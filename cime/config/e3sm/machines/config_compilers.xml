@@ -793,10 +793,7 @@ for mct, etc.
   <ADD_SLIBS MPILIB="mpi-serial"> -mkl </ADD_SLIBS>
   <ALBANY_PATH>/projects/ccsm/AlbanyTrilinos_06262017/Albany/build/install</ALBANY_PATH>
   <KOKKOS_PATH>/ascldap/users/onguba/kokkos/build-serial-omp-nodebug</KOKKOS_PATH>
-  <CXXFLAGS>
-    <base> -std=c++11 -g </base>
-    <append compile_threaded="true"> -qopenmp </append>
-  </CXXFLAGS>
+  <CXXFLAGS> -std=c++11 -g -qopenmp </CXXFLAGS>
 </compiler>
 
 <compiler COMPILER="intel" MACH="ghost">
