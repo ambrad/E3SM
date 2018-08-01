@@ -5910,7 +5910,15 @@ Number of vertical threads.
 Default: 1.
 </entry>
 
+<entry id="transport_alg" type="integer" category="se"
+       group="ctl_nl" valid_values="12" >
+SL transport alg. valid vals????????????
+</entry>
 
+<entry id="semi_lagrange_cdr_alg" type="integer" category="se"
+       group="ctl_nl" valid_values="20" >
+Not clear???????????? valid vals???????????????
+</entry>
 
 <!-- CAM I/O  -->
 
