@@ -5718,6 +5718,12 @@ Default: TRUE
 
 
 <!-- SE dycore -->
+<entry id="cubed_sphere_map" type="integer" category="se"
+       group="ctl_nl" valid_values="0,2" >
+Cubed-sphere map from a ref. element to sphere.
+Default: 0.
+</entry>
+
 
 <entry id="se_nsplit" type="integer" category="se"
        group="ctl_nl" valid_values="" >
