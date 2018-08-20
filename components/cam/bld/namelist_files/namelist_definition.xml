@@ -5931,6 +5931,12 @@ Not clear???????????? valid vals???????????????
 ?????? not clear
 </entry>
 
+<entry id="semi_lagrange_nearest_point_lev" type="integer" category="se"
+       group="ctl_nl" valid_values="">
+how many top levels are allowed to use nearest pt in halo calculating trajectories
+</entry>
+
+
 <!-- CAM I/O  -->
 
 <entry id="pio_stride" type="integer" category="pio"
