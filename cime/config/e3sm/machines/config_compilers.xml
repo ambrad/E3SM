@@ -1271,6 +1271,7 @@ for mct, etc.
   <GPTL_CPPDEFS> -DHAVE_SLASHPROC </GPTL_CPPDEFS>
   <PIO_FILESYSTEM_HINTS>gpfs </PIO_FILESYSTEM_HINTS>
   <KOKKOS_PATH>/home/onguba/kokkos/build-serial-omp-nodebug</KOKKOS_PATH>
+  <CXXFLAGS> -std=c++11 -g -qopenmp </CXXFLAGS>
 </compiler>
 
 <compiler COMPILER="gnu" MACH="anvil">
