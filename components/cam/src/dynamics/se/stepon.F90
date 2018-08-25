@@ -25,9 +25,6 @@ module stepon
    use edgetype_mod,       only: EdgeBuffer_t
    use edge_mod,       only: initEdgeBuffer, FreeEdgeBuffer, edgeVpack, edgeVunpack
    use parallel_mod,   only : par
-   use scamMod,        only: use_iop, doiopupdate, single_column, &
-                             setiopupdate, readiopdata
-   use element_mod,    only: element_t
 
    implicit none
    private
@@ -56,9 +53,6 @@ module stepon
 !
 ! !PRIVATE DATA MEMBERS:
 !
-
-  logical :: iop_update_surface
-
   type (derivative_t)   :: deriv           ! derivative struct
   type (quadrature_t)   :: gv,gp           ! quadratures on velocity and pressure grids
   type (EdgeBuffer_t) :: edgebuf              ! edge buffer
@@ -163,10 +157,8 @@ subroutine stepon_run1( dtime_out, phys_state, phys_tend,               &
   
   use dp_coupling, only: d_p_coupling
   use time_mod,    only: tstep, phys_tscale       ! dynamics timestep
-  use time_manager, only: is_last_step
   use control_mod, only: ftype
   use physics_buffer, only : physics_buffer_desc
-  use hycoef,      only: hyam, hybm
   implicit none
 !
 ! !OUTPUT PARAMETERS:
@@ -199,17 +191,6 @@ subroutine stepon_run1( dtime_out, phys_state, phys_tend,               &
    call t_startf('d_p_coupling')
    call d_p_coupling (phys_state, phys_tend,  pbuf2d, dyn_out )
    call t_stopf('d_p_coupling')
-   
-  ! Determine whether it is time for an IOP update;
-  ! doiopupdate set to true if model time step > next available IOP 
-  if (use_iop .and. .not. is_last_step()) then
-    call setiopupdate
-  end if
-  
-  if (single_column) then
-    iop_update_surface = .true. 
-    if (doiopupdate) call readiopdata( iop_update_surface,hyam,hybm )
-  endif   
    
 end subroutine stepon_run1
 
@@ -248,17 +229,15 @@ subroutine stepon_run2(phys_state, phys_tend, dyn_in, dyn_out )
 
    call t_startf('stepon_bndry_exch')
    ! do boundary exchange
-   if (.not. single_column) then 
-     do ie=1,nelemd
-       kptr=0
-       call edgeVpack(edgebuf,dyn_in%elem(ie)%derived%FM(:,:,:,:),2*nlev,kptr,ie)
-       kptr=kptr+2*nlev
+   do ie=1,nelemd
+      kptr=0
+      call edgeVpack(edgebuf,dyn_in%elem(ie)%derived%FM(:,:,:,:),2*nlev,kptr,ie)
+      kptr=kptr+2*nlev
 
-       call edgeVpack(edgebuf,dyn_in%elem(ie)%derived%FT(:,:,:),nlev,kptr,ie)
-       kptr=kptr+nlev
-       call edgeVpack(edgebuf,dyn_in%elem(ie)%derived%FQ(:,:,:,:),nlev*pcnst,kptr,ie)
-     end do
-   endif
+      call edgeVpack(edgebuf,dyn_in%elem(ie)%derived%FT(:,:,:),nlev,kptr,ie)
+      kptr=kptr+nlev
+      call edgeVpack(edgebuf,dyn_in%elem(ie)%derived%FQ(:,:,:,:),nlev*pcnst,kptr,ie)
+   end do
 
    call bndry_exchangeV(par, edgebuf)
 
@@ -271,17 +250,15 @@ subroutine stepon_run2(phys_state, phys_tend, dyn_in, dyn_out )
 
 
    do ie=1,nelemd
-     if (.not. single_column) then
-       kptr=0
+      kptr=0
 
-       call edgeVunpack(edgebuf,dyn_in%elem(ie)%derived%FM(:,:,:,:),2*nlev,kptr,ie)
-       kptr=kptr+2*nlev
+      call edgeVunpack(edgebuf,dyn_in%elem(ie)%derived%FM(:,:,:,:),2*nlev,kptr,ie)
+      kptr=kptr+2*nlev
 
-       call edgeVunpack(edgebuf,dyn_in%elem(ie)%derived%FT(:,:,:),nlev,kptr,ie)
-       kptr=kptr+nlev
+      call edgeVunpack(edgebuf,dyn_in%elem(ie)%derived%FT(:,:,:),nlev,kptr,ie)
+      kptr=kptr+nlev
 
-       call edgeVunpack(edgebuf,dyn_in%elem(ie)%derived%FQ(:,:,:,:),nlev*pcnst,kptr,ie)
-     endif
+      call edgeVunpack(edgebuf,dyn_in%elem(ie)%derived%FQ(:,:,:,:),nlev*pcnst,kptr,ie)
 
       tl_f = TimeLevel%n0   ! timelevel which was adjusted by physics
 
@@ -460,7 +437,7 @@ subroutine stepon_run2(phys_state, phys_tend, dyn_in, dyn_out )
                ftmp(i+(j-1)*np,1:pver,1) = tmp_dyn(i,j,1:pver)
             end do
          end do
-         if (.not. single_column) call outfld('VOR',ftmp(:,:,1),npsq,ie)
+         call outfld('VOR',ftmp(:,:,1),npsq,ie)
       enddo
    endif
    if (hist_fld_active('DIV')) then
@@ -471,7 +448,7 @@ subroutine stepon_run2(phys_state, phys_tend, dyn_in, dyn_out )
                ftmp(i+(j-1)*np,1:pver,1) = tmp_dyn(i,j,1:pver)
             end do
          end do
-         if (.not. single_column) call outfld('DIV',ftmp(:,:,1),npsq,ie)
+         call outfld('DIV',ftmp(:,:,1),npsq,ie)
       enddo
    endif
 #endif
@@ -483,7 +460,7 @@ subroutine stepon_run2(phys_state, phys_tend, dyn_in, dyn_out )
                   ftmp(i+(j-1)*np,1,1) = phisdyn(i,j,ie)
                end do
             end do
-            if (.not. single_column) call outfld('PHIS_SM',ftmp(:,1,1),npsq,ie)
+            call outfld('PHIS_SM',ftmp(:,1,1),npsq,ie)
          enddo
       endif
       if (hist_fld_active('SGH_SM')) then
@@ -493,7 +470,7 @@ subroutine stepon_run2(phys_state, phys_tend, dyn_in, dyn_out )
                   ftmp(i+(j-1)*np,1,1) = sghdyn(i,j,ie)
                end do
             end do
-            if (.not. single_column) call outfld('SGH_SM',ftmp(:,1,1),npsq,ie)
+            call outfld('SGH_SM',ftmp(:,1,1),npsq,ie)
          enddo
       endif
       if (hist_fld_active('SGH30_SM')) then
@@ -503,12 +480,12 @@ subroutine stepon_run2(phys_state, phys_tend, dyn_in, dyn_out )
                   ftmp(i+(j-1)*np,1,1) = sgh30dyn(i,j,ie)
                end do
             end do
-            if (.not. single_column) call outfld('SGH30_SM',ftmp(:,1,1),npsq,ie)
+            call outfld('SGH30_SM',ftmp(:,1,1),npsq,ie)
          enddo
       endif
    end if
    
-   if (hist_fld_active('FU') .or. hist_fld_active('FV') .and. .not. single_column) then
+   if (hist_fld_active('FU') .or. hist_fld_active('FV')) then
       do ie=1,nelemd
          do k=1,nlev
             do j=1,np
@@ -534,30 +511,12 @@ subroutine stepon_run3(dtime, cam_out, phys_state, dyn_in, dyn_out)
    use camsrfexch,  only: cam_out_t     
    use dyn_comp,    only: dyn_run
    use time_mod,    only: tstep
-   use hycoef,      only: hyam, hybm
-   use se_single_column_mod, only: scm_setfield, scm_setinitial
    real(r8), intent(in) :: dtime   ! Time-step
    type(cam_out_t),     intent(inout) :: cam_out(:) ! Output from CAM to surface
    type(physics_state), intent(inout) :: phys_state(begchunk:endchunk)
    type (dyn_import_t), intent(inout) :: dyn_in  ! Dynamics import container
    type (dyn_export_t), intent(inout) :: dyn_out ! Dynamics export container
-   type (element_t), pointer :: elem(:)
    integer :: rc
-   
-   elem => dyn_out%elem
-   
-   if (single_column) then
-     
-     ! Update IOP properties e.g. omega, divT, divQ
-     
-     iop_update_surface = .false. 
-     if (doiopupdate) then
-       call scm_setinitial(elem)
-       call readiopdata(iop_update_surface,hyam,hybm)
-       call scm_setfield(elem)
-     endif   
-
-   endif   
 
    call t_barrierf('sync_dyn_run', mpicom)
    call t_startf ('dyn_run')

@@ -188,7 +188,7 @@ class CompilerBlock(object):
         value_text = self._handle_references(elem, set_up,
                                              tear_down, depends)
         # Create the setting object.
-        append = self._db.name(elem) == "append"
+        append = self._db.name(elem) == "append" or (self._db.name(elem) == "base" and self._compiler and self._db.compiler != self._compiler)
         setting = ValueSetting(value_text, append,
                                conditions, set_up, tear_down)
 
@@ -208,7 +208,8 @@ class CompilerBlock(object):
             value_lists[name] = PossibleValues(name, setting,
                                                self._specificity, depends)
         else:
-            value_lists[name].add_setting(setting, self._specificity,depends)
+            value_lists[name].add_setting(setting, self._specificity,
+                                          depends)
 
     def add_settings_to_lists(self, flag_vars, value_lists):
         """Add all data in the <compiler> element to lists of settings.
@@ -228,6 +229,7 @@ class CompilerBlock(object):
 
     def matches_machine(self):
         """Check whether this block matches a machine/os.
+
         This also sets the specificity of the block, so this must be called
         before add_settings_to_lists if machine-specific output is needed.
         """

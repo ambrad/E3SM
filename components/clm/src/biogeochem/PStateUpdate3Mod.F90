@@ -210,7 +210,6 @@ contains
            enddo
          end if
 
-         if (nu_com .eq. 'RD') then
           do j = 1, nlevdecomp
              do fc = 1,num_soilc
                 c = filter_soilc(fc)
@@ -221,7 +220,6 @@ contains
                 end do
              end do
           end do
-         end if
 
          do j = 1, nlevdecomp
             do fc = 1,num_soilc
