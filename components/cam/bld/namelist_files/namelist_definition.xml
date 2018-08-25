@@ -5917,7 +5917,7 @@ Default: 1.
 </entry>
 
 <entry id="transport_alg" type="integer" category="se"
-       group="ctl_nl" valid_values="12" >
+       group="ctl_nl" valid_values="3,12" >
 SL transport alg. valid vals????????????
 </entry>
 
