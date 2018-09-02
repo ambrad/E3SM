@@ -3764,7 +3764,6 @@ struct InputParser {
 #  include "config.h.c"
 # endif
 #endif
-#endif
 
 // Rewrite each CDR's run() function to interact nicely with Homme's nested
 // OpenMP and top-level horizontal threading scheme.
