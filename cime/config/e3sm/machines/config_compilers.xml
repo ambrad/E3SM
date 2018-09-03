@@ -282,6 +282,7 @@ for mct, etc.
   <!-- http://software.intel.com/en-us/articles/intel-composer-xe/ -->
   <ADD_CPPDEFS> -DFORTRANUNDERSCORE -DNO_R16 -DCPRINTEL</ADD_CPPDEFS>
   <ADD_CFLAGS compile_threaded="true"> -openmp </ADD_CFLAGS>
+  <ADD_CXXFLAGS compile_threaded="true"> -openmp </ADD_CXXFLAGS>
   <ADD_FFLAGS compile_threaded="true"> -openmp </ADD_FFLAGS>
   <ADD_LDFLAGS compile_threaded="true"> -openmp </ADD_LDFLAGS>
   <FREEFLAGS> -free </FREEFLAGS>
@@ -296,8 +297,11 @@ for mct, etc.
   <ADD_FFLAGS DEBUG="FALSE"> -O2 -debug minimal </ADD_FFLAGS>
   <ADD_CFLAGS DEBUG="FALSE"> -O2 -debug minimal </ADD_CFLAGS>
   <ADD_CFLAGS DEBUG="TRUE"> -O0 -g </ADD_CFLAGS>
+  <ADD_CXXFLAGS DEBUG="FALSE"> -O2 -debug minimal </ADD_CXXFLAGS>
+  <ADD_CXXFLAGS DEBUG="TRUE"> -O0 -g </ADD_CXXFLAGS>
   <FFLAGS>  -convert big_endian -assume byterecl -ftz -traceback -assume realloc_lhs -fp-model source </FFLAGS>
   <CFLAGS> -O2 -fp-model precise -std=gnu99 </CFLAGS>
+  <CXXFLAGS>  -std=c++11 -fp-model source </CXXFLAGS>
   <FFLAGS_NOOPT> -O0 </FFLAGS_NOOPT>
   <ADD_FFLAGS_NOOPT compile_threaded="true"> -openmp </ADD_FFLAGS_NOOPT>
   <FC_AUTO_R8> -r8 </FC_AUTO_R8>
@@ -793,7 +797,7 @@ for mct, etc.
   <ADD_SLIBS MPILIB="mpi-serial"> -mkl </ADD_SLIBS>
   <ALBANY_PATH>/projects/ccsm/AlbanyTrilinos_06262017/Albany/build/install</ALBANY_PATH>
   <KOKKOS_PATH>/ascldap/users/onguba/kokkos/build-serial-omp-nodebug</KOKKOS_PATH>
-  <CXXFLAGS> -std=c++11 -g -qopenmp </CXXFLAGS>
+  <ADD_CXXFLAGS> -qopenmp </ADD_CXXFLAGS>
 </compiler>
 
 <compiler COMPILER="intel" MACH="ghost">
@@ -1262,6 +1266,7 @@ for mct, etc.
   <ADD_FFLAGS DEBUG="FALSE"> -O2 -debug minimal -qno-opt-dynamic-align</ADD_FFLAGS>
   <ADD_CFLAGS compile_threaded="true"> -qopenmp -static-intel</ADD_CFLAGS>
   <ADD_FFLAGS compile_threaded="true"> -qopenmp -static-intel</ADD_FFLAGS>
+  <ADD_CXXFLAGS compile_threaded="true"> -qopenmp -static-intel</ADD_CXXFLAGS>
   <ADD_FFLAGS_NOOPT compile_threaded="true"> -qopenmp -static-intel</ADD_FFLAGS_NOOPT>
   <ADD_LDFLAGS compile_threaded="true"> -qopenmp -static-intel</ADD_LDFLAGS>
   <ADD_CFLAGS compile_threaded="true" DEBUG="TRUE">-heap-arrays</ADD_CFLAGS>
@@ -1271,7 +1276,7 @@ for mct, etc.
   <GPTL_CPPDEFS> -DHAVE_SLASHPROC </GPTL_CPPDEFS>
   <PIO_FILESYSTEM_HINTS>gpfs </PIO_FILESYSTEM_HINTS>
   <KOKKOS_PATH>/home/onguba/kokkos/build-serial-omp-nodebug</KOKKOS_PATH>
-  <CXXFLAGS> -std=c++11 -g -qopenmp </CXXFLAGS>
+  <ADD_CXXFLAGS> -qopenmp </ADD_CXXFLAGS>
 </compiler>
 
 <compiler COMPILER="gnu" MACH="anvil">
