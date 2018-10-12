@@ -116,6 +116,7 @@ contains
 #endif
 
     use compose_mod, only: kokkos_init, compose_init, cedr_unittest, cedr_set_ie2gci
+    use amb_mod
 
     implicit none
 
@@ -309,6 +310,10 @@ contains
     if(par%masterproc .and. Debug) then 
         call PrintMetaVertex(MetaVertex(1))
     endif
+
+    !amb
+    call amb_run(par)
+    call amb_cmp(MetaVertex(1))
 
     if(nelemd .le. 0) then
        call abortmp('Not yet ready to handle nelemd = 0 yet' )
