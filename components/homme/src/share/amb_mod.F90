@@ -1,26 +1,42 @@
 module amb_mod
   use metagraph_mod, only: MetaVertex_t
   use parallel_mod, only: parallel_t, abortmp
+  use dimensions_mod, only: npart
+  use gridgraph_mod, only: GridVertex_t, GridEdge_t
 
   implicit none
 
-  
+  type, public :: GridManager_t
+     integer :: owned, used
+     integer, allocatable :: sfc2rank(:)
+     type (GridVertex_t), pointer :: gv(:) => null()
+     type (GridEdge_t), pointer :: ge(:) => null()
+  end type GridManager_t
 
 contains
 
   subroutine amb_run(par)
-    use dimensions_mod, only: nelem, ne, npart
+    use dimensions_mod, only: nelem, ne
 
     type (parallel_t), intent(in) :: par
-    integer :: sfc2rank(npart+1), mesh(ne,ne)
+    integer, allocatable :: sfcfacemesh(:,:)
+    type (GridManager_t) :: gm
     logical, parameter :: dbg = .false.
 
-    call amb_genspacecurve(ne, mesh)
-    call amb_genspacepart(nelem, npart, sfc2rank)
+    allocate(gm%sfc2rank(npart+1))
+    call amb_genspacepart(nelem, npart, gm%sfc2rank)
     if (dbg) then
        print '(a,i4,a)', 'AMB> nelem', nelem, 'sfc2rank'
-       print '(i4)', sfc2rank
+       print '(i4)', gm%sfc2rank
     end if
+    allocate(sfcfacemesh(ne,ne))
+    call amb_genspacecurve(ne, sfcfacemesh)
+    call amb_cube_gv_pass1(sfcfacemesh, gm)
+    call amb_cube_gv_pass2(sfcfacemesh, gm)
+    deallocate(sfcfacemesh)
+    call amb_ge(gm)
+
+    deallocate(gm%sfc2rank)
   end subroutine amb_run
   
   subroutine amb_cmp(mv_other)
@@ -138,4 +154,17 @@ contains
     end if
   end subroutine amb_genspacepart
 
+  subroutine amb_cube_gv_pass2(sfcfacemesh, gm)
+    integer, intent(in) :: sfcfacemesh(:,:)
+    type (GridManager_t), intent(inout) :: gm
+  end subroutine amb_cube_gv_pass2
+
+  subroutine amb_cube_gv_pass1(sfcfacemesh, gm)
+    integer, intent(in) :: sfcfacemesh(:,:)
+    type (GridManager_t), intent(inout) :: gm
+  end subroutine amb_cube_gv_pass1
+
+  subroutine amb_ge(gm)
+    type (GridManager_t), intent(inout) :: gm
+  end subroutine amb_ge
 end module amb_mod
