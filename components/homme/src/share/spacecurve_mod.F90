@@ -1028,9 +1028,11 @@ contains
        level    = fact%numfact
 
        if(verbose) write(iulog,*)'GenSpacecurve: level is ',level
+       if (allocated(ordered)) deallocate(ordered)
        allocate(ordered(gridsize,gridsize))
 
        ! Setup the working arrays for the traversal
+       if (allocated(pos)) deallocate(pos)
        allocate(pos(0:dim-1))
 
        !  The array ordered will contain the visitation order

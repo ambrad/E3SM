@@ -9,12 +9,13 @@ module amb_mod
 contains
 
   subroutine amb_run(par)
-    use dimensions_mod, only: nelem, npart
+    use dimensions_mod, only: nelem, ne, npart
 
     type (parallel_t), intent(in) :: par
-    integer :: sfc2rank(npart+1)
+    integer :: sfc2rank(npart+1), mesh(ne,ne)
     logical, parameter :: dbg = .false.
 
+    call amb_genspacecurve(ne, mesh)
     call amb_genspacepart(nelem, npart, sfc2rank)
     if (dbg) then
        print '(a,i4,a)', 'AMB> nelem', nelem, 'sfc2rank'
