@@ -7,8 +7,8 @@ module amb_mod
   implicit none
 
   type, public :: GridManager_t
-     integer :: owned, used
-     integer, allocatable :: sfc2rank(:)
+     integer :: rank
+     integer, allocatable :: sfcfacemesh(:,:), sfc2rank(:), gvid(:)
      type (GridVertex_t), pointer :: gv(:) => null()
      type (GridEdge_t), pointer :: ge(:) => null()
   end type GridManager_t
@@ -19,15 +19,15 @@ contains
     use dimensions_mod, only: nelem, ne
 
     type (parallel_t), intent(in) :: par
-    integer, allocatable :: sfcfacemesh(:,:), sfctest(:)
+    integer, allocatable :: sfctest(:)
     type (GridManager_t) :: gm
     integer :: ie, i, j, face, id, sfc, nelemd, nelemdi
     logical, parameter :: dbg = .true.
 
     allocate(gm%sfc2rank(npart+1))
     call amb_genspacepart(nelem, npart, gm%sfc2rank)
-    allocate(sfcfacemesh(ne,ne))
-    call amb_genspacecurve(ne, sfcfacemesh)
+    allocate(gm%sfcfacemesh(ne,ne))
+    call amb_genspacecurve(ne, gm%sfcfacemesh)
 
     if (dbg .and. par%masterproc) then
        ! amb_genspacepart
@@ -55,7 +55,7 @@ contains
                face >=1 .and. face <= 6)) then
              print *, 'AMB> u<->s:',ie,id,i,j,face
           end if
-          sfc = u2sfc(sfcfacemesh, id)
+          sfc = u2sfc(gm%sfcfacemesh, id)
           if (.not. (sfc >= 0 .and. sfc < nelem)) then
              print *, 'AMB> u2sfc:',id,sfc
           end if
@@ -69,9 +69,10 @@ contains
        deallocate(sfctest)
     end if
 
-    call amb_cube_gv_pass1(sfcfacemesh, gm)
-    call amb_cube_gv_pass2(sfcfacemesh, gm)
-    deallocate(sfcfacemesh)
+    gm%rank = par%rank
+    call amb_cube_gv_pass1(gm)
+    call amb_cube_gv_pass2(gm)
+    deallocate(gm%sfcfacemesh)
     call amb_ge(gm)
     deallocate(gm%sfc2rank)
   end subroutine amb_run
@@ -236,15 +237,81 @@ contains
     end do
   end subroutine amb_genspacepart
 
-  subroutine amb_cube_gv_pass2(sfcfacemesh, gm)
-    integer, intent(in) :: sfcfacemesh(:,:)
+  subroutine amb_cube_gv_pass1(gm)
     type (GridManager_t), intent(inout) :: gm
-  end subroutine amb_cube_gv_pass2
+    logical(kind=1), allocatable :: owned_or_used(:)
+    integer :: id, ne, nelem, sfc, i, j, k, id_nbr
+    logical :: owned, used
 
-  subroutine amb_cube_gv_pass1(sfcfacemesh, gm)
-    integer, intent(in) :: sfcfacemesh(:,:)
-    type (GridManager_t), intent(inout) :: gm
+    ne = size(gm%sfcfacemesh, 1)
+    nelem = 6*ne*ne
+
+    allocate(owned_or_used(nelem))
+    owned_or_used = .false.
+
+    do id = 1,nelem
+       sfc = u2sfc(gm%sfcfacemesh, id)
+       owned = sfc >= gm%sfc2rank(gm%rank+1) .and. sfc < gm%sfc2rank(gm%rank+2)
+
+       if (.not. owned) cycle
+       owned_or_used(id) = .true.
+
+       call u2si(id, i, j, k)
+
+       if (j >= 2 .and. i >= 2) then
+          ! setup SOUTH, WEST, SW neighbors
+          owned_or_used(s2ui(i-1,j,k)) = .true.
+          owned_or_used(s2ui(i,j-1,k)) = .true.
+          owned_or_used(s2ui(i-1,j-1,k)) = .true.
+       end if
+    end do
+
+    deallocate(owned_or_used)
+
+    ! owned_or_used(s2ui()) = .true.
   end subroutine amb_cube_gv_pass1
+  
+  subroutine gv_set(gv, dir, id, face, wgt)
+    type (GridVertex_t), intent(inout) :: gv
+    integer, intent(in) :: dir, id, face, wgt
+
+    gv%nbrs(dir) = id
+    gv%nbrs_face(dir) = face
+    gv%nbrs_wgt(dir) = wgt
+  end subroutine gv_set
+
+  subroutine amb_cube_gv_pass2(gm)
+    use dimensions_mod, only: np
+    use control_mod, only : north, south, east, west, neast, seast, swest, nwest
+
+    type (GridManager_t), intent(inout) :: gm
+    integer :: igv, id, ne, ngv, sfc, i, j, k, id_nbr
+    logical :: owned, used
+    type (GridVertex_t), pointer :: gv
+    integer, parameter :: EdgeWgtP = np, CornerWgt = 1
+
+    return
+
+    ne = size(gm%sfcfacemesh, 1)
+    ngv = size(gm%gv)
+
+    do igv = 1,ngv
+       id = gm%gvid(igv)
+       gv => gm%gv(igv)
+
+       sfc = u2sfc(gm%sfcfacemesh, id)
+
+       call u2si(id, i, j, k)
+
+       gv%nbrs = -1
+       if (j >= 2 .and. i >= 2) then
+          ! setup SOUTH, WEST, SW neighbors
+          call gv_set(gv, west, s2ui(i-1,j,k), k, EdgeWgtP)
+          call gv_set(gv, south, s2ui(i,j-1,k), k, EdgeWgtP)
+          call gv_set(gv, swest, s2ui(i-1,j-1,k), k, CornerWgt)
+       end if
+    end do
+  end subroutine amb_cube_gv_pass2
 
   subroutine amb_ge(gm)
     type (GridManager_t), intent(inout) :: gm
