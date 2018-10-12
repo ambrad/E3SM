@@ -21,11 +21,25 @@ contains
     type (parallel_t), intent(in) :: par
     integer, allocatable :: sfcfacemesh(:,:)
     type (GridManager_t) :: gm
-    logical, parameter :: dbg = .false.
+    integer :: ie, i, j, face, id
+    logical, parameter :: dbg = .true.
+
+    if (dbg .and. par%masterproc) then
+       do ie = 1, nelem
+          call u2si(ie,i,j,face)
+          id = s2ui(i,j,face)
+          if (.not. (id == ie .and. &
+               i >= 1 .and. i <= ne .and. &
+               j >= 1 .and. j <= ne .and. &
+               face >=1 .and. face <= 6)) then
+             print *, 'AMB> u<->s:',ie,id,i,j,face
+          end if
+       end do
+    end if
 
     allocate(gm%sfc2rank(npart+1))
     call amb_genspacepart(nelem, npart, gm%sfc2rank)
-    if (dbg) then
+    if (dbg .and. par%masterproc) then
        print '(a,i4,a)', 'AMB> nelem', nelem, 'sfc2rank'
        print '(i4)', gm%sfc2rank
     end if
@@ -38,6 +52,28 @@ contains
 
     deallocate(gm%sfc2rank)
   end subroutine amb_run
+
+  function s2ui(i, j, face) result (id)
+    use dimensions_mod, only: ne
+
+    integer, intent(in) :: i, j, face
+    integer :: id
+
+    id = ((face-1)*ne + (j-1))*ne + i
+  end function s2ui
+
+  subroutine u2si(id, i, j, face)
+    use dimensions_mod, only: ne
+
+    integer, intent(in) :: id
+    integer, intent(out) :: i, j, face
+    integer :: nesq
+
+    nesq = ne*ne
+    face = (id-1)/nesq + 1
+    j = mod(id-1, nesq)/ne + 1
+    i = mod(id-1, ne) + 1
+  end subroutine u2si
   
   subroutine amb_cmp(mv_other)
     type (MetaVertex_t) :: mv_other
@@ -57,7 +93,7 @@ contains
     else
        ! find the smallest ne2 which is a power of 2 and ne2>ne
        ne2=2**ceiling( log(real(ne))/log(2d0) )
-       if (ne2<ne) call abortmp('Fatel SFC error')
+       if (ne2<ne) call abortmp('Fatal SFC error')
 
        allocate(Mesh2(ne2,ne2))
        allocate(Mesh2_map(ne2,ne2,2))
