@@ -8,7 +8,7 @@ module amb_mod
 
   type, public :: GridManager_t
      integer :: rank
-     integer, allocatable :: sfcfacemesh(:,:), sfc2rank(:), gvid(:)
+     integer, allocatable :: sfcfacemesh(:,:), sfc2rank(:)
      type (GridVertex_t), pointer :: gv(:) => null()
      type (GridEdge_t), pointer :: ge(:) => null()
   end type GridManager_t
@@ -72,7 +72,6 @@ contains
     gm%rank = par%rank
     call amb_cube_gv_pass1(gm)
     call amb_cube_gv_pass2(gm)
-    deallocate(gm%sfcfacemesh)
     call amb_ge(gm)
     deallocate(gm%sfc2rank)
   end subroutine amb_run
@@ -238,10 +237,14 @@ contains
   end subroutine amb_genspacepart
 
   subroutine amb_cube_gv_pass1(gm)
+    use gridgraph_mod, only: allocate_gridvertex_nbrs
+
     type (GridManager_t), intent(inout) :: gm
     logical(kind=1), allocatable :: owned_or_used(:)
-    integer :: id, ne, nelem, sfc, i, j, k, id_nbr
-    logical :: owned, used
+    integer, allocatable :: gvid(:)
+    type (GridVertex_t), pointer :: gv
+    integer :: id, ne, nelem, sfc, i, j, k, id_nbr, n_owned_or_used
+    logical :: owned
 
     ne = size(gm%sfcfacemesh, 1)
     nelem = 6*ne*ne
@@ -265,10 +268,35 @@ contains
           owned_or_used(s2ui(i-1,j-1,k)) = .true.
        end if
     end do
-
-    deallocate(owned_or_used)
-
     ! owned_or_used(s2ui()) = .true.
+
+    n_owned_or_used = 0
+    do id = 1,nelem
+       if (owned_or_used(id)) n_owned_or_used = n_owned_or_used + 1
+    end do
+    ! Use an extra array here to minimize the high-water memory.
+    allocate(gvid(n_owned_or_used))
+    i = 1
+    do id = 1,nelem
+       if (owned_or_used(id)) then
+          gvid(i) = id
+          i = i + 1
+       end if
+    end do
+    deallocate(owned_or_used)
+    allocate(gm%gv(n_owned_or_used))
+    do i = 1, n_owned_or_used
+       call allocate_gridvertex_nbrs(gm%gv(i))
+       gv => gm%gv(i)
+       gv%number = gvid(i)
+       gv%SpaceCurve = u2sfc(gm%sfcfacemesh, gvid(i))
+       gv%nbrs = 0
+       gv%nbrs_wgt = 0
+       gv%nbrs_ptr = 0
+       gv%nbrs_wgt_ghost = 1
+    end do
+    deallocate(gm%sfcfacemesh)
+    deallocate(gvid)
   end subroutine amb_cube_gv_pass1
   
   subroutine gv_set(gv, dir, id, face, wgt)
@@ -281,25 +309,19 @@ contains
   end subroutine gv_set
 
   subroutine amb_cube_gv_pass2(gm)
-    use dimensions_mod, only: np
+    use dimensions_mod, only: np, ne
     use control_mod, only : north, south, east, west, neast, seast, swest, nwest
 
     type (GridManager_t), intent(inout) :: gm
-    integer :: igv, id, ne, ngv, sfc, i, j, k, id_nbr
-    logical :: owned, used
+    integer :: igv, id, ngv, i, j, k, id_nbr
     type (GridVertex_t), pointer :: gv
     integer, parameter :: EdgeWgtP = np, CornerWgt = 1
 
-    return
-
-    ne = size(gm%sfcfacemesh, 1)
     ngv = size(gm%gv)
 
     do igv = 1,ngv
-       id = gm%gvid(igv)
        gv => gm%gv(igv)
-
-       sfc = u2sfc(gm%sfcfacemesh, id)
+       id = gv%number
 
        call u2si(id, i, j, k)
 
