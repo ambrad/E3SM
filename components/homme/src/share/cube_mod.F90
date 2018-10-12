@@ -990,7 +990,7 @@ contains
     allocate(nbrs_used(ne,ne,nfaces,8))
     nbrs_used = .false.
 
-
+    !amb number = function(i,j,k)
     number=1
     EdgeWgtP   = np
     CornerWgt = 1
@@ -1015,6 +1015,7 @@ contains
 
     !    print *,'CubeTopology: Ne, IsFactorable, IsLoadBalanced : ',ne,IsFactorable(ne),IsLoadBalanced(nelem,npart)
 
+    !amb move this to before allocate(GridVertex/Edge)
     allocate(Mesh(ne,ne))
     if(IsFactorable(ne)) then
        call GenspaceCurve(Mesh)
@@ -1088,6 +1089,9 @@ contains
     endif
 
 
+    !amb GridVertex(s2ui(i,j,face))
+    !amb u2si(ie, i,j,face)
+
     ! -------------------------------------------
     !  Setup the space-filling curve for face 1
     ! -------------------------------------------
@@ -1148,6 +1152,13 @@ contains
           GridElem(i,j,3)%SpaceCurve = offset + Mesh(i,j)
        enddo
     enddo
+
+    !amb Replace with
+    !      loop over nelemd
+    !        u2si
+    !        if/else list on condition
+    ! if/else might seem expensive, but it's not: way fewer elements, with
+    ! slightly slower access.
 
     ! ==================
     ! face interiors
@@ -1608,6 +1619,9 @@ contains
        endif
     end do
     
+
+    !amb worst case: local tmp GridVertex. write to it. then write back to array
+    ! with shuffled data.
 
     ielem = 1                       ! Element counter
     do k=1,6

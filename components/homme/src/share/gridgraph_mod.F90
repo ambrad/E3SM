@@ -574,7 +574,7 @@ contains
               ! edge links (i.e. the "head_face")
               ! ===========================================
               do k=1,num_neighbors
-                 cnt = GridVertex(inbr)%nbrs_ptr(k+1) -GridVertex(inbr)%nbrs_ptr(k)                     
+                 cnt = GridVertex(inbr)%nbrs_ptr(k+1) -GridVertex(inbr)%nbrs_ptr(k)  
                  start = GridVertex(inbr)%nbrs_ptr(k)
                  do  n = 0, cnt-1
                     if(GridVertex(inbr)%nbrs(start+n) == GridVertex(j)%number) then
