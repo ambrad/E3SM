@@ -19,12 +19,33 @@ contains
     use dimensions_mod, only: nelem, ne
 
     type (parallel_t), intent(in) :: par
-    integer, allocatable :: sfcfacemesh(:,:)
+    integer, allocatable :: sfcfacemesh(:,:), sfctest(:)
     type (GridManager_t) :: gm
-    integer :: ie, i, j, face, id
+    integer :: ie, i, j, face, id, sfc, nelemd, nelemdi
     logical, parameter :: dbg = .true.
 
+    allocate(gm%sfc2rank(npart+1))
+    call amb_genspacepart(nelem, npart, gm%sfc2rank)
+    allocate(sfcfacemesh(ne,ne))
+    call amb_genspacecurve(ne, sfcfacemesh)
+
     if (dbg .and. par%masterproc) then
+       ! amb_genspacepart
+       if (gm%sfc2rank(npart+1) /= nelem) then
+          print *, 'AMB> nelem',nelem,'sfc2rank',gm%sfc2rank
+       end if
+       nelemd = gm%sfc2rank(2) - gm%sfc2rank(1)
+       do i = 3, npart+1
+          nelemdi = gm%sfc2rank(i) - gm%sfc2rank(i-1)
+          if (nelemdi > nelemd) then
+             print *, 'AMB> nelem',nelem,'sfc2rank',gm%sfc2rank
+             exit
+          end if
+          nelemd = nelemdi
+       end do
+       ! u<->s and ->sfc
+       allocate(sfctest(nelem))
+       sfctest = 0
        do ie = 1, nelem
           call u2si(ie,i,j,face)
           id = s2ui(i,j,face)
@@ -34,22 +55,24 @@ contains
                face >=1 .and. face <= 6)) then
              print *, 'AMB> u<->s:',ie,id,i,j,face
           end if
+          sfc = u2sfc(sfcfacemesh, id)
+          if (.not. (sfc >= 0 .and. sfc < nelem)) then
+             print *, 'AMB> u2sfc:',id,sfc
+          end if
+          sfctest(sfc+1) = sfctest(sfc+1) + 1
        end do
+       do ie = 1, nelem
+          if (sfctest(ie) .ne. 1) then
+             print *, 'AMB> sfctest:',ie,sfctest(ie)
+          end if
+       end do
+       deallocate(sfctest)
     end if
 
-    allocate(gm%sfc2rank(npart+1))
-    call amb_genspacepart(nelem, npart, gm%sfc2rank)
-    if (dbg .and. par%masterproc) then
-       print '(a,i4,a)', 'AMB> nelem', nelem, 'sfc2rank'
-       print '(i4)', gm%sfc2rank
-    end if
-    allocate(sfcfacemesh(ne,ne))
-    call amb_genspacecurve(ne, sfcfacemesh)
     call amb_cube_gv_pass1(sfcfacemesh, gm)
     call amb_cube_gv_pass2(sfcfacemesh, gm)
     deallocate(sfcfacemesh)
     call amb_ge(gm)
-
     deallocate(gm%sfc2rank)
   end subroutine amb_run
 
@@ -74,6 +97,32 @@ contains
     j = mod(id-1, nesq)/ne + 1
     i = mod(id-1, ne) + 1
   end subroutine u2si
+
+  function s2sfc(sfcfacemesh, i, j, face) result(sfc)
+    integer, intent(in) :: sfcfacemesh(:,:)
+    integer, intent(in) :: i, j, face
+    integer :: sfc, offset, ne, nesq
+
+    ne = size(sfcfacemesh,1)
+    nesq = ne*ne
+    select case (face)
+    case (1); sfc =          sfcfacemesh(i     , ne-j+1)
+    case (2); sfc =   nesq + sfcfacemesh(i     , ne-j+1)
+    case (3); sfc = 5*nesq + sfcfacemesh(i     , j     )
+    case (4); sfc = 3*nesq + sfcfacemesh(ne-j+1, i     )
+    case (5); sfc = 4*nesq + sfcfacemesh(i     , j     )
+    case (6); sfc = 2*nesq + sfcfacemesh(ne-i+1, ne-j+1)
+    end select
+  end function s2sfc
+
+  function u2sfc(sfcfacemesh, id) result(sfc)
+    integer, intent(in) :: sfcfacemesh(:,:)
+    integer, intent(in) :: id
+    integer :: i, j, face, sfc
+
+    call u2si(id, i, j, face)
+    sfc = s2sfc(sfcfacemesh, i, j, face)
+  end function u2sfc
   
   subroutine amb_cmp(mv_other)
     type (MetaVertex_t) :: mv_other
@@ -185,9 +234,6 @@ contains
     do ipart = extra+1, npart
        sfc2rank(ipart+1) = s1 + (ipart - extra)*nelemd
     end do
-    if (sfc2rank(npart+1) /= nelem) then
-       print *, 'nelem',nelem,'sfc2rank',sfc2rank
-    end if
   end subroutine amb_genspacepart
 
   subroutine amb_cube_gv_pass2(sfcfacemesh, gm)
