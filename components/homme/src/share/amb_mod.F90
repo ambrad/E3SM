@@ -8,7 +8,7 @@ module amb_mod
 
   type, public :: GridManager_t
      integer :: rank
-     integer, allocatable :: sfcfacemesh(:,:), sfc2rank(:)
+     integer, allocatable :: sfcfacemesh(:,:), rank2sfc(:)
      type (GridVertex_t), pointer :: gv(:) => null()
      type (GridEdge_t), pointer :: ge(:) => null()
   end type GridManager_t
@@ -21,27 +21,35 @@ contains
     type (parallel_t), intent(in) :: par
     integer, allocatable :: sfctest(:)
     type (GridManager_t) :: gm
-    integer :: ie, i, j, face, id, sfc, nelemd, nelemdi
+    integer :: ie, i, j, face, id, sfc, nelemd, nelemdi, rank
     logical, parameter :: dbg = .true.
 
-    allocate(gm%sfc2rank(npart+1))
-    call amb_genspacepart(nelem, npart, gm%sfc2rank)
+    allocate(gm%rank2sfc(npart+1))
+    call amb_genspacepart(nelem, npart, gm%rank2sfc)
     allocate(gm%sfcfacemesh(ne,ne))
     call amb_genspacecurve(ne, gm%sfcfacemesh)
 
     if (dbg .and. par%masterproc) then
        ! amb_genspacepart
-       if (gm%sfc2rank(npart+1) /= nelem) then
-          print *, 'AMB> nelem',nelem,'sfc2rank',gm%sfc2rank
+       if (gm%rank2sfc(npart+1) /= nelem) then
+          print *, 'AMB> nelem',nelem,'rank2sfc',gm%rank2sfc
        end if
-       nelemd = gm%sfc2rank(2) - gm%sfc2rank(1)
+       nelemd = gm%rank2sfc(2) - gm%rank2sfc(1)
        do i = 3, npart+1
-          nelemdi = gm%sfc2rank(i) - gm%sfc2rank(i-1)
+          nelemdi = gm%rank2sfc(i) - gm%rank2sfc(i-1)
           if (nelemdi > nelemd) then
-             print *, 'AMB> nelem',nelem,'sfc2rank',gm%sfc2rank
+             print *, 'AMB> nelem',nelem,'rank2sfc',gm%rank2sfc
              exit
           end if
           nelemd = nelemdi
+       end do
+       ! sfc2rank
+       do sfc = 0, nelem-1
+          rank = sfc2rank(gm%rank2sfc, sfc)
+          if (sfc < gm%rank2sfc(rank+1) .or. sfc >= gm%rank2sfc(rank+2)) then
+             print *, 'AMB> sfc, rank, rank2sfc',sfc,rank,gm%rank2sfc
+             exit
+          end if
        end do
        ! u<->s and ->sfc
        allocate(sfctest(nelem))
@@ -73,7 +81,7 @@ contains
     call amb_cube_gv_pass1(gm)
     call amb_cube_gv_pass2(gm)
     call amb_ge(gm)
-    deallocate(gm%sfc2rank)
+    deallocate(gm%rank2sfc)
   end subroutine amb_run
 
   function s2ui(i, j, face) result (id)
@@ -208,9 +216,9 @@ contains
     endif
   end subroutine amb_genspacecurve
 
-  subroutine amb_genspacepart(nelem, npart, sfc2rank)
+  subroutine amb_genspacepart(nelem, npart, rank2sfc)
     integer, intent(in) :: nelem, npart
-    integer, intent(out) :: sfc2rank(npart+1)
+    integer, intent(out) :: rank2sfc(npart+1)
     integer :: nelemd, ipart, extra, s1
 
     nelemd = nelem/npart
@@ -227,14 +235,36 @@ contains
     ! First region gets nelemd+1 elements per Processor
     ! Second region gets nelemd elements per Processor
 
-    sfc2rank(1) = 0
+    rank2sfc(1) = 0
     do ipart = 1, extra
-       sfc2rank(ipart+1) = ipart*(nelemd+1)
+       rank2sfc(ipart+1) = ipart*(nelemd+1)
     end do
     do ipart = extra+1, npart
-       sfc2rank(ipart+1) = s1 + (ipart - extra)*nelemd
+       rank2sfc(ipart+1) = s1 + (ipart - extra)*nelemd
     end do
   end subroutine amb_genspacepart
+
+  function sfc2rank(rank2sfc, sfc) result(rank)
+    integer, intent(in) :: rank2sfc(:), sfc
+    integer :: npart, lo, hi, mid, rank
+    
+    npart = size(rank2sfc) - 1
+    lo = 1
+    hi = npart+1
+    if (sfc >= rank2sfc(npart+1)) then
+       print *, 'sfc2rank: rank2sfc, sfc',rank2sfc,sfc
+       call abortmp('sfc2rank: sfc input is invalid')
+    end if
+    do while (hi > lo + 1)
+       mid = (lo + hi)/2
+       if (sfc >= rank2sfc(mid)) then
+          lo = mid
+       else
+          hi = mid
+       end if
+    end do
+    rank = lo - 1
+  end function sfc2rank
 
   subroutine amb_cube_gv_pass1(gm)
     use gridgraph_mod, only: allocate_gridvertex_nbrs
@@ -254,7 +284,7 @@ contains
 
     do id = 1,nelem
        sfc = u2sfc(gm%sfcfacemesh, id)
-       owned = sfc >= gm%sfc2rank(gm%rank+1) .and. sfc < gm%sfc2rank(gm%rank+2)
+       owned = sfc >= gm%rank2sfc(gm%rank+1) .and. sfc < gm%rank2sfc(gm%rank+2)
 
        if (.not. owned) cycle
        owned_or_used(id) = .true.
@@ -290,6 +320,7 @@ contains
        gv => gm%gv(i)
        gv%number = gvid(i)
        gv%SpaceCurve = u2sfc(gm%sfcfacemesh, gvid(i))
+       gv%processor_number = sfc2rank(gm%rank2sfc, gv%SpaceCurve)
        gv%nbrs = 0
        gv%nbrs_wgt = 0
        gv%nbrs_ptr = 0
@@ -310,11 +341,13 @@ contains
 
   subroutine amb_cube_gv_pass2(gm)
     use dimensions_mod, only: np, ne
+    use gridgraph_mod, only: allocate_gridvertex_nbrs, deallocate_gridvertex_nbrs
     use control_mod, only : north, south, east, west, neast, seast, swest, nwest
 
     type (GridManager_t), intent(inout) :: gm
-    integer :: igv, id, ngv, i, j, k, id_nbr
+    integer :: igv, id, ngv, i, j, k, id_nbr, ll, loc
     type (GridVertex_t), pointer :: gv
+    type (GridVertex_t) :: gv_tmp
     integer, parameter :: EdgeWgtP = np, CornerWgt = 1
 
     ngv = size(gm%gv)
@@ -333,6 +366,33 @@ contains
           call gv_set(gv, swest, s2ui(i-1,j-1,k), k, CornerWgt)
        end if
     end do
+
+    call allocate_gridvertex_nbrs(gv_tmp)
+    do igv = 1,ngv
+       gv => gm%gv(igv)
+       do i = 1, size(gv%nbrs)
+          gv_tmp%nbrs(i) = gv%nbrs(i)
+          gv_tmp%nbrs_face(i) = gv%nbrs_face(i)
+          gv_tmp%nbrs_wgt(i) = gv%nbrs_wgt(i)
+          gv_tmp%nbrs_wgt_ghost(i) = gv%nbrs_wgt_ghost(i)
+       end do
+       gv%nbrs_ptr(1) = 1
+       do ll = 1,8
+          loc = gv%nbrs_ptr(ll)
+          if (gv_tmp%nbrs(ll) /= -1) then
+             gv%nbrs(loc)      = gv_tmp%nbrs(ll)
+             gv%nbrs_face(loc) = gv_tmp%nbrs_face(ll)
+             gv%nbrs_wgt(loc)       = gv_tmp%nbrs_wgt(ll)
+             gv%nbrs_wgt_ghost(loc) = gv_tmp%nbrs_wgt_ghost(ll)
+
+             gv%nbrs_ptr(ll+1) = gv%nbrs_ptr(ll)+1
+          else
+             gv%nbrs_ptr(ll+1) = gv%nbrs_ptr(ll)
+          end if
+       end do
+       
+    end do
+    call deallocate_gridvertex_nbrs(gv_tmp)
   end subroutine amb_cube_gv_pass2
 
   subroutine amb_ge(gm)
