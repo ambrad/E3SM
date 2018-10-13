@@ -81,7 +81,6 @@ contains
     call amb_cube_gv_pass1(gm)
     call amb_cube_gv_pass2(gm)
     call amb_ge(gm)
-    deallocate(gm%rank2sfc)
   end subroutine amb_run
 
   function s2ui(i, j, face) result (id)
@@ -102,8 +101,8 @@ contains
 
     nesq = ne*ne
     face = (id-1)/nesq + 1
-    j = mod(id-1, nesq)/ne + 1
-    i = mod(id-1, ne) + 1
+    j = modulo(id-1, nesq)/ne + 1
+    i = modulo(id-1, ne) + 1
   end subroutine u2si
 
   function s2sfc(sfcfacemesh, i, j, face) result(sfc)
@@ -223,7 +222,7 @@ contains
 
     nelemd = nelem/npart
     ! every cpu gets nelemd elements, but the first 'extra' get nelemd+1
-    extra = mod(nelem,npart)
+    extra = modulo(nelem,npart)
     s1 = extra*(nelemd+1)
 
     ! split curve into two curves:
@@ -266,6 +265,16 @@ contains
     rank = lo - 1
   end function sfc2rank
 
+  subroutine set_oou(owned_or_used, ids)
+    logical(kind=1), intent(inout) :: owned_or_used(:)
+    integer, intent(in) :: ids(3)
+    integer :: i
+
+    owned_or_used(ids(1)) = .true.
+    owned_or_used(ids(2)) = .true.
+    if (ids(3) /= -1) owned_or_used(ids(3)) = .true.
+  end subroutine set_oou
+
   subroutine amb_cube_gv_pass1(gm)
     use gridgraph_mod, only: allocate_gridvertex_nbrs
 
@@ -273,7 +282,7 @@ contains
     logical(kind=1), allocatable :: owned_or_used(:)
     integer, allocatable :: gvid(:)
     type (GridVertex_t), pointer :: gv
-    integer :: id, ne, nelem, sfc, i, j, k, id_nbr, n_owned_or_used
+    integer :: id, ne, nelem, sfc, i, j, k, id_nbr, n_owned_or_used, rev, ids(3)
     logical :: owned
 
     ne = size(gm%sfcfacemesh, 1)
@@ -293,12 +302,78 @@ contains
 
        if (j >= 2 .and. i >= 2) then
           ! setup SOUTH, WEST, SW neighbors
-          owned_or_used(s2ui(i-1,j,k)) = .true.
-          owned_or_used(s2ui(i,j-1,k)) = .true.
-          owned_or_used(s2ui(i-1,j-1,k)) = .true.
+          call set_oou(owned_or_used, (/ s2ui(i-1,j,k), s2ui(i,j-1,k), s2ui(i-1,j-1,k) /))
        end if
+       if (j < ne .and. i < ne) then
+          ! setup EAST, NORTH, NE neighbors
+          call set_oou(owned_or_used, (/ s2ui(i+1,j,k), s2ui(i,j+1,k), s2ui(i+1,j+1,k) /))
+       end if
+       if (j > 1 .and. i < ne) then
+          ! Setup the remaining SOUTH, EAST, and SE neighbors
+          call set_oou(owned_or_used, (/ s2ui(i,j-1,k), s2ui(i+1,j,k), s2ui(i+1,j-1,k) /))
+       end if
+       if (j < ne .and. i > 1) then
+          ! Setup the remaining NORTH, WEST, and NW neighbors
+          call set_oou(owned_or_used, (/ s2ui(i,j+1,k), s2ui(i-1,j,k), s2ui(i-1,j+1,k) /))
+       end if
+       if (k < 5) then ! west/east "belt" edges
+          if (i == 1) then
+             owned_or_used(s2ui(ne,j,MODULO(2+k,4)+1)) = .true.
+             if (j /= 1) then
+                owned_or_used(s2ui(ne,j-1,MODULO(2+k,4)+1)) = .true.
+             end if
+             if (j /= ne) then
+                owned_or_used(s2ui(ne,j+1,MODULO(2+k,4)+1)) = .true.
+             end if
+          else if (i == ne) then
+             owned_or_used(s2ui(1 ,j,MODULO(k,4)+1)) = .true.
+             if (j /= 1) then
+                owned_or_used(s2ui(1 ,j-1,MODULO(k,4)+1)) = .true.
+             end if
+             if (j /= ne) then
+                owned_or_used(s2ui(1 ,j+1,MODULO(k,4)+1)) = .true.
+             end if
+          endif
+       end if
+       if (j == 1 .and. k == 1) then ! south edge of 1
+          owned_or_used(s2ui(i,ne,5)) = .true.
+          if (i /= 1) then
+             owned_or_used(s2ui(i-1,ne,5)) = .true.
+          else if (i /= ne) then
+             owned_or_used(s2ui(i+1,ne,5)) = .true.
+          end if
+       end if
+       if (j == ne .and. k == 5) then ! north edge of 5
+          owned_or_used(s2ui(i,1,1)) = .true.
+          if (i /= 1) then
+             owned_or_used(s2ui(i-1,1,1)) = .true.
+          else if (i /= ne) then
+             owned_or_used(s2ui(i+1,1,1)) = .true.
+          end if
+       end if
+       if (j == 1 .and. k == 2) then ! south edge of 2
+          rev = ne+1-i
+          owned_or_used(s2ui(ne,rev,5)) = .true.
+          if (i /= 1) then
+             owned_or_used(s2ui(ne,rev+1,5)) = .true.
+          else if (i /= ne) then
+             owned_or_used(s2ui(ne,rev-1,5)) = .true.
+          end if
+       end if
+       if (i == ne .and. k == 5) then ! east edge of 5
+          rev = ne+1-j
+          owned_or_used(s2ui(rev,1,2)) = .true.
+          if (j /= 1) then
+             owned_or_used(s2ui(rev+1,1,2)) = .true.
+          else if (j /= ne) then
+             owned_or_used(s2ui(rev-1,1,2)) = .true.
+          end if
+       end if
+       
     end do
-    ! owned_or_used(s2ui()) = .true.
+    ! call set_oou(owned_or_used, (/ s2ui, s2ui, s2ui /))
+    ! owned_or_used(s2ui) = .true.
+
 
     n_owned_or_used = 0
     do id = 1,nelem
@@ -327,6 +402,7 @@ contains
        gv%nbrs_wgt_ghost = 1
     end do
     deallocate(gm%sfcfacemesh)
+    deallocate(gm%rank2sfc)
     deallocate(gvid)
   end subroutine amb_cube_gv_pass1
   
@@ -384,13 +460,11 @@ contains
              gv%nbrs_face(loc) = gv_tmp%nbrs_face(ll)
              gv%nbrs_wgt(loc)       = gv_tmp%nbrs_wgt(ll)
              gv%nbrs_wgt_ghost(loc) = gv_tmp%nbrs_wgt_ghost(ll)
-
              gv%nbrs_ptr(ll+1) = gv%nbrs_ptr(ll)+1
           else
              gv%nbrs_ptr(ll+1) = gv%nbrs_ptr(ll)
           end if
-       end do
-       
+       end do       
     end do
     call deallocate_gridvertex_nbrs(gv_tmp)
   end subroutine amb_cube_gv_pass2
