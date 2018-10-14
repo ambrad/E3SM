@@ -96,7 +96,6 @@ contains
     end if
 
     call amb_CubeTopology_phase2(gm)
-    call amb_initgridedge(gm)
     deallocate(gm%gvid)
     call initMetaGraph(gm%rank + 1, MetaVertex, gm%gv, gm%ge)
     GridVertex => gm%gv
@@ -161,7 +160,25 @@ contains
        if (me%wgtS /= meo%wgtS) print *, 'AMB> ME wgtS disagrees'
        if (me%HeadVertex /= meo%HeadVertex) print *, 'AMB> ME HeadVertex disagrees'
        if (me%TailVertex /= meo%TailVertex) print *, 'AMB> ME TailVertex disagrees'
-       
+       do j = 1, me%nmembers
+          if (me%edgeptrP(j) /= meo%edgeptrP(j)) print *, 'AMB> ME edgeptrP disagrees'
+          if (me%edgeptrS(j) /= meo%edgeptrS(j)) print *, 'AMB> ME edgeptrS disagrees'
+          if (me%edgeptrP_ghost(j) /= meo%edgeptrP_ghost(j)) print *, 'AMB> ME edgeptrP_ghost disagrees'
+          if (me%members(j)%head_face /= meo%members(j)%head_face) &
+               print *, 'AMB> ME GE head_face disagrees'
+          if (me%members(j)%tail_face /= meo%members(j)%tail_face) &
+               print *, 'AMB> ME GE tail_face disagrees'
+          if (me%members(j)%head_dir /= meo%members(j)%head_dir) &
+               print *, 'AMB> ME GE head_dir disagrees'
+          if (me%members(j)%tail_dir /= meo%members(j)%tail_dir) &
+               print *, 'AMB> ME GE tail_dir disagrees'
+          if (me%members(j)%reverse .neqv. meo%members(j)%reverse) &
+               print *, 'AMB> ME GE reverse disagrees'
+          if (me%members(j)%head%number /= meo%members(j)%head%number) &
+               print *, 'AMB> ME GE head disagrees'
+          if (me%members(j)%tail%number /= meo%members(j)%tail%number) &
+               print *, 'AMB> ME GE tail disagrees'
+       end do
     end do
   end subroutine amb_cmp
 
@@ -403,6 +420,7 @@ contains
   
   subroutine amb_CubeTopology_phase2(gm)
     use gridgraph_mod, only: allocate_gridvertex_nbrs, deallocate_gridvertex_nbrs
+    use cube_mod, only: CubeSetupEdgeIndex
 
     type (GridManager_t), intent(inout) :: gm
     integer :: igv, ngv, i, j, k, id_nbr, ll, loc
@@ -440,6 +458,11 @@ contains
        end do       
     end do
     call deallocate_gridvertex_nbrs(gv_tmp)
+
+    call amb_initgridedge(gm)
+    do i = 1, size(gm%ge)
+       call CubeSetupEdgeIndex(gm%ge(i))
+    end do
   end subroutine amb_CubeTopology_phase2
 
   subroutine gm_set(gm, igv, i, j, face, dir)
