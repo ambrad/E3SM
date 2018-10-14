@@ -30,7 +30,7 @@ contains
     allocate(gm%sfcfacemesh(ne,ne))
     call amb_genspacecurve(ne, gm%sfcfacemesh)
 
-    if (dbg .and. par%masterproc) then
+    if (dbg) then
        ! amb_genspacepart
        if (gm%rank2sfc(npart+1) /= nelem) then
           print *, 'AMB> nelem',nelem,'rank2sfc',gm%rank2sfc
@@ -80,6 +80,17 @@ contains
 
     gm%rank = par%rank
     call amb_cube_gv_phase1(gm)
+
+    if (dbg) then
+       do i = 1, size(gm%gvid)
+          if (gid2igv(gm, gm%gvid(i)) /= i) then
+             print *, 'AMB> igv, ret, gid, gvid', &
+                  i,gid2igv(gm, gm%gvid(i)),gm%gvid(i),gm%gvid
+             exit
+          end if
+       end do
+    end if
+
     call amb_cube_gv_phase2(gm)
     call amb_ge(gm)
     deallocate(gm%gvid)
@@ -584,6 +595,29 @@ contains
        end if
     end if
   end subroutine amb_cube_gv_impl
+
+  function gid2igv(gm, gid) result(igv)
+    type (GridManager_t), intent(in) :: gm
+    integer, intent(in) :: gid
+    integer :: lo, hi, igv
+
+    lo = 1
+    hi = size(gm%gvid)
+    if (gid < gm%gvid(1) .or. gid > gm%gvid(hi)) then
+       print *, 'gid2igv: gvid, gid',gm%gvid,gid
+       call abortmp('gid2igv: gid input is invalid')
+    end if
+    do while (hi > lo)
+       igv = (lo + hi)/2
+       if (gm%gvid(igv) == gid) return
+       if (gid > gm%gvid(igv)) then
+          lo = igv+1
+       else
+          hi = igv-1
+       end if
+    end do
+    igv = lo
+  end function gid2igv
 
   subroutine amb_ge(gm)
     type (GridManager_t), intent(inout) :: gm
