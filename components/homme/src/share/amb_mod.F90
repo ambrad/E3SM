@@ -506,6 +506,47 @@ contains
           call gm_set(gm, igv, k, s2ui(1,i+1,5), seast)
        end if
     end if
+    if (i == 1 .and. k == 5) then ! west edge of 5
+       call gm_set(gm, igv, k, s2ui(j,1,4), west)
+       if (j /= 1) then
+          call gm_set(gm, igv, k, s2ui(j-1,1,4), swest)
+       else if (j /= ne) then
+          call gm_set(gm, igv, k, s2ui(j+1,1,4), nwest)
+       end if
+    end if
+    if (j == ne .and. k == 1) then ! north edge of 1
+       call gm_set(gm, igv, k, s2ui(i,1,6), north)
+       if (i /= 1) then
+          call gm_set(gm, igv, k, s2ui(i-1,1,6), nwest)
+       else if (i /= ne) then
+          call gm_set(gm, igv, k, s2ui(i+1,1,6), neast)
+       end if
+    end if
+    if (j == 1 .and. k == 6) then ! south edge of 6
+       call gm_set(gm, igv, k, s2ui(i,ne,1), south)
+       if (i /= 1) then
+          call gm_set(gm, igv, k, s2ui(i-1,ne,1), swest)
+       else if (i /= ne) then
+          call gm_set(gm, igv, k, s2ui(i+1,ne,1), seast)
+       end if
+    end if
+    if (j == ne .and. k == 2) then ! north edge of 2
+       call gm_set(gm, igv, k, s2ui(ne,i,6), north)
+       if (i /= 1) then
+          call gm_set(gm, igv, k, s2ui(ne,i-1,6), nwest)
+       else if (i /= ne) then
+          call gm_set(gm, igv, k, s2ui(ne,i+1,6), neast)
+       end if
+    end if
+    if (i == ne .and. k == 6) then ! east edge of 6
+       call gm_set(gm, igv, k, s2ui(j,ne,2), east)
+       if (j /= 1) then
+          call gm_set(gm, igv, k, s2ui(j-1,ne,2), seast)
+       else if (j /= ne) then
+          call gm_set(gm, igv, k, s2ui(j+1,ne,2), neast)
+       end if
+    end if
+
     !call gm_set(gm, igv, s2ui, , k)
   end subroutine amb_cube_gv_impl
 
