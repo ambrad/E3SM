@@ -7,8 +7,9 @@ module amb_mod
   implicit none
 
   type, public :: GridManager_t
-     integer :: rank
-     integer, allocatable :: sfcfacemesh(:,:), rank2sfc(:)
+     integer :: rank, phase, ne
+     integer, allocatable :: sfcfacemesh(:,:), rank2sfc(:), gvid(:)
+     logical(kind=1), allocatable :: owned_or_used(:)
      type (GridVertex_t), pointer :: gv(:) => null()
      type (GridEdge_t), pointer :: ge(:) => null()
   end type GridManager_t
@@ -78,9 +79,10 @@ contains
     end if
 
     gm%rank = par%rank
-    call amb_cube_gv_pass1(gm)
-    call amb_cube_gv_pass2(gm)
+    call amb_cube_gv_phase1(gm)
+    call amb_cube_gv_phase2(gm)
     call amb_ge(gm)
+    deallocate(gm%gvid)
   end subroutine amb_run
 
   function s2ui(i, j, face) result (id)
@@ -265,136 +267,54 @@ contains
     rank = lo - 1
   end function sfc2rank
 
-  subroutine set_oou(owned_or_used, ids)
-    logical(kind=1), intent(inout) :: owned_or_used(:)
-    integer, intent(in) :: ids(3)
-    integer :: i
-
-    owned_or_used(ids(1)) = .true.
-    owned_or_used(ids(2)) = .true.
-    if (ids(3) /= -1) owned_or_used(ids(3)) = .true.
-  end subroutine set_oou
-
-  subroutine amb_cube_gv_pass1(gm)
+  subroutine amb_cube_gv_phase1(gm)
     use gridgraph_mod, only: allocate_gridvertex_nbrs
 
     type (GridManager_t), intent(inout) :: gm
-    logical(kind=1), allocatable :: owned_or_used(:)
     integer, allocatable :: gvid(:)
     type (GridVertex_t), pointer :: gv
-    integer :: id, ne, nelem, sfc, i, j, k, id_nbr, n_owned_or_used, rev, ids(3)
+    integer :: id, ne, nelem, sfc, i, j, k, id_nbr, n_owned_or_used
     logical :: owned
+
+    gm%phase = 1
 
     ne = size(gm%sfcfacemesh, 1)
     nelem = 6*ne*ne
 
-    allocate(owned_or_used(nelem))
-    owned_or_used = .false.
+    gm%ne = ne
+    allocate(gm%owned_or_used(nelem))
+    gm%owned_or_used = .false.
 
     do id = 1,nelem
        sfc = u2sfc(gm%sfcfacemesh, id)
        owned = sfc >= gm%rank2sfc(gm%rank+1) .and. sfc < gm%rank2sfc(gm%rank+2)
 
        if (.not. owned) cycle
-       owned_or_used(id) = .true.
+       gm%owned_or_used(id) = .true.
 
-       call u2si(id, i, j, k)
-
-       if (j >= 2 .and. i >= 2) then
-          ! setup SOUTH, WEST, SW neighbors
-          call set_oou(owned_or_used, (/ s2ui(i-1,j,k), s2ui(i,j-1,k), s2ui(i-1,j-1,k) /))
-       end if
-       if (j < ne .and. i < ne) then
-          ! setup EAST, NORTH, NE neighbors
-          call set_oou(owned_or_used, (/ s2ui(i+1,j,k), s2ui(i,j+1,k), s2ui(i+1,j+1,k) /))
-       end if
-       if (j > 1 .and. i < ne) then
-          ! Setup the remaining SOUTH, EAST, and SE neighbors
-          call set_oou(owned_or_used, (/ s2ui(i,j-1,k), s2ui(i+1,j,k), s2ui(i+1,j-1,k) /))
-       end if
-       if (j < ne .and. i > 1) then
-          ! Setup the remaining NORTH, WEST, and NW neighbors
-          call set_oou(owned_or_used, (/ s2ui(i,j+1,k), s2ui(i-1,j,k), s2ui(i-1,j+1,k) /))
-       end if
-       if (k < 5) then ! west/east "belt" edges
-          if (i == 1) then
-             owned_or_used(s2ui(ne,j,MODULO(2+k,4)+1)) = .true.
-             if (j /= 1) then
-                owned_or_used(s2ui(ne,j-1,MODULO(2+k,4)+1)) = .true.
-             end if
-             if (j /= ne) then
-                owned_or_used(s2ui(ne,j+1,MODULO(2+k,4)+1)) = .true.
-             end if
-          else if (i == ne) then
-             owned_or_used(s2ui(1 ,j,MODULO(k,4)+1)) = .true.
-             if (j /= 1) then
-                owned_or_used(s2ui(1 ,j-1,MODULO(k,4)+1)) = .true.
-             end if
-             if (j /= ne) then
-                owned_or_used(s2ui(1 ,j+1,MODULO(k,4)+1)) = .true.
-             end if
-          endif
-       end if
-       if (j == 1 .and. k == 1) then ! south edge of 1
-          owned_or_used(s2ui(i,ne,5)) = .true.
-          if (i /= 1) then
-             owned_or_used(s2ui(i-1,ne,5)) = .true.
-          else if (i /= ne) then
-             owned_or_used(s2ui(i+1,ne,5)) = .true.
-          end if
-       end if
-       if (j == ne .and. k == 5) then ! north edge of 5
-          owned_or_used(s2ui(i,1,1)) = .true.
-          if (i /= 1) then
-             owned_or_used(s2ui(i-1,1,1)) = .true.
-          else if (i /= ne) then
-             owned_or_used(s2ui(i+1,1,1)) = .true.
-          end if
-       end if
-       if (j == 1 .and. k == 2) then ! south edge of 2
-          rev = ne+1-i
-          owned_or_used(s2ui(ne,rev,5)) = .true.
-          if (i /= 1) then
-             owned_or_used(s2ui(ne,rev+1,5)) = .true.
-          else if (i /= ne) then
-             owned_or_used(s2ui(ne,rev-1,5)) = .true.
-          end if
-       end if
-       if (i == ne .and. k == 5) then ! east edge of 5
-          rev = ne+1-j
-          owned_or_used(s2ui(rev,1,2)) = .true.
-          if (j /= 1) then
-             owned_or_used(s2ui(rev+1,1,2)) = .true.
-          else if (j /= ne) then
-             owned_or_used(s2ui(rev-1,1,2)) = .true.
-          end if
-       end if
-       
+       call amb_cube_gv_impl(gm, id, -1)
     end do
-    ! call set_oou(owned_or_used, (/ s2ui, s2ui, s2ui /))
-    ! owned_or_used(s2ui) = .true.
-
 
     n_owned_or_used = 0
     do id = 1,nelem
-       if (owned_or_used(id)) n_owned_or_used = n_owned_or_used + 1
+       if (gm%owned_or_used(id)) n_owned_or_used = n_owned_or_used + 1
     end do
     ! Use an extra array here to minimize the high-water memory.
-    allocate(gvid(n_owned_or_used))
+    allocate(gm%gvid(n_owned_or_used))
     i = 1
     do id = 1,nelem
-       if (owned_or_used(id)) then
-          gvid(i) = id
+       if (gm%owned_or_used(id)) then
+          gm%gvid(i) = id
           i = i + 1
        end if
     end do
-    deallocate(owned_or_used)
+    deallocate(gm%owned_or_used)
     allocate(gm%gv(n_owned_or_used))
     do i = 1, n_owned_or_used
        call allocate_gridvertex_nbrs(gm%gv(i))
        gv => gm%gv(i)
-       gv%number = gvid(i)
-       gv%SpaceCurve = u2sfc(gm%sfcfacemesh, gvid(i))
+       gv%number = gm%gvid(i)
+       gv%SpaceCurve = u2sfc(gm%sfcfacemesh, gm%gvid(i))
        gv%processor_number = sfc2rank(gm%rank2sfc, gv%SpaceCurve)
        gv%nbrs = 0
        gv%nbrs_wgt = 0
@@ -403,44 +323,24 @@ contains
     end do
     deallocate(gm%sfcfacemesh)
     deallocate(gm%rank2sfc)
-    deallocate(gvid)
-  end subroutine amb_cube_gv_pass1
+  end subroutine amb_cube_gv_phase1
   
-  subroutine gv_set(gv, dir, id, face, wgt)
-    type (GridVertex_t), intent(inout) :: gv
-    integer, intent(in) :: dir, id, face, wgt
-
-    gv%nbrs(dir) = id
-    gv%nbrs_face(dir) = face
-    gv%nbrs_wgt(dir) = wgt
-  end subroutine gv_set
-
-  subroutine amb_cube_gv_pass2(gm)
-    use dimensions_mod, only: np, ne
+  subroutine amb_cube_gv_phase2(gm)
     use gridgraph_mod, only: allocate_gridvertex_nbrs, deallocate_gridvertex_nbrs
-    use control_mod, only : north, south, east, west, neast, seast, swest, nwest
 
     type (GridManager_t), intent(inout) :: gm
     integer :: igv, id, ngv, i, j, k, id_nbr, ll, loc
     type (GridVertex_t), pointer :: gv
     type (GridVertex_t) :: gv_tmp
-    integer, parameter :: EdgeWgtP = np, CornerWgt = 1
 
+    gm%phase = 2
     ngv = size(gm%gv)
 
     do igv = 1,ngv
        gv => gm%gv(igv)
-       id = gv%number
-
-       call u2si(id, i, j, k)
-
        gv%nbrs = -1
-       if (j >= 2 .and. i >= 2) then
-          ! setup SOUTH, WEST, SW neighbors
-          call gv_set(gv, west, s2ui(i-1,j,k), k, EdgeWgtP)
-          call gv_set(gv, south, s2ui(i,j-1,k), k, EdgeWgtP)
-          call gv_set(gv, swest, s2ui(i-1,j-1,k), k, CornerWgt)
-       end if
+       id = gv%number
+       call amb_cube_gv_impl(gm, id, igv)
     end do
 
     call allocate_gridvertex_nbrs(gv_tmp)
@@ -467,7 +367,147 @@ contains
        end do       
     end do
     call deallocate_gridvertex_nbrs(gv_tmp)
-  end subroutine amb_cube_gv_pass2
+  end subroutine amb_cube_gv_phase2
+
+  subroutine gm_set(gm, igv, face, id, dir)
+    use dimensions_mod, only: np
+    use control_mod, only: north, south, east, west, neast, seast, swest, nwest
+
+    type (GridManager_t), intent(inout) :: gm
+    integer, intent(in) :: igv, face, id, dir
+    integer, parameter :: EdgeWgtP = np, CornerWgt = 1
+    integer :: wgt
+
+    if (gm%phase == 1) then
+       gm%owned_or_used(id) = .true.
+    else
+       gm%gv(igv)%nbrs(dir) = id
+       gm%gv(igv)%nbrs_face(dir) = face
+       if (face == north .or. face == south .or. face == east .or. face == west) then
+          wgt = EdgeWgtP
+       else
+          wgt = CornerWgt
+       end if
+       gm%gv(igv)%nbrs_wgt(dir) = wgt
+    end if
+  end subroutine gm_set
+
+  subroutine amb_cube_gv_impl(gm, id, igv)
+    use control_mod, only: north, south, east, west, neast, seast, swest, nwest
+
+    type (GridManager_t), intent(inout) :: gm
+    integer, intent(in) :: id, igv
+    integer :: ne, i, j, k, rev
+
+    ne = gm%ne
+
+    call u2si(id, i, j, k)
+
+    if (j >= 2 .and. i >= 2) then
+       ! setup SOUTH, WEST, SW neighbors
+       call gm_set(gm, igv, k, s2ui(i-1,j,k), west)
+       call gm_set(gm, igv, k, s2ui(i,j-1,k), south)
+       call gm_set(gm, igv, k, s2ui(i-1,j-1,k), swest)
+    end if
+    if (j < ne .and. i < ne) then
+       ! setup EAST, NORTH, NE neighbors
+       call gm_set(gm, igv, k, s2ui(i+1,j,k), east)
+       call gm_set(gm, igv, k, s2ui(i,j+1,k), north)
+       call gm_set(gm, igv, k, s2ui(i+1,j+1,k), neast)
+    end if
+    if (j > 1 .and. i < ne) then
+       ! Setup the remaining SOUTH, EAST, and SE neighbors
+       call gm_set(gm, igv, k, s2ui(i,j-1,k), south)
+       call gm_set(gm, igv, k, s2ui(i+1,j,k), east)
+       call gm_set(gm, igv, k, s2ui(i+1,j-1,k), seast)
+    end if
+    if (j < ne .and. i > 1) then
+       ! Setup the remaining NORTH, WEST, and NW neighbors
+       call gm_set(gm, igv, k, s2ui(i,j+1,k), north)
+       call gm_set(gm, igv, k, s2ui(i-1,j,k), west)
+       call gm_set(gm, igv, k, s2ui(i-1,j+1,k), nwest)
+    end if
+    if (k < 5) then ! west/east "belt" edges
+       if (i == 1) then
+          call gm_set(gm, igv, k, s2ui(ne,j,modulo(2+k,4)+1), west)
+          if (j /= 1) then
+             call gm_set(gm, igv, k, s2ui(ne,j-1,modulo(2+k,4)+1), swest)
+          end if
+          if (j /= ne) then
+             call gm_set(gm, igv, k, s2ui(ne,j+1,modulo(2+k,4)+1), nwest)
+          end if
+       else if (i == ne) then
+          call gm_set(gm, igv, k, s2ui(1,j,modulo(k,4)+1), east)
+          if (j /= 1) then
+             call gm_set(gm, igv, k, s2ui(1,j-1,modulo(k,4)+1), seast)
+          end if
+          if (j /= ne) then
+             call gm_set(gm, igv, k, s2ui(1,j+1,modulo(k,4)+1), neast)
+          end if
+       endif
+    end if
+    if (j == 1 .and. k == 1) then ! south edge of 1
+       call gm_set(gm, igv, k, s2ui(i,ne,5), south)
+       if (i /= 1) then
+          call gm_set(gm, igv, k, s2ui(i-1,ne,5), swest)
+       else if (i /= ne) then
+          call gm_set(gm, igv, k, s2ui(i+1,ne,5), seast)
+       end if
+    end if
+    if (j == ne .and. k == 5) then ! north edge of 5
+       call gm_set(gm, igv, k, s2ui(i,1,1), north)
+       if (i /= 1) then
+          call gm_set(gm, igv, k, s2ui(i-1,1,1), nwest)
+       else if (i /= ne) then
+          call gm_set(gm, igv, k, s2ui(i+1,1,1), neast)
+       end if
+    end if
+    if (j == 1 .and. k == 2) then ! south edge of 2
+       rev = ne+1-i
+       call gm_set(gm, igv, k, s2ui(ne,rev,5), south)
+       if (i /= 1) then
+          call gm_set(gm, igv, k, s2ui(ne,rev+1,5), swest)
+       else if (i /= ne) then
+          call gm_set(gm, igv, k, s2ui(ne,rev-1,5), seast)
+       end if
+    end if
+    if (i == ne .and. k == 5) then ! east edge of 5
+       rev = ne+1-j
+       call gm_set(gm, igv, k, s2ui(rev,1,2), east)
+       if (j /= 1) then
+          call gm_set(gm, igv, k, s2ui(rev+1,1,2), seast)
+       else if (j /= ne) then
+          call gm_set(gm, igv, k, s2ui(rev-1,1,2), neast)
+       end if
+    end if
+    if (j == 1 .and. k == 3) then ! south edge of 3
+       rev = ne+1-i
+       call gm_set(gm, igv, k, s2ui(rev,1,5), south)
+       if (i /= 1) then
+          call gm_set(gm, igv, k, s2ui(rev+1,1,5), swest)
+       else if (i /= ne) then
+          call gm_set(gm, igv, k, s2ui(rev-1,1,5), seast)
+       end if
+    end if
+    if (j == 1 .and. k == 5) then ! south edge of 5
+       rev = ne+1-i
+       call gm_set(gm, igv, k, s2ui(rev,1,3), south)
+       if (i /= 1) then
+          call gm_set(gm, igv, k, s2ui(rev+1,1,3), swest)
+       else if (i /= ne) then
+          call gm_set(gm, igv, k, s2ui(rev-1,1,3), seast)
+       end if
+    end if
+    if (j == 1 .and. k == 4) then ! south edge of 4
+       call gm_set(gm, igv, k, s2ui(1,i,5), south)
+       if (i /= 1) then
+          call gm_set(gm, igv, k, s2ui(1,i-1,5), swest)
+       else if (i /= ne) then
+          call gm_set(gm, igv, k, s2ui(1,i+1,5), seast)
+       end if
+    end if
+    !call gm_set(gm, igv, s2ui, , k)
+  end subroutine amb_cube_gv_impl
 
   subroutine amb_ge(gm)
     type (GridManager_t), intent(inout) :: gm
