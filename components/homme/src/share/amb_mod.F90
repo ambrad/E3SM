@@ -122,13 +122,17 @@ contains
     type (MetaEdge_t), pointer :: me, meo
     integer :: i
 
+    !call PrintMetaVertex(mv)
+    !call PrintMetaVertex(mvo)
+
     if (mv%number /= mvo%number) print *, 'AMB> number disagrees'
     if (mv%nmembers /= mvo%nmembers) print *, 'AMB> nmembers disagrees'
     if (mv%nedges /= mvo%nedges) print *, 'AMB> nedges disagrees'
     do i = 1, mv%nmembers
        gv => mv%members(i)
        gvo => mvo%members(i)
-       if (gv%face_number /= gvo%face_number) print *, 'AMB> GV face_number disagrees'
+       ! This seems unused
+       !if (gv%face_number /= gvo%face_number) print *, 'AMB> GV face_number disagrees'
        if (gv%number /= gvo%number) print *, 'AMB> GV number disagrees'
        if (gv%processor_number /= gvo%processor_number) print *, 'AMB> GV processor_number disagrees'
        if (gv%SpaceCurve /= gvo%SpaceCurve) print *, 'AMB> GV SpaceCurve disagrees'
@@ -375,6 +379,7 @@ contains
        gv%number = gm%gvid(i)
        gv%SpaceCurve = u2sfc(gm%sfcfacemesh, gv%number)
        gv%processor_number = sfc2rank(gm%rank2sfc, gv%SpaceCurve) + 1
+       gv%face_number = 0
        gv%nbrs = -1
        gv%nbrs_wgt = 0
        gv%nbrs_ptr = 0

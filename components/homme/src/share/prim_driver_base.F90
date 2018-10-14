@@ -143,8 +143,6 @@ contains
     logical, parameter :: Debug = .FALSE.
 
     integer  :: i
-    integer,allocatable :: TailPartition(:)
-    integer,allocatable :: HeadPartition(:)
 
     integer total_nelem
     real(kind=real_kind) :: approx_elements_per_task
@@ -231,6 +229,10 @@ contains
            nelem_edge = CubeEdgeCount()
        end if
 
+       if (.not. amb_use) then
+          call amb_run(par, amb_GridVertex, amb_MetaVertex)
+       end if
+
        ! we want to exit elegantly when we are using too many processors.
        if (nelem < par%nprocs) then
           call abortmp('Error: too many MPI tasks. set dyn_npes <= nelem')
@@ -298,13 +300,6 @@ contains
 
     nelem_edge=SIZE(GridEdge)
 
-    allocate(TailPartition(nelem_edge))
-    allocate(HeadPartition(nelem_edge))
-    do i=1,nelem_edge
-       TailPartition(i)=GridEdge(i)%tail%processor_number
-       HeadPartition(i)=GridEdge(i)%head%processor_number
-    enddo
-
     ! ====================================================
     !  Generate the communication graph
     ! ====================================================
@@ -315,16 +310,36 @@ contains
         call PrintMetaVertex(MetaVertex(1))
     endif
 
-    !amb
-    if (.not. amb_use) then
-       call amb_run(par, amb_GridVertex, amb_MetaVertex)
-       call amb_cmp(amb_MetaVertex, MetaVertex(1))
-    else
-       allocate(GridVertex(nelem))       
+    if (amb_use) then
        do j = 1, nelem
-          call allocate_gridvertex_nbrs(GridVertex(j))
+          call deallocate_gridvertex_nbrs(GridVertex(j))
        end do
+       deallocate(GridVertex)
+       do j = 1, MetaVertex(1)%nmembers
+          call deallocate_gridvertex_nbrs(MetaVertex(1)%members(j))
+       end do
+       do j = 1, MetaVertex(1)%nedges
+          deallocate(MetaVertex(1)%edges(j)%members)
+          deallocate(MetaVertex(1)%edges(j)%edgeptrP)
+          deallocate(MetaVertex(1)%edges(j)%edgeptrS)
+          deallocate(MetaVertex(1)%edges(j)%edgeptrP_ghost)
+       end do
+       deallocate(MetaVertex(1)%edges)
+       deallocate(MetaVertex(1)%members)
        call amb_run(par, GridVertex, MetaVertex(1))
+    else
+       call amb_cmp(amb_MetaVertex, MetaVertex(1))
+       do j = 1, amb_MetaVertex%nmembers
+          call deallocate_gridvertex_nbrs(amb_MetaVertex%members(j))
+       end do
+       do j = 1, amb_MetaVertex%nedges
+          deallocate(amb_MetaVertex%edges(j)%members)
+          deallocate(amb_MetaVertex%edges(j)%edgeptrP)
+          deallocate(amb_MetaVertex%edges(j)%edgeptrS)
+          deallocate(amb_MetaVertex%edges(j)%edgeptrP_ghost)
+       end do
+       deallocate(amb_MetaVertex%edges)
+       deallocate(amb_MetaVertex%members)
     end if
 
     if(nelemd .le. 0) then
@@ -538,8 +553,6 @@ contains
     deallocate(MetaVertex(1)%edges)
     deallocate(MetaVertex(1)%members)
     deallocate(MetaVertex)
-    deallocate(TailPartition)
-    deallocate(HeadPartition)
 
     ! single global edge buffer for all models:
     ! hydrostatic 4*nlev      NH:  6*nlev+1
