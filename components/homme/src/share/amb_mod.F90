@@ -79,7 +79,7 @@ contains
     end if
 
     gm%rank = par%rank
-    call amb_cube_gv_phase1(gm)
+    call amb_CubeTopology_phase1(gm)
 
     if (dbg) then
        do i = 1, size(gm%gvid)
@@ -91,8 +91,8 @@ contains
        end do
     end if
 
-    call amb_cube_gv_phase2(gm)
-    call amb_ge(gm)
+    call amb_CubeTopology_phase2(gm)
+    call amb_initgridedge(gm)
     deallocate(gm%gvid)
   end subroutine amb_run
 
@@ -278,7 +278,7 @@ contains
     rank = lo - 1
   end function sfc2rank
 
-  subroutine amb_cube_gv_phase1(gm)
+  subroutine amb_CubeTopology_phase1(gm)
     use gridgraph_mod, only: allocate_gridvertex_nbrs
 
     type (GridManager_t), intent(inout) :: gm
@@ -296,24 +296,23 @@ contains
     allocate(gm%owned_or_used(nelem))
     gm%owned_or_used = .false.
 
-    do id = 1,nelem
+    do id = 1, nelem
        sfc = u2sfc(gm%sfcfacemesh, id)
        owned = sfc >= gm%rank2sfc(gm%rank+1) .and. sfc < gm%rank2sfc(gm%rank+2)
 
        if (.not. owned) cycle
        gm%owned_or_used(id) = .true.
 
-       call amb_cube_gv_impl(gm, id, -1)
+       call amb_CubeTopology_impl(gm, id, -1)
     end do
 
     n_owned_or_used = 0
-    do id = 1,nelem
+    do id = 1, nelem
        if (gm%owned_or_used(id)) n_owned_or_used = n_owned_or_used + 1
     end do
-    ! Use an extra array here to minimize the high-water memory.
     allocate(gm%gvid(n_owned_or_used))
     i = 1
-    do id = 1,nelem
+    do id = 1, nelem
        if (gm%owned_or_used(id)) then
           gm%gvid(i) = id
           i = i + 1
@@ -325,37 +324,34 @@ contains
        call allocate_gridvertex_nbrs(gm%gv(i))
        gv => gm%gv(i)
        gv%number = gm%gvid(i)
-       gv%SpaceCurve = u2sfc(gm%sfcfacemesh, gm%gvid(i))
+       gv%SpaceCurve = u2sfc(gm%sfcfacemesh, gv%number)
        gv%processor_number = sfc2rank(gm%rank2sfc, gv%SpaceCurve)
-       gv%nbrs = 0
+       gv%nbrs = -1
        gv%nbrs_wgt = 0
        gv%nbrs_ptr = 0
        gv%nbrs_wgt_ghost = 1
     end do
     deallocate(gm%sfcfacemesh)
     deallocate(gm%rank2sfc)
-  end subroutine amb_cube_gv_phase1
+  end subroutine amb_CubeTopology_phase1
   
-  subroutine amb_cube_gv_phase2(gm)
+  subroutine amb_CubeTopology_phase2(gm)
     use gridgraph_mod, only: allocate_gridvertex_nbrs, deallocate_gridvertex_nbrs
 
     type (GridManager_t), intent(inout) :: gm
-    integer :: igv, id, ngv, i, j, k, id_nbr, ll, loc
+    integer :: igv, ngv, i, j, k, id_nbr, ll, loc
     type (GridVertex_t), pointer :: gv
     type (GridVertex_t) :: gv_tmp
 
     gm%phase = 2
     ngv = size(gm%gv)
 
-    do igv = 1,ngv
-       gv => gm%gv(igv)
-       gv%nbrs = -1
-       id = gv%number
-       call amb_cube_gv_impl(gm, id, igv)
+    do igv = 1, ngv
+       call amb_CubeTopology_impl(gm, gm%gv(igv)%number, igv)
     end do
 
     call allocate_gridvertex_nbrs(gv_tmp)
-    do igv = 1,ngv
+    do igv = 1, ngv
        gv => gm%gv(igv)
        do i = 1, size(gv%nbrs)
           gv_tmp%nbrs(i) = gv%nbrs(i)
@@ -367,9 +363,9 @@ contains
        do ll = 1,8
           loc = gv%nbrs_ptr(ll)
           if (gv_tmp%nbrs(ll) /= -1) then
-             gv%nbrs(loc)      = gv_tmp%nbrs(ll)
+             gv%nbrs(loc) = gv_tmp%nbrs(ll)
              gv%nbrs_face(loc) = gv_tmp%nbrs_face(ll)
-             gv%nbrs_wgt(loc)       = gv_tmp%nbrs_wgt(ll)
+             gv%nbrs_wgt(loc) = gv_tmp%nbrs_wgt(ll)
              gv%nbrs_wgt_ghost(loc) = gv_tmp%nbrs_wgt_ghost(ll)
              gv%nbrs_ptr(ll+1) = gv%nbrs_ptr(ll)+1
           else
@@ -378,7 +374,7 @@ contains
        end do       
     end do
     call deallocate_gridvertex_nbrs(gv_tmp)
-  end subroutine amb_cube_gv_phase2
+  end subroutine amb_CubeTopology_phase2
 
   subroutine gm_set(gm, igv, i, j, face, dir)
     use dimensions_mod, only: np
@@ -404,7 +400,7 @@ contains
     end if
   end subroutine gm_set
 
-  subroutine amb_cube_gv_impl(gm, id, igv)
+  subroutine amb_CubeTopology_impl(gm, id, igv)
     use control_mod, only: north, south, east, west, neast, seast, swest, nwest
 
     type (GridManager_t), intent(inout) :: gm
@@ -537,7 +533,7 @@ contains
     if (j == ne .and. k == 4) then ! north edge of 4
        rev = ne+1-i
        call gm_set(gm, igv, 1, rev, 6, north)
-       if (i /= 1)  call  gm_set(gm, igv, 1, rev+1, 6, nwest)
+       if (i /= 1)  call gm_set(gm, igv, 1, rev+1, 6, nwest)
        if (i /= ne) call gm_set(gm, igv, 1, rev-1, 6, neast)
     end if
     if (i == 1 .and. k == 6) then ! west edge of 6
@@ -546,8 +542,11 @@ contains
        if (j /= 1)  call gm_set(gm, igv, rev+1, ne, 4, swest)
        if (j /= ne) call gm_set(gm, igv, rev-1, ne, 4, nwest)
     end if
-  end subroutine amb_cube_gv_impl
+  end subroutine amb_CubeTopology_impl
 
+  ! Map a cell global ID to the entry in the GridVertex array gm%gv. An invalid
+  ! gid input, i.e. one that does not exist in gm%gvid, is permitted; in that
+  ! case, the output igv is invalid and so gm%gvid(igv) /= gid.
   function gid2igv(gm, gid) result(igv)
     type (GridManager_t), intent(in) :: gm
     integer, intent(in) :: gid
@@ -555,10 +554,6 @@ contains
 
     lo = 1
     hi = size(gm%gvid)
-    if (gid < gm%gvid(1) .or. gid > gm%gvid(hi)) then
-       print *, 'gid2igv: gvid, gid',gm%gvid,gid
-       call abortmp('gid2igv: gid input is invalid')
-    end if
     do while (hi > lo)
        igv = (lo + hi)/2
        if (gm%gvid(igv) == gid) return
@@ -571,9 +566,101 @@ contains
     igv = lo
   end function gid2igv
 
-  subroutine amb_ge(gm)
+  subroutine amb_initgridedge(gm)
+    use parallel_mod, only : abortmp
+    use dimensions_mod, only : max_corner_elem
+    use kinds, only: iulog
+    use gridgraph_mod, only: num_neighbors
+
     type (GridManager_t), intent(inout) :: gm
 
-    
-  end subroutine amb_ge
+    integer :: i,j,k,iptr,m,n,wgtV,wgtP,gid,igv
+    integer :: nelem,nelem_edge,inbr,igvnbr
+    integer :: mynbr_cnt, cnt, mystart, start
+    logical :: owned_or_used
+    logical, parameter :: Verbose = .false.
+
+    nelem = size(gm%gv)
+
+    ! Count the number of relevant edges.
+    nelem_edge = 0
+    do j = 1, nelem
+       do i = 1, num_neighbors
+          mynbr_cnt = gm%gv(j)%nbrs_ptr(i+1) - gm%gv(j)%nbrs_ptr(i) ! length of neighbor location
+          mystart = gm%gv(j)%nbrs_ptr(i)
+          do m=0, mynbr_cnt-1
+             if (gm%gv(j)%nbrs_wgt(mystart + m) > 0) then ! want a non-0 weight
+                owned_or_used = gm%gv(j)%processor_number == gm%rank ! want only owned or used elements
+                if (.not. owned_or_used) then
+                   gid = gm%gv(j)%nbrs(mystart + m)
+                   igv = gid2igv(gm, gid)
+                   owned_or_used = gm%gvid(igv) == gid
+                end if
+                if (owned_or_used) then
+                   nelem_edge = nelem_edge + 1
+                end if
+             end if
+          end do
+       end do
+    end do
+
+    allocate(gm%ge(nelem_edge))
+    gm%ge(:)%reverse = .false.
+
+    ! Fill in the edges.
+    iptr = 1
+    do j = 1, nelem
+       do i = 1, num_neighbors    
+          mynbr_cnt = gm%gv(j)%nbrs_ptr(i+1) - gm%gv(j)%nbrs_ptr(i)
+          mystart = gm%gv(j)%nbrs_ptr(i)
+          do m = 0, mynbr_cnt-1
+             if (gm%gv(j)%nbrs_wgt(mystart + m) > 0) then
+                owned_or_used = gm%gv(j)%processor_number == gm%rank
+                if (.not. owned_or_used) then
+                   gid = gm%gv(j)%nbrs(mystart + m)
+                   igv = gid2igv(gm, gid)
+                   owned_or_used = gm%gvid(igv) == gid
+                end if
+                if (.not. owned_or_used) cycle
+
+                gm%ge(iptr)%tail      => gm%gv(j)
+                gm%ge(iptr)%tail_face =  mystart + m ! needs to be mystart + m (location in array)
+                gm%ge(iptr)%tail_dir  =  i*max_corner_elem + m ! conversion needed for setcycle
+                inbr                  =  gm%gv(j)%nbrs(mystart+m)
+                igvnbr                =  gid2igv(gm, inbr)
+                gm%ge(iptr)%head      => gm%gv(igvnbr)
+
+                ! Determine which "face" of the neighbor element the edge links
+                ! (i.e. the "head_face")
+                do k = 1, num_neighbors
+                   cnt = gm%gv(igvnbr)%nbrs_ptr(k+1) - gm%gv(igvnbr)%nbrs_ptr(k)  
+                   start = gm%gv(igvnbr)%nbrs_ptr(k)
+                   do n = 0, cnt-1
+                      if (gm%gv(igvnbr)%nbrs(start+n) == gm%gv(j)%number) then
+                         gm%ge(iptr)%head_face = start+n ! needs to be start + n (location in array)
+                         gm%ge(iptr)%head_dir = k*max_corner_elem+n ! conversion (un-done in setcycle)
+                      endif
+                   enddo
+                enddo
+                iptr=iptr+1
+             end if
+          end do ! m loop
+       end do ! i loop
+    end do ! j loop
+    if (nelem_edge+1 /= iptr) &
+         call abortmp('Error in initgridedge: Number of edges less than expected.')
+
+    if (Verbose) then
+       print *
+       write(iulog,*)"element edge tail,head list: (TEST)"
+       do i=1,nelem_edge
+          write(iulog,*)gm%ge(i)%tail%number,gm%ge(i)%head%number
+       end do
+       print *
+       write(iulog,*)"element edge tail_face, head_face list: (TEST)"
+       do i=1,nelem_edge
+          write(iulog,*)gm%ge(i)%tail_face,gm%ge(i)%head_face
+       end do
+    end if
+  end subroutine amb_initgridedge
 end module amb_mod
