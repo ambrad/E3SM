@@ -125,9 +125,13 @@ contains
     type (domain1d_t),  pointer     :: dom_mt(:)
     type (timelevel_t), intent(out) :: Tl
 
-    type (GridVertex_t), target,allocatable :: GridVertex(:)
+    type (GridVertex_t), pointer :: GridVertex(:)
     type (GridEdge_t),   target,allocatable :: Gridedge(:)
     type (MetaVertex_t), target,allocatable :: MetaVertex(:)
+
+    type (GridVertex_t), pointer :: amb_GridVertex(:)
+    type (MetaVertex_t) :: amb_MetaVertex
+    logical, parameter :: amb_use = .false.
 
     integer :: ii,ie, ith
     integer :: nets, nete
@@ -312,8 +316,16 @@ contains
     endif
 
     !amb
-    call amb_run(par)
-    call amb_cmp(MetaVertex(1))
+    if (.not. amb_use) then
+       call amb_run(par, amb_GridVertex, amb_MetaVertex)
+       call amb_cmp(amb_MetaVertex, MetaVertex(1))
+    else
+       allocate(GridVertex(nelem))       
+       do j = 1, nelem
+          call allocate_gridvertex_nbrs(GridVertex(j))
+       end do
+       call amb_run(par, GridVertex, MetaVertex(1))
+    end if
 
     if(nelemd .le. 0) then
        call abortmp('Not yet ready to handle nelemd = 0 yet' )
@@ -506,10 +518,13 @@ contains
     end if
 
     deallocate(GridEdge)
-    do j =1,nelem
-       call deallocate_gridvertex_nbrs(GridVertex(j))
-    end do
-    deallocate(GridVertex)
+    if (.not. amb_use) then
+       do j =1,nelem
+          call deallocate_gridvertex_nbrs(GridVertex(j))
+       end do
+       deallocate(GridVertex)
+    end if
+    call amb_finish()
 
     do j = 1, MetaVertex(1)%nmembers
        call deallocate_gridvertex_nbrs(MetaVertex(1)%members(j))

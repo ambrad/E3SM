@@ -14,16 +14,17 @@ module amb_mod
      type (GridEdge_t), pointer :: ge(:) => null()
   end type GridManager_t
 
+  type (GridManager_t) :: gm
+
 contains
 
-  subroutine amb_run(par)
+  subroutine amb_run(par, GridVertex, MetaVertex)
     use dimensions_mod, only: nelem, ne
     use metagraph_mod, only: initMetaGraph
-    use gridgraph_mod, only: deallocate_gridvertex_nbrs
 
     type (parallel_t), intent(in) :: par
-    type (GridManager_t) :: gm
-    type (MetaVertex_t) :: MetaVertex
+    type (GridVertex_t), pointer, intent(out) :: GridVertex(:)
+    type (MetaVertex_t), intent(out) :: MetaVertex
     integer, allocatable :: sfctest(:)
     integer :: ie, i, j, face, id, sfc, nelemd, nelemdi, rank
     logical, parameter :: dbg = .true.
@@ -97,14 +98,56 @@ contains
     call amb_CubeTopology_phase2(gm)
     call amb_initgridedge(gm)
     deallocate(gm%gvid)
-    call initMetaGraph(gm%rank, MetaVertex, gm%gv, gm%ge)
+    call initMetaGraph(gm%rank + 1, MetaVertex, gm%gv, gm%ge)
+    GridVertex => gm%gv
+  end subroutine amb_run
+
+  subroutine amb_finish()
+    use gridgraph_mod, only: deallocate_gridvertex_nbrs
+
+    integer :: i
 
     do i = 1, size(gm%gv)
        call deallocate_gridvertex_nbrs(gm%gv(i))
     end do
     deallocate(gm%gv)
     deallocate(gm%ge)
-  end subroutine amb_run
+  end subroutine amb_finish
+
+  subroutine amb_cmp(mv, mvo)
+    use metagraph_mod, only: PrintMetaVertex, MetaEdge_t
+
+    type (MetaVertex_t), intent(in) :: mv, mvo
+    type (GridVertex_t), pointer :: gv, gvo
+    type (MetaEdge_t), pointer :: me, meo
+    integer :: i
+
+    if (mv%number /= mvo%number) print *, 'AMB> number disagrees'
+    if (mv%nmembers /= mvo%nmembers) print *, 'AMB> nmembers disagrees'
+    if (mv%nedges /= mvo%nedges) print *, 'AMB> nedges disagrees'
+    do i = 1, mv%nmembers
+       gv => mv%members(i)
+       gvo => mvo%members(i)
+       if (gv%face_number /= gvo%face_number) print *, 'AMB> GV face_number disagrees'
+       if (gv%number /= gvo%number) print *, 'AMB> GV number disagrees'
+       if (gv%processor_number /= gvo%processor_number) print *, 'AMB> GV processor_number disagrees'
+       if (gv%SpaceCurve /= gvo%SpaceCurve) print *, 'AMB> GV SpaceCurve disagrees'
+       
+    end do
+    do i = 1, mv%nedges
+       me => mv%edges(i)
+       meo => mvo%edges(i)
+       if (me%number /= meo%number) print *, 'AMB> ME number disagrees'
+       if (me%nmembers /= meo%nmembers) print *, 'AMB> ME nmembers disagrees'
+       if (me%type /= meo%type) print *, 'AMB> ME type disagrees'
+       if (me%wgtP /= meo%wgtP) print *, 'AMB> ME wgtP disagrees'
+       if (me%wgtP_ghost /= meo%wgtP_ghost) print *, 'AMB> ME wgtP_ghost disagrees'
+       if (me%wgtS /= meo%wgtS) print *, 'AMB> ME wgtS disagrees'
+       if (me%HeadVertex /= meo%HeadVertex) print *, 'AMB> ME HeadVertex disagrees'
+       if (me%TailVertex /= meo%TailVertex) print *, 'AMB> ME TailVertex disagrees'
+       
+    end do
+  end subroutine amb_cmp
 
   function s2ui(i, j, face) result (id)
     use dimensions_mod, only: ne
@@ -154,10 +197,6 @@ contains
     sfc = s2sfc(sfcfacemesh, i, j, face)
   end function u2sfc
   
-  subroutine amb_cmp(mv_other)
-    type (MetaVertex_t) :: mv_other
-  end subroutine amb_cmp
-
   subroutine amb_genspacecurve(ne, Mesh)
     use spacecurve_mod, only: IsFactorable, genspacecurve
 
@@ -335,7 +374,7 @@ contains
        gv => gm%gv(i)
        gv%number = gm%gvid(i)
        gv%SpaceCurve = u2sfc(gm%sfcfacemesh, gv%number)
-       gv%processor_number = sfc2rank(gm%rank2sfc, gv%SpaceCurve)
+       gv%processor_number = sfc2rank(gm%rank2sfc, gv%SpaceCurve) + 1
        gv%nbrs = -1
        gv%nbrs_wgt = 0
        gv%nbrs_ptr = 0
@@ -401,7 +440,7 @@ contains
     else
        gm%gv(igv)%nbrs(dir) = id
        gm%gv(igv)%nbrs_face(dir) = face
-       if (face == north .or. face == south .or. face == east .or. face == west) then
+       if (dir == north .or. dir == south .or. dir == east .or. dir == west) then
           wgt = EdgeWgtP
        else
           wgt = CornerWgt
@@ -448,20 +487,12 @@ contains
     if (k < 5) then ! west/east "belt" edges
        if (i == 1) then
           call gm_set(gm, igv, ne, j, modulo(2+k, 4)+1, west)
-          if (j /= 1) then
-             call gm_set(gm, igv, ne, j-1, modulo(2+k, 4)+1, swest)
-          end if
-          if (j /= ne) then
-             call gm_set(gm, igv, ne, j+1, modulo(2+k, 4)+1, nwest)
-          end if
+          if (j /= 1)  call gm_set(gm, igv, ne, j-1, modulo(2+k, 4)+1, swest)
+          if (j /= ne) call gm_set(gm, igv, ne, j+1, modulo(2+k, 4)+1, nwest)
        else if (i == ne) then
           call gm_set(gm, igv, 1, j, modulo(k, 4)+1, east)
-          if (j /= 1) then
-             call gm_set(gm, igv, 1, j-1, modulo(k, 4)+1, seast)
-          end if
-          if (j /= ne) then
-             call gm_set(gm, igv, 1, j+1, modulo(k, 4)+1, neast)
-          end if
+          if (j /= 1)  call gm_set(gm, igv, 1, j-1, modulo(k, 4)+1, seast)
+          if (j /= ne) call gm_set(gm, igv, 1, j+1, modulo(k, 4)+1, neast)
        endif
     end if
     if (j == 1 .and. k == 1) then ! south edge of 1
@@ -600,7 +631,7 @@ contains
           mystart = gm%gv(j)%nbrs_ptr(i)
           do m=0, mynbr_cnt-1
              if (gm%gv(j)%nbrs_wgt(mystart + m) > 0) then ! want a non-0 weight
-                owned_or_used = gm%gv(j)%processor_number == gm%rank ! want only owned or used elements
+                owned_or_used = gm%gv(j)%processor_number == gm%rank + 1 ! want only owned or used elements
                 if (.not. owned_or_used) then
                    gid = gm%gv(j)%nbrs(mystart + m)
                    igv = gid2igv(gm, gid)
@@ -625,7 +656,7 @@ contains
           mystart = gm%gv(j)%nbrs_ptr(i)
           do m = 0, mynbr_cnt-1
              if (gm%gv(j)%nbrs_wgt(mystart + m) > 0) then
-                owned_or_used = gm%gv(j)%processor_number == gm%rank
+                owned_or_used = gm%gv(j)%processor_number == gm%rank + 1
                 if (.not. owned_or_used) then
                    gid = gm%gv(j)%nbrs(mystart + m)
                    igv = gid2igv(gm, gid)
