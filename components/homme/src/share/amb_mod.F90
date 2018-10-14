@@ -369,15 +369,16 @@ contains
     call deallocate_gridvertex_nbrs(gv_tmp)
   end subroutine amb_cube_gv_phase2
 
-  subroutine gm_set(gm, igv, face, id, dir)
+  subroutine gm_set(gm, igv, i, j, face, dir)
     use dimensions_mod, only: np
     use control_mod, only: north, south, east, west, neast, seast, swest, nwest
 
     type (GridManager_t), intent(inout) :: gm
-    integer, intent(in) :: igv, face, id, dir
+    integer, intent(in) :: igv, i, j, face, dir
     integer, parameter :: EdgeWgtP = np, CornerWgt = 1
-    integer :: wgt
+    integer :: id, wgt
 
+    id = s2ui(i,j,face)
     if (gm%phase == 1) then
        gm%owned_or_used(id) = .true.
     else
@@ -405,149 +406,183 @@ contains
 
     if (j >= 2 .and. i >= 2) then
        ! setup SOUTH, WEST, SW neighbors
-       call gm_set(gm, igv, k, s2ui(i-1,j,k), west)
-       call gm_set(gm, igv, k, s2ui(i,j-1,k), south)
-       call gm_set(gm, igv, k, s2ui(i-1,j-1,k), swest)
+       call gm_set(gm, igv, i-1, j, k, west)
+       call gm_set(gm, igv, i, j-1, k, south)
+       call gm_set(gm, igv, i-1, j-1, k, swest)
     end if
     if (j < ne .and. i < ne) then
        ! setup EAST, NORTH, NE neighbors
-       call gm_set(gm, igv, k, s2ui(i+1,j,k), east)
-       call gm_set(gm, igv, k, s2ui(i,j+1,k), north)
-       call gm_set(gm, igv, k, s2ui(i+1,j+1,k), neast)
+       call gm_set(gm, igv, i+1, j, k, east)
+       call gm_set(gm, igv, i, j+1, k, north)
+       call gm_set(gm, igv, i+1, j+1, k, neast)
     end if
     if (j > 1 .and. i < ne) then
        ! Setup the remaining SOUTH, EAST, and SE neighbors
-       call gm_set(gm, igv, k, s2ui(i,j-1,k), south)
-       call gm_set(gm, igv, k, s2ui(i+1,j,k), east)
-       call gm_set(gm, igv, k, s2ui(i+1,j-1,k), seast)
+       call gm_set(gm, igv, i, j-1, k, south)
+       call gm_set(gm, igv, i+1, j, k, east)
+       call gm_set(gm, igv, i+1, j-1, k, seast)
     end if
     if (j < ne .and. i > 1) then
        ! Setup the remaining NORTH, WEST, and NW neighbors
-       call gm_set(gm, igv, k, s2ui(i,j+1,k), north)
-       call gm_set(gm, igv, k, s2ui(i-1,j,k), west)
-       call gm_set(gm, igv, k, s2ui(i-1,j+1,k), nwest)
+       call gm_set(gm, igv, i, j+1, k, north)
+       call gm_set(gm, igv, i-1, j, k, west)
+       call gm_set(gm, igv, i-1, j+1, k, nwest)
     end if
     if (k < 5) then ! west/east "belt" edges
        if (i == 1) then
-          call gm_set(gm, igv, k, s2ui(ne,j,modulo(2+k,4)+1), west)
+          call gm_set(gm, igv, ne, j, modulo(2+k, 4)+1, west)
           if (j /= 1) then
-             call gm_set(gm, igv, k, s2ui(ne,j-1,modulo(2+k,4)+1), swest)
+             call gm_set(gm, igv, ne, j-1, modulo(2+k, 4)+1, swest)
           end if
           if (j /= ne) then
-             call gm_set(gm, igv, k, s2ui(ne,j+1,modulo(2+k,4)+1), nwest)
+             call gm_set(gm, igv, ne, j+1, modulo(2+k, 4)+1, nwest)
           end if
        else if (i == ne) then
-          call gm_set(gm, igv, k, s2ui(1,j,modulo(k,4)+1), east)
+          call gm_set(gm, igv, 1, j, modulo(k, 4)+1, east)
           if (j /= 1) then
-             call gm_set(gm, igv, k, s2ui(1,j-1,modulo(k,4)+1), seast)
+             call gm_set(gm, igv, 1, j-1, modulo(k, 4)+1, seast)
           end if
           if (j /= ne) then
-             call gm_set(gm, igv, k, s2ui(1,j+1,modulo(k,4)+1), neast)
+             call gm_set(gm, igv, 1, j+1, modulo(k, 4)+1, neast)
           end if
        endif
     end if
     if (j == 1 .and. k == 1) then ! south edge of 1
-       call gm_set(gm, igv, k, s2ui(i,ne,5), south)
+       call gm_set(gm, igv, i, ne, 5, south)
        if (i /= 1) then
-          call gm_set(gm, igv, k, s2ui(i-1,ne,5), swest)
+          call gm_set(gm, igv, i-1, ne, 5, swest)
        else if (i /= ne) then
-          call gm_set(gm, igv, k, s2ui(i+1,ne,5), seast)
+          call gm_set(gm, igv, i+1, ne, 5, seast)
        end if
     end if
     if (j == ne .and. k == 5) then ! north edge of 5
-       call gm_set(gm, igv, k, s2ui(i,1,1), north)
+       call gm_set(gm, igv, i, 1, 1, north)
        if (i /= 1) then
-          call gm_set(gm, igv, k, s2ui(i-1,1,1), nwest)
+          call gm_set(gm, igv, i-1, 1, 1, nwest)
        else if (i /= ne) then
-          call gm_set(gm, igv, k, s2ui(i+1,1,1), neast)
+          call gm_set(gm, igv, i+1, 1, 1, neast)
        end if
     end if
     if (j == 1 .and. k == 2) then ! south edge of 2
        rev = ne+1-i
-       call gm_set(gm, igv, k, s2ui(ne,rev,5), south)
+       call gm_set(gm, igv, ne, rev, 5, south)
        if (i /= 1) then
-          call gm_set(gm, igv, k, s2ui(ne,rev+1,5), swest)
+          call gm_set(gm, igv, ne, rev+1, 5, swest)
        else if (i /= ne) then
-          call gm_set(gm, igv, k, s2ui(ne,rev-1,5), seast)
+          call gm_set(gm, igv, ne, rev-1, 5, seast)
        end if
     end if
     if (i == ne .and. k == 5) then ! east edge of 5
        rev = ne+1-j
-       call gm_set(gm, igv, k, s2ui(rev,1,2), east)
+       call gm_set(gm, igv, rev, 1, 2, east)
        if (j /= 1) then
-          call gm_set(gm, igv, k, s2ui(rev+1,1,2), seast)
+          call gm_set(gm, igv, rev+1, 1, 2, seast)
        else if (j /= ne) then
-          call gm_set(gm, igv, k, s2ui(rev-1,1,2), neast)
+          call gm_set(gm, igv, rev-1, 1, 2, neast)
        end if
     end if
     if (j == 1 .and. k == 3) then ! south edge of 3
        rev = ne+1-i
-       call gm_set(gm, igv, k, s2ui(rev,1,5), south)
+       call gm_set(gm, igv, rev, 1, 5, south)
        if (i /= 1) then
-          call gm_set(gm, igv, k, s2ui(rev+1,1,5), swest)
+          call gm_set(gm, igv, rev+1, 1, 5, swest)
        else if (i /= ne) then
-          call gm_set(gm, igv, k, s2ui(rev-1,1,5), seast)
+          call gm_set(gm, igv, rev-1, 1, 5, seast)
        end if
     end if
     if (j == 1 .and. k == 5) then ! south edge of 5
        rev = ne+1-i
-       call gm_set(gm, igv, k, s2ui(rev,1,3), south)
+       call gm_set(gm, igv, rev, 1, 3, south)
        if (i /= 1) then
-          call gm_set(gm, igv, k, s2ui(rev+1,1,3), swest)
+          call gm_set(gm, igv, rev+1, 1, 3, swest)
        else if (i /= ne) then
-          call gm_set(gm, igv, k, s2ui(rev-1,1,3), seast)
+          call gm_set(gm, igv, rev-1, 1, 3, seast)
        end if
     end if
     if (j == 1 .and. k == 4) then ! south edge of 4
-       call gm_set(gm, igv, k, s2ui(1,i,5), south)
+       call gm_set(gm, igv, 1, i, 5, south)
        if (i /= 1) then
-          call gm_set(gm, igv, k, s2ui(1,i-1,5), swest)
+          call gm_set(gm, igv, 1, i-1, 5, swest)
        else if (i /= ne) then
-          call gm_set(gm, igv, k, s2ui(1,i+1,5), seast)
+          call gm_set(gm, igv, 1, i+1, 5, seast)
        end if
     end if
     if (i == 1 .and. k == 5) then ! west edge of 5
-       call gm_set(gm, igv, k, s2ui(j,1,4), west)
+       call gm_set(gm, igv, j, 1, 4, west)
        if (j /= 1) then
-          call gm_set(gm, igv, k, s2ui(j-1,1,4), swest)
+          call gm_set(gm, igv, j-1, 1, 4, swest)
        else if (j /= ne) then
-          call gm_set(gm, igv, k, s2ui(j+1,1,4), nwest)
+          call gm_set(gm, igv, j+1, 1, 4, nwest)
        end if
     end if
     if (j == ne .and. k == 1) then ! north edge of 1
-       call gm_set(gm, igv, k, s2ui(i,1,6), north)
+       call gm_set(gm, igv, i, 1, 6, north)
        if (i /= 1) then
-          call gm_set(gm, igv, k, s2ui(i-1,1,6), nwest)
+          call gm_set(gm, igv, i-1, 1, 6, nwest)
        else if (i /= ne) then
-          call gm_set(gm, igv, k, s2ui(i+1,1,6), neast)
+          call gm_set(gm, igv, i+1, 1, 6, neast)
        end if
     end if
     if (j == 1 .and. k == 6) then ! south edge of 6
-       call gm_set(gm, igv, k, s2ui(i,ne,1), south)
+       call gm_set(gm, igv, i, ne, 1, south)
        if (i /= 1) then
-          call gm_set(gm, igv, k, s2ui(i-1,ne,1), swest)
+          call gm_set(gm, igv, i-1, ne, 1, swest)
        else if (i /= ne) then
-          call gm_set(gm, igv, k, s2ui(i+1,ne,1), seast)
+          call gm_set(gm, igv, i+1, ne, 1, seast)
        end if
     end if
     if (j == ne .and. k == 2) then ! north edge of 2
-       call gm_set(gm, igv, k, s2ui(ne,i,6), north)
+       call gm_set(gm, igv, ne, i, 6, north)
        if (i /= 1) then
-          call gm_set(gm, igv, k, s2ui(ne,i-1,6), nwest)
+          call gm_set(gm, igv, ne, i-1, 6, nwest)
        else if (i /= ne) then
-          call gm_set(gm, igv, k, s2ui(ne,i+1,6), neast)
+          call gm_set(gm, igv, ne, i+1, 6, neast)
        end if
     end if
     if (i == ne .and. k == 6) then ! east edge of 6
-       call gm_set(gm, igv, k, s2ui(j,ne,2), east)
+       call gm_set(gm, igv, j, ne, 2, east)
        if (j /= 1) then
-          call gm_set(gm, igv, k, s2ui(j-1,ne,2), seast)
+          call gm_set(gm, igv, j-1, ne, 2, seast)
        else if (j /= ne) then
-          call gm_set(gm, igv, k, s2ui(j+1,ne,2), neast)
+          call gm_set(gm, igv, j+1, ne, 2, neast)
        end if
     end if
-
-    !call gm_set(gm, igv, s2ui, , k)
+    if (j == ne .and. k == 3) then ! north edge of 3
+       rev = ne+1-i
+       call gm_set(gm, igv, rev, ne, 6, north)
+       if (i /= 1) then
+          call gm_set(gm, igv, rev+1, ne, 6, nwest)
+       else if (i /= ne) then
+          call gm_set(gm, igv, rev-1, ne, 6, neast)
+       end if
+    end if
+    if (j == ne .and. k == 6) then ! north edge of 6
+       rev = ne+1-i
+       call gm_set(gm, igv, rev, ne, 3, north)
+       if (i /= 1) then
+          call gm_set(gm, igv, rev+1, ne, 3, nwest)
+       else if (i /= ne) then
+          call gm_set(gm, igv, rev-1, ne, 3, neast)
+       end if
+    end if
+    if (j == ne .and. k == 4) then ! north edge of 4
+       rev = ne+1-i
+       call gm_set(gm, igv, 1, rev, 6, north)
+       if (i /= 1) then
+          call gm_set(gm, igv, 1, rev+1, 6, nwest)
+       else if (i /= ne) then
+          call gm_set(gm, igv, 1, rev-1, 6, neast)
+       end if
+    end if
+    if (i == 1 .and. k == 6) then ! west edge of 6
+       rev = ne+1-j
+       call gm_set(gm, igv, rev, ne, 4, west)
+       if (j /= 1) then
+          call gm_set(gm, igv, rev+1, ne, 4, swest)
+       else if (j /= ne) then
+          call gm_set(gm, igv, rev-1, ne, 4, nwest)
+       end if
+    end if
   end subroutine amb_cube_gv_impl
 
   subroutine amb_ge(gm)
