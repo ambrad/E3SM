@@ -120,7 +120,7 @@ contains
     type (MetaVertex_t), intent(in) :: mv, mvo
     type (GridVertex_t), pointer :: gv, gvo
     type (MetaEdge_t), pointer :: me, meo
-    integer :: i
+    integer :: i, npi, j
 
     !call PrintMetaVertex(mv)
     !call PrintMetaVertex(mvo)
@@ -134,9 +134,21 @@ contains
        ! This seems unused
        !if (gv%face_number /= gvo%face_number) print *, 'AMB> GV face_number disagrees'
        if (gv%number /= gvo%number) print *, 'AMB> GV number disagrees'
-       if (gv%processor_number /= gvo%processor_number) print *, 'AMB> GV processor_number disagrees'
+       if (gv%processor_number /= gvo%processor_number) &
+            print *, 'AMB> GV processor_number disagrees'
        if (gv%SpaceCurve /= gvo%SpaceCurve) print *, 'AMB> GV SpaceCurve disagrees'
-       
+       do j = 1, size(gv%nbrs_ptr)
+          if (gv%nbrs_ptr(j) /= gvo%nbrs_ptr(j)) print *, 'AMB> GV nbrs_ptr disagrees'
+       end do
+       do npi = 1, size(gv%nbrs_ptr)
+          do j = gv%nbrs_ptr(npi), gv%nbrs_ptr(npi+1)-1
+             if (gv%nbrs(j) /= gvo%nbrs(j)) print *, 'AMB> GV nbrs disagrees'
+             if (gv%nbrs_face(j) /= gvo%nbrs_face(j)) print *, 'AMB> GV nbrs_face disagrees'
+             if (gv%nbrs_wgt(j) /= gvo%nbrs_wgt(j)) print *, 'AMB> GV nbrs_wgt disagrees'
+             if (gv%nbrs_wgt_ghost(j) /= gvo%nbrs_wgt_ghost(j)) &
+                  print *, 'AMB> GV nbrs_wgt_ghost disagrees'
+          end do
+       end do
     end do
     do i = 1, mv%nedges
        me => mv%edges(i)
