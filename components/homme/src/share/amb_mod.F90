@@ -18,10 +18,13 @@ contains
 
   subroutine amb_run(par)
     use dimensions_mod, only: nelem, ne
+    use metagraph_mod, only: initMetaGraph
+    use gridgraph_mod, only: deallocate_gridvertex_nbrs
 
     type (parallel_t), intent(in) :: par
-    integer, allocatable :: sfctest(:)
     type (GridManager_t) :: gm
+    type (MetaVertex_t) :: MetaVertex
+    integer, allocatable :: sfctest(:)
     integer :: ie, i, j, face, id, sfc, nelemd, nelemdi, rank
     logical, parameter :: dbg = .true.
 
@@ -94,6 +97,13 @@ contains
     call amb_CubeTopology_phase2(gm)
     call amb_initgridedge(gm)
     deallocate(gm%gvid)
+    call initMetaGraph(gm%rank, MetaVertex, gm%gv, gm%ge)
+
+    do i = 1, size(gm%gv)
+       call deallocate_gridvertex_nbrs(gm%gv(i))
+    end do
+    deallocate(gm%gv)
+    deallocate(gm%ge)
   end subroutine amb_run
 
   function s2ui(i, j, face) result (id)
