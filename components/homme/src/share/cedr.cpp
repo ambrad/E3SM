@@ -2833,7 +2833,7 @@ Int CAAS<ES>::get_num_tracers () const {
 
 template <typename ES>
 void CAAS<ES>::reduce_locally () {
-  const bool user_reduces = user_reducer_;
+  const bool user_reduces = user_reducer_ != nullptr;
   const Int nt = probs_.size();
   Int k = 0;
   Int os = nlclcells_;
