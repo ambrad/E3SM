@@ -121,9 +121,7 @@ contains
     type (MetaEdge_t), pointer :: me, meo
     integer :: i, npi, j
 
-    !call PrintMetaVertex(mv)
-    !call PrintMetaVertex(mvo)
-
+    if (gm%rank == 0) print *, 'AMB> amb_cmp'
     if (mv%number /= mvo%number) print *, 'AMB> number disagrees'
     if (mv%nmembers /= mvo%nmembers) print *, 'AMB> nmembers disagrees'
     if (mv%nedges /= mvo%nedges) print *, 'AMB> nedges disagrees'
@@ -163,7 +161,8 @@ contains
        do j = 1, me%nmembers
           if (me%edgeptrP(j) /= meo%edgeptrP(j)) print *, 'AMB> ME edgeptrP disagrees'
           if (me%edgeptrS(j) /= meo%edgeptrS(j)) print *, 'AMB> ME edgeptrS disagrees'
-          if (me%edgeptrP_ghost(j) /= meo%edgeptrP_ghost(j)) print *, 'AMB> ME edgeptrP_ghost disagrees'
+          if (me%edgeptrP_ghost(j) /= meo%edgeptrP_ghost(j)) &
+               print *, 'AMB> ME edgeptrP_ghost disagrees'
           if (me%members(j)%head_face /= meo%members(j)%head_face) &
                print *, 'AMB> ME GE head_face disagrees'
           if (me%members(j)%tail_face /= meo%members(j)%tail_face) &

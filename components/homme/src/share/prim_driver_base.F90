@@ -238,28 +238,29 @@ contains
           call abortmp('Error: too many MPI tasks. set dyn_npes <= nelem')
        end if
 
-       allocate(GridVertex(nelem))
-       allocate(GridEdge(nelem_edge))
+       if (.not. amb_use) then
+          allocate(GridVertex(nelem))
+          allocate(GridEdge(nelem_edge))
 
-       do j =1,nelem
-          call allocate_gridvertex_nbrs(GridVertex(j))
-       end do
+          do j =1,nelem
+             call allocate_gridvertex_nbrs(GridVertex(j))
+          end do
 
-       if (MeshUseMeshFile) then
-           if (par%masterproc) then
-               write(iulog,*) "Set up grid vertex from mesh..."
-           end if
-           call MeshCubeTopologyCoords(GridEdge, GridVertex, coord_dim1, coord_dim2, coord_dim3, coord_dimension)
-           !MD:TODO: still need to do the coordinate transformation for this case.
+          if (MeshUseMeshFile) then
+             if (par%masterproc) then
+                write(iulog,*) "Set up grid vertex from mesh..."
+             end if
+             call MeshCubeTopologyCoords(GridEdge, GridVertex, coord_dim1, coord_dim2, coord_dim3, coord_dimension)
+             !MD:TODO: still need to do the coordinate transformation for this case.
 
 
-       else
-           call CubeTopology(GridEdge,GridVertex)
-           if (is_zoltan_partition(partmethod) .or. is_zoltan_task_mapping(z2_map_method)) then
-              call getfixmeshcoordinates(GridVertex, coord_dim1, coord_dim2, coord_dim3, coord_dimension)
-           endif
-        end if
-
+          else
+             call CubeTopology(GridEdge,GridVertex)
+             if (is_zoltan_partition(partmethod) .or. is_zoltan_task_mapping(z2_map_method)) then
+                call getfixmeshcoordinates(GridVertex, coord_dim1, coord_dim2, coord_dim3, coord_dimension)
+             endif
+          end if
+       end if
        if(par%masterproc)       write(iulog,*)"...done."
     end if
     if(par%masterproc) write(iulog,*)"total number of elements nelem = ",nelem
@@ -268,22 +269,24 @@ contains
 
     call t_startf('PartitioningTime')
 
-    if(partmethod .eq. SFCURVE) then
-       if(par%masterproc) write(iulog,*)"partitioning graph using SF Curve..."
-       !if the partitioning method is space filling curves
-       call genspacepart(GridEdge,GridVertex)
-       if (is_zoltan_task_mapping(z2_map_method)) then
-          if(par%masterproc) write(iulog,*)"mapping graph using zoltan2 task mapping on the result of SF Curve..."
-        call genzoltanpart(GridEdge,GridVertex, par%comm, coord_dim1, coord_dim2, coord_dim3, coord_dimension)
+    if (.not. amb_use) then
+       if(partmethod .eq. SFCURVE) then
+          if(par%masterproc) write(iulog,*)"partitioning graph using SF Curve..."
+          !if the partitioning method is space filling curves
+          call genspacepart(GridEdge,GridVertex)
+          if (is_zoltan_task_mapping(z2_map_method)) then
+             if(par%masterproc) write(iulog,*)"mapping graph using zoltan2 task mapping on the result of SF Curve..."
+             call genzoltanpart(GridEdge,GridVertex, par%comm, coord_dim1, coord_dim2, coord_dim3, coord_dimension)
+          endif
+          !if zoltan2 partitioning method is asked to run.
+       elseif ( is_zoltan_partition(partmethod)) then
+          if(par%masterproc) write(iulog,*)"partitioning graph using zoltan2 partitioning/task mapping..."
+          call genzoltanpart(GridEdge,GridVertex, par%comm, coord_dim1, coord_dim2, coord_dim3, coord_dimension)
+       else
+          if(par%masterproc) write(iulog,*)"partitioning graph using Metis..."
+          call genmetispart(GridEdge,GridVertex)
        endif
-    !if zoltan2 partitioning method is asked to run.
-    elseif ( is_zoltan_partition(partmethod)) then
-        if(par%masterproc) write(iulog,*)"partitioning graph using zoltan2 partitioning/task mapping..."
-        call genzoltanpart(GridEdge,GridVertex, par%comm, coord_dim1, coord_dim2, coord_dim3, coord_dimension)
-    else
-        if(par%masterproc) write(iulog,*)"partitioning graph using Metis..."
-       call genmetispart(GridEdge,GridVertex)
-    endif
+    end if
 
     call t_stopf('PartitioningTime')
 
@@ -303,29 +306,10 @@ contains
     ! ====================================================
     !  Generate the communication graph
     ! ====================================================
-    call initMetaGraph(iam,MetaVertex(1),GridVertex,GridEdge)
-
-    nelemd = LocalElemCount(MetaVertex(1))
-    if(par%masterproc .and. Debug) then 
-        call PrintMetaVertex(MetaVertex(1))
-    endif
+    if (.not. amb_use) &
+         call initMetaGraph(iam,MetaVertex(1),GridVertex,GridEdge)
 
     if (amb_use) then
-       do j = 1, nelem
-          call deallocate_gridvertex_nbrs(GridVertex(j))
-       end do
-       deallocate(GridVertex)
-       do j = 1, MetaVertex(1)%nmembers
-          call deallocate_gridvertex_nbrs(MetaVertex(1)%members(j))
-       end do
-       do j = 1, MetaVertex(1)%nedges
-          deallocate(MetaVertex(1)%edges(j)%members)
-          deallocate(MetaVertex(1)%edges(j)%edgeptrP)
-          deallocate(MetaVertex(1)%edges(j)%edgeptrS)
-          deallocate(MetaVertex(1)%edges(j)%edgeptrP_ghost)
-       end do
-       deallocate(MetaVertex(1)%edges)
-       deallocate(MetaVertex(1)%members)
        call amb_run(par, GridVertex, MetaVertex(1))
     else
        call amb_cmp(amb_MetaVertex, MetaVertex(1))
@@ -341,6 +325,11 @@ contains
        deallocate(amb_MetaVertex%edges)
        deallocate(amb_MetaVertex%members)
     end if
+
+    nelemd = LocalElemCount(MetaVertex(1))
+    if(par%masterproc .and. Debug) then 
+        call PrintMetaVertex(MetaVertex(1))
+    endif
 
     if(nelemd .le. 0) then
        call abortmp('Not yet ready to handle nelemd = 0 yet' )
@@ -436,7 +425,8 @@ contains
            do ie=1,nelemd
                call set_corner_coordinates(elem(ie))
            end do
-           call assign_node_numbers_to_elem(elem, GridVertex)
+           ! This is not used any longer.
+           !call assign_node_numbers_to_elem(elem, GridVertex)
        end if
        do ie=1,nelemd
           call cube_init_atomic(elem(ie),gp%points)
@@ -532,8 +522,8 @@ contains
        end do
     end if
 
-    deallocate(GridEdge)
     if (.not. amb_use) then
+       deallocate(GridEdge)
        do j =1,nelem
           call deallocate_gridvertex_nbrs(GridVertex(j))
        end do
