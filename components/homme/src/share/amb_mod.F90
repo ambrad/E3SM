@@ -96,7 +96,6 @@ contains
     end if
 
     call amb_CubeTopology_phase2(gm)
-    deallocate(gm%gvid)
     call initMetaGraph(gm%rank + 1, MetaVertex, gm%gv, gm%ge)
     GridVertex => gm%gv
   end subroutine amb_run
@@ -106,6 +105,7 @@ contains
 
     integer :: i
 
+    deallocate(gm%gvid)
     do i = 1, size(gm%gv)
        call deallocate_gridvertex_nbrs(gm%gv(i))
     end do

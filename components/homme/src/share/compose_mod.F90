@@ -160,6 +160,7 @@ contains
     use gridgraph_mod, only : GridVertex_t
     use control_mod, only : semi_lagrange_cdr_alg, transport_alg, cubed_sphere_map, &
          semi_lagrange_nearest_point_lev
+    use amb_mod, only : gid2igv, gm
 
     integer, intent(in) :: comm
     type (element_t), intent(in) :: elem(:)
@@ -168,17 +169,19 @@ contains
          sc2gci(:), sc2rank(:), &    ! space curve index -> (GID, rank)
          nbr_id_rank(:), nirptr(:)   ! (GID, rank) in local mesh patch, starting with own
     integer :: lid2gid(nelemd), lid2facenum(nelemd)
-    integer :: i, j, k, sc, gid
+    integer :: i, j, k, sc, gid, igv
 
-    allocate(sc2gci(nelem), sc2rank(nelem))
-    do i = 1, nelem
-       sc = GridVertex(i)%SpaceCurve + 1
-       sc2gci(sc) = i - 1
-       sc2rank(sc) = GridVertex(i)%processor_number - 1
-    end do
+    if (semi_lagrange_cdr_alg == 2 .or. semi_lagrange_cdr_alg == 20) then
+       allocate(sc2gci(nelem), sc2rank(nelem))
+       do i = 1, nelem
+          sc = GridVertex(i)%SpaceCurve + 1
+          sc2gci(sc) = i - 1
+          sc2rank(sc) = GridVertex(i)%processor_number - 1
+       end do
+    end if
     call cedr_init_impl(comm, semi_lagrange_cdr_alg, sc2gci, sc2rank, &
          nelem, nelemd, nlev)
-    deallocate(sc2gci, sc2rank)
+    if (allocated(sc2gci)) deallocate(sc2gci, sc2rank)
 
     if (transport_alg > 1) then
        k = 0
@@ -193,12 +196,22 @@ contains
           lid2gid(i) = gid
           lid2facenum(i) = elem(i)%faceNum
           nbr_id_rank(k) = gid
-          nbr_id_rank(k+1) = GridVertex(gid)%processor_number - 1
+          if (size(GridVertex) == nelem) then
+             igv = gid
+          else
+             igv = gid2igv(gm, gid)
+          end if
+          nbr_id_rank(k+1) = GridVertex(igv)%processor_number - 1
           k = k + 2
           do j = 1, size(elem(i)%desc%globalID_neigh_corners)
              gid = elem(i)%desc%globalID_neigh_corners(j)
+             if (size(GridVertex) == nelem) then
+                igv = gid
+             else
+                igv = gid2igv(gm, gid)
+             end if
              nbr_id_rank(k) = gid
-             nbr_id_rank(k+1) = GridVertex(gid)%processor_number - 1
+             nbr_id_rank(k+1) = GridVertex(igv)%processor_number - 1
              k = k + 2
           end do
        end do

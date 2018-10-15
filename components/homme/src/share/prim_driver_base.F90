@@ -131,7 +131,7 @@ contains
 
     type (GridVertex_t), pointer :: amb_GridVertex(:)
     type (MetaVertex_t) :: amb_MetaVertex
-    logical, parameter :: amb_use = .false.
+    logical, parameter :: amb_use = .true.
 
     integer :: ii,ie, ith
     integer :: nets, nete
