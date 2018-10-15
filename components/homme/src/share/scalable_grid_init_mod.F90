@@ -1,10 +1,32 @@
-module amb_mod
+module scalable_grid_init_mod
   use metagraph_mod, only: MetaVertex_t
   use parallel_mod, only: parallel_t, abortmp
   use dimensions_mod, only: npart
   use gridgraph_mod, only: GridVertex_t, GridEdge_t
 
   implicit none
+  private
+
+  public :: &
+
+    ! (Almost) scalably generate MetaVertex. SFC generation is still unscalable,
+    ! but ne must be > 10K before it becomes a concern. Also provide GridVertex.
+    sgi_init_grid, &
+
+    ! Deallocate data used in grid initialization. This is separate from
+    ! sgi_init_grid because there are external clients of GridVertex and
+    ! gid2igv.  
+    sgi_finalize, &
+
+    ! Check each field (and subfields) of a MetaVertex against those of
+    ! another. If the two are not exactly the same, output a message. This is
+    ! used for correctness checking the output of sgi_init_grid.
+    sgi_check, &
+
+    ! Map a cell global ID to the entry in the GridVertex_t array GridVertex. An
+    ! invalid gid input, i.e. one that does not exist in gm%gvid, is permitted;
+    ! in that case, the output igv is invalid and so GridVertex(igv) /= gid.
+    sgi_gid2igv
 
   type, public :: GridManager_t
      integer :: rank, phase, ne
@@ -14,36 +36,39 @@ module amb_mod
      type (GridEdge_t), pointer :: ge(:) => null()
   end type GridManager_t
 
-  type (GridManager_t) :: gm
+  type (GridManager_t), target :: sgi_gm
 
 contains
 
-  subroutine amb_run(par, GridVertex, MetaVertex)
+  subroutine sgi_init_grid(par, GridVertex, MetaVertex)
     use dimensions_mod, only: nelem, ne
     use metagraph_mod, only: initMetaGraph
 
     type (parallel_t), intent(in) :: par
     type (GridVertex_t), pointer, intent(out) :: GridVertex(:)
     type (MetaVertex_t), intent(out) :: MetaVertex
+    type (GridManager_t), pointer :: gm
     integer, allocatable :: sfctest(:)
     integer :: ie, i, j, face, id, sfc, nelemd, nelemdi, rank
-    logical, parameter :: dbg = .true.
+    logical, parameter :: dbg = .false.
+
+    gm => sgi_gm
 
     allocate(gm%rank2sfc(npart+1))
-    call amb_genspacepart(nelem, npart, gm%rank2sfc)
+    call sgi_genspacepart(nelem, npart, gm%rank2sfc)
     allocate(gm%sfcfacemesh(ne,ne))
-    call amb_genspacecurve(ne, gm%sfcfacemesh)
+    call sgi_genspacecurve(ne, gm%sfcfacemesh)
 
     if (dbg) then
-       ! amb_genspacepart
+       ! sgi_genspacepart
        if (gm%rank2sfc(npart+1) /= nelem) then
-          print *, 'AMB> nelem',nelem,'rank2sfc',gm%rank2sfc
+          print *, 'SGI> nelem',nelem,'rank2sfc',gm%rank2sfc
        end if
        nelemd = gm%rank2sfc(2) - gm%rank2sfc(1)
        do i = 3, npart+1
           nelemdi = gm%rank2sfc(i) - gm%rank2sfc(i-1)
           if (nelemdi > nelemd) then
-             print *, 'AMB> nelem',nelem,'rank2sfc',gm%rank2sfc
+             print *, 'SGI> nelem',nelem,'rank2sfc',gm%rank2sfc
              exit
           end if
           nelemd = nelemdi
@@ -52,7 +77,7 @@ contains
        do sfc = 0, nelem-1
           rank = sfc2rank(gm%rank2sfc, sfc)
           if (sfc < gm%rank2sfc(rank+1) .or. sfc >= gm%rank2sfc(rank+2)) then
-             print *, 'AMB> sfc, rank, rank2sfc',sfc,rank,gm%rank2sfc
+             print *, 'SGI> sfc, rank, rank2sfc',sfc,rank,gm%rank2sfc
              exit
           end if
        end do
@@ -66,44 +91,47 @@ contains
                i >= 1 .and. i <= ne .and. &
                j >= 1 .and. j <= ne .and. &
                face >=1 .and. face <= 6)) then
-             print *, 'AMB> u<->s:',ie,id,i,j,face
+             print *, 'SGI> u<->s:',ie,id,i,j,face
           end if
           sfc = u2sfc(gm%sfcfacemesh, id)
           if (.not. (sfc >= 0 .and. sfc < nelem)) then
-             print *, 'AMB> u2sfc:',id,sfc
+             print *, 'SGI> u2sfc:',id,sfc
           end if
           sfctest(sfc+1) = sfctest(sfc+1) + 1
        end do
        do ie = 1, nelem
           if (sfctest(ie) .ne. 1) then
-             print *, 'AMB> sfctest:',ie,sfctest(ie)
+             print *, 'SGI> sfctest:',ie,sfctest(ie)
           end if
        end do
        deallocate(sfctest)
     end if
 
     gm%rank = par%rank
-    call amb_CubeTopology_phase1(gm)
+    call sgi_CubeTopology_phase1(gm)
 
     if (dbg) then
        do i = 1, size(gm%gvid)
           if (gid2igv(gm, gm%gvid(i)) /= i) then
-             print *, 'AMB> igv, ret, gid, gvid', &
+             print *, 'SGI> igv, ret, gid, gvid', &
                   i,gid2igv(gm, gm%gvid(i)),gm%gvid(i),gm%gvid
              exit
           end if
        end do
     end if
 
-    call amb_CubeTopology_phase2(gm)
+    call sgi_CubeTopology_phase2(gm)
     call initMetaGraph(gm%rank + 1, MetaVertex, gm%gv, gm%ge)
     GridVertex => gm%gv
-  end subroutine amb_run
+  end subroutine sgi_init_grid
 
-  subroutine amb_finish()
+  subroutine sgi_finalize()
     use gridgraph_mod, only: deallocate_gridvertex_nbrs
 
+    type (GridManager_t), pointer :: gm
     integer :: i
+
+    gm => sgi_gm
 
     deallocate(gm%gvid)
     do i = 1, size(gm%gv)
@@ -111,76 +139,80 @@ contains
     end do
     deallocate(gm%gv)
     deallocate(gm%ge)
-  end subroutine amb_finish
+  end subroutine sgi_finalize
 
-  subroutine amb_check(mv, mvo)
+  subroutine sgi_check(mv, mvo)
     use metagraph_mod, only: PrintMetaVertex, MetaEdge_t
 
     type (MetaVertex_t), intent(in) :: mv, mvo
     type (GridVertex_t), pointer :: gv, gvo
     type (MetaEdge_t), pointer :: me, meo
+    type (GridManager_t), pointer :: gm
     integer :: i, npi, j
 
-    if (gm%rank == 0) print *, 'AMB> amb_check'
-    if (mv%number /= mvo%number) print *, 'AMB> number disagrees'
-    if (mv%nmembers /= mvo%nmembers) print *, 'AMB> nmembers disagrees'
-    if (mv%nedges /= mvo%nedges) print *, 'AMB> nedges disagrees'
+    gm => sgi_gm
+
+    if (gm%rank == 0) print *, 'SGI> sgi_check'
+    if (mv%number /= mvo%number) print *, 'SGI> number disagrees'
+    if (mv%nmembers /= mvo%nmembers) print *, 'SGI> nmembers disagrees'
+    if (mv%nedges /= mvo%nedges) print *, 'SGI> nedges disagrees'
     do i = 1, mv%nmembers
        gv => mv%members(i)
        gvo => mvo%members(i)
        ! This seems unused
-       !if (gv%face_number /= gvo%face_number) print *, 'AMB> GV face_number disagrees'
-       if (gv%number /= gvo%number) print *, 'AMB> GV number disagrees'
+       !if (gv%face_number /= gvo%face_number) print *, 'SGI> GV face_number disagrees'
+       if (gv%number /= gvo%number) print *, 'SGI> GV number disagrees'
        if (gv%processor_number /= gvo%processor_number) &
-            print *, 'AMB> GV processor_number disagrees'
-       if (gv%SpaceCurve /= gvo%SpaceCurve) print *, 'AMB> GV SpaceCurve disagrees'
+            print *, 'SGI> GV processor_number disagrees'
+       if (gv%SpaceCurve /= gvo%SpaceCurve) print *, 'SGI> GV SpaceCurve disagrees'
        do j = 1, size(gv%nbrs_ptr)
-          if (gv%nbrs_ptr(j) /= gvo%nbrs_ptr(j)) print *, 'AMB> GV nbrs_ptr disagrees'
+          if (gv%nbrs_ptr(j) /= gvo%nbrs_ptr(j)) print *, 'SGI> GV nbrs_ptr disagrees'
        end do
        do npi = 1, size(gv%nbrs_ptr)
           do j = gv%nbrs_ptr(npi), gv%nbrs_ptr(npi+1)-1
-             if (gv%nbrs(j) /= gvo%nbrs(j)) print *, 'AMB> GV nbrs disagrees'
-             if (gv%nbrs_face(j) /= gvo%nbrs_face(j)) print *, 'AMB> GV nbrs_face disagrees'
-             if (gv%nbrs_wgt(j) /= gvo%nbrs_wgt(j)) print *, 'AMB> GV nbrs_wgt disagrees'
+             if (gv%nbrs(j) /= gvo%nbrs(j)) print *, 'SGI> GV nbrs disagrees'
+             if (gv%nbrs_face(j) /= gvo%nbrs_face(j)) print *, 'SGI> GV nbrs_face disagrees'
+             if (gv%nbrs_wgt(j) /= gvo%nbrs_wgt(j)) print *, 'SGI> GV nbrs_wgt disagrees'
              if (gv%nbrs_wgt_ghost(j) /= gvo%nbrs_wgt_ghost(j)) &
-                  print *, 'AMB> GV nbrs_wgt_ghost disagrees'
+                  print *, 'SGI> GV nbrs_wgt_ghost disagrees'
           end do
        end do
     end do
     do i = 1, mv%nedges
        me => mv%edges(i)
        meo => mvo%edges(i)
-       if (me%number /= meo%number) print *, 'AMB> ME number disagrees'
-       if (me%nmembers /= meo%nmembers) print *, 'AMB> ME nmembers disagrees'
-       if (me%type /= meo%type) print *, 'AMB> ME type disagrees'
-       if (me%wgtP /= meo%wgtP) print *, 'AMB> ME wgtP disagrees'
-       if (me%wgtP_ghost /= meo%wgtP_ghost) print *, 'AMB> ME wgtP_ghost disagrees'
-       if (me%wgtS /= meo%wgtS) print *, 'AMB> ME wgtS disagrees'
-       if (me%HeadVertex /= meo%HeadVertex) print *, 'AMB> ME HeadVertex disagrees'
-       if (me%TailVertex /= meo%TailVertex) print *, 'AMB> ME TailVertex disagrees'
+       if (me%number /= meo%number) print *, 'SGI> ME number disagrees'
+       if (me%nmembers /= meo%nmembers) print *, 'SGI> ME nmembers disagrees'
+       if (me%type /= meo%type) print *, 'SGI> ME type disagrees'
+       if (me%wgtP /= meo%wgtP) print *, 'SGI> ME wgtP disagrees'
+       if (me%wgtP_ghost /= meo%wgtP_ghost) print *, 'SGI> ME wgtP_ghost disagrees'
+       if (me%wgtS /= meo%wgtS) print *, 'SGI> ME wgtS disagrees'
+       if (me%HeadVertex /= meo%HeadVertex) print *, 'SGI> ME HeadVertex disagrees'
+       if (me%TailVertex /= meo%TailVertex) print *, 'SGI> ME TailVertex disagrees'
        do j = 1, me%nmembers
-          if (me%edgeptrP(j) /= meo%edgeptrP(j)) print *, 'AMB> ME edgeptrP disagrees'
-          if (me%edgeptrS(j) /= meo%edgeptrS(j)) print *, 'AMB> ME edgeptrS disagrees'
+          if (me%edgeptrP(j) /= meo%edgeptrP(j)) print *, 'SGI> ME edgeptrP disagrees'
+          if (me%edgeptrS(j) /= meo%edgeptrS(j)) print *, 'SGI> ME edgeptrS disagrees'
           if (me%edgeptrP_ghost(j) /= meo%edgeptrP_ghost(j)) &
-               print *, 'AMB> ME edgeptrP_ghost disagrees'
+               print *, 'SGI> ME edgeptrP_ghost disagrees'
           if (me%members(j)%head_face /= meo%members(j)%head_face) &
-               print *, 'AMB> ME GE head_face disagrees'
+               print *, 'SGI> ME GE head_face disagrees'
           if (me%members(j)%tail_face /= meo%members(j)%tail_face) &
-               print *, 'AMB> ME GE tail_face disagrees'
+               print *, 'SGI> ME GE tail_face disagrees'
           if (me%members(j)%head_dir /= meo%members(j)%head_dir) &
-               print *, 'AMB> ME GE head_dir disagrees'
+               print *, 'SGI> ME GE head_dir disagrees'
           if (me%members(j)%tail_dir /= meo%members(j)%tail_dir) &
-               print *, 'AMB> ME GE tail_dir disagrees'
+               print *, 'SGI> ME GE tail_dir disagrees'
           if (me%members(j)%reverse .neqv. meo%members(j)%reverse) &
-               print *, 'AMB> ME GE reverse disagrees'
+               print *, 'SGI> ME GE reverse disagrees'
           if (me%members(j)%head%number /= meo%members(j)%head%number) &
-               print *, 'AMB> ME GE head disagrees'
+               print *, 'SGI> ME GE head disagrees'
           if (me%members(j)%tail%number /= meo%members(j)%tail%number) &
-               print *, 'AMB> ME GE tail disagrees'
+               print *, 'SGI> ME GE tail disagrees'
        end do
     end do
-  end subroutine amb_check
+  end subroutine sgi_check
 
+  ! Map structured (i,j,face) triple to global ID.
   function s2ui(i, j, face) result (id)
     use dimensions_mod, only: ne
 
@@ -190,6 +222,7 @@ contains
     id = ((face-1)*ne + (j-1))*ne + i
   end function s2ui
 
+  ! Map global ID to structured (i,j,face) triple.
   subroutine u2si(id, i, j, face)
     use dimensions_mod, only: ne
 
@@ -203,6 +236,7 @@ contains
     i = modulo(id-1, ne) + 1
   end subroutine u2si
 
+  ! Map structured (i,j,face) triple to SFC index.
   function s2sfc(sfcfacemesh, i, j, face) result(sfc)
     integer, intent(in) :: sfcfacemesh(:,:)
     integer, intent(in) :: i, j, face
@@ -220,6 +254,7 @@ contains
     end select
   end function s2sfc
 
+  ! Map global element ID to SFC index.
   function u2sfc(sfcfacemesh, id) result(sfc)
     integer, intent(in) :: sfcfacemesh(:,:)
     integer, intent(in) :: id
@@ -228,8 +263,10 @@ contains
     call u2si(id, i, j, face)
     sfc = s2sfc(sfcfacemesh, i, j, face)
   end function u2sfc
-  
-  subroutine amb_genspacecurve(ne, Mesh)
+
+  ! This routine to generate the space-filling curve (SFC) is not yet
+  ! scalable. It allocates 4*ne^2 bytes.
+  subroutine sgi_genspacecurve(ne, Mesh)
     use spacecurve_mod, only: IsFactorable, genspacecurve
 
     integer, intent(in) :: ne
@@ -307,9 +344,12 @@ contains
        deallocate(Mesh2_map)
        deallocate(sfcij)
     endif
-  end subroutine amb_genspacecurve
+  end subroutine sgi_genspacecurve
 
-  subroutine amb_genspacepart(nelem, npart, rank2sfc)
+  ! Generate the SFC partitioning based on just nelem and npart. On output,
+  ! rank2sfc(rank:rank+1) contains the SFC index inclusive-lower and
+  ! exclusive-upper indices for part 'rank'.
+  subroutine sgi_genspacepart(nelem, npart, rank2sfc)
     integer, intent(in) :: nelem, npart
     integer, intent(out) :: rank2sfc(npart+1)
     integer :: nelemd, ipart, extra, s1
@@ -335,8 +375,9 @@ contains
     do ipart = extra+1, npart
        rank2sfc(ipart+1) = s1 + (ipart - extra)*nelemd
     end do
-  end subroutine amb_genspacepart
+  end subroutine sgi_genspacepart
 
+  ! Map a SFC index to the rank that owns the corresponding element.
   function sfc2rank(rank2sfc, sfc) result(rank)
     integer, intent(in) :: rank2sfc(:), sfc
     integer :: npart, lo, hi, mid, rank
@@ -359,7 +400,10 @@ contains
     rank = lo - 1
   end function sfc2rank
 
-  subroutine amb_CubeTopology_phase1(gm)
+  ! sgi_CubeTopology_phase1/2 are scalable replacements for
+  ! cube_mod::CubeTopology. The GridVertex array (here, gm%gv) is constructed to
+  ! have entries only for owned and remote-used elemnents.
+  subroutine sgi_CubeTopology_phase1(gm)
     use gridgraph_mod, only: allocate_gridvertex_nbrs
 
     type (GridManager_t), intent(inout) :: gm
@@ -384,7 +428,7 @@ contains
        if (.not. owned) cycle
        gm%owned_or_used(id) = .true.
 
-       call amb_CubeTopology_impl(gm, id, -1)
+       call sgi_CubeTopology_impl(gm, id, -1)
     end do
 
     n_owned_or_used = 0
@@ -415,9 +459,9 @@ contains
     end do
     deallocate(gm%sfcfacemesh)
     deallocate(gm%rank2sfc)
-  end subroutine amb_CubeTopology_phase1
+  end subroutine sgi_CubeTopology_phase1
   
-  subroutine amb_CubeTopology_phase2(gm)
+  subroutine sgi_CubeTopology_phase2(gm)
     use gridgraph_mod, only: allocate_gridvertex_nbrs, deallocate_gridvertex_nbrs
     use cube_mod, only: CubeSetupEdgeIndex
 
@@ -430,7 +474,7 @@ contains
     ngv = size(gm%gv)
 
     do igv = 1, ngv
-       call amb_CubeTopology_impl(gm, gm%gv(igv)%number, igv)
+       call sgi_CubeTopology_impl(gm, gm%gv(igv)%number, igv)
     end do
 
     call allocate_gridvertex_nbrs(gv_tmp)
@@ -458,12 +502,13 @@ contains
     end do
     call deallocate_gridvertex_nbrs(gv_tmp)
 
-    call amb_initgridedge(gm)
+    call sgi_initgridedge(gm)
     do i = 1, size(gm%ge)
        call CubeSetupEdgeIndex(gm%ge(i))
     end do
-  end subroutine amb_CubeTopology_phase2
+  end subroutine sgi_CubeTopology_phase2
 
+  ! Set data in a single GridVertex according to gm%phase = 1 or 2.
   subroutine gm_set(gm, igv, i, j, face, dir)
     use dimensions_mod, only: np
     use control_mod, only: north, south, east, west, neast, seast, swest, nwest
@@ -488,7 +533,8 @@ contains
     end if
   end subroutine gm_set
 
-  subroutine amb_CubeTopology_impl(gm, id, igv)
+  ! Called by both phases. gm_set does distinct things in each phase.
+  subroutine sgi_CubeTopology_impl(gm, id, igv)
     use control_mod, only: north, south, east, west, neast, seast, swest, nwest
 
     type (GridManager_t), intent(inout) :: gm
@@ -622,11 +668,8 @@ contains
        if (j /= 1)  call gm_set(gm, igv, rev+1, ne, 4, swest)
        if (j /= ne) call gm_set(gm, igv, rev-1, ne, 4, nwest)
     end if
-  end subroutine amb_CubeTopology_impl
+  end subroutine sgi_CubeTopology_impl
 
-  ! Map a cell global ID to the entry in the GridVertex array gm%gv. An invalid
-  ! gid input, i.e. one that does not exist in gm%gvid, is permitted; in that
-  ! case, the output igv is invalid and so gm%gvid(igv) /= gid.
   function gid2igv(gm, gid) result(igv)
     type (GridManager_t), intent(in) :: gm
     integer, intent(in) :: gid
@@ -646,7 +689,18 @@ contains
     igv = lo
   end function gid2igv
 
-  subroutine amb_initgridedge(gm)
+  ! Wrapper for external use.
+  function sgi_gid2igv(gid) result (igv)
+    integer, intent(in) :: gid
+    integer :: igv
+
+    igv = gid2igv(sgi_gm, gid)
+  end function sgi_gid2igv
+
+  ! Scalable replacement for GridGraph_mod::initgridedge. Only edges belonging
+  ! to owned or remote-used elements are instantiated. Only owned and
+  ! remote-used elements need to be represented in GridVertex.
+  subroutine sgi_initgridedge(gm)
     use parallel_mod, only : abortmp
     use dimensions_mod, only : max_corner_elem
     use kinds, only: iulog
@@ -684,10 +738,11 @@ contains
        end do
     end do
 
+    ! Allocate enough room for just these relevant edges.
     allocate(gm%ge(nelem_edge))
     gm%ge(:)%reverse = .false.
 
-    ! Fill in the edges.
+    ! Fill in the relevant edges.
     iptr = 1
     do j = 1, nelem
        do i = 1, num_neighbors    
@@ -742,5 +797,5 @@ contains
           write(iulog,*)gm%ge(i)%tail_face,gm%ge(i)%head_face
        end do
     end if
-  end subroutine amb_initgridedge
-end module amb_mod
+  end subroutine sgi_initgridedge
+end module scalable_grid_init_mod

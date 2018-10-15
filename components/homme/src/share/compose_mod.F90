@@ -160,7 +160,7 @@ contains
     use gridgraph_mod, only : GridVertex_t
     use control_mod, only : semi_lagrange_cdr_alg, transport_alg, cubed_sphere_map, &
          semi_lagrange_nearest_point_lev
-    use amb_mod, only : gid2igv, gm
+    use scalable_grid_init_mod, only : sgi_gid2igv
 
     integer, intent(in) :: comm
     type (element_t), intent(in) :: elem(:)
@@ -199,7 +199,7 @@ contains
           if (size(GridVertex) == nelem) then
              igv = gid
           else
-             igv = gid2igv(gm, gid)
+             igv = sgi_gid2igv(gid)
           end if
           nbr_id_rank(k+1) = GridVertex(igv)%processor_number - 1
           k = k + 2
@@ -208,7 +208,7 @@ contains
              if (size(GridVertex) == nelem) then
                 igv = gid
              else
-                igv = gid2igv(gm, gid)
+                igv = sgi_gid2igv(gid)
              end if
              nbr_id_rank(k) = gid
              nbr_id_rank(k+1) = GridVertex(igv)%processor_number - 1

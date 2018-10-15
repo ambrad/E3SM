@@ -116,7 +116,7 @@ contains
 #endif
 
     use compose_mod, only: kokkos_init, compose_init, cedr_unittest, cedr_set_ie2gci
-    use amb_mod
+    use scalable_grid_init_mod, only: sgi_init_grid, sgi_check, sgi_finalize
 
     implicit none
 
@@ -233,7 +233,7 @@ contains
 
        if (par%masterproc) print *, 'AMB> use, cmp',amb_use,amb_cmp
        if (amb_cmp) then
-          call amb_run(par, amb_GridVertex, amb_MetaVertex)
+          call sgi_init_grid(par, amb_GridVertex, amb_MetaVertex)
        end if
 
        ! we want to exit elegantly when we are using too many processors.
@@ -313,9 +313,9 @@ contains
          call initMetaGraph(iam,MetaVertex(1),GridVertex,GridEdge)
 
     if (amb_use) then
-       call amb_run(par, GridVertex, MetaVertex(1))
+       call sgi_init_grid(par, GridVertex, MetaVertex(1))
     else if (amb_cmp) then
-       call amb_check(amb_MetaVertex, MetaVertex(1))
+       call sgi_check(amb_MetaVertex, MetaVertex(1))
        do j = 1, amb_MetaVertex%nmembers
           call deallocate_gridvertex_nbrs(amb_MetaVertex%members(j))
        end do
@@ -532,7 +532,7 @@ contains
        end do
        deallocate(GridVertex)
     end if
-    if (amb_use .or. amb_cmp) call amb_finish()
+    if (amb_use .or. amb_cmp) call sgi_finalize()
     if (par%masterproc) then
        call amb_print_memusage()
     end if
