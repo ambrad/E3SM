@@ -132,6 +132,7 @@ contains
     type (GridVertex_t), pointer :: amb_GridVertex(:)
     type (MetaVertex_t) :: amb_MetaVertex
     logical, parameter :: amb_use = .true.
+    logical, parameter :: amb_cmp = .not. amb_use .and. .false.
 
     integer :: ii,ie, ith
     integer :: nets, nete
@@ -158,6 +159,7 @@ contains
     real(kind=real_kind) :: repro_sum_rel_diff_max
 #endif
 
+    call t_startf('prim_init1')
     ! =====================================
     ! Read in model control information
     ! =====================================
@@ -229,7 +231,8 @@ contains
            nelem_edge = CubeEdgeCount()
        end if
 
-       if (.not. amb_use) then
+       if (par%masterproc) print *, 'AMB> use, cmp',amb_use,amb_cmp
+       if (amb_cmp) then
           call amb_run(par, amb_GridVertex, amb_MetaVertex)
        end if
 
@@ -311,8 +314,8 @@ contains
 
     if (amb_use) then
        call amb_run(par, GridVertex, MetaVertex(1))
-    else
-       call amb_cmp(amb_MetaVertex, MetaVertex(1))
+    else if (amb_cmp) then
+       call amb_check(amb_MetaVertex, MetaVertex(1))
        do j = 1, amb_MetaVertex%nmembers
           call deallocate_gridvertex_nbrs(amb_MetaVertex%members(j))
        end do
@@ -529,7 +532,10 @@ contains
        end do
        deallocate(GridVertex)
     end if
-    call amb_finish()
+    if (amb_use .or. amb_cmp) call amb_finish()
+    if (par%masterproc) then
+       call amb_print_memusage()
+    end if
 
     do j = 1, MetaVertex(1)%nmembers
        call deallocate_gridvertex_nbrs(MetaVertex(1)%members(j))
@@ -568,7 +574,16 @@ contains
 
     if(par%masterproc) write(iulog,*) 'end of prim_init'
 
+    call t_stopf('prim_init1')
+
   end subroutine prim_init1
+
+  subroutine amb_print_memusage()
+    integer :: GPTLget_memusage
+    integer :: ok, size, rss_int, share, text, datastack, ie
+    ok = GPTLget_memusage(size, rss_int, share, text, datastack)
+    print *, 'AMB> rss',rss_int
+  end subroutine amb_print_memusage
 
   !_____________________________________________________________________
   subroutine prim_init2(elem, hybrid, nets, nete, tl, hvcoord)

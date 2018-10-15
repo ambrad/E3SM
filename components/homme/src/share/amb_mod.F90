@@ -113,7 +113,7 @@ contains
     deallocate(gm%ge)
   end subroutine amb_finish
 
-  subroutine amb_cmp(mv, mvo)
+  subroutine amb_check(mv, mvo)
     use metagraph_mod, only: PrintMetaVertex, MetaEdge_t
 
     type (MetaVertex_t), intent(in) :: mv, mvo
@@ -121,7 +121,7 @@ contains
     type (MetaEdge_t), pointer :: me, meo
     integer :: i, npi, j
 
-    if (gm%rank == 0) print *, 'AMB> amb_cmp'
+    if (gm%rank == 0) print *, 'AMB> amb_check'
     if (mv%number /= mvo%number) print *, 'AMB> number disagrees'
     if (mv%nmembers /= mvo%nmembers) print *, 'AMB> nmembers disagrees'
     if (mv%nedges /= mvo%nedges) print *, 'AMB> nedges disagrees'
@@ -179,7 +179,7 @@ contains
                print *, 'AMB> ME GE tail disagrees'
        end do
     end do
-  end subroutine amb_cmp
+  end subroutine amb_check
 
   function s2ui(i, j, face) result (id)
     use dimensions_mod, only: ne
