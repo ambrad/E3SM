@@ -127,12 +127,8 @@ contains
 
     type (GridVertex_t), pointer :: GridVertex(:)
     type (GridEdge_t),   target,allocatable :: Gridedge(:)
-    type (MetaVertex_t), target,allocatable :: MetaVertex(:)
-
-    type (GridVertex_t), pointer :: amb_GridVertex(:)
-    type (MetaVertex_t) :: amb_MetaVertex
-    logical, parameter :: amb_use = .true.
-    logical, parameter :: amb_cmp = .not. amb_use .and. .false.
+    type (MetaVertex_t) :: MetaVertex
+    logical :: can_scalably_init_grid
 
     integer :: ii,ie, ith
     integer :: nets, nete
@@ -217,7 +213,18 @@ contains
     ! ===============================================================
     ! Allocate and initialize the graph (array of GridVertex_t types)
     ! ===============================================================
-    if (topology=="cube") then
+    can_scalably_init_grid = &
+         topology == "cube" .and. &
+         .not. MeshUseMeshFile .and. &
+         partmethod .eq. SFCURVE .and. &
+         .not. (is_zoltan_partition(partmethod) .or. is_zoltan_task_mapping(z2_map_method))
+
+    if (can_scalably_init_grid) then
+       nelem = CubeElemCount()
+       call sgi_init_grid(par, GridVertex, MetaVertex)
+    end if
+
+    if (topology=="cube" .and. .not. can_scalably_init_grid) then
 
        if (par%masterproc) then
           write(iulog,*)"creating cube topology..."
@@ -231,38 +238,31 @@ contains
            nelem_edge = CubeEdgeCount()
        end if
 
-       if (par%masterproc) print *, 'AMB> use, cmp',amb_use,amb_cmp
-       if (amb_cmp) then
-          call sgi_init_grid(par, amb_GridVertex, amb_MetaVertex)
-       end if
-
        ! we want to exit elegantly when we are using too many processors.
        if (nelem < par%nprocs) then
           call abortmp('Error: too many MPI tasks. set dyn_npes <= nelem')
        end if
 
-       if (.not. amb_use) then
-          allocate(GridVertex(nelem))
-          allocate(GridEdge(nelem_edge))
+       allocate(GridVertex(nelem))
+       allocate(GridEdge(nelem_edge))
 
-          do j =1,nelem
-             call allocate_gridvertex_nbrs(GridVertex(j))
-          end do
+       do j =1,nelem
+          call allocate_gridvertex_nbrs(GridVertex(j))
+       end do
 
-          if (MeshUseMeshFile) then
-             if (par%masterproc) then
-                write(iulog,*) "Set up grid vertex from mesh..."
-             end if
-             call MeshCubeTopologyCoords(GridEdge, GridVertex, coord_dim1, coord_dim2, coord_dim3, coord_dimension)
-             !MD:TODO: still need to do the coordinate transformation for this case.
-
-
-          else
-             call CubeTopology(GridEdge,GridVertex)
-             if (is_zoltan_partition(partmethod) .or. is_zoltan_task_mapping(z2_map_method)) then
-                call getfixmeshcoordinates(GridVertex, coord_dim1, coord_dim2, coord_dim3, coord_dimension)
-             endif
+       if (MeshUseMeshFile) then
+          if (par%masterproc) then
+             write(iulog,*) "Set up grid vertex from mesh..."
           end if
+          call MeshCubeTopologyCoords(GridEdge, GridVertex, coord_dim1, coord_dim2, coord_dim3, coord_dimension)
+          !MD:TODO: still need to do the coordinate transformation for this case.
+
+
+       else
+          call CubeTopology(GridEdge,GridVertex)
+          if (is_zoltan_partition(partmethod) .or. is_zoltan_task_mapping(z2_map_method)) then
+             call getfixmeshcoordinates(GridVertex, coord_dim1, coord_dim2, coord_dim3, coord_dimension)
+          endif
        end if
        if(par%masterproc)       write(iulog,*)"...done."
     end if
@@ -272,7 +272,7 @@ contains
 
     call t_startf('PartitioningTime')
 
-    if (.not. amb_use) then
+    if (.not. can_scalably_init_grid) then
        if(partmethod .eq. SFCURVE) then
           if(par%masterproc) write(iulog,*)"partitioning graph using SF Curve..."
           !if the partitioning method is space filling curves
@@ -301,7 +301,6 @@ contains
     ! ===========================================================
     ! given partition, count number of local element descriptors
     ! ===========================================================
-    allocate(MetaVertex(1))
     allocate(Schedule(1))
 
     nelem_edge=SIZE(GridEdge)
@@ -309,18 +308,14 @@ contains
     ! ====================================================
     !  Generate the communication graph
     ! ====================================================
-    if (.not. amb_use) &
-         call initMetaGraph(iam,MetaVertex(1),GridVertex,GridEdge)
-
-    if (amb_use) then
-       call sgi_init_grid(par, GridVertex, MetaVertex(1))
-    else if (amb_cmp) then
-       call sgi_check(amb_MetaVertex, MetaVertex(1))
+    if (.not. can_scalably_init_grid) then
+       call initMetaGraph(iam,MetaVertex,GridVertex,GridEdge)
+       deallocate(GridEdge)
     end if
 
-    nelemd = LocalElemCount(MetaVertex(1))
+    nelemd = LocalElemCount(MetaVertex)
     if(par%masterproc .and. Debug) then 
-        call PrintMetaVertex(MetaVertex(1))
+        call PrintMetaVertex(MetaVertex)
     endif
 
     if(nelemd .le. 0) then
@@ -343,7 +338,7 @@ contains
     !  Generate the communication schedule
     ! ====================================================
 
-    call genEdgeSched(elem,iam,Schedule(1),MetaVertex(1))
+    call genEdgeSched(elem,iam,Schedule(1),MetaVertex)
 
 
     allocate(global_shared_buf(nelemd,nrepro_vars))
@@ -514,20 +509,15 @@ contains
        end do
     end if
 
-    if (.not. amb_use) then
-       deallocate(GridEdge)
+    if (can_scalably_init_grid) then
+       call sgi_finalize()
+    else
+       call destroyMetaGraph(MetaVertex)
        do j =1,nelem
           call deallocate_gridvertex_nbrs(GridVertex(j))
        end do
        deallocate(GridVertex)
     end if
-    if (amb_use .or. amb_cmp) call sgi_finalize()
-    if (par%masterproc) then
-       call amb_print_memusage()
-    end if
-
-    if (.not. amb_use) call destroyMetaGraph(MetaVertex(1))
-    deallocate(MetaVertex)
 
     ! single global edge buffer for all models:
     ! hydrostatic 4*nlev      NH:  6*nlev+1
@@ -556,13 +546,6 @@ contains
     call t_stopf('prim_init1')
 
   end subroutine prim_init1
-
-  subroutine amb_print_memusage()
-    integer :: GPTLget_memusage
-    integer :: ok, size, rss_int, share, text, datastack, ie
-    ok = GPTLget_memusage(size, rss_int, share, text, datastack)
-    print *, 'AMB> rss',rss_int
-  end subroutine amb_print_memusage
 
   !_____________________________________________________________________
   subroutine prim_init2(elem, hybrid, nets, nete, tl, hvcoord)
