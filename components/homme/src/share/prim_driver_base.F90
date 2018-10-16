@@ -213,6 +213,19 @@ contains
     ! ===============================================================
     ! Allocate and initialize the graph (array of GridVertex_t types)
     ! ===============================================================
+    if (MeshUseMeshFile) then
+       nelem = MeshCubeElemCount()
+       nelem_edge = MeshCubeEdgeCount()
+    else
+       nelem      = CubeElemCount()
+       nelem_edge = CubeEdgeCount()
+    end if
+
+    ! we want to exit elegantly when we are using too many processors.
+    if (nelem < par%nprocs) then
+       call abortmp('Error: too many MPI tasks. set dyn_npes <= nelem')
+    end if
+
     can_scalably_init_grid = &
          topology == "cube" .and. &
          .not. MeshUseMeshFile .and. &
@@ -220,7 +233,6 @@ contains
          .not. (is_zoltan_partition(partmethod) .or. is_zoltan_task_mapping(z2_map_method))
 
     if (can_scalably_init_grid) then
-       nelem = CubeElemCount()
        call sgi_init_grid(par, GridVertex, MetaVertex)
     end if
 
@@ -228,19 +240,6 @@ contains
 
        if (par%masterproc) then
           write(iulog,*)"creating cube topology..."
-       end if
-
-       if (MeshUseMeshFile) then
-           nelem = MeshCubeElemCount()
-           nelem_edge = MeshCubeEdgeCount()
-       else
-           nelem      = CubeElemCount()
-           nelem_edge = CubeEdgeCount()
-       end if
-
-       ! we want to exit elegantly when we are using too many processors.
-       if (nelem < par%nprocs) then
-          call abortmp('Error: too many MPI tasks. set dyn_npes <= nelem')
        end if
 
        allocate(GridVertex(nelem))
