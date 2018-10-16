@@ -65,7 +65,7 @@ contains
     use mesh_mod, only : MeshSetCoordinates, MeshUseMeshFile, MeshCubeTopology, &
          MeshCubeElemCount, MeshCubeEdgeCount, MeshCubeTopologyCoords
     ! --------------------------------
-    use metagraph_mod, only : metavertex_t, metaedge_t, localelemcount, initmetagraph, printmetavertex
+    use metagraph_mod, only : metavertex_t, metaedge_t, localelemcount, initmetagraph, printmetavertex, destroymetagraph
     ! --------------------------------
     use gridgraph_mod, only : gridvertex_t, gridedge_t, allocate_gridvertex_nbrs, deallocate_gridvertex_nbrs
     ! --------------------------------
@@ -316,17 +316,6 @@ contains
        call sgi_init_grid(par, GridVertex, MetaVertex(1))
     else if (amb_cmp) then
        call sgi_check(amb_MetaVertex, MetaVertex(1))
-       do j = 1, amb_MetaVertex%nmembers
-          call deallocate_gridvertex_nbrs(amb_MetaVertex%members(j))
-       end do
-       do j = 1, amb_MetaVertex%nedges
-          deallocate(amb_MetaVertex%edges(j)%members)
-          deallocate(amb_MetaVertex%edges(j)%edgeptrP)
-          deallocate(amb_MetaVertex%edges(j)%edgeptrS)
-          deallocate(amb_MetaVertex%edges(j)%edgeptrP_ghost)
-       end do
-       deallocate(amb_MetaVertex%edges)
-       deallocate(amb_MetaVertex%members)
     end if
 
     nelemd = LocalElemCount(MetaVertex(1))
@@ -537,17 +526,7 @@ contains
        call amb_print_memusage()
     end if
 
-    do j = 1, MetaVertex(1)%nmembers
-       call deallocate_gridvertex_nbrs(MetaVertex(1)%members(j))
-    end do
-    do j = 1, MetaVertex(1)%nedges
-       deallocate(MetaVertex(1)%edges(j)%members)
-       deallocate(MetaVertex(1)%edges(j)%edgeptrP)
-       deallocate(MetaVertex(1)%edges(j)%edgeptrS)
-       deallocate(MetaVertex(1)%edges(j)%edgeptrP_ghost)
-    end do
-    deallocate(MetaVertex(1)%edges)
-    deallocate(MetaVertex(1)%members)
+    if (.not. amb_use) call destroyMetaGraph(MetaVertex(1))
     deallocate(MetaVertex)
 
     ! single global edge buffer for all models:

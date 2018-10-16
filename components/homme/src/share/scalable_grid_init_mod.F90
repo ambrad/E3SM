@@ -11,11 +11,13 @@ module scalable_grid_init_mod
 
     ! (Almost) scalably generate MetaVertex. SFC generation is still unscalable,
     ! but ne must be > 10K before it becomes a concern. Also provide GridVertex.
+    ! sgi_finalize will deallocate both GridVertex and MetaVertex, in addition
+    ! to internal data.
     sgi_init_grid, &
 
     ! Deallocate data used in grid initialization. This is separate from
     ! sgi_init_grid because there are external clients of GridVertex and
-    ! gid2igv.  
+    ! gid2igv. Both GridVertex and MetaVertex are deallocated.
     sgi_finalize, &
 
     ! Check each field (and subfields) of a MetaVertex against those of
@@ -34,6 +36,7 @@ module scalable_grid_init_mod
      logical(kind=1), allocatable :: owned_or_used(:)
      type (GridVertex_t), pointer :: gv(:) => null()
      type (GridEdge_t), pointer :: ge(:) => null()
+     type (MetaVertex_t), pointer :: mv => null()
   end type GridManager_t
 
   type (GridManager_t), target :: sgi_gm
@@ -46,13 +49,14 @@ contains
 
     type (parallel_t), intent(in) :: par
     type (GridVertex_t), pointer, intent(out) :: GridVertex(:)
-    type (MetaVertex_t), intent(out) :: MetaVertex
+    type (MetaVertex_t), intent(out), target :: MetaVertex
     type (GridManager_t), pointer :: gm
     integer, allocatable :: sfctest(:)
     integer :: ie, i, j, face, id, sfc, nelemd, nelemdi, rank
     logical, parameter :: dbg = .false.
 
     gm => sgi_gm
+    gm%mv => MetaVertex
 
     allocate(gm%rank2sfc(npart+1))
     call sgi_genspacepart(nelem, npart, gm%rank2sfc)
@@ -127,6 +131,7 @@ contains
 
   subroutine sgi_finalize()
     use gridgraph_mod, only: deallocate_gridvertex_nbrs
+    use metagraph_mod, only: destroyMetaGraph
 
     type (GridManager_t), pointer :: gm
     integer :: i
@@ -139,6 +144,7 @@ contains
     end do
     deallocate(gm%gv)
     deallocate(gm%ge)
+    call destroyMetaGraph(gm%mv)
   end subroutine sgi_finalize
 
   subroutine sgi_check(mv, mvo)
