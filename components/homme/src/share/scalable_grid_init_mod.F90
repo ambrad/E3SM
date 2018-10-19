@@ -1,7 +1,5 @@
 module scalable_grid_init_mod
   use metagraph_mod, only: MetaVertex_t
-  use parallel_mod, only: parallel_t, abortmp
-  use dimensions_mod, only: npart
   use gridgraph_mod, only: GridVertex_t, GridEdge_t
   use spacecurve_mod, only: factor_t
 
@@ -53,7 +51,8 @@ module scalable_grid_init_mod
 contains
 
   subroutine sgi_init_grid(par, GridVertex, MetaVertex)
-    use dimensions_mod, only: nelem, ne
+    use parallel_mod, only: parallel_t
+    use dimensions_mod, only: nelem, ne, npart
     use metagraph_mod, only: initMetaGraph
 
     type (parallel_t), intent(in) :: par
@@ -307,6 +306,7 @@ contains
   ! This routine to generate the space-filling curve (SFC) is not yet
   ! scalable. It allocates 4*ne^2 bytes.
   subroutine sgi_genspacecurve(ne, Mesh)
+    use parallel_mod, only: abortmp
     use spacecurve_mod, only: IsFactorable, genspacecurve
 
     integer, intent(in) :: ne
@@ -419,6 +419,7 @@ contains
 
   ! Map a SFC index to the rank that owns the corresponding element.
   function sfc2rank(rank2sfc, sfc) result(rank)
+    use parallel_mod, only: abortmp
     integer, intent(in) :: rank2sfc(:), sfc
     integer :: npart, lo, hi, mid, rank
     
