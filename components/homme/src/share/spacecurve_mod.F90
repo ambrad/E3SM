@@ -33,6 +33,7 @@ module spacecurve_mod
   public :: PrintCurve
   public :: IsFactorable,IsLoadBalanced
   public :: genspacepart
+  public :: Factor
 contains 
   !---------------------------------------------------------
   recursive function Cinco(l,type,ma,md,ja,jd) result(ierr)
