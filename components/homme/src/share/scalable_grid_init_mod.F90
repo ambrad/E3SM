@@ -69,6 +69,7 @@ contains
     end if
 
     gm => sgi_gm
+    gm%ne = ne
     gm%mv => MetaVertex
 
     call sfcmap_init(ne, gm%sfcmap)
@@ -83,8 +84,10 @@ contains
 
     allocate(gm%rank2sfc(npart+1))
     call sgi_genspacepart(nelem, npart, gm%rank2sfc)
-    allocate(gm%sfcfacemesh(ne,ne))
-    call sgi_genspacecurve(ne, gm%sfcfacemesh)
+    if (.not. gm%use_sfcmap) then
+       allocate(gm%sfcfacemesh(ne,ne))
+       call sgi_genspacecurve(ne, gm%sfcfacemesh)
+    end if
 
     if (dbg) then
        ! sgi_genspacepart
@@ -120,7 +123,7 @@ contains
                face >=1 .and. face <= 6)) then
              print *, 'SGI> u<->s:',ie,id,i,j,face
           end if
-          sfc = u2sfc(gm%sfcfacemesh, id)
+          sfc = u2sfc(gm, id)
           if (.not. (sfc >= 0 .and. sfc < nelem)) then
              print *, 'SGI> u2sfc:',id,sfc
           end if
@@ -267,31 +270,38 @@ contains
   end subroutine u2si
 
   ! Map structured (i,j,face) triple to SFC index.
-  function s2sfc(sfcfacemesh, i, j, face) result(sfc)
-    integer, intent(in) :: sfcfacemesh(:,:)
+  function s2sfc(gm, i, j, face) result(sfc)
+    type (GridManager_t), intent(inout) :: gm
     integer, intent(in) :: i, j, face
-    integer :: sfc, offset, ne, nesq
+    integer :: sfc, os, ne, nesq, pos(2), ierr
 
-    ne = size(sfcfacemesh,1)
+    ne = gm%ne
     nesq = ne*ne
     select case (face)
-    case (1); sfc =          sfcfacemesh(i     , ne-j+1)
-    case (2); sfc =   nesq + sfcfacemesh(i     , ne-j+1)
-    case (3); sfc = 5*nesq + sfcfacemesh(i     , j     )
-    case (4); sfc = 3*nesq + sfcfacemesh(ne-j+1, i     )
-    case (5); sfc = 4*nesq + sfcfacemesh(i     , j     )
-    case (6); sfc = 2*nesq + sfcfacemesh(ne-i+1, ne-j+1)
+    case (1); os =      0; pos = (/ i     , ne-j+1 /)
+    case (2); os =   nesq; pos = (/ i     , ne-j+1 /)
+    case (3); os = 5*nesq; pos = (/ i     , j      /)
+    case (4); os = 3*nesq; pos = (/ ne-j+1, i      /)
+    case (5); os = 4*nesq; pos = (/ i     , j      /)
+    case (6); os = 2*nesq; pos = (/ ne-i+1, ne-j+1 /)
     end select
+
+    if (gm%use_sfcmap) then
+       ierr = sfcmap_pos2i(gm%sfcmap, pos, sfc)
+       sfc = sfc + os
+    else
+       sfc = os + gm%sfcfacemesh(pos(1), pos(2))
+    end if
   end function s2sfc
 
   ! Map global element ID to SFC index.
-  function u2sfc(sfcfacemesh, id) result(sfc)
-    integer, intent(in) :: sfcfacemesh(:,:)
+  function u2sfc(gm, id) result(sfc)
+    type (GridManager_t), intent(inout) :: gm
     integer, intent(in) :: id
     integer :: i, j, face, sfc
 
     call u2si(id, i, j, face)
-    sfc = s2sfc(sfcfacemesh, i, j, face)
+    sfc = s2sfc(gm, i, j, face)
   end function u2sfc
 
   ! This routine to generate the space-filling curve (SFC) is not yet
@@ -623,30 +633,26 @@ contains
   ! cube_mod::CubeTopology. The GridVertex array (here, gm%gv) is constructed to
   ! have entries only for owned and remote-used elemnents.
   subroutine sgi_CubeTopology_phase1(gm)
+    use dimensions_mod, only: ne
     use gridgraph_mod, only: allocate_gridvertex_nbrs
 
     type (GridManager_t), intent(inout) :: gm
     integer, allocatable :: gvid(:)
     type (GridVertex_t), pointer :: gv
-    integer :: id, ne, nelem, sfc, i, j, k, id_nbr, n_owned_or_used
+    integer :: id, nelem, sfc, i, j, k, id_nbr, n_owned_or_used
     logical :: owned
 
     gm%phase = 1
-
-    ne = size(gm%sfcfacemesh, 1)
     nelem = 6*ne*ne
 
-    gm%ne = ne
     allocate(gm%owned_or_used(nelem))
     gm%owned_or_used = .false.
 
     do id = 1, nelem
-       sfc = u2sfc(gm%sfcfacemesh, id)
+       sfc = u2sfc(gm, id)
        owned = sfc >= gm%rank2sfc(gm%rank+1) .and. sfc < gm%rank2sfc(gm%rank+2)
-
        if (.not. owned) cycle
        gm%owned_or_used(id) = .true.
-
        call sgi_CubeTopology_impl(gm, id, -1)
     end do
 
@@ -668,7 +674,7 @@ contains
        call allocate_gridvertex_nbrs(gm%gv(i))
        gv => gm%gv(i)
        gv%number = gm%gvid(i)
-       gv%SpaceCurve = u2sfc(gm%sfcfacemesh, gv%number)
+       gv%SpaceCurve = u2sfc(gm, gv%number)
        gv%processor_number = sfc2rank(gm%rank2sfc, gv%SpaceCurve) + 1
        gv%face_number = 0
        gv%nbrs = -1
@@ -676,7 +682,7 @@ contains
        gv%nbrs_ptr = 0
        gv%nbrs_wgt_ghost = 1
     end do
-    deallocate(gm%sfcfacemesh)
+    if (.not. gm%use_sfcmap) deallocate(gm%sfcfacemesh)
     deallocate(gm%rank2sfc)
   end subroutine sgi_CubeTopology_phase1
   
