@@ -31,6 +31,12 @@ module scalable_grid_init_mod
     ! in that case, the output igv is invalid and so GridVertex(igv) /= gid.
     sgi_gid2igv
 
+  type, public :: sfcmap_t
+     type (factor_t) :: fact
+     integer :: index_os, index, pos_os(2), pos(2)
+     logical :: pos2i
+  end type sfcmap_t
+
   type, public :: GridManager_t
      integer :: rank, phase, ne
      integer, allocatable :: sfcfacemesh(:,:), rank2sfc(:), gvid(:)
@@ -38,13 +44,9 @@ module scalable_grid_init_mod
      type (GridVertex_t), pointer :: gv(:) => null()
      type (GridEdge_t), pointer :: ge(:) => null()
      type (MetaVertex_t), pointer :: mv => null()
+     type (sfcmap_t) :: sfcmap
+     logical :: use_sfcmap
   end type GridManager_t
-
-  type, public :: sfcmap_t
-     type (factor_t) :: fact
-     integer :: index_os, index, pos_os(2), pos(2)
-     logical :: pos2i
-  end type sfcmap_t
 
   type (GridManager_t), target :: sgi_gm
 
@@ -68,6 +70,16 @@ contains
 
     gm => sgi_gm
     gm%mv => MetaVertex
+
+    call sfcmap_init(ne, gm%sfcmap)
+    gm%use_sfcmap = .true.
+    do i = 1, gm%sfcmap%fact%numfact
+       if (gm%sfcmap%fact%factors(i) /= 2) then
+          gm%use_sfcmap = .false.
+          exit
+       end if
+    end do
+    if (par%masterproc) print *, 'SGI> use sfcmap:',gm%use_sfcmap
 
     allocate(gm%rank2sfc(npart+1))
     call sgi_genspacepart(nelem, npart, gm%rank2sfc)
@@ -156,6 +168,7 @@ contains
     deallocate(gm%gv)
     deallocate(gm%ge)
     call destroyMetaGraph(gm%mv)
+    call sfcmap_finalize(gm%sfcmap)
   end subroutine sgi_finalize
 
   subroutine sgi_check(mv, mvo)
