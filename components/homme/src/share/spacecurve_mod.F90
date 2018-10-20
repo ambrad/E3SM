@@ -6,7 +6,9 @@ module spacecurve_mod
 !
 !
 ! Revisions:
+! John Dennis, NCAR: Initial
 ! Mark Taylor: 2018/3  Remove memory leaks, make most routines private
+! AMB: 2018/10  Add sfcmap_* (i,j) <-> SFC index routines
 !
   use kinds, only : iulog
   implicit none
@@ -1460,11 +1462,11 @@ contains
     ! In the following, each pos increment line moves the cursor to the starting
     ! point of the next child region. Thus, if you're trying to understand the
     ! code, draw a 2-level curve so that the starting point is relevant. (In a
-    ! 1-level model, the child region is just a point, and thus the starting
+    ! 1-level curve, the child region is just a point, and thus the starting
     ! point is not revealed.)
     !
-    ! Each line before the exit recurses on just the region containing the input
-    ! position or index.
+    ! Each exit line recurses on just the region containing the input position
+    ! or index.
     select case (s%fact%factors(k))
     case (2)
        !  _

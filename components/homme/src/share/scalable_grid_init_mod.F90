@@ -1,4 +1,9 @@
 module scalable_grid_init_mod
+  ! Scalably initialize the grid. That means memory and work are proportional to
+  ! the number of owned and remote-used elements.
+  !
+  ! Revisions:
+  ! AMB: 2018/10  Initial
   use metagraph_mod, only: MetaVertex_t
   use gridgraph_mod, only: GridVertex_t, GridEdge_t
   use spacecurve_mod, only: factor_t, sfcmap_t
