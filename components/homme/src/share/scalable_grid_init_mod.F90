@@ -1,7 +1,7 @@
 module scalable_grid_init_mod
   use metagraph_mod, only: MetaVertex_t
   use gridgraph_mod, only: GridVertex_t, GridEdge_t
-  use spacecurve_mod, only: factor_t
+  use spacecurve_mod, only: factor_t, sfcmap_t
 
   implicit none
   private
@@ -29,12 +29,6 @@ module scalable_grid_init_mod
     ! in that case, the output igv is invalid and so GridVertex(igv) /= gid.
     sgi_gid2igv
 
-  type, public :: sfcmap_t
-     type (factor_t) :: fact
-     integer :: index_os, index, pos_os(2), pos(2)
-     logical :: pos2i
-  end type sfcmap_t
-
   type, public :: GridManager_t
      integer :: rank, phase, ne
      integer, allocatable :: sfcfacemesh(:,:), rank2sfc(:), gvid(:)
@@ -54,13 +48,14 @@ contains
     use parallel_mod, only: parallel_t
     use dimensions_mod, only: nelem, ne, npart
     use metagraph_mod, only: initMetaGraph
+    use spacecurve_mod, only: sfcmap_init, sfcmap_test
 
     type (parallel_t), intent(in) :: par
     type (GridVertex_t), pointer, intent(out) :: GridVertex(:)
     type (MetaVertex_t), intent(out), target :: MetaVertex
     type (GridManager_t), pointer :: gm
     integer, allocatable :: sfctest(:)
-    integer :: ie, i, j, face, id, sfc, nelemd, nelemdi, rank
+    integer :: ie, i, j, face, id, sfc, nelemd, nelemdi, rank, ierr
     logical, parameter :: dbg = .true.
 
     if (dbg .and. par%masterproc) then
@@ -71,14 +66,8 @@ contains
     gm%ne = ne
     gm%mv => MetaVertex
 
-    call sfcmap_init(ne, gm%sfcmap)
-    gm%use_sfcmap = .true.
-    do i = 1, gm%sfcmap%fact%numfact
-       if (gm%sfcmap%fact%factors(i) /= 2) then
-          gm%use_sfcmap = .false.
-          exit
-       end if
-    end do
+    ierr = sfcmap_init(ne, gm%sfcmap)
+    gm%use_sfcmap = ierr == 0
     if (par%masterproc) print *, 'SGI> use sfcmap:',gm%use_sfcmap
 
     allocate(gm%rank2sfc(npart+1))
@@ -157,6 +146,7 @@ contains
   subroutine sgi_finalize()
     use gridgraph_mod, only: deallocate_gridvertex_nbrs
     use metagraph_mod, only: destroyMetaGraph
+    use spacecurve_mod, only: sfcmap_finalize
 
     type (GridManager_t), pointer :: gm
     integer :: i
@@ -270,6 +260,8 @@ contains
 
   ! Map structured (i,j,face) triple to SFC index.
   function s2sfc(gm, i, j, face) result(sfc)
+    use spacecurve_mod, only: sfcmap_pos2i
+
     type (GridManager_t), intent(inout) :: gm
     integer, intent(in) :: i, j, face
     integer :: sfc, os, ne, nesq, pos(2), ierr
@@ -440,195 +432,6 @@ contains
     end do
     rank = lo - 1
   end function sfc2rank
-
-  subroutine sfcmap_init(ne, sfcmap)
-    use spacecurve_mod, only: factor
-
-    integer, intent(in) :: ne
-    type (sfcmap_t), intent(out) :: sfcmap
-
-    sfcmap%fact = factor(ne)
-  end subroutine sfcmap_init
-
-  subroutine sfcmap_finalize(sfcmap)
-    type (sfcmap_t), intent(inout) :: sfcmap
-    deallocate(sfcmap%fact%factors)
-  end subroutine sfcmap_finalize
-
-  function sfcmap_pos2i(s, pos, index) result(status)
-    type (sfcmap_t), intent(inout) :: s
-    integer, intent(in) :: pos(2)
-    integer, intent(out) :: index
-    integer :: o, status
-
-    s%pos2i = .true.
-    s%pos_os = (/ 0, 0 /)
-    s%pos = (/ pos(1)-1, pos(2)-1 /)
-    s%index = 0
-    status = sfcmap_rec(s, s%fact%numfact, 0, 1, 0, 1)
-    index = s%index
-  end function sfcmap_pos2i
-
-  function sfcmap_i2pos(s, index, pos) result(status)
-    type (sfcmap_t), intent(inout) :: s
-    integer, intent(in) :: index
-    integer, intent(out) :: pos(2)
-    integer :: o, status
-
-    s%pos2i = .false.
-    s%index_os = 0
-    s%index = index
-    s%pos = (/ 0, 0 /)
-    status = sfcmap_rec(s, s%fact%numfact, 0, 1, 0, 1)
-    pos = (/ s%pos(1)+1, s%pos(2)+1 /)
-  end function sfcmap_i2pos
-
-  function hilbert_pos2quadrant(km1_n, ma, pos, pos_os) result(quad)
-    integer, intent(in) :: km1_n, ma, pos(2), pos_os(2)
-    integer :: quad, x, y
-
-    x = abs(pos(1) - pos_os(1)) / km1_n
-    y = abs(pos(2) - pos_os(2)) / km1_n
-    if (ma == 0) then
-       if (x == 0) then
-          if (y == 0) then
-             quad = 0
-          else
-             quad = 1
-          end if
-       else
-          if (y == 0) then
-             quad = 3
-          else
-             quad = 2
-          end if
-       end if
-    else
-       if (x == 0) then
-          if (y == 0) then
-             quad = 0
-          else
-             quad = 3
-          end if
-       else
-          if (y == 0) then
-             quad = 1
-          else
-             quad = 2
-          end if
-       end if
-    end if
-  end function hilbert_pos2quadrant
-
-  subroutine hilbert_incr_pos(region, ma, ima, md, km1_n, pos)
-    integer, intent(in) :: region, ma, ima, md, km1_n
-    integer, intent(inout) :: pos(2)
-
-    if (region > 0) then
-       pos(ima+1) = pos(ima+1) + km1_n*md
-       if (region > 1) then
-          pos(ma+1) = pos(ma+1) + km1_n*md
-          if (region > 2) then
-             pos(ma+1) = pos(ma+1) + (km1_n - 1)*md
-             pos(ima+1) = pos(ima+1) - md
-          end if
-       end if
-    end if
-  end subroutine hilbert_incr_pos
-
-  recursive function sfcmap_rec(s, k, ma, md, ja, jd) result(o)
-    type (sfcmap_t), intent(inout) :: s
-    integer, intent(in) :: k, ma, md, ja, jd
-    integer :: km1, ima, km1_n, km1_n2, region, o
-
-    if (k == 0) then
-       o = 0
-       return
-    end if
-
-    km1 = k - 1
-    ima = modulo(ma+1, 2)
-    km1_n = 2**km1
-    km1_n2 = km1_n*km1_n
-
-    select case (s%fact%factors(k))
-    case (2)
-       if (s%pos2i) then
-          region = hilbert_pos2quadrant(km1_n, ma, s%pos, s%pos_os)
-          s%index = s%index + km1_n2*region
-          call hilbert_incr_pos(region, ma, ima, md, km1_n, s%pos_os)
-       else
-          region = (s%index - s%index_os) / km1_n2
-          s%index_os = s%index_os + km1_n2*region
-          call hilbert_incr_pos(region, ma, ima, md, km1_n, s%pos)
-       end if
-       select case (region)
-       case (0); o = sfcmap_rec(s, km1, ima,  md, ima,  md)
-       case (1); o = sfcmap_rec(s, km1,  ma,  md,  ma,  md)
-       case (2); o = sfcmap_rec(s, km1,  ma,  md, ima, -md)
-       case (3); o = sfcmap_rec(s, km1, ima, -md,  ja,  jd)
-       end select
-    case (3)
-       print *, 'NOT IMPLED'
-       call exit(-1)
-    case (5)
-       print *, 'NOT IMPLED'
-       call exit(-1)
-    case default
-       print *, 'error: factors =', s%fact%factors
-       o = -1
-    end select
-  end function sfcmap_rec
-
-  subroutine sfcmap_test(verbose)
-    use spacecurve_mod, only: genspacecurve
-
-    logical, intent(in) :: verbose
-    integer, allocatable :: mesh(:,:)
-    integer :: ne, ine, index, pos(2), ierr, i, j
-    real :: start, finish
-    type (sfcmap_t) :: sfcmap
-
-    integer, parameter :: nes(4) = (/ 4, 8, 16, 1024 /)
-
-    do ine = 1, size(nes)
-       ne = nes(ine)
-       allocate(mesh(ne,ne))
-       call cpu_time(start)
-       call genspacecurve(mesh)
-       call cpu_time(finish)
-       if (verbose) print *, 'SGI> gsc et', ne, finish-start
-       call sfcmap_init(ne, sfcmap)
-       call cpu_time(start)
-       do index = 0, ne**2 - 1
-          ierr = sfcmap_i2pos(sfcmap, index, pos)
-          if (ierr /= 0) then
-             print *, 'not impled for ne',ne,'with factors',sfcmap%fact%factors
-             exit
-          end if
-          if (mesh(pos(1),pos(2)) /= index) then
-             print *, 'SGI> (i4,i6,i6,i3,i3)', ne, index, mesh(pos(1),pos(2)), pos(1), pos(2)
-          end if
-       end do
-       call cpu_time(finish)
-       if (verbose) print *, 'SGI> p2i et', ne, finish-start
-       index = -1
-       call cpu_time(start)
-       do j = 1, ne
-          do i = 1, ne
-             pos = (/ i, j /)
-             ierr = sfcmap_pos2i(sfcmap, pos, index)
-             if (mesh(i,j) /= index) then
-                print *, 'SGI> (i4,i6,i6,i3,i3)', ne, mesh(i,j), index, i, j
-             end if
-          end do
-       end do
-       call cpu_time(finish)
-       if (verbose) print *, 'SGI> i2p et', ne, finish-start
-       deallocate(mesh)
-       call sfcmap_finalize(sfcmap)
-    end do
-  end subroutine sfcmap_test
 
   ! sgi_CubeTopology_phase1/2 are scalable replacements for
   ! cube_mod::CubeTopology. The GridVertex array (here, gm%gv) is constructed to
