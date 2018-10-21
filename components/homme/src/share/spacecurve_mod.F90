@@ -1435,7 +1435,7 @@ contains
     type (sfcmap_t), intent(inout) :: s
     integer, intent(in) :: k, k_n, ma, md, ja, jd
     integer, intent(inout) :: pos(2)
-    integer :: km1, ima, km1_n, km1_n2, km1_n_md, region, o, one
+    integer :: km1, ima, km1_n, km1_n2, km1_n_md, region, o
 
     if (k == 0) then
        ! In this level, each region is a point, so we're done.
@@ -1459,79 +1459,70 @@ contains
        s%index_os = s%index_os + km1_n2*region
     end if
 
-    ! In the following, each pos increment line moves the cursor to the starting
-    ! point of the next child region. Thus, if you're trying to understand the
-    ! code, draw a 2-level curve so that the starting point is relevant. (In a
-    ! 1-level curve, the child region is just a point, and thus the starting
-    ! point is not revealed.)
-    !
-    ! Each exit line recurses on just the region containing the input position
-    ! or index.
+    ! In the following, the pos increment line moves the cursor to the starting
+    ! point of the child region containing the input position or index. Thus, if
+    ! you're trying to understand the code, draw a 2-level curve so that the
+    ! starting point is relevant. (In a 1-level curve, the child region is just
+    ! a point, and thus the starting point is not revealed.) Then the function
+    ! recurses on that region.
     select case (s%fact%factors(k))
     case (2)
        !  _
        ! | |
        ! 0 3
-       do one = 1, 1 ! exitable block
-          if (region == 0) then
-             o = sfcmap_rec(s, pos, km1, km1_n, ima,  md, ima,  md); exit
-          end if
-          pos(ima+1) = pos(ima+1) + km1_n_md
-          if (region == 1) then
-             o = sfcmap_rec(s, pos, km1, km1_n,  ma,  md,  ma,  md); exit
-          end if
-          pos(ma+1) = pos(ma+1) + km1_n_md
-          if (region == 2) then
-             o = sfcmap_rec(s, pos, km1, km1_n,  ma,  md, ima, -md); exit
-          end if
-          pos( ma+1) = pos( ma+1) + (km1_n - 1)*md
-          pos(ima+1) = pos(ima+1) - md
+       select case(region)
+       case (0)
+          o = sfcmap_rec(s, pos, km1, km1_n, ima,  md, ima,  md)
+       case (1)
+          pos(ima+1) = pos(ima+1) +   km1_n_md
+          o = sfcmap_rec(s, pos, km1, km1_n,  ma,  md,  ma,  md)
+       case (2)
+          pos( ma+1) = pos( ma+1) +   km1_n_md
+          pos(ima+1) = pos(ima+1) +   km1_n_md
+          o = sfcmap_rec(s, pos, km1, km1_n,  ma,  md, ima, -md)
+       case (3)
+          pos( ma+1) = pos( ma+1) +   km1_n_md + (km1_n - 1)*md
+          pos(ima+1) = pos(ima+1) + (km1_n - 1)*md
           o = sfcmap_rec(   s, pos, km1, km1_n, ima, -md,  ja,  jd)
-       end do
+       end select
     case (3)
        !  _ _
        ! |  _|
        ! | |_
        ! 0   8
-       do one = 1, 1
-          if (region == 0) then
-             o = sfcmap_rec(s, pos, km1, km1_n, ima,  md, ima,  md); exit
-          end if
-          pos(ima+1) = pos(ima+1) + km1_n_md
-          if (region == 1) then
-             o = sfcmap_rec(s, pos, km1, km1_n, ima,  md, ima,  md); exit
-          end if
-          pos(ima+1) = pos(ima+1) + km1_n_md
-          if (region == 2) then
-             o = sfcmap_rec(s, pos, km1, km1_n,  ma,  md,  ma,  md); exit
-          end if
-          pos(ma+1) = pos(ma+1) + km1_n_md
-          if (region == 3) then
-             o = sfcmap_rec(s, pos, km1, km1_n,  ma,  md,  ma,  md); exit
-          end if
-          pos(ma+1) = pos(ma+1) + km1_n_md
-          if (region == 4) then
-             o = sfcmap_rec(s, pos, km1, km1_n,  ma,  md, ima, -md); exit
-          end if
-          pos(ma+1) = pos(ma+1) + (km1_n - 1)*md
-          pos(ima+1) = pos(ima+1) - md
-          if (region == 5) then
-             o = sfcmap_rec(s, pos, km1, km1_n,  ma, -md,  ma, -md); exit
-          end if
-          pos(ma+1) = pos(ma+1) - km1_n_md
-          if (region == 6) then
-             o = sfcmap_rec(s, pos, km1, km1_n, ima, -md, ima, -md); exit
-          end if
-          pos(ima+1) = pos(ima+1) - km1_n_md
-          if (region == 7) then
-             o = sfcmap_rec(s, pos, km1, km1_n, ima, -md,  ma,  md); exit
-          end if
-          pos(ima+1) = pos(ima+1) - (km1_n - 1)*md
-          pos(ma+1) = pos(ma+1) + md
-          if (region == 8) then
-             o = sfcmap_rec(s, pos, km1, km1_n,  ma,  md,  ja,  jd)
-          end if
-       end do
+       select case (region)
+       case (0)
+          o = sfcmap_rec(s, pos, km1, km1_n, ima,  md, ima,  md)
+       case (1)
+          pos(ima+1) = pos(ima+1) +   km1_n_md
+          o = sfcmap_rec(s, pos, km1, km1_n, ima,  md, ima,  md)
+       case (2)
+          pos(ima+1) = pos(ima+1) + 2*km1_n_md
+          o = sfcmap_rec(s, pos, km1, km1_n,  ma,  md,  ma,  md)
+       case (3)
+          pos( ma+1) = pos( ma+1) +   km1_n_md
+          pos(ima+1) = pos(ima+1) + 2*km1_n_md
+          o = sfcmap_rec(s, pos, km1, km1_n,  ma,  md,  ma,  md)
+       case (4)
+          pos( ma+1) = pos( ma+1) + 2*km1_n_md
+          pos(ima+1) = pos(ima+1) + 2*km1_n_md
+          o = sfcmap_rec(s, pos, km1, km1_n,  ma,  md, ima, -md)
+       case (5)
+          pos( ma+1) = pos( ma+1) + 3*km1_n_md - md
+          pos(ima+1) = pos(ima+1) + 2*km1_n_md - md
+          o = sfcmap_rec(s, pos, km1, km1_n,  ma, -md,  ma, -md)
+       case (6)
+          pos( ma+1) = pos( ma+1) + 2*km1_n_md - md
+          pos(ima+1) = pos(ima+1) + 2*km1_n_md - md
+          o = sfcmap_rec(s, pos, km1, km1_n, ima, -md, ima, -md)
+       case (7)
+          pos( ma+1) = pos( ma+1) + 2*km1_n_md - md
+          pos(ima+1) = pos(ima+1) +   km1_n_md - md
+          o = sfcmap_rec(s, pos, km1, km1_n, ima, -md,  ma,  md)
+       case (8)
+          pos( ma+1) = pos( ma+1) + 2*km1_n_md
+          o = sfcmap_rec(s, pos, km1, km1_n,  ma,  md,  ja,  jd)
+       end select
     case (5)
        !  _   _ _
        ! | |_|  _|
@@ -1539,115 +1530,103 @@ contains
        ! |_| |  _|
        !  _ _| |_
        ! 0       24
-       do one = 1, 1
-          if (region == 0) then
-             o = sfcmap_rec(s, pos, km1, km1_n,  ma,  md,  ma,  md); exit
-          end if
-          pos(ma+1) = pos(ma+1) + km1_n_md
-          if (region == 1) then
-             o = sfcmap_rec(s, pos, km1, km1_n,  ma,  md,  ma,  md); exit
-          end if
-          pos(ma+1) = pos(ma+1) + km1_n_md
-          if (region == 2) then
-             o = sfcmap_rec(s, pos, km1, km1_n, ima,  md, ima,  md); exit
-          end if
-          pos(ima+1) = pos(ima+1) + km1_n_md
-          if (region == 3) then
-             o = sfcmap_rec(s, pos, km1, km1_n, ima,  md, ima,  md); exit
-          end if
-          pos(ima+1) = pos(ima+1) + km1_n_md
-          if (region == 4) then
-             o = sfcmap_rec(s, pos, km1, km1_n, ima,  md,  ma, -md); exit
-          end if
-          pos(ima+1) = pos(ima+1) + (km1_n - 1)*md
-          pos(ma+1) = pos(ma+1) - md
-          if (region == 5) then
-             o = sfcmap_rec(s, pos, km1, km1_n, ima, -md, ima, -md); exit
-          end if
-          pos(ima+1) = pos(ima+1) - km1_n_md
-          if (region == 6) then
-             o = sfcmap_rec(s, pos, km1, km1_n,  ma, -md,  ma, -md); exit
-          end if
-          pos(ma+1) = pos(ma+1) - km1_n_md
-          if (region == 7) then
-             o = sfcmap_rec(s, pos, km1, km1_n,  ma, -md, ima,  md); exit
-          end if
-          pos(ma+1) = pos(ma+1) - (km1_n - 1)*md
-          pos(ima+1) = pos(ima+1) + md
-          if (region == 8) then
-             o = sfcmap_rec(s, pos, km1, km1_n, ima,  md, ima,  md); exit
-          end if
-          pos(ima+1) = pos(ima+1) + km1_n_md
-          if (region == 9) then
-             o = sfcmap_rec(s, pos, km1, km1_n, ima,  md, ima,  md); exit
-          end if
-          pos(ima+1) = pos(ima+1) + km1_n_md
-          if (region == 10) then
-             o = sfcmap_rec(s, pos, km1, km1_n,  ma,  md,  ma,  md); exit
-          end if
-          pos(ma+1) = pos(ma+1) + km1_n_md
-          if (region == 11) then
-             o = sfcmap_rec(s, pos, km1, km1_n,  ma,  md, ima, -md); exit
-          end if
-          pos(ma+1) = pos(ma+1) + (km1_n - 1)*md
-          pos(ima+1) = pos(ima+1) - md
-          if (region == 12) then
-             o = sfcmap_rec(s, pos, km1, km1_n, ima, -md,  ma,  md); exit
-          end if
-          pos(ima+1) = pos(ima+1) - (km1_n - 1)*md
-          pos(ma+1) = pos(ma+1) + md
-          if (region == 13) then
-             o = sfcmap_rec(s, pos, km1, km1_n, ima,  md, ima,  md); exit
-          end if
-          pos(ima+1) = pos(ima+1) + km1_n_md
-          if (region == 14) then
-             o = sfcmap_rec(s, pos, km1, km1_n,  ma,  md,  ma,  md); exit
-          end if
-          pos(ma+1) = pos(ma+1) + km1_n_md
-          if (region == 15) then
-             o = sfcmap_rec(s, pos, km1, km1_n,  ma,  md,  ma,  md); exit
-          end if
-          pos(ma+1) = pos(ma+1) + km1_n_md
-          if (region == 16) then
-             o = sfcmap_rec(s, pos, km1, km1_n,  ma,  md, ima, -md); exit
-          end if
-          pos(ma+1) = pos(ma+1) + (km1_n - 1)*md
-          pos(ima+1) = pos(ima+1) - md
-          if (region == 17) then
-             o = sfcmap_rec(s, pos, km1, km1_n,  ma, -md,  ma, -md); exit
-          end if
-          pos(ma+1) = pos(ma+1) - km1_n_md
-          if (region == 18) then
-             o = sfcmap_rec(s, pos, km1, km1_n, ima, -md, ima, -md); exit
-          end if
-          pos(ima+1) = pos(ima+1) - km1_n_md
-          if (region == 19) then
-             o = sfcmap_rec(s, pos, km1, km1_n, ima, -md,  ma,  md); exit
-          end if
-          pos(ima+1) = pos(ima+1) - (km1_n - 1)*md
-          pos(ma+1) = pos(ma+1) + md
-          if (region == 20) then
-             o = sfcmap_rec(s, pos, km1, km1_n,  ma,  md, ima, -md); exit
-          end if
-          pos(ma+1) = pos(ma+1) + (km1_n - 1)*md
-          pos(ima+1) = pos(ima+1) - md
-          if (region == 21) then
-             o = sfcmap_rec(s, pos, km1, km1_n,  ma, -md,  ma, -md); exit
-          end if
-          pos(ma+1) = pos(ma+1) - km1_n_md
-          if (region == 22) then
-             o = sfcmap_rec(s, pos, km1, km1_n, ima, -md, ima, -md); exit
-          end if
-          pos(ima+1) = pos(ima+1) - km1_n_md
-          if (region == 23) then
-             o = sfcmap_rec(s, pos, km1, km1_n, ima, -md,  ma,  md); exit
-          end if
-          pos(ima+1) = pos(ima+1) - (km1_n - 1)*md
-          pos(ma+1) = pos(ma+1) + md
-          if (region == 24) then
-             o = sfcmap_rec(s, pos, km1, km1_n,  ma,  md,  ja,  jd)
-          end if
-       end do
+       select case (region)
+       case (0)
+          o = sfcmap_rec(s, pos, km1, km1_n,  ma,  md,  ma,  md)
+       case (1)
+          pos( ma+1) = pos( ma+1) +   km1_n_md
+          o = sfcmap_rec(s, pos, km1, km1_n,  ma,  md,  ma,  md)
+       case (2)
+          pos( ma+1) = pos( ma+1) + 2*km1_n_md
+          o = sfcmap_rec(s, pos, km1, km1_n, ima,  md, ima,  md)
+       case (3)
+          pos( ma+1) = pos( ma+1) + 2*km1_n_md
+          pos(ima+1) = pos(ima+1) +   km1_n_md
+          o = sfcmap_rec(s, pos, km1, km1_n, ima,  md, ima,  md)
+       case (4)
+          pos( ma+1) = pos( ma+1) + 2*km1_n_md
+          pos(ima+1) = pos(ima+1) + 2*km1_n_md
+          o = sfcmap_rec(s, pos, km1, km1_n, ima,  md,  ma, -md)
+       case (5)
+          pos( ma+1) = pos( ma+1) + 2*km1_n_md - md
+          pos(ima+1) = pos(ima+1) + 3*km1_n_md - md
+          o = sfcmap_rec(s, pos, km1, km1_n, ima, -md, ima, -md)
+       case (6)
+          pos( ma+1) = pos( ma+1) + 2*km1_n_md - md
+          pos(ima+1) = pos(ima+1) + 2*km1_n_md - md
+          o = sfcmap_rec(s, pos, km1, km1_n,  ma, -md,  ma, -md)
+       case (7)
+          pos( ma+1) = pos( ma+1) +   km1_n_md - md
+          pos(ima+1) = pos(ima+1) + 2*km1_n_md - md
+          o = sfcmap_rec(s, pos, km1, km1_n,  ma, -md, ima,  md)
+       case (8)
+          pos( ma+1) = pos( ma+1)
+          pos(ima+1) = pos(ima+1) + 2*km1_n_md
+          o = sfcmap_rec(s, pos, km1, km1_n, ima,  md, ima,  md)
+       case (9)
+          pos( ma+1) = pos( ma+1)
+          pos(ima+1) = pos(ima+1) + 3*km1_n_md
+          o = sfcmap_rec(s, pos, km1, km1_n, ima,  md, ima,  md)
+       case (10)
+          pos( ma+1) = pos( ma+1)
+          pos(ima+1) = pos(ima+1) + 4*km1_n_md
+          o = sfcmap_rec(s, pos, km1, km1_n,  ma,  md,  ma,  md)
+       case (11)
+          pos( ma+1) = pos( ma+1) +   km1_n_md
+          pos(ima+1) = pos(ima+1) + 4*km1_n_md
+          o = sfcmap_rec(s, pos, km1, km1_n,  ma,  md, ima, -md)
+       case (12)
+          pos( ma+1) = pos( ma+1) + 2*km1_n_md - md
+          pos(ima+1) = pos(ima+1) + 4*km1_n_md - md
+          o = sfcmap_rec(s, pos, km1, km1_n, ima, -md,  ma,  md)
+       case (13)
+          pos( ma+1) = pos( ma+1) + 2*km1_n_md
+          pos(ima+1) = pos(ima+1) + 3*km1_n_md
+          o = sfcmap_rec(s, pos, km1, km1_n, ima,  md, ima,  md)
+       case (14)
+          pos( ma+1) = pos( ma+1) + 2*km1_n_md
+          pos(ima+1) = pos(ima+1) + 4*km1_n_md
+          o = sfcmap_rec(s, pos, km1, km1_n,  ma,  md,  ma,  md)
+       case (15)
+          pos( ma+1) = pos( ma+1) + 3*km1_n_md
+          pos(ima+1) = pos(ima+1) + 4*km1_n_md
+          o = sfcmap_rec(s, pos, km1, km1_n,  ma,  md,  ma,  md)
+       case (16)
+          pos( ma+1) = pos( ma+1) + 4*km1_n_md
+          pos(ima+1) = pos(ima+1) + 4*km1_n_md
+          o = sfcmap_rec(s, pos, km1, km1_n,  ma,  md, ima, -md)
+       case (17)
+          pos( ma+1) = pos( ma+1) + 5*km1_n_md - md
+          pos(ima+1) = pos(ima+1) + 4*km1_n_md - md
+          o = sfcmap_rec(s, pos, km1, km1_n,  ma, -md,  ma, -md)
+       case (18)
+          pos( ma+1) = pos( ma+1) + 4*km1_n_md - md
+          pos(ima+1) = pos(ima+1) + 4*km1_n_md - md
+          o = sfcmap_rec(s, pos, km1, km1_n, ima, -md, ima, -md)
+       case (19)
+          pos( ma+1) = pos( ma+1) + 4*km1_n_md - md
+          pos(ima+1) = pos(ima+1) + 3*km1_n_md - md
+          o = sfcmap_rec(s, pos, km1, km1_n, ima, -md,  ma,  md)
+       case (20)
+          pos( ma+1) = pos( ma+1) + 4*km1_n_md
+          pos(ima+1) = pos(ima+1) + 2*km1_n_md
+          o = sfcmap_rec(s, pos, km1, km1_n,  ma,  md, ima, -md)
+       case (21)
+          pos( ma+1) = pos( ma+1) + 5*km1_n_md - md
+          pos(ima+1) = pos(ima+1) + 2*km1_n_md - md
+          o = sfcmap_rec(s, pos, km1, km1_n,  ma, -md,  ma, -md)
+       case (22)
+          pos( ma+1) = pos( ma+1) + 4*km1_n_md - md
+          pos(ima+1) = pos(ima+1) + 2*km1_n_md - md
+          o = sfcmap_rec(s, pos, km1, km1_n, ima, -md, ima, -md)
+       case (23)
+          pos( ma+1) = pos( ma+1) + 4*km1_n_md - md
+          pos(ima+1) = pos(ima+1) +   km1_n_md - md
+          o = sfcmap_rec(s, pos, km1, km1_n, ima, -md,  ma,  md)
+       case (24)
+          pos( ma+1) = pos( ma+1) + 4*km1_n_md
+          o = sfcmap_rec(s, pos, km1, km1_n,  ma,  md,  ja,  jd)
+       end select
     case default
        print *, 'error: factors =', s%fact%factors
        o = -1

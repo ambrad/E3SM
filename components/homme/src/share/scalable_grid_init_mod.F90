@@ -66,6 +66,16 @@ contains
 
     if (dbg .and. par%masterproc) then
        call sfcmap_test(.false.)
+       if (par%masterproc) then
+          i = 1
+          write (*, fmt='(a)', advance='no') 'SGI> factorable ne:'
+          do while (i <= 4096)
+             i = find_next_factorable(i, 1)
+             write (*, fmt='(i5)', advance='no') i
+             i = i + 1
+          end do
+          print *, ''
+       end if
     end if
 
     gm => sgi_gm
@@ -78,7 +88,8 @@ contains
        ne_fac_prev = find_next_factorable(ne, -1)
        ne_fac_next = find_next_factorable(ne, 1)
        print '(a,i6,a,i6,a,i6)', &
-            'SGI> ne',ne,' is not factorable; suggest setting ne to', &
+            'SGI> ne',ne, &
+            ' is not factorable; to get fully scalable initialization, set ne to', &
             ne_fac_prev,' or',ne_fac_next
     end if
 
@@ -135,16 +146,6 @@ contains
           end if
        end do
        deallocate(sfctest)
-       if (par%masterproc) then
-          i = 1
-          write (*, fmt='(a)', advance='no') 'SGI> factorable ne:'
-          do while (i <= 4096)
-             i = find_next_factorable(i, 1)
-             write (*, fmt='(i5)', advance='no') i
-             i = i + 1
-          end do
-          print *, ''
-       end if
     end if
 
     gm%rank = par%rank
