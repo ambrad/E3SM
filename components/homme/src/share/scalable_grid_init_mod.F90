@@ -3,7 +3,7 @@ module scalable_grid_init_mod
   ! the number of owned and remote-used elements.
   !
   ! Revisions:
-  ! AMB: 2018/10  Initial
+  ! AMB 2018/10 Initial
   use metagraph_mod, only: MetaVertex_t
   use gridgraph_mod, only: GridVertex_t, GridEdge_t
   use spacecurve_mod, only: factor_t, sfcmap_t
@@ -60,7 +60,8 @@ contains
     type (MetaVertex_t), intent(out), target :: MetaVertex
     type (GridManager_t), pointer :: gm
     integer, allocatable :: sfctest(:)
-    integer :: ie, i, j, face, id, sfc, nelemd, nelemdi, rank, ierr
+    integer :: ie, i, j, face, id, sfc, nelemd, nelemdi, rank, ierr, &
+         ne_fac_prev, ne_fac_next
     logical, parameter :: dbg = .true.
 
     if (dbg .and. par%masterproc) then
@@ -73,7 +74,13 @@ contains
 
     ierr = sfcmap_init(ne, gm%sfcmap)
     gm%use_sfcmap = ierr == 0
-    if (par%masterproc) print *, 'SGI> use sfcmap:',gm%use_sfcmap
+    if (par%masterproc .and. .not. gm%use_sfcmap) then
+       ne_fac_prev = find_next_factorable(ne, -1)
+       ne_fac_next = find_next_factorable(ne, 1)
+       print '(a,i6,a,i6,a,i6)', &
+            'SGI> ne',ne,' is not factorable; suggest setting ne to', &
+            ne_fac_prev,' or',ne_fac_next
+    end if
 
     allocate(gm%rank2sfc(npart+1))
     call sgi_genspacepart(nelem, npart, gm%rank2sfc)
@@ -128,6 +135,16 @@ contains
           end if
        end do
        deallocate(sfctest)
+       if (par%masterproc) then
+          i = 1
+          write (*, fmt='(a)', advance='no') 'SGI> factorable ne:'
+          do while (i <= 4096)
+             i = find_next_factorable(i, 1)
+             write (*, fmt='(i5)', advance='no') i
+             i = i + 1
+          end do
+          print *, ''
+       end if
     end if
 
     gm%rank = par%rank
@@ -300,8 +317,7 @@ contains
     sfc = s2sfc(gm, i, j, face)
   end function u2sfc
 
-  ! This routine to generate the space-filling curve (SFC) is not yet
-  ! scalable. It allocates 4*ne^2 bytes.
+  ! This routine to generate the space-filling curve (SFC) is not scalable.
   subroutine sgi_genspacecurve(ne, Mesh)
     use parallel_mod, only: abortmp
     use spacecurve_mod, only: IsFactorable, genspacecurve
@@ -832,4 +848,39 @@ contains
        end do
     end if
   end subroutine sgi_initgridedge
+
+  function factorable(n_in)
+    integer, intent(in) :: n_in
+    logical :: factorable
+    integer :: n, f, i
+    integer, parameter :: fs(3) = (/ 2, 3, 5 /)
+
+    n = n_in
+    do i = 1, size(fs)
+       f = fs(i)
+       do while (.true.)
+          if (modulo(n, f) == 0) then
+             n = n / f
+          else
+             exit
+          end if
+       end do
+    end do
+    factorable = n == 1
+  end function factorable
+
+  function find_next_factorable(n_in, direction) result(n)
+    integer, intent(in) :: n_in, direction
+    integer :: n, dir, f
+
+    n = n_in
+    if (direction > 0) then
+       dir = 1
+    else
+       dir = -1
+    end if
+    do while (.not. factorable(n))
+       n = n + dir
+    end do
+  end function find_next_factorable
 end module scalable_grid_init_mod
