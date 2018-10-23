@@ -24,15 +24,13 @@ module scalable_grid_init_mod
     ! gid2igv. Both GridVertex and MetaVertex are deallocated.
     sgi_finalize, &
 
-    ! Check each field (and subfields) of a MetaVertex against those of
-    ! another. If the two are not exactly the same, output a message. This is
-    ! used for correctness checking the output of sgi_init_grid.
-    sgi_check, &
-
     ! Map a cell global ID to the entry in the GridVertex_t array GridVertex. An
     ! invalid gid input, i.e. one that does not exist in gm%gvid, is permitted;
     ! in that case, the output igv is invalid and so GridVertex(igv) /= gid.
-    sgi_gid2igv
+    sgi_gid2igv, &
+
+    ! Comprehensively test this module.
+    sgi_test
 
   type, public :: GridManager_t
      integer :: rank, phase, ne
@@ -49,7 +47,7 @@ module scalable_grid_init_mod
 
 contains
 
-  subroutine sgi_init_grid(par, GridVertex, MetaVertex)
+  subroutine sgi_init_grid(par, GridVertex, MetaVertex, debug_in)
     use parallel_mod, only: parallel_t
     use dimensions_mod, only: nelem, ne, npart
     use metagraph_mod, only: initMetaGraph
@@ -58,14 +56,22 @@ contains
     type (parallel_t), intent(in) :: par
     type (GridVertex_t), pointer, intent(out) :: GridVertex(:)
     type (MetaVertex_t), intent(out), target :: MetaVertex
+    logical, optional, intent(in) :: debug_in
     type (GridManager_t), pointer :: gm
     integer, allocatable :: sfctest(:)
     integer :: ie, i, j, face, id, sfc, nelemd, nelemdi, rank, ierr, &
          ne_fac_prev, ne_fac_next
-    logical, parameter :: dbg = .true.
+    logical :: debug
+    logical, parameter :: dbg = .false., verbose = .true.
 
-    if (dbg .and. par%masterproc) then
-       call sfcmap_test(.false.)
+    if (.not. present(debug_in)) then
+       debug = dbg
+    else
+       debug = debug_in
+    end if
+
+    if (debug .and. par%masterproc) then
+       call sfcmap_test(verbose)
        if (par%masterproc) then
           i = 1
           write (*, fmt='(a)', advance='no') 'SGI> factorable ne:'
@@ -100,7 +106,7 @@ contains
        call sgi_genspacecurve(ne, gm%sfcfacemesh)
     end if
 
-    if (dbg) then
+    if (debug) then
        ! sgi_genspacepart
        if (gm%rank2sfc(npart+1) /= nelem) then
           print *, 'SGI> nelem',nelem,'rank2sfc',gm%rank2sfc
@@ -151,7 +157,7 @@ contains
     gm%rank = par%rank
     call sgi_CubeTopology_phase1(gm)
 
-    if (dbg) then
+    if (debug) then
        do i = 1, size(gm%gvid)
           if (gid2igv(gm, gm%gvid(i)) /= i) then
              print *, 'SGI> igv, ret, gid, gvid', &
@@ -185,77 +191,6 @@ contains
     call destroyMetaGraph(gm%mv)
     call sfcmap_finalize(gm%sfcmap)
   end subroutine sgi_finalize
-
-  subroutine sgi_check(mv, mvo)
-    use metagraph_mod, only: PrintMetaVertex, MetaEdge_t
-
-    type (MetaVertex_t), intent(in) :: mv, mvo
-    type (GridVertex_t), pointer :: gv, gvo
-    type (MetaEdge_t), pointer :: me, meo
-    type (GridManager_t), pointer :: gm
-    integer :: i, npi, j
-
-    gm => sgi_gm
-
-    if (gm%rank == 0) print *, 'SGI> sgi_check'
-    if (mv%number /= mvo%number) print *, 'SGI> number disagrees'
-    if (mv%nmembers /= mvo%nmembers) print *, 'SGI> nmembers disagrees'
-    if (mv%nedges /= mvo%nedges) print *, 'SGI> nedges disagrees'
-    do i = 1, mv%nmembers
-       gv => mv%members(i)
-       gvo => mvo%members(i)
-       ! This seems unused
-       !if (gv%face_number /= gvo%face_number) print *, 'SGI> GV face_number disagrees'
-       if (gv%number /= gvo%number) print *, 'SGI> GV number disagrees'
-       if (gv%processor_number /= gvo%processor_number) &
-            print *, 'SGI> GV processor_number disagrees'
-       if (gv%SpaceCurve /= gvo%SpaceCurve) print *, 'SGI> GV SpaceCurve disagrees'
-       do j = 1, size(gv%nbrs_ptr)
-          if (gv%nbrs_ptr(j) /= gvo%nbrs_ptr(j)) print *, 'SGI> GV nbrs_ptr disagrees'
-       end do
-       do npi = 1, size(gv%nbrs_ptr)
-          do j = gv%nbrs_ptr(npi), gv%nbrs_ptr(npi+1)-1
-             if (gv%nbrs(j) /= gvo%nbrs(j)) print *, 'SGI> GV nbrs disagrees'
-             if (gv%nbrs_face(j) /= gvo%nbrs_face(j)) print *, 'SGI> GV nbrs_face disagrees'
-             if (gv%nbrs_wgt(j) /= gvo%nbrs_wgt(j)) print *, 'SGI> GV nbrs_wgt disagrees'
-             if (gv%nbrs_wgt_ghost(j) /= gvo%nbrs_wgt_ghost(j)) &
-                  print *, 'SGI> GV nbrs_wgt_ghost disagrees'
-          end do
-       end do
-    end do
-    do i = 1, mv%nedges
-       me => mv%edges(i)
-       meo => mvo%edges(i)
-       if (me%number /= meo%number) print *, 'SGI> ME number disagrees'
-       if (me%nmembers /= meo%nmembers) print *, 'SGI> ME nmembers disagrees'
-       if (me%type /= meo%type) print *, 'SGI> ME type disagrees'
-       if (me%wgtP /= meo%wgtP) print *, 'SGI> ME wgtP disagrees'
-       if (me%wgtP_ghost /= meo%wgtP_ghost) print *, 'SGI> ME wgtP_ghost disagrees'
-       if (me%wgtS /= meo%wgtS) print *, 'SGI> ME wgtS disagrees'
-       if (me%HeadVertex /= meo%HeadVertex) print *, 'SGI> ME HeadVertex disagrees'
-       if (me%TailVertex /= meo%TailVertex) print *, 'SGI> ME TailVertex disagrees'
-       do j = 1, me%nmembers
-          if (me%edgeptrP(j) /= meo%edgeptrP(j)) print *, 'SGI> ME edgeptrP disagrees'
-          if (me%edgeptrS(j) /= meo%edgeptrS(j)) print *, 'SGI> ME edgeptrS disagrees'
-          if (me%edgeptrP_ghost(j) /= meo%edgeptrP_ghost(j)) &
-               print *, 'SGI> ME edgeptrP_ghost disagrees'
-          if (me%members(j)%head_face /= meo%members(j)%head_face) &
-               print *, 'SGI> ME GE head_face disagrees'
-          if (me%members(j)%tail_face /= meo%members(j)%tail_face) &
-               print *, 'SGI> ME GE tail_face disagrees'
-          if (me%members(j)%head_dir /= meo%members(j)%head_dir) &
-               print *, 'SGI> ME GE head_dir disagrees'
-          if (me%members(j)%tail_dir /= meo%members(j)%tail_dir) &
-               print *, 'SGI> ME GE tail_dir disagrees'
-          if (me%members(j)%reverse .neqv. meo%members(j)%reverse) &
-               print *, 'SGI> ME GE reverse disagrees'
-          if (me%members(j)%head%number /= meo%members(j)%head%number) &
-               print *, 'SGI> ME GE head disagrees'
-          if (me%members(j)%tail%number /= meo%members(j)%tail%number) &
-               print *, 'SGI> ME GE tail disagrees'
-       end do
-    end do
-  end subroutine sgi_check
 
   ! Map structured (i,j,face) triple to global ID.
   function s2ui(i, j, face) result (id)
@@ -884,4 +819,133 @@ contains
        n = n + dir
     end do
   end function find_next_factorable
+  
+  ! Check each field (and subfields) of a MetaVertex against those of
+  ! another. If the two are not exactly the same, output a message. This is used
+  ! for correctness checking the output of sgi_init_grid.
+  subroutine sgi_check(mv, mvo)
+    use metagraph_mod, only: PrintMetaVertex, MetaEdge_t
+
+    type (MetaVertex_t), intent(in) :: mv, mvo
+    type (GridVertex_t), pointer :: gv, gvo
+    type (MetaEdge_t), pointer :: me, meo
+    type (GridManager_t), pointer :: gm
+    integer :: i, npi, j
+
+    gm => sgi_gm
+
+    if (gm%rank == 0) print *, 'SGI> sgi_check'
+    if (mv%number /= mvo%number) print *, 'SGI> number disagrees'
+    if (mv%nmembers /= mvo%nmembers) print *, 'SGI> nmembers disagrees'
+    if (mv%nedges /= mvo%nedges) print *, 'SGI> nedges disagrees'
+    do i = 1, mv%nmembers
+       gv => mv%members(i)
+       gvo => mvo%members(i)
+       ! This seems unused
+       !if (gv%face_number /= gvo%face_number) print *, 'SGI> GV face_number disagrees'
+       if (gv%number /= gvo%number) print *, 'SGI> GV number disagrees'
+       if (gv%processor_number /= gvo%processor_number) &
+            print *, 'SGI> GV processor_number disagrees'
+       if (gv%SpaceCurve /= gvo%SpaceCurve) print *, 'SGI> GV SpaceCurve disagrees'
+       do j = 1, size(gv%nbrs_ptr)
+          if (gv%nbrs_ptr(j) /= gvo%nbrs_ptr(j)) print *, 'SGI> GV nbrs_ptr disagrees'
+       end do
+       do npi = 1, size(gv%nbrs_ptr)-1
+          do j = gv%nbrs_ptr(npi), gv%nbrs_ptr(npi+1)-1
+             if (gv%nbrs(j) /= gvo%nbrs(j)) print *, 'SGI> GV nbrs disagrees'
+             if (gv%nbrs_face(j) /= gvo%nbrs_face(j)) print *, 'SGI> GV nbrs_face disagrees'
+             if (gv%nbrs_wgt(j) /= gvo%nbrs_wgt(j)) print *, 'SGI> GV nbrs_wgt disagrees'
+             if (gv%nbrs_wgt_ghost(j) /= gvo%nbrs_wgt_ghost(j)) &
+                  print *, 'SGI> GV nbrs_wgt_ghost disagrees'
+          end do
+       end do
+    end do
+    do i = 1, mv%nedges
+       me => mv%edges(i)
+       meo => mvo%edges(i)
+       if (me%number /= meo%number) print *, 'SGI> ME number disagrees'
+       if (me%nmembers /= meo%nmembers) print *, 'SGI> ME nmembers disagrees'
+       if (me%type /= meo%type) print *, 'SGI> ME type disagrees'
+       if (me%wgtP /= meo%wgtP) print *, 'SGI> ME wgtP disagrees'
+       if (me%wgtP_ghost /= meo%wgtP_ghost) print *, 'SGI> ME wgtP_ghost disagrees'
+       if (me%wgtS /= meo%wgtS) print *, 'SGI> ME wgtS disagrees'
+       if (me%HeadVertex /= meo%HeadVertex) print *, 'SGI> ME HeadVertex disagrees'
+       if (me%TailVertex /= meo%TailVertex) print *, 'SGI> ME TailVertex disagrees'
+       do j = 1, me%nmembers
+          if (me%edgeptrP(j) /= meo%edgeptrP(j)) print *, 'SGI> ME edgeptrP disagrees'
+          if (me%edgeptrS(j) /= meo%edgeptrS(j)) print *, 'SGI> ME edgeptrS disagrees'
+          if (me%edgeptrP_ghost(j) /= meo%edgeptrP_ghost(j)) &
+               print *, 'SGI> ME edgeptrP_ghost disagrees'
+          if (me%members(j)%head_face /= meo%members(j)%head_face) &
+               print *, 'SGI> ME GE head_face disagrees'
+          if (me%members(j)%tail_face /= meo%members(j)%tail_face) &
+               print *, 'SGI> ME GE tail_face disagrees'
+          if (me%members(j)%head_dir /= meo%members(j)%head_dir) &
+               print *, 'SGI> ME GE head_dir disagrees'
+          if (me%members(j)%tail_dir /= meo%members(j)%tail_dir) &
+               print *, 'SGI> ME GE tail_dir disagrees'
+          if (me%members(j)%reverse .neqv. meo%members(j)%reverse) &
+               print *, 'SGI> ME GE reverse disagrees'
+          if (me%members(j)%head%number /= meo%members(j)%head%number) &
+               print *, 'SGI> ME GE head disagrees'
+          if (me%members(j)%tail%number /= meo%members(j)%tail%number) &
+               print *, 'SGI> ME GE tail disagrees'
+       end do
+    end do
+  end subroutine sgi_check
+
+  ! Compare MetaVertex created the scalable way against the one created the
+  ! original, unscalable way.
+  subroutine sgi_test(par, verbose_in)
+    use dimensions_mod, only: ne, nelem
+    use cube_mod, only: CubeElemCount, CubeEdgeCount, CubeTopology
+    use gridgraph_mod, only: allocate_gridvertex_nbrs, deallocate_gridvertex_nbrs
+    use metagraph_mod, only: initMetaGraph, destroyMetaGraph
+    use parallel_mod, only: iam, parallel_t
+    use spacecurve_mod, only: genspacepart
+
+    type (parallel_t), intent(in) :: par
+    logical, optional, intent(in) :: verbose_in
+    type (GridVertex_t), pointer :: GridVertex(:), sgi_GridVertex(:)
+    type (GridEdge_t),   target,allocatable :: Gridedge(:)
+    type (MetaVertex_t) :: MetaVertex, sgi_MetaVertex
+
+    logical :: debug, verbose
+    integer :: ine, nelem_edge, j, ne_orig, nelem_orig, ierr
+    !integer, parameter :: nes(5) = (/ 6, 9, 11, 30, 60 /)
+    integer, parameter :: nes(3) = (/ 16, 8, 30 /)
+    
+    if (.not. present(verbose_in)) verbose = .true.
+
+    ne_orig = ne
+    nelem_orig = nelem
+    do ine = 1, size(nes)
+       ne = nes(ine)
+       if (verbose .and. par%masterproc) print *, 'SGI> sgi_test',ne
+       nelem = CubeElemCount()
+       nelem_edge = CubeEdgeCount()
+       allocate(GridVertex(nelem))
+       allocate(GridEdge(nelem_edge))
+       do j = 1, nelem
+          call allocate_gridvertex_nbrs(GridVertex(j))
+       end do
+       call CubeTopology(GridEdge,GridVertex)
+       call genspacepart(GridEdge,GridVertex)
+       call initMetaGraph(iam,MetaVertex,GridVertex,GridEdge)
+       debug = ine == 1
+       call sgi_init_grid(par, sgi_GridVertex, sgi_MetaVertex, debug)
+       call sgi_check(MetaVertex, sgi_MetaVertex)
+       call sgi_finalize()
+       do j = 1, nelem
+          call deallocate_gridvertex_nbrs(GridVertex(j))
+       end do
+       deallocate(GridVertex)
+       deallocate(GridEdge)
+       call destroyMetaGraph(MetaVertex)
+    end do
+    ne = ne_orig
+    nelem = nelem_orig
+    call mpi_barrier(par%comm, ierr)
+    print *,'SGI rank',par%rank,ierr,ne,nelem
+  end subroutine sgi_test
 end module scalable_grid_init_mod

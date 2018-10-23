@@ -116,7 +116,7 @@ contains
 #endif
 
     use compose_mod, only: kokkos_init, compose_init, cedr_unittest, cedr_set_ie2gci
-    use scalable_grid_init_mod, only: sgi_init_grid, sgi_check, sgi_finalize
+    use scalable_grid_init_mod, only: sgi_init_grid, sgi_finalize, sgi_test
 
     implicit none
 
@@ -233,6 +233,7 @@ contains
          .not. (is_zoltan_partition(partmethod) .or. is_zoltan_task_mapping(z2_map_method))
 
     if (can_scalably_init_grid) then
+       call sgi_test(par)
        call sgi_init_grid(par, GridVertex, MetaVertex)
     end if
 
@@ -301,8 +302,6 @@ contains
     ! given partition, count number of local element descriptors
     ! ===========================================================
     allocate(Schedule(1))
-
-    nelem_edge=SIZE(GridEdge)
 
     ! ====================================================
     !  Generate the communication graph
