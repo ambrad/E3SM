@@ -233,7 +233,7 @@ contains
          .not. (is_zoltan_partition(partmethod) .or. is_zoltan_task_mapping(z2_map_method))
 
     if (can_scalably_init_grid) then
-       call sgi_test(par)
+       !call sgi_test(par)
        call sgi_init_grid(par, GridVertex, MetaVertex)
     end if
 

@@ -60,9 +60,9 @@ contains
     type (GridManager_t), pointer :: gm
     integer, allocatable :: sfctest(:)
     integer :: ie, i, j, face, id, sfc, nelemd, nelemdi, rank, ierr, &
-         ne_fac_prev, ne_fac_next
+         ne_fac_prev, ne_fac_next, tmp
     logical :: debug
-    logical, parameter :: dbg = .false., verbose = .true.
+    logical, parameter :: dbg = .true., verbose = .false.
 
     if (.not. present(debug_in)) then
        debug = dbg
@@ -141,9 +141,9 @@ contains
              print *, 'SGI> u<->s:',ie,id,i,j,face
           end if
           sfc = u2sfc(gm, id)
-          if (.not. (sfc >= 0 .and. sfc < nelem)) then
-             print *, 'SGI> u2sfc:',id,sfc
-          end if
+          if (.not. (sfc >= 0 .and. sfc < nelem)) print *, 'SGI> u2sfc:',id,sfc
+          tmp = sfc2face(gm, sfc)
+          if (tmp /= face) print *, 'SGI> sfc2face',sfc,face,tmp
           sfctest(sfc+1) = sfctest(sfc+1) + 1
        end do
        do ie = 1, nelem
@@ -252,6 +252,22 @@ contains
     call u2si(id, i, j, face)
     sfc = s2sfc(gm, i, j, face)
   end function u2sfc
+
+  function sfc2face(gm, sfc) result(face)
+    type (GridManager_t), intent(inout) :: gm
+    integer, intent(in) :: sfc
+    integer :: face
+    
+    face = sfc / (gm%ne*gm%ne)
+    select case (face)
+    case (0); face = 1
+    case (1); face = 2
+    case (2); face = 6
+    case (3); face = 4
+    case (4); face = 5
+    case (5); face = 3
+    end select
+  end function sfc2face
 
   ! This routine to generate the space-filling curve (SFC) is not scalable.
   subroutine sgi_genspacecurve(ne, Mesh)
@@ -398,10 +414,10 @@ contains
     use gridgraph_mod, only: allocate_gridvertex_nbrs
 
     type (GridManager_t), intent(inout) :: gm
-    integer, allocatable :: gvid(:)
     type (GridVertex_t), pointer :: gv
-    integer :: id, nelem, sfc, i, j, k, id_nbr, n_owned_or_used
+    integer :: id, nelem, sfc, i, j, k, id_nbr, n_owned, n_owned_or_used, o
     logical :: owned
+    integer, allocatable :: positions(:,:)
 
     gm%phase = 1
     nelem = 6*ne*ne
@@ -409,13 +425,23 @@ contains
     allocate(gm%owned_or_used(nelem))
     gm%owned_or_used = .false.
 
-    do id = 1, nelem
-       sfc = u2sfc(gm, id)
-       owned = sfc >= gm%rank2sfc(gm%rank+1) .and. sfc < gm%rank2sfc(gm%rank+2)
-       if (.not. owned) cycle
-       gm%owned_or_used(id) = .true.
-       call sgi_CubeTopology_impl(gm, id, -1)
-    end do
+    if (.false.) then
+       n_owned = gm%rank2sfc(gm%rank+1) - gm%rank2sfc(gm%rank)
+       allocate(positions(n_owned,2))
+       !o = sfcmap_indexrange2pos(gm%sfcmap, gm%rank2sfc(gm%rank), gm%rank2sfc(gm%rank+1)-1, positions)
+       do i = 1, n_owned
+          !s2ui(positions(i,1), positions(i,2))
+       end do
+       deallocate(positions)
+    else
+       do id = 1, nelem
+          sfc = u2sfc(gm, id)
+          owned = sfc >= gm%rank2sfc(gm%rank+1) .and. sfc < gm%rank2sfc(gm%rank+2)
+          if (.not. owned) cycle
+          gm%owned_or_used(id) = .true.
+          call sgi_CubeTopology_impl(gm, id, -1)
+       end do
+    end if
 
     n_owned_or_used = 0
     do id = 1, nelem
@@ -913,7 +939,7 @@ contains
     logical :: debug, verbose
     integer :: ine, nelem_edge, j, ne_orig, nelem_orig, ierr
     !integer, parameter :: nes(5) = (/ 6, 9, 11, 30, 60 /)
-    integer, parameter :: nes(3) = (/ 16, 8, 30 /)
+    integer, parameter :: nes(1) = (/ 7 /)
     
     if (.not. present(verbose_in)) verbose = .true.
 
