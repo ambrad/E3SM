@@ -436,9 +436,6 @@ contains
     integer :: idxs, idxe, face_current, face, nface, sfcidx(7), max_pos
     integer, allocatable :: positions(:,:)
 
-    integer :: cnt
-    integer, allocatable :: owned_ids(:)
-
     gm%phase = 1
     ne2 = gm%ne*gm%ne
     nelem = 6*ne2
@@ -446,11 +443,8 @@ contains
     allocate(gm%owned_or_used(nelem))
     gm%owned_or_used = .false.
 
-    allocate(owned_ids(nelem))
-    cnt = 0
-
     ! Count owned and remote-used elements.
-    if (.true. .and. gm%use_sfcmap) then
+    if (gm%use_sfcmap) then
        ! Break owned index space into pieces by face.
        sfcidx = 0
        nface = 1 ! number of faces in this index segment
@@ -458,8 +452,6 @@ contains
        sfcidx(nface) = idxs
        face_current = sfc2face(gm, idxs)
        max_pos = 0
-       print *,'amb> r2sfc',gm%rank,gm%rank2sfc
-       print *,'amb> is,ie',gm%rank,idxs,gm%rank2sfc(gm%rank+2)-1
        do i = idxs, gm%rank2sfc(gm%rank+2)-1
           face = sfc2face(gm, i)
           if (face /= face_current) then
@@ -471,7 +463,6 @@ contains
        end do
        sfcidx(nface+1) = gm%rank2sfc(gm%rank+2)
        max_pos = max(max_pos, sfcidx(nface+1) - sfcidx(nface))
-       print *,'amb>',gm%rank,max_pos,'|',sfcidx(1:nface+1)
        ! For each face:
        allocate(positions(max_pos,2))
        do i = 1, nface
@@ -479,14 +470,12 @@ contains
           ! on the cube, while here we need the index on a face, hence the mod.
           idxs = modulo(sfcidx(i), ne2)
           idxe = modulo(sfcidx(i+1) - 1, ne2)
-          print *,'amb> map:',gm%rank,i,idxs,idxe
           ! Map SFC index range to SFC positions list.
           o = sfcmap_indexrange2pos(gm%sfcmap, idxs, idxe, positions)
           ! Map (SFC position, face) to global ID.
           face = sfc2face(gm, sfcidx(i))
           do j = 1, idxe-idxs+1
              id = sfcpos2ui(gm, positions(j,:), face)
-             cnt = cnt + 1; owned_ids(cnt) = id
              gm%owned_or_used(id) = .true.   
              call sgi_CubeTopology_impl(gm, id, -1)
           end do
@@ -497,13 +486,10 @@ contains
           sfc = u2sfc(gm, id)
           owned = sfc >= gm%rank2sfc(gm%rank+1) .and. sfc < gm%rank2sfc(gm%rank+2)
           if (.not. owned) cycle
-          cnt = cnt + 1; owned_ids(cnt) = id
           gm%owned_or_used(id) = .true.
           call sgi_CubeTopology_impl(gm, id, -1)
        end do
     end if
-    call print_array(gm%rank, 'ids', owned_ids(1:cnt))
-    call mpi_barrier(0, i)
     !TODO Still need to incorporate this into the following. A list of owned
     ! SFCs will be in the same order as gvid below, but just the owned
     ! subset. So do id_sfc_pairs(n_owned, 2) to match id to gm%number.
