@@ -410,27 +410,62 @@ contains
   ! cube_mod::CubeTopology. The GridVertex array (here, gm%gv) is constructed to
   ! have entries only for owned and remote-used elemnents.
   subroutine sgi_CubeTopology_phase1(gm)
-    use dimensions_mod, only: ne
     use gridgraph_mod, only: allocate_gridvertex_nbrs
+    use spacecurve_mod, only: sfcmap_indexrange2pos
 
     type (GridManager_t), intent(inout) :: gm
     type (GridVertex_t), pointer :: gv
-    integer :: id, nelem, sfc, i, j, k, id_nbr, n_owned, n_owned_or_used, o
+    integer :: id, ne2, nelem, sfc, i, j, k, id_nbr, n_owned_or_used, o
     logical :: owned
+    integer :: idxs, idxe, face_current, face, nface, sfcidx(7), max_pos
     integer, allocatable :: positions(:,:)
 
     gm%phase = 1
-    nelem = 6*ne*ne
+    ne2 = gm%ne*gm%ne
+    nelem = 6*ne2
 
     allocate(gm%owned_or_used(nelem))
     gm%owned_or_used = .false.
 
-    if (.false.) then
-       n_owned = gm%rank2sfc(gm%rank+1) - gm%rank2sfc(gm%rank)
-       allocate(positions(n_owned,2))
-       !o = sfcmap_indexrange2pos(gm%sfcmap, gm%rank2sfc(gm%rank), gm%rank2sfc(gm%rank+1)-1, positions)
-       do i = 1, n_owned
-          !s2ui(positions(i,1), positions(i,2))
+    ! Count owned and remote-used elements.
+    if (gm%use_sfcmap) then
+       ! Break owned index space into pieces by face.
+       sfcidx = 0
+       nface = 1
+       idxs = gm%rank2sfc(gm%rank+1)
+       sfcidx(nface) = idxs
+       face_current = sfc2face(gm, idxs)
+       max_pos = 0
+       print *,'amb> r2sfc',gm%rank,gm%rank2sfc
+       print *,'amb> is,ie',gm%rank,idxs,gm%rank2sfc(gm%rank+2)-1
+       do i = idxs, gm%rank2sfc(gm%rank+2)-1
+          face = sfc2face(gm, i)
+          if (face /= face_current) then
+             face_current = face
+             nface = nface + 1
+             sfcidx(nface) = i
+             max_pos = max(max_pos, sfcidx(nface) - sfcidx(nface-1))
+          end if
+       end do
+       sfcidx(nface+1) = gm%rank2sfc(gm%rank+2)
+       print *,'amb>',gm%rank,max_pos,'|',sfcidx(1:nface+1)
+       ! For each face:
+       allocate(positions(max_pos,2))
+       do i = 1, nface
+          ! Get the SFC owned index range on this face. sfcidx is the SFC index
+          ! on the cube, while here we need the index on a face, hence the mod.
+          idxs = modulo(sfcidx(i), ne2)
+          idxe = modulo(sfcidx(i+1) - 1, ne2)
+          print *,'amb> map:',gm%rank,i,idxs,idxe
+          ! Map SFC index range to SFC positions list.
+          o = sfcmap_indexrange2pos(gm%sfcmap, idxs, idxe, positions)
+          ! Map (SFC position, face) to global ID.
+          face = sfc2face(gm, sfcidx(i))
+          do j = 1, idxe-idxs+1
+             id = s2ui(positions(j,1), positions(j,2), face)
+             gm%owned_or_used(id) = .true.   
+             call sgi_CubeTopology_impl(gm, id, -1)
+          end do
        end do
        deallocate(positions)
     else
@@ -442,6 +477,9 @@ contains
           call sgi_CubeTopology_impl(gm, id, -1)
        end do
     end if
+    !TODO Still need to incorporate this into the following. A list of owned
+    ! SFCs will be in the same order as gvid below, but just the owned
+    ! subset. So do id_sfc_pairs(n_owned, 2) to match id to gm%number.
 
     n_owned_or_used = 0
     do id = 1, nelem
