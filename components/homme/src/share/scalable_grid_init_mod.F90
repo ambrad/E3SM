@@ -51,7 +51,7 @@ contains
     use parallel_mod, only: parallel_t
     use dimensions_mod, only: nelem, ne, npart
     use metagraph_mod, only: initMetaGraph
-    use spacecurve_mod, only: sfcmap_init, sfcmap_test
+    use spacecurve_mod, only: sfcmap_init, sfcmap_test, sfcmap_i2pos
 
     type (parallel_t), intent(in) :: par
     type (GridVertex_t), pointer, intent(out) :: GridVertex(:)
@@ -62,7 +62,7 @@ contains
     integer :: ie, i, j, face, id, sfc, nelemd, nelemdi, rank, ierr, &
          ne_fac_prev, ne_fac_next, tmp, pos(2)
     logical :: debug
-    logical, parameter :: dbg = .true., verbose = .false.
+    logical, parameter :: dbg = .true., verbose = .true.
 
     if (.not. present(debug_in)) then
        debug = dbg
@@ -106,7 +106,7 @@ contains
        call sgi_genspacecurve(ne, gm%sfcfacemesh)
     end if
 
-    if (debug) then
+    if (debug .and. par%masterproc) then
        ! sgi_genspacepart
        if (gm%rank2sfc(npart+1) /= nelem) then
           print *, 'SGI> nelem',nelem,'rank2sfc',gm%rank2sfc
@@ -145,6 +145,11 @@ contains
           sfctest(sfc+1) = sfctest(sfc+1) + 1
           tmp = sfc2face(gm, sfc)
           if (tmp /= face) print *, 'SGI> sfc2face',sfc,face,tmp
+          if (gm%use_sfcmap) then
+             tmp = sfcmap_i2pos(gm%sfcmap, modulo(sfc, gm%ne*gm%ne), pos)
+             tmp = sfcpos2ui(gm, pos, face)
+             if (tmp /= ie) print *, 'SGI> sfcpos2ui:',id,sfc,tmp,pos
+          end if
        end do
        do ie = 1, nelem
           if (sfctest(ie) .ne. 1) then
@@ -440,6 +445,9 @@ contains
     ne2 = gm%ne*gm%ne
     nelem = 6*ne2
 
+    ! For factorable ne, owned_or_used is the one remaining unscalable piece. It
+    ! can be made scalable using, e.g., a hash table, a binary tree, a heap, or
+    ! an extra counting loop.
     allocate(gm%owned_or_used(nelem))
     gm%owned_or_used = .false.
 
@@ -1005,8 +1013,7 @@ contains
 
     logical :: debug, verbose
     integer :: ine, nelem_edge, j, ne_orig, nelem_orig, ierr
-    !integer, parameter :: nes(5) = (/ 6, 9, 11, 30, 60 /)
-    integer, parameter :: nes(1) = (/ 7 /)
+    integer, parameter :: nes(5) = (/ 6, 9, 11, 30, 60 /)
     
     if (.not. present(verbose_in)) verbose = .true.
 
@@ -1039,6 +1046,5 @@ contains
     ne = ne_orig
     nelem = nelem_orig
     call mpi_barrier(par%comm, ierr)
-    print *,'SGI rank',par%rank,ierr,ne,nelem
   end subroutine sgi_test
 end module scalable_grid_init_mod
