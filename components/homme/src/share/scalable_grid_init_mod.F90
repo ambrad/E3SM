@@ -471,7 +471,8 @@ contains
        end do
        sfcidx(nface+1) = gm%rank2sfc(gm%rank+2)
        max_pos = max(max_pos, sfcidx(nface+1) - sfcidx(nface))
-       ! For each face:
+       ! Map owned global ID to SFC index and call sgi_CubeTopology_impl for
+       ! each owned ID.
        allocate(positions(max_pos,2), id_sfc_pairs(gm%rank2sfc(gm%rank+2)-idxs,2))
        k = 1
        do i = 1, nface
@@ -494,6 +495,7 @@ contains
        end do
        deallocate(positions)
     else
+       ! Find owned IDs and call sgi_CubeTopology_impl for each owned ID.
        do id = 1, nelem
           sfc = u2sfc(gm, id)
           owned = sfc >= gm%rank2sfc(gm%rank+1) .and. sfc < gm%rank2sfc(gm%rank+2)
@@ -503,6 +505,7 @@ contains
        end do
     end if
 
+    ! Collect owned and remote-used global IDs.
     n_owned_or_used = 0
     do id = 1, nelem
        if (gm%owned_or_used(id)) n_owned_or_used = n_owned_or_used + 1
@@ -516,6 +519,8 @@ contains
        end if
     end do
     deallocate(gm%owned_or_used)
+
+    ! Fill in GridVertex for owned and remote-used elements.
     allocate(gm%gv(n_owned_or_used))
     k = 1
     do i = 1, n_owned_or_used
@@ -539,6 +544,7 @@ contains
        gv%nbrs_ptr = 0
        gv%nbrs_wgt_ghost = 1
     end do
+
     if (gm%use_sfcmap) then
        deallocate(id_sfc_pairs)
     else
