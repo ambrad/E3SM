@@ -60,7 +60,7 @@ contains
     type (GridManager_t), pointer :: gm
     integer, allocatable :: sfctest(:)
     integer :: ie, i, j, face, id, sfc, nelemd, nelemdi, rank, ierr, &
-         ne_fac_prev, ne_fac_next, tmp
+         ne_fac_prev, ne_fac_next, tmp, pos(2)
     logical :: debug
     logical, parameter :: dbg = .true., verbose = .false.
 
@@ -142,9 +142,9 @@ contains
           end if
           sfc = u2sfc(gm, id)
           if (.not. (sfc >= 0 .and. sfc < nelem)) print *, 'SGI> u2sfc:',id,sfc
+          sfctest(sfc+1) = sfctest(sfc+1) + 1
           tmp = sfc2face(gm, sfc)
           if (tmp /= face) print *, 'SGI> sfc2face',sfc,face,tmp
-          sfctest(sfc+1) = sfctest(sfc+1) + 1
        end do
        do ie = 1, nelem
           if (sfctest(ie) .ne. 1) then
@@ -242,6 +242,22 @@ contains
        sfc = os + gm%sfcfacemesh(pos(1), pos(2))
     end if
   end function s2sfc
+
+  ! Map SFC position, cube face to global ID.
+  function sfcpos2ui(gm, pos, face) result(id)
+    type (GridManager_t), intent(in) :: gm
+    integer, intent(in) :: pos(2), face
+    integer :: id, ne, i, j
+
+    ne = gm%ne
+    select case (face)
+    case (1,2); i = pos(1);      j = ne+1-pos(2)
+    case (3,5); i = pos(1);      j = pos(2);
+    case (4);   i = pos(2);      j = ne+1-pos(1)
+    case (6);   i = ne+1-pos(1); j = ne+1-pos(2)
+    end select
+    id = s2ui(i, j, face)
+  end function sfcpos2ui
 
   ! Map global element ID to SFC index.
   function u2sfc(gm, id) result(sfc)
@@ -469,7 +485,7 @@ contains
           ! Map (SFC position, face) to global ID.
           face = sfc2face(gm, sfcidx(i))
           do j = 1, idxe-idxs+1
-             id = s2ui(positions(j,1), positions(j,2), face)
+             id = sfcpos2ui(gm, positions(j,:), face)
              cnt = cnt + 1; owned_ids(cnt) = id
              gm%owned_or_used(id) = .true.   
              call sgi_CubeTopology_impl(gm, id, -1)
@@ -486,7 +502,7 @@ contains
           call sgi_CubeTopology_impl(gm, id, -1)
        end do
     end if
-    print *,'amb>',gm%rank,'|',owned_ids(1:cnt)
+    call print_array(gm%rank, 'ids', owned_ids(1:cnt))
     call mpi_barrier(0, i)
     !TODO Still need to incorporate this into the following. A list of owned
     ! SFCs will be in the same order as gvid below, but just the owned
@@ -521,7 +537,7 @@ contains
     if (.not. gm%use_sfcmap) deallocate(gm%sfcfacemesh)
     deallocate(gm%rank2sfc)
   end subroutine sgi_CubeTopology_phase1
-  
+
   subroutine sgi_CubeTopology_phase2(gm)
     use gridgraph_mod, only: allocate_gridvertex_nbrs, deallocate_gridvertex_nbrs
     use cube_mod, only: CubeSetupEdgeIndex
@@ -969,6 +985,22 @@ contains
     end do
   end subroutine sgi_check
 
+  subroutine print_array(rank, name, a)
+    integer, intent(in) :: rank, a(:)
+    character(*), intent(in) :: name
+    character(128) :: filename
+    integer :: i
+
+    write(filename, '(a,i1)') name,rank
+    open(unit=42, file=filename)
+    write (42, fmt='(a,a,a)', advance='no')  '(sv b.',filename(1:5),'(sort ['
+    do i = 1, size(a)
+       write (42, fmt='(i4)', advance='no') a(i)
+    end do
+    write (42, fmt='(a)', advance='yes') ']))'
+    close(42)
+  end subroutine print_array
+  
   ! Compare MetaVertex created the scalable way against the one created the
   ! original, unscalable way.
   subroutine sgi_test(par, verbose_in)
