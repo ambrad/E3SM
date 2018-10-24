@@ -62,7 +62,7 @@ contains
     integer :: ie, i, j, face, id, sfc, nelemd, nelemdi, rank, ierr, &
          ne_fac_prev, ne_fac_next, tmp, pos(2)
     logical :: debug
-    logical, parameter :: dbg = .true., verbose = .true.
+    logical, parameter :: dbg = .false., verbose = .true.
 
     if (.not. present(debug_in)) then
        debug = dbg
@@ -439,7 +439,7 @@ contains
     integer :: id, ne2, nelem, sfc, i, j, k, id_nbr, n_owned_or_used, o
     logical :: owned
     integer :: idxs, idxe, face_current, face, nface, sfcidx(7), max_pos
-    integer, allocatable :: positions(:,:)
+    integer, allocatable :: positions(:,:), id_sfc_pairs(:,:)
 
     gm%phase = 1
     ne2 = gm%ne*gm%ne
@@ -472,7 +472,8 @@ contains
        sfcidx(nface+1) = gm%rank2sfc(gm%rank+2)
        max_pos = max(max_pos, sfcidx(nface+1) - sfcidx(nface))
        ! For each face:
-       allocate(positions(max_pos,2))
+       allocate(positions(max_pos,2), id_sfc_pairs(gm%rank2sfc(gm%rank+2)-idxs,2))
+       k = 1
        do i = 1, nface
           ! Get the SFC owned index range on this face. sfcidx is the SFC index
           ! on the cube, while here we need the index on a face, hence the mod.
@@ -484,7 +485,10 @@ contains
           face = sfc2face(gm, sfcidx(i))
           do j = 1, idxe-idxs+1
              id = sfcpos2ui(gm, positions(j,:), face)
-             gm%owned_or_used(id) = .true.   
+             gm%owned_or_used(id) = .true.
+             id_sfc_pairs(k,1) = id
+             id_sfc_pairs(k,2) = sfcidx(i) + j - 1
+             k = k + 1
              call sgi_CubeTopology_impl(gm, id, -1)
           end do
        end do
@@ -498,9 +502,6 @@ contains
           call sgi_CubeTopology_impl(gm, id, -1)
        end do
     end if
-    !TODO Still need to incorporate this into the following. A list of owned
-    ! SFCs will be in the same order as gvid below, but just the owned
-    ! subset. So do id_sfc_pairs(n_owned, 2) to match id to gm%number.
 
     n_owned_or_used = 0
     do id = 1, nelem
@@ -516,11 +517,21 @@ contains
     end do
     deallocate(gm%owned_or_used)
     allocate(gm%gv(n_owned_or_used))
+    k = 1
     do i = 1, n_owned_or_used
        call allocate_gridvertex_nbrs(gm%gv(i))
        gv => gm%gv(i)
        gv%number = gm%gvid(i)
-       gv%SpaceCurve = u2sfc(gm, gv%number)
+       if (gm%use_sfcmap) then
+          if (gv%number == id_sfc_pairs(k,1)) then
+             gv%SpaceCurve = id_sfc_pairs(k,2)
+             k = k + 1
+          else
+             gv%SpaceCurve = u2sfc(gm, gv%number)
+          end if
+       else
+          gv%SpaceCurve = u2sfc(gm, gv%number)
+       end if
        gv%processor_number = sfc2rank(gm%rank2sfc, gv%SpaceCurve) + 1
        gv%face_number = 0
        gv%nbrs = -1
@@ -528,7 +539,11 @@ contains
        gv%nbrs_ptr = 0
        gv%nbrs_wgt_ghost = 1
     end do
-    if (.not. gm%use_sfcmap) deallocate(gm%sfcfacemesh)
+    if (gm%use_sfcmap) then
+       deallocate(id_sfc_pairs)
+    else
+       deallocate(gm%sfcfacemesh)
+    end if
     deallocate(gm%rank2sfc)
   end subroutine sgi_CubeTopology_phase1
 
