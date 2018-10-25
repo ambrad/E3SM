@@ -4357,6 +4357,27 @@ void run (CDR& cdr, const Data& d, const Real* q_min_r, const Real* q_max_r,
           //todo Generalize to one rhom field per level. Until then, we're not
           // getting QLT's safety benefit.
           if (ti == 0) cdr.cdr->set_rhom(lci, 0, volume);
+          if (Qm_prev < -0.5) {
+            // set_Qm will throw. Report information before that happens.
+            std::stringstream ss;
+            ss << "Qm_prev < -0.5: Qm_prev = " << Qm_prev
+               << " on rank " << cdr.p->rank()
+               << " at (ie,gid,spli,k0,q,ti,sbli,lci,k,n0_qdp,tl_np1) = ("
+               << ie << "," << cdr.ie2gci[ie] << "," << spli << "," << k0 << ","
+               << q << "," << ti << "," << sbli << "," << lci << "," << k << ","
+               << d.n0_qdp << "," << d.tl_np1 << ")\n";
+            ss << "Qdp(:,:,k,q,n0_qdp) = [";
+            for (Int j = 0; j < np; ++j)
+              for (Int i = 0; i < np; ++i)
+                ss << " " << qdp_p(i,j,k,q,d.n0_qdp);
+            ss << "]\n";
+            ss << "dp3d(:,:,k,tl_np1) = [";
+            for (Int j = 0; j < np; ++j)
+              for (Int i = 0; i < np; ++i)
+                ss << " " << dp3d_c(i,j,k,d.tl_np1);
+            ss << "]\n";
+            pr(ss.str());
+          }
           cdr.cdr->set_Qm(lci, ti, Qm, Qm_min, Qm_max, Qm_prev);
         }
       }
