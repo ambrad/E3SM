@@ -317,7 +317,7 @@ struct CDR {
     const Real& Qm_min, const Real& Qm_max,
     // If mass conservation is requested, provide the previous Qm, which will be
     // summed to give the desired global mass.
-    const Real Qm_prev = -1) = 0;
+    const Real Qm_prev = std::numeric_limits<Real>::infinity()) = 0;
 
   // Run the QLT algorithm with the values set by set_{rho,Q}. It is an error to
   // call this function from a parallel region.
@@ -487,7 +487,7 @@ public:
   KOKKOS_INLINE_FUNCTION
   void set_Qm(const Int& lclcellidx, const Int& tracer_idx,
               const Real& Qm, const Real& Qm_min, const Real& Qm_max,
-              const Real Qm_prev = -1) override;
+              const Real Qm_prev = std::numeric_limits<Real>::infinity()) override;
 
   void run() override;
 
@@ -673,7 +673,7 @@ public:
   KOKKOS_INLINE_FUNCTION
   void set_Qm(const Int& lclcellidx, const Int& tracer_idx,
               const Real& Qm, const Real& Qm_min, const Real& Qm_max,
-              const Real Qm_prev = -1) override;
+              const Real Qm_prev = std::numeric_limits<Real>::infinity()) override;
 
   void run() override;
 
@@ -1209,7 +1209,7 @@ void QLT<ES>::set_Qm (const Int& lclcellidx, const Int& tracer_idx,
       cedr_kernel_throw_if(true, "set_Q: invalid problem_type.");
     }
     if (problem_type & ProblemType::conserve) {
-      cedr_kernel_throw_if(Qm_prev < -0.5,
+      cedr_kernel_throw_if(Qm_prev == std::numeric_limits<Real>::infinity(),
                            "Qm_prev was not provided to set_Q.");
       bd[3] = Qm_prev;
     }
@@ -4358,25 +4358,29 @@ void run (CDR& cdr, const Data& d, const Real* q_min_r, const Real* q_max_r,
           // getting QLT's safety benefit.
           if (ti == 0) cdr.cdr->set_rhom(lci, 0, volume);
           if (Qm_prev < -0.5) {
-            // set_Qm will throw. Report information before that happens.
-            std::stringstream ss;
-            ss << "Qm_prev < -0.5: Qm_prev = " << Qm_prev
-               << " on rank " << cdr.p->rank()
-               << " at (ie,gid,spli,k0,q,ti,sbli,lci,k,n0_qdp,tl_np1) = ("
-               << ie << "," << cdr.ie2gci[ie] << "," << spli << "," << k0 << ","
-               << q << "," << ti << "," << sbli << "," << lci << "," << k << ","
-               << d.n0_qdp << "," << d.tl_np1 << ")\n";
-            ss << "Qdp(:,:,k,q,n0_qdp) = [";
-            for (Int j = 0; j < np; ++j)
-              for (Int i = 0; i < np; ++i)
-                ss << " " << qdp_p(i,j,k,q,d.n0_qdp);
-            ss << "]\n";
-            ss << "dp3d(:,:,k,tl_np1) = [";
-            for (Int j = 0; j < np; ++j)
-              for (Int i = 0; i < np; ++i)
-                ss << " " << dp3d_c(i,j,k,d.tl_np1);
-            ss << "]\n";
-            pr(ss.str());
+            static bool first = true;
+            if (first) {
+              first = false;
+              // set_Qm will throw. Report information before that happens.
+              std::stringstream ss;
+              ss << "Qm_prev < -0.5: Qm_prev = " << Qm_prev
+                 << " on rank " << cdr.p->rank()
+                 << " at (ie,gid,spli,k0,q,ti,sbli,lci,k,n0_qdp,tl_np1) = ("
+                 << ie << "," << cdr.ie2gci[ie] << "," << spli << "," << k0 << ","
+                 << q << "," << ti << "," << sbli << "," << lci << "," << k << ","
+                 << d.n0_qdp << "," << d.tl_np1 << ")\n";
+              ss << "Qdp(:,:,k,q,n0_qdp) = [";
+              for (Int j = 0; j < np; ++j)
+                for (Int i = 0; i < np; ++i)
+                  ss << " " << qdp_p(i,j,k,q,d.n0_qdp);
+              ss << "]\n";
+              ss << "dp3d(:,:,k,tl_np1) = [";
+              for (Int j = 0; j < np; ++j)
+                for (Int i = 0; i < np; ++i)
+                  ss << " " << dp3d_c(i,j,k,d.tl_np1);
+              ss << "]\n";
+              pr(ss.str());
+            }
           }
           cdr.cdr->set_Qm(lci, ti, Qm, Qm_min, Qm_max, Qm_prev);
         }
