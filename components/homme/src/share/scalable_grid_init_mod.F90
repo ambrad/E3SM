@@ -11,6 +11,8 @@ module scalable_grid_init_mod
   implicit none
   private
 
+  ! Basic interface. This is all that is needed for standard HOMME
+  ! initialization.
   public :: &
 
     ! (Almost) scalably generate MetaVertex. SFC generation is still unscalable,
@@ -22,19 +24,27 @@ module scalable_grid_init_mod
     ! Deallocate data used in grid initialization. This is separate from
     ! sgi_init_grid because there are external clients of GridVertex and
     ! gid2igv. Both GridVertex and MetaVertex are deallocated.
-    sgi_finalize, &
+    sgi_finalize
+
+  ! Interface to interact with detailed information. These are used by optional
+  ! components that need to know problem distribution details.
+  public :: &
 
     ! Map a cell global ID to the entry in the GridVertex_t array GridVertex. An
     ! invalid gid input, i.e. one that does not exist in gm%gvid, is permitted;
     ! in that case, the output igv is invalid and so GridVertex(igv) /= gid.
     sgi_gid2igv, &
 
+    ! Get a pointer to an array in which rank2sfc(rank) : rank2sfc(rank+1)-1
+    ! gives the SFC indices owned by rank.
+    sgi_get_rank2sfc, &
+
     ! Comprehensively test this module.
     sgi_test
 
   type, public :: GridManager_t
      integer :: rank, phase, ne
-     integer, allocatable :: sfcfacemesh(:,:), rank2sfc(:), gvid(:)
+     integer, allocatable :: sfcfacemesh(:,:), rank2sfc(:), gvid(:,:)
      logical(kind=1), allocatable :: owned_or_used(:)
      type (GridVertex_t), pointer :: gv(:) => null()
      type (GridEdge_t), pointer :: ge(:) => null()
@@ -62,7 +72,7 @@ contains
     integer :: ie, i, j, face, id, sfc, nelemd, nelemdi, rank, ierr, &
          ne_fac_prev, ne_fac_next, tmp, pos(2)
     logical :: debug
-    logical, parameter :: dbg = .false., verbose = .true.
+    logical, parameter :: dbg = .true., verbose = .true.
 
     if (.not. present(debug_in)) then
        debug = dbg
@@ -163,10 +173,10 @@ contains
     call sgi_CubeTopology_phase1(gm)
 
     if (debug) then
-       do i = 1, size(gm%gvid)
-          if (gid2igv(gm, gm%gvid(i)) /= i) then
+       do i = 1, size(gm%gvid,2)
+          if (gid2igv(gm, gm%gvid(1,i)) /= i) then
              print *, 'SGI> igv, ret, gid, gvid', &
-                  i,gid2igv(gm, gm%gvid(i)),gm%gvid(i),gm%gvid
+                  i,gid2igv(gm, gm%gvid(1,i)),gm%gvid(1,i),gm%gvid
              exit
           end if
        end do
@@ -187,7 +197,7 @@ contains
 
     gm => sgi_gm
 
-    deallocate(gm%gvid)
+    deallocate(gm%rank2sfc, gm%gvid)
     do i = 1, size(gm%gv)
        call deallocate_gridvertex_nbrs(gm%gv(i))
     end do
@@ -473,7 +483,7 @@ contains
        max_pos = max(max_pos, sfcidx(nface+1) - sfcidx(nface))
        ! Map owned global ID to SFC index and call sgi_CubeTopology_impl for
        ! each owned ID.
-       allocate(positions(max_pos,2), id_sfc_pairs(gm%rank2sfc(gm%rank+2)-idxs,2))
+       allocate(positions(max_pos,2), id_sfc_pairs(2,gm%rank2sfc(gm%rank+2)-idxs))
        k = 1
        do i = 1, nface
           ! Get the SFC owned index range on this face. sfcidx is the SFC index
@@ -487,8 +497,8 @@ contains
           do j = 1, idxe-idxs+1
              id = sfcpos2ui(gm, positions(j,:), face)
              gm%owned_or_used(id) = .true.
-             id_sfc_pairs(k,1) = id
-             id_sfc_pairs(k,2) = sfcidx(i) + j - 1
+             id_sfc_pairs(1,k) = id
+             id_sfc_pairs(2,k) = sfcidx(i) + j - 1
              k = k + 1
              call sgi_CubeTopology_impl(gm, id, -1)
           end do
@@ -510,32 +520,37 @@ contains
     do id = 1, nelem
        if (gm%owned_or_used(id)) n_owned_or_used = n_owned_or_used + 1
     end do
-    allocate(gm%gvid(n_owned_or_used))
+    allocate(gm%gvid(2,n_owned_or_used))
     i = 1
     do id = 1, nelem
        if (gm%owned_or_used(id)) then
-          gm%gvid(i) = id
+          gm%gvid(1,i) = id
           i = i + 1
        end if
     end do
     deallocate(gm%owned_or_used)
+    if (gm%use_sfcmap) then
+       gm%gvid(2,:) = -1
+       ! Collect owned SFC indices.
+       do i = 1, size(id_sfc_pairs,2)
+          id = id_sfc_pairs(1,i)
+          j = gid2igv(gm, id)
+          gm%gvid(2,j) = id_sfc_pairs(2,i)
+       end do
+       deallocate(id_sfc_pairs)
+    end if
 
     ! Fill in GridVertex for owned and remote-used elements.
     allocate(gm%gv(n_owned_or_used))
-    k = 1
     do i = 1, n_owned_or_used
        call allocate_gridvertex_nbrs(gm%gv(i))
        gv => gm%gv(i)
-       gv%number = gm%gvid(i)
-       if (gm%use_sfcmap) then
-          if (gv%number == id_sfc_pairs(k,1)) then
-             gv%SpaceCurve = id_sfc_pairs(k,2)
-             k = k + 1
-          else
-             gv%SpaceCurve = u2sfc(gm, gv%number)
-          end if
+       gv%number = gm%gvid(1,i)
+       if (gm%use_sfcmap .and. gm%gvid(2,i) /= -1) then
+          gv%SpaceCurve = gm%gvid(2,i)
        else
           gv%SpaceCurve = u2sfc(gm, gv%number)
+          gm%gvid(2,i) = gv%SpaceCurve
        end if
        gv%processor_number = sfc2rank(gm%rank2sfc, gv%SpaceCurve) + 1
        gv%face_number = 0
@@ -545,12 +560,7 @@ contains
        gv%nbrs_wgt_ghost = 1
     end do
 
-    if (gm%use_sfcmap) then
-       deallocate(id_sfc_pairs)
-    else
-       deallocate(gm%sfcfacemesh)
-    end if
-    deallocate(gm%rank2sfc)
+    if (.not. gm%use_sfcmap) deallocate(gm%sfcfacemesh)
   end subroutine sgi_CubeTopology_phase1
 
   subroutine sgi_CubeTopology_phase2(gm)
@@ -768,11 +778,11 @@ contains
     integer :: lo, hi, igv
 
     lo = 1
-    hi = size(gm%gvid)
+    hi = size(gm%gvid,2)
     do while (hi > lo)
        igv = (lo + hi)/2
-       if (gm%gvid(igv) == gid) return
-       if (gid > gm%gvid(igv)) then
+       if (gm%gvid(1,igv) == gid) return
+       if (gid > gm%gvid(1,igv)) then
           lo = igv+1
        else
           hi = igv-1
@@ -788,6 +798,12 @@ contains
 
     igv = gid2igv(sgi_gm, gid)
   end function sgi_gid2igv
+
+  subroutine sgi_get_rank2sfc(rank2sfc)
+    integer, pointer, intent(out) :: rank2sfc(:)
+
+    rank2sfc = sgi_gm%rank2sfc
+  end subroutine sgi_get_rank2sfc
 
   ! Scalable replacement for GridGraph_mod::initgridedge. Only edges belonging
   ! to owned or remote-used elements are instantiated. Only owned and
@@ -820,7 +836,7 @@ contains
                 if (.not. owned_or_used) then
                    gid = gm%gv(j)%nbrs(mystart + m)
                    igv = gid2igv(gm, gid)
-                   owned_or_used = gm%gvid(igv) == gid
+                   owned_or_used = gm%gvid(1,igv) == gid
                 end if
                 if (owned_or_used) then
                    nelem_edge = nelem_edge + 1
@@ -846,7 +862,7 @@ contains
                 if (.not. owned_or_used) then
                    gid = gm%gv(j)%nbrs(mystart + m)
                    igv = gid2igv(gm, gid)
-                   owned_or_used = gm%gvid(igv) == gid
+                   owned_or_used = gm%gvid(1,igv) == gid
                 end if
                 if (.not. owned_or_used) cycle
 
