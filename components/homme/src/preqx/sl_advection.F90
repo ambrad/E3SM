@@ -146,6 +146,8 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
   integer                                       :: num_neighbors, scalar_q_bounds, info
   logical :: slmm, cisl, qos
 
+  real(kind=real_kind) :: tmp
+
   call t_barrierf('Prim_Advec_Tracers_remap_ALE', hybrid%par%comm)
   call t_startf('Prim_Advec_Tracers_remap_ALE')
 
@@ -171,6 +173,17 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
         end do
      end do
      call t_stopf('SLMM_v2x')
+
+     if (semi_lagrange_cdr_check) then
+        do ie = nets, nete
+           do q = 1, qsize
+              tmp = minval(elem(ie)%state%Qdp(:,:,:,q,n0_qdp))
+              if (tmp < -0.1) then
+                 print *,'amb> min Qdp at n0_qdp for ie,q is',ie,q,tmp
+              end if
+           end do
+        end do
+     end if
 
      call t_startf('SLMM_csl')
      !todo Here and in the set-pointer loop for CEDR, do just in the first call.
