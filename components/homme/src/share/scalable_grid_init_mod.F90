@@ -35,7 +35,7 @@ module scalable_grid_init_mod
     ! in that case, the output igv is invalid and so GridVertex(igv) /= gid.
     sgi_gid2igv, &
 
-    ! Get a pointer to an array in which rank2sfc(rank) : rank2sfc(rank+1)-1
+    ! Get a pointer to an array in which rank2sfc(rank+1) : rank2sfc(rank+2)-1
     ! gives the SFC indices owned by rank.
     sgi_get_rank2sfc, &
 
@@ -44,7 +44,11 @@ module scalable_grid_init_mod
 
   type, public :: GridManager_t
      integer :: rank, phase, ne
-     integer, allocatable :: sfcfacemesh(:,:), rank2sfc(:), gvid(:,:)
+     integer, allocatable :: &
+          sfcfacemesh(:,:), & ! output from genspacecurve
+          rank2sfc(:), & ! rank2sfc(rank+1) : rank2sfc(rank+1)-1 is this rank's owned SFC indices
+          gvid(:,:), &   ! global owned and remote-used IDs ordered by ID
+          owned_ids(:)   ! owned IDs in SFC index order
      logical(kind=1), allocatable :: owned_or_used(:)
      type (GridVertex_t), pointer :: gv(:) => null()
      type (GridEdge_t), pointer :: ge(:) => null()
@@ -72,7 +76,7 @@ contains
     integer :: ie, i, j, face, id, sfc, nelemd, nelemdi, rank, ierr, &
          ne_fac_prev, ne_fac_next, tmp, pos(2)
     logical :: debug
-    logical, parameter :: dbg = .true., verbose = .true.
+    logical, parameter :: dbg = .false., verbose = .true.
 
     if (.not. present(debug_in)) then
        debug = dbg
@@ -197,7 +201,7 @@ contains
 
     gm => sgi_gm
 
-    deallocate(gm%rank2sfc, gm%gvid)
+    deallocate(gm%rank2sfc, gm%gvid, gm%owned_ids)
     do i = 1, size(gm%gv)
        call deallocate_gridvertex_nbrs(gm%gv(i))
     end do
@@ -529,8 +533,9 @@ contains
        end if
     end do
     deallocate(gm%owned_or_used)
+
+    gm%gvid(2,:) = -1
     if (gm%use_sfcmap) then
-       gm%gvid(2,:) = -1
        ! Collect owned SFC indices.
        do i = 1, size(id_sfc_pairs,2)
           id = id_sfc_pairs(1,i)

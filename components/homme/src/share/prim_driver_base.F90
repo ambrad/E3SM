@@ -231,7 +231,7 @@ contains
          .not. MeshUseMeshFile .and. &
          partmethod .eq. SFCURVE .and. &
          .not. (is_zoltan_partition(partmethod) .or. is_zoltan_task_mapping(z2_map_method))
-    if (.true.) then
+    if (.false.) then
        if (par%masterproc) print *, '~*~ COMPOSE turn off SGI, turn on cedr_unittest ~*~'
        can_scalably_init_grid = .false.
     end if
