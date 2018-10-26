@@ -299,6 +299,16 @@ subroutine stepon_run2(phys_state, phys_tend, dyn_in, dyn_out )
                      dyn_in%elem(ie)%state%Qdp(i,j,k,ic,tl_fQdp) = &
                           dp(i,j,k)*dyn_in%elem(ie)%derived%FQ(i,j,k,ic)
 
+
+if(dyn_in%elem(ie)%state%Qdp(i,j,k,ic,tl_fQdp) < 0.0) then
+print *, 'OGHERE1 we are!'
+print *, 'i,j,k,ic,ie,dyn_in%elem(ie)%state%Qdp(i,j,k,ic,tl_fQdp)'
+print *, i,j,k,ic,ie,dyn_in%elem(ie)%state%Qdp(i,j,k,ic,tl_fQdp)
+endif
+
+
+
+
 ! BEWARE critical region if using OpenMP over k (AAM)
                      if (ic==1) then
                         fq = dp(i,j,k)*(  dyn_in%elem(ie)%derived%FQ(i,j,k,ic) - &
@@ -323,6 +333,16 @@ subroutine stepon_run2(phys_state, phys_tend, dyn_in, dyn_out )
                        ( hybi(k+1) - hybi(k) )*dyn_in%elem(ie)%state%ps_v(i,j,tl_f)
                   dyn_in%elem(ie)%state%Q(i,j,k,ic)= &
                        dyn_in%elem(ie)%state%Qdp(i,j,k,ic,tl_fQdp)/dp_tmp
+
+
+if(dyn_in%elem(ie)%state%Q(i,j,k,ic) < 0.0) then
+print *, 'OGHERE2 we are!'
+print *, 'i,j,k,ic,ie,dyn_in%elem(ie)%state%Q(i,j,k,ic)'
+print *, i,j,k,ic,ie,dyn_in%elem(ie)%state%Q(i,j,k,ic)
+endif
+
+
+
                end do
             end do
           end do
@@ -376,6 +396,9 @@ subroutine stepon_run2(phys_state, phys_tend, dyn_in, dyn_out )
          end do
 
 !$omp parallel do private(k, j, i, ic, dp_tmp)
+
+
+!inefficient loop
          do k=1,nlev
             do ic=1,pcnst
                do j=1,np
