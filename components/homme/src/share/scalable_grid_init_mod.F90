@@ -24,7 +24,10 @@ module scalable_grid_init_mod
     ! Deallocate data used in grid initialization. This is separate from
     ! sgi_init_grid because there are external clients of GridVertex and
     ! gid2igv. Both GridVertex and MetaVertex are deallocated.
-    sgi_finalize
+    sgi_finalize, &
+
+    ! Return whether sgi_init_grid was called.
+    sgi_is_initialized
 
   ! Interface to interact with detailed information. These are used by optional
   ! components that need to know problem distribution details.
@@ -47,8 +50,7 @@ module scalable_grid_init_mod
      integer, allocatable :: &
           sfcfacemesh(:,:), & ! output from genspacecurve
           rank2sfc(:), & ! rank2sfc(rank+1) : rank2sfc(rank+1)-1 is this rank's owned SFC indices
-          gvid(:,:), &   ! global owned and remote-used IDs ordered by ID
-          owned_ids(:)   ! owned IDs in SFC index order
+          gvid(:,:)      ! global owned and remote-used IDs ordered by ID
      logical(kind=1), allocatable :: owned_or_used(:)
      type (GridVertex_t), pointer :: gv(:) => null()
      type (GridEdge_t), pointer :: ge(:) => null()
@@ -58,6 +60,7 @@ module scalable_grid_init_mod
   end type GridManager_t
 
   type (GridManager_t), target :: sgi_gm
+  logical :: sgi_use = .false.
 
 contains
 
@@ -77,6 +80,8 @@ contains
          ne_fac_prev, ne_fac_next, tmp, pos(2)
     logical :: debug
     logical, parameter :: dbg = .false., verbose = .true.
+
+    sgi_use = .true.
 
     if (.not. present(debug_in)) then
        debug = dbg
@@ -191,6 +196,11 @@ contains
     GridVertex => gm%gv
   end subroutine sgi_init_grid
 
+  function sgi_is_initialized()
+    logical :: sgi_is_initialized
+    sgi_is_initialized = sgi_use
+  end function sgi_is_initialized
+
   subroutine sgi_finalize()
     use gridgraph_mod, only: deallocate_gridvertex_nbrs
     use metagraph_mod, only: destroyMetaGraph
@@ -201,7 +211,7 @@ contains
 
     gm => sgi_gm
 
-    deallocate(gm%rank2sfc, gm%gvid, gm%owned_ids)
+    deallocate(gm%rank2sfc, gm%gvid)
     do i = 1, size(gm%gv)
        call deallocate_gridvertex_nbrs(gm%gv(i))
     end do
@@ -807,7 +817,7 @@ contains
   subroutine sgi_get_rank2sfc(rank2sfc)
     integer, pointer, intent(out) :: rank2sfc(:)
 
-    rank2sfc = sgi_gm%rank2sfc
+    rank2sfc => sgi_gm%rank2sfc
   end subroutine sgi_get_rank2sfc
 
   ! Scalable replacement for GridGraph_mod::initgridedge. Only edges belonging
