@@ -155,6 +155,17 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
 
   call TimeLevel_Qdp( tl, qsplit, n0_qdp, np1_qdp)
 
+  if (semi_lagrange_cdr_check) then
+     do ie = nets, nete
+        do q = 1, qsize
+           tmp = minval(elem(ie)%state%Qdp(:,:,:,q,n0_qdp))
+           if (tmp < -0.1) then
+              print *,'amb> before min Qdp at n0_qdp for ie,q is',ie,q,tmp
+           end if
+        end do
+     end do
+  end if
+
   ! compute displacements for departure grid store in elem%derived%vstar
   call ALE_RKdss (elem, nets, nete, hybrid, deriv, dt, tl)
 
@@ -173,17 +184,6 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
         end do
      end do
      call t_stopf('SLMM_v2x')
-
-     if (semi_lagrange_cdr_check) then
-        do ie = nets, nete
-           do q = 1, qsize
-              tmp = minval(elem(ie)%state%Qdp(:,:,:,q,n0_qdp))
-              if (tmp < -0.1) then
-                 print *,'amb> min Qdp at n0_qdp for ie,q is',ie,q,tmp
-              end if
-           end do
-        end do
-     end if
 
      call t_startf('SLMM_csl')
      !todo Here and in the set-pointer loop for CEDR, do just in the first call.
@@ -451,6 +451,20 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
   else
      call apply_cobra(elem, hybrid, tl, nets, nete, n0_qdp, np1_qdp, minq, maxq)
      call t_stopf('Prim_Advec_Tracers_remap_ALE')
+  end if
+  if (semi_lagrange_cdr_check) then
+     do ie = nets, nete
+        do q = 1, qsize
+           tmp = minval(elem(ie)%state%Qdp(:,:,:,q,n0_qdp))
+           if (tmp < -0.1) then
+              print *,'amb> after min Qdp at n0_qdp for ie,q is',ie,q,tmp
+           end if
+           tmp = minval(elem(ie)%state%Qdp(:,:,:,q,np1_qdp))
+           if (tmp < -0.1) then
+              print *,'amb> after min Qdp at np1_qdp for ie,q is',ie,q,tmp
+           end if
+        end do
+     end do
   end if
 end subroutine Prim_Advec_Tracers_remap_ALE
 
