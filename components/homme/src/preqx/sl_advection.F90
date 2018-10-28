@@ -160,7 +160,7 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
         do q = 1, qsize
            tmp = minval(elem(ie)%state%Qdp(:,:,:,q,n0_qdp))
            if (tmp < -0.1) then
-              print *,'amb> before min Qdp at n0_qdp for ie,q is',ie,q,tmp
+              print *,'amb> SL before min Qdp at n0_qdp for ie,q is',ie,q,tmp
            end if
         end do
      end do
@@ -450,11 +450,11 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
         do q = 1, qsize
            tmp = minval(elem(ie)%state%Qdp(:,:,:,q,n0_qdp))
            if (tmp < -0.1) then
-              print *,'amb> after min Qdp at n0_qdp for ie,q is',ie,q,tmp
+              print *,'amb> SL after min Qdp at n0_qdp for ie,q is',ie,q,tmp
            end if
            tmp = minval(elem(ie)%state%Qdp(:,:,:,q,np1_qdp))
            if (tmp < -0.1) then
-              print *,'amb> after min Qdp at np1_qdp for ie,q is',ie,q,tmp
+              print *,'amb> SL after min Qdp at np1_qdp for ie,q is',ie,q,tmp
            end if
         end do
      end do

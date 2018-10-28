@@ -36,7 +36,7 @@ contains
   !
   use kinds,          only: real_kind
   use hybvcoord_mod,  only: hvcoord_t
-  use control_mod,    only: rsplit
+  use control_mod,    only: rsplit, semi_lagrange_cdr_check
   use hybrid_mod,     only: hybrid_t
 
 
@@ -50,6 +50,7 @@ contains
 
   real (kind=real_kind), dimension(np,np,nlev)  :: dp,dp_star
   real (kind=real_kind), dimension(np,np,nlev,2)  :: ttmp
+  real (kind=real_kind) :: tmp
 
   call t_startf('vertical_remap')
 
@@ -140,9 +141,27 @@ contains
      ! remap the gll tracers from lagrangian levels (dp_star)  to REF levels dp
      if (qsize>0) then
 
+        if (semi_lagrange_cdr_check) then
+           do q = 1, qsize
+              tmp = minval(elem(ie)%state%Qdp(:,:,:,q,np1_qdp))
+              if (tmp < -0.1) then
+                 print *,'amb> VR before min Qdp at np1_qdp for ie,q is',ie,q,tmp
+              end if
+           end do
+        end if
+
        call t_startf('vertical_remap1_3')
        call remap1(elem(ie)%state%Qdp(:,:,:,:,np1_qdp),np,qsize,dp_star,dp)
        call t_stopf('vertical_remap1_3')
+
+        if (semi_lagrange_cdr_check) then
+           do q = 1, qsize
+              tmp = minval(elem(ie)%state%Qdp(:,:,:,q,np1_qdp))
+              if (tmp < -0.1) then
+                 print *,'amb> VR after min Qdp at np1_qdp for ie,q is',ie,q,tmp
+              end if
+           end do
+        end if
 
      endif
   enddo
