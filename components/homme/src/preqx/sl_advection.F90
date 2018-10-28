@@ -445,13 +445,6 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
      if (barrier) call perf_barrier(hybrid)
      call t_stopf('CEDR_check')
   end if
-  if (semi_lagrange_cdr_alg /= 1) then
-     call t_stopf('Prim_Advec_Tracers_remap_ALE')
-     return
-  else
-     call apply_cobra(elem, hybrid, tl, nets, nete, n0_qdp, np1_qdp, minq, maxq)
-     call t_stopf('Prim_Advec_Tracers_remap_ALE')
-  end if
   if (semi_lagrange_cdr_check) then
      do ie = nets, nete
         do q = 1, qsize
@@ -465,6 +458,13 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
            end if
         end do
      end do
+  end if
+  if (semi_lagrange_cdr_alg /= 1) then
+     call t_stopf('Prim_Advec_Tracers_remap_ALE')
+     return
+  else
+     call apply_cobra(elem, hybrid, tl, nets, nete, n0_qdp, np1_qdp, minq, maxq)
+     call t_stopf('Prim_Advec_Tracers_remap_ALE')
   end if
 end subroutine Prim_Advec_Tracers_remap_ALE
 
