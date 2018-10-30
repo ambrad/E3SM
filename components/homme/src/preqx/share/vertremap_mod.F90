@@ -12,6 +12,7 @@ module vertremap_mod
   use perf_mod, only               : t_startf, t_stopf  ! _EXTERNAL
   use parallel_mod, only           : abortmp, parallel_t
   use control_mod, only : vert_remap_q_alg
+  use control_mod, only: sl_dbg_ctr
 
   implicit none
   private
@@ -50,7 +51,10 @@ contains
 
   real (kind=real_kind), dimension(np,np,nlev)  :: dp,dp_star
   real (kind=real_kind), dimension(np,np,nlev,2)  :: ttmp
-  real (kind=real_kind) :: tmp
+
+  real (kind=real_kind) :: tmp,tmp1
+  logical :: before_triggered
+  logical, save :: first = .true.
 
   call t_startf('vertical_remap')
 
@@ -142,10 +146,12 @@ contains
      if (qsize>0) then
 
         if (semi_lagrange_cdr_check) then
+           before_triggered = .false.
            do q = 1, qsize
               tmp = minval(elem(ie)%state%Qdp(:,:,:,q,np1_qdp))
               if (tmp < -0.1) then
-                 print *,'amb> VR before min Qdp at np1_qdp for ie,q is',ie,q,tmp
+                 before_triggered = .true.
+                 print *,'amb> VR before min Qdp at np1_qdp for ctr,ie,q is',sl_dbg_ctr,ie,q,tmp
               end if
            end do
         end if
@@ -158,7 +164,21 @@ contains
            do q = 1, qsize
               tmp = minval(elem(ie)%state%Qdp(:,:,:,q,np1_qdp))
               if (tmp < -0.1) then
-                 print *,'amb> VR after min Qdp at np1_qdp for ie,q is',ie,q,tmp
+                 print *,'amb> VR after min Qdp at np1_qdp for ctr,ie,q is',sl_dbg_ctr,ie,q,tmp
+                 if (.not. before_triggered .and. first) then
+                    do j = 1,np
+                       do i = 1,np
+                          tmp1 = minval(elem(ie)%state%Qdp(i,j,:,q,np1_qdp))
+                          if (first .and. tmp1 == tmp) then
+                             print *,'amb> VR first q,i,j,minval',q,i,j,tmp
+                             print *,'amb> VR first Qdp',elem(ie)%state%Qdp(i,j,:,q,np1_qdp)
+                             print *,'amb> VR first dp',dp(i,j,:)
+                             print *,'amb> VR first dp_star',dp_star(i,j,:)
+                             first = .false.
+                          end if
+                       end do
+                    end do
+                 end if
               end if
            end do
         end if

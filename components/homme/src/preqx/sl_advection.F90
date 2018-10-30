@@ -26,6 +26,7 @@ module sl_advection
   use parallel_mod, only       : abortmp, parallel_t
   use coordinate_systems_mod, only : cartesian3D_t
   use compose_mod
+  use control_mod, only: sl_dbg_ctr
 
   implicit none
 
@@ -160,7 +161,7 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
         do q = 1, qsize
            tmp = minval(elem(ie)%state%Qdp(:,:,:,q,n0_qdp))
            if (tmp < -0.1) then
-              print *,'amb> SL before min Qdp at n0_qdp for ie,q is',ie,q,tmp
+              print *,'amb> SL before min Qdp at n0_qdp for ctr,ie,q is',sl_dbg_ctr,ie,q,tmp
            end if
         end do
      end do
@@ -450,14 +451,15 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
         do q = 1, qsize
            tmp = minval(elem(ie)%state%Qdp(:,:,:,q,n0_qdp))
            if (tmp < -0.1) then
-              print *,'amb> SL after min Qdp at n0_qdp for ie,q is',ie,q,tmp
+              print *,'amb> SL after min Qdp at n0_qdp for ctr,ie,q is',sl_dbg_ctr,ie,q,tmp
            end if
            tmp = minval(elem(ie)%state%Qdp(:,:,:,q,np1_qdp))
            if (tmp < -0.1) then
-              print *,'amb> SL after min Qdp at np1_qdp for ie,q is',ie,q,tmp
+              print *,'amb> SL after min Qdp at np1_qdp for ctr,ie,q is',sl_dbg_ctr,ie,q,tmp
            end if
         end do
      end do
+     sl_dbg_ctr = sl_dbg_ctr + 1
   end if
   if (semi_lagrange_cdr_alg /= 1) then
      call t_stopf('Prim_Advec_Tracers_remap_ALE')

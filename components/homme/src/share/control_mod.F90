@@ -40,6 +40,7 @@ module control_mod
   integer, public :: semi_lagrange_nearest_point_lev = 0
   ! Leftover for transport_alg = 1
   logical, public  :: use_semi_lagrange_transport_local_conservation  = .false.
+  integer, public :: sl_dbg_ctr = 0
 
 ! set to .true. to run the theta nonydrostatic model in hydrostatic mode
   logical, public :: theta_hydrostatic_mode = .false.  
