@@ -55,6 +55,7 @@ contains
   real (kind=real_kind) :: tmp,tmp1
   logical :: before_triggered
   logical, save :: first = .true.
+  real (kind=real_kind), allocatable :: Qdp_save(:,:,:,:)
 
   call t_startf('vertical_remap')
 
@@ -146,6 +147,10 @@ contains
      if (qsize>0) then
 
         if (semi_lagrange_cdr_check) then
+           if (first) then
+              allocate(Qdp_save(np,np,nlev,qsize))
+              Qdp_save(:,:,:,:) = elem(ie)%state%Qdp(:,:,:,1:qsize,np1_qdp)
+           end if
            before_triggered = .false.
            do q = 1, qsize
               tmp = minval(elem(ie)%state%Qdp(:,:,:,q,np1_qdp))
@@ -171,6 +176,7 @@ contains
                           tmp1 = minval(elem(ie)%state%Qdp(i,j,:,q,np1_qdp))
                           if (first .and. tmp1 == tmp) then
                              print *,'amb> VR first q,i,j,minval',q,i,j,tmp
+                             print *,'amb> VR first Qdp_save',Qdp_save(i,j,:,q)
                              print *,'amb> VR first Qdp',elem(ie)%state%Qdp(i,j,:,q,np1_qdp)
                              print *,'amb> VR first dp',dp(i,j,:)
                              print *,'amb> VR first dp_star',dp_star(i,j,:)
@@ -181,6 +187,7 @@ contains
                  end if
               end if
            end do
+           if (allocated(Qdp_save)) deallocate(Qdp_save)
         end if
 
      endif
