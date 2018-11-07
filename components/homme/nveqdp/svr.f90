@@ -1,9 +1,39 @@
+! gfortran -g -cpp svr.f90 -o svr; if [ $? == 0 ]; then ./svr; fi
+
 module svr_mod
   implicit none
 
   integer, parameter :: vert_remap_q_alg = 2, real_kind=8, nlev = 72
 
 contains
+  ! Find k such that pio(k) <= pivot < pio(k+1). Provide a reasonable input
+  ! value for k.
+  subroutine binary_search(pio, pivot, k)
+    real(kind=real_kind), intent(in) :: pio(nlev+2), pivot
+    integer, intent(inout) :: k
+    integer :: lo, hi, mid
+
+    if (pio(k) > pivot) then
+       lo = 1
+       hi = k
+    else
+       lo = k
+       hi = nlev+2
+    end if
+    do while (hi > lo + 1)
+       k = (lo + hi)/2
+       if (pio(k) > pivot) then
+          hi = k
+       else
+          lo = k
+       end if
+    end do
+    k = lo
+    if (pio(k) > pivot .or. pio(k+1) <= pivot) then
+       print *, 'amb> whoops',k,pio(k),pio(k+1),pivot
+    end if
+  end subroutine binary_search
+
   subroutine remap_Q_ppm(Qdp,nx,qsize,dp1,dp2)
     ! remap 1 field
     ! input:  Qdp   field to be remapped (NOTE: MASS, not MIXING RATIO)
@@ -68,11 +98,15 @@ contains
           !each other.
           do k = 1 , nlev
              kk = k  !Keep from an order n^2 search operation by assuming the old cell index is close.
-             !Find the index of the old grid cell in which this new cell's bottom interface resides.
-             do while ( pio(kk) <= pin(k+1) )
-                kk = kk + 1
-             enddo
-             kk = kk - 1                   !kk is now the cell index we're integrating over.
+             if (pio(kk) > pin(k+1)) then
+                call binary_search(pio, pin(k+1), kk)
+             else
+                !Find the index of the old grid cell in which this new cell's bottom interface resides.
+                do while ( pio(kk) <= pin(k+1) )
+                   kk = kk + 1
+                enddo
+                kk = kk - 1                   !kk is now the cell index we're integrating over.
+             end if
              if (kk == nlev+1) kk = nlev   !This is to keep the indices in bounds.
              !Top bounds match anyway, so doesn't matter what coefficients are used
              kid(k) = kk                   !Save for reuse

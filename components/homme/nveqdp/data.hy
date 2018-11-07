@@ -106,9 +106,9 @@
  nx 1 qsize 1
  vert_remap_q_alg 1 nlev (len dp))
 
-(for [i (range 55)]
+(for [i (range 58)]
   (sv (get Qdp_save i) 0))
-(for [i (range 55 (len Qdp_save))]
+(for [i (range 58 (len Qdp_save))]
   (sv (get Qdp_save i) 1))
 
 (defn print-f90-array [name a]
