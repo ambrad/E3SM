@@ -29,10 +29,45 @@ contains
        end if
     end do
     k = lo
-    if (pio(k) > pivot .or. pio(k+1) <= pivot) then
-       print *, 'amb> whoops',k,pio(k),pio(k+1),pivot
-    end if
   end subroutine binary_search
+
+  subroutine test_binary_search()
+    real(8) :: pio(nlev+2), pin(nlev+1)
+    integer :: trial, k, kk
+    logical :: ok
+
+    ok = .true.
+    do trial = 1, 100000
+       call random_number(pio)
+       pio(1) = 0
+       do k = 2, nlev+1
+          pio(k) = pio(k-1) + pio(k)
+       end do
+       call random_number(pin)
+       pin(1) = 0
+       do k = 2, nlev+1
+          pin(k) = pin(k-1) + pin(k)
+       end do
+       if (pin(nlev+1) <= pio(nlev+1)) then
+          pin(nlev+1) = pio(nlev+1)
+       else
+          pio(nlev+1) = pin(nlev+1)
+       end if
+       pio(nlev+2) = pio(nlev+1) + 1
+       do k = 1, nlev
+          kk = k
+          call binary_search(pio, pin(k+1), kk)
+          if (kk == nlev+1) kk = nlev
+          if (pio(kk) > pin(k+1) .or. &
+               pio(kk+1) < pin(k+1) .or. &
+               (pio(kk+1) == pin(k+1) .and. k /= nlev)) then
+             print *, 'tbs> failed',k,kk,pio(kk),pio(kk+1),pin(k+1)
+             ok = .false.
+          end if
+       end do
+       if (.not. ok) exit
+    end do
+  end subroutine test_binary_search
 
   subroutine remap_Q_ppm(Qdp,nx,qsize,dp1,dp2)
     ! remap 1 field
@@ -271,6 +306,8 @@ program main
   implicit none
 
 #include "data.f90"
+
+  call test_binary_search()
   call remap_Q_ppm(Qdp,1,1,dp1,dp2)
   print *, Qdp
 end program main
