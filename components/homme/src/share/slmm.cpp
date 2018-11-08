@@ -4,6 +4,12 @@
 #ifndef NDEBUG
 # define NDEBUG
 #endif
+#include <mpi.h>
+//#pragma message "We want assertions"
+//#undef NDEBUG
+
+// Uncomment this to look for MPI-related memory leaks.
+//#define COMPOSE_DEBUG_MPI
 
 #define BUILD_CISL
 
@@ -34,19 +40,23 @@
 namespace siqk {
 namespace ko = Kokkos;
 
-#define pr(m) do {                              \
-    std::stringstream _ss_;                     \
-    _ss_ << "slmm: " <<  m << std::endl;        \
-    std::cerr << _ss_.str();                    \
+#define pr(m) do {                                          \
+    int _pid_ = 0;                                          \
+    MPI_Comm_rank(MPI_COMM_WORLD, &_pid_);                  \
+    std::stringstream _ss_;                                 \
+    _ss_.precision(15);                                     \
+    _ss_ << "slmm: pid " << _pid_ << " " << m << std::endl; \
+    std::cerr << _ss_.str();                                \
   } while (0)
 #define prc(m) pr(#m << " | " << (m))
 #define puf(m)"(" << #m << " " << (m) << ")"
 #define pu(m) << " " << puf(m)
 template<typename T>
 static void prarr (const std::string& name, const T* const v, const size_t n) {
-  std::cerr << name << ": ";
-  for (size_t i = 0; i < n; ++i) std::cerr << " " << v[i];
-  std::cerr << "\n";
+  std::stringstream ss;
+  ss << name << ": ";
+  for (size_t i = 0; i < n; ++i) ss << " " << v[i];
+  pr(ss.str());
 }
 #define mprarr(m) siqk::prarr(#m, m.data(), m.size())
 
@@ -2278,8 +2288,6 @@ typedef Int Size;
 
 namespace ko = Kokkos;
 
-typedef siqk::sh::Mesh<ko::HostSpace> Mesh;
-
 // A 2D array A can be thought of as having nslices(A) rows and szslice(A)
 // columns. A slice can be obtained by
 //     auto ak = slice(A, k);
@@ -2524,31 +2532,6 @@ int unittest () {
   return nerr;
 }
 
-std::string to_string (const Mesh& m) {
-  std::stringstream ss;
-  ss.precision(17);
-  ss << "(mesh nnode " << nslices(m.p) << " nelem " << nslices(m.e);
-  for (Int ie = 0; ie < nslices(m.e); ++ie) {
-    ss << "\n  (elem " << ie;
-    ss << " (";
-    for (Int iv = 0; iv < szslice(m.e); ++iv) ss << " " << m.e(ie,iv);
-    ss << ")";
-    for (Int iv = 0; iv < szslice(m.e); ++iv) {
-      ss << "\n     (p";
-      for (Int d = 0; d < 3; ++d)
-        ss << " " << m.p(m.e(ie,iv),d);
-      ss << ")";
-      ss << "\n     (nml";
-      for (Int d = 0; d < 3; ++d)
-        ss << " " << m.nml(m.en(ie,iv),d);
-      ss << ")";
-    }
-    ss << "))";
-  }
-  ss << ")";
-  return ss.str();
-}
-
 static const Real sqrt5 = std::sqrt(5.0);
 static const Real oosqrt5 = 1.0 / sqrt5;
 
@@ -2650,6 +2633,12 @@ inline bool is_inside (const siqk::sh::Mesh<siqk::ko::HostSpace>& m,
   return inside;
 }
 
+// Both cubed_sphere_map=0 and cubed_sphere_map=2 can use this
+// method. (cubed_sphere_map=1 is not impl'ed in Homme.) This method is natural
+// for cubed_sphere_map=2, so RRM works automatically. cubed_sphere_map=0 is
+// supported in Homme only for regular cubed-sphere meshes, not RRM; in that
+// case, edges are great arcs, so again this impl works. In contrast,
+// calc_sphere_to_ref has to be specialized on cubed_sphere_map.
 int get_src_cell (const siqk::sh::Mesh<siqk::ko::HostSpace>& m, // Local mesh.
                   const Real* v, // 3D Cartesian point.
                   const Int my_ic = -1) { // Target cell in the local mesh.
@@ -2691,6 +2680,31 @@ int get_src_cell (const siqk::sh::Mesh<siqk::ko::HostSpace>& m, // Local mesh.
   return -1;
 }
 
+std::string to_string (const siqk::sh::Mesh<siqk::ko::HostSpace>& m) {
+  std::stringstream ss;
+  ss.precision(17);
+  ss << "(mesh nnode " << nslices(m.p) << " nelem " << nslices(m.e);
+  for (Int ie = 0; ie < nslices(m.e); ++ie) {
+    ss << "\n  (elem " << ie;
+    ss << " (";
+    for (Int iv = 0; iv < szslice(m.e); ++iv) ss << " " << m.e(ie,iv);
+    ss << ")";
+    for (Int iv = 0; iv < szslice(m.e); ++iv) {
+      ss << "\n     (p";
+      for (Int d = 0; d < 3; ++d)
+        ss << " " << m.p(m.e(ie,iv),d);
+      ss << ")";
+      ss << "\n     (nml";
+      for (Int d = 0; d < 3; ++d)
+        ss << " " << m.nml(m.en(ie,iv),d);
+      ss << ")";
+    }
+    ss << "))";
+  }
+  ss << ")";
+  return ss.str();
+}
+
 namespace nearest_point {
 /* Get external segments in preproc step.
    Get approximate nearest point in each segment.
@@ -2699,6 +2713,8 @@ namespace nearest_point {
      Approx distance as cartesian distance.
    Of the approx dists, take the point associated with smallest.
  */
+
+typedef siqk::sh::Mesh<siqk::ko::HostSpace> Mesh;
 
 template <typename ES = ko::DefaultExecutionSpace>
 struct MeshNearestPointData {
@@ -2940,20 +2956,21 @@ Int test_fill_perim (const Mesh& m, const Int& tgt_ic,
 
 typedef nearest_point::MeshNearestPointData<ko::HostSpace> MeshNearestPointData;
 
-void init_nearest_point_data (const Mesh& m, MeshNearestPointData& d) {
+void init_nearest_point_data (const nearest_point::Mesh& m,
+                              MeshNearestPointData& d) {
   nearest_point::fill_perim(m, d);
 }
 
-int get_nearest_point (const Mesh& m, const MeshNearestPointData& d,
+int get_nearest_point (const nearest_point::Mesh& m, const MeshNearestPointData& d,
                        Real* v, const Int my_ic) {
   nearest_point::calc(m, d, v);
   return get_src_cell(m, v, my_ic);
 }
 
-Int unittest (const slmm::Mesh& m, const Int& tgt_elem) {
-  Int nerr = 0;
+Int unittest (const nearest_point::Mesh& m, const Int tgt_elem) {
+  Int nerr = 0, ne;
   const Int nc = len(m.e);
-  for (Int ic = 0; ic < nc; ++ic) {
+  for (Int ic = 0, ne = 0; ic < nc; ++ic) {
     const auto cell = slice(m.e, ic);
     static const Real alphas[] = { 0.01, 0.99, 0, 1 };
     static const int nalphas = sizeof(alphas)/sizeof(*alphas);
@@ -2962,27 +2979,143 @@ Int unittest (const slmm::Mesh& m, const Int& tgt_elem) {
         const Real a = alphas[i], oma = 1-a, b = alphas[j], omb = 1-b;
         Real v[3] = {0};
         for (Int d = 0; d < 3; ++d)
-          v[d] = (b  *(a*m.p(cell[0], d) + oma*m.p(cell[1], d)) + 
+          v[d] = (  b*(a*m.p(cell[0], d) + oma*m.p(cell[1], d)) + 
                   omb*(a*m.p(cell[3], d) + oma*m.p(cell[2], d)));
         if (i < 2 && j < 2) {
-          if (get_src_cell(m, v, tgt_elem) != ic) ++nerr;
+          if (get_src_cell(m, v, tgt_elem) != ic) ++ne;
         } else {
-          if (get_src_cell(m, v, tgt_elem) == -1) ++nerr;
+          if (get_src_cell(m, v, tgt_elem) == -1) ++ne;
         }
       }
   }
-  nerr += nearest_point::test_canpoa();
+  if (ne) pr("slmm::unittest: get_src_cell failed");
+  nerr += ne;
+  ne = nearest_point::test_canpoa();
+  nerr += ne;
+  if (ne) pr("slmm::unittest: test_canpoa failed");
   {
     MeshNearestPointData d;
     init_nearest_point_data(m, d);
-    nerr += nearest_point::test_fill_perim(m, tgt_elem, d);
-    nerr += nearest_point::test_calc(m, tgt_elem, d);
+    ne = nearest_point::test_fill_perim(m, tgt_elem, d);
+    if (ne) pr("slmm::unittest: test_fill_perim failed");
+    nerr += ne;
+    ne = nearest_point::test_calc(m, tgt_elem, d);
+    if (ne) pr("slmm::unittest: test_calc failed");
+    nerr += ne;
   }
   return nerr;
 }
 
+typedef Kokkos::View<Int*, ko::HostSpace> Ints;
+
+//TODO We might switch to one 
+// Local mesh patch centered on the target element.
+struct LocalMesh : public siqk::sh::Mesh<ko::HostSpace> {
+  typedef siqk::sh::Mesh<ko::HostSpace> Super;
+  typedef typename Super::IntArray IntArray;
+  typedef typename Super::RealArray RealArray;
+
+  // tgt_elem is the index of the target element in this mesh.
+  Int tgt_elem;
+};
+
+// Wrap call to siqk::sqr::calc_sphere_to_ref. That impl supports only
+// cubed_sphere_map=2, and we want to keep it that way. This wrapper supports,
+// in addition, cubed_sphere_map=0.
+struct SphereToRef {
+  void init (const Int cubed_sphere_map, const Int nelem_global,
+             const Ints::const_type& lid2facenum) {
+    cubed_sphere_map_ = cubed_sphere_map;
+    ne_ = static_cast<Int>(std::round(std::sqrt((nelem_global / 6))));
+    slmm_throw_if( ! (cubed_sphere_map_ != 0 || 6*ne_*ne_ == nelem_global),
+                  "If cubed_sphere_map = 0, then the mesh must be a "
+                  "regular cubed-sphere.");
+    lid2facenum_ = lid2facenum;
+  }
+
+  Real tol () const {
+    return 1e3 * ne_ * std::numeric_limits<Real>::epsilon();
+  }
+
+  // See siqk::sqr::calc_sphere_to_ref for docs.
+  void calc_sphere_to_ref (
+    const Int& ie, const LocalMesh& m,
+    const Real q[3],
+    Real& a, Real& b,
+    siqk::sqr::Info* const info = nullptr,
+    const Int max_its = 10,
+    const Real tol = 1e2*std::numeric_limits<Real>::epsilon()) const
+  {
+    if (cubed_sphere_map_ == 2)
+      siqk::sqr::calc_sphere_to_ref(m.p, slice(m.e, m.tgt_elem), q, a, b,
+                                    info, max_its, tol);
+    else {
+      const Int face = lid2facenum_(ie); //assume: ie corresponds to m.tgt_elem.
+      map_sphere_coord_to_face_coord(face-1, q[0], q[1], q[2], a, b);
+      a = map_face_coord_to_cell_ref_coord(a);
+      b = map_face_coord_to_cell_ref_coord(b);
+      if (info) { info->success = true; info->n_iterations = 1; }
+    }
+  }
+
+  bool check (const Int& ie, const LocalMesh& m) const {
+    if (cubed_sphere_map_ != 0) return true;
+    const Int face = lid2facenum_(ie); //assume: ie corresponds to m.tgt_elem.
+    Real cent[3] = {0};
+    const auto cell = slice(m.e, m.tgt_elem);
+    for (int i = 0; i < 4; ++i)
+      for (int d = 0; d < 3; ++d)
+        cent[d] += 0.25*m.p(cell[i], d);
+    const Int cf = get_cube_face_idx(cent[0], cent[1], cent[2]) + 1;
+    return face == cf;
+  }
+
+private:
+  Int ne_, cubed_sphere_map_;
+  Ints::const_type lid2facenum_;
+
+  // Follow the description given in
+  //     coordinate_systems_mod::unit_face_based_cube_to_unit_sphere.
+  static Int get_cube_face_idx (const Real& x, const Real& y, const Real& z) {
+    const Real ax = std::abs(x), ay = std::abs(y), az = std::abs(z);
+    if (ax >= ay) {
+      if (ax >= az) return x > 0 ? 0 : 2;
+      else return z > 0 ? 5 : 4;
+    } else {
+      if (ay >= az) return y > 0 ? 1 : 3;
+      else return z > 0 ? 5 : 4;
+    }
+  }
+
+  static void map_sphere_coord_to_face_coord (
+    const Int& face_idx, const Real& x, const Real& y, const Real& z,
+    Real& fx, Real& fy)
+  {
+    static constexpr Real theta_max = 0.25*M_PI;
+    Real d;
+    switch (face_idx) {
+    case  0: d = std::abs(x); fx =  y/d; fy =  z/d; break;
+    case  1: d = std::abs(y); fx = -x/d; fy =  z/d; break;
+    case  2: d = std::abs(x); fx = -y/d; fy =  z/d; break;
+    case  3: d = std::abs(y); fx =  x/d; fy =  z/d; break;
+    case  4: d = std::abs(z); fx =  y/d; fy =  x/d; break;
+    default: d = std::abs(z); fx =  y/d; fy = -x/d;
+    }
+    fx = std::atan(fx) / theta_max;
+    fy = std::atan(fy) / theta_max;
+  }
+
+  Real map_face_coord_to_cell_ref_coord (Real a) const {
+    a = (0.5*(1 + a))*ne_;
+    a = 2*(a - std::floor(a)) - 1;
+    return a;
+  }
+};
+
+// Advecter has purely mesh-local knowledge, with one exception noted below.
 struct Advecter {
   typedef std::shared_ptr<Advecter> Ptr;
+  typedef std::shared_ptr<const Advecter> ConstPtr;
 
   struct Alg {
     enum Enum {
@@ -3006,14 +3139,16 @@ struct Advecter {
   };
 
   Advecter (const Int np, const Int nelem, const Int transport_alg,
-            const Int nearest_point_permitted_lev_bdy)
+            const Int cubed_sphere_map, const Int nearest_point_permitted_lev_bdy)
     : alg_(Alg::convert(transport_alg)),
       np_(np), np2_(np*np), np4_(np2_*np2_),
+      cubed_sphere_map_(cubed_sphere_map),
       tq_order_(alg_ == Alg::qos ? 14 : 12),
       nearest_point_permitted_lev_bdy_(nearest_point_permitted_lev_bdy)
   {
+    slmm_throw_if(cubed_sphere_map == 0 && Alg::is_cisl(alg_),
+                  "When cubed_sphere_map = 0, SLMM supports only ISL methods.");
     local_mesh_.resize(nelem);
-    local_mesh_tgt_elem_.resize(nelem);
     if (Alg::is_cisl(alg_))
       mass_mix_.resize(np4_);
     if (nearest_point_permitted_lev_bdy_ >= 0)
@@ -3028,66 +3163,32 @@ struct Advecter {
   Alg::Enum alg () const { return alg_; }
   bool is_cisl () const { return Alg::is_cisl(alg_); }
 
+  Int cubed_sphere_map () const { return cubed_sphere_map_; }
+  const Ints& lid2facenum () const { return lid2facenum_; }
+
+  // nelem_global is used only if cubed_sphere_map = 0, to deduce ne in
+  // nelem_global = 6 ne^2. That is b/c cubed_sphere_map = 0 is supported in
+  // Homme only for regular meshes (not RRM), and ne is essential to using the
+  // efficiency it provides.
+  void init_meta_data(const Int nelem_global, const Int* lid2facenum);
+
   template <typename Array3D>
-  void init_local_mesh_if_needed (const Int ie, const Array3D& corners,
-                                  const Real* p_inside) {
-    slmm_assert(ie < static_cast<Int>(local_mesh_.size()));
-    if (local_mesh_[ie].p.extent_int(0) != 0) return;
-    auto& m = local_mesh_[ie];
-    const Int
-      nd = 3,
-      nvert = corners.extent_int(1),
-      ncell = corners.extent_int(2),
-      N = nvert*ncell;
-    m.p = typename Mesh::RealArray("p", N);
-    m.e = typename Mesh::IntArray("e", ncell, nvert);
-    for (Int ci = 0, k = 0; ci < ncell; ++ci)
-      for (Int vi = 0; vi < nvert; ++vi, ++k) {
-        for (int j = 0; j < nd; ++j)
-          m.p(k,j) = corners(j,vi,ci);
-        m.e(ci,vi) = k;
-      }
-    siqk::test::fill_normals<siqk::SphereGeometry>(m);
-    local_mesh_tgt_elem_[ie] = slmm::get_src_cell(m, p_inside);
-    slmm_assert(local_mesh_tgt_elem_[ie] >= 0 &&
-                local_mesh_tgt_elem_[ie] < ncell);
-    if (nearest_point_permitted_lev_bdy_ >= 0)
-      init_nearest_point_data(local_mesh_[ie],
-                              local_mesh_nearest_point_data_[ie]);
-  }
+  void init_local_mesh_if_needed(const Int ie, const Array3D& corners,
+                                 const Real* p_inside);
 
   // Check that our ref <-> sphere map agrees with Homme's. p_homme is a GLL
   // point on the sphere. Check that we map it to a GLL ref point.
-  void check_ref2sphere (const Int ie, const Real* p_homme) {
-    const auto& m = local_mesh(ie);
-    const auto& me = local_mesh_tgt_elem(ie);
-    Real ref_coord[2];
-    siqk::sqr::Info info;
-    siqk::sqr::calc_sphere_to_ref(m.p, slice(m.e, me), p_homme,
-                                  ref_coord[0], ref_coord[1], &info);
-    const slmm::Basis basis(4, 0);
-    const slmm::GLL gll;
-    const Real* x, * wt;
-    gll.get_coef(basis, x, wt);
-    int fnd[2] = {0};
-    for (int i = 0; i < 4; ++i)
-      for (int j = 0; j < 2; ++j)
-        if (std::abs(ref_coord[j] - x[i]) < 1e-12)
-          fnd[j] = 1;
-    if ( ! fnd[0] || ! fnd[1])
-      printf("COMPOSE check_ref2sphere: %1.15e %1.15e %d %d\n",
-             ref_coord[0], ref_coord[1], info.success, info.n_iterations);
-  }
+  void check_ref2sphere(const Int ie, const Real* p_homme);
 
   void init_M_tgt_if_needed();
 
-  const Mesh& local_mesh (const Int ie) const {
+  const LocalMesh& local_mesh (const Int ie) const {
     slmm_assert(ie < static_cast<Int>(local_mesh_.size()));
     return local_mesh_[ie];
-  };
-
-  Int local_mesh_tgt_elem (const Int ie) const {
-    return local_mesh_tgt_elem_[ie];
+  }
+  LocalMesh& local_mesh (const Int ie) {
+    slmm_assert(ie < static_cast<Int>(local_mesh_.size()));
+    return local_mesh_[ie];
   }
 
   const MeshNearestPointData& nearest_point_data (const Int ie) const {
@@ -3101,6 +3202,7 @@ struct Advecter {
   }
 
   std::vector<Real>& mass_mix_buffer () { return mass_mix_; }
+
   const Real* M_tgt (const Int& ie) {
     slmm_assert(ie >= 0 && ie < nelem());
     return alg_ == Alg::jct ?
@@ -3108,22 +3210,62 @@ struct Advecter {
       mass_tgt_.data() + ie*np4_;
   }
 
-  bool nearest_point_permitted (const Int& lev) {
+  bool nearest_point_permitted (const Int& lev) const {
     return lev <= nearest_point_permitted_lev_bdy_;
   }
 
+  const SphereToRef& s2r () const { return s2r_; }
+
 private:
   const Alg::Enum alg_;
-  const Int np_, np2_, np4_;
-  std::vector<Mesh> local_mesh_;
-  std::vector<Int> local_mesh_tgt_elem_;
+  const Int np_, np2_, np4_, cubed_sphere_map_;
+  std::vector<LocalMesh> local_mesh_;
   // For CISL:
   const Int tq_order_;
   std::vector<Real> mass_tgt_, mass_mix_, rhs_;
   // For recovery from get_src_cell failure:
   Int nearest_point_permitted_lev_bdy_;
   std::vector<MeshNearestPointData> local_mesh_nearest_point_data_;
+  // Meta data obtained at initialization that can be used later.
+  Ints lid2facenum_;
+  SphereToRef s2r_;
 };
+
+void Advecter
+::init_meta_data (const Int nelem_global, const Int* lid2facenum) {
+  const auto nelemd = local_mesh_.size();
+  lid2facenum_ = Ints("Advecter::lid2facenum", nelemd);
+  std::copy(lid2facenum, lid2facenum + nelemd, lid2facenum_.data());
+  s2r_.init(cubed_sphere_map_, nelem_global, lid2facenum_);
+}
+
+template <typename Array3D>
+void Advecter::init_local_mesh_if_needed (const Int ie, const Array3D& corners,
+                                          const Real* p_inside) {
+  slmm_assert(ie < static_cast<Int>(local_mesh_.size()));
+  if (local_mesh_[ie].p.extent_int(0) != 0) return;
+  auto& m = local_mesh_[ie];
+  const Int
+    nd = 3,
+    nvert = corners.extent_int(1),
+    ncell = corners.extent_int(2),
+    N = nvert*ncell;
+  m.p = typename LocalMesh::RealArray("p", N);
+  m.e = typename LocalMesh::IntArray("e", ncell, nvert);
+  for (Int ci = 0, k = 0; ci < ncell; ++ci)
+    for (Int vi = 0; vi < nvert; ++vi, ++k) {
+      for (int j = 0; j < nd; ++j)
+        m.p(k,j) = corners(j,vi,ci);
+      m.e(ci,vi) = k;
+    }
+  siqk::test::fill_normals<siqk::SphereGeometry>(m);
+  m.tgt_elem = slmm::get_src_cell(m, p_inside);
+  slmm_assert(m.tgt_elem >= 0 &&
+              m.tgt_elem < ncell);
+  if (nearest_point_permitted_lev_bdy_ >= 0)
+    init_nearest_point_data(local_mesh_[ie],
+                            local_mesh_nearest_point_data_[ie]);
+}
 
 void Advecter::init_M_tgt_if_needed ()  {
   if ( ! Alg::is_cisl(alg_)) return;
@@ -3186,7 +3328,7 @@ void Advecter::init_M_tgt_if_needed ()  {
       // Local mesh.
       const auto& mesh = local_mesh_[ie];
       // Target cell in this local mesh.
-      const auto ci = local_mesh_tgt_elem_[ie];
+      const auto ci = mesh.tgt_elem;
       slmm_assert(ci >= 0 && ci < nslices(mesh.e));
       const auto cell = slice(mesh.e, ci);
       // Sphere coordinates of cell corners.
@@ -3228,6 +3370,33 @@ void Advecter::init_M_tgt_if_needed ()  {
       M_tgt += np4_;
     }
   }
+}
+
+void Advecter::check_ref2sphere (const Int ie, const Real* p_homme) {
+  const auto& m = local_mesh(ie);
+  Real ref_coord[2];
+  siqk::sqr::Info info;
+  const Real tol = s2r_.tol();
+  s2r_.calc_sphere_to_ref(ie, m, p_homme, ref_coord[0], ref_coord[1], &info);
+  const slmm::Basis basis(4, 0);
+  const slmm::GLL gll;
+  const Real* x, * wt;
+  gll.get_coef(basis, x, wt);
+  int fnd[2] = {0};
+  Real min[2] = {1,1};
+  for (int i = 0; i < 4; ++i)
+    for (int j = 0; j < 2; ++j) {
+      const Real d = std::abs(ref_coord[j] - x[i]);
+      min[j] = std::min(min[j], d);
+      if (d < tol)
+        fnd[j] = 1;
+    }
+  if ( ! fnd[0] || ! fnd[1])
+    printf("COMPOSE check_ref2sphere: %1.15e %1.15e (%1.2e %1.2e) %d %d\n",
+           ref_coord[0], ref_coord[1], min[0], min[1],
+           info.success, info.n_iterations);
+  if ( ! s2r_.check(ie, m))
+    printf("COMPOSE SphereToRef::check return false: ie = %d\n", ie);
 }
 } // namespace slmm
 
@@ -3311,10 +3480,12 @@ void study (const Int elem_global_id, const Cartesian3D* corners,
 
 static slmm::Advecter::Ptr g_advecter;
 
-void slmm_init (const Int np, const Int nelemd, const Int transport_alg,
-                const Int sl_nearest_point_lev) {
-  g_advecter = std::make_shared<slmm::Advecter>(np, nelemd, transport_alg,
-                                                sl_nearest_point_lev);
+void slmm_init (const Int np, const Int nelem, const Int nelemd,
+                const Int transport_alg, const Int cubed_sphere_map,
+                const Int sl_nearest_point_lev, const Int* lid2facenum) {
+  g_advecter = std::make_shared<slmm::Advecter>(
+    np, nelemd, transport_alg, cubed_sphere_map, sl_nearest_point_lev);
+  g_advecter->init_meta_data(nelem, lid2facenum);
 }
 
 #ifdef BUILD_CISL
@@ -3809,8 +3980,7 @@ void slmm_csl (
 
     // Determine which cell the departure point is in.
     const Real* dep_point = dep_points.data() + 3*tvi;
-    const Int sci = slmm::get_src_cell(m, dep_point,
-                                      g_advecter->local_mesh_tgt_elem(ie));
+    const Int sci = slmm::get_src_cell(m, dep_point, m.tgt_elem);
     slmm_throw_if(sci == -1, "Departure point is outside of halo.");
 
     // Get reference point.
@@ -3886,6 +4056,34 @@ Parallel::Ptr make_parallel (MPI_Comm comm) {
   return std::make_shared<Parallel>(comm);
 }
 
+struct Request {
+  MPI_Request request;
+
+#ifdef COMPOSE_DEBUG_MPI
+  int unfreed;
+  Request();
+  ~Request();
+#endif
+};
+
+#ifdef COMPOSE_DEBUG_MPI
+Request::Request () : unfreed(0) {}
+Request::~Request () {
+  if (unfreed) {
+    std::stringstream ss;
+    ss << "Request is being deleted with unfreed = " << unfreed;
+    int fin;
+    MPI_Finalized(&fin);
+    if (fin) {
+      ss << "\n";
+      std::cerr << ss.str();
+    } else {
+      pr(ss.str());
+    }
+  }
+}
+#endif
+
 template <typename T> MPI_Datatype get_type();
 template <> inline MPI_Datatype get_type<int>() { return MPI_INT; }
 template <> inline MPI_Datatype get_type<double>() { return MPI_DOUBLE; }
@@ -3893,33 +4091,61 @@ template <> inline MPI_Datatype get_type<long>() { return MPI_LONG_INT; }
 
 template <typename T>
 int isend (const Parallel& p, const T* buf, int count, int dest, int tag,
-           MPI_Request* ireq = nullptr) {
+           Request* ireq) {
   MPI_Datatype dt = get_type<T>();
   MPI_Request ureq;
-  MPI_Request* req = ireq ? ireq : &ureq;
+  MPI_Request* req = ireq ? &ireq->request : &ureq;
   int ret = MPI_Isend(const_cast<T*>(buf), count, dt, dest, tag, p.comm(), req);
   if ( ! ireq) MPI_Request_free(req);
+#ifdef COMPOSE_DEBUG_MPI
+  else ireq->unfreed++;
+#endif
   return ret;
 }
 
 template <typename T>
-int irecv (const Parallel& p, T* buf, int count, int src, int tag,
-           MPI_Request* ireq = nullptr) {
+int irecv (const Parallel& p, T* buf, int count, int src, int tag, Request* ireq) {
   MPI_Datatype dt = get_type<T>();
   MPI_Request ureq;
-  MPI_Request* req = ireq ? ireq : &ureq;
+  MPI_Request* req = ireq ? &ireq->request : &ureq;
   int ret = MPI_Irecv(buf, count, dt, src, tag, p.comm(), req);
   if ( ! ireq) MPI_Request_free(req);
+#ifdef COMPOSE_DEBUG_MPI
+  else ireq->unfreed++;
+#endif
   return ret;
 }
 
-inline int waitany (int count, MPI_Request* reqs, int* index,
-                    MPI_Status* stats = nullptr) {
-  return MPI_Waitany(count, reqs, index, stats ? stats : MPI_STATUS_IGNORE);
+int waitany (int count, Request* reqs, int* index, MPI_Status* stats = nullptr) {
+#ifdef COMPOSE_DEBUG_MPI
+  std::vector<MPI_Request> vreqs(count);
+  for (int i = 0; i < count; ++i) vreqs[i] = reqs[i].request;
+  const auto out = MPI_Waitany(count, vreqs.data(), index,
+                               stats ? stats : MPI_STATUS_IGNORE);
+  for (int i = 0; i < count; ++i) reqs[i].request = vreqs[i];
+  reqs[*index].unfreed--;
+  return out;
+#else
+  return MPI_Waitany(count, reinterpret_cast<MPI_Request*>(reqs), index,
+                     stats ? stats : MPI_STATUS_IGNORE);
+#endif
 }
 
-int waitall (int count, MPI_Request* reqs, MPI_Status* stats = nullptr) {
-  return MPI_Waitall(count, reqs, stats ? stats : MPI_STATUS_IGNORE);
+int waitall (int count, Request* reqs, MPI_Status* stats = nullptr) {
+#ifdef COMPOSE_DEBUG_MPI
+  std::vector<MPI_Request> vreqs(count);
+  for (int i = 0; i < count; ++i) vreqs[i] = reqs[i].request;
+  const auto out = MPI_Waitall(count, vreqs.data(),
+                               stats ? stats : MPI_STATUS_IGNORE);
+  for (int i = 0; i < count; ++i) {
+    reqs[i].request = vreqs[i];
+    reqs[i].unfreed--;
+  }
+  return out;
+#else
+  return MPI_Waitall(count, reinterpret_cast<MPI_Request*>(reqs),
+                     stats ? stats : MPI_STATUS_IGNORE);
+#endif
 }
 } // namespace mpi
 
@@ -4121,7 +4347,7 @@ struct CslMpi {
       gid,      // cell global ID
       rank,     // the rank that owns the cell
       rank_idx, // index into list of ranks with whom I communicate, including me
-      lid_on_rank,    // the local ID of the cell on the owning rank
+      lid_on_rank,     // the local ID of the cell on the owning rank
       lid_on_rank_idx; // index into list of LIDs on the rank
   };
   // The comm and real data associated with an element patch, the set of
@@ -4137,8 +4363,9 @@ struct CslMpi {
     };
     GidRank* me;                     // the owned cell
     FixedCapList<GidRank> nbrs;      // the cell's neighbors (but including me)
+    Int nin1halo;                    // nbrs[0:n]
     FixedCapList<OwnItem> own;       // points whose q are computed with own rank's data
-    FixedCapList<RemoteItem> rmt;    // list computed by a remote rank's data
+    FixedCapList<RemoteItem> rmt;    // points computed by a remote rank's data
     IntArray2D src;                  // src(lev,k) = get_src_cell
     Array<Real**[2]> q_extrema;
     const Real* metdet, * qdp, * dp; // the owned cell's data
@@ -4146,7 +4373,8 @@ struct CslMpi {
   };
 
   const mpi::Parallel::Ptr p;
-  const Int np, np2, nlev, qsize, qsized, nelemd;
+  const slmm::Advecter::ConstPtr advecter;
+  const Int np, np2, nlev, qsize, qsized, nelemd, halo;
 
   FixedCapList<ElemData> ed; // this rank's owned cells, indexed by LID
 
@@ -4158,17 +4386,18 @@ struct CslMpi {
   // MPI comm data.
   ListOfLists<Real> sendbuf, recvbuf;
   FixedCapList<Int> sendcount;
-  FixedCapList<MPI_Request> sendreq, recvreq;
+  FixedCapList<mpi::Request> sendreq, recvreq;
 
   bool horiz_openmp;
 #ifdef HORIZ_OPENMP
   ListOfLists<omp_lock_t> ri_lidi_locks;
 #endif
 
-  CslMpi (const mpi::Parallel::Ptr& ip, Int inp, Int inlev, Int iqsize,
-          Int iqsized, Int inelemd)
-    : p(ip), np(inp), np2(np*np), nlev(inlev), qsize(iqsize), qsized(iqsized),
-      nelemd(inelemd)
+  CslMpi (const mpi::Parallel::Ptr& ip, const slmm::Advecter::ConstPtr& advecter,
+          Int inp, Int inlev, Int iqsize, Int iqsized, Int inelemd, Int ihalo)
+    : p(ip), advecter(advecter),
+      np(inp), np2(np*np), nlev(inlev), qsize(iqsize), qsized(iqsized), nelemd(inelemd),
+      halo(ihalo)
   {
     slmm_assert(qsized <= QSIZE_D);
   }
@@ -4178,12 +4407,387 @@ struct CslMpi {
     const Int nrmtrank = static_cast<Int>(ranks.n()) - 1;
     for (Int ri = 0; ri < nrmtrank; ++ri) {
       auto&& locks = ri_lidi_locks(ri);
-      for (auto& lock: locks)
-        omp_destroy_lock(&lock);  
+      for (auto& lock: locks) {
+        // The following call is causing a seg fault on at least one Cray KNL
+        // system. It doesn't kill the run b/c it occurs after main exits. Not
+        // calling this is a memory leak, but it's innocuous in this case. Thus,
+        // comment it out:
+        //omp_destroy_lock(&lock);
+        // It's possible that something in the OpenMP runtime shuts down before
+        // this call, and that's the problem. If that turns out to be it, I
+        // should make a compose_finalize() call somewhere.
+      }
     }
 #endif
   }
 };
+
+namespace extend_halo {
+// Extend halo by one layer. This has two parts: finding neighbor (gid, rank) in
+// collect_gid_rank, and extending the Advecter local mesh geometry in
+// extend_local_meshes. The two parts have the same comm pattern: in round 1,
+// request data for lists of GIDs; in round 2, fulfill these requests.
+
+typedef CslMpi::ElemData ElemData;
+typedef Int Gid;
+typedef Int Rank;
+struct GidRankPair {
+  const Gid gid;
+  const Rank rank;
+  GidRankPair(const Gid& gid_, const Rank& rank_) : gid(gid_), rank(rank_) {}
+  bool operator< (const GidRankPair& o) const {
+    if (gid < o.gid) return true;
+    if (gid > o.gid) return false;
+    return rank < o.rank;
+  }
+};
+typedef std::vector<GidRankPair> GidRankPairs;
+typedef std::map<Gid, GidRankPairs> Gid2Nbrs;
+typedef std::vector<Int> IntBuf;
+typedef std::vector<Real> RealBuf;
+
+GidRankPairs all_nbrs_but_me (const ElemData& ed) {
+  GidRankPairs gs;
+  gs.reserve(ed.nbrs.size() - 1);
+  for (const auto& n : ed.nbrs)
+    if (&n != ed.me)
+      gs.push_back(GidRankPair(n.gid, n.rank));
+  return gs;
+}
+
+void fill_gid2nbrs (const mpi::Parallel& p, const FixedCapList<ElemData>& eds,
+                    Gid2Nbrs& gid2nbrs) {
+  static const Int tag = 6;
+  const Rank my_rank = p.rank();
+  const Int n_owned = eds.size();
+
+  // Fill in the ones we know.
+  for (const auto& ed : eds) {
+    slmm_assert(ed.me->rank == my_rank);
+    gid2nbrs[ed.me->gid] = all_nbrs_but_me(ed);
+  }
+
+  std::vector<Rank> ranks;
+  Int nrank;
+  std::vector<IntBuf> req_sends, req_recvs;
+  std::vector<mpi::Request> req_recv_reqs;
+  {
+    // Find the ranks that know the rest.
+    std::map<Rank,Int> rank2rankidx;
+    std::map<Gid,Rank> needgid2rank;
+    {
+      std::set<Rank> unique_ranks;
+      for (const auto& item : gid2nbrs)
+        for (const auto& n : item.second)
+          if (n.rank != my_rank) {
+            slmm_assert(gid2nbrs.find(n.gid) == gid2nbrs.end());
+            needgid2rank.insert(std::make_pair(n.gid, n.rank));
+            unique_ranks.insert(n.rank);
+          }
+      nrank = unique_ranks.size();
+      ranks.insert(ranks.begin(), unique_ranks.begin(), unique_ranks.end());
+      Int i = 0;
+      for (const auto& rank : ranks)
+        rank2rankidx[rank] = i++;
+    }
+
+    // Send and receive neighbor queries.
+    slmm_assert(ranks.size() == static_cast<size_t>(nrank));
+    req_sends.resize(nrank);
+    req_recvs.resize(nrank); req_recv_reqs.resize(nrank);
+    for (Int i = 0; i < nrank; ++i) {
+      auto& r = req_recvs[i];
+      r.resize(n_owned+1); // upper bound on #requests, plus 1 for size datum
+      mpi::irecv(p, r.data(), r.size(), ranks[i], tag, &req_recv_reqs[i]);
+      req_sends[i].push_back(0);
+    }
+    for (const auto& item : needgid2rank) {
+      const auto& gid = item.first;
+      const auto& rank = item.second;
+      const auto& it = rank2rankidx.find(rank);
+      slmm_assert(it != rank2rankidx.end());
+      const auto& rank_idx = it->second;
+      slmm_assert(gid2nbrs.find(gid) == gid2nbrs.end());
+      req_sends[rank_idx].push_back(gid);
+    }
+    for (Int i = 0; i < nrank; ++i) {
+      auto& s = req_sends[i];
+      s[0] = s.size() - 1; // #gids in request
+      mpi::isend(p, s.data(), s.size(), ranks[i], tag, nullptr);
+    }
+  }
+
+  // Fullfill queries and receive answers to our queries.
+  std::vector<IntBuf> nbr_sends(nrank), nbr_recvs(nrank);
+  std::vector<mpi::Request> nbr_send_reqs(nrank), nbr_recv_reqs(nrank);
+  for (Int i = 0; i < nrank; ++i) {
+    auto& r = nbr_recvs[i];
+    // 20 is from dimensions_mod::set_mesh_dimensions; factor of 2 is to get
+    // (gid,rank); 1 is for size datum.
+    r.resize((20*2 + 1)*(req_sends[i].size() - 1));
+    mpi::irecv(p, r.data(), r.size(), ranks[i], tag, &nbr_recv_reqs[i]);
+  }
+  for (Int k = 0; k < nrank; ++k) {
+    Int i;
+    mpi::waitany(nrank, req_recv_reqs.data(), &i);
+    const auto& r = req_recvs[i];
+    auto& s = nbr_sends[i];
+    const Int ngid = r[0];
+    for (Int j = 0; j < ngid; ++j) {
+      const auto gid = r[j+1];
+      const auto it = gid2nbrs.find(gid);
+      slmm_assert(it != gid2nbrs.end());
+      const auto& nbrs = it->second;
+      s.push_back(nbrs.size());
+      for (const auto& n : nbrs) {
+        s.push_back(n.gid);
+        s.push_back(n.rank);
+      }
+    }
+    mpi::isend(p, s.data(), s.size(), ranks[i], tag, &nbr_send_reqs[i]);
+  }
+  for (Int j = 0; j < nrank; ++j) {
+    Int i;
+    mpi::waitany(nrank, nbr_recv_reqs.data(), &i);
+    const auto& s = req_sends[i];
+    const Int nrequested = s.size() - 1;
+    const auto& r = nbr_recvs[i];
+    for (Int si = 0, ri = 0; si < nrequested; ++si) {
+      const Gid gid = s[si+1];
+      const Int nnbr = r[ri++];
+      GidRankPairs nbrs;
+      for (Int ni = 0; ni < nnbr; ++ni, ri += 2)
+        nbrs.push_back(GidRankPair(r[ri], r[ri+1]));
+      slmm_assert(gid2nbrs.find(gid) == gid2nbrs.end());
+      gid2nbrs.insert(std::make_pair(gid, nbrs));
+    }
+  }
+  mpi::waitall(nbr_send_reqs.size(), nbr_send_reqs.data());
+}
+
+void extend_nbrs (const Gid2Nbrs& gid2nbrs, FixedCapList<ElemData>& eds) {
+  for (auto& ed : eds) {
+    // Get all <=2-halo neighbors.
+    std::set<GidRankPair> new_nbrs;
+    for (const auto& n : ed.nbrs) {
+      if (&n == ed.me) continue;
+      const auto& it = gid2nbrs.find(n.gid);
+      slmm_assert(it != gid2nbrs.end());
+      const auto& gid_nbrs = it->second;
+      for (const auto& gn : gid_nbrs)
+        new_nbrs.insert(gn);
+    }
+    // Remove the already known ones.
+    for (const auto& n : ed.nbrs)
+      new_nbrs.erase(GidRankPair(n.gid, n.rank));
+    // Find me b/c of the pointer reset.
+    Int me = -1;
+    for (Int i = 0; i < ed.nbrs.size(); ++i)
+      if (&ed.nbrs(i) == ed.me) {
+        me = i;
+        break;
+      }
+    slmm_assert(me >= 0);
+    // Append the, now only new, 2-halo ones.
+    Int i = ed.nbrs.size();
+    ed.nbrs.reset_capacity(i + new_nbrs.size(), true);
+    ed.me = &ed.nbrs(me);
+    for (const auto& n : new_nbrs) {
+      auto& en = ed.nbrs(i++);
+      en.gid = n.gid;
+      en.rank = n.rank;
+      en.rank_idx = -1;
+      en.lid_on_rank = -1;
+      en.lid_on_rank_idx = -1;
+    }
+  }
+}
+
+void collect_gid_rank (const mpi::Parallel& p, FixedCapList<ElemData>& eds) {
+  Gid2Nbrs gid2nbrs;
+  fill_gid2nbrs(p, eds, gid2nbrs);
+  extend_nbrs(gid2nbrs, eds);
+}
+
+void extend_local_meshes (const mpi::Parallel& p, const FixedCapList<ElemData>& eds,
+                          slmm::Advecter& advecter) {
+  using slmm::slice;
+  using slmm::nslices;
+  using slmm::szslice;
+  using slmm::len;
+  using slmm::LocalMesh;
+  using RealArray3 = ko::View<Real***, ko::HostSpace>;
+
+  static const Int tag = 24;
+  const Int my_rank = p.rank();
+  const Int n_owned = eds.size();
+
+  RealArray3 corners;
+  std::map<Gid,Int> owngid2lid, rmtgid2idx;
+  {
+    // Find relevant ranks.
+    std::vector<Int> ranks;
+    Int nrank;
+    std::vector<IntBuf> req_sends, req_recvs;
+    std::vector<mpi::Request> req_recv_reqs;
+    {
+      std::map<Int,Int> rank2rankidx;
+      {
+        std::set<Int> uranks;
+        for (const auto& ed : eds)
+          for (const auto& n : ed.nbrs)
+            uranks.insert(n.rank);
+        uranks.erase(my_rank);
+        ranks.insert(ranks.begin(), uranks.begin(), uranks.end());
+        nrank = ranks.size();
+        Int i = 0;
+        for (const auto& rank : ranks)
+          rank2rankidx[rank] = i++;
+      }
+
+      // Trade requests.
+      req_sends.resize(nrank); req_recvs.resize(nrank);
+      req_recv_reqs.resize(nrank);
+      for (Int i = 0; i < nrank; ++i) { // Set up recvs.
+        auto& r = req_recvs[i];
+        r.resize(n_owned+1);
+        mpi::irecv(p, r.data(), r.size(), ranks[i], tag, &req_recv_reqs[i]);
+      }
+      std::set<Gid> unique_rmtgids;
+      { // Collect the remote GIDs by rank.
+        std::vector<std::set<Gid> > req_gids(nrank);
+        for (const auto& ed : eds)
+          for (Int i = ed.nin1halo; i < ed.nbrs.size(); ++i) {
+            const auto& n = ed.nbrs(i);
+            if (n.rank != my_rank) {
+              req_gids[rank2rankidx[n.rank]].insert(n.gid);
+              unique_rmtgids.insert(n.gid);
+            }
+          }
+        for (Int i = 0; i < nrank; ++i) { // Set up sends.
+          auto& s = req_sends[i];
+          s.push_back(0);
+          s.insert(s.end(), req_gids[i].begin(), req_gids[i].end());
+          s[0] = s.size() - 1;
+          mpi::isend(p, s.data(), s.size(), ranks[i], tag, nullptr);
+        }
+        Int i = 0;
+        for (const auto& gid : unique_rmtgids)
+          rmtgid2idx[gid] = i++;
+      }
+    }
+
+    for (Int i = 0; i < eds.size(); ++i) {
+      const Gid gid = eds(i).me->gid;
+      owngid2lid[gid] = i;
+    }
+
+    // Fulfill our requests and obtain the data in reply to ours.
+    std::vector<RealBuf> geo_recvs(nrank), geo_sends(nrank);
+    std::vector<mpi::Request> geo_recv_reqs(nrank), geo_send_reqs(nrank);
+    for (Int i = 0; i < nrank; ++i) {
+      auto& r = geo_recvs[i];
+      r.resize(12*(req_sends[i].size() - 1)); // 4 vertices x 3 dimensions
+      mpi::irecv(p, r.data(), r.size(), ranks[i], tag, &geo_recv_reqs[i]);
+    }
+    for (Int k = 0; k < nrank; ++k) { // Pack cell corner points for requesters.
+      Int i;
+      mpi::waitany(nrank, req_recv_reqs.data(), &i);
+      const auto& r = req_recvs[i];
+      auto& s = geo_sends[i];
+      const Int ngid = r[0];
+      s.resize(12*ngid);
+      Int si = 0;
+      for (Int j = 0; j < ngid; ++j) {
+        const auto gid = r[j+1];
+        const auto it = owngid2lid.find(gid);
+        slmm_assert(it != owngid2lid.end());
+        const auto lid = it->second;
+        const auto& local_mesh = advecter.local_mesh(lid);
+        const auto cell = slice(local_mesh.e, local_mesh.tgt_elem);
+        slmm_assert(szslice(local_mesh.e) == 4 && cell[3] != -1);
+        const auto& p = local_mesh.p;
+        for (Int v = 0; v < 4; ++v)
+          for (Int d = 0; d < 3; ++d)
+            s[si++] = p(cell[v],d);
+      }
+      slmm_assert(si == static_cast<Int>(s.size()));
+      mpi::isend(p, s.data(), s.size(), ranks[i], tag, &geo_send_reqs[i]);
+    }
+    corners = RealArray3("corners", rmtgid2idx.size(), 4, 3);
+    for (Int j = 0; j < nrank; ++j) { // Pack cell corner points for me.
+      Int i;
+      mpi::waitany(nrank, geo_recv_reqs.data(), &i);
+      const auto& s = req_sends[i];
+      const Int nrequested = s.size() - 1;
+      const auto& r = geo_recvs[i];
+      for (Int si = 0, ri = 0; si < nrequested; ++si) {
+        const Gid gid = s[si+1];
+        const auto it = rmtgid2idx.find(gid);
+        slmm_assert(it != rmtgid2idx.end());
+        const auto idx = it->second;
+        for (Int v = 0; v < 4; ++v)
+          for (Int d = 0; d < 3; ++d)
+            corners(idx,v,d) = r[ri++];
+      }
+    }
+    // Do this here so we can release the memory.
+    mpi::waitall(geo_send_reqs.size(), geo_send_reqs.data());
+  }
+
+  // Extend the local meshes.
+  for (Int lid = 0; lid < eds.size(); ++lid) {
+    const auto& ed = eds(lid);
+    auto& local_mesh = advecter.local_mesh(lid);
+    auto p0 = local_mesh.p;
+    auto e0 = local_mesh.e;
+    const Int ncell = ed.nbrs.size();
+    slmm_assert(szslice(p0) == 3 && szslice(e0) == 4);
+    local_mesh.p = LocalMesh::RealArray("p", 4*ncell);
+    auto& p = local_mesh.p;
+    local_mesh.e = LocalMesh::IntArray("e", ncell, 4);
+    auto& e = local_mesh.e;
+    // Copy in old data.
+    for (Int pi = 0; pi < nslices(p0); ++pi)
+      for (Int d = 0; d < 3; ++d)
+        p(pi,d) = p0(pi,d);
+    for (Int ei = 0; ei < nslices(e0); ++ei)
+      for (Int d = 0; d < 4; ++d)
+        e(ei,d) = e0(ei,d);
+    // Fill in new data.
+    for (Int ni = ed.nin1halo; ni < ed.nbrs.size(); ++ni) {
+      const auto& n = ed.nbrs(ni);
+      const Gid gid = n.gid;
+      if (n.rank != my_rank) {
+        const auto it = rmtgid2idx.find(gid);
+        slmm_assert(it != rmtgid2idx.end());
+        const Int idx = it->second;
+        for (Int v = 0; v < 4; ++v) {
+          const Int slot = 4*ni+v;
+          e(ni,v) = slot;
+          slmm_assert(slot < nslices(p));
+          for (Int d = 0; d < 3; ++d) p(slot,d) = corners(idx,v,d);
+        }
+      } else {
+        const auto it = owngid2lid.find(gid);
+        slmm_assert(it != owngid2lid.end());
+        const Int lid = it->second;
+        const auto& local_mesh_other = advecter.local_mesh(lid);
+        const auto cell_other = slice(local_mesh_other.e, local_mesh_other.tgt_elem);
+        const auto& p_other = local_mesh_other.p;
+        for (Int v = 0; v < 4; ++v) {
+          const Int slot = 4*ni+v;
+          e(ni,v) = slot;
+          slmm_assert(slot < nslices(p));
+          for (Int d = 0; d < 3; ++d) p(slot,d) = p_other(cell_other[v],d);
+        }
+      }
+    }
+    // Recompute all normals.
+    siqk::test::fill_normals<siqk::SphereGeometry>(local_mesh);
+  }
+}
+} // namespace extend_halo
 
 // Fill in (gid, rank), the list of owning rank per gid.
 void collect_gid_rank (CslMpi& cm, const Int* nbr_id_rank, const Int* nirptr) {
@@ -4194,7 +4798,8 @@ void collect_gid_rank (CslMpi& cm, const Int* nbr_id_rank, const Int* nirptr) {
     const Int nnir = (nirptr[i+1] - nirptr[i]) / 2;
     const Int mygid = nir[0];
     ed.me = nullptr;
-    ed.nbrs.reset_capacity(nnir-1, true);
+    ed.nin1halo = nnir-1;
+    ed.nbrs.reset_capacity(ed.nin1halo, true);
     ed.own.reset_capacity(cm.nlev * cm.np2);
     ed.rmt.reset_capacity(cm.nlev * cm.np2);
     for (Int j = 1; j < nnir; ++j) {
@@ -4205,11 +4810,13 @@ void collect_gid_rank (CslMpi& cm, const Int* nbr_id_rank, const Int* nirptr) {
         ed.me = &n;
       }
       n.rank = nir[2*j+1];
-      n.lid_on_rank = -1;
       n.rank_idx = -1;
+      n.lid_on_rank = -1;
+      n.lid_on_rank_idx = -1;
     }
     slmm_assert(ed.me);
   }
+  if (cm.halo == 2) extend_halo::collect_gid_rank(*cm.p, cm.ed);
 }
 
 typedef std::map<Int, std::set<Int> > Rank2Gids;
@@ -4246,7 +4853,7 @@ void comm_lid_on_rank (CslMpi& cm, const Rank2Gids& rank2rmtgids,
     rn += e.second.size();
   const Int nrecv = rank2rmtgids.size();
   std::vector<Int> recv(rn), recvptr(nrecv+1), recvrank(nrecv);
-  std::vector<MPI_Request> reqs(nrecv);
+  std::vector<mpi::Request> reqs(nrecv);
   recvptr[0] = 0;
   Int ir = 0;
   rn = 0;
@@ -4265,7 +4872,7 @@ void comm_lid_on_rank (CslMpi& cm, const Rank2Gids& rank2rmtgids,
   for (const auto& e: rank2owngids)
     sn += e.second.size();
   std::vector<Int> send(sn);
-  std::vector<MPI_Request> sendreqs(rank2owngids.size());
+  std::vector<mpi::Request> sendreqs(rank2owngids.size());
   sn = 0;
   for (const auto& e: rank2owngids) {
     // Iteration through a set gives increasing GID, which means the LID list is
@@ -4384,9 +4991,9 @@ void set_idx2_maps (CslMpi& cm, const Rank2Gids& rank2rmtgids,
 }
 
 // In the original MPI pattern that has been in HOMME for years, each owned cell
-// has a 1-halo patch of bulk data. The allocations in this routine use
-// essentially the same amount of memory, but not more. We could use less if we
-// were willing to realloc space at each SL time step.
+// has a 1-halo patch of bulk data. For a 1-halo, allocations in this routine
+// use essentially the same amount of memory, but not more. We could use less if
+// we were willing to realloc space at each SL time step.
 void alloc_mpi_buffers (CslMpi& cm, const Rank2Gids& rank2rmtgids,
                         const Rank2Gids& rank2owngids) {
   const auto myrank = cm.p->rank();
@@ -4497,19 +5104,29 @@ void init_mylid_with_comm_threaded (CslMpi& cm, const Int& nets, const Int& nete
 #endif
 }
 
-CslMpi::Ptr init (const mpi::Parallel::Ptr& p,
+CslMpi::Ptr init (const slmm::Advecter::ConstPtr& advecter,
+                  const mpi::Parallel::Ptr& p,
                   Int np, Int nlev, Int qsize, Int qsized, Int nelemd,
-                  const Int* nbr_id_rank, const Int* nirptr) {
-  auto cm = std::make_shared<CslMpi>(p, np, nlev, qsize, qsized, nelemd);
+                  const Int* nbr_id_rank, const Int* nirptr,
+                  Int halo) {
+  slmm_throw_if(halo < 1 || halo > 2, "halo must be 1 (default) or 2.");
+  auto cm = std::make_shared<CslMpi>(p, advecter, np, nlev, qsize, qsized,
+                                     nelemd, halo);
   setup_comm_pattern(*cm, nbr_id_rank, nirptr);
   return cm;
+}
+
+// For const clarity, take the non-const advecter as an arg, even though cm
+// already has a ref to the const'ed one.
+void finalize_local_meshes (CslMpi& cm, slmm::Advecter& advecter) {
+  if (cm.halo == 2) extend_halo::extend_local_meshes(*cm.p, cm.ed, advecter);
 }
 
 // Set pointers to HOMME data arrays.
 void set_elem_data (CslMpi& cm, const Int ie, const Real* metdet, const Real* qdp,
                     const Real* dp, Real* q, const Int nelem_in_patch) {
   slmm_assert(ie < cm.ed.size());
-  slmm_assert(cm.ed(ie).nbrs.size() == nelem_in_patch);
+  slmm_assert(cm.halo > 1 || cm.ed(ie).nbrs.size() == nelem_in_patch);
   auto& e = cm.ed(ie);
   e.metdet = metdet;
   e.qdp = qdp;
@@ -4517,32 +5134,38 @@ void set_elem_data (CslMpi& cm, const Int ie, const Real* metdet, const Real* qd
   e.q = q;
 }
 
-void setup_irecv (CslMpi& cm) {
+void setup_irecv (CslMpi& cm, const bool skip_if_empty = false) {
 #ifdef HORIZ_OPENMP
 # pragma omp master
 #endif
   {
     const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
+    cm.recvreq.clear();
     for (Int ri = 0; ri < nrmtrank; ++ri) {
+      if (skip_if_empty && cm.nx_in_rank(ri) == 0) continue;
       auto&& recvbuf = cm.recvbuf(ri);
       // The count is just the number of slots available, which can be larger
       // than what is actually being received.
+      cm.recvreq.inc();
       mpi::irecv(*cm.p, recvbuf.data(), recvbuf.n(), cm.ranks(ri), 42,
-                 &cm.recvreq(ri));
+                 &cm.recvreq.back());
     }
-  }  
+  }
 }
 
-void isend (CslMpi& cm, const bool want_req = true) {
+void isend (CslMpi& cm, const bool want_req = true, const bool skip_if_empty = false) {
 #ifdef HORIZ_OPENMP
 # pragma omp barrier
 # pragma omp master
 #endif
   {
+    slmm_assert( ! (skip_if_empty && want_req));
     const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
-    for (Int ri = 0; ri < nrmtrank; ++ri)
+    for (Int ri = 0; ri < nrmtrank; ++ri) {
+      if (skip_if_empty && cm.sendcount(ri) == 0) continue;
       mpi::isend(*cm.p, cm.sendbuf(ri).data(), cm.sendcount(ri),
                  cm.ranks(ri), 42, want_req ? &cm.sendreq(ri) : nullptr);
+    }
   }
 }
 
@@ -4559,7 +5182,7 @@ void recv_and_wait_on_send (CslMpi& cm) {
 #endif
 }
 
-void recv (CslMpi& cm) {
+void recv (CslMpi& cm, const bool skip_if_empty = false) {
 #ifdef HORIZ_OPENMP
 # pragma omp master
 #endif
@@ -4583,16 +5206,16 @@ void analyze_dep_points (CslMpi& cm, const Int& nets, const Int& nete,
   for (Int ri = 0; ri < nrmtrank; ++ri)
     cm.nx_in_lid(ri).zero();
   for (Int tci = nets; tci <= nete; ++tci) {
-    const auto& mesh = g_advecter->local_mesh(tci);
-    const auto tgt_idx = g_advecter->local_mesh_tgt_elem(tci);
+    const auto& mesh = cm.advecter->local_mesh(tci);
+    const auto tgt_idx = mesh.tgt_elem;
     auto& ed = cm.ed(tci);
     ed.own.clear();
     for (Int lev = 0; lev < cm.nlev; ++lev)
       for (Int k = 0; k < cm.np2; ++k) {
         Int sci = slmm::get_src_cell(mesh, &dep_points(0,k,lev,tci), tgt_idx);
-        if (sci == -1 && g_advecter->nearest_point_permitted(lev))
+        if (sci == -1 && cm.advecter->nearest_point_permitted(lev))
           sci = slmm::get_nearest_point(
-            mesh, g_advecter->nearest_point_data(tci),
+            mesh, cm.advecter->nearest_point_data(tci),
             &dep_points(0,k,lev,tci), tgt_idx);
         if (sci == -1) {
           std::stringstream ss;
@@ -4600,7 +5223,7 @@ void analyze_dep_points (CslMpi& cm, const Int& nets, const Int& nete,
           const auto* v = &dep_points(0,k,lev,tci);
           ss << "Departure point is outside of halo:\n"
              << "  nearest point permitted: "
-             << g_advecter->nearest_point_permitted(lev)
+             << cm.advecter->nearest_point_permitted(lev)
              << "\n  elem LID " << tci
              << " elem GID " << ed.me->gid
              << " (lev, k) (" << lev << ", " << k << ")"
@@ -4669,7 +5292,7 @@ Int getbuf (Buffer& buf, const Int& os, Int& i1, Int& i2) {
    with one pass. Departure point and q messages are formatted as follows:
     xs: (#x-in-rank    int
          pad           i
-         (lid          i     only packed if #x in lid > 0
+         (lid-on-rank  i     only packed if #x in lid > 0
           #x-in-lid    i     > 0
           (lev         i     only packed if #x in (lid,lev) > 0
            #x          i     > 0
@@ -4689,6 +5312,10 @@ void pack_dep_points_sendbuf_pass1 (CslMpi& cm) {
     const auto&& lid_on_rank = cm.lid_on_rank(ri);
     Int xos = 0, qos = 0;
     xos += setbuf(sendbuf, xos, cm.nx_in_rank(ri), 0 /* empty space for alignment */);
+    if (cm.nx_in_rank(ri) == 0) {
+      cm.sendcount(ri) = xos;
+      continue;
+    }
     auto&& bla = cm.bla(ri);
     for (Int lidi = 0, lidn = cm.lid_on_rank(ri).n(); lidi < lidn; ++lidi) {
       auto nx_in_lid = cm.nx_in_lid(ri,lidi);
@@ -4793,16 +5420,15 @@ void calc_q_extrema (CslMpi& cm, const Int& nets, const Int& nete) {
 template <Int np>
 void calc_q (const CslMpi& cm, const Int& src_lid, const Int& lev,
              const Real* const dep_point, Real* const q_tgt, const bool use_q) {
-  const auto& m = g_advecter->local_mesh(src_lid);
-  const auto my_idx = g_advecter->local_mesh_tgt_elem(src_lid);
-
-  Real ref_coord[2];
-  siqk::sqr::calc_sphere_to_ref(m.p, slmm::slice(m.e, my_idx), dep_point,
-                                ref_coord[0], ref_coord[1]);
+  Real ref_coord[2]; {
+    const auto& m = cm.advecter->local_mesh(src_lid);
+    cm.advecter->s2r().calc_sphere_to_ref(src_lid, m, dep_point,
+                                          ref_coord[0], ref_coord[1]);
+  }
 
   // Interpolate.
   Real rx[4], ry[4];
-  switch (g_advecter->alg()) {
+  switch (cm.advecter->alg()) {
   case slmm::Advecter::Alg::csl_gll:
     slmm::gll_np4_eval(ref_coord[0], rx);
     slmm::gll_np4_eval(ref_coord[1], ry);
@@ -4864,7 +5490,10 @@ void calc_rmt_q (CslMpi& cm) {
     auto&& qs = cm.sendbuf(ri);
     Int xos = 0, qos = 0, nx_in_rank, padding;
     xos += getbuf(xs, xos, nx_in_rank, padding);
-    if (nx_in_rank == 0) continue;
+    if (nx_in_rank == 0) {
+      cm.sendcount(ri) = 0;
+      continue; 
+    }
     // The upper bound is to prevent an inf loop if the msg is corrupted.
     for (Int lidi = 0; lidi < cm.nelemd; ++lidi) {
       Int lid, nx_in_lid;
@@ -4987,16 +5616,16 @@ void step (
   // Compute the requested q for departure points from remotes.
   calc_rmt_q<np>(cm);
   // Send q data.
-  isend(cm, false);
+  isend(cm, false /* want_req */, true /* skip_if_empty */);
   // Set up to receive q for each of my departure point requests sent to
   // remotes. We can't do this until the OpenMP barrier in isend assures that
   // all threads are done with the receive buffer's departure points.
-  setup_irecv(cm);
+  setup_irecv(cm, true /* skip_if_empty */);
   // While waiting to get my data from remotes, compute q for departure points
   // that have remained in my elements.
   calc_own_q<np>(cm, nets, nete, dep_points, q_min, q_max);
   // Receive remote q data and use this to fill in the rest of my fields.
-  recv(cm);
+  recv(cm, true /* skip_if_empty */);
   copy_q(cm, nets, q_min, q_max);
   // Don't need to wait on send buffer again because MPI-level synchronization
   // outside of SL transport assures the send buffer is ready at the next call
@@ -5010,9 +5639,10 @@ int slmm_unittest () {
   int nerr = 0, ne;
   {
     ne = 0;
-    for (int i = 0; i < homme::g_advecter->nelem(); ++i)
-      ne += slmm::unittest(homme::g_advecter->local_mesh(i),
-                           homme::g_advecter->local_mesh_tgt_elem(i));
+    for (int i = 0; i < homme::g_advecter->nelem(); ++i) {
+      const auto& m = homme::g_advecter->local_mesh(i);
+      ne += slmm::unittest(m, m.tgt_elem);
+    }
     if (ne)
       fprintf(stderr, "slmm_unittest: slmm::unittest returned %d\n", ne);
     nerr += ne;
@@ -5023,7 +5653,7 @@ int slmm_unittest () {
 #include <cstdlib>
 
 struct Experiment {
-  int sl_mpi;
+  int sl_mpi, halo;
 };
 
 template <typename T> T strto(const char* s);
@@ -5035,102 +5665,107 @@ template <> inline std::string strto (const char* s) { return std::string(s); }
 Experiment get_options () {
   Experiment e;
   e.sl_mpi = 1;
+  e.halo = 2;
   char* var_s = std::getenv("slmpi");
   if (var_s) e.sl_mpi = strto<int>(var_s);
+  var_s = std::getenv("halo");
+  if (var_s) e.halo = strto<int>(var_s);
   return e;
 }
 
 static homme::cslmpi::CslMpi::Ptr g_csl_mpi;
 
 extern "C" {
-void slmm_init_impl_ (
-  const homme::Int* fcomm, homme::Int* transport_alg, homme::Int* np,
-  homme::Int* nlev, homme::Int* qsize, homme::Int* qsized, homme::Int* nelemd,
-  homme::Int** nbr_id_rank, homme::Int** nirptr,
-  homme::Int* sl_nearest_point_lev)
+void slmm_init_impl (
+  homme::Int fcomm, homme::Int transport_alg, homme::Int np,
+  homme::Int nlev, homme::Int qsize, homme::Int qsized, homme::Int nelem,
+  homme::Int nelemd, homme::Int cubed_sphere_map,
+  const homme::Int** lid2gid, const homme::Int** lid2facenum,
+  const homme::Int** nbr_id_rank, const homme::Int** nirptr,
+  homme::Int sl_nearest_point_lev)
 {
   auto e = get_options();
-  homme::slmm_init(*np, *nelemd, *transport_alg, *sl_nearest_point_lev - 1);
+  homme::slmm_init(np, nelem, nelemd, transport_alg, cubed_sphere_map,
+                   sl_nearest_point_lev - 1, *lid2facenum);
   if (e.sl_mpi && homme::g_advecter->is_cisl())
     e.sl_mpi = 0;
+  slmm_throw_if(cubed_sphere_map == 0 &&
+                (homme::g_advecter->is_cisl() || ! e.sl_mpi),
+                "When cubed_sphere_map = 0, SLMM supports only ISL methods"
+                " with SL MPI.");
   if (e.sl_mpi) {
-    auto p = homme::mpi::make_parallel(MPI_Comm_f2c(*fcomm));
-    g_csl_mpi = homme::cslmpi::init(p, *np, *nlev, *qsize, *qsized, *nelemd,
-                                    *nbr_id_rank, *nirptr);
+    const auto p = homme::mpi::make_parallel(MPI_Comm_f2c(fcomm));
+    g_csl_mpi = homme::cslmpi::init(homme::g_advecter, p, np, nlev, qsize,
+                                    qsized, nelemd, *nbr_id_rank, *nirptr,
+                                    e.halo);
+    if (p->amroot()) pr(puf(e.sl_mpi) pu(e.halo));
   }
 }
 
-void slmm_get_mpi_pattern_ (homme::Int* sl_mpi) {
+void slmm_get_mpi_pattern (homme::Int* sl_mpi) {
   *sl_mpi = g_csl_mpi ? 1 : 0;
 }
 
-// Figure shtuff out.
-void slmm_study_ (
-  homme::Int* elem_global_id, homme::Cartesian3D* corners,
-  homme::Int** desc_global_ids, homme::Cartesian3D** desc_neigh_corners,
-  homme::Int* n)
-{
-  static int gid_max = -1;
-  if (*elem_global_id <= gid_max) return;
-  gid_max = *elem_global_id;
-  homme::study(*elem_global_id, corners, *desc_global_ids, *desc_neigh_corners, *n + 1);
-}
-
-void slmm_init_local_mesh_ (
-  homme::Int* ie, homme::Cartesian3D** neigh_corners, homme::Int* nnc,
+void slmm_init_local_mesh (
+  homme::Int ie, homme::Cartesian3D** neigh_corners, homme::Int nnc,
   homme::Cartesian3D* p_inside)
 {
   homme::g_advecter->init_local_mesh_if_needed(
-    *ie - 1, homme::FA3<const homme::Real>(
-      reinterpret_cast<const homme::Real*>(*neigh_corners), 3, 4, *nnc),
+    ie - 1, homme::FA3<const homme::Real>(
+      reinterpret_cast<const homme::Real*>(*neigh_corners), 3, 4, nnc),
     reinterpret_cast<const homme::Real*>(p_inside));
-  if (*ie == homme::g_advecter->nelem())
+  if (ie == homme::g_advecter->nelem())
     homme::g_advecter->init_M_tgt_if_needed();
 }
 
-void slmm_check_ref2sphere_ (homme::Int* ie, homme::Cartesian3D* p) {
-  homme::g_advecter->check_ref2sphere(
-    *ie - 1, reinterpret_cast<const homme::Real*>(p));
+void slmm_init_finalize () {
+  if (g_csl_mpi)
+    homme::cslmpi::finalize_local_meshes(*g_csl_mpi, *homme::g_advecter);
 }
 
-void slmm_advect_ (
-  homme::Int* lev, homme::Int* ie, homme::Int* nnc, homme::Int* np, homme::Int* nlev,
-  homme::Int* qsize, homme::Int* nets, homme::Int* nete,
+void slmm_check_ref2sphere (homme::Int ie, homme::Cartesian3D* p) {
+  homme::g_advecter->check_ref2sphere(
+    ie - 1, reinterpret_cast<const homme::Real*>(p));
+}
+
+void slmm_advect (
+  homme::Int lev, homme::Int ie, homme::Int nnc, homme::Int np, homme::Int nlev,
+  homme::Int qsize, homme::Int nets, homme::Int nete,
   homme::Cartesian3D* dep_points, homme::Real* neigh_q, homme::Real* J_t,
-  homme::Real* dp3d, homme::Int* tl_np1, homme::Real* q, homme::Real* minq,
+  homme::Real* dp3d, homme::Int tl_np1, homme::Real* q, homme::Real* minq,
   homme::Real* maxq)
 {
   if (homme::g_advecter->is_cisl()) {
 #ifdef BUILD_CISL
-    homme::slmm_project(*lev - 1, *nets - 1, *ie - 1, *nnc, *np, *nlev, *qsize,
-                        dep_points, neigh_q, J_t, dp3d, *tl_np1 - 1, q, minq, maxq);
+    homme::slmm_project(lev - 1, nets - 1, ie - 1, nnc, np, nlev, qsize,
+                        dep_points, neigh_q, J_t, dp3d, tl_np1 - 1, q, minq, maxq);
 #else
     throw std::runtime_error("Closed for business to speed up compilation.");
 #endif
   } else {
-    slmm_assert(*np == 4);
-    homme::slmm_csl<4>(*lev - 1, *nets - 1, *ie - 1, *nnc, *nlev, *qsize,
-                       dep_points, neigh_q, J_t, dp3d, *tl_np1 - 1, q, minq, maxq);
+    slmm_assert(np == 4);
+    homme::slmm_csl<4>(lev - 1, nets - 1, ie - 1, nnc, nlev, qsize,
+                       dep_points, neigh_q, J_t, dp3d, tl_np1 - 1, q, minq, maxq);
   }
 }
 
-void slmm_csl_set_elem_data_ (
-  homme::Int* ie, homme::Real* metdet, homme::Real* qdp, homme::Real* dp,
-  homme::Real* q, homme::Int* nelem_in_patch)
+void slmm_csl_set_elem_data (
+  homme::Int ie, homme::Real* metdet, homme::Real* qdp, homme::Real* dp,
+  homme::Real* q, homme::Int nelem_in_patch)
 {
   slmm_assert(g_csl_mpi);
-  homme::cslmpi::set_elem_data(*g_csl_mpi, *ie - 1, metdet, qdp, dp, q,
-                               *nelem_in_patch);
+  homme::cslmpi::set_elem_data(*g_csl_mpi, ie - 1, metdet, qdp, dp, q,
+                               nelem_in_patch);
 }
 
-void slmm_csl_ (
-  homme::Int* nets, homme::Int* nete, homme::Cartesian3D* dep_points,
+void slmm_csl (
+  homme::Int nets, homme::Int nete, homme::Cartesian3D* dep_points,
   homme::Real* minq, homme::Real* maxq, homme::Int* info)
 {
   slmm_assert(g_csl_mpi);
   *info = 0;
   try {
-    homme::cslmpi::step<4>(*g_csl_mpi, *nets - 1, *nete - 1,
+    homme::cslmpi::step<4>(*g_csl_mpi, nets - 1, nete - 1,
                            dep_points, minq, maxq);
   } catch (const std::exception& e) {
     std::cerr << e.what();

@@ -69,8 +69,8 @@ subroutine sl_init1(par, elem)
   if (transport_alg > 0) then
      if (par%masterproc .and. nu_q > 0) &
           print *, 'COMPOSE> use HV; nu_q, all:', nu_q, semi_lagrange_hv_q_all
-     if (cubed_sphere_map /= 2) then
-        call abortmp('transport_alg > 0 requires cubed_sphere_map = 2')
+     if (cubed_sphere_map /= 2 .and. cisl) then
+        call abortmp('CISL transport_alg requires cubed_sphere_map = 2')
      end if
      call sl_parse_transport_alg(transport_alg, slmm, cisl, qos)
      nslots = nlev*qsize
@@ -100,6 +100,7 @@ subroutine sl_init1(par, elem)
               end do
            end if
         end do
+        call slmm_init_finalize()
      end if
      if (semi_lagrange_cdr_alg > 1) then
         need_conservation = 1

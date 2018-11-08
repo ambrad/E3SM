@@ -3,6 +3,10 @@
 #ifndef NDEBUG
 # define NDEBUG
 #endif
+//#pragma message "We want assertions"
+//#undef NDEBUG
+// Uncomment this to look for MPI-related memory leaks.
+//#define COMPOSE_DEBUG_MPI
 
 //>> cedr_kokkos.hpp
 #ifndef INCLUDE_CEDR_KOKKOS_HPP
@@ -100,6 +104,7 @@ struct ProblemType {
 
 #include <mpi.h>
 
+//#include "compose_config.hpp"
 //#include "cedr.hpp"
 
 namespace cedr {
@@ -117,6 +122,16 @@ public:
   bool amroot () const { return rank() == root(); }
 };
 
+struct Request {
+  MPI_Request request;
+
+#ifdef COMPOSE_DEBUG_MPI
+  int unfreed;
+  Request();
+  ~Request();
+#endif
+};
+
 Parallel::Ptr make_parallel(MPI_Comm comm);
 
 template <typename T> MPI_Datatype get_type();
@@ -130,14 +145,15 @@ int all_reduce(const Parallel& p, const T* sendbuf, T* rcvbuf, int count, MPI_Op
 
 template <typename T>
 int isend(const Parallel& p, const T* buf, int count, int dest, int tag,
-          MPI_Request* ireq);
+          Request* ireq = nullptr);
 
 template <typename T>
-int irecv(const Parallel& p, T* buf, int count, int src, int tag, MPI_Request* ireq);
+int irecv(const Parallel& p, T* buf, int count, int src, int tag,
+          Request* ireq = nullptr);
 
-int waitany(int count, MPI_Request* reqs, int* index, MPI_Status* stats = nullptr);
+int waitany(int count, Request* reqs, int* index, MPI_Status* stats = nullptr);
 
-int waitall(int count, MPI_Request* reqs, MPI_Status* stats = nullptr);
+int waitall(int count, Request* reqs, MPI_Status* stats = nullptr);
 
 template<typename T>
 int gather(const Parallel& p, const T* sendbuf, int sendcount,
@@ -403,7 +419,7 @@ struct NodeSets {
     // MPI information for this level.
     std::vector<MPIMetaData> me, kids;
     // Have to keep requests separate so we can call waitall if we want to.
-    mutable std::vector<MPI_Request> me_send_req, me_recv_req, kids_req;
+    mutable std::vector<mpi::Request> me_send_req, me_recv_req, kids_req;
   };
   
   // Levels. nodes[0] is level 0, the leaf level.
@@ -452,7 +468,9 @@ public:
   typedef QLT<ExeSpace> Me;
   typedef std::shared_ptr<Me> Ptr;
   
-  // Set up QLT topology and communication data structures based on a tree.
+  // Set up QLT topology and communication data structures based on a tree. Both
+  // ncells and tree refer to the global mesh, not just this processor's
+  // part. The tree must be identical across ranks.
   QLT(const Parallel::Ptr& p, const Int& ncells, const tree::Node::Ptr& tree);
 
   void print(std::ostream& os) const override;
@@ -656,7 +674,22 @@ public:
   typedef std::shared_ptr<Me> Ptr;
 
 public:
-  CAAS(const mpi::Parallel::Ptr& p, const Int nlclcells);
+  struct UserAllReducer {
+    typedef std::shared_ptr<const UserAllReducer> Ptr;
+    virtual int operator()(const mpi::Parallel& p,
+                           // In Fortran, these are formatted as
+                           //   sendbuf(nlocal, nfld)
+                           //   rcvbuf(nfld)
+                           // The implementation is permitted to modify sendbuf.
+                           Real* sendbuf, Real* rcvbuf,
+                           // nlocal is number of values to reduce in this rank.
+                           // nfld is number of fields.
+                           int nlocal, int nfld,
+                           MPI_Op op) const = 0;
+  };
+
+  CAAS(const mpi::Parallel::Ptr& p, const Int nlclcells,
+       const typename UserAllReducer::Ptr& r = nullptr);
 
   void declare_tracer(int problem_type, const Int& rhomidx) override;
 
@@ -693,7 +726,8 @@ protected:
   };
 
   mpi::Parallel::Ptr p_;
-  
+  typename UserAllReducer::Ptr user_reducer_;
+
   Int nlclcells_, nrhomidxs_;
   std::shared_ptr<std::vector<Decl> > tracer_decls_;
   bool need_conserve_;
@@ -824,22 +858,28 @@ int all_reduce (const Parallel& p, const T* sendbuf, T* rcvbuf, int count, MPI_O
 
 template <typename T>
 int isend (const Parallel& p, const T* buf, int count, int dest, int tag,
-           MPI_Request* ireq) {
+           Request* ireq) {
   MPI_Datatype dt = get_type<T>();
   MPI_Request ureq;
-  MPI_Request* req = ireq ? ireq : &ureq;
+  MPI_Request* req = ireq ? &ireq->request : &ureq;
   int ret = MPI_Isend(const_cast<T*>(buf), count, dt, dest, tag, p.comm(), req);
   if ( ! ireq) MPI_Request_free(req);
+#ifdef COMPOSE_DEBUG_MPI
+  else ireq->unfreed++;
+#endif
   return ret;
 }
 
 template <typename T>
-int irecv (const Parallel& p, T* buf, int count, int src, int tag, MPI_Request* ireq) {
+int irecv (const Parallel& p, T* buf, int count, int src, int tag, Request* ireq) {
   MPI_Datatype dt = get_type<T>();
   MPI_Request ureq;
-  MPI_Request* req = ireq ? ireq : &ureq;
+  MPI_Request* req = ireq ? &ireq->request : &ureq;
   int ret = MPI_Irecv(buf, count, dt, src, tag, p.comm(), req);
   if ( ! ireq) MPI_Request_free(req);
+#ifdef COMPOSE_DEBUG_MPI
+  else ireq->unfreed++;
+#endif
   return ret;
 }
 
@@ -1737,6 +1777,7 @@ Int unittest () {
 
 //>> cedr_mpi.cpp
 //#include "cedr_mpi.hpp"
+//#include "cedr_util.hpp"
 
 namespace cedr {
 namespace mpi {
@@ -1757,16 +1798,58 @@ Int Parallel::rank () const {
   return pid;
 }
 
+#ifdef COMPOSE_DEBUG_MPI
+Request::Request () : unfreed(0) {}
+Request::~Request () {
+  if (unfreed) {
+    std::stringstream ss;
+    ss << "Request is being deleted with unfreed = " << unfreed;
+    int fin;
+    MPI_Finalized(&fin);
+    if (fin) {
+      ss << "\n";
+      std::cerr << ss.str();
+    } else {
+      pr(ss.str());
+    }
+  }
+}
+#endif
+
 template <> MPI_Datatype get_type<int>() { return MPI_INT; }
 template <> MPI_Datatype get_type<double>() { return MPI_DOUBLE; }
 template <> MPI_Datatype get_type<long>() { return MPI_LONG_INT; }
 
-int waitany (int count, MPI_Request* reqs, int* index, MPI_Status* stats) {
-  return MPI_Waitany(count, reqs, index, stats ? stats : MPI_STATUS_IGNORE);
+int waitany (int count, Request* reqs, int* index, MPI_Status* stats) {
+#ifdef COMPOSE_DEBUG_MPI
+  std::vector<MPI_Request> vreqs(count);
+  for (int i = 0; i < count; ++i) vreqs[i] = reqs[i].request;
+  const auto out = MPI_Waitany(count, vreqs.data(), index,
+                               stats ? stats : MPI_STATUS_IGNORE);
+  for (int i = 0; i < count; ++i) reqs[i].request = vreqs[i];
+  reqs[*index].unfreed--;
+  return out;
+#else
+  return MPI_Waitany(count, reinterpret_cast<MPI_Request*>(reqs), index,
+                     stats ? stats : MPI_STATUS_IGNORE);
+#endif
 }
 
-int waitall (int count, MPI_Request* reqs, MPI_Status* stats) {
-  return MPI_Waitall(count, reqs, stats ? stats : MPI_STATUS_IGNORE);
+int waitall (int count, Request* reqs, MPI_Status* stats) {
+#ifdef COMPOSE_DEBUG_MPI
+  std::vector<MPI_Request> vreqs(count);
+  for (int i = 0; i < count; ++i) vreqs[i] = reqs[i].request;
+  const auto out = MPI_Waitall(count, vreqs.data(),
+                               stats ? stats : MPI_STATUS_IGNORE);
+  for (int i = 0; i < count; ++i) {
+    reqs[i].request = vreqs[i];
+    reqs[i].unfreed--;
+  }
+  return out;
+#else
+  return MPI_Waitall(count, reinterpret_cast<MPI_Request*>(reqs),
+                     stats ? stats : MPI_STATUS_IGNORE);
+#endif
 }
 
 bool all_ok (const Parallel& p, bool im_ok) {
@@ -1775,8 +1858,8 @@ bool all_ok (const Parallel& p, bool im_ok) {
   return static_cast<bool>(msg);
 }
 
-}
-}
+} // namespace mpi
+} // namespace cedr
 
 //>> cedr_qlt.cpp
 //#include "cedr_qlt.hpp"
@@ -1883,18 +1966,18 @@ void NodeSets::print (std::ostream& os) const {
 }
 
 // Find tree depth, assign ranks to non-leaf nodes, and init 'reserved'.
-Int init_tree (const tree::Node::Ptr& node, Int& id) {
+Int init_tree (const Int& my_rank, const tree::Node::Ptr& node, Int& id) {
   node->reserved = nullptr;
   Int depth = 0;
   for (Int i = 0; i < node->nkids; ++i) {
     cedr_assert(node.get() == node->kids[i]->parent);
-    depth = std::max(depth, init_tree(node->kids[i], id));
+    depth = std::max(depth, init_tree(my_rank, node->kids[i], id));
   }
   if (node->nkids) {
     node->rank = node->kids[0]->rank;
     node->cellidx = id++;
   } else {
-    cedr_throw_if(node->cellidx < 0 || node->cellidx >= id,
+    cedr_throw_if(node->rank == my_rank && node->cellidx < 0 || node->cellidx >= id,
                   "cellidx is " << node->cellidx << " but should be between " <<
                   0 << " and " << id);
   }
@@ -2063,7 +2146,7 @@ NodeSets::ConstPtr analyze (const Parallel::Ptr& p, const Int& ncells,
   const auto nodesets = std::make_shared<NodeSets>();
   cedr_assert( ! tree->parent);
   Int id = ncells;
-  const Int depth = init_tree(tree, id);
+  const Int depth = init_tree(p->rank(), tree, id);
   nodesets->levels.resize(depth);
   level_schedule_and_collect(*nodesets, p->rank(), tree);
   consolidate(*nodesets);
@@ -2129,7 +2212,6 @@ Int test_comm_pattern (const Parallel::Ptr& p, const NodeSets::ConstPtr& ns,
       mpi::irecv(*p, &data[mmd.offset], mmd.size, mmd.rank, NodeSets::mpitag,
                  &lvl.kids_req[i]);
     }
-    //todo Replace with simultaneous waitany and isend.
     mpi::waitall(lvl.kids_req.size(), lvl.kids_req.data());
     // Combine kids' data.
     for (auto& n : lvl.nodes) {
@@ -2141,11 +2223,8 @@ Int test_comm_pattern (const Parallel::Ptr& p, const NodeSets::ConstPtr& ns,
     // Send to parents.
     for (size_t i = 0; i < lvl.me.size(); ++i) {
       const auto& mmd = lvl.me[i];
-      mpi::isend(*p, &data[mmd.offset], mmd.size, mmd.rank, NodeSets::mpitag,
-                 &lvl.me_send_req[i]);
+      mpi::isend(*p, &data[mmd.offset], mmd.size, mmd.rank, NodeSets::mpitag);
     }
-    if (il+1 == ns->levels.size())
-      mpi::waitall(lvl.me_send_req.size(), lvl.me_send_req.data());
   }
   // Root to leaves.
   for (size_t il = ns->levels.size(); il > 0; --il) {
@@ -2156,7 +2235,6 @@ Int test_comm_pattern (const Parallel::Ptr& p, const NodeSets::ConstPtr& ns,
       mpi::irecv(*p, &data[mmd.offset], mmd.size, mmd.rank, NodeSets::mpitag,
                  &lvl.me_recv_req[i]);
     }    
-    //todo Replace with simultaneous waitany and isend.
     mpi::waitall(lvl.me_recv_req.size(), lvl.me_recv_req.data());
     // Pass to kids.
     for (auto& n : lvl.nodes) {
@@ -2167,16 +2245,8 @@ Int test_comm_pattern (const Parallel::Ptr& p, const NodeSets::ConstPtr& ns,
     // Send.
     for (size_t i = 0; i < lvl.kids.size(); ++i) {
       const auto& mmd = lvl.kids[i];
-      mpi::isend(*p, &data[mmd.offset], mmd.size, mmd.rank, NodeSets::mpitag,
-                 &lvl.kids_req[i]);
+      mpi::isend(*p, &data[mmd.offset], mmd.size, mmd.rank, NodeSets::mpitag);
     }
-  }
-  // Wait on sends to clean up.
-  for (size_t il = 0; il < ns->levels.size(); ++il) {
-    auto& lvl = ns->levels[il];
-    if (il+1 < ns->levels.size())
-      mpi::waitall(lvl.me_send_req.size(), lvl.me_send_req.data());
-    mpi::waitall(lvl.kids_req.size(), lvl.kids_req.data());
   }
   { // Check that all leaf nodes have the right number.
     const Int desired_sum = (ncells*(ncells - 1)) / 2;
@@ -2198,7 +2268,8 @@ Int unittest (const Parallel::Ptr& p, const NodeSets::ConstPtr& ns,
   if (nerr) return nerr;
   nerr += check_leaf_nodes(p, ns, ncells);
   if (nerr) return nerr;
-  nerr += test_comm_pattern(p, ns, ncells);
+  for (Int trial = 0; trial < 11; ++trial)
+    nerr += test_comm_pattern(p, ns, ncells);
   if (nerr) return nerr;
   return nerr;
 }
@@ -2394,8 +2465,7 @@ Int QLT<ES>::get_num_tracers () const {
 
 template <typename ES>
 void QLT<ES>::run () {
-  cedr_throw_if(true,
-                "In current E3SM-COMPOSE integration, should not get here.");
+  cedr_throw_if(true, "Should not get here.");
 }
 
 template <typename ES>
@@ -2711,8 +2781,10 @@ namespace cedr {
 namespace caas {
 
 template <typename ES>
-CAAS<ES>::CAAS (const mpi::Parallel::Ptr& p, const Int nlclcells)
-  : p_(p), nlclcells_(nlclcells), nrhomidxs_(0), need_conserve_(false)
+CAAS<ES>::CAAS (const mpi::Parallel::Ptr& p, const Int nlclcells,
+                const typename UserAllReducer::Ptr& uar)
+  : p_(p), user_reducer_(uar), nlclcells_(nlclcells), nrhomidxs_(0),
+    need_conserve_(false)
 {
   cedr_throw_if(nlclcells == 0, "CAAS does not support 0 cells on a rank.");
   tracer_decls_ = std::make_shared<std::vector<Decl> >();  
@@ -2745,7 +2817,7 @@ void CAAS<ES>::end_tracer_declarations () {
   d_ = RealList("CAAS data", nlclcells_ * ((3+e)*probs_.size() + 1));
   const auto nslots = 4*probs_.size();
   // (e'Qm_clip, e'Qm, e'Qm_min, e'Qm_max, [e'Qm_prev])
-  send_ = RealList("CAAS send", nslots);
+  send_ = RealList("CAAS send", nslots*(user_reducer_ ? nlclcells_ : 1));
   recv_ = RealList("CAAS recv", nslots);
 }
 
@@ -2762,6 +2834,7 @@ Int CAAS<ES>::get_num_tracers () const {
 
 template <typename ES>
 void CAAS<ES>::reduce_locally () {
+  const bool user_reduces = user_reducer_ != nullptr;
   const Int nt = probs_.size();
   Int k = 0;
   Int os = nlclcells_;
@@ -2770,33 +2843,47 @@ void CAAS<ES>::reduce_locally () {
     Real Qm_sum = 0, Qm_clip_sum = 0;
     for (Int i = 0; i < nlclcells_; ++i) {
       const Real Qm = d_(os+i);
-      Qm_sum += (probs_(k) & ProblemType::conserve ?
-                 d_(os + nlclcells_*3*nt + i) /* Qm_prev */ :
-                 Qm);
+      const Real Qm_term = (probs_(k) & ProblemType::conserve ?
+                            d_(os + nlclcells_*3*nt + i) /* Qm_prev */ :
+                            Qm);
       const Real Qm_min = d_(os + nlclcells_*  nt + i);
       const Real Qm_max = d_(os + nlclcells_*2*nt + i);
       const Real Qm_clip = cedr::impl::min(Qm_max, cedr::impl::max(Qm_min, Qm));
-      Qm_clip_sum += Qm_clip;
       d_(os+i) = Qm_clip;
+      if (user_reduces) {
+        send_(nlclcells_*      k  + i) = Qm_clip;
+        send_(nlclcells_*(nt + k) + i) = Qm_term;
+      } else {
+        Qm_clip_sum += Qm_clip;
+        Qm_sum += Qm_term;
+      }
     }
-    send_(     k) = Qm_clip_sum;
-    send_(nt + k) = Qm_sum;
+    if ( ! user_reduces) {
+      send_(     k) = Qm_clip_sum;
+      send_(nt + k) = Qm_sum;
+    }
     os += nlclcells_;
   }
   k += nt;
   // Qm_min, Qm_max
   for ( ; k < 4*nt; ++k) {
-    Real accum = 0;
-    for (Int i = 0; i < nlclcells_; ++i)
-      accum += d_(os+i);
-    send_(k) = accum;
+    if (user_reduces) {
+      for (Int i = 0; i < nlclcells_; ++i)
+        send_(nlclcells_*k + i) = d_(os+i);
+    } else {
+      Real accum = 0;
+      for (Int i = 0; i < nlclcells_; ++i)
+        accum += d_(os+i);
+      send_(k) = accum;
+    }
     os += nlclcells_;
   }
 }
 
 template <typename ES>
 void CAAS<ES>::reduce_globally () {
-  int err = mpi::all_reduce(*p_, send_.data(), recv_.data(), send_.size(), MPI_SUM);
+  const int err = mpi::all_reduce(*p_, send_.data(), recv_.data(),
+                                  send_.size(), MPI_SUM);
   cedr_throw_if(err != MPI_SUCCESS,
                 "CAAS::reduce_globally MPI_Allreduce returned " << err);
 }
@@ -2815,7 +2902,7 @@ void CAAS<ES>::finish_locally () {
       if (fac > 0) {
         fac = m/fac;
         for (Int i = 0; i < nlclcells_; ++i) {
-          const Real Qm_min = d_(os + nlclcells_*  nt + i);
+          const Real Qm_min = d_(os + nlclcells_ * nt + i);
           Real& Qm = d_(os+i);
           Qm += fac*(Qm - Qm_min);
         }
@@ -2838,15 +2925,35 @@ void CAAS<ES>::finish_locally () {
 
 template <typename ES>
 void CAAS<ES>::run () {
-  cedr_throw_if(true,
-                "In current E3SM-COMPOSE integration, should not get here.");
+  reduce_locally();
+  if (user_reducer_)
+    (*user_reducer_)(*p_, send_.data(), recv_.data(),
+                     nlclcells_, recv_.size(), MPI_SUM);
+  else
+    reduce_globally();
+  finish_locally();
 }
 
 namespace test {
 struct TestCAAS : public cedr::test::TestRandomized {
   typedef CAAS<Kokkos::DefaultExecutionSpace> CAAST;
 
-  TestCAAS (const mpi::Parallel::Ptr& p, const Int& ncells, const bool verbose)
+  struct TestAllReducer : public CAAST::UserAllReducer {
+    int operator() (const mpi::Parallel& p, Real* sendbuf, Real* rcvbuf,
+                    int nlcl, int count, MPI_Op op) const override {
+      for (int i = 1; i < nlcl; ++i)
+        sendbuf[0] += sendbuf[i];
+      for (int k = 1; k < count; ++k) {
+        sendbuf[k] = sendbuf[nlcl*k];
+        for (int i = 1; i < nlcl; ++i)
+          sendbuf[k] += sendbuf[nlcl*k + i];
+      }
+      return mpi::all_reduce(p, sendbuf, rcvbuf, count, op);
+    }
+  };
+
+  TestCAAS (const mpi::Parallel::Ptr& p, const Int& ncells,
+            const bool use_own_reducer, const bool verbose)
     : TestRandomized("CAAS", p, ncells, verbose),
       p_(p)
   {
@@ -2854,7 +2961,9 @@ struct TestCAAS : public cedr::test::TestRandomized {
     nlclcells_ = ncells / np;
     const Int todo = ncells - nlclcells_ * np;
     if (rank < todo) ++nlclcells_;
-    caas_ = std::make_shared<CAAST>(p, nlclcells_);
+    caas_ = std::make_shared<CAAST>(
+      p, nlclcells_,
+      use_own_reducer ? std::make_shared<TestAllReducer>() : nullptr);
     init();
   }
 
@@ -2909,7 +3018,8 @@ Int unittest (const mpi::Parallel::Ptr& p) {
   for (Int nlclcells : {1, 2, 4, 11}) {
     Long ncells = np*nlclcells;
     if (ncells > np) ncells -= np/2;
-    nerr += TestCAAS(p, ncells, false).run(1, false);
+    nerr += TestCAAS(p, ncells, false, false).run(1, false);
+    nerr += TestCAAS(p, ncells, true, false).run(1, false);
   }
   return nerr;
 }
@@ -3758,15 +3868,21 @@ struct InputParser {
 
 // -------------------- Homme-specific impl details -------------------- //
 
+#if 0
+// Includes if using compose library.
+#include "compose/cedr.hpp"
+// Use these when rewriting each CDR's run() function to interact nicely with
+// Homme's nested OpenMP and top-level horizontal threading scheme.
+#include "compose/cedr_qlt.hpp"
+#include "compose/cedr_caas.hpp"
+#endif
+
 #define THREAD_QLT_RUN
 #ifndef QLT_MAIN
 # ifdef HAVE_CONFIG_H
 #  include "config.h.c"
 # endif
 #endif
-
-// Rewrite each CDR's run() function to interact nicely with Homme's nested
-// OpenMP and top-level horizontal threading scheme.
 
 namespace homme {
 namespace compose {
@@ -3865,11 +3981,9 @@ struct QLT : public cedr::qlt::QLT<ES> {
         {
           for (size_t i = 0; i < lvl.me.size(); ++i) {
             const auto& mmd = lvl.me[i];
-            mpi::isend(*p_, &bd_.l2r_data(mmd.offset*l2rndps), mmd.size*l2rndps, mmd.rank,
-                       mpitag, &lvl.me_send_req[i]);
+            mpi::isend(*p_, &bd_.l2r_data(mmd.offset*l2rndps), mmd.size*l2rndps,
+                       mmd.rank, mpitag);
           }
-          if (il+1 == ns_->levels.size())
-            mpi::waitall(lvl.me_send_req.size(), lvl.me_send_req.data());
         }
 
 #if defined THREAD_QLT_RUN && defined HORIZ_OPENMP
@@ -3990,23 +4104,11 @@ struct QLT : public cedr::qlt::QLT<ES> {
         {
           for (size_t i = 0; i < lvl.kids.size(); ++i) {
             const auto& mmd = lvl.kids[i];
-            mpi::isend(*p_, &bd_.r2l_data(mmd.offset*r2lndps), mmd.size*r2lndps, mmd.rank,
-                       mpitag, &lvl.kids_req[i]);
+            mpi::isend(*p_, &bd_.r2l_data(mmd.offset*r2lndps), mmd.size*r2lndps,
+                       mmd.rank, mpitag);
           }
         }
       }
-
-      // Wait on sends to clean up.
-#if defined THREAD_QLT_RUN && defined HORIZ_OPENMP
-#     pragma omp master
-#endif
-      for (size_t il = 0; il < ns_->levels.size(); ++il) {
-        auto& lvl = ns_->levels[il];
-        if (il+1 < ns_->levels.size())
-          mpi::waitall(lvl.me_send_req.size(), lvl.me_send_req.data());
-        mpi::waitall(lvl.kids_req.size(), lvl.kids_req.data());
-      }
-
 #if ! defined THREAD_QLT_RUN && defined HORIZ_OPENMP
     }
 #endif
@@ -4015,8 +4117,11 @@ struct QLT : public cedr::qlt::QLT<ES> {
 
 template <typename ES>
 struct CAAS : public cedr::caas::CAAS<ES> {
-  CAAS (const cedr::mpi::Parallel::Ptr& p, const cedr::Int nlclcells)
-    : cedr::caas::CAAS<ES>(p, nlclcells)
+  typedef cedr::caas::CAAS<ES> Super;
+
+  CAAS (const cedr::mpi::Parallel::Ptr& p, const cedr::Int nlclcells,
+        const typename Super::UserAllReducer::Ptr& uar)
+    : Super(p, nlclcells, uar)
   {}
 
   void run () override {
@@ -4024,9 +4129,7 @@ struct CAAS : public cedr::caas::CAAS<ES> {
 #   pragma omp master
 #endif
     {
-      this->reduce_locally();
-      this->reduce_globally();
-      this->finish_locally();
+      Super::run();
     }
   }
 };
@@ -4071,8 +4174,6 @@ int main (int argc, char** argv) {
   return 0;
 }
 #endif
-
-//todo Move to a separate file, qlt_homme.cpp.
 
 namespace homme {
 namespace qlt = cedr::qlt;
@@ -4138,6 +4239,25 @@ make_tree (const qlt::Parallel::Ptr& p, const Int nelem,
   return tree;
 }
 
+extern "C"
+void compose_repro_sum(const Real* send, Real* recv,
+                       Int nlocal, Int nfld, Int fcomm);
+
+struct ReproSumReducer :
+    public cedr::caas::CAAS<Kokkos::DefaultExecutionSpace>::UserAllReducer {
+  ReproSumReducer (Int fcomm) : fcomm_(fcomm) {}
+
+  int operator() (const cedr::mpi::Parallel& p, Real* sendbuf, Real* rcvbuf,
+                  int nlocal, int count, MPI_Op op) const override {
+    cedr_assert(op == MPI_SUM);
+    compose_repro_sum(sendbuf, rcvbuf, nlocal, count, fcomm_);
+    return 0;
+  }
+
+private:
+  const Int fcomm_;
+};
+
 struct CDR {
   typedef std::shared_ptr<CDR> Ptr;
   typedef compose::QLT<Kokkos::DefaultExecutionSpace> QLTT;
@@ -4151,7 +4271,7 @@ struct CDR {
       case 20: return qlt_super_level;
       case 3:  return caas;
       case 30: return caas_super_level;
-      case 42: return qlt;
+      case 42: return caas_super_level; // actually none
       default: cedr_throw_if(true,  "cdr_alg " << cdr_alg << " is invalid.");
       }
     }
@@ -4166,15 +4286,15 @@ struct CDR {
   
   const Alg::Enum alg;
   const Int ncell, nlclcell, nlev, nsublev, nsuplev;
-  const qlt::Parallel::Ptr p;
+  const cedr::mpi::Parallel::Ptr p;
   qlt::tree::Node::Ptr tree; // Don't need this except for unit testing.
   cedr::CDR::Ptr cdr;
   std::vector<Int> ie2gci; // Map Homme ie to Homme global cell index.
   std::vector<Int> ie2lci; // Map Homme ie to CDR local cell index (lclcellidx).
 
   CDR (Int cdr_alg_, Int ngblcell_, Int nlclcell_, Int nlev_,
-       const Int* sc2gci, const Int* sc2rank,
-       const qlt::Parallel::Ptr& p_)
+       const Int* owned_ids, const Int* rank2sfc,
+       const cedr::mpi::Parallel::Ptr& p_, Int fcomm)
     : alg(Alg::convert(cdr_alg_)), ncell(ngblcell_), nlclcell(nlclcell_),
       nlev(nlev_),
       nsublev(Alg::is_suplev(alg) ? nsublev_per_suplev : 1),
@@ -4182,10 +4302,12 @@ struct CDR {
       p(p_), inited_tracers_(false)
   {
     if (Alg::is_qlt(alg)) {
-      tree = make_tree(p, ncell, sc2gci, sc2rank, nsublev);
+      tree = make_tree(p, ncell, owned_ids, rank2sfc, nsublev);
       cdr = std::make_shared<QLTT>(p, ncell*nsublev, tree);
     } else if (Alg::is_caas(alg)) {
-      cdr = std::make_shared<CAAST>(p, nlclcell*nsublev);
+      const auto caas = std::make_shared<CAAST>(
+        p, nlclcell*nsublev, std::make_shared<ReproSumReducer>(fcomm));
+      cdr = caas;
     } else {
       cedr_throw_if(true, "Invalid semi_lagrange_cdr_alg " << alg);
     }
@@ -4216,7 +4338,7 @@ void init_ie2lci (CDR& q) {
     }
   } else {
     for (size_t ie = 0; ie < q.ie2gci.size(); ++ie)
-      for (Int sbli = 0; sbli < q.nsublev; ++sbli){
+      for (Int sbli = 0; sbli < q.nsublev; ++sbli) {
         const Int id = q.nsublev*ie + sbli;
         q.ie2lci[id] = id;
       }
@@ -4361,7 +4483,6 @@ void run (CDR& cdr, const Data& d, const Real* q_min_r, const Real* q_max_r,
             static bool first = true;
             if (first) {
               first = false;
-              // set_Qm will throw. Report information before that happens.
               std::stringstream ss;
               ss << "Qm_prev < -0.5: Qm_prev = " << Qm_prev
                  << " on rank " << cdr.p->rank()
@@ -4666,102 +4787,96 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
 } // namespace homme
 
 // Interface for Homme, through compose_mod.F90.
-extern "C" void kokkos_init_ () {
+extern "C" void kokkos_init () {
   Kokkos::InitArguments args;
   args.disable_warnings = true;
   Kokkos::initialize(args);
 }
 
-extern "C" void kokkos_finalize_ () { Kokkos::finalize_all(); }
+extern "C" void kokkos_finalize () { Kokkos::finalize_all(); }
 
 static homme::CDR::Ptr g_cdr;
 
 extern "C" void
-cedr_init_impl_ (const homme::Int* fcomm, const homme::Int* cdr_alg,
-                 const homme::Int** sc2gci, const homme::Int** sc2rank,
-                 const homme::Int* gbl_ncell, const homme::Int* lcl_ncell,
-                 const homme::Int* nlev) {
-  const auto p = cedr::mpi::make_parallel(MPI_Comm_f2c(*fcomm));
-  g_cdr = std::make_shared<homme::CDR>(*cdr_alg, *gbl_ncell, *lcl_ncell, *nlev,
-                                       *sc2gci, *sc2rank, p);
+cedr_init_impl (const homme::Int fcomm, const homme::Int cdr_alg,
+                const homme::Int** owned_ids, const homme::Int** rank2sfc,
+                const homme::Int gbl_ncell, const homme::Int lcl_ncell,
+                const homme::Int nlev) {
+  const auto p = cedr::mpi::make_parallel(MPI_Comm_f2c(fcomm));
+  g_cdr = std::make_shared<homme::CDR>(cdr_alg, gbl_ncell, lcl_ncell, nlev,
+                                       *owned_ids, *rank2sfc, p, fcomm);
 }
 
-extern "C" void
-cedr_unittest_ (const homme::Int* fcomm, homme::Int* nerrp) {
+extern "C" void cedr_unittest (const homme::Int fcomm, homme::Int* nerrp) {
   cedr_assert(g_cdr);
-  auto p = cedr::mpi::make_parallel(MPI_Comm_f2c(*fcomm));
+  auto p = cedr::mpi::make_parallel(MPI_Comm_f2c(fcomm));
   if (homme::CDR::Alg::is_qlt(g_cdr->alg))
-    *nerrp = cedr::qlt::test::TestQLT(p, g_cdr->tree,
-                                      g_cdr->nsublev*g_cdr->ncell).run();
+    *nerrp = cedr::qlt::test::test_qlt(p, g_cdr->tree,
+                                       g_cdr->nsublev*g_cdr->ncell);
   else
     *nerrp = cedr::caas::test::unittest(p);
 }
 
-extern "C" void
-cedr_set_ie2gci_ (const homme::Int* ie, const homme::Int* gci) {
+extern "C" void cedr_set_ie2gci (const homme::Int ie, const homme::Int gci) {
   cedr_assert(g_cdr);
   // Now is a good time to drop the tree, whose persistence was used for unit
   // testing if at all.
   g_cdr->tree = nullptr;
-  homme::set_ie2gci(*g_cdr, *ie - 1, *gci - 1);
+  homme::set_ie2gci(*g_cdr, ie - 1, gci - 1);
 }
 
 static homme::sl::Data::Ptr g_sl;
 
-extern "C" homme::Int cedr_sl_init_ (
-  const homme::Int* np, const homme::Int* nlev, const homme::Int* qsize,
-  const homme::Int* qsized, const homme::Int* timelevels,
-  const homme::Int* need_conservation)
+extern "C" homme::Int cedr_sl_init (
+  const homme::Int np, const homme::Int nlev, const homme::Int qsize,
+  const homme::Int qsized, const homme::Int timelevels,
+  const homme::Int need_conservation)
 {
   cedr_assert(g_cdr);
-  g_sl = std::make_shared<homme::sl::Data>(g_cdr->nlclcell, *np, *nlev, *qsize,
-                                           *qsized, *timelevels);
+  g_sl = std::make_shared<homme::sl::Data>(g_cdr->nlclcell, np, nlev, qsize,
+                                           qsized, timelevels);
   homme::init_ie2lci(*g_cdr);
-  homme::init_tracers(*g_cdr, *nlev, *qsize, *need_conservation);
+  homme::init_tracers(*g_cdr, nlev, qsize, need_conservation);
   homme::sl::check(*g_cdr, *g_sl);
   return 1;
 }
 
-extern "C" void cedr_sl_set_pointers_begin_ (
-  homme::Int* nets, homme::Int* nete)
-{}
-
-extern "C" void cedr_sl_set_spheremp_ (homme::Int* ie, homme::Real* v)
-{ homme::sl::insert(g_sl, *ie - 1, 0, v); }
-extern "C" void cedr_sl_set_qdp_ (homme::Int* ie, homme::Real* v, homme::Int* n0_qdp,
-                                  homme::Int* n1_qdp)
-{ homme::sl::insert(g_sl, *ie - 1, 1, v, *n0_qdp - 1, *n1_qdp - 1); }
-extern "C" void cedr_sl_set_dp3d_ (homme::Int* ie, homme::Real* v, homme::Int* tl_np1)
-{ homme::sl::insert(g_sl, *ie - 1, 2, v, *tl_np1 - 1); }
-extern "C" void cedr_sl_set_q_ (homme::Int* ie, homme::Real* v)
-{ homme::sl::insert(g_sl, *ie - 1, 3, v); }
-
-extern "C" void cedr_sl_set_pointers_end_ () {}
+extern "C" void cedr_sl_set_pointers_begin (homme::Int nets, homme::Int nete) {}
+extern "C" void cedr_sl_set_spheremp (homme::Int ie, homme::Real* v)
+{ homme::sl::insert(g_sl, ie - 1, 0, v); }
+extern "C" void cedr_sl_set_qdp (homme::Int ie, homme::Real* v, homme::Int n0_qdp,
+                                  homme::Int n1_qdp)
+{ homme::sl::insert(g_sl, ie - 1, 1, v, n0_qdp - 1, n1_qdp - 1); }
+extern "C" void cedr_sl_set_dp3d (homme::Int ie, homme::Real* v, homme::Int tl_np1)
+{ homme::sl::insert(g_sl, ie - 1, 2, v, tl_np1 - 1); }
+extern "C" void cedr_sl_set_q (homme::Int ie, homme::Real* v)
+{ homme::sl::insert(g_sl, ie - 1, 3, v); }
+extern "C" void cedr_sl_set_pointers_end () {}
 
 // Run QLT.
-extern "C" void cedr_sl_run_ (const homme::Real* minq, const homme::Real* maxq,
-                              homme::Int* nets, homme::Int* nete) {
+extern "C" void cedr_sl_run (const homme::Real* minq, const homme::Real* maxq,
+                             homme::Int nets, homme::Int nete) {
   cedr_assert(minq != maxq);
   cedr_assert(g_cdr);
   cedr_assert(g_sl);
-  homme::sl::run(*g_cdr, *g_sl, minq, maxq, *nets-1, *nete-1);
+  homme::sl::run(*g_cdr, *g_sl, minq, maxq, nets-1, nete-1);
 }
 
 // Run the cell-local limiter problem.
-extern "C" void cedr_sl_run_local_ (const homme::Real* minq, const homme::Real* maxq,
-                                    homme::Int* nets, homme::Int* nete, homme::Int* use_ir,
-                                    homme::Int* limiter_option) {
+extern "C" void cedr_sl_run_local (const homme::Real* minq, const homme::Real* maxq,
+                                   homme::Int nets, homme::Int nete, homme::Int use_ir,
+                                   homme::Int limiter_option) {
   cedr_assert(minq != maxq);
   cedr_assert(g_cdr);
   cedr_assert(g_sl);
-  homme::sl::run_local(*g_cdr, *g_sl, minq, maxq, *nets-1, *nete-1, *use_ir,
-                       *limiter_option);
+  homme::sl::run_local(*g_cdr, *g_sl, minq, maxq, nets-1, nete-1, use_ir,
+                       limiter_option);
 }
 
 // Check properties for this transport step.
-extern "C" void cedr_sl_check_ (const homme::Real* minq, const homme::Real* maxq,
-                                homme::Int* nets, homme::Int* nete) {
+extern "C" void cedr_sl_check (const homme::Real* minq, const homme::Real* maxq,
+                               homme::Int nets, homme::Int nete) {
   cedr_assert(g_cdr);
   cedr_assert(g_sl);
-  homme::sl::check(*g_cdr, *g_sl, minq, maxq, *nets-1, *nete-1);
+  homme::sl::check(*g_cdr, *g_sl, minq, maxq, nets-1, nete-1);
 }
