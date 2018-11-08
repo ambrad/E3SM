@@ -147,7 +147,7 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
   integer                                       :: num_neighbors, scalar_q_bounds, info
   logical :: slmm, cisl, qos
 
-  real(kind=real_kind) :: tmp
+  real(kind=real_kind) :: tmp, tmp1
 
   call t_barrierf('Prim_Advec_Tracers_remap_ALE', hybrid%par%comm)
   call t_startf('Prim_Advec_Tracers_remap_ALE')
@@ -455,7 +455,8 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
            end if
            tmp = minval(elem(ie)%state%Qdp(:,:,:,q,np1_qdp))
            if (tmp < -0.1) then
-              print *,'amb> SL after min Qdp at np1_qdp for ctr,ie,q is',sl_dbg_ctr,ie,q,tmp
+              tmp1 = minval(elem(ie)%state%dp3d)
+              print *,'amb> SL after min Qdp at np1_qdp, dp3d for ctr,ie,q are',sl_dbg_ctr,ie,q,tmp,tmp1
            end if
         end do
      end do
