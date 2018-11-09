@@ -210,7 +210,11 @@ contains
 
   subroutine compose_repro_sum(send, recv, nlocal, nfld, comm) bind(c)
     use kinds, only: real_kind
+#ifdef CAM
+    use shr_reprosum_mod, only: repro_sum => shr_reprosum_calc
+#else
     use repro_sum_mod, only: repro_sum
+#endif
 
     real(kind=real_kind), intent(in) :: send(nlocal,nfld)
     real(kind=real_kind), intent(out) :: recv(nfld)
