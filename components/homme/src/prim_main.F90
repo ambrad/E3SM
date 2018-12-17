@@ -34,6 +34,7 @@ program prim_main
 #else
   use prim_movie_mod,   only : prim_movie_output, prim_movie_finish,prim_movie_init
 #endif
+  use compose_forcing_mod, only : kokkos_init, kokkos_finalize
 
   implicit none
 
@@ -116,6 +117,8 @@ program prim_main
   hybrid = hybrid_create(par,ithr,1)
   nets=1
   nete=nelemd
+
+  call kokkos_init()
 
 
   ! ==================================
@@ -262,6 +265,7 @@ program prim_main
   if(par%masterproc) print *,"writing timing data"
   call t_prf('HommeTime', par%comm)
   if(par%masterproc) print *,"calling t_finalizef"
+  call kokkos_finalize()
   call t_finalizef()
   call haltmp("exiting program...")
 end program prim_main
