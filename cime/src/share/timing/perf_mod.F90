@@ -784,7 +784,6 @@ contains
    return
    end subroutine t_startf
 
-
    subroutine t_startfw(event, iwt) !ndk
 
    character(len=*), intent(in) :: event
@@ -797,7 +796,7 @@ contains
 
    if (.not. timing_initialized) return
    if (timing_disable_depth > 0) return
-
+#ifdef CAM
    if ((perf_add_detail) .AND. (cur_timing_detail < 100)) then
 
       write(cdetail,'(i2.2)') cur_timing_detail
@@ -828,7 +827,7 @@ contains
    wtdata(iwt,wtix(iwt)) = wtime
    wtix(iwt)=wtix(iwt)+1
 !$OMP END MASTER
-
+#endif
    return
    end subroutine t_startfw
 
@@ -909,7 +908,7 @@ contains
 
    !if (.not. timing_initialized) return
    !if (timing_disable_depth > 0) return
-
+#ifdef CAM
    if ((perf_add_detail) .AND. (cur_timing_detail < 100)) then
 
       write(cdetail,'(i2.2)') cur_timing_detail
@@ -939,7 +938,7 @@ contains
    wtdata(iwt,wtix(iwt)) = wtime
    wtix(iwt)=wtix(iwt)+1
 !$OMP END MASTER
-
+#endif
    return
    end subroutine t_stopfw
 !
