@@ -40,6 +40,10 @@ module control_mod
   integer, public :: semi_lagrange_nearest_point_lev = 0
   ! Leftover for transport_alg = 1
   logical, public  :: use_semi_lagrange_transport_local_conservation  = .false.
+  ! Forcing nonnegativity fixer.
+  !     0  none
+  !     1  QLT
+  integer, public  :: forcing_cdr_alg = 0
 
 ! flag used by preqx, theta-l and theta-c models
 ! should be renamed to "hydrostatic_mode"

@@ -5173,7 +5173,7 @@ struct CDR {
   typedef compose::CAAS CAAST;
 
   struct Alg {
-    enum Enum { qlt, qlt_super_level, caas, caas_super_level };
+    enum Enum { qlt, qlt_super_level, caas, caas_super_level, forcing_qlt };
     static Enum convert (Int cdr_alg) {
       switch (cdr_alg) {
       case 2:  return qlt;
@@ -5181,6 +5181,7 @@ struct CDR {
       case 3:  return caas;
       case 30: return caas_super_level;
       case 42: return caas_super_level; // actually none
+      case 102: return forcing_qlt;
       default: cedr_throw_if(true,  "cdr_alg " << cdr_alg << " is invalid.");
       }
     }
@@ -5694,6 +5695,10 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
   }
 }
 } // namespace sl
+
+namespace forcing {
+
+} // namespace forcing
 } // namespace homme
 
 // Interface for Homme, through compose_mod.F90.
@@ -5705,7 +5710,7 @@ extern "C" void kokkos_init () {
 
 extern "C" void kokkos_finalize () { Kokkos::finalize_all(); }
 
-static homme::CDR::Ptr g_cdr;
+static homme::CDR::Ptr g_cdr, g_forcing;
 
 extern "C" void
 cedr_init_impl (const homme::Int fcomm, const homme::Int cdr_alg,
@@ -5733,6 +5738,8 @@ extern "C" void cedr_set_ie2gci (const homme::Int ie, const homme::Int gci) {
   // testing if at all.
   g_cdr->tree = nullptr;
   homme::set_ie2gci(*g_cdr, ie - 1, gci - 1);
+  if (g_forcing)
+    homme::set_ie2gci(*g_forcing, ie - 1, gci - 1);
 }
 
 static homme::sl::Data::Ptr g_sl;
@@ -5789,4 +5796,18 @@ extern "C" void cedr_sl_check (const homme::Real* minq, const homme::Real* maxq,
   cedr_assert(g_cdr);
   cedr_assert(g_sl);
   homme::sl::check(*g_cdr, *g_sl, minq, maxq, nets-1, nete-1);
+}
+
+// -- Forcing nonnegativity constraint prototype
+
+extern "C" void
+forcing_init_impl (const homme::Int fcomm, const homme::Int forcing_cdr_alg,
+                   const homme::Int** owned_ids, const homme::Int** rank2sfc,
+                   const homme::Int gbl_ncell, const homme::Int lcl_ncell,
+                   const homme::Int nlev) {
+  const auto p = cedr::mpi::make_parallel(MPI_Comm_f2c(fcomm));
+  cedr_assert(forcing_cdr_alg == 1);
+  const int cdr_alg = 102;
+  g_forcing = std::make_shared<homme::CDR>(cdr_alg, gbl_ncell, lcl_ncell, nlev,
+                                           *owned_ids, *rank2sfc, p, fcomm);
 }

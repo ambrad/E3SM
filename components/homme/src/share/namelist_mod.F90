@@ -34,6 +34,7 @@ module namelist_mod
     semi_lagrange_hv_q_all, &
     semi_lagrange_nearest_point_lev, &
     use_semi_lagrange_transport_local_conservation , &   ! local conservation vs. global if transport_alg = 1
+    forcing_cdr_alg, &
     tstep_type,    &
     cubed_sphere_map, &
     qsplit,        &
@@ -216,6 +217,7 @@ module namelist_mod
       semi_lagrange_hv_q_all, &
       semi_lagrange_nearest_point_lev, &
       use_semi_lagrange_transport_local_conservation , &   ! local conservation vs. global if transport_alg = 1
+      forcing_cdr_alg, &
       tstep_type,    &
       cubed_sphere_map, &
       qsplit,        &
@@ -372,6 +374,7 @@ module namelist_mod
     semi_lagrange_hv_q_all = .false.
     semi_lagrange_nearest_point_lev = 0
     use_semi_lagrange_transport_local_conservation   = .false.
+    forcing_cdr_alg = 0
     disable_diagnostics = .false.
 
     theta_hydrostatic_mode = .true.    ! for preqx, this must be .true.
@@ -689,6 +692,7 @@ module namelist_mod
     call MPI_bcast(semi_lagrange_hv_q_all ,1,MPIlogical_t,par%root,par%comm,ierr)
     call MPI_bcast(semi_lagrange_nearest_point_lev ,1,MPIinteger_t,par%root,par%comm,ierr)
     call MPI_bcast(use_semi_lagrange_transport_local_conservation ,1,MPIlogical_t,par%root,par%comm,ierr)
+    call MPI_bcast(forcing_cdr_alg ,1,MPIinteger_t,par%root,par%comm,ierr)
     call MPI_bcast(tstep_type,1,MPIinteger_t ,par%root,par%comm,ierr)
     call MPI_bcast(cubed_sphere_map,1,MPIinteger_t ,par%root,par%comm,ierr)
     call MPI_bcast(qsplit,1,MPIinteger_t ,par%root,par%comm,ierr)
@@ -941,6 +945,7 @@ module namelist_mod
        write(iulog,*)"readnl: semi_lagrange_hv_q_all   = ",semi_lagrange_hv_q_all
        write(iulog,*)"readnl: semi_lagrange_nearest_point_lev   = ",semi_lagrange_nearest_point_lev
        write(iulog,*)"readnl: use_semi_lagrange_transport_local_conservation=",use_semi_lagrange_transport_local_conservation
+       write(iulog,*)"readnl: forcing_cdr_alg   = ",forcing_cdr_alg
        write(iulog,*)"readnl: tstep_type    = ",tstep_type
        write(iulog,*)"readnl: vert_remap_q_alg  = ",vert_remap_q_alg
 #ifdef CAM

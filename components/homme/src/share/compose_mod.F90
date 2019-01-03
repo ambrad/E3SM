@@ -153,6 +153,14 @@ module compose_mod
      subroutine slmm_get_mpi_pattern(sl_mpi) bind(c)
        integer, intent(out) :: sl_mpi
      end subroutine slmm_get_mpi_pattern
+
+     !! -- Forcing nonnegativity constraint prototype
+     subroutine forcing_init_impl(comm, cdr_alg, sc2gci, sc2rank, &
+          ncell, nlclcell, nlev) bind(c)
+       integer, value, intent(in) :: comm, cdr_alg, ncell, nlclcell, nlev
+       integer, intent(in) :: sc2gci(:), sc2rank(:)
+     end subroutine forcing_init_impl
+
   end interface
 
 contains
@@ -163,7 +171,7 @@ contains
     use element_mod, only : element_t
     use gridgraph_mod, only : GridVertex_t
     use control_mod, only : semi_lagrange_cdr_alg, transport_alg, cubed_sphere_map, &
-         semi_lagrange_nearest_point_lev
+         semi_lagrange_nearest_point_lev, forcing_cdr_alg
     use scalable_grid_init_mod, only : sgi_is_initialized, sgi_get_rank2sfc, &
          sgi_gid2igv
     use perf_mod, only: t_startf, t_stopf
@@ -183,7 +191,8 @@ contains
     call t_startf('compose_init')
     use_sgi = sgi_is_initialized()
 
-    if (semi_lagrange_cdr_alg == 2 .or. semi_lagrange_cdr_alg == 20) then
+    if ((semi_lagrange_cdr_alg == 2 .or. semi_lagrange_cdr_alg == 20) .or. &
+         forcing_cdr_alg > 0) then
        if (.not. use_sgi) then
           call abortmp('COMPOSE> CEDR algorithm QLT requires &
                &scalable grid initialization.')
@@ -200,6 +209,8 @@ contains
        end do
     end if
     call cedr_init_impl(par%comm, semi_lagrange_cdr_alg, owned_ids, rank2sfc, &
+         nelem, nelemd, nlev)
+    call forcing_init_impl(par%comm, forcing_cdr_alg, owned_ids, rank2sfc, &
          nelem, nelemd, nlev)
     if (allocated(owned_ids)) deallocate(owned_ids)
 

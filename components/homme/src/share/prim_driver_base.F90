@@ -590,15 +590,16 @@ contains
 
   subroutine prim_init1_compose(par, elem)
     use parallel_mod, only : parallel_t
-    use control_mod, only : transport_alg, semi_lagrange_cdr_alg
+    use control_mod, only : transport_alg, semi_lagrange_cdr_alg, forcing_cdr_alg
     use compose_mod, only : kokkos_init, compose_init, cedr_set_ie2gci, cedr_unittest
 
     type (parallel_t), intent(in) :: par
     type (element_t), pointer, intent(in) :: elem(:)
     integer :: ie, ierr
 
-    call kokkos_init()
-    if (transport_alg > 0 .and. semi_lagrange_cdr_alg > 1) then
+    if ((transport_alg > 0 .and. semi_lagrange_cdr_alg > 1) .or. &
+         forcing_cdr_alg > 0) then
+       call kokkos_init()
        call compose_init(par, elem, GridVertex)
        !call cedr_unittest(par%comm, ierr)
        if (par%masterproc) then
