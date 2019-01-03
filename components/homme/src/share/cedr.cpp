@@ -5192,6 +5192,7 @@ struct CDR {
     static bool is_suplev (Enum e) {
       return e == qlt_super_level || e == caas_super_level;
     }
+    static bool is_nonneg_only(Enum e) { return e == forcing_qlt; }
   };
 
   enum { nsublev_per_suplev = 8 };
@@ -5228,9 +5229,14 @@ struct CDR {
 
   void init_tracers (const Int qsize, const bool need_conservation) {
     typedef cedr::ProblemType PT;
-    for (Int ti = 0, nt = nsuplev*qsize; ti < nt; ++ti)
-      cdr->declare_tracer(PT::shapepreserve |
-                          (need_conservation ? PT::conserve : 0), 0);
+    if (Alg::is_nonneg_only(alg)) {
+      for (Int ti = 0, nt = nsuplev*qsize; ti < nt; ++ti)
+        cdr->declare_tracer(PT::nonnegative, 0);
+    } else {
+      for (Int ti = 0, nt = nsuplev*qsize; ti < nt; ++ti)
+        cdr->declare_tracer(PT::shapepreserve |
+                            (need_conservation ? PT::conserve : 0), 0);
+    }
     cdr->end_tracer_declarations();
   }
 

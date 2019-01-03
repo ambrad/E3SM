@@ -606,6 +606,8 @@ contains
   subroutine applyCAMforcing_tracers(elem,hvcoord,np1,np1_qdp,dt,nets,nete)
 
   use physical_constants, only: Cp
+  use control_mod, only: forcing_cdr_alg
+  use compose_mod, only: 
 
   implicit none
   type (element_t),       intent(inout) :: elem(:)
@@ -630,7 +632,8 @@ contains
               do i=1,np
                  v1 = dt*elem(ie)%derived%FQ(i,j,k,q)
                  !if (elem(ie)%state%Qdp(i,j,k,q,np1) + v1 < 0 .and. v1<0) then
-                 if (elem(ie)%state%Qdp(i,j,k,q,np1_qdp) + v1 < 0 .and. v1<0) then
+                 if (forcing_cdr_alg == 0 .and. &
+                      elem(ie)%state%Qdp(i,j,k,q,np1_qdp) + v1 < 0 .and. v1<0) then
                     !if (elem(ie)%state%Qdp(i,j,k,q,np1) < 0 ) then
                     if (elem(ie)%state%Qdp(i,j,k,q,np1_qdp) < 0 ) then
                        v1=0  ! Q already negative, dont make it more so
@@ -649,6 +652,10 @@ contains
            enddo
         enddo
      enddo
+
+     if (forcing_cdr_alg > 0) then
+        
+     end if
 
      if (use_moisture) then
         ! to conserve dry mass in the precese of Q1 forcing:
