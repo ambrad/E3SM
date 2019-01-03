@@ -5185,7 +5185,9 @@ struct CDR {
       default: cedr_throw_if(true,  "cdr_alg " << cdr_alg << " is invalid.");
       }
     }
-    static bool is_qlt (Enum e) { return e == qlt || e == qlt_super_level; }
+    static bool is_qlt (Enum e) {
+      return e == qlt || e == qlt_super_level || e == forcing_qlt;
+    }
     static bool is_caas (Enum e) { return e == caas || e == caas_super_level; }
     static bool is_suplev (Enum e) {
       return e == qlt_super_level || e == caas_super_level;
@@ -5255,8 +5257,7 @@ void init_ie2lci (CDR& q) {
   }
 }
 
-void init_tracers (CDR& q, const Int nlev, const Int qsize,
-                   const bool need_conservation) {
+void init_tracers (CDR& q, const Int qsize, const bool need_conservation) {
   q.init_tracers(qsize, need_conservation);
 }
 
@@ -5753,7 +5754,7 @@ extern "C" homme::Int cedr_sl_init (
   g_sl = std::make_shared<homme::sl::Data>(g_cdr->nlclcell, np, nlev, qsize,
                                            qsized, timelevels);
   homme::init_ie2lci(*g_cdr);
-  homme::init_tracers(*g_cdr, nlev, qsize, need_conservation);
+  homme::init_tracers(*g_cdr, qsize, need_conservation);
   homme::sl::check(*g_cdr, *g_sl);
   return 1;
 }
@@ -5801,13 +5802,20 @@ extern "C" void cedr_sl_check (const homme::Real* minq, const homme::Real* maxq,
 // -- Forcing nonnegativity constraint prototype
 
 extern "C" void
-forcing_init_impl (const homme::Int fcomm, const homme::Int forcing_cdr_alg,
-                   const homme::Int** owned_ids, const homme::Int** rank2sfc,
-                   const homme::Int gbl_ncell, const homme::Int lcl_ncell,
-                   const homme::Int nlev) {
+cedr_forcing_init_impl (const homme::Int fcomm, const homme::Int forcing_cdr_alg,
+                        const homme::Int** owned_ids, const homme::Int** rank2sfc,
+                        const homme::Int gbl_ncell, const homme::Int lcl_ncell,
+                        const homme::Int nlev) {
   const auto p = cedr::mpi::make_parallel(MPI_Comm_f2c(fcomm));
   cedr_assert(forcing_cdr_alg == 1);
   const int cdr_alg = 102;
   g_forcing = std::make_shared<homme::CDR>(cdr_alg, gbl_ncell, lcl_ncell, nlev,
                                            *owned_ids, *rank2sfc, p, fcomm);
+}
+
+extern "C" void
+cedr_forcing_finish (const homme::Int qsize) {
+  cedr_assert(g_forcing);
+  homme::init_ie2lci(*g_forcing);
+  homme::init_tracers(*g_forcing, qsize, false);
 }

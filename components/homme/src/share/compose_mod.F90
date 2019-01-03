@@ -155,12 +155,15 @@ module compose_mod
      end subroutine slmm_get_mpi_pattern
 
      !! -- Forcing nonnegativity constraint prototype
-     subroutine forcing_init_impl(comm, cdr_alg, sc2gci, sc2rank, &
+     subroutine cedr_forcing_init_impl(comm, cdr_alg, sc2gci, sc2rank, &
           ncell, nlclcell, nlev) bind(c)
        integer, value, intent(in) :: comm, cdr_alg, ncell, nlclcell, nlev
        integer, intent(in) :: sc2gci(:), sc2rank(:)
-     end subroutine forcing_init_impl
+     end subroutine cedr_forcing_init_impl
 
+     subroutine cedr_forcing_finish(qsize) bind(c)
+       integer, value, intent(in) :: qsize
+     end subroutine cedr_forcing_finish
   end interface
 
 contains
@@ -210,7 +213,7 @@ contains
     end if
     call cedr_init_impl(par%comm, semi_lagrange_cdr_alg, owned_ids, rank2sfc, &
          nelem, nelemd, nlev)
-    call forcing_init_impl(par%comm, forcing_cdr_alg, owned_ids, rank2sfc, &
+    call cedr_forcing_init_impl(par%comm, forcing_cdr_alg, owned_ids, rank2sfc, &
          nelem, nelemd, nlev)
     if (allocated(owned_ids)) deallocate(owned_ids)
 

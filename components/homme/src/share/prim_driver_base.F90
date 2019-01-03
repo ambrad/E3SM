@@ -590,8 +590,10 @@ contains
 
   subroutine prim_init1_compose(par, elem)
     use parallel_mod, only : parallel_t
+    use dimensions_mod, only : qsize
     use control_mod, only : transport_alg, semi_lagrange_cdr_alg, forcing_cdr_alg
-    use compose_mod, only : kokkos_init, compose_init, cedr_set_ie2gci, cedr_unittest
+    use compose_mod, only : kokkos_init, compose_init, cedr_set_ie2gci, cedr_unittest, &
+         cedr_forcing_finish
 
     type (parallel_t), intent(in) :: par
     type (element_t), pointer, intent(in) :: elem(:)
@@ -608,6 +610,9 @@ contains
        do ie = 1, nelemd
           call cedr_set_ie2gci(ie, elem(ie)%vertex%number)
        end do
+       if (forcing_cdr_alg > 0) then
+          call cedr_forcing_finish(qsize)
+       end if
     end if
   end subroutine prim_init1_compose
 
