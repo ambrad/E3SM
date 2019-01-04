@@ -607,7 +607,6 @@ contains
 
   use physical_constants, only: Cp
   use control_mod, only: forcing_cdr_alg
-  use compose_mod, only: 
 
   implicit none
   type (element_t),       intent(inout) :: elem(:)
@@ -619,6 +618,11 @@ contains
   integer :: i,j,k,ie,q
   real (kind=real_kind) :: v1,dp
   real (kind=real_kind) :: beta(np,np),E0(np,np),ED(np,np),dp0m1(np,np),dpsum(np,np)
+
+  if (forcing_cdr_alg > 0) then
+     call applyCAMforcing_tracers_nonneg(elem,hvcoord,np1,np1_qdp,dt,nets,nete)
+     return
+  end if
 
   do ie=nets,nete
      ! apply forcing to Qdp
@@ -632,8 +636,7 @@ contains
               do i=1,np
                  v1 = dt*elem(ie)%derived%FQ(i,j,k,q)
                  !if (elem(ie)%state%Qdp(i,j,k,q,np1) + v1 < 0 .and. v1<0) then
-                 if (forcing_cdr_alg == 0 .and. &
-                      elem(ie)%state%Qdp(i,j,k,q,np1_qdp) + v1 < 0 .and. v1<0) then
+                 if (elem(ie)%state%Qdp(i,j,k,q,np1_qdp) + v1 < 0 .and. v1<0) then
                     !if (elem(ie)%state%Qdp(i,j,k,q,np1) < 0 ) then
                     if (elem(ie)%state%Qdp(i,j,k,q,np1_qdp) < 0 ) then
                        v1=0  ! Q already negative, dont make it more so
@@ -652,10 +655,6 @@ contains
            enddo
         enddo
      enddo
-
-     if (forcing_cdr_alg > 0) then
-        
-     end if
 
      if (use_moisture) then
         ! to conserve dry mass in the precese of Q1 forcing:
@@ -683,6 +682,96 @@ contains
   enddo
   end subroutine applyCAMforcing_tracers
 
+  subroutine applyCAMforcing_tracers_nonneg(elem,hvcoord,np1,np1_qdp,dt,nets,nete)
+
+  use physical_constants, only: Cp
+  use control_mod, only: forcing_cdr_alg
+  use compose_mod, only: 
+
+  implicit none
+  type (element_t),       intent(inout) :: elem(:)
+  real (kind=real_kind),  intent(in)    :: dt
+  type (hvcoord_t),       intent(in)    :: hvcoord
+  integer,                intent(in)    :: np1,nets,nete,np1_qdp
+
+  ! local
+  integer :: i,j,k,ie,q,n_other_qdp
+  real (kind=real_kind) :: v1,dp
+  real (kind=real_kind) :: beta(np,np),E0(np,np),ED(np,np),dp0m1(np,np),dpsum(np,np)
+
+  n_other_qdp = modulo(np1_qdp, 2) + 1
+
+  do ie=nets,nete
+#if (defined COLUMN_OPENMP)
+!$omp parallel do private(q,k,i,j,v1)
+#endif
+     do q=1,qsize
+        do k=1,nlev
+           do j=1,np
+              do i=1,np
+                 elem(ie)%state%Qdp(i,j,k,q,n_other_qdp) = elem(ie)%state%Qdp(i,j,k,q,np1_qdp)
+                 v1 = dt*elem(ie)%derived%FQ(i,j,k,q)
+                 elem(ie)%state%Qdp(i,j,k,q,np1_qdp) = elem(ie)%state%Qdp(i,j,k,q,np1_qdp)+v1
+              enddo
+           enddo
+        enddo
+     enddo
+  end do
+
+  do ie=nets,nete
+     ! apply forcing to Qdp
+     elem(ie)%derived%FQps(:,:)=0
+     q = 1
+#if (defined COLUMN_OPENMP)
+!$omp parallel do private(k,i,j,v1)
+#endif
+     do k=1,nlev
+        do j=1,np
+           do i=1,np
+              v1 = elem(ie)%state%Qdp(i,j,k,q,np1_qdp) - elem(ie)%state%Qdp(i,j,k,q,n_other_qdp)
+
+              !!! temporary> test that we get the same answer as originally
+              elem(ie)%state%Qdp(i,j,k,q,np1_qdp) = elem(ie)%state%Qdp(i,j,k,q,n_other_qdp)
+              if (elem(ie)%state%Qdp(i,j,k,q,np1_qdp) + v1 < 0 .and. v1<0) then
+                 print *, 'amb> ie,i,j,k,q, Qdp, v1',ie,i,j,k,q, elem(ie)%state%Qdp(i,j,k,q,np1_qdp), v1
+                 if (elem(ie)%state%Qdp(i,j,k,q,np1_qdp) < 0 ) then
+                    v1=0  ! Q already negative, dont make it more so
+                 else
+                    v1 = -elem(ie)%state%Qdp(i,j,k,q,np1_qdp)
+                 endif
+              endif
+              elem(ie)%state%Qdp(i,j,k,q,np1_qdp) = elem(ie)%state%Qdp(i,j,k,q,np1_qdp)+v1
+              !!! <temporary
+
+              elem(ie)%derived%FQps(i,j)=elem(ie)%derived%FQps(i,j)+v1/dt
+           enddo
+        enddo
+     enddo
+
+     if (use_moisture) then
+        ! to conserve dry mass in the precese of Q1 forcing:
+        elem(ie)%state%ps_v(:,:,np1) = elem(ie)%state%ps_v(:,:,np1) + &
+             dt*elem(ie)%derived%FQps(:,:)
+     endif
+
+     ! Qdp(np1) and ps_v(np1) were updated by forcing - update Q(np1)
+#if (defined COLUMN_OPENMP)
+!$omp parallel do private(q,k,i,j,dp)
+#endif
+     do q=1,qsize
+        do k=1,nlev
+           do j=1,np
+              do i=1,np
+                 dp = ( hvcoord%hyai(k+1) - hvcoord%hyai(k) )*hvcoord%ps0 + &
+                      ( hvcoord%hybi(k+1) - hvcoord%hybi(k) )*elem(ie)%state%ps_v(i,j,np1)
+                 elem(ie)%state%Q(i,j,k,q) = elem(ie)%state%Qdp(i,j,k,q,np1_qdp)/dp
+              enddo
+           enddo
+        enddo
+     enddo
+
+  enddo
+  end subroutine applyCAMforcing_tracers_nonneg
 
 !applies dynamic tendencies without dp adjustment
   subroutine applyCAMforcing_dynamics(elem,hvcoord,np1,dt,nets,nete)
@@ -735,7 +824,7 @@ contains
      enddo
   enddo
   end subroutine applyCAMforcing_dynamics_dp
-
+  
 
   subroutine advance_hypervis_dp(elem,hvcoord,hybrid,deriv,nt,nets,nete,dt2,eta_ave_w)
   !
