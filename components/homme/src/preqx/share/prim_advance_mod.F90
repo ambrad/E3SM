@@ -550,20 +550,21 @@ contains
 
 !ftype logic
 !should be called with dt_remap, on 'eulerian' levels, only before homme remap timestep
-  subroutine applyCAMforcing_ps(elem,hvcoord,dyn_timelev,tr_timelev,dt_remap,nets,nete)
+  subroutine applyCAMforcing_ps(elem,hybrid,hvcoord,dyn_timelev,tr_timelev,dt_remap,nets,nete)
   use control_mod, only : ftype
   implicit none
   type (element_t),       intent(inout) :: elem(:)
+  type (hybrid_t),        intent(in)    :: hybrid
   real (kind=real_kind),  intent(in)    :: dt_remap
   type (hvcoord_t),       intent(in)    :: hvcoord
   integer,                intent(in)    :: dyn_timelev,tr_timelev,nets,nete
 
   call t_startf("ApplyCAMForcing")
   if (ftype==0) then
-    call applyCAMforcing_dynamics(elem,hvcoord,dyn_timelev,           dt_remap,nets,nete)
-    call applyCAMforcing_tracers (elem,hvcoord,dyn_timelev,tr_timelev,dt_remap,nets,nete)
+    call applyCAMforcing_dynamics(elem,       hvcoord,dyn_timelev,           dt_remap,nets,nete)
+    call applyCAMforcing_tracers (elem,hybrid,hvcoord,dyn_timelev,tr_timelev,dt_remap,nets,nete)
   elseif (ftype==2) then
-    call ApplyCAMForcing_dynamics(elem,hvcoord,dyn_timelev,           dt_remap,nets,nete)
+    call ApplyCAMForcing_dynamics(elem,       hvcoord,dyn_timelev,           dt_remap,nets,nete)
   endif
 #ifndef CAM
   ! for standalone homme, we need tracer tendencies injected similarly to CAM
@@ -572,7 +573,7 @@ contains
   ! it is identical to ftype=0).
   ! leaving option ftype=-1 for standalone homme when no forcing is applied ever
   if ((ftype /= 0 ).and.(ftype > 0)) then
-    call ApplyCAMForcing_tracers (elem, hvcoord,dyn_timelev,tr_timelev,dt_remap,nets,nete)
+    call ApplyCAMForcing_tracers (elem,hybrid,hvcoord,dyn_timelev,tr_timelev,dt_remap,nets,nete)
   endif
 #endif
   call t_stopf("ApplyCAMForcing")
@@ -603,13 +604,14 @@ contains
 
 
 !applies tracer tendencies and adjusts ps depending on moisture
-  subroutine applyCAMforcing_tracers(elem,hvcoord,np1,np1_qdp,dt,nets,nete)
+  subroutine applyCAMforcing_tracers(elem,hybrid,hvcoord,np1,np1_qdp,dt,nets,nete)
 
   use physical_constants, only: Cp
   use control_mod, only: forcing_cdr_alg
 
   implicit none
   type (element_t),       intent(inout) :: elem(:)
+  type (hybrid_t),        intent(in)    :: hybrid
   real (kind=real_kind),  intent(in)    :: dt
   type (hvcoord_t),       intent(in)    :: hvcoord
   integer,                intent(in)    :: np1,nets,nete,np1_qdp
@@ -620,7 +622,7 @@ contains
   real (kind=real_kind) :: beta(np,np),E0(np,np),ED(np,np),dp0m1(np,np),dpsum(np,np)
 
   if (forcing_cdr_alg > 0) then
-     call applyCAMforcing_tracers_nonneg(elem,hvcoord,np1,np1_qdp,dt,nets,nete)
+     call applyCAMforcing_tracers_nonneg(elem,hybrid,hvcoord,np1,np1_qdp,dt,nets,nete)
      return
   end if
 
@@ -682,14 +684,15 @@ contains
   enddo
   end subroutine applyCAMforcing_tracers
 
-  subroutine applyCAMforcing_tracers_nonneg(elem,hvcoord,np1,np1_qdp,dt,nets,nete)
-
+  subroutine applyCAMforcing_tracers_nonneg(elem,hybrid,hvcoord,np1,np1_qdp,dt,nets,nete)
   use physical_constants, only: Cp
   use control_mod, only: forcing_cdr_alg
-  use compose_mod, only: 
+  use compose_mod, only: cedr_forcing_set_Qdp, cedr_forcing_run, cedr_forcing_run_local, &
+       cedr_forcing_dss
 
   implicit none
   type (element_t),       intent(inout) :: elem(:)
+  type (hybrid_t),        intent(in)    :: hybrid
   real (kind=real_kind),  intent(in)    :: dt
   type (hvcoord_t),       intent(in)    :: hvcoord
   integer,                intent(in)    :: np1,nets,nete,np1_qdp
@@ -716,9 +719,23 @@ contains
            enddo
         enddo
      enddo
+     call cedr_forcing_set_Qdp(ie, elem(ie)%state%Qdp, np1_qdp, n_other_qdp)
   end do
 
+  call t_startf('Forcing run')
+  call cedr_forcing_run(nets, nete)
+  call t_stopf('Forcing run')
+  call t_startf('Forcing run_local')
+  call cedr_forcing_run_local(nets, nete)
+  call t_stopf('Forcing run_local')
+  call t_startf('Forcing DSS')
+  call cedr_forcing_dss(elem, nets, nete, hybrid, np1_qdp)
+  call t_stopf('Forcing DSS')
+
   do ie=nets,nete
+     ! TODO Confirm that I can move use_moisture to outside the FQps
+     ! accumulation loop.
+
      ! apply forcing to Qdp
      elem(ie)%derived%FQps(:,:)=0
      q = 1
@@ -729,20 +746,6 @@ contains
         do j=1,np
            do i=1,np
               v1 = elem(ie)%state%Qdp(i,j,k,q,np1_qdp) - elem(ie)%state%Qdp(i,j,k,q,n_other_qdp)
-
-              !!! temporary> test that we get the same answer as originally
-              elem(ie)%state%Qdp(i,j,k,q,np1_qdp) = elem(ie)%state%Qdp(i,j,k,q,n_other_qdp)
-              if (elem(ie)%state%Qdp(i,j,k,q,np1_qdp) + v1 < 0 .and. v1<0) then
-                 print *, 'amb> ie,i,j,k,q, Qdp, v1',ie,i,j,k,q, elem(ie)%state%Qdp(i,j,k,q,np1_qdp), v1
-                 if (elem(ie)%state%Qdp(i,j,k,q,np1_qdp) < 0 ) then
-                    v1=0  ! Q already negative, dont make it more so
-                 else
-                    v1 = -elem(ie)%state%Qdp(i,j,k,q,np1_qdp)
-                 endif
-              endif
-              elem(ie)%state%Qdp(i,j,k,q,np1_qdp) = elem(ie)%state%Qdp(i,j,k,q,np1_qdp)+v1
-              !!! <temporary
-
               elem(ie)%derived%FQps(i,j)=elem(ie)%derived%FQps(i,j)+v1/dt
            enddo
         enddo

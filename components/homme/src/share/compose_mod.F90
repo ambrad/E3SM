@@ -164,6 +164,21 @@ module compose_mod
      subroutine cedr_forcing_finish(qsize) bind(c)
        integer, value, intent(in) :: qsize
      end subroutine cedr_forcing_finish
+
+     subroutine cedr_forcing_set_Qdp(ie, Qdp, n, n_other) bind(c)
+       use kinds, only : real_kind
+       use dimensions_mod, only : nlev, np, qsize_d
+       integer, value, intent(in) :: ie, n, n_other
+       real(kind=real_kind), intent(in) :: Qdp(np,np,nlev,qsize_d,2)
+     end subroutine cedr_forcing_set_Qdp
+
+     subroutine cedr_forcing_run(nets, nete) bind(c)
+       integer, value, intent(in) :: nets, nete
+     end subroutine cedr_forcing_run
+
+     subroutine cedr_forcing_run_local(nets, nete) bind(c)
+       integer, value, intent(in) :: nets, nete
+     end subroutine cedr_forcing_run_local
   end interface
 
 contains
@@ -268,5 +283,16 @@ contains
 
     call repro_sum(send, recv, nlocal, nlocal, nfld, commid=comm)
   end subroutine compose_repro_sum
+
+  subroutine cedr_forcing_dss(elem, nets, nete, hybrid, n)
+    use edgetype_mod, only : EdgeBuffer_t
+    use bndry_mod, only : bndry_exchangev
+    use hybrid_mod, only : hybrid_t
+    use element_mod, only : element_t
+
+    type (element_t), intent(inout) :: elem(:)
+    integer, intent(in   ) :: nets, nete, n
+    type (hybrid_t), intent(in) :: hybrid
+  end subroutine cedr_forcing_dss
 
 end module compose_mod

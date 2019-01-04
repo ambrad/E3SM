@@ -5769,7 +5769,7 @@ extern "C" void cedr_sl_set_pointers_begin (homme::Int nets, homme::Int nete) {}
 extern "C" void cedr_sl_set_spheremp (homme::Int ie, homme::Real* v)
 { homme::sl::insert(g_sl, ie - 1, 0, v); }
 extern "C" void cedr_sl_set_qdp (homme::Int ie, homme::Real* v, homme::Int n0_qdp,
-                                  homme::Int n1_qdp)
+                                 homme::Int n1_qdp)
 { homme::sl::insert(g_sl, ie - 1, 1, v, n0_qdp - 1, n1_qdp - 1); }
 extern "C" void cedr_sl_set_dp3d (homme::Int ie, homme::Real* v, homme::Int tl_np1)
 { homme::sl::insert(g_sl, ie - 1, 2, v, tl_np1 - 1); }
@@ -5824,4 +5824,16 @@ cedr_forcing_finish (const homme::Int qsize) {
   cedr_assert(g_forcing);
   homme::init_ie2lci(*g_forcing);
   homme::init_tracers(*g_forcing, qsize, false);
+}
+
+extern "C" void
+cedr_forcing_set_qdp (homme::Int ie, homme::Real* v, homme::Int n, homme::Int n1_other)
+{}
+
+extern "C" void
+cedr_forcing_run (homme::Int nets, homme::Int nete) {
+}
+
+extern "C" void
+cedr_forcing_run_local (homme::Int nets, homme::Int nete) {
 }
