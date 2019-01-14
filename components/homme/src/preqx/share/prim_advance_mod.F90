@@ -699,7 +699,7 @@ contains
 
   ! local
   integer :: i,j,k,ie,q,n_other_qdp
-  real (kind=real_kind) :: v1,dp
+  real (kind=real_kind) :: v1,dp,Qdp_unconstrained
   real (kind=real_kind) :: beta(np,np),E0(np,np),ED(np,np),dp0m1(np,np),dpsum(np,np)
 
   n_other_qdp = modulo(np1_qdp, 2) + 1
@@ -733,25 +733,29 @@ contains
   call t_stopf('Forcing DSS')
 
   do ie=nets,nete
-     ! TODO Confirm that I can move use_moisture to outside the FQps
-     ! accumulation loop.
-
-     ! apply forcing to Qdp
-     elem(ie)%derived%FQps(:,:)=0
-     q = 1
+     if (use_moisture) then
+        ! apply forcing to Qdp
+        elem(ie)%derived%FQps(:,:)=0
+        q = 1
 #if (defined COLUMN_OPENMP)
-!$omp parallel do private(k,i,j,v1)
+        !$omp parallel do private(k,i,j,v1,Qdp_unconstrained)
 #endif
-     do k=1,nlev
-        do j=1,np
-           do i=1,np
-              v1 = elem(ie)%state%Qdp(i,j,k,q,np1_qdp) - elem(ie)%state%Qdp(i,j,k,q,n_other_qdp)
-              elem(ie)%derived%FQps(i,j)=elem(ie)%derived%FQps(i,j)+v1/dt
+        do k=1,nlev
+           do j=1,np
+              do i=1,np
+                 ! To stay BFB with applyCAMforcing_tracers when all tendencies
+                 ! produce >=0 Qdp, use the following procedure.
+                 v1 = dt*elem(ie)%derived%FQ(i,j,k,q) ! recompute nominal v1 ...
+                 Qdp_unconstrained = elem(ie)%state%Qdp(i,j,k,q,n_other_qdp) + v1 ! ... and Qdp
+                 if (elem(ie)%state%Qdp(i,j,k,q,np1_qdp) /= Qdp_unconstrained) then
+                    ! Qdp was adjusted, so use implied v1.
+                    v1 = elem(ie)%state%Qdp(i,j,k,q,np1_qdp) - elem(ie)%state%Qdp(i,j,k,q,n_other_qdp)
+                 end if
+                 elem(ie)%derived%FQps(i,j) = elem(ie)%derived%FQps(i,j) + v1/dt
+              enddo
            enddo
         enddo
-     enddo
 
-     if (use_moisture) then
         ! to conserve dry mass in the precese of Q1 forcing:
         elem(ie)%state%ps_v(:,:,np1) = elem(ie)%state%ps_v(:,:,np1) + &
              dt*elem(ie)%derived%FQps(:,:)
