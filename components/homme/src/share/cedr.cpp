@@ -5069,6 +5069,14 @@ int main (int argc, char** argv) {
 #endif
 
 namespace homme {
+// Fortran array wrappers.
+template <typename T> using FA2 =
+  Kokkos::View<T**,    Kokkos::LayoutLeft, Kokkos::HostSpace>;
+template <typename T> using FA4 =
+  Kokkos::View<T****,  Kokkos::LayoutLeft, Kokkos::HostSpace>;
+template <typename T> using FA5 =
+  Kokkos::View<T*****, Kokkos::LayoutLeft, Kokkos::HostSpace>;
+
 namespace qlt = cedr::qlt;
 using cedr::Int;
 using cedr::Real;
@@ -5268,14 +5276,6 @@ void init_tracers (CDR& q, const Int qsize, const bool need_conservation) {
 }
 
 namespace sl { // For sl_advection.F90
-// Fortran array wrappers.
-template <typename T> using FA2 =
-  Kokkos::View<T**,    Kokkos::LayoutLeft, Kokkos::HostSpace>;
-template <typename T> using FA4 =
-  Kokkos::View<T****,  Kokkos::LayoutLeft, Kokkos::HostSpace>;
-template <typename T> using FA5 =
-  Kokkos::View<T*****, Kokkos::LayoutLeft, Kokkos::HostSpace>;
-
 // Following are naming conventions in element_state and sl_advection:
 //     elem(ie)%state%Q(:,:,k,q) is tracer mixing ratio.
 //     elem(ie)%state%dp3d(:,:,k,tl%np1) is essentially total density.
@@ -5825,6 +5825,9 @@ cedr_forcing_finish (const homme::Int qsize) {
   homme::init_ie2lci(*g_forcing);
   homme::init_tracers(*g_forcing, qsize, false);
 }
+
+extern "C" void cedr_forcing_set_spheremp (homme::Int ie, homme::Real* v)
+{}
 
 extern "C" void
 cedr_forcing_set_qdp (homme::Int ie, homme::Real* v, homme::Int n, homme::Int n1_other)

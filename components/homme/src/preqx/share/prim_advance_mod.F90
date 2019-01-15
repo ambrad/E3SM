@@ -687,7 +687,8 @@ contains
   subroutine applyCAMforcing_tracers_nonneg(elem,hybrid,hvcoord,np1,np1_qdp,dt,nets,nete)
   use physical_constants, only: Cp
   use control_mod, only: forcing_cdr_alg
-  use compose_mod, only: cedr_forcing_set_Qdp, cedr_forcing_run, cedr_forcing_run_local, &
+  use compose_mod, only: cedr_forcing_set_spheremp, cedr_forcing_set_Qdp, &
+       cedr_forcing_run, cedr_forcing_run_local, &
        cedr_forcing_dss
 
   implicit none
@@ -719,6 +720,7 @@ contains
            enddo
         enddo
      enddo
+     call cedr_forcing_set_spheremp(ie, elem(ie)%spheremp)
      call cedr_forcing_set_Qdp(ie, elem(ie)%state%Qdp, np1_qdp, n_other_qdp)
   end do
 

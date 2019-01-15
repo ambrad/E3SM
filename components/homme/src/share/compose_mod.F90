@@ -165,6 +165,13 @@ module compose_mod
        integer, value, intent(in) :: qsize
      end subroutine cedr_forcing_finish
 
+     subroutine cedr_forcing_set_spheremp(ie, spheremp) bind(c)
+       use kinds         , only : real_kind
+       use dimensions_mod, only : np
+       integer, value, intent(in) :: ie
+       real(kind=real_kind), intent(in) :: spheremp(np,np)
+     end subroutine cedr_forcing_set_spheremp
+
      subroutine cedr_forcing_set_Qdp(ie, Qdp, n, n_other) bind(c)
        use kinds, only : real_kind
        use dimensions_mod, only : nlev, np, qsize_d
