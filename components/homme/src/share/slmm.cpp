@@ -5,17 +5,22 @@
 # define NDEBUG
 #endif
 #include <mpi.h>
-//#pragma message "We want assertions"
-//#undef NDEBUG
+#pragma message "We want assertions"
+#undef NDEBUG
 
 // Uncomment this to look for MPI-related memory leaks.
-//#define COMPOSE_DEBUG_MPI
+#pragma message "Debug MPI"
+#define COMPOSE_DEBUG_MPI
 
-#define BUILD_CISL
+#pragma message "Skip CISL"
+//#define BUILD_CISL
 
 //> begin SIQK
 // To make this initial integration less messy, inline SIQK in this translation
 // unit. Once we've put together the Compose library, I'll remove this code.
+
+// COMPOSE version 1.0: Copyright 2018 NTESS. This software is released under
+// the BSD license; see LICENSE in the top-level directory.
 
 #ifndef INCLUDE_SIQK_DEFS_HPP
 #define INCLUDE_SIQK_DEFS_HPP
@@ -3112,7 +3117,7 @@ private:
   }
 };
 
-// Advecter has purely mesh-local knowledge, with once exception noted below.
+// Advecter has purely mesh-local knowledge, with one exception noted below.
 struct Advecter {
   typedef std::shared_ptr<Advecter> Ptr;
   typedef std::shared_ptr<const Advecter> ConstPtr;
