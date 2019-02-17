@@ -185,10 +185,11 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
         do k=1,nlev
            dp(:,:,k) = ( hvcoord%hyai(k+1) - hvcoord%hyai(k) )*hvcoord%ps0 + &
                 ( hvcoord%hybi(k+1) - hvcoord%hybi(k) )*elem(ie)%state%ps_v(:,:,tl%np1)
-           elem(ie)%derived%dp(:,:,k) = dp(:,:,k) + dt*(elem(ie)%derived%eta_dot_dpdn(:,:,k+1) -&
+           ! use divdp for dp_star
+           elem(ie)%derived%divdp(:,:,k) = dp(:,:,k) + dt*(elem(ie)%derived%eta_dot_dpdn(:,:,k+1) -&
                 elem(ie)%derived%eta_dot_dpdn(:,:,k))
         enddo
-        call remap1_nofilter(elem(ie)%derived%vn0,np,1,dp,elem(ie)%derived%dp)
+        call remap1_nofilter(elem(ie)%derived%vn0,np,1,dp,elem(ie)%derived%divdp)
      end do
   end if
 
@@ -440,7 +441,7 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
         if (rsplit > 0) then
            call cedr_sl_set_dp3d(ie, elem(ie)%state%dp3d, tl%np1)
         else
-           call cedr_sl_set_dp(ie, elem(ie)%derived%dp)
+           call cedr_sl_set_dp(ie, elem(ie)%derived%divdp) ! dp_star
         end if
         call cedr_sl_set_Q(ie, elem(ie)%state%Q)
      end do
