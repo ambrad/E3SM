@@ -5,6 +5,7 @@
 program prim_main
 #ifdef _PRIM
   use prim_driver_mod, only : prim_init1, prim_init2, prim_finalize, prim_run_subcycle
+  use prim_driver_base, only : prim_run_subcycle_amb
   use hybvcoord_mod, only : hvcoord_t, hvcoord_init
 #endif
 
@@ -233,7 +234,7 @@ program prim_main
      nstep = nextoutputstep(tl)
      do while(tl%nstep<nstep)
         call t_startf('prim_run')
-        call prim_run_subcycle(elem, hybrid,nets,nete, tstep, .false., tl, hvcoord,1)
+        call prim_run_subcycle_amb(elem, hybrid,nets,nete, tstep, .false., tl, hvcoord,1)
         call t_stopf('prim_run')
      end do
 #if (defined HORIZ_OPENMP)

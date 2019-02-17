@@ -868,11 +868,6 @@ module namelist_mod
           call abortmp('prescribed_wind should be either 0 or 1')
     endif
 
-    
-    if (transport_alg > 0 .and. rsplit == 0) then
-       call abortmp('The semi-Lagrange Transport option requires 0 < rsplit')
-    end if
-
 !=======================================================================================================!
 #ifdef CAM
     nmpi_per_node=1

@@ -125,7 +125,7 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
   use control_mod,            only : qsplit, nu_q, semi_lagrange_hv_q_all,&
        transport_alg, semi_lagrange_cdr_alg, semi_lagrange_cdr_check
   ! For DCMIP16 supercell test case.
-  use control_mod,            only : dcmip16_mu_q
+  use control_mod,            only : dcmip16_mu_q, rsplit
   use prim_advection_base,    only : advance_physical_vis
 
   implicit none
@@ -162,7 +162,36 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
 
   call TimeLevel_Qdp( tl, qsplit, n0_qdp, np1_qdp)
 
-  ! compute displacements for departure grid store in elem%derived%vstar
+  do ie=nets,nete
+     elem(ie)%derived%vn0 = elem(ie)%state%v(:,:,:,:,tl%np1) ! actually v at np1
+  end do
+#if 0
+  if (rsplit == 0) then
+     do ie=nets,nete
+        do k=1,nlev
+           elem(ie)%derived%eta_dot_dpdn(:,:,k) = elem(ie)%spheremp(:,:)*elem(ie)%derived%eta_dot_dpdn(:,:,k)
+        enddo
+        call edgeVpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%eta_dot_dpdn(:,:,1:nlev),nlev,0,nlev)
+     enddo
+     call bndry_exchangeV(hybrid,edgeAdv1)
+     do ie=nets,nete
+        call edgeVunpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%eta_dot_dpdn(:,:,1:nlev),nlev,0,nlev)
+        do k=1,nlev
+           elem(ie)%derived%eta_dot_dpdn(:,:,k)=elem(ie)%derived%eta_dot_dpdn(:,:,k)*elem(ie)%rspheremp(:,:)
+        enddo
+        !elem(ie)%derived%eta_dot_dpdn(:,:,:)=0  ! dbg
+        do k=1,nlev
+           dp(:,:,k) = ( hvcoord%hyai(k+1) - hvcoord%hyai(k) )*hvcoord%ps0 + &
+                ( hvcoord%hybi(k+1) - hvcoord%hybi(k) )*elem(ie)%state%ps_v(:,:,np1)
+           dp_star(:,:,k) = dp(:,:,k) + dt*(elem(ie)%derived%eta_dot_dpdn(:,:,k+1) -&
+                elem(ie)%derived%eta_dot_dpdn(:,:,k))
+        enddo
+        call remap1_nofilter(elem(ie)%derived%vn0,np,1,dp,dp_star)
+     end do
+  end if
+#endif
+
+  ! compute displacements for departure grid store in elem%derived%vstar  
   call ALE_RKdss (elem, nets, nete, hybrid, deriv, dt, tl)
 
   if (slmm .and. sl_mpi == 1) then
@@ -880,10 +909,12 @@ subroutine ALE_RKdss(elem, nets, nete, hy, deriv, dt, tl)
      ! vstarn0 = U(x,t)
      ! vstar   = U(x,t+1)
     do k=1,nlev
-      vtmp(:,:,:)=ugradv_sphere(elem(ie)%state%v(:,:,:,k,np1), elem(ie)%derived%vstar(:,:,:,k),deriv,elem(ie))
+      ! vstar is v at the start of the tracer time step, and vn0 is actually v
+      ! at the end of the tracer time step.
+      vtmp(:,:,:)=ugradv_sphere(elem(ie)%derived%vn0(:,:,:,k), elem(ie)%derived%vstar(:,:,:,k),deriv,elem(ie))
 
       elem(ie)%derived%vstar(:,:,:,k) = &
-           (elem(ie)%state%v(:,:,:,k,np1) + elem(ie)%derived%vstar(:,:,:,k))/2 - dt*vtmp(:,:,:)/2
+           (elem(ie)%derived%vn0(:,:,:,k) + elem(ie)%derived%vstar(:,:,:,k))/2 - dt*vtmp(:,:,:)/2
 
       elem(ie)%derived%vstar(:,:,1,k) = elem(ie)%derived%vstar(:,:,1,k)*elem(ie)%spheremp(:,:)
       elem(ie)%derived%vstar(:,:,2,k) = elem(ie)%derived%vstar(:,:,2,k)*elem(ie)%spheremp(:,:)

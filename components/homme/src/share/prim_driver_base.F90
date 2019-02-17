@@ -34,6 +34,7 @@ module prim_driver_base
 
   private
   public :: prim_init1, prim_init2 , prim_run_subcycle, prim_finalize
+  public :: prim_run_subcycle_amb
   public :: prim_init1_geometry, prim_init1_elem_arrays, prim_init1_buffers, prim_init1_cleanup
 #ifndef CAM
   public :: prim_init1_no_cam
@@ -1639,8 +1640,206 @@ contains
     enddo
     
   end subroutine set_prescribed_scm        
+
+  ! amb
+
+  subroutine prim_run_subcycle_amb(elem, hybrid,nets,nete, dt, single_column, tl, hvcoord,nsubstep)
+    use control_mod,        only: statefreq, ftype, qsplit, rsplit, disable_diagnostics
+    use hybvcoord_mod,      only: hvcoord_t
+    use parallel_mod,       only: abortmp
+    use prim_state_mod,     only: prim_printstate, prim_diag_scalars, prim_energy_halftimes
+    use vertremap_mod,      only: vertical_remap
+    use reduction_mod,      only: parallelmax
+    use time_mod,           only: TimeLevel_t, timelevel_update, timelevel_qdp, nsplit, tstep
+    use prim_advance_mod,   only: convert_thermo_forcing
+
+    implicit none
+
+    type (element_t) ,    intent(inout) :: elem(:)
+    type (hybrid_t),      intent(in)    :: hybrid                       ! distributed parallel structure (shared)
+    type (hvcoord_t),     intent(in)    :: hvcoord                      ! hybrid vertical coordinate struct
+    integer,              intent(in)    :: nets                         ! starting thread element number (private)
+    integer,              intent(in)    :: nete                         ! ending thread element number   (private)
+    real(kind=real_kind), intent(in)    :: dt                           ! "timestep dependent" timestep
+    logical,              intent(in)    :: single_column
+    type (TimeLevel_t),   intent(inout) :: tl
+    integer,              intent(in)    :: nsubstep                     ! nsubstep = 1 .. nsplit
+
+    real(kind=real_kind) :: dp, dt_q, dt_remap
+    real(kind=real_kind) :: dp_np1(np,np)
+    integer :: ie,i,j,k,n,q,t,scm_dum
+    integer :: n0_qdp,np1_qdp,r,nstep_end,nets_in,nete_in
+    logical :: compute_diagnostics
+
+    dt_q      = dt*qsplit
+    dt_remap  = dt_q
+    nstep_end = tl%nstep + qsplit
+    if (rsplit>0) then
+       dt_remap  = dt_q*rsplit   ! rsplit=0 means use eulerian code, not vert. lagrange
+       nstep_end = tl%nstep + qsplit*rsplit  ! nstep at end of this routine
+    endif
+
+    compute_diagnostics   = .false.
+    if (MODULO(nstep_end,statefreq)==0 .or. (tl%nstep <= tl%nstep0+(nstep_end-tl%nstep) )) then
+       compute_diagnostics= .true.
+    endif
+    if(disable_diagnostics) compute_diagnostics= .false.
+    ! compute scalar diagnostics if currently active
+    if (compute_diagnostics) then
+       call t_startf("prim_diag_scalars")
+       call prim_diag_scalars(elem,hvcoord,tl,3,.true.,nets,nete)
+       call t_stopf("prim_diag_scalars")
+
+       call t_startf("prim_energy_halftimes")
+       call prim_energy_halftimes(elem,hvcoord,tl,3,.true.,nets,nete)
+       call t_stopf("prim_energy_halftimes")
+    endif
+
+    call TimeLevel_Qdp(tl, qsplit, n0_qdp, np1_qdp)
+#ifndef CAM
+    ! compute HOMME test case forcing
+    ! by calling it here, it mimics eam forcings computations in standalone
+    ! homme.
+    call compute_test_forcing(elem,hybrid,hvcoord,tl%n0,n0_qdp,dt_remap,nets,nete,tl)
+    call convert_thermo_forcing(elem,hvcoord,tl%n0,n0_qdp,dt_remap,nets,nete)
+#endif
+
+    call applyCAMforcing_ps(elem,hvcoord,tl%n0,n0_qdp,dt_remap,nets,nete)
+
+    if (compute_diagnostics) then
+       ! E(1) Energy after CAM forcing
+       call t_startf("prim_energy_halftimes")
+       call prim_energy_halftimes(elem,hvcoord,tl,1,.true.,nets,nete)
+       call t_stopf("prim_energy_halftimes")
+       ! qmass and variance, using Q(n0),Qdp(n0)
+       call t_startf("prim_diag_scalars")
+       call prim_diag_scalars(elem,hvcoord,tl,1,.true.,nets,nete)
+       call t_stopf("prim_diag_scalars")
+    endif
+
+    ! initialize dp3d from ps
+    do ie=nets,nete
+       do k=1,nlev
+          elem(ie)%state%dp3d(:,:,k,tl%n0)=&
+               ( hvcoord%hyai(k+1) - hvcoord%hyai(k) )*hvcoord%ps0 + &
+               ( hvcoord%hybi(k+1) - hvcoord%hybi(k) )*elem(ie)%state%ps_v(:,:,tl%n0)
+       enddo
+    enddo
+
+    if (rsplit > 1) call abortmp('_amb requires rsplit <= 1')
+    
+    do r=1,max(rsplit,1)
+       if (r > 1) call TimeLevel_update(tl,"leapfrog")
+       call t_startf("prim_step_rX")
+       call prim_step_amb(elem, hybrid, nets, nete, dt, tl, hvcoord, logical(r == 1))
+       call t_stopf("prim_step_rX")
+    enddo
+
+    call TimeLevel_Qdp( tl, qsplit, n0_qdp, np1_qdp)
+
+    call t_startf("prim_run_subcyle_diags")
+    do ie=nets,nete
+       do k=1,nlev
+          dp_np1(:,:) = ( hvcoord%hyai(k+1) - hvcoord%hyai(k) )*hvcoord%ps0 + &
+               ( hvcoord%hybi(k+1) - hvcoord%hybi(k) )*elem(ie)%state%ps_v(:,:,tl%np1)
+          do q=1,qsize
+             elem(ie)%state%Q(:,:,k,q)=elem(ie)%state%Qdp(:,:,k,q,np1_qdp)/dp_np1(:,:)
+          enddo
+       enddo
+    enddo
+    call t_stopf("prim_run_subcyle_diags")
+
+    ! now we have:
+    !   u(nm1)   dynamics at  t+dt_remap - 2*dt
+    !   u(n0)    dynamics at  t+dt_remap - dt
+    !   u(np1)   dynamics at  t+dt_remap
+    !
+    !   Q(1)   Q at t+dt_remap
+    if (compute_diagnostics) then
+       call t_startf("prim_diag_scalars")
+       call prim_diag_scalars(elem,hvcoord,tl,2,.false.,nets,nete)
+       call t_stopf("prim_diag_scalars")
+
+       call t_startf("prim_energy_halftimes")
+       call prim_energy_halftimes(elem,hvcoord,tl,2,.false.,nets,nete)
+       call t_stopf("prim_energy_halftimes")
+    endif
+
+    call TimeLevel_update(tl,"leapfrog")
+    ! now we have:
+    !   u(nm1)   dynamics at  t+dt_remap - dt       
+    !   u(n0)    dynamics at  t+dt_remap
+    !   u(np1)   undefined
+
+    if (compute_diagnostics) then
+       call prim_printstate(elem, tl, hybrid,hvcoord,nets,nete)
+    end if
+  end subroutine prim_run_subcycle_amb
+
+  subroutine prim_step_amb(elem, hybrid,nets,nete, dt, tl, hvcoord, compute_diagnostics)
+    use control_mod,        only: statefreq, integration, ftype, qsplit, nu_p, rsplit
+    use control_mod,        only: transport_alg
+    use hybvcoord_mod,      only : hvcoord_t
+    use parallel_mod,       only: abortmp
+    use prim_advance_mod,   only: prim_advance_exp
+    use prim_advection_mod, only: prim_advec_tracers_remap
+    use reduction_mod,      only: parallelmax
+    use time_mod,           only: time_at,TimeLevel_t, timelevel_update, nsplit, timelevel_qdp
+    use prim_state_mod,     only: prim_printstate, prim_diag_scalars, prim_energy_halftimes
+    use vertremap_mod,      only: vertical_remap
+
+    type(element_t),      intent(inout) :: elem(:)
+    type(hybrid_t),       intent(in)    :: hybrid   ! distributed parallel structure (shared)
+    type(hvcoord_t),      intent(in)    :: hvcoord  ! hybrid vertical coordinate struct
+    integer,              intent(in)    :: nets     ! starting thread element number (private)
+    integer,              intent(in)    :: nete     ! ending thread element number   (private)
+    real(kind=real_kind), intent(in)    :: dt       ! "timestep dependent" timestep
+    type(TimeLevel_t),    intent(inout) :: tl
+
+    real(kind=real_kind) :: st, st1, dp, dt_q, dt_remap
+    integer :: ie, t, q,k,i,j,n,n0_qdp,np1_qdp
+    real (kind=real_kind)                          :: maxcflx, maxcfly
+    real (kind=real_kind) :: dp_np1(np,np)
+    logical :: compute_diagnostics
+
+    dt_q = dt*qsplit
+    dt_remap = dt_q
+
+    do ie=nets,nete
+       elem(ie)%derived%eta_dot_dpdn=0     ! mean vertical mass flux
+       elem(ie)%derived%vn0=0              ! mean horizontal mass flux
+       elem(ie)%derived%omega_p=0
+       if (nu_p>0) then
+          elem(ie)%derived%dpdiss_ave=0
+          elem(ie)%derived%dpdiss_biharmonic=0
+       endif
+       if (transport_alg > 0) then
+          elem(ie)%derived%vstar=elem(ie)%state%v(:,:,:,:,tl%n0)
+       end if
+       elem(ie)%derived%dp(:,:,:)=elem(ie)%state%dp3d(:,:,:,tl%n0)
+    enddo
+
+    call ApplyCAMforcing_dp3d(elem,hvcoord,tl%n0,dt,nets,nete)
+    call t_startf("prim_step_dyn")
+    do n=1,qsplit
+       if (n > 1) call TimeLevel_update(tl,"leapfrog")
+       call ApplyCAMforcing_dp3d(elem,hvcoord,tl%n0,dt,nets,nete)
+       call prim_advance_exp(elem, deriv1, hvcoord,hybrid, dt, tl, nets, nete, &
+            logical(compute_diagnostics .and. n > 1))
+       ! defer final timelevel update until after Q update.
+    enddo
+    call t_stopf("prim_step_dyn")
+
+    call t_startf("prim_step_advec")
+    if (qsize > 0) then
+       call t_startf("PAT_remap")
+       call Prim_Advec_Tracers_remap(elem, deriv1,hvcoord,hybrid,dt_q,tl,nets,nete)
+       call t_stopf("PAT_remap")
+    end if
+    call t_stopf("prim_step_advec")
+
+    call TimeLevel_Qdp( tl, qsplit, n0_qdp, np1_qdp)
+    call vertical_remap(hybrid,elem,hvcoord,dt_remap,tl%np1,np1_qdp,nets,nete)
+  end subroutine prim_step_amb
     
 end module prim_driver_base
-
-
-
