@@ -127,6 +127,7 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
   ! For DCMIP16 supercell test case.
   use control_mod,            only : dcmip16_mu_q, rsplit
   use prim_advection_base,    only : advance_physical_vis
+  use vertremap_base,         only : remap1_nofilter
 
   implicit none
   type (element_t)     , intent(inout) :: elem(:)
@@ -155,6 +156,8 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
   integer               :: num_neighbors, scalar_q_bounds, info
   logical :: slmm, cisl, qos, sl_test
 
+  real(kind=real_kind) :: dp(np,np,nlev)!, dp_star(np,np,nlev)
+
   call t_barrierf('Prim_Advec_Tracers_remap_ALE', hybrid%par%comm)
   call t_startf('Prim_Advec_Tracers_remap_ALE')
 
@@ -165,7 +168,6 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
   do ie=nets,nete
      elem(ie)%derived%vn0 = elem(ie)%state%v(:,:,:,:,tl%np1) ! actually v at np1
   end do
-#if 0
   if (rsplit == 0) then
      do ie=nets,nete
         do k=1,nlev
@@ -173,7 +175,7 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
         enddo
         call edgeVpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%eta_dot_dpdn(:,:,1:nlev),nlev,0,nlev)
      enddo
-     call bndry_exchangeV(hybrid,edgeAdv1)
+     call bndry_exchangeV(hybrid,edge_g)
      do ie=nets,nete
         call edgeVunpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%eta_dot_dpdn(:,:,1:nlev),nlev,0,nlev)
         do k=1,nlev
@@ -182,14 +184,13 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
         !elem(ie)%derived%eta_dot_dpdn(:,:,:)=0  ! dbg
         do k=1,nlev
            dp(:,:,k) = ( hvcoord%hyai(k+1) - hvcoord%hyai(k) )*hvcoord%ps0 + &
-                ( hvcoord%hybi(k+1) - hvcoord%hybi(k) )*elem(ie)%state%ps_v(:,:,np1)
-           dp_star(:,:,k) = dp(:,:,k) + dt*(elem(ie)%derived%eta_dot_dpdn(:,:,k+1) -&
+                ( hvcoord%hybi(k+1) - hvcoord%hybi(k) )*elem(ie)%state%ps_v(:,:,tl%np1)
+           elem(ie)%derived%dp(:,:,k) = dp(:,:,k) + dt*(elem(ie)%derived%eta_dot_dpdn(:,:,k+1) -&
                 elem(ie)%derived%eta_dot_dpdn(:,:,k))
         enddo
-        call remap1_nofilter(elem(ie)%derived%vn0,np,1,dp,dp_star)
+        call remap1_nofilter(elem(ie)%derived%vn0,np,1,dp,elem(ie)%derived%dp)
      end do
   end if
-#endif
 
   ! compute displacements for departure grid store in elem%derived%vstar  
   call ALE_RKdss (elem, nets, nete, hybrid, deriv, dt, tl)
@@ -436,7 +437,11 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
      do ie = nets, nete
         call cedr_sl_set_spheremp(ie, elem(ie)%spheremp)
         call cedr_sl_set_Qdp(ie, elem(ie)%state%Qdp, n0_qdp, np1_qdp)
-        call cedr_sl_set_dp3d(ie, elem(ie)%state%dp3d, tl%np1)
+        if (rsplit > 0) then
+           call cedr_sl_set_dp3d(ie, elem(ie)%state%dp3d, tl%np1)
+        else
+           call cedr_sl_set_dp(ie, elem(ie)%derived%dp)
+        end if
         call cedr_sl_set_Q(ie, elem(ie)%state%Q)
      end do
      call cedr_sl_set_pointers_end()
