@@ -234,8 +234,12 @@ program prim_main
      nstep = nextoutputstep(tl)
      do while(tl%nstep<nstep)
         call t_startf('prim_run')
-        amb_experiment = 0
-        call prim_run_subcycle(elem, hybrid,nets,nete, tstep, .false., tl, hvcoord,1)
+        amb_experiment = 1
+        if (amb_experiment == 0) then
+           call prim_run_subcycle(elem, hybrid,nets,nete, tstep, .false., tl, hvcoord,1)
+        else
+           call prim_run_subcycle_amb(elem, hybrid,nets,nete, tstep, .false., tl, hvcoord,1)
+        end if
         call t_stopf('prim_run')
      end do
 #if (defined HORIZ_OPENMP)
