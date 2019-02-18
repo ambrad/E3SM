@@ -123,7 +123,7 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
   use bndry_mod,              only : ghost_exchangevfull
   use interpolate_mod,        only : interpolate_tracers, minmax_tracers
   use control_mod,            only : qsplit, nu_q, semi_lagrange_hv_q_all,&
-       transport_alg, semi_lagrange_cdr_alg, semi_lagrange_cdr_check
+       transport_alg, semi_lagrange_cdr_alg, semi_lagrange_cdr_check, amb_experiment
   ! For DCMIP16 supercell test case.
   use control_mod,            only : dcmip16_mu_q, rsplit
   use prim_advection_base,    only : advance_physical_vis
@@ -168,7 +168,7 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
   do ie=nets,nete
      elem(ie)%derived%vn0 = elem(ie)%state%v(:,:,:,:,tl%np1) ! actually v at np1
   end do
-  if (.true.) then
+  if (amb_experiment == 1) then
      do ie=nets,nete
         do k=1,nlev
            elem(ie)%derived%eta_dot_dpdn(:,:,k) = elem(ie)%spheremp(:,:)*elem(ie)%derived%eta_dot_dpdn(:,:,k)
@@ -443,8 +443,11 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
      do ie = nets, nete
         call cedr_sl_set_spheremp(ie, elem(ie)%spheremp)
         call cedr_sl_set_Qdp(ie, elem(ie)%state%Qdp, n0_qdp, np1_qdp)
-        !call cedr_sl_set_dp3d(ie, elem(ie)%state%dp3d, tl%np1)
-        call cedr_sl_set_dp(ie, elem(ie)%derived%divdp) ! dp_star
+        if (amb_experiment == 0) then
+           call cedr_sl_set_dp3d(ie, elem(ie)%state%dp3d, tl%np1)
+        else
+           call cedr_sl_set_dp(ie, elem(ie)%derived%divdp) ! dp_star
+        end if
         call cedr_sl_set_Q(ie, elem(ie)%state%Q)
      end do
      call cedr_sl_set_pointers_end()

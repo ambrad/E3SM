@@ -14,6 +14,7 @@ module control_mod
   character(len=MAX_STRING_LEN)    , public :: integration    ! time integration (explicit, or full imp)
 
 ! experimental option for preqx model:
+  integer, public :: amb_experiment = 0
   ! Tracer transport algorithm type:
   !     0  spectral-element Eulerian
   !     1  classical semi-Lagrangian (SL)

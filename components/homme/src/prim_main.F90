@@ -16,7 +16,7 @@ program prim_main
                               omp_get_num_threads, omp_get_max_threads
   use time_mod,         only: tstep, nendstep, timelevel_t, TimeLevel_init, nstep=>nextOutputStep
   use dimensions_mod,   only: nelemd, qsize
-  use control_mod,      only: restartfreq, vfile_mid, vfile_int, runtype, integration, statefreq, tstep_type, transport_alg
+  use control_mod,      only: restartfreq, vfile_mid, vfile_int, runtype, integration, statefreq, tstep_type, transport_alg, amb_experiment
   use domain_mod,       only: domain1d_t, decompose
   use element_mod,      only: element_t
   use common_io_mod,    only: output_dir, infilenames
@@ -234,7 +234,8 @@ program prim_main
      nstep = nextoutputstep(tl)
      do while(tl%nstep<nstep)
         call t_startf('prim_run')
-        call prim_run_subcycle_amb(elem, hybrid,nets,nete, tstep, .false., tl, hvcoord,1)
+        amb_experiment = 0
+        call prim_run_subcycle(elem, hybrid,nets,nete, tstep, .false., tl, hvcoord,1)
         call t_stopf('prim_run')
      end do
 #if (defined HORIZ_OPENMP)
