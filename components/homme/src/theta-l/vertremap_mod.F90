@@ -87,6 +87,10 @@ contains
                 elem(ie)%derived%eta_dot_dpdn(:,:,k))
         else
            dp_star(:,:,k) = elem(ie)%state%dp3d(:,:,k,np1)
+           ! This is actually delta eta_dot_dpdn, as in the rsplit==0
+           ! expression, accumulated over the tracer time step.
+           elem(ie)%derived%eta_dot_dpdn_prescribed(:,:,k) = elem(ie)%derived%eta_dot_dpdn_prescribed(:,:,k) + &
+                (dp_star(:,:,k) - dp(:,:,k))
         endif
      enddo
      if (minval(dp_star)<0) then
@@ -97,6 +101,7 @@ contains
               print *,'index ie,i,j,k = ',ie,i,j,k
               print *,'dp,dp_star = ',dp(i,j,k),dp_star(i,j,k)
               print *,'eta_dot_dpdn = ',elem(ie)%derived%eta_dot_dpdn(i,j,k+1),elem(ie)%derived%eta_dot_dpdn(i,j,k)
+              print *,'eta_dot_dpdn_prescribed = ',elem(ie)%derived%eta_dot_dpdn_prescribed(i,j,k+1),elem(ie)%derived%eta_dot_dpdn_prescribed(i,j,k)
               print *,"column location lat,lon (radians):",elem(ie)%spherep(i,j)%lat,elem(ie)%spherep(i,j)%lon
            endif
         enddo
@@ -157,7 +162,16 @@ contains
      endif
 
      ! remap the gll tracers from lagrangian levels (dp_star)  to REF levels dp
-     if (qsize>0) then
+     if (qsize>0 .and. np1_qdp > 0) then
+
+        if (rsplit > 0) then
+           do k=1,nlev
+              dp(:,:,k) = ( hvcoord%hyai(k+1) - hvcoord%hyai(k) )*hvcoord%ps0 + &
+                   ( hvcoord%hybi(k+1) - hvcoord%hybi(k) )*elem(ie)%state%ps_v(:,:,np1)
+              ! This is actually delta eta_dot_dpdn.
+              dp_star(:,:,k) = dp(:,:,k) + elem(ie)%derived%eta_dot_dpdn_prescribed(:,:,k)
+           end do
+        end if
 
        call t_startf('vertical_remap1_3')
        call remap1(elem(ie)%state%Qdp(:,:,:,:,np1_qdp),np,qsize,dp_star,dp)

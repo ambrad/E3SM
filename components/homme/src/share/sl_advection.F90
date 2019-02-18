@@ -156,7 +156,7 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
   integer               :: num_neighbors, scalar_q_bounds, info
   logical :: slmm, cisl, qos, sl_test
 
-  real(kind=real_kind) :: dp(np,np,nlev)!, dp_star(np,np,nlev)
+  real(kind=real_kind) :: ps_v(np,np), dp(np,np,nlev)!, dp_star(np,np,nlev)
 
   call t_barrierf('Prim_Advec_Tracers_remap_ALE', hybrid%par%comm)
   call t_startf('Prim_Advec_Tracers_remap_ALE')
@@ -181,15 +181,26 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
         do k=1,nlev
            elem(ie)%derived%eta_dot_dpdn(:,:,k)=elem(ie)%derived%eta_dot_dpdn(:,:,k)*elem(ie)%rspheremp(:,:)
         enddo
-        !elem(ie)%derived%eta_dot_dpdn(:,:,:)=0  ! dbg
+        ps_v = hvcoord%hyai(1)*hvcoord%ps0 + sum(elem(ie)%state%dp3d(:,:,:,tl%np1),3)
         do k=1,nlev
            dp(:,:,k) = ( hvcoord%hyai(k+1) - hvcoord%hyai(k) )*hvcoord%ps0 + &
-                ( hvcoord%hybi(k+1) - hvcoord%hybi(k) )*elem(ie)%state%ps_v(:,:,tl%np1)
+                ( hvcoord%hybi(k+1) - hvcoord%hybi(k) )*ps_v !elem(ie)%state%ps_v(:,:,tl%np1)
            ! use divdp for dp_star
            elem(ie)%derived%divdp(:,:,k) = dp(:,:,k) + dt*(elem(ie)%derived%eta_dot_dpdn(:,:,k+1) -&
                 elem(ie)%derived%eta_dot_dpdn(:,:,k))
         enddo
         call remap1_nofilter(elem(ie)%derived%vn0,np,1,dp,elem(ie)%derived%divdp)
+     end do
+  else
+     do ie=nets,nete
+        ps_v = hvcoord%hyai(1)*hvcoord%ps0 + sum(elem(ie)%state%dp3d(:,:,:,tl%np1),3)
+        do k=1,nlev
+           dp(:,:,k) = ( hvcoord%hyai(k+1) - hvcoord%hyai(k) )*hvcoord%ps0 + &
+                ( hvcoord%hybi(k+1) - hvcoord%hybi(k) )*ps_v !elem(ie)%state%ps_v(:,:,tl%np1)
+           ! use divdp for dp_star
+           ! This is accumulated dt*(delta eta_dot_dpdn).
+           elem(ie)%derived%divdp(:,:,k) = dp(:,:,k) + elem(ie)%derived%eta_dot_dpdn_prescribed(:,:,k)
+        end do
      end do
   end if
 
@@ -438,11 +449,8 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
      do ie = nets, nete
         call cedr_sl_set_spheremp(ie, elem(ie)%spheremp)
         call cedr_sl_set_Qdp(ie, elem(ie)%state%Qdp, n0_qdp, np1_qdp)
-        if (rsplit > 0) then
-           call cedr_sl_set_dp3d(ie, elem(ie)%state%dp3d, tl%np1)
-        else
-           call cedr_sl_set_dp(ie, elem(ie)%derived%divdp) ! dp_star
-        end if
+        !call cedr_sl_set_dp3d(ie, elem(ie)%state%dp3d, tl%np1)
+        call cedr_sl_set_dp(ie, elem(ie)%derived%divdp) ! dp_star
         call cedr_sl_set_Q(ie, elem(ie)%state%Q)
      end do
      call cedr_sl_set_pointers_end()

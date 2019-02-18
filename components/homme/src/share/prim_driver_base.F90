@@ -1726,9 +1726,7 @@ contains
        enddo
     enddo
 
-    if (rsplit > 1) call abortmp('_amb requires rsplit <= 1')
-    
-    do r=1,max(rsplit,1)
+    do r=1,1
        if (r > 1) call TimeLevel_update(tl,"leapfrog")
        call t_startf("prim_step_rX")
        call prim_step_amb(elem, hybrid, nets, nete, dt, tl, hvcoord, logical(r == 1))
@@ -1787,6 +1785,7 @@ contains
     use time_mod,           only: time_at,TimeLevel_t, timelevel_update, nsplit, timelevel_qdp
     use prim_state_mod,     only: prim_printstate, prim_diag_scalars, prim_energy_halftimes
     use vertremap_mod,      only: vertical_remap
+    use vertremap_base,     only: remap1
 
     type(element_t),      intent(inout) :: elem(:)
     type(hybrid_t),       intent(in)    :: hybrid   ! distributed parallel structure (shared)
@@ -1796,17 +1795,26 @@ contains
     real(kind=real_kind), intent(in)    :: dt       ! "timestep dependent" timestep
     type(TimeLevel_t),    intent(inout) :: tl
 
-    real(kind=real_kind) :: st, st1, dp, dt_q, dt_remap
+    real(kind=real_kind) :: st, st1, dt_q, dt_remap
     integer :: ie, t, q,k,i,j,n,n0_qdp,np1_qdp
     real (kind=real_kind)                          :: maxcflx, maxcfly
     real (kind=real_kind) :: dp_np1(np,np)
     logical :: compute_diagnostics
 
+    real (kind=real_kind), dimension(np,np,nlev)  :: dp,dp_star
+
+    if (rsplit > 0 .and. modulo(qsplit, rsplit) /= 0) call abortmp('amb> rsplit must divide qsplit.')
+
     dt_q = dt*qsplit
-    dt_remap = dt_q
+    if (rsplit == 0) then
+       dt_remap = dt_q
+    else
+       dt_remap = dt*rsplit
+    end if
 
     do ie=nets,nete
        elem(ie)%derived%eta_dot_dpdn=0     ! mean vertical mass flux
+       elem(ie)%derived%eta_dot_dpdn_prescribed=0     ! delta eta_dot_dpdn
        elem(ie)%derived%vn0=0              ! mean horizontal mass flux
        elem(ie)%derived%omega_p=0
        if (nu_p>0) then
@@ -1826,6 +1834,17 @@ contains
        call ApplyCAMforcing_dp3d(elem,hvcoord,tl%n0,dt,nets,nete)
        call prim_advance_exp(elem, deriv1, hvcoord,hybrid, dt, tl, nets, nete, &
             logical(compute_diagnostics .and. n > 1))
+       if (rsplit > 0 .and. modulo(n, rsplit) == 0) then
+          call vertical_remap(hybrid,elem,hvcoord,dt_remap,tl%np1,-1,nets,nete)
+          ! initialize dp3d from ps
+          do ie=nets,nete
+             do k=1,nlev
+                elem(ie)%state%dp3d(:,:,k,tl%n0)=&
+                     ( hvcoord%hyai(k+1) - hvcoord%hyai(k) )*hvcoord%ps0 + &
+                     ( hvcoord%hybi(k+1) - hvcoord%hybi(k) )*elem(ie)%state%ps_v(:,:,tl%np1)
+             enddo
+          enddo
+       end if
        ! defer final timelevel update until after Q update.
     enddo
     call t_stopf("prim_step_dyn")
@@ -1833,13 +1852,26 @@ contains
     call t_startf("prim_step_advec")
     if (qsize > 0) then
        call t_startf("PAT_remap")
-       call Prim_Advec_Tracers_remap(elem, deriv1,hvcoord,hybrid,dt_q,tl,nets,nete)
+       call Prim_Advec_Tracers_remap(elem,deriv1,hvcoord,hybrid,dt_q,tl,nets,nete)
        call t_stopf("PAT_remap")
     end if
     call t_stopf("prim_step_advec")
 
     call TimeLevel_Qdp( tl, qsplit, n0_qdp, np1_qdp)
-    call vertical_remap(hybrid,elem,hvcoord,dt_remap,tl%np1,np1_qdp,nets,nete)
+    if (rsplit == 0) then
+       call vertical_remap(hybrid,elem,hvcoord,dt_remap,tl%np1,np1_qdp,nets,nete)
+    else
+       do ie = nets, nete
+          do k=1,nlev
+             dp(:,:,k) = ( hvcoord%hyai(k+1) - hvcoord%hyai(k) )*hvcoord%ps0 + &
+                  ( hvcoord%hybi(k+1) - hvcoord%hybi(k) )*elem(ie)%state%ps_v(:,:,tl%np1)
+             ! This is actually delta eta_dot_dpdn.
+             dp_star(:,:,k) = dp(:,:,k) + elem(ie)%derived%eta_dot_dpdn_prescribed(:,:,k)
+          end do
+          call remap1(elem(ie)%state%Qdp(:,:,:,:,np1_qdp),np,qsize,dp_star,dp)
+       end do
+    end if
+    !if (hybrid%par%masterproc) print *,'amb>',elem(1)%state%Qdp(1,1,:,1,np1_qdp)
   end subroutine prim_step_amb
     
 end module prim_driver_base
