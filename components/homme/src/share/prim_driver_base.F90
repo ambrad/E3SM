@@ -1833,13 +1833,13 @@ contains
        if (n > 1) call TimeLevel_update(tl,"leapfrog")
        call ApplyCAMforcing_dp3d(elem,hvcoord,tl%n0,dt,nets,nete)
        call prim_advance_exp(elem, deriv1, hvcoord,hybrid, dt, tl, nets, nete, &
-            logical(compute_diagnostics .and. n > 1))
+            logical(compute_diagnostics .and. n == 1))
        if (rsplit > 0 .and. modulo(n, rsplit) == 0) then
           call vertical_remap(hybrid,elem,hvcoord,dt_remap,tl%np1,-1,nets,nete)
           ! initialize dp3d from ps
           do ie=nets,nete
              do k=1,nlev
-                elem(ie)%state%dp3d(:,:,k,tl%n0)=&
+                elem(ie)%state%dp3d(:,:,k,tl%np1)=&
                      ( hvcoord%hyai(k+1) - hvcoord%hyai(k) )*hvcoord%ps0 + &
                      ( hvcoord%hybi(k+1) - hvcoord%hybi(k) )*elem(ie)%state%ps_v(:,:,tl%np1)
              enddo
