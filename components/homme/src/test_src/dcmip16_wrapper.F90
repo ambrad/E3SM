@@ -508,6 +508,7 @@ subroutine dcmip2016_test1_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl)
 
     qi=4; elem(ie)%derived%FQ(:,:,:,qi) = dp*ddt_cl
     qi=5; elem(ie)%derived%FQ(:,:,:,qi) = dp*ddt_cl2
+    qi=6; elem(ie)%derived%FQ(:,:,:,qi) = 0
 
     ! perform measurements of max w, and max prect
     max_w     = max( max_w    , maxval(w    ) )

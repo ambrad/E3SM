@@ -5670,6 +5670,16 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
     reduce(p, c.q_max_l.data(), q_max_g.data(), N, MPI_MAX, root);
 
     if (cdr.p->amroot()) {
+      Real q6_min = -100, q6_max = -100;
+      for (Int k = 0; k < nsuplev; ++k) q6_min = std::max(q6_min,qd_lo_g(k,5));
+      for (Int k = 0; k < nsuplev; ++k) q6_max = std::max(q6_max,qd_hi_g(k,5));
+      Real q_lo = 100, q_hi = -100;
+      for (Int k = 0; k < nsuplev; ++k) q_lo = std::min(q_lo,q_lo_g(k,5));
+      for (Int k = 0; k < nsuplev; ++k) q_hi = std::max(q_hi,q_hi_g(k,5));
+      pr("amb> worst " pu(q6_min) pu(q6_max) pu(q_lo-1) pu(q_hi-1));
+    }
+
+    if (cdr.p->amroot()) {
       const Real tol = 1e4*std::numeric_limits<Real>::epsilon();
       for (Int k = 0; k < nsuplev; ++k)
         for (Int q = 0; q < qsize; ++q) {

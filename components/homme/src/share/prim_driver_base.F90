@@ -1015,7 +1015,7 @@ contains
     integer,              intent(in)    :: nsubstep                     ! nsubstep = 1 .. nsplit
 
     real(kind=real_kind) :: dp, dt_q, dt_remap
-    real(kind=real_kind) :: dp_np1(np,np)
+    real(kind=real_kind) :: dp_np1(np,np),tmp(4)
     integer :: ie,i,j,k,n,q,t,scm_dum
     integer :: n0_qdp,np1_qdp,r,nstep_end,nets_in,nete_in
     logical :: compute_diagnostics
@@ -1162,6 +1162,20 @@ contains
        enddo
     enddo
     call t_stopf("prim_run_subcyle_diags")
+
+    if (.true. .and. hybrid%par%masterproc) then
+       ! In dcmip2016 test1, Q6 = 1 and should stay 1.
+       q = 6
+       tmp(1) = 1000
+       tmp(2) = -1000
+       do ie = nets, nete
+          tmp(3) = minval(elem(ie)%state%Q(:,:,:,q))
+          tmp(4) = maxval(elem(ie)%state%Q(:,:,:,q))
+          tmp(1) = min(tmp(1), tmp(3))
+          tmp(2) = max(tmp(2), tmp(4))
+       end do
+       print *,'amb> Q6 {min,max}-1',tmp(1)-1,tmp(2)-1
+    end if
 
     ! now we have:
     !   u(nm1)   dynamics at  t+dt_remap - 2*dt
@@ -1431,6 +1445,8 @@ contains
         enddo
      enddo
 
+     !amb If I don't run this block of code, tracer consistency, as assessed by
+     ! Q6 staying 1 to almost all digits, holds for dcmip2016 test 1 wet.
      if (use_moisture) then
         ! to conserve dry mass in the precese of Q1 forcing:
         elem(ie)%state%ps_v(:,:,np1) = elem(ie)%state%ps_v(:,:,np1) + &
@@ -1666,7 +1682,7 @@ contains
     integer,              intent(in)    :: nsubstep                     ! nsubstep = 1 .. nsplit
 
     real(kind=real_kind) :: dp, dt_q, dt_remap
-    real(kind=real_kind) :: dp_np1(np,np)
+    real(kind=real_kind) :: dp_np1(np,np), tmp(4)
     integer :: ie,i,j,k,n,q,t,scm_dum
     integer :: n0_qdp,np1_qdp,r,nstep_end,nets_in,nete_in
     logical :: compute_diagnostics
@@ -1736,15 +1752,25 @@ contains
     call TimeLevel_Qdp( tl, qsplit, n0_qdp, np1_qdp)
 
     call t_startf("prim_run_subcyle_diags")
+    tmp(1) = 100; tmp(2) = -100
     do ie=nets,nete
        do k=1,nlev
+#if 0
           dp_np1(:,:) = ( hvcoord%hyai(k+1) - hvcoord%hyai(k) )*hvcoord%ps0 + &
                ( hvcoord%hybi(k+1) - hvcoord%hybi(k) )*elem(ie)%state%ps_v(:,:,tl%np1)
           do q=1,qsize
              elem(ie)%state%Q(:,:,k,q)=elem(ie)%state%Qdp(:,:,k,q,np1_qdp)/dp_np1(:,:)
           enddo
+#else
+          do q=1,qsize
+             elem(ie)%state%Q(:,:,k,q)=elem(ie)%state%Qdp(:,:,k,q,np1_qdp)/elem(ie)%state%dp3d(:,:,k,tl%np1)
+          enddo          
+          tmp(1) = min(tmp(1), minval(elem(ie)%state%Q(:,:,k,6)))
+          tmp(2) = max(tmp(2), maxval(elem(ie)%state%Q(:,:,k,6)))
+#endif
        enddo
     enddo
+    print *,'amb> again',tmp(1)-1,tmp(2)-1
     call t_stopf("prim_run_subcyle_diags")
 
     ! now we have:
@@ -1797,8 +1823,8 @@ contains
 
     real(kind=real_kind) :: st, st1, dt_q, dt_remap
     integer :: ie, t, q,k,i,j,n,n0_qdp,np1_qdp
-    real (kind=real_kind)                          :: maxcflx, maxcfly
-    real (kind=real_kind) :: dp_np1(np,np)
+    real (kind=real_kind) :: maxcflx, maxcfly
+    real (kind=real_kind) :: dp_np1(np,np), tmp(4)
     logical :: compute_diagnostics
 
     real (kind=real_kind), dimension(np,np,nlev)  :: dp,dp_star
@@ -1847,6 +1873,10 @@ contains
        end if
        ! defer final timelevel update until after Q update.
     enddo
+    if (rsplit == 0) then
+       elem(ie)%state%ps_v(:,:,tl%np1) = hvcoord%hyai(1)*hvcoord%ps0 + &
+            sum(elem(ie)%state%dp3d(:,:,:,tl%np1),3)
+    end if
     call t_stopf("prim_step_dyn")
 
     call t_startf("prim_step_advec")
@@ -1861,15 +1891,43 @@ contains
     if (rsplit == 0) then
        call vertical_remap(hybrid,elem,hvcoord,dt_remap,tl%np1,np1_qdp,nets,nete)
     else
+       q = 6
+       tmp(1) = 1000
+       tmp(2) = -1000
        do ie = nets, nete
+#if 0
           do k=1,nlev
              dp(:,:,k) = ( hvcoord%hyai(k+1) - hvcoord%hyai(k) )*hvcoord%ps0 + &
                   ( hvcoord%hybi(k+1) - hvcoord%hybi(k) )*elem(ie)%state%ps_v(:,:,tl%np1)
              ! This is actually delta eta_dot_dpdn.
              dp_star(:,:,k) = dp(:,:,k) + elem(ie)%derived%eta_dot_dpdn_prescribed(:,:,k)
           end do
+#else
+          dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
+          dp_star = dp + elem(ie)%derived%eta_dot_dpdn_prescribed(:,:,1:nlev)
+#endif
+          if (hybrid%par%masterproc) then
+             tmp(3) = minval(elem(ie)%state%Qdp(:,:,:,q,np1_qdp) / dp_star)
+             tmp(4) = maxval(elem(ie)%state%Qdp(:,:,:,q,np1_qdp) / dp_star)
+             tmp(1) = min(tmp(1), tmp(3))
+             tmp(2) = max(tmp(2), tmp(4))
+          end if
           call remap1(elem(ie)%state%Qdp(:,:,:,:,np1_qdp),np,qsize,dp_star,dp)
        end do
+       if (hybrid%par%masterproc) print *,'amb> before Q6 {min,max}-1',tmp(1)-1,tmp(2)-1
+    end if
+    if (.true. .and. hybrid%par%masterproc) then
+       ! In dcmip2016 test1, Q6 = 1 and should stay 1.
+       q = 6
+       tmp(1) = 1000
+       tmp(2) = -1000
+       do ie = nets, nete
+          tmp(3) = minval(elem(ie)%state%Qdp(:,:,:,q,np1_qdp) / elem(ie)%state%dp3d(:,:,:,tl%np1))
+          tmp(4) = maxval(elem(ie)%state%Qdp(:,:,:,q,np1_qdp) / elem(ie)%state%dp3d(:,:,:,tl%np1))
+          tmp(1) = min(tmp(1), tmp(3))
+          tmp(2) = max(tmp(2), tmp(4))
+       end do
+       print *,'amb>  after Q6 {min,max}-1',tmp(1)-1,tmp(2)-1
     end if
     !if (hybrid%par%masterproc) print *,'amb>',elem(1)%state%Qdp(1,1,:,1,np1_qdp)
   end subroutine prim_step_amb

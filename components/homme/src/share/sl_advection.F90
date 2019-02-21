@@ -156,7 +156,7 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
   integer               :: num_neighbors, scalar_q_bounds, info
   logical :: slmm, cisl, qos, sl_test
 
-  real(kind=real_kind) :: ps_v(np,np), dp(np,np,nlev)!, dp_star(np,np,nlev)
+  real(kind=real_kind) :: dp(np,np,nlev)!, dp_star(np,np,nlev)
 
   call t_barrierf('Prim_Advec_Tracers_remap_ALE', hybrid%par%comm)
   call t_startf('Prim_Advec_Tracers_remap_ALE')
@@ -181,10 +181,10 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
         do k=1,nlev
            elem(ie)%derived%eta_dot_dpdn(:,:,k)=elem(ie)%derived%eta_dot_dpdn(:,:,k)*elem(ie)%rspheremp(:,:)
         enddo
-        ps_v = hvcoord%hyai(1)*hvcoord%ps0 + sum(elem(ie)%state%dp3d(:,:,:,tl%np1),3)
+#if 0
         do k=1,nlev
            dp(:,:,k) = ( hvcoord%hyai(k+1) - hvcoord%hyai(k) )*hvcoord%ps0 + &
-                ( hvcoord%hybi(k+1) - hvcoord%hybi(k) )*ps_v !elem(ie)%state%ps_v(:,:,tl%np1)
+                ( hvcoord%hybi(k+1) - hvcoord%hybi(k) )*elem(ie)%state%ps_v(:,:,tl%np1)
            ! use divdp for dp_star
            if (rsplit == 0) then
               elem(ie)%derived%divdp(:,:,k) = dp(:,:,k) + dt*(elem(ie)%derived%eta_dot_dpdn(:,:,k+1) -&
@@ -194,6 +194,10 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
               elem(ie)%derived%divdp(:,:,k) = dp(:,:,k) + elem(ie)%derived%eta_dot_dpdn_prescribed(:,:,k)
            end if
         enddo
+#else
+        dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
+        elem(ie)%derived%divdp = dp + elem(ie)%derived%eta_dot_dpdn_prescribed(:,:,1:nlev)
+#endif
         call remap1_nofilter(elem(ie)%derived%vn0,np,1,dp,elem(ie)%derived%divdp)
      end do
   end if
@@ -226,6 +230,7 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
              elem(ie)%desc%actual_neigh_edges + 1)
      end do
      call slmm_csl(nets, nete, dep_points_all, minq, maxq, info)
+     if (hybrid%par%masterproc) print *,'amb> sl minq,maxq',minval(minq(:,:,:,6,:))-1,maxval(maxq(:,:,:,6,:))-1
      if (info /= 0) then
         call write_velocity_data(elem, nets, nete, hybrid, deriv, dt, tl)
         call abortmp('slmm_csl returned -1; see output above for more information.')
