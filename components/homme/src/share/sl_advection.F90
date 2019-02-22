@@ -226,7 +226,7 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
              elem(ie)%desc%actual_neigh_edges + 1)
      end do
      call slmm_csl(nets, nete, dep_points_all, minq, maxq, info)
-     if (hybrid%par%masterproc) print *,'amb> sl minq,maxq',minval(minq(:,:,:,6,:))-1,maxval(maxq(:,:,:,6,:))-1
+
      if (info /= 0) then
         call write_velocity_data(elem, nets, nete, hybrid, deriv, dt, tl)
         call abortmp('slmm_csl returned -1; see output above for more information.')
