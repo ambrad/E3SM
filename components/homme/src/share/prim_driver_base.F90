@@ -1755,22 +1755,14 @@ contains
     tmp(1) = 100; tmp(2) = -100
     do ie=nets,nete
        do k=1,nlev
-#if 0
-          dp_np1(:,:) = ( hvcoord%hyai(k+1) - hvcoord%hyai(k) )*hvcoord%ps0 + &
-               ( hvcoord%hybi(k+1) - hvcoord%hybi(k) )*elem(ie)%state%ps_v(:,:,tl%np1)
-          do q=1,qsize
-             elem(ie)%state%Q(:,:,k,q)=elem(ie)%state%Qdp(:,:,k,q,np1_qdp)/dp_np1(:,:)
-          enddo
-#else
           do q=1,qsize
              elem(ie)%state%Q(:,:,k,q)=elem(ie)%state%Qdp(:,:,k,q,np1_qdp)/elem(ie)%state%dp3d(:,:,k,tl%np1)
           enddo          
           tmp(1) = min(tmp(1), minval(elem(ie)%state%Q(:,:,k,6)))
           tmp(2) = max(tmp(2), maxval(elem(ie)%state%Q(:,:,k,6)))
-#endif
        enddo
     enddo
-    print *,'amb> again',tmp(1)-1,tmp(2)-1
+    if (hybrid%par%masterproc) print *,'amb> again',tmp(1)-1,tmp(2)-1
     call t_stopf("prim_run_subcyle_diags")
 
     ! now we have:
@@ -1874,8 +1866,10 @@ contains
        ! defer final timelevel update until after Q update.
     enddo
     if (rsplit == 0) then
-       elem(ie)%state%ps_v(:,:,tl%np1) = hvcoord%hyai(1)*hvcoord%ps0 + &
-            sum(elem(ie)%state%dp3d(:,:,:,tl%np1),3)
+       do ie = nets,nete
+          elem(ie)%state%ps_v(:,:,tl%np1) = hvcoord%hyai(1)*hvcoord%ps0 + &
+               sum(elem(ie)%state%dp3d(:,:,:,tl%np1),3)
+       end do
     end if
     call t_stopf("prim_step_dyn")
 
@@ -1895,17 +1889,9 @@ contains
        tmp(1) = 1000
        tmp(2) = -1000
        do ie = nets, nete
-#if 0
-          do k=1,nlev
-             dp(:,:,k) = ( hvcoord%hyai(k+1) - hvcoord%hyai(k) )*hvcoord%ps0 + &
-                  ( hvcoord%hybi(k+1) - hvcoord%hybi(k) )*elem(ie)%state%ps_v(:,:,tl%np1)
-             ! This is actually delta eta_dot_dpdn.
-             dp_star(:,:,k) = dp(:,:,k) + elem(ie)%derived%eta_dot_dpdn_prescribed(:,:,k)
-          end do
-#else
           dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
+          ! This is actually delta eta_dot_dpdn.
           dp_star = dp + elem(ie)%derived%eta_dot_dpdn_prescribed(:,:,1:nlev)
-#endif
           if (hybrid%par%masterproc) then
              tmp(3) = minval(elem(ie)%state%Qdp(:,:,:,q,np1_qdp) / dp_star)
              tmp(4) = maxval(elem(ie)%state%Qdp(:,:,:,q,np1_qdp) / dp_star)

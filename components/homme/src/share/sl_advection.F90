@@ -181,23 +181,19 @@ subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , 
         do k=1,nlev
            elem(ie)%derived%eta_dot_dpdn(:,:,k)=elem(ie)%derived%eta_dot_dpdn(:,:,k)*elem(ie)%rspheremp(:,:)
         enddo
-#if 0
-        do k=1,nlev
-           dp(:,:,k) = ( hvcoord%hyai(k+1) - hvcoord%hyai(k) )*hvcoord%ps0 + &
-                ( hvcoord%hybi(k+1) - hvcoord%hybi(k) )*elem(ie)%state%ps_v(:,:,tl%np1)
-           ! use divdp for dp_star
-           if (rsplit == 0) then
+        ! use divdp for dp_star
+        if (rsplit == 0) then
+           do k=1,nlev
+              dp(:,:,k) = ( hvcoord%hyai(k+1) - hvcoord%hyai(k) )*hvcoord%ps0 + &
+                   ( hvcoord%hybi(k+1) - hvcoord%hybi(k) )*elem(ie)%state%ps_v(:,:,tl%np1)
               elem(ie)%derived%divdp(:,:,k) = dp(:,:,k) + dt*(elem(ie)%derived%eta_dot_dpdn(:,:,k+1) -&
                    elem(ie)%derived%eta_dot_dpdn(:,:,k))
-           else
-              ! This is accumulated dt*(delta eta_dot_dpdn).
-              elem(ie)%derived%divdp(:,:,k) = dp(:,:,k) + elem(ie)%derived%eta_dot_dpdn_prescribed(:,:,k)
-           end if
-        enddo
-#else
-        dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
-        elem(ie)%derived%divdp = dp + elem(ie)%derived%eta_dot_dpdn_prescribed(:,:,1:nlev)
-#endif
+           enddo
+        else
+           dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
+           ! This is accumulated dt*(delta eta_dot_dpdn).
+           elem(ie)%derived%divdp = dp + elem(ie)%derived%eta_dot_dpdn_prescribed(:,:,1:nlev)
+        end if
         call remap1_nofilter(elem(ie)%derived%vn0,np,1,dp,elem(ie)%derived%divdp)
      end do
   end if
