@@ -1871,6 +1871,9 @@ contains
           dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
           ! This is actually delta eta_dot_dpdn.
           dp_star = dp + elem(ie)%derived%eta_dot_dpdn_prescribed(:,:,1:nlev)
+          if (minval(dp_star) < 0) then
+             print *,'amb> ALARUM dp_star -ve',dp_star
+          end if
           call remap1(elem(ie)%state%Qdp(:,:,:,:,np1_qdp),np,qsize,dp_star,dp)
        end do
     end if
