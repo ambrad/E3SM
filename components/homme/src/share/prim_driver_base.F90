@@ -1872,7 +1872,14 @@ contains
           ! This is actually delta eta_dot_dpdn.
           dp_star = dp + elem(ie)%derived%eta_dot_dpdn_prescribed(:,:,1:nlev)
           if (minval(dp_star) < 0) then
-             print *,'amb> ALARUM dp_star -ve',dp_star
+             print *,'amb> ALARUM dp_star -ve,rank,ie',hybrid%par%rank,ie
+             do j = 1,np
+                do i = 1,np
+                   if (minval(dp_star(i,j,:)) < 0) then
+                      print *,'amb>',i,j,dp_star(i,j,:)
+                   end if
+                end do
+             end do
           end if
           call remap1(elem(ie)%state%Qdp(:,:,:,:,np1_qdp),np,qsize,dp_star,dp)
        end do

@@ -233,6 +233,7 @@ program prim_main
      
      nstep = nextoutputstep(tl)
      do while(tl%nstep<nstep)
+        if (par%masterproc) print *,'amb> tl%nstep,nstep',tl%nstep,nstep
         call t_startf('prim_run')
         amb_experiment = 1
         if (amb_experiment == 0) then
@@ -257,7 +258,9 @@ program prim_main
      ! ============================================================
      ! Write restart files if required 
      ! ============================================================
+     if (par%masterproc) print *,'amb> restartfreq,tl%nstep',restartfreq,tl%nstep
      if((restartfreq > 0) .and. (MODULO(tl%nstep,restartfreq) ==0)) then 
+        if (par%masterproc) print *,'amb> calling WriteRestart'
         call WriteRestart(elem, ithr,1,nelemd,tl)
      endif
   end do !end of while tl%nstep < nEndStep
