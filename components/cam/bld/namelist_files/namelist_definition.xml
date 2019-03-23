@@ -5802,12 +5802,28 @@ Default: Set by build-namelist.
 </entry>
 
 <entry id="se_limiter_option" type="integer" category="se"
-       group="ctl_nl" valid_values="0,4,8" >
+       group="ctl_nl" valid_values="0,4,8,9" >
 Limiter used for horizontal tracer advection:
 0: None
 4: Sign-preserving limiter.
 8: Monotone limiter.
-Default: Set by build-namelist (probably 8).
+9: Efficient monotone limiter.
+Default: Set by build-namelist.
+</entry>
+
+<entry id="transport_alg" type="integer" category="se"
+       group="ctl_nl" valid_values="0,12" >
+Dycore transport algorithm:
+0: Euler
+12: SL
+</entry>
+
+<entry id="semi_lagrange_cdr_alg" type="integer" category="se"
+       group="ctl_nl" valid_values="20" > 
+</entry>
+
+<entry id="semi_lagrange_nearest_point_lev" type="integer" category="se"
+       group="ctl_nl" valid_values="" >  
 </entry>
 
 <entry id="vert_remap_q_alg" type="integer" category="se"
@@ -5828,6 +5844,7 @@ CAM physics forcing option:
 0: tendencies
 1: adjustments
 2: hybrid
+4: like 2, but applied each dyn. step.
 Default: Set by build-namelist.
 </entry>
 

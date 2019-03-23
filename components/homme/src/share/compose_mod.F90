@@ -270,7 +270,11 @@ contains
 
   subroutine compose_repro_sum(send, recv, nlocal, nfld, comm) bind(c)
     use iso_c_binding, only: c_int, c_double
+#ifdef CAM
+    use shr_reprosum_mod, only: repro_sum => shr_reprosum_calc
+#else
     use repro_sum_mod, only: repro_sum
+#endif
 
     real(kind=c_double), intent(in) :: send(nlocal,nfld)
     real(kind=c_double), intent(out) :: recv(nfld)
