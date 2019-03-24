@@ -2031,6 +2031,8 @@ contains
   ! It is assumed that un0 has the value of y and the computed value of gi is stored at
   ! unp1
   !===================================================================================
+    use amb, only: amb_solve
+
   integer, intent(in) :: np1,qn0,nets,nete
   real*8, intent(in) :: dt2
   integer :: maxiter
@@ -2142,9 +2144,13 @@ contains
       do i=1,np
       do j=1,np
         x(1:nlev,i,j) = -Fn(i,j,1:nlev)  !+Fn(i,j,nlev+1:2*nlev,1)/(g*dt2))
+#if 0
         call DGTTRF(nlev, JacL(:,i,j), JacD(:,i,j),JacU(:,i,j),JacU2(:,i,j), Ipiv(:,i,j), info(i,j) )
         ! Tridiagonal solve
         call DGTTRS( 'N', nlev,1, JacL(:,i,j), JacD(:,i,j), JacU(:,i,j), JacU2(:,i,j), Ipiv(:,i,j),x(:,i,j), nlev, info(i,j) )
+#else
+        call amb_solve(nlev, 1, JacL(:,i,j), JacD(:,i,j), JacU(:,i,j), x(:,i,j), nlev, info(i,j))
+#endif
         ! update approximate solution of phi
         phi_np1(i,j,1:nlev) = phi_np1(i,j,1:nlev) + x(1:nlev,i,j)
       end do
