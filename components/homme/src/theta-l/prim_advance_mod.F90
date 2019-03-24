@@ -2149,7 +2149,7 @@ contains
         ! Tridiagonal solve
         call DGTTRS( 'N', nlev,1, JacL(:,i,j), JacD(:,i,j), JacU(:,i,j), JacU2(:,i,j), Ipiv(:,i,j),x(:,i,j), nlev, info(i,j) )
 #else
-        call amb_solve(nlev, 1, JacL(:,i,j), JacD(:,i,j), JacU(:,i,j), x(:,i,j), nlev, info(i,j))
+        call amb_solve(logical(hybrid%par%masterproc .and. ie == 1 .and. itercount == 0), nlev, 1, JacL(:,i,j), JacD(:,i,j), JacU(:,i,j), x(:,i,j), nlev, info(i,j))
 #endif
         ! update approximate solution of phi
         phi_np1(i,j,1:nlev) = phi_np1(i,j,1:nlev) + x(1:nlev,i,j)
