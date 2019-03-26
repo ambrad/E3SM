@@ -233,7 +233,7 @@ def _build_libraries(case, exeroot, sharedpath, caseroot, cimeroot, libroot, lid
     if mpilib == "mpi-serial":
         libs.insert(0, mpilib)
 
-    if cam_target == "preqx_kokkos" or cam_target == "preqx_sl" or cam_target == "theta-sl":
+    if cam_target == "preqx_kokkos" or cam_target == "preqx-sl" or cam_target == "theta-sl":
         libs.append("kokkos")
 
     logs = []
