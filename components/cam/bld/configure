@@ -2779,7 +2779,7 @@ sub write_filepath
     print $fh "$camsrcdir/cam/src/dynamics/$dyn\n";
     if($dyn eq 'se') {
       print $fh "$camsrcdir/homme/src/share\n";
-      if ($opts{'dyn_target'} eq 'preqx' or $opts{'dyn_target'} eq 'preqx-sl') {
+      if ($opts{'dyn_target'} eq 'preqx') {
         print $fh "$camsrcdir/homme/src/preqx\n";
         print $fh "$camsrcdir/homme/src/preqx/share\n";
       } 
@@ -2787,7 +2787,7 @@ sub write_filepath
         print $fh "$camsrcdir/homme/src/preqx_acc\n";
         print $fh "$camsrcdir/homme/src/preqx/share\n";
       }
-      elsif($opts{'dyn_target'} eq 'theta-l' or $opts{'dyn_target'} eq 'theta-sl') {
+      elsif($opts{'dyn_target'} eq 'theta-l') {
         print $fh "$camsrcdir/homme/src/theta-l\n";
       }
       elsif ($opts{'dyn_target'} eq 'preqx_kokkos') {
