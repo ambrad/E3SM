@@ -3857,17 +3857,6 @@ template <> inline bool strto (const char* s) { return std::atoi(s); }
 template <> inline double strto (const char* s) { return std::atof(s); }
 template <> inline std::string strto (const char* s) { return std::string(s); }
 
-Experiment get_options () {
-  Experiment e;
-  e.sl_mpi = 1;
-  e.halo = 2;
-  char* var_s = std::getenv("slmpi");
-  if (var_s) e.sl_mpi = strto<int>(var_s);
-  var_s = std::getenv("halo");
-  if (var_s) e.halo = strto<int>(var_s);
-  return e;
-}
-
 static homme::cslmpi::CslMpi::Ptr g_csl_mpi;
 
 extern "C" {
@@ -3879,22 +3868,14 @@ void slmm_init_impl (
   const homme::Int** nbr_id_rank, const homme::Int** nirptr,
   homme::Int sl_nearest_point_lev)
 {
-  auto e = get_options();
   homme::slmm_init(np, nelem, nelemd, transport_alg, cubed_sphere_map,
                    sl_nearest_point_lev - 1, *lid2facenum);
-  if (e.sl_mpi && homme::g_advecter->is_cisl())
-    e.sl_mpi = 0;
-  slmm_throw_if(cubed_sphere_map == 0 &&
-                (homme::g_advecter->is_cisl() || ! e.sl_mpi),
-                "When cubed_sphere_map = 0, SLMM supports only ISL methods"
-                " with SL MPI.");
-  if (e.sl_mpi) {
-    const auto p = homme::mpi::make_parallel(MPI_Comm_f2c(fcomm));
-    g_csl_mpi = homme::cslmpi::init(homme::g_advecter, p, np, nlev, qsize,
-                                    qsized, nelemd, *nbr_id_rank, *nirptr,
-                                    e.halo);
-    if (p->amroot()) pr(puf(e.sl_mpi) pu(e.halo));
-  }
+  slmm_throw_if(homme::g_advecter->is_cisl(),
+                "CISL code was removed.");
+  const auto p = homme::mpi::make_parallel(MPI_Comm_f2c(fcomm));
+  g_csl_mpi = homme::cslmpi::init(homme::g_advecter, p, np, nlev, qsize,
+                                  qsized, nelemd, *nbr_id_rank, *nirptr,
+                                  2 /* halo */);
 }
 
 void slmm_get_mpi_pattern (homme::Int* sl_mpi) {
