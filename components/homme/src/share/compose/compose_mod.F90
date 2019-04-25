@@ -122,20 +122,6 @@ module compose_mod
        type(cartesian3D_t), intent(in) :: sphere_cart_coord
      end subroutine slmm_check_ref2sphere
 
-     subroutine slmm_advect(lev, ie, nnc, np, nlev, qsize, nets, nete, &
-          dep_points, Qj_src, metdet, dp3d, tl_np1, q, minq, maxq) bind(c)
-       use iso_c_binding, only: c_int, c_double
-       use coordinate_systems_mod, only : cartesian3D_t
-       use dimensions_mod, only : qsize_d, max_neigh_edges
-       use element_state, only : timelevels
-       integer(kind=c_int), value, intent(in) :: lev, ie, nnc, np, nlev, qsize, nets, nete, tl_np1
-       type(cartesian3D_t), intent(in) :: dep_points(np,np)
-       real(kind=c_double), intent(in) :: Qj_src(np,np,qsize+1,max_neigh_edges+1), &
-            metdet(np,np), dp3d(np,np,nlev,timelevels)
-       real(kind=c_double), intent(out) :: q(np,np,nlev,qsize_d), &
-            minq(np,np,nlev,qsize,nets:nete), maxq(np,np,nlev,qsize,nets:nete)
-     end subroutine slmm_advect
-
      subroutine slmm_csl_set_elem_data(ie, metdet, qdp, dp, q, nelem_in_patch) bind(c)
        use iso_c_binding, only: c_int, c_double
        use dimensions_mod, only : nlev, np, qsize

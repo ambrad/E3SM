@@ -313,6 +313,11 @@ IF (${HOMME_USE_KOKKOS})
   ADD_SUBDIRECTORY(test/unit_tests)
 ENDIF ()
 
+# Add libcompose, consisting of just C++ files, so we can build it just once for
+# all exes. It does not depend on compile-time sizes.
+set (COMPOSE_LIBRARY "compose")
+add_subdirectory(src/share/compose)
+
 SET(EXEC_LIST ""  CACHE INTERNAL "List of configured executables")
 IF(${BUILD_HOMME_SWEQX})
   ADD_SUBDIRECTORY(src/sweqx)

@@ -2187,17 +2187,6 @@ int main (int argc, char** argv) {
 }
 #endif
 
-#ifndef SLMM_MAIN
-# ifdef HAVE_CONFIG_H
-#  include "config.h.c"
-# endif
-# ifdef CAM
-#  define QSIZE_D PCNST
-# endif
-#else
-# define QSIZE_D 64
-#endif
-
 namespace homme {
 typedef slmm::Int Int;
 typedef slmm::Real Real;
@@ -2529,6 +2518,22 @@ private:
   Int nlev_;
 };
 
+inline int get_tid () {
+#ifdef HORIZ_OPENMP
+  return omp_get_thread_num();
+#else
+  return 0;
+#endif
+}
+
+inline int get_num_threads () {
+#ifdef HORIZ_OPENMP
+  return omp_get_num_threads();
+#else
+  return 1;
+#endif
+}
+
 // Meta and bulk data for the interpolation SL MPI communication pattern.
 struct CslMpi {
   typedef std::shared_ptr<CslMpi> Ptr;
@@ -2588,14 +2593,14 @@ struct CslMpi {
   ListOfLists<omp_lock_t> ri_lidi_locks;
 #endif
 
+  Array<Real**> rwork;
+
   CslMpi (const mpi::Parallel::Ptr& ip, const slmm::Advecter::ConstPtr& advecter,
           Int inp, Int inlev, Int iqsize, Int iqsized, Int inelemd, Int ihalo)
     : p(ip), advecter(advecter),
       np(inp), np2(np*np), nlev(inlev), qsize(iqsize), qsized(iqsized), nelemd(inelemd),
       halo(ihalo)
-  {
-    slmm_assert(qsized <= QSIZE_D);
-  }
+  {}
 
   ~CslMpi () {
 #ifdef HORIZ_OPENMP
@@ -3253,22 +3258,6 @@ void setup_comm_pattern (CslMpi& cm, const Int* nbr_id_rank, const Int* nirptr) 
   if (cm.ed(0).me->rank == 0) std::cout << "COMPOSE> use SL MPI pattern\n";
 }
 
-inline int get_tid () {
-#ifdef HORIZ_OPENMP
-  return omp_get_thread_num();
-#else
-  return 0;
-#endif
-}
-
-inline int get_num_threads () {
-#ifdef HORIZ_OPENMP
-  return omp_get_num_threads();
-#else
-  return 1;
-#endif
-}
-
 // mylid_with_comm(rankidx) is a list of element LIDs that have relations with
 // other elements on other ranks. For horizontal threading, need to find the
 // subsets that fit within the usual horizontal-threading nets:nete ranges.
@@ -3278,7 +3267,9 @@ void init_mylid_with_comm_threaded (CslMpi& cm, const Int& nets, const Int& nete
 # pragma omp master
 #endif
   {
-    cm.mylid_with_comm_tid_ptr.reset_capacity(get_num_threads()+1, true);
+    const int nthr = get_num_threads();
+    cm.rwork = CslMpi::Array<Real**>("rwork", nthr, cm.qsize);
+    cm.mylid_with_comm_tid_ptr.reset_capacity(nthr+1, true);
     cm.horiz_openmp = get_num_threads() > 1;
   }
 #ifdef HORIZ_OPENMP
@@ -3723,6 +3714,7 @@ template <Int np>
 void calc_own_q (CslMpi& cm, const Int& nets, const Int& nete,
                  const FA4<const Real>& dep_points,
                  const FA4<Real>& q_min, const FA4<Real>& q_max) {
+  const int tid = get_tid();
   for (Int tci = nets; tci <= nete; ++tci) {
     const Int ie0 = tci - nets;
     auto& ed = cm.ed(tci);
@@ -3734,7 +3726,7 @@ void calc_own_q (CslMpi& cm, const Int& nets, const Int& nete,
         q_min(e.k, e.lev, iq, ie0) = sed.q_extrema(iq, e.lev, 0);
         q_max(e.k, e.lev, iq, ie0) = sed.q_extrema(iq, e.lev, 1);
       }
-      Real qtmp[QSIZE_D];
+      Real* const qtmp = &cm.rwork(tid, 0);
       calc_q<np>(cm, slid, e.lev, &dep_points(0, e.k, e.lev, tci), qtmp, false);
       for (Int iq = 0; iq < cm.qsize; ++iq)
         q_tgt(e.k, e.lev, iq) = qtmp[iq];
