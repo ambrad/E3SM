@@ -62,6 +62,7 @@ contains
     integer :: nslots, ie, num_neighbors, need_conservation, i, j
     logical :: slmm, cisl, qos, sl_test
 
+#ifndef HOMME_NO_COMPOSE
     call t_startf('sl_init1')
     if (transport_alg > 0) then
        call sl_parse_transport_alg(transport_alg, slmm, cisl, qos, sl_test)
@@ -99,6 +100,7 @@ contains
        end if
     endif
     call t_stopf('sl_init1')
+#endif
   end subroutine sl_init1
 
   subroutine  Prim_Advec_Tracers_remap_ALE( elem , deriv , hvcoord, hybrid , dt , tl , nets , nete )
@@ -130,6 +132,7 @@ contains
     integer               :: num_neighbors, scalar_q_bounds, info
     logical :: slmm, cisl, qos, sl_test
 
+#ifndef HOMME_NO_COMPOSE
     call t_barrierf('Prim_Advec_Tracers_remap_ALE', hybrid%par%comm)
     call t_startf('Prim_Advec_Tracers_remap_ALE')
 
@@ -239,6 +242,7 @@ contains
        call advance_physical_vis(elem, hvcoord, hybrid, deriv, tl%np1, np1_qdp, nets, nete, dt, dcmip16_mu_q)
     endif
     call t_stopf('Prim_Advec_Tracers_remap_ALE')
+#endif
   end subroutine Prim_Advec_Tracers_remap_ALE
 
   ! ----------------------------------------------------------------------------------!
@@ -255,9 +259,7 @@ contains
 
   ! this will calculate the velocity at time t+1/2  along the trajectory s(t) given the velocities
   ! at the GLL points at time t and t+1 using a second order time accurate formulation.
-
   subroutine ALE_RKdss(elem, nets, nete, hy, deriv, dt, tl)
-
     use derivative_mod,  only : derivative_t, ugradv_sphere
     use edgetype_mod,    only : EdgeBuffer_t
     use bndry_mod,       only : bndry_exchangev

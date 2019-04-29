@@ -179,6 +179,7 @@ contains
     integer, allocatable :: owned_ids(:)
     integer, pointer :: rank2sfc(:) => null()
 
+#ifndef HOMME_NO_COMPOSE
     call t_startf('compose_init')
     use_sgi = sgi_is_initialized()
 
@@ -252,6 +253,7 @@ contains
        deallocate(nbr_id_rank, nirptr)
     end if
     call t_stopf('compose_init')
+#endif
   end subroutine compose_init
 
   subroutine compose_repro_sum(send, recv, nlocal, nfld, comm) bind(c)

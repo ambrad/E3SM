@@ -105,7 +105,9 @@ IF (${BUILD_HOMME_PREQX_KOKKOS})
   SET (BUILD_HOMME_PREQX TRUE)
 ENDIF ()
 
-SET (HOMME_USE_CXX TRUE) # always, for SL
+if (NOT HOMME_NO_COMPOSE)
+  set (HOMME_USE_CXX TRUE)
+endif ()
 
 IF (${HOMME_USE_CXX})
   MESSAGE(STATUS "This configuration of HOMME requires a C++ compiler")
@@ -315,8 +317,13 @@ ENDIF ()
 
 # Add libcompose, consisting of just C++ files, so we can build it just once for
 # all exes. It does not depend on compile-time sizes.
-set (COMPOSE_LIBRARY "compose")
-add_subdirectory(src/share/compose)
+if (NOT HOMME_NO_COMPOSE)
+  set (COMPOSE_LIBRARY "compose")
+  add_subdirectory(src/share/compose)
+else ()
+  message ("-- COMPOSE semi-Lagrangian transport was explicitly disabled")
+  add_definitions(-DHOMME_NO_COMPOSE)
+endif ()
 
 SET(EXEC_LIST ""  CACHE INTERNAL "List of configured executables")
 IF(${BUILD_HOMME_SWEQX})
