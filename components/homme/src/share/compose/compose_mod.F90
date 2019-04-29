@@ -179,7 +179,7 @@ contains
     integer, allocatable :: owned_ids(:)
     integer, pointer :: rank2sfc(:) => null()
 
-#ifndef HOMME_NO_COMPOSE
+#ifdef HOMME_ENABLE_COMPOSE
     call t_startf('compose_init')
     use_sgi = sgi_is_initialized()
 

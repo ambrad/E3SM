@@ -84,7 +84,7 @@ contains
     type (derivative_t) :: deriv
     integer :: ithr, nets, nete
 
-#ifndef HOMME_NO_COMPOSE
+#ifdef HOMME_ENABLE_COMPOSE
     call derivinit(deriv)
 
     if (par%masterproc) print *, '~*~ Comprehensively test COMPOSE ~*~'
@@ -170,7 +170,7 @@ contains
     integer :: nsteps, n0_qdp, np1_qdp, ie, i, j
     real (kind=real_kind) :: dt, tprev, t
 
-#ifndef HOMME_NO_COMPOSE  
+#ifdef HOMME_ENABLE_COMPOSE  
     call t_startf('compose_stt')
     ! Set up time stepping and initialize q and density.
     call timelevel_init_default(tl)

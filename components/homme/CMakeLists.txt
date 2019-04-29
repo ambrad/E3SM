@@ -317,13 +317,14 @@ ENDIF ()
 
 # Add libcompose, consisting of just C++ files, so we can build it just once for
 # all exes. It does not depend on compile-time sizes.
-if (NOT HOMME_NO_COMPOSE)
+set (HOMME_ENABLE_COMPOSE TRUE CACHE LOGICAL "Build COMPOSE semi-Lagrangian tracer transport code")
+if (HOMME_ENABLE_COMPOSE)
+  add_definitions(-DHOMME_ENABLE_COMPOSE)
   set (COMPOSE_LIBRARY "compose")
   add_subdirectory(src/share/compose)
   set (USE_KOKKOS_KERNELS ON)
 else ()
   message ("-- COMPOSE semi-Lagrangian transport was explicitly disabled")
-  add_definitions(-DHOMME_NO_COMPOSE)
 endif ()
 
 SET(EXEC_LIST ""  CACHE INTERNAL "List of configured executables")

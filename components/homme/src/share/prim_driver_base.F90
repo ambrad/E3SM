@@ -593,7 +593,7 @@ contains
     type (element_t), pointer, intent(in) :: elem(:)
     integer :: ie, ierr
     if (transport_alg > 0) then
-#ifndef HOMME_NO_COMPOSE
+#ifdef HOMME_ENABLE_COMPOSE
        call kokkos_init()
        call compose_init(par, elem, GridVertex)
        !call cedr_unittest(par%comm, ierr)
