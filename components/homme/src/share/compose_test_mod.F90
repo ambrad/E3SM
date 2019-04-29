@@ -7,6 +7,8 @@ module compose_test_mod
   implicit none
 
 interface
+
+#ifdef HOMME_ENABLE_COMPOSE
    subroutine compose_unittest() bind(c)
    end subroutine compose_unittest
 
@@ -61,6 +63,8 @@ interface
      use iso_c_binding, only: c_int
      integer (kind=c_int), value, intent(in) :: comm, root, rank
    end subroutine compose_stt_finish
+#endif
+
 end interface
 
 contains

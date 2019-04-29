@@ -3,6 +3,8 @@ module compose_mod
   implicit none
 
   interface
+
+#ifdef HOMME_ENABLE_COMPOSE
      subroutine kokkos_init() bind(c)
      end subroutine kokkos_init
 
@@ -149,6 +151,8 @@ module compose_mod
        use iso_c_binding, only: c_int
        integer(kind=c_int), intent(out) :: sl_mpi
      end subroutine slmm_get_mpi_pattern
+#endif
+
   end interface
 
 contains

@@ -584,14 +584,16 @@ contains
   end subroutine prim_init1_elem_arrays
 
   subroutine prim_init1_compose(par, elem)
-    use parallel_mod, only : parallel_t
+    use parallel_mod, only : parallel_t, abortmp
     use control_mod,  only : transport_alg, semi_lagrange_cdr_alg
+#ifdef HOMME_ENABLE_COMPOSE
     use compose_mod,  only : kokkos_init, compose_init, cedr_set_ie2gci, cedr_unittest
-    use parallel_mod, only : abortmp
+#endif
 
     type (parallel_t), intent(in) :: par
     type (element_t), pointer, intent(in) :: elem(:)
     integer :: ie, ierr
+
     if (transport_alg > 0) then
 #ifdef HOMME_ENABLE_COMPOSE
        call kokkos_init()
