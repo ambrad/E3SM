@@ -5,5 +5,8 @@ endif ()
 if (ENABLE_COLUMN_OPENMP)
   add_definitions(-DCOLUMN_OPENMP)
 endif ()
-add_library (${COMPOSE_LIBRARY} compose_slmm.cpp compose_cedr.cpp compose_test.cpp)
+add_library (${COMPOSE_LIBRARY}
+  compose_test.cpp
+  compose_cedr.cpp
+  compose_slmm.cpp)
 link_to_kokkos(${COMPOSE_LIBRARY})

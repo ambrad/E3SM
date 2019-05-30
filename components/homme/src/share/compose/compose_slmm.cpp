@@ -1,8 +1,5 @@
 #include <mpi.h>
 
-// Uncomment this to look for MPI-related memory leaks.
-//#define COMPOSE_DEBUG_MPI
-
 //> begin SIQK
 // To make this initial integration less messy, inline SIQK in this translation
 // unit. Once we've put together the Compose library, I'll remove this code.
@@ -1178,9 +1175,7 @@ void outer_eval (const Real& x, Real v[4]) {
 }
 
 // In the middle region, use the standard GLL np=4 interpolant; in the two outer
-// regions, use an order-reduced interpolant, but one that stabilizes the
-// resulting classical SL method stable for the uniform-flow problem on a
-// uniform mesh.
+// regions, use an order-reduced interpolant that stabilizes the method.
 void gll_np4_subgrid_exp_eval (const Real& x, Real y[4]) {
   static constexpr Real
     alpha = 0.5527864045000416708,
@@ -1908,10 +1903,9 @@ int main (int argc, char** argv) {
 }
 #endif
 
-namespace homme {
-typedef slmm::Int Int;
-typedef slmm::Real Real;
+#include "compose_slmm_cslmpi.hpp"
 
+namespace homme {
 namespace ko = Kokkos;
 
 // Fortran array wrappers.
@@ -1935,124 +1929,6 @@ void slmm_init (const Int np, const Int nelem, const Int nelemd,
     np, nelemd, transport_alg, cubed_sphere_map, sl_nearest_point_lev);
   g_advecter->init_meta_data(nelem, lid2facenum);
 }
-
-namespace mpi { //todo Share with cedr.
-class Parallel {
-  MPI_Comm comm_;
-public:
-  typedef std::shared_ptr<Parallel> Ptr;
-  Parallel(MPI_Comm comm) : comm_(comm) {}
-  MPI_Comm comm () const { return comm_; }
-  Int size() const {
-    int sz = 0;
-    MPI_Comm_size(comm_, &sz);
-    return sz;
-  }
-  Int rank() const {
-    int pid = 0;
-    MPI_Comm_rank(comm_, &pid);
-    return pid;
-  }
-  Int root () const { return 0; }
-  bool amroot () const { return rank() == root(); }
-};
-
-Parallel::Ptr make_parallel (MPI_Comm comm) {
-  return std::make_shared<Parallel>(comm);
-}
-
-struct Request {
-  MPI_Request request;
-
-#ifdef COMPOSE_DEBUG_MPI
-  int unfreed;
-  Request();
-  ~Request();
-#endif
-};
-
-#ifdef COMPOSE_DEBUG_MPI
-Request::Request () : unfreed(0) {}
-Request::~Request () {
-  if (unfreed) {
-    std::stringstream ss;
-    ss << "Request is being deleted with unfreed = " << unfreed;
-    int fin;
-    MPI_Finalized(&fin);
-    if (fin) {
-      ss << "\n";
-      std::cerr << ss.str();
-    } else {
-      pr(ss.str());
-    }
-  }
-}
-#endif
-
-template <typename T> MPI_Datatype get_type();
-template <> inline MPI_Datatype get_type<int>() { return MPI_INT; }
-template <> inline MPI_Datatype get_type<double>() { return MPI_DOUBLE; }
-template <> inline MPI_Datatype get_type<long>() { return MPI_LONG_INT; }
-
-template <typename T>
-int isend (const Parallel& p, const T* buf, int count, int dest, int tag,
-           Request* ireq) {
-  MPI_Datatype dt = get_type<T>();
-  MPI_Request ureq;
-  MPI_Request* req = ireq ? &ireq->request : &ureq;
-  int ret = MPI_Isend(const_cast<T*>(buf), count, dt, dest, tag, p.comm(), req);
-  if ( ! ireq) MPI_Request_free(req);
-#ifdef COMPOSE_DEBUG_MPI
-  else ireq->unfreed++;
-#endif
-  return ret;
-}
-
-template <typename T>
-int irecv (const Parallel& p, T* buf, int count, int src, int tag, Request* ireq) {
-  MPI_Datatype dt = get_type<T>();
-  MPI_Request ureq;
-  MPI_Request* req = ireq ? &ireq->request : &ureq;
-  int ret = MPI_Irecv(buf, count, dt, src, tag, p.comm(), req);
-  if ( ! ireq) MPI_Request_free(req);
-#ifdef COMPOSE_DEBUG_MPI
-  else ireq->unfreed++;
-#endif
-  return ret;
-}
-
-int waitany (int count, Request* reqs, int* index, MPI_Status* stats = nullptr) {
-#ifdef COMPOSE_DEBUG_MPI
-  std::vector<MPI_Request> vreqs(count);
-  for (int i = 0; i < count; ++i) vreqs[i] = reqs[i].request;
-  const auto out = MPI_Waitany(count, vreqs.data(), index,
-                               stats ? stats : MPI_STATUS_IGNORE);
-  for (int i = 0; i < count; ++i) reqs[i].request = vreqs[i];
-  reqs[*index].unfreed--;
-  return out;
-#else
-  return MPI_Waitany(count, reinterpret_cast<MPI_Request*>(reqs), index,
-                     stats ? stats : MPI_STATUS_IGNORE);
-#endif
-}
-
-int waitall (int count, Request* reqs, MPI_Status* stats = nullptr) {
-#ifdef COMPOSE_DEBUG_MPI
-  std::vector<MPI_Request> vreqs(count);
-  for (int i = 0; i < count; ++i) vreqs[i] = reqs[i].request;
-  const auto out = MPI_Waitall(count, vreqs.data(),
-                               stats ? stats : MPI_STATUS_IGNORE);
-  for (int i = 0; i < count; ++i) {
-    reqs[i].request = vreqs[i];
-    reqs[i].unfreed--;
-  }
-  return out;
-#else
-  return MPI_Waitall(count, reinterpret_cast<MPI_Request*>(reqs),
-                     stats ? stats : MPI_STATUS_IGNORE);
-#endif
-}
-} // namespace mpi
 
 namespace cslmpi {
 // Meta and bulk data for the classical (interpolation) SL method with special
