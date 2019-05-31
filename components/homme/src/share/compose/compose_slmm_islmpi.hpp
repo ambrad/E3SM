@@ -442,6 +442,27 @@ void isend(IslMpi& cm, const bool want_req = true, const bool skip_if_empty = fa
 void recv_and_wait_on_send(IslMpi& cm);
 void recv(IslMpi& cm, const bool skip_if_empty = false);
 
+const int nreal_per_2int = (2*sizeof(Int) + sizeof(Real) - 1) / sizeof(Real);
+
+template <typename Buffer>
+Int setbuf (Buffer& buf, const Int& os, const Int& i1, const Int& i2) {
+  Int* const b = reinterpret_cast<Int*>(&buf(os));
+  b[0] = i1;
+  b[1] = i2;
+  return nreal_per_2int;
+}
+
+template <typename Buffer>
+Int getbuf (Buffer& buf, const Int& os, Int& i1, Int& i2) {
+  const Int* const b = reinterpret_cast<const Int*>(&buf(os));
+  i1 = b[0];
+  i2 = b[1];
+  return nreal_per_2int;
+}
+
+void pack_dep_points_sendbuf_pass1(IslMpi& cm);
+void pack_dep_points_sendbuf_pass2(IslMpi& cm, const FA4<const Real>& dep_points);
+
 } // namespace islmpi
 } // namespace homme
 
