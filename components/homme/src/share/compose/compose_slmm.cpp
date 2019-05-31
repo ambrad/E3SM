@@ -191,7 +191,7 @@ int main (int argc, char** argv) {
 }
 #endif
 
-#include "compose_slmm_cslmpi.hpp"
+#include "compose_slmm_islmpi.hpp"
 
 namespace homme {
 namespace ko = Kokkos;
@@ -218,191 +218,7 @@ void slmm_init (const Int np, const Int nelem, const Int nelemd,
   g_advecter->init_meta_data(nelem, lid2facenum);
 }
 
-namespace cslmpi {
-// Meta and bulk data for the classical (interpolation) SL method with special
-// comm pattern.
-
-#define SLMM_BOUNDS_CHECK
-#ifdef SLMM_BOUNDS_CHECK
-# define slmm_assert_high(condition) slmm_assert(condition)
-#else
-# define slmm_assert_high(condition)
-#endif
-
-// FixedCapList, ListOfLists, and BufferLayoutArray are simple and somewhat
-// problem-specific array data structures for use in CslMpi.
-template <typename T>
-struct FixedCapList {
-  FixedCapList () : n_(0) {}
-  FixedCapList (const Int& cap) { slmm_assert_high(cap >= 0); reset_capacity(cap); }
-  void reset_capacity (const Int& cap, const bool also_size = false) {
-    slmm_assert(cap >= 0);
-    d_.resize(cap);
-    n_ = also_size ? cap : 0;
-  }
-  void clear () { n_ = 0; }
-
-  Int n () const { return n_; }
-  Int size () const { return n_; }
-  Int capacity () const { return d_.size(); }
-  const T& operator() (const Int& i) const { slmm_assert_high(i >= 0 && i < n_); return d_[i]; }
-  T& operator() (const Int& i) { slmm_assert_high(i >= 0 && i < n_); return d_[i]; }
-  void inc () { ++n_; slmm_assert_high(n_ <= static_cast<Int>(d_.size())); }
-  void inc (const Int& dn) { n_ += dn; slmm_assert_high(n_ <= static_cast<Int>(d_.size())); }
-
-  const T* data () const { return d_.data(); }
-  T* data () { return d_.data(); }  
-  const T& back () const { slmm_assert_high(n_ > 0); return d_[n_-1]; }
-  T& back () { slmm_assert_high(n_ > 0); return d_[n_-1]; }
-  const T* begin () const { return d_.data(); }
-  T* begin () { return d_.data(); }
-  const T* end () const { return d_.data() + n_; }
-  T* end () { return d_.data() + n_; }
-
- private:
-  std::vector<T> d_;
-  Int n_;
-};
-
-template <typename T>
-struct ListOfLists {
-  struct List {
-    Int n () const { return n_; }
-
-    T& operator() (const Int& i) { slmm_assert_high(i >= 0 && i < n_); return d_[i]; }
-    const T& operator() (const Int& i) const { slmm_assert_high(i >= 0 && i < n_); return d_[i]; }
-
-    const T* data () const { return d_; }
-    T* data () { return d_; }
-    const T* begin () const { return d_; }
-    T* begin () { return d_; }
-    const T* end () const { return d_ + n_; }
-    T* end () { return d_ + n_; }
-
-    void zero () { for (Int i = 0; i < n_; ++i) d_[i] = 0; }
-
-  private:
-    friend class ListOfLists<T>;
-    List (T* d, const Int& n) : d_(d), n_(n) { slmm_assert_high(n_ >= 0); }
-    T* const d_;
-    const Int n_;
-  };
-
-  ListOfLists () {}
-  ListOfLists (const Int nlist, const Int* nlist_per_list) { init(nlist, nlist_per_list); }
-  void init (const Int nlist, const Int* nlist_per_list) {
-    slmm_assert(nlist >= 0); 
-    ptr_.resize(nlist+1);
-    ptr_[0] = 0;
-    for (Int i = 0; i < nlist; ++i) {
-      slmm_assert(nlist_per_list[i] >= 0);
-      ptr_[i+1] = ptr_[i] + nlist_per_list[i];
-    }
-    d_.resize(ptr_.back());
-  }
-
-  Int n () const { return static_cast<Int>(ptr_.size()) - 1; }
-  List operator() (const Int& i) {
-    slmm_assert_high(i >= 0 && i < static_cast<Int>(ptr_.size()) - 1);
-    return List(&d_[ptr_[i]], ptr_[i+1] - ptr_[i]);
-  }
-  const List operator() (const Int& i) const {
-    slmm_assert_high(i >= 0 && i < static_cast<Int>(ptr_.size()) - 1);
-    return List(const_cast<T*>(&d_[ptr_[i]]), ptr_[i+1] - ptr_[i]);
-  }
-  T& operator() (const Int& i, const Int& j) {
-    slmm_assert_high(i >= 0 && i < static_cast<Int>(ptr_.size()) - 1 &&
-                     j >= 0 && j < ptr_[i+1] - ptr_[i]);
-    return d_[ptr_[i] + j];
-  }
-  const T& operator() (const Int& i, const Int& j) const {
-    slmm_assert_high(i >= 0 && i < static_cast<Int>(ptr_.size()) - 1 &&
-                     j >= 0 && j < ptr_[i+1] - ptr_[i]);
-    return d_[ptr_[i] + j];
-  }
-
-private:
-  friend class BufferLayoutArray;
-  std::vector<T> d_;
-  std::vector<Int> ptr_;
-  T* data () { return d_.data(); }
-  const T* data () const { return d_.data(); }
-};
-
-struct LayoutTriple {
-  Int xptr, qptr, cnt;
-  LayoutTriple () : LayoutTriple(0) {}
-  LayoutTriple (const Int& val) { xptr = qptr = cnt = 0; }
-};
-
-struct BufferLayoutArray {
-  struct BufferRankLayoutArray {
-    LayoutTriple& operator() (const Int& lidi, const Int& lev) {
-      slmm_assert_high(lidi >= 0 && lev >= 0 && lidi*nlev_ + lev < d_.n());
-      return d_(lidi*nlev_ + lev);
-    }
-    const LayoutTriple& operator() (const Int& lidi, const Int& lev) const {
-      slmm_assert_high(lidi >= 0 && lev >= 0 && lidi*nlev_ + lev < d_.n());
-      return d_(lidi*nlev_ + lev);
-    }
-
-  private:
-    friend class BufferLayoutArray;
-    BufferRankLayoutArray (const ListOfLists<LayoutTriple>::List& d, const Int& nlev)
-      : d_(d), nlev_(nlev) {}
-    ListOfLists<LayoutTriple>::List d_;
-    Int nlev_;
-  };
-
-  BufferLayoutArray () : nlev_(0) {}
-  BufferLayoutArray (const Int& nrank, const Int* nlid_per_rank, const Int& nlev)
-    { init(nrank, nlid_per_rank, nlev); }
-  void init (const Int& nrank, const Int* nlid_per_rank, const Int& nlev) {
-    slmm_assert(nrank >= 0 && nlev > 0);
-    nlev_ = nlev;
-    std::vector<Int> ns(nrank);
-    for (Int i = 0; i < nrank; ++i) {
-      slmm_assert(nlid_per_rank[i] > 0);
-      ns[i] = nlid_per_rank[i] * nlev;
-    }
-    d_.init(nrank, ns.data());
-  }
-
-  void zero () {
-    const Int ni = d_.n();
-#ifdef HORIZ_OPENMP
-#   pragma omp for
-#endif
-    for (Int i = 0; i < ni; ++i) {
-      auto&& l = d_(i);
-      for (Int j = 0, nj = l.n(); j < nj; ++j)
-        l(j) = 0;
-    }
-  }
-
-  LayoutTriple& operator() (const Int& ri, const Int& lidi, const Int& lev) {
-    slmm_assert_high(ri >= 0 && ri < d_.n() &&
-                     lidi >= 0 && lev >= 0 &&
-                     lidi*nlev_ + lev < d_(ri).n());
-    return d_.data()[d_.ptr_[ri] + lidi*nlev_ + lev];
-  }
-  const LayoutTriple& operator() (const Int& ri, const Int& lidi, const Int& lev) const {
-    return const_cast<BufferLayoutArray*>(this)->operator()(ri, lidi, lev);
-  }
-  BufferRankLayoutArray operator() (const Int& ri) {
-    slmm_assert_high(ri >= 0 && ri < d_.n());
-    return BufferRankLayoutArray(d_(ri), nlev_);
-  }
-  const BufferRankLayoutArray operator() (const Int& ri) const {
-    slmm_assert_high(ri >= 0 && ri < d_.n());
-    return BufferRankLayoutArray(d_(ri), nlev_);
-  }
-
-private:
-  ListOfLists<LayoutTriple> d_;
-  Int nlev_;
-};
-
+namespace islmpi {
 inline int get_tid () {
 #ifdef HORIZ_OPENMP
   return omp_get_thread_num();
@@ -420,8 +236,8 @@ inline int get_num_threads () {
 }
 
 // Meta and bulk data for the interpolation SL MPI communication pattern.
-struct CslMpi {
-  typedef std::shared_ptr<CslMpi> Ptr;
+struct IslMpi {
+  typedef std::shared_ptr<IslMpi> Ptr;
 
   template <typename Datatype>
   using Array = ko::View<Datatype, ko::LayoutRight, ko::HostSpace>;
@@ -480,14 +296,14 @@ struct CslMpi {
 
   Array<Real**> rwork;
 
-  CslMpi (const mpi::Parallel::Ptr& ip, const slmm::Advecter::ConstPtr& advecter,
+  IslMpi (const mpi::Parallel::Ptr& ip, const slmm::Advecter::ConstPtr& advecter,
           Int inp, Int inlev, Int iqsize, Int iqsized, Int inelemd, Int ihalo)
     : p(ip), advecter(advecter),
       np(inp), np2(np*np), nlev(inlev), qsize(iqsize), qsized(iqsized), nelemd(inelemd),
       halo(ihalo)
   {}
 
-  ~CslMpi () {
+  ~IslMpi () {
 #ifdef HORIZ_OPENMP
     const Int nrmtrank = static_cast<Int>(ranks.n()) - 1;
     for (Int ri = 0; ri < nrmtrank; ++ri) {
@@ -513,7 +329,7 @@ namespace extend_halo {
 // extend_local_meshes. The two parts have the same comm pattern: in round 1,
 // request data for lists of GIDs; in round 2, fulfill these requests.
 
-typedef CslMpi::ElemData ElemData;
+typedef IslMpi::ElemData ElemData;
 typedef Int Gid;
 typedef Int Rank;
 struct GidRankPair {
@@ -875,7 +691,7 @@ void extend_local_meshes (const mpi::Parallel& p, const FixedCapList<ElemData>& 
 } // namespace extend_halo
 
 // Fill in (gid, rank), the list of owning rank per gid.
-void collect_gid_rank (CslMpi& cm, const Int* nbr_id_rank, const Int* nirptr) {
+void collect_gid_rank (IslMpi& cm, const Int* nbr_id_rank, const Int* nirptr) {
   cm.ed.reset_capacity(cm.nelemd, true);
   for (Int i = 0; i < cm.nelemd; ++i) {
     auto& ed = cm.ed(i);
@@ -906,7 +722,7 @@ void collect_gid_rank (CslMpi& cm, const Int* nbr_id_rank, const Int* nirptr) {
 
 typedef std::map<Int, std::set<Int> > Rank2Gids;
 
-void get_rank2gids (const CslMpi& cm, Rank2Gids& rank2rmtgids,
+void get_rank2gids (const IslMpi& cm, Rank2Gids& rank2rmtgids,
                     Rank2Gids& rank2owngids) {
   const Int myrank = cm.p->rank();
   for (Int i = 0; i < cm.nelemd; ++i) {
@@ -923,7 +739,7 @@ void get_rank2gids (const CslMpi& cm, Rank2Gids& rank2rmtgids,
 
 // Fill in nbrs.lid_on_rank, the lid on the remote rank corresponding to the gid
 // I share but do not own.
-void comm_lid_on_rank (CslMpi& cm, const Rank2Gids& rank2rmtgids,
+void comm_lid_on_rank (IslMpi& cm, const Rank2Gids& rank2rmtgids,
                        const Rank2Gids& rank2owngids,
                        std::map<Int, Int>& gid2rmt_owning_lid) {
   const Int myrank = cm.p->rank();
@@ -1021,7 +837,7 @@ void comm_lid_on_rank (CslMpi& cm, const Rank2Gids& rank2rmtgids,
 // Useful maps between a linear index space 1:K to a set of K unique
 // integers. These obviate sorts and use of hash or binary maps during time
 // stepping.
-void set_idx2_maps (CslMpi& cm, const Rank2Gids& rank2rmtgids,
+void set_idx2_maps (IslMpi& cm, const Rank2Gids& rank2rmtgids,
                     const std::map<Int, Int>& gid2rmt_owning_lid) {
   const Int myrank = cm.p->rank();
   std::map<Int, Int> ranks;
@@ -1070,8 +886,8 @@ void set_idx2_maps (CslMpi& cm, const Rank2Gids& rank2rmtgids,
         i :
         lor2idx[n.rank_idx].at(n.lid_on_rank);
     }
-    ed.src = CslMpi::IntArray2D("src", cm.nlev, cm.np2);
-    ed.q_extrema = CslMpi::Array<Real**[2]>("q_extrema", cm.qsize, cm.nlev);
+    ed.src = IslMpi::IntArray2D("src", cm.nlev, cm.np2);
+    ed.q_extrema = IslMpi::Array<Real**[2]>("q_extrema", cm.qsize, cm.nlev);
   }
 }
 
@@ -1079,7 +895,7 @@ void set_idx2_maps (CslMpi& cm, const Rank2Gids& rank2rmtgids,
 // has a 1-halo patch of bulk data. For a 1-halo, allocations in this routine
 // use essentially the same amount of memory, but not more. We could use less if
 // we were willing to realloc space at each SL time step.
-void alloc_mpi_buffers (CslMpi& cm, const Rank2Gids& rank2rmtgids,
+void alloc_mpi_buffers (IslMpi& cm, const Rank2Gids& rank2rmtgids,
                         const Rank2Gids& rank2owngids) {
   const auto myrank = cm.p->rank();
   // sizeof real, int, single int (b/c of alignment)
@@ -1130,7 +946,7 @@ void alloc_mpi_buffers (CslMpi& cm, const Rank2Gids& rank2rmtgids,
 
 // At simulation initialization, set up a bunch of stuff to make the work at
 // each step as small as possible.
-void setup_comm_pattern (CslMpi& cm, const Int* nbr_id_rank, const Int* nirptr) {
+void setup_comm_pattern (IslMpi& cm, const Int* nbr_id_rank, const Int* nirptr) {
   collect_gid_rank(cm, nbr_id_rank, nirptr);
   Rank2Gids rank2rmtgids, rank2owngids;
   get_rank2gids(cm, rank2rmtgids, rank2owngids);
@@ -1145,14 +961,14 @@ void setup_comm_pattern (CslMpi& cm, const Int* nbr_id_rank, const Int* nirptr) 
 // mylid_with_comm(rankidx) is a list of element LIDs that have relations with
 // other elements on other ranks. For horizontal threading, need to find the
 // subsets that fit within the usual horizontal-threading nets:nete ranges.
-void init_mylid_with_comm_threaded (CslMpi& cm, const Int& nets, const Int& nete) {
+void init_mylid_with_comm_threaded (IslMpi& cm, const Int& nets, const Int& nete) {
 #ifdef HORIZ_OPENMP
 # pragma omp barrier
 # pragma omp master
 #endif
   {
     const int nthr = get_num_threads();
-    cm.rwork = CslMpi::Array<Real**>("rwork", nthr, cm.qsize);
+    cm.rwork = IslMpi::Array<Real**>("rwork", nthr, cm.qsize);
     cm.mylid_with_comm_tid_ptr.reset_capacity(nthr+1, true);
     cm.horiz_openmp = get_num_threads() > 1;
   }
@@ -1174,13 +990,13 @@ void init_mylid_with_comm_threaded (CslMpi& cm, const Int& nets, const Int& nete
 #endif
 }
 
-CslMpi::Ptr init (const slmm::Advecter::ConstPtr& advecter,
+IslMpi::Ptr init (const slmm::Advecter::ConstPtr& advecter,
                   const mpi::Parallel::Ptr& p,
                   Int np, Int nlev, Int qsize, Int qsized, Int nelemd,
                   const Int* nbr_id_rank, const Int* nirptr,
                   Int halo) {
   slmm_throw_if(halo < 1 || halo > 2, "halo must be 1 (default) or 2.");
-  auto cm = std::make_shared<CslMpi>(p, advecter, np, nlev, qsize, qsized,
+  auto cm = std::make_shared<IslMpi>(p, advecter, np, nlev, qsize, qsized,
                                      nelemd, halo);
   setup_comm_pattern(*cm, nbr_id_rank, nirptr);
   return cm;
@@ -1188,12 +1004,12 @@ CslMpi::Ptr init (const slmm::Advecter::ConstPtr& advecter,
 
 // For const clarity, take the non-const advecter as an arg, even though cm
 // already has a ref to the const'ed one.
-void finalize_local_meshes (CslMpi& cm, slmm::Advecter& advecter) {
+void finalize_local_meshes (IslMpi& cm, slmm::Advecter& advecter) {
   if (cm.halo == 2) extend_halo::extend_local_meshes(*cm.p, cm.ed, advecter);
 }
 
 // Set pointers to HOMME data arrays.
-void set_elem_data (CslMpi& cm, const Int ie, const Real* metdet, const Real* qdp,
+void set_elem_data (IslMpi& cm, const Int ie, const Real* metdet, const Real* qdp,
                     const Real* dp, Real* q, const Int nelem_in_patch) {
   slmm_assert(ie < cm.ed.size());
   slmm_assert(cm.halo > 1 || cm.ed(ie).nbrs.size() == nelem_in_patch);
@@ -1204,7 +1020,7 @@ void set_elem_data (CslMpi& cm, const Int ie, const Real* metdet, const Real* qd
   e.q = q;
 }
 
-void setup_irecv (CslMpi& cm, const bool skip_if_empty = false) {
+void setup_irecv (IslMpi& cm, const bool skip_if_empty = false) {
 #ifdef HORIZ_OPENMP
 # pragma omp master
 #endif
@@ -1223,7 +1039,7 @@ void setup_irecv (CslMpi& cm, const bool skip_if_empty = false) {
   }
 }
 
-void isend (CslMpi& cm, const bool want_req = true, const bool skip_if_empty = false) {
+void isend (IslMpi& cm, const bool want_req = true, const bool skip_if_empty = false) {
 #ifdef HORIZ_OPENMP
 # pragma omp barrier
 # pragma omp master
@@ -1239,7 +1055,7 @@ void isend (CslMpi& cm, const bool want_req = true, const bool skip_if_empty = f
   }
 }
 
-void recv_and_wait_on_send (CslMpi& cm) {
+void recv_and_wait_on_send (IslMpi& cm) {
 #ifdef HORIZ_OPENMP
 # pragma omp master
 #endif
@@ -1252,7 +1068,7 @@ void recv_and_wait_on_send (CslMpi& cm) {
 #endif
 }
 
-void recv (CslMpi& cm, const bool skip_if_empty = false) {
+void recv (IslMpi& cm, const bool skip_if_empty = false) {
 #ifdef HORIZ_OPENMP
 # pragma omp master
 #endif
@@ -1265,7 +1081,7 @@ void recv (CslMpi& cm, const bool skip_if_empty = false) {
 }
 
 // Find where each departure point is.
-void analyze_dep_points (CslMpi& cm, const Int& nets, const Int& nete,
+void analyze_dep_points (IslMpi& cm, const Int& nets, const Int& nete,
                          const FA4<Real>& dep_points) {
   const auto myrank = cm.p->rank();
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
@@ -1372,7 +1188,7 @@ Int getbuf (Buffer& buf, const Int& os, Int& i1, Int& i2) {
          q              qsize r
           *#x) *#lev *#lid *#rank
  */
-void pack_dep_points_sendbuf_pass1 (CslMpi& cm) {
+void pack_dep_points_sendbuf_pass1 (IslMpi& cm) {
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
 #ifdef HORIZ_OPENMP
 # pragma omp for
@@ -1413,7 +1229,7 @@ void pack_dep_points_sendbuf_pass1 (CslMpi& cm) {
   }
 }
 
-void pack_dep_points_sendbuf_pass2 (CslMpi& cm, const FA4<const Real>& dep_points) {
+void pack_dep_points_sendbuf_pass2 (IslMpi& cm, const FA4<const Real>& dep_points) {
   const auto myrank = cm.p->rank();
   const int tid = get_tid();
   for (Int ptr = cm.mylid_with_comm_tid_ptr(tid),
@@ -1462,7 +1278,7 @@ void pack_dep_points_sendbuf_pass2 (CslMpi& cm, const FA4<const Real>& dep_point
 }
 
 template <Int np>
-void calc_q_extrema (CslMpi& cm, const Int& nets, const Int& nete) {
+void calc_q_extrema (IslMpi& cm, const Int& nets, const Int& nete) {
   for (Int tci = nets; tci <= nete; ++tci) {
     auto& ed = cm.ed(tci);
     const FA2<const Real> dp(ed.dp, cm.np2, cm.nlev);
@@ -1488,7 +1304,7 @@ void calc_q_extrema (CslMpi& cm, const Int& nets, const Int& nete) {
 }
 
 template <Int np>
-void calc_q (const CslMpi& cm, const Int& src_lid, const Int& lev,
+void calc_q (const IslMpi& cm, const Int& src_lid, const Int& lev,
              const Real* const dep_point, Real* const q_tgt, const bool use_q) {
   Real ref_coord[2]; {
     const auto& m = cm.advecter->local_mesh(src_lid);
@@ -1550,7 +1366,7 @@ void calc_q (const CslMpi& cm, const Int& src_lid, const Int& lev,
 }
 
 template <Int np>
-void calc_rmt_q (CslMpi& cm) {
+void calc_rmt_q (IslMpi& cm) {
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
 #ifdef HORIZ_OPENMP
 # pragma omp for
@@ -1595,7 +1411,7 @@ void calc_rmt_q (CslMpi& cm) {
 }
 
 template <Int np>
-void calc_own_q (CslMpi& cm, const Int& nets, const Int& nete,
+void calc_own_q (IslMpi& cm, const Int& nets, const Int& nete,
                  const FA4<const Real>& dep_points,
                  const FA4<Real>& q_min, const FA4<Real>& q_max) {
   const int tid = get_tid();
@@ -1618,7 +1434,7 @@ void calc_own_q (CslMpi& cm, const Int& nets, const Int& nete,
   }
 }
 
-void copy_q (CslMpi& cm, const Int& nets,
+void copy_q (IslMpi& cm, const Int& nets,
              const FA4<Real>& q_min, const FA4<Real>& q_max) {
   const auto myrank = cm.p->rank();
   const int tid = get_tid();
@@ -1651,7 +1467,7 @@ void copy_q (CslMpi& cm, const Int& nets,
  */
 template <int np>
 void step (
-  CslMpi& cm, const Int nets, const Int nete,
+  IslMpi& cm, const Int nets, const Int nete,
   Cartesian3D* dep_points_r,    // dep_points(1:3, 1:np, 1:np)
   Real* q_min_r, Real* q_max_r) // q_{min,max}(1:np, 1:np, lev, 1:qsize, ie-nets+1)
 {
@@ -1702,7 +1518,7 @@ void step (
   // outside of SL transport assures the send buffer is ready at the next call
   // to step. But do need to dealloc the send requests.
 }
-} // namespace cslmpi
+} // namespace islmpi
 } // namespace homme
 
 // Valid after slmm_init_local_mesh_ is called.
@@ -1733,7 +1549,7 @@ template <> inline bool strto (const char* s) { return std::atoi(s); }
 template <> inline double strto (const char* s) { return std::atof(s); }
 template <> inline std::string strto (const char* s) { return std::string(s); }
 
-static homme::cslmpi::CslMpi::Ptr g_csl_mpi;
+static homme::islmpi::IslMpi::Ptr g_csl_mpi;
 
 extern "C" {
 void slmm_init_impl (
@@ -1749,7 +1565,7 @@ void slmm_init_impl (
   slmm_throw_if(homme::g_advecter->is_cisl(),
                 "CISL code was removed.");
   const auto p = homme::mpi::make_parallel(MPI_Comm_f2c(fcomm));
-  g_csl_mpi = homme::cslmpi::init(homme::g_advecter, p, np, nlev, qsize,
+  g_csl_mpi = homme::islmpi::init(homme::g_advecter, p, np, nlev, qsize,
                                   qsized, nelemd, *nbr_id_rank, *nirptr,
                                   2 /* halo */);
 }
@@ -1770,7 +1586,7 @@ void slmm_init_local_mesh (
 
 void slmm_init_finalize () {
   if (g_csl_mpi)
-    homme::cslmpi::finalize_local_meshes(*g_csl_mpi, *homme::g_advecter);
+    homme::islmpi::finalize_local_meshes(*g_csl_mpi, *homme::g_advecter);
 }
 
 void slmm_check_ref2sphere (homme::Int ie, homme::Cartesian3D* p) {
@@ -1783,7 +1599,7 @@ void slmm_csl_set_elem_data (
   homme::Real* q, homme::Int nelem_in_patch)
 {
   slmm_assert(g_csl_mpi);
-  homme::cslmpi::set_elem_data(*g_csl_mpi, ie - 1, metdet, qdp, dp, q,
+  homme::islmpi::set_elem_data(*g_csl_mpi, ie - 1, metdet, qdp, dp, q,
                                nelem_in_patch);
 }
 
@@ -1794,7 +1610,7 @@ void slmm_csl (
   slmm_assert(g_csl_mpi);
   *info = 0;
   try {
-    homme::cslmpi::step<4>(*g_csl_mpi, nets - 1, nete - 1,
+    homme::islmpi::step<4>(*g_csl_mpi, nets - 1, nete - 1,
                            dep_points, minq, maxq);
   } catch (const std::exception& e) {
     std::cerr << e.what();
