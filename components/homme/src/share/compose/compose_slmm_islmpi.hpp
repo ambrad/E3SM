@@ -18,18 +18,6 @@ typedef slmm::Real Real;
 
 namespace ko = Kokkos;
 
-// Fortran array wrappers.
-template <typename T> using FA2 =
-  Kokkos::View<T**,    Kokkos::LayoutLeft, Kokkos::HostSpace>;
-template <typename T> using FA3 =
-  Kokkos::View<T***,   Kokkos::LayoutLeft, Kokkos::HostSpace>;
-template <typename T> using FA4 =
-  Kokkos::View<T****,  Kokkos::LayoutLeft, Kokkos::HostSpace>;
-template <typename T> using FA5 =
-  Kokkos::View<T*****, Kokkos::LayoutLeft, Kokkos::HostSpace>;
-
-struct Cartesian3D { Real x, y, z; };
-
 namespace mpi { //todo Share with cedr.
 class Parallel {
   MPI_Comm comm_;

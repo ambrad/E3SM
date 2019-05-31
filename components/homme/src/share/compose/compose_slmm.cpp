@@ -1,6 +1,7 @@
 #include "compose_slmm.hpp"
 #include "compose_slmm_siqk.hpp"
 #include "compose_slmm_advecter.hpp"
+#include "compose_slmm_homme.hpp"
 
 #include <sys/time.h>
 #include <mpi.h>
