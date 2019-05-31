@@ -463,6 +463,24 @@ Int getbuf (Buffer& buf, const Int& os, Int& i1, Int& i2) {
 void pack_dep_points_sendbuf_pass1(IslMpi& cm);
 void pack_dep_points_sendbuf_pass2(IslMpi& cm, const FA4<const Real>& dep_points);
 
+void calc_q_extrema(IslMpi& cm, const Int& nets, const Int& nete);
+
+void calc_rmt_q(IslMpi& cm);
+void calc_own_q(IslMpi& cm, const Int& nets, const Int& nete,
+                const FA4<const Real>& dep_points,
+                const FA4<Real>& q_min, const FA4<Real>& q_max);
+void copy_q(IslMpi& cm, const Int& nets,
+            const FA4<Real>& q_min, const FA4<Real>& q_max);
+
+/* dep_points is const in principle, but if lev <=
+   semi_lagrange_nearest_point_lev, a departure point may be altered if the
+   winds take it outside of the comm halo.
+ */
+void step(
+  IslMpi& cm, const Int nets, const Int nete,
+  Cartesian3D* dep_points_r,    // dep_points(1:3, 1:np, 1:np)
+  Real* q_min_r, Real* q_max_r); // q_{min,max}(1:np, 1:np, lev, 1:qsize, ie-nets+1)
+
 } // namespace islmpi
 } // namespace homme
 
