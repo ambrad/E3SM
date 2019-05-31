@@ -490,6 +490,13 @@ void calc_q_extrema (IslMpi& cm, const Int& nets, const Int& nete) {
   }  
 }
 
+void calc_q_extrema (IslMpi& cm, const Int& nets, const Int& nete) {
+  switch (cm.np) {
+  case 4: calc_q_extrema<4>(cm, nets, nete); break;
+  default: slmm_throw_if(true, "np " << cm.np << "not supported");
+  }
+}
+
 template <Int np>
 void calc_q (const IslMpi& cm, const Int& src_lid, const Int& lev,
              const Real* const dep_point, Real* const q_tgt, const bool use_q) {
@@ -597,6 +604,13 @@ void calc_rmt_q (IslMpi& cm) {
   }
 }
 
+void calc_rmt_q (IslMpi& cm) {
+  switch (cm.np) {
+  case 4: calc_rmt_q<4>(cm); break;
+  default: slmm_throw_if(true, "np " << cm.np << "not supported");
+  }
+}
+
 template <Int np>
 void calc_own_q (IslMpi& cm, const Int& nets, const Int& nete,
                  const FA4<const Real>& dep_points,
@@ -618,6 +632,15 @@ void calc_own_q (IslMpi& cm, const Int& nets, const Int& nete,
       for (Int iq = 0; iq < cm.qsize; ++iq)
         q_tgt(e.k, e.lev, iq) = qtmp[iq];
     }
+  }
+}
+
+void calc_own_q (IslMpi& cm, const Int& nets, const Int& nete,
+                 const FA4<const Real>& dep_points,
+                 const FA4<Real>& q_min, const FA4<Real>& q_max) {
+  switch (cm.np) {
+  case 4: calc_own_q<4>(cm, nets, nete, dep_points, q_min, q_max); break;
+  default: slmm_throw_if(true, "np " << cm.np << "not supported");
   }
 }
 
@@ -652,13 +675,11 @@ void copy_q (IslMpi& cm, const Int& nets,
    semi_lagrange_nearest_point_lev, a departure point may be altered if the
    winds take it outside of the comm halo.
  */
-template <int np>
 void step (
   IslMpi& cm, const Int nets, const Int nete,
   Cartesian3D* dep_points_r,    // dep_points(1:3, 1:np, 1:np)
   Real* q_min_r, Real* q_max_r) // q_{min,max}(1:np, 1:np, lev, 1:qsize, ie-nets+1)
 {
-  static_assert(np == 4, "SLMM CSL with special MPI is supported for np 4 only.");
   slmm_assert(cm.np == 4);
 
   const FA4<Real>
@@ -683,12 +704,12 @@ void step (
   // Send requests.
   isend(cm);
   // While waiting, compute q extrema in each of my elements.
-  calc_q_extrema<np>(cm, nets, nete);
+  calc_q_extrema(cm, nets, nete);
   // Wait for the departure point requests. Since this requires a thread
   // barrier, at the same time make sure the send buffer is free for use.
   recv_and_wait_on_send(cm);
   // Compute the requested q for departure points from remotes.
-  calc_rmt_q<np>(cm);
+  calc_rmt_q(cm);
   // Send q data.
   isend(cm, false /* want_req */, true /* skip_if_empty */);
   // Set up to receive q for each of my departure point requests sent to
@@ -697,7 +718,7 @@ void step (
   setup_irecv(cm, true /* skip_if_empty */);
   // While waiting to get my data from remotes, compute q for departure points
   // that have remained in my elements.
-  calc_own_q<np>(cm, nets, nete, dep_points, q_min, q_max);
+  calc_own_q(cm, nets, nete, dep_points, q_min, q_max);
   // Receive remote q data and use this to fill in the rest of my fields.
   recv(cm, true /* skip_if_empty */);
   copy_q(cm, nets, q_min, q_max);
@@ -827,8 +848,7 @@ void slmm_csl (
   slmm_assert(g_csl_mpi);
   *info = 0;
   try {
-    homme::islmpi::step<4>(*g_csl_mpi, nets - 1, nete - 1,
-                           dep_points, minq, maxq);
+    homme::islmpi::step(*g_csl_mpi, nets - 1, nete - 1, dep_points, minq, maxq);
   } catch (const std::exception& e) {
     std::cerr << e.what();
     *info = -1;
