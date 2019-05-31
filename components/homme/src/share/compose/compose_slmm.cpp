@@ -8,9 +8,6 @@
 #include <cmath>
 #include <iostream>
 #include <sstream>
-#include <map>
-#include <set>
-#include <list>
 #include <vector>
 #include <memory>
 #include <limits>
@@ -171,25 +168,6 @@ int get_nearest_point (const siqk::Mesh<ko::HostSpace>& m,
   return get_src_cell(m, v, my_ic);
 }
 } // namespace slmm
-
-#ifdef SLMM_MAIN
-/*
-  mpicxx -O3 -g -DSLMM_MAIN -Wall -pedantic -fopenmp -std=c++11 -I/home/ambradl/lib/kokkos/cpu/include slmm.cpp -L/home/ambradl/lib/kokkos/cpu/lib -lkokkos -ldl -llapack -lblas; if [ $? == 0 ]; then OMP_PROC_BIND=false OMP_NUM_THREADS=2 mpirun -np 14 ./a.out; fi
- */
-int main (int argc, char** argv) {
-  int ret = 0;
-  Kokkos::initialize(argc, argv);
-  try {
-    int nerr = 0;
-    nerr += slmm::unittest();
-    std::cerr << (nerr ? "FAIL" : "PASS") << "ED\n";
-  } catch (const std::exception& e) {
-    std::cerr << e.what();
-  }
-  Kokkos::finalize();
-  return ret;
-}
-#endif
 
 #include "compose_slmm_islmpi.hpp"
 
@@ -785,16 +763,6 @@ int slmm_unittest () {
 }
 
 #include <cstdlib>
-
-struct Experiment {
-  int sl_mpi, halo;
-};
-
-template <typename T> T strto(const char* s);
-template <> inline int strto (const char* s) { return std::atoi(s); }
-template <> inline bool strto (const char* s) { return std::atoi(s); }
-template <> inline double strto (const char* s) { return std::atof(s); }
-template <> inline std::string strto (const char* s) { return std::string(s); }
 
 static homme::islmpi::IslMpi::Ptr g_csl_mpi;
 
