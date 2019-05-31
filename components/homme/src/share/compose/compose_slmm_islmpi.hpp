@@ -436,6 +436,12 @@ void extend_local_meshes(const mpi::Parallel& p,
 void analyze_dep_points(IslMpi& cm, const Int& nets, const Int& nete,
                         const FA4<Real>& dep_points);
 
+void init_mylid_with_comm_threaded(IslMpi& cm, const Int& nets, const Int& nete);
+void setup_irecv(IslMpi& cm, const bool skip_if_empty = false);
+void isend(IslMpi& cm, const bool want_req = true, const bool skip_if_empty = false);
+void recv_and_wait_on_send(IslMpi& cm);
+void recv(IslMpi& cm, const bool skip_if_empty = false);
+
 } // namespace islmpi
 } // namespace homme
 
