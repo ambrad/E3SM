@@ -12,5 +12,11 @@ add_library (${COMPOSE_LIBRARY}
   compose_slmm_util.cpp
   compose_slmm_departure_point.cpp
   compose_slmm_advecter.cpp
-  compose_slmm_islmpi.cpp)
+  compose_slmm_islmpi.cpp
+  compose_slmm_islmpi_adp.cpp
+  compose_slmm_islmpi_comm.cpp
+  compose_slmm_islmpi_pack.cpp
+  compose_slmm_islmpi_q.cpp
+  compose_slmm_islmpi_qextrema.cpp
+  compose_slmm_islmpi_step.cpp)
 link_to_kokkos(${COMPOSE_LIBRARY})

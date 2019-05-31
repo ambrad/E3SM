@@ -4,6 +4,7 @@
 #include "compose.hpp"
 #include "compose_slmm.hpp"
 #include "compose_slmm_advecter.hpp"
+#include "compose_slmm_homme.hpp"
 
 #include <mpi.h>
 
@@ -431,6 +432,10 @@ void extend_local_meshes(const mpi::Parallel& p,
                          const FixedCapList<IslMpi::ElemData>& eds,
                          slmm::Advecter& advecter);
 } // namespace extend_halo
+
+void analyze_dep_points(IslMpi& cm, const Int& nets, const Int& nete,
+                        const FA4<Real>& dep_points);
+
 } // namespace islmpi
 } // namespace homme
 
