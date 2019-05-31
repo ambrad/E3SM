@@ -2,6 +2,7 @@
 #define INCLUDE_COMPOSE_SLMM_ISLMPI_HPP
 
 #include "compose_slmm.hpp"
+#include "compose_slmm_advecter.hpp"
 
 #include <mpi.h>
 
@@ -13,6 +14,20 @@
 namespace homme {
 typedef slmm::Int Int;
 typedef slmm::Real Real;
+
+namespace ko = Kokkos;
+
+// Fortran array wrappers.
+template <typename T> using FA2 =
+  Kokkos::View<T**,    Kokkos::LayoutLeft, Kokkos::HostSpace>;
+template <typename T> using FA3 =
+  Kokkos::View<T***,   Kokkos::LayoutLeft, Kokkos::HostSpace>;
+template <typename T> using FA4 =
+  Kokkos::View<T****,  Kokkos::LayoutLeft, Kokkos::HostSpace>;
+template <typename T> using FA5 =
+  Kokkos::View<T*****, Kokkos::LayoutLeft, Kokkos::HostSpace>;
+
+struct Cartesian3D { Real x, y, z; };
 
 namespace mpi { //todo Share with cedr.
 class Parallel {
@@ -314,6 +329,94 @@ struct BufferLayoutArray {
 private:
   ListOfLists<LayoutTriple> d_;
   Int nlev_;
+};
+
+// Meta and bulk data for the interpolation SL MPI communication pattern.
+struct IslMpi {
+  typedef std::shared_ptr<IslMpi> Ptr;
+
+  template <typename Datatype>
+  using Array = ko::View<Datatype, ko::LayoutRight, ko::HostSpace>;
+  typedef Array<Int**> IntArray2D;
+
+  struct GidRank {
+    Int
+      gid,      // cell global ID
+      rank,     // the rank that owns the cell
+      rank_idx, // index into list of ranks with whom I communicate, including me
+      lid_on_rank,     // the local ID of the cell on the owning rank
+      lid_on_rank_idx; // index into list of LIDs on the rank
+  };
+  // The comm and real data associated with an element patch, the set of
+  // elements surrounding an owned cell.
+  struct ElemData {
+    struct OwnItem {
+      short lev;   // level index
+      short k;     // linearized GLL index
+    };
+    struct RemoteItem {
+      Int q_extrema_ptr, q_ptr; // pointers into recvbuf
+      short lev, k;
+    };
+    GidRank* me;                     // the owned cell
+    FixedCapList<GidRank> nbrs;      // the cell's neighbors (but including me)
+    Int nin1halo;                    // nbrs[0:n]
+    FixedCapList<OwnItem> own;       // points whose q are computed with own rank's data
+    FixedCapList<RemoteItem> rmt;    // points computed by a remote rank's data
+    IntArray2D src;                  // src(lev,k) = get_src_cell
+    Array<Real**[2]> q_extrema;
+    const Real* metdet, * qdp, * dp; // the owned cell's data
+    Real* q;
+  };
+
+  const mpi::Parallel::Ptr p;
+  const slmm::Advecter::ConstPtr advecter;
+  const Int np, np2, nlev, qsize, qsized, nelemd, halo;
+
+  FixedCapList<ElemData> ed; // this rank's owned cells, indexed by LID
+
+  // IDs.
+  FixedCapList<Int> ranks, nx_in_rank, mylid_with_comm, mylid_with_comm_tid_ptr;
+  ListOfLists <Int> nx_in_lid, lid_on_rank;
+  BufferLayoutArray bla;
+
+  // MPI comm data.
+  ListOfLists<Real> sendbuf, recvbuf;
+  FixedCapList<Int> sendcount;
+  FixedCapList<mpi::Request> sendreq, recvreq;
+
+  bool horiz_openmp;
+#ifdef HORIZ_OPENMP
+  ListOfLists<omp_lock_t> ri_lidi_locks;
+#endif
+
+  Array<Real**> rwork;
+
+  IslMpi (const mpi::Parallel::Ptr& ip, const slmm::Advecter::ConstPtr& advecter,
+          Int inp, Int inlev, Int iqsize, Int iqsized, Int inelemd, Int ihalo)
+    : p(ip), advecter(advecter),
+      np(inp), np2(np*np), nlev(inlev), qsize(iqsize), qsized(iqsized), nelemd(inelemd),
+      halo(ihalo)
+  {}
+
+  ~IslMpi () {
+#ifdef HORIZ_OPENMP
+    const Int nrmtrank = static_cast<Int>(ranks.n()) - 1;
+    for (Int ri = 0; ri < nrmtrank; ++ri) {
+      auto&& locks = ri_lidi_locks(ri);
+      for (auto& lock: locks) {
+        // The following call is causing a seg fault on at least one Cray KNL
+        // system. It doesn't kill the run b/c it occurs after main exits. Not
+        // calling this is a memory leak, but it's innocuous in this case. Thus,
+        // comment it out:
+        //omp_destroy_lock(&lock);
+        // It's possible that something in the OpenMP runtime shuts down before
+        // this call, and that's the problem. If that turns out to be it, I
+        // should make a compose_finalize() call somewhere.
+      }
+    }
+#endif
+  }
 };
 
 } // namespace islmpi
