@@ -50,7 +50,7 @@ public:
   bool amroot () const { return rank() == root(); }
 };
 
-Parallel::Ptr make_parallel (MPI_Comm comm) {
+inline Parallel::Ptr make_parallel (MPI_Comm comm) {
   return std::make_shared<Parallel>(comm);
 }
 
@@ -114,7 +114,7 @@ int irecv (const Parallel& p, T* buf, int count, int src, int tag, Request* ireq
   return ret;
 }
 
-int waitany (int count, Request* reqs, int* index, MPI_Status* stats = nullptr) {
+inline int waitany (int count, Request* reqs, int* index, MPI_Status* stats = nullptr) {
 #ifdef COMPOSE_DEBUG_MPI
   std::vector<MPI_Request> vreqs(count);
   for (int i = 0; i < count; ++i) vreqs[i] = reqs[i].request;
@@ -129,7 +129,7 @@ int waitany (int count, Request* reqs, int* index, MPI_Status* stats = nullptr) 
 #endif
 }
 
-int waitall (int count, Request* reqs, MPI_Status* stats = nullptr) {
+inline int waitall (int count, Request* reqs, MPI_Status* stats = nullptr) {
 #ifdef COMPOSE_DEBUG_MPI
   std::vector<MPI_Request> vreqs(count);
   for (int i = 0; i < count; ++i) vreqs[i] = reqs[i].request;
@@ -419,6 +419,29 @@ struct IslMpi {
   }
 };
 
+inline int get_tid () {
+#ifdef HORIZ_OPENMP
+  return omp_get_thread_num();
+#else
+  return 0;
+#endif
+}
+
+inline int get_num_threads () {
+#ifdef HORIZ_OPENMP
+  return omp_get_num_threads();
+#else
+  return 1;
+#endif
+}
+
+void setup_comm_pattern(IslMpi& cm, const Int* nbr_id_rank, const Int* nirptr);
+
+namespace extend_halo {
+void extend_local_meshes(const mpi::Parallel& p,
+                         const FixedCapList<IslMpi::ElemData>& eds,
+                         slmm::Advecter& advecter);
+} // namespace extend_halo
 } // namespace islmpi
 } // namespace homme
 
