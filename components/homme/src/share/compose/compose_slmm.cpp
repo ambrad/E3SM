@@ -169,6 +169,7 @@ int get_nearest_point (const siqk::Mesh<ko::HostSpace>& m,
 }
 } // namespace slmm
 
+#include "compose.hpp"
 #include "compose_slmm_islmpi.hpp"
 
 namespace homme {
@@ -177,7 +178,7 @@ namespace islmpi {
 // other elements on other ranks. For horizontal threading, need to find the
 // subsets that fit within the usual horizontal-threading nets:nete ranges.
 void init_mylid_with_comm_threaded (IslMpi& cm, const Int& nets, const Int& nete) {
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
 # pragma omp master
 #endif
@@ -187,7 +188,7 @@ void init_mylid_with_comm_threaded (IslMpi& cm, const Int& nets, const Int& nete
     cm.mylid_with_comm_tid_ptr.reset_capacity(nthr+1, true);
     cm.horiz_openmp = get_num_threads() > 1;
   }
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
 #endif
   const int tid = get_tid();
@@ -200,13 +201,13 @@ void init_mylid_with_comm_threaded (IslMpi& cm, const Int& nets, const Int& nete
                                        cm.mylid_with_comm.end(), nete+1);
     cm.mylid_with_comm_tid_ptr(tid+1) = end - cm.mylid_with_comm.begin();
   }
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
 #endif
 }
 
 void setup_irecv (IslMpi& cm, const bool skip_if_empty = false) {
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp master
 #endif
   {
@@ -225,7 +226,7 @@ void setup_irecv (IslMpi& cm, const bool skip_if_empty = false) {
 }
 
 void isend (IslMpi& cm, const bool want_req = true, const bool skip_if_empty = false) {
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
 # pragma omp master
 #endif
@@ -241,26 +242,26 @@ void isend (IslMpi& cm, const bool want_req = true, const bool skip_if_empty = f
 }
 
 void recv_and_wait_on_send (IslMpi& cm) {
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp master
 #endif
   {
     mpi::waitall(cm.sendreq.n(), cm.sendreq.data());
     mpi::waitall(cm.recvreq.n(), cm.recvreq.data());
   }
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
 #endif
 }
 
 void recv (IslMpi& cm, const bool skip_if_empty = false) {
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp master
 #endif
   {
     mpi::waitall(cm.recvreq.n(), cm.recvreq.data());
   }
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
 #endif
 }
@@ -271,7 +272,7 @@ void analyze_dep_points (IslMpi& cm, const Int& nets, const Int& nete,
   const auto myrank = cm.p->rank();
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
   cm.bla.zero();
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp for
 #endif
   for (Int ri = 0; ri < nrmtrank; ++ri)
@@ -311,7 +312,7 @@ void analyze_dep_points (IslMpi& cm, const Int& nets, const Int& nete,
         } else {
           const auto ri = ed.nbrs(sci).rank_idx;
           const auto lidi = ed.nbrs(sci).lid_on_rank_idx;
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
           omp_lock_t* lock;
           if (cm.horiz_openmp) {
             lock = &cm.ri_lidi_locks(ri,lidi);
@@ -322,13 +323,13 @@ void analyze_dep_points (IslMpi& cm, const Int& nets, const Int& nete,
             ++cm.nx_in_lid(ri,lidi);
             ++cm.bla(ri,lidi,lev).xptr;
           }
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
           if (cm.horiz_openmp) omp_unset_lock(lock);
 #endif
         }
       }
   }
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
 # pragma omp for
 #endif
@@ -375,7 +376,7 @@ Int getbuf (Buffer& buf, const Int& os, Int& i1, Int& i2) {
  */
 void pack_dep_points_sendbuf_pass1 (IslMpi& cm) {
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp for
 #endif
   for (Int ri = 0; ri < nrmtrank; ++ri) {
@@ -431,7 +432,7 @@ void pack_dep_points_sendbuf_pass2 (IslMpi& cm, const FA4<const Real>& dep_point
         const Int ri = nbr.rank_idx;
         const Int lidi = nbr.lid_on_rank_idx;
         auto&& sb = cm.sendbuf(ri);
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
         omp_lock_t* lock;
         if (cm.horiz_openmp) {
           lock = &cm.ri_lidi_locks(ri,lidi);
@@ -445,7 +446,7 @@ void pack_dep_points_sendbuf_pass2 (IslMpi& cm, const FA4<const Real>& dep_point
           xptr = t.xptr + 3*cnt;
           ++t.cnt;
         }
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
         if (cm.horiz_openmp) omp_unset_lock(lock);
 #endif
         slmm_assert_high(xptr > 0);
@@ -553,7 +554,7 @@ void calc_q (const IslMpi& cm, const Int& src_lid, const Int& lev,
 template <Int np>
 void calc_rmt_q (IslMpi& cm) {
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp for
 #endif
   for (Int ri = 0; ri < nrmtrank; ++ri) {

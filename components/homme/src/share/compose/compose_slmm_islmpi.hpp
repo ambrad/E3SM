@@ -1,6 +1,7 @@
 #ifndef INCLUDE_COMPOSE_SLMM_ISLMPI_HPP
 #define INCLUDE_COMPOSE_SLMM_ISLMPI_HPP
 
+#include "compose.hpp"
 #include "compose_slmm.hpp"
 #include "compose_slmm_advecter.hpp"
 
@@ -298,7 +299,7 @@ struct BufferLayoutArray {
 
   void zero () {
     const Int ni = d_.n();
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 #   pragma omp for
 #endif
     for (Int i = 0; i < ni; ++i) {
@@ -386,7 +387,7 @@ struct IslMpi {
   FixedCapList<mpi::Request> sendreq, recvreq;
 
   bool horiz_openmp;
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
   ListOfLists<omp_lock_t> ri_lidi_locks;
 #endif
 
@@ -400,7 +401,7 @@ struct IslMpi {
   {}
 
   ~IslMpi () {
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
     const Int nrmtrank = static_cast<Int>(ranks.n()) - 1;
     for (Int ri = 0; ri < nrmtrank; ++ri) {
       auto&& locks = ri_lidi_locks(ri);
@@ -420,7 +421,7 @@ struct IslMpi {
 };
 
 inline int get_tid () {
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
   return omp_get_thread_num();
 #else
   return 0;
@@ -428,7 +429,7 @@ inline int get_tid () {
 }
 
 inline int get_num_threads () {
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
   return omp_get_num_threads();
 #else
   return 1;

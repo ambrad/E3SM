@@ -1,3 +1,4 @@
+#include "compose.hpp"
 #include "compose_slmm_islmpi.hpp"
 
 #include <set>
@@ -616,7 +617,7 @@ void alloc_mpi_buffers (IslMpi& cm, const Rank2Gids& rank2rmtgids,
   cm.bla.init(nrmtrank, nlid_per_rank.data(), cm.nlev);
   cm.sendbuf.init(nrmtrank, sendsz.data());
   cm.recvbuf.init(nrmtrank, recvsz.data());
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
   cm.ri_lidi_locks.init(nrmtrank, nlid_per_rank.data());
   for (Int ri = 0; ri < nrmtrank; ++ri) {
     auto&& locks = cm.ri_lidi_locks(ri);

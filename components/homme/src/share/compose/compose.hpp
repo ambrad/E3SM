@@ -1,0 +1,12 @@
+#ifndef INCLUDE_COMPOSE_HPP
+#define INCLUDE_COMPOSE_HPP
+
+#ifdef HORIZ_OPENMP
+# define COMPOSE_HORIZ_OPENMP
+#endif
+
+#ifdef COLUMN_OPENMP
+# define COMPOSE_COLUMN_OPENMP
+#endif
+
+#endif
