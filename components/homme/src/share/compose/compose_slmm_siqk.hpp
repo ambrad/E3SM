@@ -1,11 +1,9 @@
 #ifndef INCLUDE_COMPOSE_SLMM_SIQK_HPP
 #define INCLUDE_COMPOSE_SLMM_SIQK_HPP
 
-#include <mpi.h>
+#include "compose_homme.hpp"
 
-//> begin SIQK
-// To make this initial integration less messy, inline SIQK in this translation
-// unit. Once we've put together the Compose library, I'll remove this code.
+#include <mpi.h>
 
 #ifndef INCLUDE_SIQK_DEFS_HPP
 #define INCLUDE_SIQK_DEFS_HPP
@@ -16,18 +14,16 @@
 #include <iostream>
 #include <sstream>
 
-#include <Kokkos_Core.hpp>
-
 #ifdef SIQK_TIME
 # include <unistd.h>
 # include <sys/time.h>
 # include <sys/resource.h>
 #endif
 
-// Always want this for GPU.
-#define SIQK_NONRECURSIVE
-
 namespace siqk {
+using homme::Int;
+using homme::Real;
+
 namespace ko = Kokkos;
 
 #define pr(m) do {                                          \
@@ -69,9 +65,6 @@ KOKKOS_INLINE_FUNCTION static void error (const char* const msg)
 
 KOKKOS_INLINE_FUNCTION static void message (const char* const msg)
 { printf("%s\n", msg); }
-
-typedef int Int;
-typedef double Real;
 
 #ifdef KOKKOS_HAVE_CUDA
 typedef ko::LayoutLeft Layout;

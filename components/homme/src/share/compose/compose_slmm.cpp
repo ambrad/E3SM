@@ -1,7 +1,6 @@
 #include "compose_slmm.hpp"
 #include "compose_slmm_siqk.hpp"
 #include "compose_slmm_advecter.hpp"
-#include "compose_slmm_homme.hpp"
 #include "compose.hpp"
 #include "compose_slmm_islmpi.hpp"
 

@@ -4,7 +4,6 @@
 #include "compose.hpp"
 #include "compose_slmm.hpp"
 #include "compose_slmm_advecter.hpp"
-#include "compose_slmm_homme.hpp"
 
 #include <mpi.h>
 
