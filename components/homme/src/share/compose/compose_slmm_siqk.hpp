@@ -66,11 +66,7 @@ KOKKOS_INLINE_FUNCTION static void error (const char* const msg)
 KOKKOS_INLINE_FUNCTION static void message (const char* const msg)
 { printf("%s\n", msg); }
 
-#ifdef KOKKOS_HAVE_CUDA
-typedef ko::LayoutLeft Layout;
-#else
 typedef ko::LayoutRight Layout;
-#endif
 
 // SIQK's array types.
 typedef ko::View<Real*[3], Layout> Vec3s;

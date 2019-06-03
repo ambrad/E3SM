@@ -147,8 +147,6 @@ public:
     slmm_throw_if(cubed_sphere_map == 0 && Alg::is_cisl(alg_),
                   "When cubed_sphere_map = 0, SLMM supports only ISL methods.");
     local_mesh_.resize(nelem);
-    if (Alg::is_cisl(alg_))
-      mass_mix_.resize(np4_);
     if (nearest_point_permitted_lev_bdy_ >= 0)
       local_mesh_nearest_point_data_.resize(nelem);
   }
@@ -192,20 +190,6 @@ public:
     return local_mesh_nearest_point_data_[ie];
   }
 
-  std::vector<Real>& rhs_buffer (const Int qsize) {
-    rhs_.resize(np2_*qsize);
-    return rhs_;
-  }
-
-  std::vector<Real>& mass_mix_buffer () { return mass_mix_; }
-
-  const Real* M_tgt (const Int& ie) {
-    slmm_assert(ie >= 0 && ie < nelem());
-    return alg_ == Alg::jct ?
-      mass_tgt_.data() :
-      mass_tgt_.data() + ie*np4_;
-  }
-
   bool nearest_point_permitted (const Int& lev) const {
     return lev <= nearest_point_permitted_lev_bdy_;
   }
@@ -218,7 +202,6 @@ private:
   std::vector<LocalMesh<ES> > local_mesh_;
   // For CISL:
   const Int tq_order_;
-  std::vector<Real> mass_tgt_, mass_mix_, rhs_;
   // For recovery from get_src_cell failure:
   Int nearest_point_permitted_lev_bdy_;
   std::vector<MeshNearestPointData> local_mesh_nearest_point_data_;

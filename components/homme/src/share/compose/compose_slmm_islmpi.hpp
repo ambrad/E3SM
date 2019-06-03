@@ -329,7 +329,7 @@ struct IslMpi {
   typedef std::shared_ptr<IslMpi> Ptr;
 
   template <typename Datatype>
-  using Array = ko::View<Datatype, ko::LayoutRight, ES>;
+  using Array = ko::View<Datatype, siqk::Layout, ES>;
   typedef Array<Int**> IntArray2D;
 
   struct GidRank {
