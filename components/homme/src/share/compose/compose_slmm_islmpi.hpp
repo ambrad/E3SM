@@ -322,10 +322,14 @@ private:
 
 // Meta and bulk data for the interpolation SL MPI communication pattern.
 struct IslMpi {
+  using ES = ko::DefaultExecutionSpace;
+  using Advecter = slmm::Advecter<ES>;
+  using LocalMesh = slmm::LocalMesh<ES>;
+
   typedef std::shared_ptr<IslMpi> Ptr;
 
   template <typename Datatype>
-  using Array = ko::View<Datatype, ko::LayoutRight, ko::HostSpace>;
+  using Array = ko::View<Datatype, ko::LayoutRight, ES>;
   typedef Array<Int**> IntArray2D;
 
   struct GidRank {
@@ -359,7 +363,7 @@ struct IslMpi {
   };
 
   const mpi::Parallel::Ptr p;
-  const slmm::Advecter::ConstPtr advecter;
+  const Advecter::ConstPtr advecter;
   const Int np, np2, nlev, qsize, qsized, nelemd, halo;
 
   FixedCapList<ElemData> ed; // this rank's owned cells, indexed by LID
@@ -381,7 +385,7 @@ struct IslMpi {
 
   Array<Real**> rwork;
 
-  IslMpi (const mpi::Parallel::Ptr& ip, const slmm::Advecter::ConstPtr& advecter,
+  IslMpi (const mpi::Parallel::Ptr& ip, const Advecter::ConstPtr& advecter,
           Int inp, Int inlev, Int iqsize, Int iqsized, Int inelemd, Int ihalo)
     : p(ip), advecter(advecter),
       np(inp), np2(np*np), nlev(inlev), qsize(iqsize), qsized(iqsized), nelemd(inelemd),
@@ -429,7 +433,7 @@ void setup_comm_pattern(IslMpi& cm, const Int* nbr_id_rank, const Int* nirptr);
 namespace extend_halo {
 void extend_local_meshes(const mpi::Parallel& p,
                          const FixedCapList<IslMpi::ElemData>& eds,
-                         slmm::Advecter& advecter);
+                         IslMpi::Advecter& advecter);
 } // namespace extend_halo
 
 void analyze_dep_points(IslMpi& cm, const Int& nets, const Int& nete,

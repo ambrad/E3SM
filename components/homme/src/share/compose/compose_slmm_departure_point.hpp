@@ -5,9 +5,84 @@
 
 namespace slmm {
 
+/* A local mesh is described by the following arrays:
+       p: 3 x #nodes, the array of vertices.
+       e: max(#verts) x #elems, the array of element base-0 indices.
+       nml: 3 x #edges, the array of edge normals.
+       en: max(#verts) x #elems, the array of edge-normal base-0 indices.
+     e. e indexes p. e(i,j) == -1 in column j indicates that j:end are not used.
+     nml. As a mesh is refined, cancellation error makes an edge normal based
+   off of an element's vertices increasingly inaccurate. Roughly, if an edge
+   subtends angle phi of the sphere, -log10(phi/(2 pi)) digits are lost in the
+   edge normal. Therefore, we compute edge normals offline, since in certain
+   meshes, they can be computed by an accurate means. E.g., in a cubed-sphere
+   mesh, the whole line of a square face can be used to compute the edge
+   normal. Furthermore, there are far fewer unique edge normals than edges.
+ */
+template <typename ES = ko::DefaultExecutionSpace>
+struct LocalMesh {
+#if 0
+  typedef typename siqk::InExeSpace<siqk::ConstVec3s, ES>::type RealArray;
+  typedef typename siqk::InExeSpace<siqk::ConstIdxs, ES>::type IntArray;
+#else
+  typedef typename siqk::Vec3s RealArray;
+  typedef typename siqk::Idxs IntArray;
+#endif
+
+  RealArray p, nml;
+  IntArray e, en;
+
+  // tgt_elem is the index of the target element in this mesh.
+  Int tgt_elem;
+
+  LocalMesh () {}
+
+  LocalMesh (const LocalMesh<ko::HostSpace>& m) {
+    typename siqk::InExeSpace<siqk::Vec3s, ES>::type tp, tnml;
+    typename siqk::InExeSpace<siqk::Idxs, ES>::type te, ten;
+    siqk::resize_and_copy(tp, m.p); p = tp;
+    siqk::resize_and_copy(tnml, m.nml); nml = tnml;
+    siqk::resize_and_copy(te, m.e); e = te;
+    siqk::resize_and_copy(ten, m.en); en = ten;
+    tgt_elem = m.tgt_elem;
+  }
+};
+
+// Inward-oriented normal. In practice, we want to form high-quality normals
+// using information about the cubed-sphere mesh. This is a low-quality
+// brute-force calculation.
+template <typename geo>
+void fill_normals (LocalMesh<ko::DefaultHostExecutionSpace>& m) {
+  // Count number of edges.
+  Int ne = 0;
+  for (Int ip = 0; ip < nslices(m.e); ++ip)
+    for (Int iv = 0; iv < szslice(m.e); ++iv)
+      if (m.e(ip,iv) == -1) break; else ++ne;
+  // Fill.
+  siqk::Idxs::HostMirror en("en", nslices(m.e), szslice(m.e));
+  ko::deep_copy(en, -1);
+  siqk::Vec3s::HostMirror nml("nml", ne);
+  Int ie = 0;
+  for (Int ip = 0; ip < nslices(m.e); ++ip)
+    for (Int iv = 0; iv < szslice(m.e); ++iv)
+      if (m.e(ip,iv) == -1)
+        break;
+      else {
+        // Somewhat complicated next node index.
+        const Int iv_next = (iv+1 == szslice(m.e) ? 0 :
+                             (m.e(ip,iv+1) == -1 ? 0 : iv+1));
+        geo::edge_normal(slice(m.p, m.e(ip, iv)), slice(m.p, m.e(ip, iv_next)),
+                         slice(nml, ie));
+        en(ip,iv) = ie;
+        ++ie;
+      }
+  m.en = en;
+  m.nml = nml;
+}
+
 // Is v inside, including on, the quad ic?
 template <typename ES>
-inline bool is_inside (const siqk::Mesh<ES>& m,
+inline bool is_inside (const LocalMesh<ES>& m,
                        const Real* v, const Real& atol, const Int& ic) {
   using slmm::slice;
   const auto cell = slice(m.e, ic);
@@ -33,7 +108,7 @@ inline bool is_inside (const siqk::Mesh<ES>& m,
 // case, edges are great arcs, so again this impl works. In contrast,
 // calc_sphere_to_ref has to be specialized on cubed_sphere_map.
 template <typename ES>
-int get_src_cell (const siqk::Mesh<ES>& m, // Local mesh.
+int get_src_cell (const LocalMesh<ES>& m, // Local mesh.
                   const Real* v, // 3D Cartesian point.
                   const Int my_ic = -1) { // Target cell in the local mesh.
   using slmm::len;
@@ -99,12 +174,12 @@ inline Real calc_dist (const V3a& p0, const V3b& p1) {
 }
 
 template <typename ES>
-inline Real calc_dist (const siqk::Mesh<ES>& m, const Int& i0, const Int& i1) {
+inline Real calc_dist (const LocalMesh<ES>& m, const Int& i0, const Int& i1) {
   return calc_dist(slice(m.p, i0), slice(m.p, i1));
 }
 
 template <typename ES>
-void find_external_edges (const siqk::Mesh<ES>& m, std::vector<Int>& external_edges) {
+void find_external_edges (const LocalMesh<ES>& m, std::vector<Int>& external_edges) {
   const Int ncell = nslices(m.e);
   const Int nedge = 4*ncell;
   // Get the minimum edge length to normalize distance.
@@ -171,7 +246,7 @@ void find_external_edges (const siqk::Mesh<ES>& m, std::vector<Int>& external_ed
 }
 
 template <typename ES>
-void fill_perim (const siqk::Mesh<ES>& m, MeshNearestPointData<ES>& d) {
+void fill_perim (const LocalMesh<ES>& m, MeshNearestPointData<ES>& d) {
   std::vector<Int> external_edges;
   find_external_edges(m, external_edges);
   const Int nee = external_edges.size();
@@ -210,7 +285,7 @@ void calc_approx_nearest_point_on_arc (
 }
 
 template <typename ES>
-void calc (const siqk::Mesh<ES>& m, const MeshNearestPointData<ES>& d, Real* v) {
+void calc (const LocalMesh<ES>& m, const MeshNearestPointData<ES>& d, Real* v) {
   using geo = siqk::SphereGeometry;
   const Int nedge = d.perimp.size();
   const auto canpoa = [&] (const Int& ie, Real* vn) {
@@ -240,7 +315,9 @@ void calc (const siqk::Mesh<ES>& m, const MeshNearestPointData<ES>& d, Real* v) 
 }
 } // namespace nearest_point
 
-Int unittest(const siqk::Mesh<ko::DefaultExecutionSpace>& m, const Int tgt_elem);
+Int unittest(const LocalMesh<ko::DefaultExecutionSpace>& m, const Int tgt_elem);
+
+std::string to_string(const LocalMesh<ko::DefaultHostExecutionSpace>& m);
 
 } // namespace slmm
 

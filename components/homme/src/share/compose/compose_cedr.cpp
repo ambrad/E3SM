@@ -5283,14 +5283,12 @@ void init_tracers (CDR& q, const Int nlev, const Int qsize,
   q.init_tracers(qsize, need_conservation);
 }
 
+#include "compose_homme.hpp"
+
 namespace sl { // For sl_advection.F90
-// Fortran array wrappers.
-template <typename T> using FA2 =
-  Kokkos::View<T**,    Kokkos::LayoutLeft, Kokkos::HostSpace>;
-template <typename T> using FA4 =
-  Kokkos::View<T****,  Kokkos::LayoutLeft, Kokkos::HostSpace>;
-template <typename T> using FA5 =
-  Kokkos::View<T*****, Kokkos::LayoutLeft, Kokkos::HostSpace>;
+using homme::FA2;
+using homme::FA4;
+using homme::FA5;
 
 // Following are naming conventions in element_state and sl_advection:
 //     elem(ie)%state%Q(:,:,k,q) is tracer mixing ratio.

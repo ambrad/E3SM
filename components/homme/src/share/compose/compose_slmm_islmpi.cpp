@@ -1,5 +1,6 @@
 #include "compose.hpp"
 #include "compose_slmm_islmpi.hpp"
+#include "compose_slmm_departure_point.hpp"
 
 #include <set>
 #include <memory>
@@ -194,12 +195,11 @@ void collect_gid_rank (const mpi::Parallel& p, FixedCapList<ElemData>& eds) {
 }
 
 void extend_local_meshes (const mpi::Parallel& p, const FixedCapList<ElemData>& eds,
-                          slmm::Advecter& advecter) {
+                          IslMpi::Advecter& advecter) {
   using slmm::slice;
   using slmm::nslices;
   using slmm::szslice;
   using slmm::len;
-  using slmm::LocalMesh;
   using RealArray3 = ko::View<Real***, ko::HostSpace>;
 
   static const Int tag = 24;
@@ -327,9 +327,9 @@ void extend_local_meshes (const mpi::Parallel& p, const FixedCapList<ElemData>& 
     auto e0 = local_mesh.e;
     const Int ncell = ed.nbrs.size();
     slmm_assert(szslice(p0) == 3 && szslice(e0) == 4);
-    local_mesh.p = LocalMesh::RealArray("p", 4*ncell);
+    local_mesh.p = IslMpi::LocalMesh::RealArray("p", 4*ncell);
     auto& p = local_mesh.p;
-    local_mesh.e = LocalMesh::IntArray("e", ncell, 4);
+    local_mesh.e = IslMpi::LocalMesh::IntArray("e", ncell, 4);
     auto& e = local_mesh.e;
     // Copy in old data.
     for (Int pi = 0; pi < nslices(p0); ++pi)
@@ -368,7 +368,7 @@ void extend_local_meshes (const mpi::Parallel& p, const FixedCapList<ElemData>& 
       }
     }
     // Recompute all normals.
-    siqk::test::fill_normals<siqk::SphereGeometry>(local_mesh);
+    slmm::fill_normals<siqk::SphereGeometry>(local_mesh);
   }
 }
 } // namespace extend_halo

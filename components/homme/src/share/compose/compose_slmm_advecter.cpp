@@ -2,15 +2,17 @@
 
 namespace slmm {
 
-void Advecter
+template <typename ES>
+void Advecter<ES>
 ::init_meta_data (const Int nelem_global, const Int* lid2facenum) {
   const auto nelemd = local_mesh_.size();
-  lid2facenum_ = Ints("Advecter::lid2facenum", nelemd);
+  lid2facenum_ = Ints<ES>("Advecter::lid2facenum", nelemd);
   std::copy(lid2facenum, lid2facenum + nelemd, lid2facenum_.data());
   s2r_.init(cubed_sphere_map_, nelem_global, lid2facenum_);
 }
 
-void Advecter::check_ref2sphere (const Int ie, const Real* p_homme) {
+template <typename ES>
+void Advecter<ES>::check_ref2sphere (const Int ie, const Real* p_homme) {
   const auto& m = local_mesh(ie);
   Real ref_coord[2];
   siqk::sqr::Info info;
@@ -36,5 +38,7 @@ void Advecter::check_ref2sphere (const Int ie, const Real* p_homme) {
   if ( ! s2r_.check(ie, m))
     printf("COMPOSE SphereToRef::check return false: ie = %d\n", ie);
 }
+
+template class Advecter<ko::DefaultExecutionSpace>;
 
 } // namespace slmm

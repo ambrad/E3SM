@@ -6,6 +6,7 @@
 #include <Kokkos_Core.hpp>
 
 #include "compose.hpp"
+#include "compose_homme.hpp"
 #include "compose_test.hpp"
 
 #define pr(m) do {                              \
@@ -333,10 +334,10 @@ const char* WindFieldType::inputs[] =
 namespace ko = Kokkos;
 
 // Fortran array wrappers.
-template <typename T> using FA2 = ko::View<T**,   ko::LayoutLeft,ko::HostSpace>;
-template <typename T> using FA3 = ko::View<T***,  ko::LayoutLeft,ko::HostSpace>;
-template <typename T> using FA4 = ko::View<T****, ko::LayoutLeft,ko::HostSpace>;
-template <typename T> using FA5 = ko::View<T*****,ko::LayoutLeft,ko::HostSpace>;
+using homme::FA2;
+using homme::FA3;
+using homme::FA4;
+using homme::FA5;
 
 struct StandaloneTracersTester {
   typedef std::shared_ptr<StandaloneTracersTester> Ptr;

@@ -2,8 +2,9 @@
 #include "compose_slmm_departure_point.hpp"
 
 namespace slmm {
-int get_nearest_point (const siqk::Mesh<ko::HostSpace>& m,
-                       const nearest_point::MeshNearestPointData<ko::HostSpace>& d,
+template <typename ES>
+int get_nearest_point (const LocalMesh<ES>& m,
+                       const nearest_point::MeshNearestPointData<ES>& d,
                        Real* v, const Int my_ic) {
   nearest_point::calc(m, d, v);
   return get_src_cell(m, v, my_ic);

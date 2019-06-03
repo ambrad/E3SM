@@ -18,7 +18,7 @@
 namespace homme {
 namespace islmpi {
 
-IslMpi::Ptr init (const slmm::Advecter::ConstPtr& advecter,
+IslMpi::Ptr init (const IslMpi::Advecter::ConstPtr& advecter,
                   const mpi::Parallel::Ptr& p,
                   Int np, Int nlev, Int qsize, Int qsized, Int nelemd,
                   const Int* nbr_id_rank, const Int* nirptr,
@@ -32,7 +32,7 @@ IslMpi::Ptr init (const slmm::Advecter::ConstPtr& advecter,
 
 // For const clarity, take the non-const advecter as an arg, even though cm
 // already has a ref to the const'ed one.
-void finalize_local_meshes (IslMpi& cm, slmm::Advecter& advecter) {
+void finalize_local_meshes (IslMpi& cm, IslMpi::Advecter& advecter) {
   if (cm.halo == 2) extend_halo::extend_local_meshes(*cm.p, cm.ed, advecter);
 }
 
@@ -49,12 +49,12 @@ void set_elem_data (IslMpi& cm, const Int ie, const Real* metdet, const Real* qd
 }
 } // namespace islmpi
 
-static slmm::Advecter::Ptr g_advecter;
+static islmpi::IslMpi::Advecter::Ptr g_advecter;
 
 void slmm_init (const Int np, const Int nelem, const Int nelemd,
                 const Int transport_alg, const Int cubed_sphere_map,
                 const Int sl_nearest_point_lev, const Int* lid2facenum) {
-  g_advecter = std::make_shared<slmm::Advecter>(
+  g_advecter = std::make_shared<islmpi::IslMpi::Advecter>(
     np, nelemd, transport_alg, cubed_sphere_map, sl_nearest_point_lev);
   g_advecter->init_meta_data(nelem, lid2facenum);
 }

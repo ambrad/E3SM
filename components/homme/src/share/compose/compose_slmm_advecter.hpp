@@ -9,25 +9,16 @@
 #include <memory>
 
 namespace slmm {
-typedef Kokkos::View<Int*, ko::HostSpace> Ints;
-
-//TODO We might switch to one 
-// Local mesh patch centered on the target element.
-struct LocalMesh : public siqk::Mesh<ko::HostSpace> {
-  typedef siqk::Mesh<ko::HostSpace> Super;
-  typedef typename Super::IntArray IntArray;
-  typedef typename Super::RealArray RealArray;
-
-  // tgt_elem is the index of the target element in this mesh.
-  Int tgt_elem;
-};
+template <typename ES>
+using Ints = Kokkos::View<Int*, ES>;
 
 // Wrap call to siqk::sqr::calc_sphere_to_ref. That impl supports only
 // cubed_sphere_map=2, and we want to keep it that way. This wrapper supports,
 // in addition, cubed_sphere_map=0.
+template <typename ES>
 struct SphereToRef {
   void init (const Int cubed_sphere_map, const Int nelem_global,
-             const Ints::const_type& lid2facenum) {
+             const typename Ints<ES>::const_type& lid2facenum) {
     cubed_sphere_map_ = cubed_sphere_map;
     ne_ = static_cast<Int>(std::round(std::sqrt((nelem_global / 6))));
     slmm_throw_if( ! (cubed_sphere_map_ != 0 || 6*ne_*ne_ == nelem_global),
@@ -42,7 +33,7 @@ struct SphereToRef {
 
   // See siqk::sqr::calc_sphere_to_ref for docs.
   void calc_sphere_to_ref (
-    const Int& ie, const LocalMesh& m,
+    const Int& ie, const LocalMesh<ES>& m,
     const Real q[3],
     Real& a, Real& b,
     siqk::sqr::Info* const info = nullptr,
@@ -61,7 +52,7 @@ struct SphereToRef {
     }
   }
 
-  bool check (const Int& ie, const LocalMesh& m) const {
+  bool check (const Int& ie, const LocalMesh<ES>& m) const {
     if (cubed_sphere_map_ != 0) return true;
     const Int face = lid2facenum_(ie); //assume: ie corresponds to m.tgt_elem.
     Real cent[3] = {0};
@@ -75,7 +66,7 @@ struct SphereToRef {
 
 private:
   Int ne_, cubed_sphere_map_;
-  Ints::const_type lid2facenum_;
+  typename Ints<ES>::const_type lid2facenum_;
 
   // Follow the description given in
   //     coordinate_systems_mod::unit_face_based_cube_to_unit_sphere.
@@ -116,8 +107,9 @@ private:
 };
 
 // Advecter has purely mesh-local knowledge, with once exception noted below.
+template <typename ES>
 class Advecter {
-  typedef nearest_point::MeshNearestPointData<ko::HostSpace> MeshNearestPointData;
+  typedef nearest_point::MeshNearestPointData<ES> MeshNearestPointData;
 
 public:
   typedef std::shared_ptr<Advecter> Ptr;
@@ -166,11 +158,11 @@ public:
   Int np4 () const { return np4_; }
   Int nelem () const { return local_mesh_.size(); }
   Int tq_order () const { return tq_order_; }
-  Alg::Enum alg () const { return alg_; }
+  typename Alg::Enum alg () const { return alg_; }
   bool is_cisl () const { return Alg::is_cisl(alg_); }
 
   Int cubed_sphere_map () const { return cubed_sphere_map_; }
-  const Ints& lid2facenum () const { return lid2facenum_; }
+  const Ints<ES>& lid2facenum () const { return lid2facenum_; }
 
   // nelem_global is used only if cubed_sphere_map = 0, to deduce ne in
   // nelem_global = 6 ne^2. That is b/c cubed_sphere_map = 0 is supported in
@@ -186,11 +178,11 @@ public:
   // point on the sphere. Check that we map it to a GLL ref point.
   void check_ref2sphere(const Int ie, const Real* p_homme);
 
-  const LocalMesh& local_mesh (const Int ie) const {
+  const LocalMesh<ES>& local_mesh (const Int ie) const {
     slmm_assert(ie < static_cast<Int>(local_mesh_.size()));
     return local_mesh_[ie];
   }
-  LocalMesh& local_mesh (const Int ie) {
+  LocalMesh<ES>& local_mesh (const Int ie) {
     slmm_assert(ie < static_cast<Int>(local_mesh_.size()));
     return local_mesh_[ie];
   }
@@ -218,12 +210,12 @@ public:
     return lev <= nearest_point_permitted_lev_bdy_;
   }
 
-  const SphereToRef& s2r () const { return s2r_; }
+  const SphereToRef<ES>& s2r () const { return s2r_; }
 
 private:
-  const Alg::Enum alg_;
+  const typename Alg::Enum alg_;
   const Int np_, np2_, np4_, cubed_sphere_map_;
-  std::vector<LocalMesh> local_mesh_;
+  std::vector<LocalMesh<ES> > local_mesh_;
   // For CISL:
   const Int tq_order_;
   std::vector<Real> mass_tgt_, mass_mix_, rhs_;
@@ -231,33 +223,37 @@ private:
   Int nearest_point_permitted_lev_bdy_;
   std::vector<MeshNearestPointData> local_mesh_nearest_point_data_;
   // Meta data obtained at initialization that can be used later.
-  Ints lid2facenum_;
-  SphereToRef s2r_;
+  Ints<ES> lid2facenum_;
+  SphereToRef<ES> s2r_;
 };
 
+template <typename ES>
 template <typename Array3D>
-void Advecter::init_local_mesh_if_needed (const Int ie, const Array3D& corners,
-                                          const Real* p_inside) {
+void Advecter<ES>
+::init_local_mesh_if_needed (const Int ie, const Array3D& corners,
+                             const Real* p_inside) {
   slmm_assert(ie < static_cast<Int>(local_mesh_.size()));
   if (local_mesh_[ie].p.extent_int(0) != 0) return;
-  auto& m = local_mesh_[ie];
   const Int
     nd = 3,
     nvert = corners.extent_int(1),
     ncell = corners.extent_int(2),
     N = nvert*ncell;
-  m.p = typename LocalMesh::RealArray("p", N);
-  m.e = typename LocalMesh::IntArray("e", ncell, nvert);
+  typedef LocalMesh<ko::DefaultHostExecutionSpace> LM;
+  LM m;
+  m.p = typename LM::RealArray("p", N);
+  m.e = typename LM::IntArray("e", ncell, nvert);
   for (Int ci = 0, k = 0; ci < ncell; ++ci)
     for (Int vi = 0; vi < nvert; ++vi, ++k) {
       for (int j = 0; j < nd; ++j)
         m.p(k,j) = corners(j,vi,ci);
       m.e(ci,vi) = k;
     }
-  siqk::test::fill_normals<siqk::SphereGeometry>(m);
+  fill_normals<siqk::SphereGeometry>(m);
   m.tgt_elem = slmm::get_src_cell(m, p_inside);
   slmm_assert(m.tgt_elem >= 0 &&
               m.tgt_elem < ncell);
+  local_mesh_[ie] = LocalMesh<ES>(m);
   if (nearest_point_permitted_lev_bdy_ >= 0)
     nearest_point::fill_perim(local_mesh_[ie],
                               local_mesh_nearest_point_data_[ie]);

@@ -196,7 +196,6 @@ public:
   }
 };
 
-std::string to_string(const siqk::Mesh<siqk::ko::DefaultExecutionSpace>& m);
 } // namespace slmm
 
 #endif

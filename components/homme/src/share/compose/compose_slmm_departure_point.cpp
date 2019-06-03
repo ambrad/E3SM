@@ -26,7 +26,7 @@ Int test_canpoa () {
 }
 
 template <typename ES>
-Int test_calc (const siqk::Mesh<ES>& m, const Int& tgt_ic,
+Int test_calc (const LocalMesh<ES>& m, const Int& tgt_ic,
                const MeshNearestPointData<ES>& md)
 {
   Int nerr = 0;
@@ -52,7 +52,7 @@ Int test_calc (const siqk::Mesh<ES>& m, const Int& tgt_ic,
 }
 
 template <typename ES>
-Int test_fill_perim (const siqk::Mesh<ES>& m, const Int& tgt_ic,
+Int test_fill_perim (const LocalMesh<ES>& m, const Int& tgt_ic,
                      const MeshNearestPointData<ES>& md) {
   using geo = siqk::SphereGeometry;
   Int nerr = 0;
@@ -91,7 +91,7 @@ Int test_fill_perim (const siqk::Mesh<ES>& m, const Int& tgt_ic,
 
 } // namespace nearest_point
 
-Int unittest (const siqk::Mesh<ko::DefaultExecutionSpace>& m, const Int tgt_elem) {
+Int unittest (const LocalMesh<ko::DefaultExecutionSpace>& m, const Int tgt_elem) {
   typedef nearest_point::MeshNearestPointData<> MeshNearestPointData;
 
   Int nerr = 0, ne;
@@ -130,6 +130,31 @@ Int unittest (const siqk::Mesh<ko::DefaultExecutionSpace>& m, const Int tgt_elem
     nerr += ne;
   }
   return nerr;
+}
+
+std::string to_string (const LocalMesh<ko::DefaultHostExecutionSpace>& m) {
+  std::stringstream ss;
+  ss.precision(17);
+  ss << "(mesh nnode " << nslices(m.p) << " nelem " << nslices(m.e);
+  for (Int ie = 0; ie < nslices(m.e); ++ie) {
+    ss << "\n  (elem " << ie;
+    ss << " (";
+    for (Int iv = 0; iv < szslice(m.e); ++iv) ss << " " << m.e(ie,iv);
+    ss << ")";
+    for (Int iv = 0; iv < szslice(m.e); ++iv) {
+      ss << "\n     (p";
+      for (Int d = 0; d < 3; ++d)
+        ss << " " << m.p(m.e(ie,iv),d);
+      ss << ")";
+      ss << "\n     (nml";
+      for (Int d = 0; d < 3; ++d)
+        ss << " " << m.nml(m.en(ie,iv),d);
+      ss << ")";
+    }
+    ss << "))";
+  }
+  ss << ")";
+  return ss.str();
 }
 
 } // namespace slmm

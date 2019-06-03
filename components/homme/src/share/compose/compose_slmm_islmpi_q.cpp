@@ -152,15 +152,15 @@ void calc_q (const IslMpi& cm, const Int& src_lid, const Int& lev,
   // Interpolate.
   Real rx[4], ry[4];
   switch (cm.advecter->alg()) {
-  case slmm::Advecter::Alg::csl_gll:
+  case IslMpi::Advecter::Alg::csl_gll:
     slmm::gll_np4_eval(ref_coord[0], rx);
     slmm::gll_np4_eval(ref_coord[1], ry);
     break;
-  case slmm::Advecter::Alg::csl_gll_subgrid:
+  case IslMpi::Advecter::Alg::csl_gll_subgrid:
     slmm::gll_np4_subgrid_eval(ref_coord[0], rx);
     slmm::gll_np4_subgrid_eval(ref_coord[1], ry);
     break;
-  case slmm::Advecter::Alg::csl_gll_exp:
+  case IslMpi::Advecter::Alg::csl_gll_exp:
     slmm::gll_np4_subgrid_exp_eval(ref_coord[0], rx);
     slmm::gll_np4_subgrid_exp_eval(ref_coord[1], ry);
     break;
