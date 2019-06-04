@@ -41,8 +41,10 @@ void Advecter<MT>::check_ref2sphere (const Int ie, const Real* p_homme) {
 
 template <typename MT>
 void Advecter<MT>::sync_to_device() {
-  //todo
-  local_mesh_d_ = local_mesh_h_;
+  if ( ! slmm::OnGpu<typename MT::DES>::value) {
+    local_mesh_d_ = local_mesh_h_;
+    return;
+  }
 }
 
 template class Advecter<>;
