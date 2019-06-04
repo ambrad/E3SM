@@ -9,6 +9,7 @@
 #include <memory>
 
 namespace slmm {
+
 template <typename ES>
 using Ints = Kokkos::View<Int*, ES>;
 
@@ -109,7 +110,13 @@ private:
 // Advecter has purely mesh-local knowledge, with once exception noted below.
 template <typename ES>
 class Advecter {
+  typedef ko::DefaultHostExecutionSpace HES;
+  typedef ES DES;
+
   typedef nearest_point::MeshNearestPointData<ES> MeshNearestPointData;
+
+  typedef ko::View<LocalMesh<HES>*, HES> LocalMeshesH;
+  typedef ko::View<LocalMesh<DES>*, DES> LocalMeshesD;
 
 public:
   typedef std::shared_ptr<Advecter> Ptr;
@@ -146,15 +153,18 @@ public:
   {
     slmm_throw_if(cubed_sphere_map == 0 && Alg::is_cisl(alg_),
                   "When cubed_sphere_map = 0, SLMM supports only ISL methods.");
-    local_mesh_.resize(nelem);
+    local_mesh_h_ = LocalMeshesH("local_mesh_h_", nelem);
     if (nearest_point_permitted_lev_bdy_ >= 0)
       local_mesh_nearest_point_data_.resize(nelem);
   }
 
+  // After Advecter is fully initialized, send all the data to device.
+  void sync_to_device();
+
   Int np  () const { return np_ ; }
   Int np2 () const { return np2_; }
   Int np4 () const { return np4_; }
-  Int nelem () const { return local_mesh_.size(); }
+  Int nelem () const { return local_mesh_h_.extent_int(0); }
   Int tq_order () const { return tq_order_; }
   typename Alg::Enum alg () const { return alg_; }
   bool is_cisl () const { return Alg::is_cisl(alg_); }
@@ -176,13 +186,22 @@ public:
   // point on the sphere. Check that we map it to a GLL ref point.
   void check_ref2sphere(const Int ie, const Real* p_homme);
 
+  const LocalMesh<ES>& local_mesh_host (const Int ie) const {
+    slmm_assert(ie < static_cast<Int>(local_mesh_.size()));
+    return local_mesh_h_(ie);
+  }
+  LocalMesh<ES>& local_mesh_host (const Int ie) {
+    slmm_assert(ie < static_cast<Int>(local_mesh_.size()));
+    return local_mesh_h_(ie);
+  }
+
   const LocalMesh<ES>& local_mesh (const Int ie) const {
     slmm_assert(ie < static_cast<Int>(local_mesh_.size()));
-    return local_mesh_[ie];
+    return local_mesh_d_(ie);
   }
   LocalMesh<ES>& local_mesh (const Int ie) {
     slmm_assert(ie < static_cast<Int>(local_mesh_.size()));
-    return local_mesh_[ie];
+    return local_mesh_d_(ie);
   }
 
   const MeshNearestPointData& nearest_point_data (const Int ie) const {
@@ -199,7 +218,8 @@ public:
 private:
   const typename Alg::Enum alg_;
   const Int np_, np2_, np4_, cubed_sphere_map_;
-  std::vector<LocalMesh<ES> > local_mesh_;
+  LocalMeshesH local_mesh_h_;
+  LocalMeshesD local_mesh_d_;
   // For CISL:
   const Int tq_order_;
   // For recovery from get_src_cell failure:
@@ -216,14 +236,14 @@ void Advecter<ES>
 ::init_local_mesh_if_needed (const Int ie, const Array3D& corners,
                              const Real* p_inside) {
   slmm_assert(ie < static_cast<Int>(local_mesh_.size()));
-  if (local_mesh_[ie].p.extent_int(0) != 0) return;
+  if (local_mesh_h_(ie).p.extent_int(0) != 0) return;
   const Int
     nd = 3,
     nvert = corners.extent_int(1),
     ncell = corners.extent_int(2),
     N = nvert*ncell;
-  typedef LocalMesh<ko::DefaultHostExecutionSpace> LM;
-  LM m;
+  auto& m = local_mesh_h_(ie);
+  typedef LocalMesh<DES> LM;
   m.p = typename LM::RealArray("p", N);
   m.e = typename LM::IntArray("e", ncell, nvert);
   for (Int ci = 0, k = 0; ci < ncell; ++ci)
@@ -236,12 +256,11 @@ void Advecter<ES>
   m.tgt_elem = slmm::get_src_cell(m, p_inside);
   slmm_assert(m.tgt_elem >= 0 &&
               m.tgt_elem < ncell);
-  local_mesh_[ie] = LocalMesh<ES>(m);
   if (nearest_point_permitted_lev_bdy_ >= 0)
-    nearest_point::fill_perim(local_mesh_[ie],
+    nearest_point::fill_perim(local_mesh_h_(ie),
                               local_mesh_nearest_point_data_[ie]);
 }
 
-}
+} // namespace slmm
 
 #endif

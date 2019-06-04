@@ -21,31 +21,13 @@ namespace slmm {
  */
 template <typename ES = ko::DefaultExecutionSpace>
 struct LocalMesh {
-#if 0
-  typedef typename siqk::InExeSpace<siqk::ConstVec3s, ES>::type RealArray;
-  typedef typename siqk::InExeSpace<siqk::ConstIdxs, ES>::type IntArray;
-#else
-  typedef typename siqk::Vec3s RealArray;
-  typedef typename siqk::Idxs IntArray;
-#endif
+  using RealArray = ko::View<Real*[3], siqk::Layout, ES>;
+  using IntArray = ko::View<Int**, siqk::Layout, ES>;
 
   RealArray p, nml;
   IntArray e, en;
-
   // tgt_elem is the index of the target element in this mesh.
   Int tgt_elem;
-
-  LocalMesh () {}
-
-  LocalMesh (const LocalMesh<ko::HostSpace>& m) {
-    typename siqk::InExeSpace<siqk::Vec3s, ES>::type tp, tnml;
-    typename siqk::InExeSpace<siqk::Idxs, ES>::type te, ten;
-    siqk::resize_and_copy(tp, m.p); p = tp;
-    siqk::resize_and_copy(tnml, m.nml); nml = tnml;
-    siqk::resize_and_copy(te, m.e); e = te;
-    siqk::resize_and_copy(ten, m.en); en = ten;
-    tgt_elem = m.tgt_elem;
-  }
 };
 
 // Inward-oriented normal. In practice, we want to form high-quality normals

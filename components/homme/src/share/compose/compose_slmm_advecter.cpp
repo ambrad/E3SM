@@ -5,7 +5,7 @@ namespace slmm {
 template <typename ES>
 void Advecter<ES>
 ::init_meta_data (const Int nelem_global, const Int* lid2facenum) {
-  const auto nelemd = local_mesh_.size();
+  const auto nelemd = local_mesh_h_.extent_int(0);
   lid2facenum_ = Ints<ES>("Advecter::lid2facenum", nelemd);
   std::copy(lid2facenum, lid2facenum + nelemd, lid2facenum_.data());
   s2r_.init(cubed_sphere_map_, nelem_global, lid2facenum_);
@@ -13,7 +13,7 @@ void Advecter<ES>
 
 template <typename ES>
 void Advecter<ES>::check_ref2sphere (const Int ie, const Real* p_homme) {
-  const auto& m = local_mesh(ie);
+  const auto& m = local_mesh_host(ie);
   Real ref_coord[2];
   siqk::sqr::Info info;
   const Real tol = s2r_.tol();
@@ -37,6 +37,12 @@ void Advecter<ES>::check_ref2sphere (const Int ie, const Real* p_homme) {
            info.success, info.n_iterations);
   if ( ! s2r_.check(ie, m))
     printf("COMPOSE SphereToRef::check return false: ie = %d\n", ie);
+}
+
+template <typename ES>
+void Advecter<ES>::sync_to_device() {
+  //todo
+  local_mesh_d_ = local_mesh_h_;
 }
 
 template class Advecter<ko::DefaultExecutionSpace>;

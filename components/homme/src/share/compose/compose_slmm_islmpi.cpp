@@ -287,7 +287,7 @@ void extend_local_meshes (const mpi::Parallel& p, const FixedCapList<ElemData>& 
         const auto it = owngid2lid.find(gid);
         slmm_assert(it != owngid2lid.end());
         const auto lid = it->second;
-        const auto& local_mesh = advecter.local_mesh(lid);
+        const auto& local_mesh = advecter.local_mesh_host(lid);
         const auto cell = slice(local_mesh.e, local_mesh.tgt_elem);
         slmm_assert(szslice(local_mesh.e) == 4 && cell[3] != -1);
         const auto& p = local_mesh.p;
@@ -322,7 +322,7 @@ void extend_local_meshes (const mpi::Parallel& p, const FixedCapList<ElemData>& 
   // Extend the local meshes.
   for (Int lid = 0; lid < eds.size(); ++lid) {
     const auto& ed = eds(lid);
-    auto& local_mesh = advecter.local_mesh(lid);
+    auto& local_mesh = advecter.local_mesh_host(lid);
     auto p0 = local_mesh.p;
     auto e0 = local_mesh.e;
     const Int ncell = ed.nbrs.size();
@@ -356,7 +356,7 @@ void extend_local_meshes (const mpi::Parallel& p, const FixedCapList<ElemData>& 
         const auto it = owngid2lid.find(gid);
         slmm_assert(it != owngid2lid.end());
         const Int lid = it->second;
-        const auto& local_mesh_other = advecter.local_mesh(lid);
+        const auto& local_mesh_other = advecter.local_mesh_host(lid);
         const auto cell_other = slice(local_mesh_other.e, local_mesh_other.tgt_elem);
         const auto& p_other = local_mesh_other.p;
         for (Int v = 0; v < 4; ++v) {

@@ -33,7 +33,9 @@ IslMpi::Ptr init (const IslMpi::Advecter::ConstPtr& advecter,
 // For const clarity, take the non-const advecter as an arg, even though cm
 // already has a ref to the const'ed one.
 void finalize_local_meshes (IslMpi& cm, IslMpi::Advecter& advecter) {
-  if (cm.halo == 2) extend_halo::extend_local_meshes(*cm.p, cm.ed, advecter);
+  if (cm.halo == 2)
+    extend_halo::extend_local_meshes(*cm.p, cm.ed, advecter);
+  advecter.sync_to_device();
 }
 
 // Set pointers to HOMME data arrays.
@@ -66,7 +68,7 @@ int slmm_unittest () {
   {
     ne = 0;
     for (int i = 0; i < homme::g_advecter->nelem(); ++i) {
-      const auto& m = homme::g_advecter->local_mesh(i);
+      const auto& m = homme::g_advecter->local_mesh_host(i);
       ne += slmm::unittest(m, m.tgt_elem);
     }
     if (ne)

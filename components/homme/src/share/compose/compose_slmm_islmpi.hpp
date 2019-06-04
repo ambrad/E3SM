@@ -147,7 +147,7 @@ namespace islmpi {
 #endif
 
 // FixedCapList, ListOfLists, and BufferLayoutArray are simple and somewhat
-// problem-specific array data structures for use in CslMpi.
+// problem-specific array data structures for use in IslMpi.
 template <typename T>
 struct FixedCapList {
   FixedCapList () : n_(0) {}
