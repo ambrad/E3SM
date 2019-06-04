@@ -182,6 +182,8 @@ private:
   Int n_;
 };
 
+template <typename ES> struct BufferLayoutArray;
+
 template <typename T, typename ES = slmm::MachineTraits::DES>
 struct ListOfLists {
   struct List {
@@ -241,7 +243,7 @@ struct ListOfLists {
 
 private:
   template <typename T1> using Array = ko::View<T1*, ES>;
-  friend class BufferLayoutArray;
+  friend class BufferLayoutArray<ES>;
   Array<T> d_;
   Array<Int> ptr_;
   SLMM_KIF T* data () { return d_.data(); }
@@ -250,24 +252,25 @@ private:
 
 struct LayoutTriple {
   Int xptr, qptr, cnt;
-  LayoutTriple () : LayoutTriple(0) {}
-  LayoutTriple (const Int& val) { xptr = qptr = cnt = 0; }
+  SLMM_KIF LayoutTriple () : LayoutTriple(0) {}
+  SLMM_KIF LayoutTriple (const Int& val) { xptr = qptr = cnt = 0; }
 };
 
+template <typename ES = slmm::MachineTraits::DES>
 struct BufferLayoutArray {
   struct BufferRankLayoutArray {
-    LayoutTriple& operator() (const Int& lidi, const Int& lev) {
+    SLMM_KIF LayoutTriple& operator() (const Int& lidi, const Int& lev) {
       slmm_assert_high(lidi >= 0 && lev >= 0 && lidi*nlev_ + lev < d_.n());
       return d_(lidi*nlev_ + lev);
     }
-    const LayoutTriple& operator() (const Int& lidi, const Int& lev) const {
+    SLMM_KIF const LayoutTriple& operator() (const Int& lidi, const Int& lev) const {
       slmm_assert_high(lidi >= 0 && lev >= 0 && lidi*nlev_ + lev < d_.n());
       return d_(lidi*nlev_ + lev);
     }
 
   private:
     friend class BufferLayoutArray;
-    BufferRankLayoutArray (const ListOfLists<LayoutTriple>::List& d, const Int& nlev)
+    SLMM_KIF BufferRankLayoutArray (const ListOfLists<LayoutTriple>::List& d, const Int& nlev)
       : d_(d), nlev_(nlev) {}
     ListOfLists<LayoutTriple>::List d_;
     Int nlev_;
@@ -299,26 +302,26 @@ struct BufferLayoutArray {
     }
   }
 
-  LayoutTriple& operator() (const Int& ri, const Int& lidi, const Int& lev) {
+  SLMM_KIF LayoutTriple& operator() (const Int& ri, const Int& lidi, const Int& lev) {
     slmm_assert_high(ri >= 0 && ri < d_.n() &&
                      lidi >= 0 && lev >= 0 &&
                      lidi*nlev_ + lev < d_(ri).n());
     return d_.data()[d_.ptr_[ri] + lidi*nlev_ + lev];
   }
-  const LayoutTriple& operator() (const Int& ri, const Int& lidi, const Int& lev) const {
+  SLMM_KIF const LayoutTriple& operator() (const Int& ri, const Int& lidi, const Int& lev) const {
     return const_cast<BufferLayoutArray*>(this)->operator()(ri, lidi, lev);
   }
-  BufferRankLayoutArray operator() (const Int& ri) {
+  SLMM_KIF BufferRankLayoutArray operator() (const Int& ri) {
     slmm_assert_high(ri >= 0 && ri < d_.n());
     return BufferRankLayoutArray(d_(ri), nlev_);
   }
-  const BufferRankLayoutArray operator() (const Int& ri) const {
+  SLMM_KIF const BufferRankLayoutArray operator() (const Int& ri) const {
     slmm_assert_high(ri >= 0 && ri < d_.n());
     return BufferRankLayoutArray(d_(ri), nlev_);
   }
 
 private:
-  ListOfLists<LayoutTriple> d_;
+  ListOfLists<LayoutTriple, ES> d_;
   Int nlev_;
 };
 
@@ -378,7 +381,7 @@ struct IslMpi {
   // IDs.
   FixedCapList<Int> ranks, nx_in_rank, mylid_with_comm, mylid_with_comm_tid_ptr;
   ListOfLists <Int> nx_in_lid, lid_on_rank;
-  BufferLayoutArray bla;
+  BufferLayoutArray<> bla;
 
   // MPI comm data.
   ListOfLists<Real> sendbuf, recvbuf;
