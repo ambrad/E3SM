@@ -108,12 +108,12 @@ private:
 };
 
 // Advecter has purely mesh-local knowledge, with once exception noted below.
-template <typename ES>
+template <typename MT = MachineTraits>
 class Advecter {
-  typedef ko::DefaultHostExecutionSpace HES;
-  typedef ES DES;
+  typedef typename MT::HES HES;
+  typedef typename MT::DES DES;
 
-  typedef nearest_point::MeshNearestPointData<ES> MeshNearestPointData;
+  typedef nearest_point::MeshNearestPointData<DES> MeshNearestPointData;
 
   typedef ko::View<LocalMesh<HES>*, HES> LocalMeshesH;
   typedef ko::View<LocalMesh<DES>*, DES> LocalMeshesD;
@@ -170,7 +170,7 @@ public:
   bool is_cisl () const { return Alg::is_cisl(alg_); }
 
   Int cubed_sphere_map () const { return cubed_sphere_map_; }
-  const Ints<ES>& lid2facenum () const { return lid2facenum_; }
+  const Ints<DES>& lid2facenum () const { return lid2facenum_; }
 
   // nelem_global is used only if cubed_sphere_map = 0, to deduce ne in
   // nelem_global = 6 ne^2. That is b/c cubed_sphere_map = 0 is supported in
@@ -186,20 +186,20 @@ public:
   // point on the sphere. Check that we map it to a GLL ref point.
   void check_ref2sphere(const Int ie, const Real* p_homme);
 
-  const LocalMesh<ES>& local_mesh_host (const Int ie) const {
+  const LocalMesh<DES>& local_mesh_host (const Int ie) const {
     slmm_assert(ie < static_cast<Int>(local_mesh_.size()));
     return local_mesh_h_(ie);
   }
-  LocalMesh<ES>& local_mesh_host (const Int ie) {
+  LocalMesh<DES>& local_mesh_host (const Int ie) {
     slmm_assert(ie < static_cast<Int>(local_mesh_.size()));
     return local_mesh_h_(ie);
   }
 
-  const LocalMesh<ES>& local_mesh (const Int ie) const {
+  const LocalMesh<DES>& local_mesh (const Int ie) const {
     slmm_assert(ie < static_cast<Int>(local_mesh_.size()));
     return local_mesh_d_(ie);
   }
-  LocalMesh<ES>& local_mesh (const Int ie) {
+  LocalMesh<DES>& local_mesh (const Int ie) {
     slmm_assert(ie < static_cast<Int>(local_mesh_.size()));
     return local_mesh_d_(ie);
   }
@@ -213,7 +213,7 @@ public:
     return lev <= nearest_point_permitted_lev_bdy_;
   }
 
-  const SphereToRef<ES>& s2r () const { return s2r_; }
+  const SphereToRef<DES>& s2r () const { return s2r_; }
 
 private:
   const typename Alg::Enum alg_;
@@ -226,13 +226,13 @@ private:
   Int nearest_point_permitted_lev_bdy_;
   std::vector<MeshNearestPointData> local_mesh_nearest_point_data_;
   // Meta data obtained at initialization that can be used later.
-  Ints<ES> lid2facenum_;
-  SphereToRef<ES> s2r_;
+  Ints<DES> lid2facenum_;
+  SphereToRef<DES> s2r_;
 };
 
-template <typename ES>
+template <typename MT>
 template <typename Array3D>
-void Advecter<ES>
+void Advecter<MT>
 ::init_local_mesh_if_needed (const Int ie, const Array3D& corners,
                              const Real* p_inside) {
   slmm_assert(ie < static_cast<Int>(local_mesh_.size()));

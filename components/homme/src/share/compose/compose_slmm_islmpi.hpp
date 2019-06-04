@@ -148,7 +148,7 @@ namespace islmpi {
 
 // FixedCapList, ListOfLists, and BufferLayoutArray are simple and somewhat
 // problem-specific array data structures for use in IslMpi.
-template <typename T>
+template <typename T, typename ES = ko::DefaultExecutionSpace>
 struct FixedCapList {
   FixedCapList () : n_(0) {}
   FixedCapList (const Int& cap) { slmm_assert_high(cap >= 0); reset_capacity(cap); }
@@ -323,8 +323,8 @@ private:
 // Meta and bulk data for the interpolation SL MPI communication pattern.
 struct IslMpi {
   using ES = ko::DefaultExecutionSpace;
-  using Advecter = slmm::Advecter<ES>;
-  using LocalMesh = slmm::LocalMesh<ES>;
+  using Advecter = slmm::Advecter<>;
+  using LocalMesh = slmm::LocalMesh<>;
 
   typedef std::shared_ptr<IslMpi> Ptr;
 

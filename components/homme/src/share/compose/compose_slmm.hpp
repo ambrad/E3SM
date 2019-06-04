@@ -33,6 +33,12 @@ typedef Int Size;
 
 namespace ko = Kokkos;
 
+struct MachineTraits {
+  // Host and device execution spaces.
+  typedef ko::DefaultHostExecutionSpace HES;
+  typedef ko::DefaultExecutionSpace DES;
+};
+
 // A 2D array A can be thought of as having nslices(A) rows and szslice(A)
 // columns. A slice can be obtained by
 //     auto ak = slice(A, k);
