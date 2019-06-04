@@ -148,7 +148,7 @@ namespace islmpi {
 
 // FixedCapList, ListOfLists, and BufferLayoutArray are simple and somewhat
 // problem-specific array data structures for use in IslMpi.
-template <typename T, typename ES = ko::DefaultExecutionSpace>
+template <typename T, typename ES = slmm::MachineTraits::DES>
 struct FixedCapList { 
   FixedCapList () : n_(0) {}
   FixedCapList (const Int& cap) { slmm_assert_high(cap >= 0); reset_capacity(cap); }
@@ -162,8 +162,8 @@ struct FixedCapList {
   SLMM_KIF Int n () const { return n_; }
   SLMM_KIF Int size () const { return n_; }
   SLMM_KIF Int capacity () const { return d_.size(); }
-  SLMM_KIF const T& operator() (const Int& i) const { slmm_assert_high(i >= 0 && i < n_); return d_(i); }
-  SLMM_KIF T& operator() (const Int& i) { slmm_assert_high(i >= 0 && i < n_); return d_(i); }
+  SLMM_KIF const T& operator() (const Int& i) const { slmm_assert_high(i >= 0 && i < n_); return d_[i]; }
+  SLMM_KIF T& operator() (const Int& i) { slmm_assert_high(i >= 0 && i < n_); return d_[i]; }
   SLMM_KIF void inc () { ++n_; slmm_assert_high(n_ <= static_cast<Int>(d_.size())); }
   SLMM_KIF void inc (const Int& dn) { n_ += dn; slmm_assert_high(n_ <= static_cast<Int>(d_.size())); }
 
@@ -182,26 +182,26 @@ private:
   Int n_;
 };
 
-template <typename T>
+template <typename T, typename ES = slmm::MachineTraits::DES>
 struct ListOfLists {
   struct List {
-    Int n () const { return n_; }
+    SLMM_KIF Int n () const { return n_; }
 
-    T& operator() (const Int& i) { slmm_assert_high(i >= 0 && i < n_); return d_[i]; }
-    const T& operator() (const Int& i) const { slmm_assert_high(i >= 0 && i < n_); return d_[i]; }
+    SLMM_KIF T& operator() (const Int& i) { slmm_assert_high(i >= 0 && i < n_); return d_[i]; }
+    SLMM_KIF const T& operator() (const Int& i) const { slmm_assert_high(i >= 0 && i < n_); return d_[i]; }
 
-    const T* data () const { return d_; }
-    T* data () { return d_; }
-    const T* begin () const { return d_; }
-    T* begin () { return d_; }
-    const T* end () const { return d_ + n_; }
-    T* end () { return d_ + n_; }
+    SLMM_KIF const T* data () const { return d_; }
+    SLMM_KIF T* data () { return d_; }
+    SLMM_KIF const T* begin () const { return d_; }
+    SLMM_KIF T* begin () { return d_; }
+    SLMM_KIF const T* end () const { return d_ + n_; }
+    SLMM_KIF T* end () { return d_ + n_; }
 
-    void zero () { for (Int i = 0; i < n_; ++i) d_[i] = 0; }
+    SLMM_KIF void zero () { for (Int i = 0; i < n_; ++i) d_[i] = 0; }
 
   private:
     friend class ListOfLists<T>;
-    List (T* d, const Int& n) : d_(d), n_(n) { slmm_assert_high(n_ >= 0); }
+    SLMM_KIF List (T* d, const Int& n) : d_(d), n_(n) { slmm_assert_high(n_ >= 0); }
     T* const d_;
     const Int n_;
   };
@@ -210,41 +210,42 @@ struct ListOfLists {
   ListOfLists (const Int nlist, const Int* nlist_per_list) { init(nlist, nlist_per_list); }
   void init (const Int nlist, const Int* nlist_per_list) {
     slmm_assert(nlist >= 0); 
-    ptr_.resize(nlist+1);
+    ptr_ = Array<Int>("ptr_", nlist+1);
     ptr_[0] = 0;
     for (Int i = 0; i < nlist; ++i) {
       slmm_assert(nlist_per_list[i] >= 0);
       ptr_[i+1] = ptr_[i] + nlist_per_list[i];
     }
-    d_.resize(ptr_.back());
+    d_ = Array<T>("d_", ptr_[nlist]);
   }
 
-  Int n () const { return static_cast<Int>(ptr_.size()) - 1; }
-  List operator() (const Int& i) {
+  SLMM_KIF Int n () const { return static_cast<Int>(ptr_.size()) - 1; }
+  SLMM_KIF List operator() (const Int& i) {
     slmm_assert_high(i >= 0 && i < static_cast<Int>(ptr_.size()) - 1);
     return List(&d_[ptr_[i]], ptr_[i+1] - ptr_[i]);
   }
-  const List operator() (const Int& i) const {
+  SLMM_KIF const List operator() (const Int& i) const {
     slmm_assert_high(i >= 0 && i < static_cast<Int>(ptr_.size()) - 1);
     return List(const_cast<T*>(&d_[ptr_[i]]), ptr_[i+1] - ptr_[i]);
   }
-  T& operator() (const Int& i, const Int& j) {
+  SLMM_KIF T& operator() (const Int& i, const Int& j) {
     slmm_assert_high(i >= 0 && i < static_cast<Int>(ptr_.size()) - 1 &&
                      j >= 0 && j < ptr_[i+1] - ptr_[i]);
     return d_[ptr_[i] + j];
   }
-  const T& operator() (const Int& i, const Int& j) const {
+  SLMM_KIF const T& operator() (const Int& i, const Int& j) const {
     slmm_assert_high(i >= 0 && i < static_cast<Int>(ptr_.size()) - 1 &&
                      j >= 0 && j < ptr_[i+1] - ptr_[i]);
     return d_[ptr_[i] + j];
   }
 
 private:
+  template <typename T1> using Array = ko::View<T1*, ES>;
   friend class BufferLayoutArray;
-  std::vector<T> d_;
-  std::vector<Int> ptr_;
-  T* data () { return d_.data(); }
-  const T* data () const { return d_.data(); }
+  Array<T> d_;
+  Array<Int> ptr_;
+  SLMM_KIF T* data () { return d_.data(); }
+  SLMM_KIF const T* data () const { return d_.data(); }
 };
 
 struct LayoutTriple {
