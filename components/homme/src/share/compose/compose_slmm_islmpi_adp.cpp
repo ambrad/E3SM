@@ -15,7 +15,8 @@ namespace homme {
 namespace islmpi {
 
 // Find where each departure point is.
-void analyze_dep_points (IslMpi& cm, const Int& nets, const Int& nete,
+template <typename MT>
+void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
                          const FA4<Real>& dep_points) {
   const auto myrank = cm.p->rank();
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
@@ -88,6 +89,9 @@ void analyze_dep_points (IslMpi& cm, const Int& nets, const Int& nete,
       nx_in_rank += cm.nx_in_lid(ri,i);
   }
 }
+
+template void analyze_dep_points(IslMpi<slmm::MachineTraits>& cm, const Int& nets,
+                                 const Int& nete, const FA4<Real>& dep_points);
 
 } // namespace islmpi
 } // namespace homme

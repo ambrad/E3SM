@@ -3,8 +3,9 @@
 namespace homme {
 namespace islmpi {
 
+template <typename MT>
 void step (
-  IslMpi& cm, const Int nets, const Int nete,
+  IslMpi<MT>& cm, const Int nets, const Int nete,
   Cartesian3D* dep_points_r,    // dep_points(1:3, 1:np, 1:np)
   Real* q_min_r, Real* q_max_r) // q_{min,max}(1:np, 1:np, lev, 1:qsize, ie-nets+1)
 {
@@ -54,6 +55,8 @@ void step (
   // outside of SL transport assures the send buffer is ready at the next call
   // to step. But do need to dealloc the send requests.
 }
+
+template void step(IslMpi<slmm::MachineTraits>&, const Int, const Int, Cartesian3D*, Real*, Real*);
 
 } // namespace islmpi
 } // namespace homme

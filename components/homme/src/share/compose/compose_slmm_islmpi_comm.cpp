@@ -5,14 +5,15 @@ namespace islmpi {
 // mylid_with_comm(rankidx) is a list of element LIDs that have relations with
 // other elements on other ranks. For horizontal threading, need to find the
 // subsets that fit within the usual horizontal-threading nets:nete ranges.
-void init_mylid_with_comm_threaded (IslMpi& cm, const Int& nets, const Int& nete) {
+template <typename MT>
+void init_mylid_with_comm_threaded (IslMpi<MT>& cm, const Int& nets, const Int& nete) {
 #ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
 # pragma omp master
 #endif
   {
     const int nthr = get_num_threads();
-    cm.rwork = IslMpi::Array<Real**>("rwork", nthr, cm.qsize);
+    cm.rwork = typename IslMpi<MT>::template Array<Real**>("rwork", nthr, cm.qsize);
     cm.mylid_with_comm_tid_ptr.reset_capacity(nthr+1, true);
     cm.horiz_openmp = get_num_threads() > 1;
   }
@@ -34,7 +35,8 @@ void init_mylid_with_comm_threaded (IslMpi& cm, const Int& nets, const Int& nete
 #endif
 }
 
-void setup_irecv (IslMpi& cm, const bool skip_if_empty) {
+template <typename MT>
+void setup_irecv (IslMpi<MT>& cm, const bool skip_if_empty) {
 #ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp master
 #endif
@@ -53,7 +55,8 @@ void setup_irecv (IslMpi& cm, const bool skip_if_empty) {
   }
 }
 
-void isend (IslMpi& cm, const bool want_req , const bool skip_if_empty) {
+template <typename MT>
+void isend (IslMpi<MT>& cm, const bool want_req , const bool skip_if_empty) {
 #ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
 # pragma omp master
@@ -69,7 +72,8 @@ void isend (IslMpi& cm, const bool want_req , const bool skip_if_empty) {
   }
 }
 
-void recv_and_wait_on_send (IslMpi& cm) {
+template <typename MT>
+void recv_and_wait_on_send (IslMpi<MT>& cm) {
 #ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp master
 #endif
@@ -82,7 +86,8 @@ void recv_and_wait_on_send (IslMpi& cm) {
 #endif
 }
 
-void recv (IslMpi& cm, const bool skip_if_empty) {
+template <typename MT>
+void recv (IslMpi<MT>& cm, const bool skip_if_empty) {
 #ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp master
 #endif
@@ -93,5 +98,14 @@ void recv (IslMpi& cm, const bool skip_if_empty) {
 # pragma omp barrier
 #endif
 }
+
+template void init_mylid_with_comm_threaded(
+  IslMpi<slmm::MachineTraits>& cm, const Int& nets, const Int& nete);
+template void setup_irecv(IslMpi<slmm::MachineTraits>& cm, const bool skip_if_empty);
+template void isend(IslMpi<slmm::MachineTraits>& cm, const bool want_req,
+                    const bool skip_if_empty);
+template void recv_and_wait_on_send(IslMpi<slmm::MachineTraits>& cm);
+template void recv(IslMpi<slmm::MachineTraits>& cm, const bool skip_if_empty);
+
 } // namespace islmpi
 } // namespace homme

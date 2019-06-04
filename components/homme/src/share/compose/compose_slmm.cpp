@@ -18,28 +18,32 @@
 namespace homme {
 namespace islmpi {
 
-IslMpi::Ptr init (const IslMpi::Advecter::ConstPtr& advecter,
-                  const mpi::Parallel::Ptr& p,
-                  Int np, Int nlev, Int qsize, Int qsized, Int nelemd,
-                  const Int* nbr_id_rank, const Int* nirptr,
-                  Int halo) {
+template <typename MT>
+typename IslMpi<MT>::Ptr
+init (const typename IslMpi<MT>::Advecter::ConstPtr& advecter,
+      const mpi::Parallel::Ptr& p,
+      Int np, Int nlev, Int qsize, Int qsized, Int nelemd,
+      const Int* nbr_id_rank, const Int* nirptr,
+      Int halo) {
   slmm_throw_if(halo < 1 || halo > 2, "halo must be 1 (default) or 2.");
-  auto cm = std::make_shared<IslMpi>(p, advecter, np, nlev, qsize, qsized,
-                                     nelemd, halo);
+  auto cm = std::make_shared<IslMpi<MT> >(p, advecter, np, nlev, qsize, qsized,
+                                          nelemd, halo);
   setup_comm_pattern(*cm, nbr_id_rank, nirptr);
   return cm;
 }
 
 // For const clarity, take the non-const advecter as an arg, even though cm
 // already has a ref to the const'ed one.
-void finalize_local_meshes (IslMpi& cm, IslMpi::Advecter& advecter) {
+template <typename MT>
+void finalize_local_meshes (IslMpi<MT>& cm, typename IslMpi<MT>::Advecter& advecter) {
   if (cm.halo == 2)
-    extend_halo::extend_local_meshes(*cm.p, cm.ed, advecter);
+    extend_halo::extend_local_meshes<MT>(*cm.p, cm.ed, advecter);
   advecter.sync_to_device();
 }
 
 // Set pointers to HOMME data arrays.
-void set_elem_data (IslMpi& cm, const Int ie, const Real* metdet, const Real* qdp,
+template <typename MT>
+void set_elem_data (IslMpi<MT>& cm, const Int ie, const Real* metdet, const Real* qdp,
                     const Real* dp, Real* q, const Int nelem_in_patch) {
   slmm_assert(ie < cm.ed.size());
   slmm_assert(cm.halo > 1 || cm.ed(ie).nbrs.size() == nelem_in_patch);
@@ -51,12 +55,15 @@ void set_elem_data (IslMpi& cm, const Int ie, const Real* metdet, const Real* qd
 }
 } // namespace islmpi
 
-static islmpi::IslMpi::Advecter::Ptr g_advecter;
+typedef slmm::MachineTraits HommeMachineTraits;
+typedef islmpi::IslMpi<HommeMachineTraits> HommeIslMpi;
+
+static HommeIslMpi::Advecter::Ptr g_advecter;
 
 void slmm_init (const Int np, const Int nelem, const Int nelemd,
                 const Int transport_alg, const Int cubed_sphere_map,
                 const Int sl_nearest_point_lev, const Int* lid2facenum) {
-  g_advecter = std::make_shared<islmpi::IslMpi::Advecter>(
+  g_advecter = std::make_shared<HommeIslMpi::Advecter>(
     np, nelemd, transport_alg, cubed_sphere_map, sl_nearest_point_lev);
   g_advecter->init_meta_data(nelem, lid2facenum);
 }
@@ -80,7 +87,7 @@ int slmm_unittest () {
 
 #include <cstdlib>
 
-static homme::islmpi::IslMpi::Ptr g_csl_mpi;
+static homme::HommeIslMpi::Ptr g_csl_mpi;
 
 extern "C" {
 void slmm_init_impl (
@@ -96,9 +103,9 @@ void slmm_init_impl (
   slmm_throw_if(homme::g_advecter->is_cisl(),
                 "CISL code was removed.");
   const auto p = homme::mpi::make_parallel(MPI_Comm_f2c(fcomm));
-  g_csl_mpi = homme::islmpi::init(homme::g_advecter, p, np, nlev, qsize,
-                                  qsized, nelemd, *nbr_id_rank, *nirptr,
-                                  2 /* halo */);
+  g_csl_mpi = homme::islmpi::init<homme::HommeMachineTraits>(
+    homme::g_advecter, p, np, nlev, qsize, qsized, nelemd,
+    *nbr_id_rank, *nirptr, 2 /* halo */);
 }
 
 void slmm_get_mpi_pattern (homme::Int* sl_mpi) {

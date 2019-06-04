@@ -3,8 +3,8 @@
 namespace homme {
 namespace islmpi {
 
-template <Int np>
-void calc_q_extrema (IslMpi& cm, const Int& nets, const Int& nete) {
+template <Int np, typename MT>
+void calc_q_extrema (IslMpi<MT>& cm, const Int& nets, const Int& nete) {
   for (Int tci = nets; tci <= nete; ++tci) {
     auto& ed = cm.ed(tci);
     const FA2<const Real> dp(ed.dp, cm.np2, cm.nlev);
@@ -29,12 +29,16 @@ void calc_q_extrema (IslMpi& cm, const Int& nets, const Int& nete) {
   }  
 }
 
-void calc_q_extrema (IslMpi& cm, const Int& nets, const Int& nete) {
+template <typename MT>
+void calc_q_extrema (IslMpi<MT>& cm, const Int& nets, const Int& nete) {
   switch (cm.np) {
   case 4: calc_q_extrema<4>(cm, nets, nete); break;
   default: slmm_throw_if(true, "np " << cm.np << "not supported");
   }
 }
+
+template void calc_q_extrema (IslMpi<slmm::MachineTraits>& cm, const Int& nets,
+                              const Int& nete);
 
 } // namespace islmpi
 } // namespace homme

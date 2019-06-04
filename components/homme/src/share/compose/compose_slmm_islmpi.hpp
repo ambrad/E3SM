@@ -321,15 +321,17 @@ private:
 };
 
 // Meta and bulk data for the interpolation SL MPI communication pattern.
+template <typename MT = slmm::MachineTraits>
 struct IslMpi {
-  using ES = ko::DefaultExecutionSpace;
-  using Advecter = slmm::Advecter<>;
-  using LocalMesh = slmm::LocalMesh<>;
+  typedef typename MT::HES HES;
+  typedef typename MT::DES DES;
+
+  using Advecter = slmm::Advecter<MT>;
 
   typedef std::shared_ptr<IslMpi> Ptr;
 
   template <typename Datatype>
-  using Array = ko::View<Datatype, siqk::Layout, ES>;
+  using Array = ko::View<Datatype, siqk::Layout, DES>;
   typedef Array<Int**> IntArray2D;
 
   struct GidRank {
@@ -363,7 +365,7 @@ struct IslMpi {
   };
 
   const mpi::Parallel::Ptr p;
-  const Advecter::ConstPtr advecter;
+  const typename Advecter::ConstPtr advecter;
   const Int np, np2, nlev, qsize, qsized, nelemd, halo;
 
   FixedCapList<ElemData> ed; // this rank's owned cells, indexed by LID
@@ -385,7 +387,7 @@ struct IslMpi {
 
   Array<Real**> rwork;
 
-  IslMpi (const mpi::Parallel::Ptr& ip, const Advecter::ConstPtr& advecter,
+  IslMpi (const mpi::Parallel::Ptr& ip, const typename Advecter::ConstPtr& advecter,
           Int inp, Int inlev, Int iqsize, Int iqsized, Int inelemd, Int ihalo)
     : p(ip), advecter(advecter),
       np(inp), np2(np*np), nlev(inlev), qsize(iqsize), qsized(iqsized), nelemd(inelemd),
@@ -428,22 +430,30 @@ inline int get_num_threads () {
 #endif
 }
 
-void setup_comm_pattern(IslMpi& cm, const Int* nbr_id_rank, const Int* nirptr);
+template <typename MT>
+void setup_comm_pattern(IslMpi<MT>& cm, const Int* nbr_id_rank, const Int* nirptr);
 
 namespace extend_halo {
+template <typename MT>
 void extend_local_meshes(const mpi::Parallel& p,
-                         const FixedCapList<IslMpi::ElemData>& eds,
-                         IslMpi::Advecter& advecter);
+                         const FixedCapList<typename IslMpi<MT>::ElemData>& eds,
+                         typename IslMpi<MT>::Advecter& advecter);
 } // namespace extend_halo
 
-void analyze_dep_points(IslMpi& cm, const Int& nets, const Int& nete,
+template <typename MT>
+void analyze_dep_points(IslMpi<MT>& cm, const Int& nets, const Int& nete,
                         const FA4<Real>& dep_points);
 
-void init_mylid_with_comm_threaded(IslMpi& cm, const Int& nets, const Int& nete);
-void setup_irecv(IslMpi& cm, const bool skip_if_empty = false);
-void isend(IslMpi& cm, const bool want_req = true, const bool skip_if_empty = false);
-void recv_and_wait_on_send(IslMpi& cm);
-void recv(IslMpi& cm, const bool skip_if_empty = false);
+template <typename MT>
+void init_mylid_with_comm_threaded(IslMpi<MT>& cm, const Int& nets, const Int& nete);
+template <typename MT>
+void setup_irecv(IslMpi<MT>& cm, const bool skip_if_empty = false);
+template <typename MT>
+void isend(IslMpi<MT>& cm, const bool want_req = true, const bool skip_if_empty = false);
+template <typename MT>
+void recv_and_wait_on_send(IslMpi<MT>& cm);
+template <typename MT>
+void recv(IslMpi<MT>& cm, const bool skip_if_empty = false);
 
 const int nreal_per_2int = (2*sizeof(Int) + sizeof(Real) - 1) / sizeof(Real);
 
@@ -463,24 +473,30 @@ Int getbuf (Buffer& buf, const Int& os, Int& i1, Int& i2) {
   return nreal_per_2int;
 }
 
-void pack_dep_points_sendbuf_pass1(IslMpi& cm);
-void pack_dep_points_sendbuf_pass2(IslMpi& cm, const FA4<const Real>& dep_points);
+template <typename MT>
+void pack_dep_points_sendbuf_pass1(IslMpi<MT>& cm);
+template <typename MT>
+void pack_dep_points_sendbuf_pass2(IslMpi<MT>& cm, const FA4<const Real>& dep_points);
+template <typename MT>
+void calc_q_extrema(IslMpi<MT>& cm, const Int& nets, const Int& nete);
 
-void calc_q_extrema(IslMpi& cm, const Int& nets, const Int& nete);
-
-void calc_rmt_q(IslMpi& cm);
-void calc_own_q(IslMpi& cm, const Int& nets, const Int& nete,
+template <typename MT>
+void calc_rmt_q(IslMpi<MT>& cm);
+template <typename MT>
+void calc_own_q(IslMpi<MT>& cm, const Int& nets, const Int& nete,
                 const FA4<const Real>& dep_points,
                 const FA4<Real>& q_min, const FA4<Real>& q_max);
-void copy_q(IslMpi& cm, const Int& nets,
+template <typename MT>
+void copy_q(IslMpi<MT>& cm, const Int& nets,
             const FA4<Real>& q_min, const FA4<Real>& q_max);
 
 /* dep_points is const in principle, but if lev <=
    semi_lagrange_nearest_point_lev, a departure point may be altered if the
    winds take it outside of the comm halo.
- */
+*/
+template <typename MT = slmm::MachineTraits>
 void step(
-  IslMpi& cm, const Int nets, const Int nete,
+  IslMpi<MT>& cm, const Int nets, const Int nete,
   Cartesian3D* dep_points_r,    // dep_points(1:3, 1:np, 1:np)
   Real* q_min_r, Real* q_max_r); // q_{min,max}(1:np, 1:np, lev, 1:qsize, ie-nets+1)
 

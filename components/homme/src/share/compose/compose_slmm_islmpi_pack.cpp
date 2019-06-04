@@ -18,7 +18,8 @@ namespace islmpi {
          q              qsize r
           *#x) *#lev *#lid *#rank
  */
-void pack_dep_points_sendbuf_pass1 (IslMpi& cm) {
+template <typename MT>
+void pack_dep_points_sendbuf_pass1 (IslMpi<MT>& cm) {
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
 #ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp for
@@ -59,7 +60,8 @@ void pack_dep_points_sendbuf_pass1 (IslMpi& cm) {
   }
 }
 
-void pack_dep_points_sendbuf_pass2 (IslMpi& cm, const FA4<const Real>& dep_points) {
+template <typename MT>
+void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const FA4<const Real>& dep_points) {
   const auto myrank = cm.p->rank();
   const int tid = get_tid();
   for (Int ptr = cm.mylid_with_comm_tid_ptr(tid),
@@ -106,6 +108,10 @@ void pack_dep_points_sendbuf_pass2 (IslMpi& cm, const FA4<const Real>& dep_point
     }
   }
 }
+
+template void pack_dep_points_sendbuf_pass1(IslMpi<slmm::MachineTraits>& cm);
+template void pack_dep_points_sendbuf_pass2(IslMpi<slmm::MachineTraits>& cm,
+                                            const FA4<const Real>& dep_points);
 
 } // namespace islmpi
 } // namespace homme

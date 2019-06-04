@@ -13,7 +13,7 @@ namespace extend_halo {
 // extend_local_meshes. The two parts have the same comm pattern: in round 1,
 // request data for lists of GIDs; in round 2, fulfill these requests.
 
-typedef IslMpi::ElemData ElemData;
+typedef IslMpi<slmm::MachineTraits>::ElemData ElemData; //todo
 typedef Int Gid;
 typedef Int Rank;
 struct GidRankPair {
@@ -194,8 +194,10 @@ void collect_gid_rank (const mpi::Parallel& p, FixedCapList<ElemData>& eds) {
   extend_nbrs(gid2nbrs, eds);
 }
 
-void extend_local_meshes (const mpi::Parallel& p, const FixedCapList<ElemData>& eds,
-                          IslMpi::Advecter& advecter) {
+template <typename MT>
+void extend_local_meshes (const mpi::Parallel& p,
+                          const FixedCapList<typename IslMpi<MT>::ElemData>& eds,
+                          typename IslMpi<MT>::Advecter& advecter) {
   using slmm::slice;
   using slmm::nslices;
   using slmm::szslice;
@@ -327,9 +329,9 @@ void extend_local_meshes (const mpi::Parallel& p, const FixedCapList<ElemData>& 
     auto e0 = local_mesh.e;
     const Int ncell = ed.nbrs.size();
     slmm_assert(szslice(p0) == 3 && szslice(e0) == 4);
-    local_mesh.p = IslMpi::LocalMesh::RealArray("p", 4*ncell);
+    local_mesh.p = typename slmm::LocalMesh<typename MT::HES>::RealArray("p", 4*ncell);
     auto& p = local_mesh.p;
-    local_mesh.e = IslMpi::LocalMesh::IntArray("e", ncell, 4);
+    local_mesh.e = typename slmm::LocalMesh<typename MT::HES>::IntArray("e", ncell, 4);
     auto& e = local_mesh.e;
     // Copy in old data.
     for (Int pi = 0; pi < nslices(p0); ++pi)
@@ -371,10 +373,18 @@ void extend_local_meshes (const mpi::Parallel& p, const FixedCapList<ElemData>& 
     slmm::fill_normals<siqk::SphereGeometry>(local_mesh);
   }
 }
+
+template void
+extend_local_meshes<slmm::MachineTraits>(
+  const mpi::Parallel& p,
+  const FixedCapList<IslMpi<slmm::MachineTraits>::ElemData>& eds,
+  IslMpi<slmm::MachineTraits>::Advecter& advecter);
+
 } // namespace extend_halo
 
 // Fill in (gid, rank), the list of owning rank per gid.
-void collect_gid_rank (IslMpi& cm, const Int* nbr_id_rank, const Int* nirptr) {
+template <typename MT>
+void collect_gid_rank (IslMpi<MT>& cm, const Int* nbr_id_rank, const Int* nirptr) {
   cm.ed.reset_capacity(cm.nelemd, true);
   for (Int i = 0; i < cm.nelemd; ++i) {
     auto& ed = cm.ed(i);
@@ -405,7 +415,8 @@ void collect_gid_rank (IslMpi& cm, const Int* nbr_id_rank, const Int* nirptr) {
 
 typedef std::map<Int, std::set<Int> > Rank2Gids;
 
-void get_rank2gids (const IslMpi& cm, Rank2Gids& rank2rmtgids,
+template <typename MT>
+void get_rank2gids (const IslMpi<MT>& cm, Rank2Gids& rank2rmtgids,
                     Rank2Gids& rank2owngids) {
   const Int myrank = cm.p->rank();
   for (Int i = 0; i < cm.nelemd; ++i) {
@@ -422,7 +433,8 @@ void get_rank2gids (const IslMpi& cm, Rank2Gids& rank2rmtgids,
 
 // Fill in nbrs.lid_on_rank, the lid on the remote rank corresponding to the gid
 // I share but do not own.
-void comm_lid_on_rank (IslMpi& cm, const Rank2Gids& rank2rmtgids,
+template <typename MT>
+void comm_lid_on_rank (IslMpi<MT>& cm, const Rank2Gids& rank2rmtgids,
                        const Rank2Gids& rank2owngids,
                        std::map<Int, Int>& gid2rmt_owning_lid) {
   const Int myrank = cm.p->rank();
@@ -520,7 +532,8 @@ void comm_lid_on_rank (IslMpi& cm, const Rank2Gids& rank2rmtgids,
 // Useful maps between a linear index space 1:K to a set of K unique
 // integers. These obviate sorts and use of hash or binary maps during time
 // stepping.
-void set_idx2_maps (IslMpi& cm, const Rank2Gids& rank2rmtgids,
+template <typename MT>
+void set_idx2_maps (IslMpi<MT>& cm, const Rank2Gids& rank2rmtgids,
                     const std::map<Int, Int>& gid2rmt_owning_lid) {
   const Int myrank = cm.p->rank();
   std::map<Int, Int> ranks;
@@ -569,8 +582,9 @@ void set_idx2_maps (IslMpi& cm, const Rank2Gids& rank2rmtgids,
         i :
         lor2idx[n.rank_idx].at(n.lid_on_rank);
     }
-    ed.src = IslMpi::IntArray2D("src", cm.nlev, cm.np2);
-    ed.q_extrema = IslMpi::Array<Real**[2]>("q_extrema", cm.qsize, cm.nlev);
+    ed.src = typename IslMpi<MT>::IntArray2D("src", cm.nlev, cm.np2);
+    ed.q_extrema = typename IslMpi<MT>::template Array<Real**[2]>(
+      "q_extrema", cm.qsize, cm.nlev);
   }
 }
 
@@ -578,7 +592,8 @@ void set_idx2_maps (IslMpi& cm, const Rank2Gids& rank2rmtgids,
 // has a 1-halo patch of bulk data. For a 1-halo, allocations in this routine
 // use essentially the same amount of memory, but not more. We could use less if
 // we were willing to realloc space at each SL time step.
-void alloc_mpi_buffers (IslMpi& cm, const Rank2Gids& rank2rmtgids,
+template <typename MT>
+void alloc_mpi_buffers (IslMpi<MT>& cm, const Rank2Gids& rank2rmtgids,
                         const Rank2Gids& rank2owngids) {
   const auto myrank = cm.p->rank();
   // sizeof real, int, single int (b/c of alignment)
@@ -629,7 +644,8 @@ void alloc_mpi_buffers (IslMpi& cm, const Rank2Gids& rank2rmtgids,
 
 // At simulation initialization, set up a bunch of stuff to make the work at
 // each step as small as possible.
-void setup_comm_pattern (IslMpi& cm, const Int* nbr_id_rank, const Int* nirptr) {
+template <typename MT>
+void setup_comm_pattern (IslMpi<MT>& cm, const Int* nbr_id_rank, const Int* nirptr) {
   collect_gid_rank(cm, nbr_id_rank, nirptr);
   Rank2Gids rank2rmtgids, rank2owngids;
   get_rank2gids(cm, rank2rmtgids, rank2owngids);
@@ -640,6 +656,10 @@ void setup_comm_pattern (IslMpi& cm, const Int* nbr_id_rank, const Int* nirptr) 
   }
   alloc_mpi_buffers(cm, rank2rmtgids, rank2owngids);
 }
+
+template void
+setup_comm_pattern(IslMpi<slmm::MachineTraits>& cm, const Int* nbr_id_rank,
+                   const Int* nirptr);
 
 } // namespace islmpi
 } // namespace homme

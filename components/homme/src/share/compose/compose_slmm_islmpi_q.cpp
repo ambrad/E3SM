@@ -140,8 +140,8 @@ void gll_np4_subgrid_exp_eval (const Real& x, Real y[4]) {
 namespace homme {
 namespace islmpi {
 
-template <Int np>
-void calc_q (const IslMpi& cm, const Int& src_lid, const Int& lev,
+template <Int np, typename MT>
+void calc_q (const IslMpi<MT>& cm, const Int& src_lid, const Int& lev,
              const Real* const dep_point, Real* const q_tgt, const bool use_q) {
   Real ref_coord[2]; {
     const auto& m = cm.advecter->local_mesh(src_lid);
@@ -151,16 +151,17 @@ void calc_q (const IslMpi& cm, const Int& src_lid, const Int& lev,
 
   // Interpolate.
   Real rx[4], ry[4];
+  typedef typename IslMpi<MT>::Advecter::Alg Alg;
   switch (cm.advecter->alg()) {
-  case IslMpi::Advecter::Alg::csl_gll:
+  case Alg::csl_gll:
     slmm::gll_np4_eval(ref_coord[0], rx);
     slmm::gll_np4_eval(ref_coord[1], ry);
     break;
-  case IslMpi::Advecter::Alg::csl_gll_subgrid:
+  case Alg::csl_gll_subgrid:
     slmm::gll_np4_subgrid_eval(ref_coord[0], rx);
     slmm::gll_np4_subgrid_eval(ref_coord[1], ry);
     break;
-  case IslMpi::Advecter::Alg::csl_gll_exp:
+  case Alg::csl_gll_exp:
     slmm::gll_np4_subgrid_exp_eval(ref_coord[0], rx);
     slmm::gll_np4_subgrid_exp_eval(ref_coord[1], ry);
     break;
@@ -202,8 +203,8 @@ void calc_q (const IslMpi& cm, const Int& src_lid, const Int& lev,
   }
 }
 
-template <Int np>
-void calc_rmt_q (IslMpi& cm) {
+template <Int np, typename MT>
+void calc_rmt_q (IslMpi<MT>& cm) {
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
 #ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp for
@@ -247,15 +248,16 @@ void calc_rmt_q (IslMpi& cm) {
   }
 }
 
-void calc_rmt_q (IslMpi& cm) {
+template <typename MT>
+void calc_rmt_q (IslMpi<MT>& cm) {
   switch (cm.np) {
   case 4: calc_rmt_q<4>(cm); break;
   default: slmm_throw_if(true, "np " << cm.np << "not supported");
   }
 }
 
-template <Int np>
-void calc_own_q (IslMpi& cm, const Int& nets, const Int& nete,
+template <Int np, typename MT>
+void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
                  const FA4<const Real>& dep_points,
                  const FA4<Real>& q_min, const FA4<Real>& q_max) {
   const int tid = get_tid();
@@ -278,7 +280,8 @@ void calc_own_q (IslMpi& cm, const Int& nets, const Int& nete,
   }
 }
 
-void calc_own_q (IslMpi& cm, const Int& nets, const Int& nete,
+template <typename MT>
+void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
                  const FA4<const Real>& dep_points,
                  const FA4<Real>& q_min, const FA4<Real>& q_max) {
   switch (cm.np) {
@@ -287,7 +290,8 @@ void calc_own_q (IslMpi& cm, const Int& nets, const Int& nete,
   }
 }
 
-void copy_q (IslMpi& cm, const Int& nets,
+template <typename MT>
+void copy_q (IslMpi<MT>& cm, const Int& nets,
              const FA4<Real>& q_min, const FA4<Real>& q_max) {
   const auto myrank = cm.p->rank();
   const int tid = get_tid();
@@ -313,6 +317,13 @@ void copy_q (IslMpi& cm, const Int& nets,
     }
   }
 }
+
+template void calc_rmt_q(IslMpi<slmm::MachineTraits>& cm);
+template void calc_own_q(IslMpi<slmm::MachineTraits>& cm, const Int& nets,
+                         const Int& nete, const FA4<const Real>& dep_points,
+                         const FA4<Real>& q_min, const FA4<Real>& q_max);
+template void copy_q(IslMpi<slmm::MachineTraits>& cm, const Int& nets,
+                     const FA4<Real>& q_min, const FA4<Real>& q_max);
 
 } // namespace islmpi
 } // namespace homme
