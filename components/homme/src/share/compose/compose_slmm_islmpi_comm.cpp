@@ -13,7 +13,7 @@ void init_mylid_with_comm_threaded (IslMpi<MT>& cm, const Int& nets, const Int& 
 #endif
   {
     const int nthr = get_num_threads();
-    cm.rwork = typename IslMpi<MT>::template Array<Real**>("rwork", nthr, cm.qsize);
+    cm.rwork = typename IslMpi<MT>::template ArrayD<Real**>("rwork", nthr, cm.qsize);
     cm.mylid_with_comm_tid_ptr.reset_capacity(nthr+1, true);
     cm.horiz_openmp = get_num_threads() > 1;
   }

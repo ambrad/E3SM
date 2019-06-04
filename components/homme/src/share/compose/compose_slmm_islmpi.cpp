@@ -582,8 +582,8 @@ void set_idx2_maps (IslMpi<MT>& cm, const Rank2Gids& rank2rmtgids,
         i :
         lor2idx[n.rank_idx].at(n.lid_on_rank);
     }
-    ed.src = typename IslMpi<MT>::IntArray2D("src", cm.nlev, cm.np2);
-    ed.q_extrema = typename IslMpi<MT>::template Array<Real**[2]>(
+    ed.src = typename IslMpi<MT>::template ArrayD<Int**>("src", cm.nlev, cm.np2);
+    ed.q_extrema = typename IslMpi<MT>::template ArrayD<Real**[2]>(
       "q_extrema", cm.qsize, cm.nlev);
   }
 }

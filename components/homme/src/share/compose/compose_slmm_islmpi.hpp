@@ -330,9 +330,12 @@ struct IslMpi {
 
   typedef std::shared_ptr<IslMpi> Ptr;
 
+  template <typename Datatype, typename ES>
+  using Array = ko::View<Datatype, siqk::Layout, ES>;
   template <typename Datatype>
-  using Array = ko::View<Datatype, siqk::Layout, DES>;
-  typedef Array<Int**> IntArray2D;
+  using ArrayH = ko::View<Datatype, siqk::Layout, HES>;
+  template <typename Datatype>
+  using ArrayD = ko::View<Datatype, siqk::Layout, DES>;
 
   struct GidRank {
     Int
@@ -358,8 +361,8 @@ struct IslMpi {
     Int nin1halo;                    // nbrs[0:n]
     FixedCapList<OwnItem> own;       // points whose q are computed with own rank's data
     FixedCapList<RemoteItem> rmt;    // points computed by a remote rank's data
-    IntArray2D src;                  // src(lev,k) = get_src_cell
-    Array<Real**[2]> q_extrema;
+    Array<Int**,DES> src;            // src(lev,k) = get_src_cell
+    Array<Real**[2],DES> q_extrema;
     const Real* metdet, * qdp, * dp; // the owned cell's data
     Real* q;
   };
@@ -385,7 +388,7 @@ struct IslMpi {
   ListOfLists<omp_lock_t> ri_lidi_locks;
 #endif
 
-  Array<Real**> rwork;
+  Array<Real**,DES> rwork;
 
   IslMpi (const mpi::Parallel::Ptr& ip, const typename Advecter::ConstPtr& advecter,
           Int inp, Int inlev, Int iqsize, Int iqsized, Int inelemd, Int ihalo)
@@ -477,6 +480,7 @@ template <typename MT>
 void pack_dep_points_sendbuf_pass1(IslMpi<MT>& cm);
 template <typename MT>
 void pack_dep_points_sendbuf_pass2(IslMpi<MT>& cm, const FA4<const Real>& dep_points);
+
 template <typename MT>
 void calc_q_extrema(IslMpi<MT>& cm, const Int& nets, const Int& nete);
 
