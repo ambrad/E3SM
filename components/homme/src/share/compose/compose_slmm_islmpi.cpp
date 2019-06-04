@@ -13,7 +13,6 @@ namespace extend_halo {
 // extend_local_meshes. The two parts have the same comm pattern: in round 1,
 // request data for lists of GIDs; in round 2, fulfill these requests.
 
-typedef IslMpi<slmm::MachineTraits>::ElemData ElemData; //todo
 typedef Int Gid;
 typedef Int Rank;
 struct GidRankPair {
@@ -31,7 +30,8 @@ typedef std::map<Gid, GidRankPairs> Gid2Nbrs;
 typedef std::vector<Int> IntBuf;
 typedef std::vector<Real> RealBuf;
 
-GidRankPairs all_nbrs_but_me (const ElemData& ed) {
+template <typename MT>
+GidRankPairs all_nbrs_but_me (const typename IslMpi<MT>::ElemDataH& ed) {
   GidRankPairs gs;
   gs.reserve(ed.nbrs.size() - 1);
   for (const auto& n : ed.nbrs)
@@ -40,7 +40,8 @@ GidRankPairs all_nbrs_but_me (const ElemData& ed) {
   return gs;
 }
 
-void fill_gid2nbrs (const mpi::Parallel& p, const FixedCapList<ElemData>& eds,
+template <typename MT>
+void fill_gid2nbrs (const mpi::Parallel& p, const typename IslMpi<MT>::ElemDataListH& eds,
                     Gid2Nbrs& gid2nbrs) {
   static const Int tag = 6;
   const Rank my_rank = p.rank();
@@ -49,7 +50,7 @@ void fill_gid2nbrs (const mpi::Parallel& p, const FixedCapList<ElemData>& eds,
   // Fill in the ones we know.
   for (const auto& ed : eds) {
     slmm_assert(ed.me->rank == my_rank);
-    gid2nbrs[ed.me->gid] = all_nbrs_but_me(ed);
+    gid2nbrs[ed.me->gid] = all_nbrs_but_me<MT>(ed);
   }
 
   std::vector<Rank> ranks;
@@ -150,7 +151,8 @@ void fill_gid2nbrs (const mpi::Parallel& p, const FixedCapList<ElemData>& eds,
   mpi::waitall(nbr_send_reqs.size(), nbr_send_reqs.data());
 }
 
-void extend_nbrs (const Gid2Nbrs& gid2nbrs, FixedCapList<ElemData>& eds) {
+template <typename MT>
+void extend_nbrs (const Gid2Nbrs& gid2nbrs, typename IslMpi<MT>::ElemDataListH& eds) {
   for (auto& ed : eds) {
     // Get all <=2-halo neighbors.
     std::set<GidRankPair> new_nbrs;
@@ -188,15 +190,16 @@ void extend_nbrs (const Gid2Nbrs& gid2nbrs, FixedCapList<ElemData>& eds) {
   }
 }
 
-void collect_gid_rank (const mpi::Parallel& p, FixedCapList<ElemData>& eds) {
+template <typename MT>
+void collect_gid_rank (const mpi::Parallel& p, typename IslMpi<MT>::ElemDataListH& eds) {
   Gid2Nbrs gid2nbrs;
-  fill_gid2nbrs(p, eds, gid2nbrs);
-  extend_nbrs(gid2nbrs, eds);
+  fill_gid2nbrs<MT>(p, eds, gid2nbrs);
+  extend_nbrs<MT>(gid2nbrs, eds);
 }
 
 template <typename MT>
 void extend_local_meshes (const mpi::Parallel& p,
-                          const FixedCapList<typename IslMpi<MT>::ElemData>& eds,
+                          const typename IslMpi<MT>::ElemDataListH& eds,
                           typename IslMpi<MT>::Advecter& advecter) {
   using slmm::slice;
   using slmm::nslices;
@@ -377,7 +380,7 @@ void extend_local_meshes (const mpi::Parallel& p,
 template void
 extend_local_meshes<slmm::MachineTraits>(
   const mpi::Parallel& p,
-  const FixedCapList<IslMpi<slmm::MachineTraits>::ElemData>& eds,
+  const typename IslMpi<slmm::MachineTraits>::ElemDataListH& eds,
   IslMpi<slmm::MachineTraits>::Advecter& advecter);
 
 } // namespace extend_halo
@@ -385,9 +388,9 @@ extend_local_meshes<slmm::MachineTraits>(
 // Fill in (gid, rank), the list of owning rank per gid.
 template <typename MT>
 void collect_gid_rank (IslMpi<MT>& cm, const Int* nbr_id_rank, const Int* nirptr) {
-  cm.ed.reset_capacity(cm.nelemd, true);
+  cm.ed_h.reset_capacity(cm.nelemd, true);
   for (Int i = 0; i < cm.nelemd; ++i) {
-    auto& ed = cm.ed(i);
+    auto& ed = cm.ed_h(i);
     const Int* nir = nbr_id_rank + nirptr[i];
     const Int nnir = (nirptr[i+1] - nirptr[i]) / 2;
     const Int mygid = nir[0];
@@ -410,7 +413,7 @@ void collect_gid_rank (IslMpi<MT>& cm, const Int* nbr_id_rank, const Int* nirptr
     }
     slmm_assert(ed.me);
   }
-  if (cm.halo == 2) extend_halo::collect_gid_rank(*cm.p, cm.ed);
+  if (cm.halo == 2) extend_halo::collect_gid_rank<MT>(*cm.p, cm.ed_h);
 }
 
 typedef std::map<Int, std::set<Int> > Rank2Gids;
@@ -420,7 +423,7 @@ void get_rank2gids (const IslMpi<MT>& cm, Rank2Gids& rank2rmtgids,
                     Rank2Gids& rank2owngids) {
   const Int myrank = cm.p->rank();
   for (Int i = 0; i < cm.nelemd; ++i) {
-    const auto& ed = cm.ed(i);
+    const auto& ed = cm.ed_h(i);
     for (const auto& n: ed.nbrs) {
       if (n.rank == myrank) continue;
       // I need this rmt gid's lid.
@@ -441,7 +444,7 @@ void comm_lid_on_rank (IslMpi<MT>& cm, const Rank2Gids& rank2rmtgids,
 
   std::map<Int, Int> gid2mylid;
   for (Int i = 0; i < cm.nelemd; ++i)
-    gid2mylid[cm.ed(i).me->gid] = i;
+    gid2mylid[cm.ed_h(i).me->gid] = i;
   
   // Set up to recv remote (gid, lid) lists.
   Int rn = 0;
@@ -501,7 +504,7 @@ void comm_lid_on_rank (IslMpi<MT>& cm, const Rank2Gids& rank2rmtgids,
   // Fill lid_on_rank and mylid_with_comm.
   std::vector<Int> mylid_with_comm;
   for (Int i = 0; i < cm.nelemd; ++i) {
-    auto& ed = cm.ed(i);
+    auto& ed = cm.ed_h(i);
     bool has_comm = false;
     for (auto& n: ed.nbrs)
       if (n.rank == myrank) {
@@ -573,7 +576,7 @@ void set_idx2_maps (IslMpi<MT>& cm, const Rank2Gids& rank2rmtgids,
   }
 
   for (i = 0; i < cm.nelemd; ++i) {
-    auto& ed = cm.ed(i);
+    auto& ed = cm.ed_h(i);
     ed.me->rank_idx = ranks.at(ed.me->rank);
     ed.me->lid_on_rank_idx = i;
     for (auto& n: ed.nbrs) {

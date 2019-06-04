@@ -352,6 +352,7 @@ struct IslMpi {
   };
   // The comm and real data associated with an element patch, the set of
   // elements surrounding an owned cell.
+  template <typename ES>
   struct ElemData {
     struct OwnItem {
       short lev;   // level index
@@ -361,22 +362,28 @@ struct IslMpi {
       Int q_extrema_ptr, q_ptr; // pointers into recvbuf
       short lev, k;
     };
-    GidRank* me;                     // the owned cell
-    FixedCapList<GidRank> nbrs;      // the cell's neighbors (but including me)
-    Int nin1halo;                    // nbrs[0:n]
-    FixedCapList<OwnItem> own;       // points whose q are computed with own rank's data
-    FixedCapList<RemoteItem> rmt;    // points computed by a remote rank's data
-    Array<Int**,DES> src;            // src(lev,k) = get_src_cell
-    Array<Real**[2],DES> q_extrema;
-    const Real* metdet, * qdp, * dp; // the owned cell's data
+    GidRank* me;                      // the owned cell
+    FixedCapList<GidRank, ES> nbrs;   // the cell's neighbors (but including me)
+    Int nin1halo;                     // nbrs[0:n]
+    FixedCapList<OwnItem, ES> own;    // points whose q are computed with own rank's data
+    FixedCapList<RemoteItem, ES> rmt; // points computed by a remote rank's data
+    Array<Int**, ES> src;             // src(lev,k) = get_src_cell
+    Array<Real**[2], ES> q_extrema;
+    const Real* metdet, * qdp, * dp;  // the owned cell's data
     Real* q;
   };
+
+  typedef ElemData<HES> ElemDataH;
+  typedef ElemData<DES> ElemDataD;
+  typedef FixedCapList<ElemDataH> ElemDataListH;
+  typedef FixedCapList<ElemDataD> ElemDataListD;
 
   const mpi::Parallel::Ptr p;
   const typename Advecter::ConstPtr advecter;
   const Int np, np2, nlev, qsize, qsized, nelemd, halo;
 
-  FixedCapList<ElemData> ed; // this rank's owned cells, indexed by LID
+  ElemDataListH ed_h; // this rank's owned cells, indexed by LID
+  ElemDataListD ed_d;
 
   // IDs.
   FixedCapList<Int> ranks, nx_in_rank, mylid_with_comm, mylid_with_comm_tid_ptr;
@@ -444,7 +451,7 @@ void setup_comm_pattern(IslMpi<MT>& cm, const Int* nbr_id_rank, const Int* nirpt
 namespace extend_halo {
 template <typename MT>
 void extend_local_meshes(const mpi::Parallel& p,
-                         const FixedCapList<typename IslMpi<MT>::ElemData>& eds,
+                         const typename IslMpi<MT>::ElemDataListH& eds,
                          typename IslMpi<MT>::Advecter& advecter);
 } // namespace extend_halo
 

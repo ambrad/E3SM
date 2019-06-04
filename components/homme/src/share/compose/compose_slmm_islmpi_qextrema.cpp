@@ -6,7 +6,7 @@ namespace islmpi {
 template <Int np, typename MT>
 void calc_q_extrema (IslMpi<MT>& cm, const Int& nets, const Int& nete) {
   for (Int tci = nets; tci <= nete; ++tci) {
-    auto& ed = cm.ed(tci);
+    auto& ed = cm.ed_h(tci);
     const FA2<const Real> dp(ed.dp, cm.np2, cm.nlev);
     const FA3<const Real> qdp(ed.qdp, cm.np2, cm.nlev, cm.qsize);
     const FA3<Real> q(ed.q, cm.np2, cm.nlev, cm.qsize);

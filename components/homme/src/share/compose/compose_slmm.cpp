@@ -37,7 +37,7 @@ init (const typename IslMpi<MT>::Advecter::ConstPtr& advecter,
 template <typename MT>
 void finalize_local_meshes (IslMpi<MT>& cm, typename IslMpi<MT>::Advecter& advecter) {
   if (cm.halo == 2)
-    extend_halo::extend_local_meshes<MT>(*cm.p, cm.ed, advecter);
+    extend_halo::extend_local_meshes<MT>(*cm.p, cm.ed_h, advecter);
   advecter.sync_to_device();
 }
 
@@ -45,9 +45,9 @@ void finalize_local_meshes (IslMpi<MT>& cm, typename IslMpi<MT>::Advecter& advec
 template <typename MT>
 void set_elem_data (IslMpi<MT>& cm, const Int ie, const Real* metdet, const Real* qdp,
                     const Real* dp, Real* q, const Int nelem_in_patch) {
-  slmm_assert(ie < cm.ed.size());
-  slmm_assert(cm.halo > 1 || cm.ed(ie).nbrs.size() == nelem_in_patch);
-  auto& e = cm.ed(ie);
+  slmm_assert(ie < cm.ed_h.size());
+  slmm_assert(cm.halo > 1 || cm.ed_h(ie).nbrs.size() == nelem_in_patch);
+  auto& e = cm.ed_h(ie);
   e.metdet = metdet;
   e.qdp = qdp;
   e.dp = dp;

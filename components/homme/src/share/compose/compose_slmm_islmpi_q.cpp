@@ -169,7 +169,7 @@ void calc_q (const IslMpi<MT>& cm, const Int& src_lid, const Int& lev,
     slmm_assert(0);
   }
 
-  const auto& ed = cm.ed(src_lid);
+  const auto& ed = cm.ed_h(src_lid);
   const Int levos = np*np*lev;
   const Int np2nlev = np*np*cm.nlev;
   if (use_q) {
@@ -222,7 +222,7 @@ void calc_rmt_q (IslMpi<MT>& cm) {
     for (Int lidi = 0; lidi < cm.nelemd; ++lidi) {
       Int lid, nx_in_lid;
       xos += getbuf(xs, xos, lid, nx_in_lid);
-      const auto& ed = cm.ed(lid);
+      const auto& ed = cm.ed_h(lid);
       for (Int levi = 0; levi < cm.nlev; ++levi) { // same re: inf loop
         Int lev, nx;
         xos += getbuf(xs, xos, lev, nx);
@@ -263,11 +263,11 @@ void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
   const int tid = get_tid();
   for (Int tci = nets; tci <= nete; ++tci) {
     const Int ie0 = tci - nets;
-    auto& ed = cm.ed(tci);
+    auto& ed = cm.ed_h(tci);
     const FA3<Real> q_tgt(ed.q, cm.np2, cm.nlev, cm.qsize);
     for (const auto& e: ed.own) {
       const Int slid = ed.nbrs(ed.src(e.lev, e.k)).lid_on_rank;
-      const auto& sed = cm.ed(slid);
+      const auto& sed = cm.ed_h(slid);
       for (Int iq = 0; iq < cm.qsize; ++iq) {
         q_min(e.k, e.lev, iq, ie0) = sed.q_extrema(iq, e.lev, 0);
         q_max(e.k, e.lev, iq, ie0) = sed.q_extrema(iq, e.lev, 1);
@@ -300,7 +300,7 @@ void copy_q (IslMpi<MT>& cm, const Int& nets,
        ptr < end; ++ptr) {
     const Int tci = cm.mylid_with_comm(ptr);
     const Int ie0 = tci - nets;
-    auto& ed = cm.ed(tci);
+    auto& ed = cm.ed_h(tci);
     const FA3<Real> q_tgt(ed.q, cm.np2, cm.nlev, cm.qsize);
     for (const auto& e: ed.rmt) {
       slmm_assert(ed.nbrs(ed.src(e.lev, e.k)).rank != myrank);
