@@ -149,35 +149,36 @@ namespace islmpi {
 // FixedCapList, ListOfLists, and BufferLayoutArray are simple and somewhat
 // problem-specific array data structures for use in IslMpi.
 template <typename T, typename ES = ko::DefaultExecutionSpace>
-struct FixedCapList {
+struct FixedCapList { 
   FixedCapList () : n_(0) {}
   FixedCapList (const Int& cap) { slmm_assert_high(cap >= 0); reset_capacity(cap); }
   void reset_capacity (const Int& cap, const bool also_size = false) {
     slmm_assert(cap >= 0);
-    d_.resize(cap);
+    ko::resize(d_, cap);
     n_ = also_size ? cap : 0;
   }
-  void clear () { n_ = 0; }
+  SLMM_KIF void clear () { n_ = 0; }
 
-  Int n () const { return n_; }
-  Int size () const { return n_; }
-  Int capacity () const { return d_.size(); }
-  const T& operator() (const Int& i) const { slmm_assert_high(i >= 0 && i < n_); return d_[i]; }
-  T& operator() (const Int& i) { slmm_assert_high(i >= 0 && i < n_); return d_[i]; }
-  void inc () { ++n_; slmm_assert_high(n_ <= static_cast<Int>(d_.size())); }
-  void inc (const Int& dn) { n_ += dn; slmm_assert_high(n_ <= static_cast<Int>(d_.size())); }
+  SLMM_KIF Int n () const { return n_; }
+  SLMM_KIF Int size () const { return n_; }
+  SLMM_KIF Int capacity () const { return d_.size(); }
+  SLMM_KIF const T& operator() (const Int& i) const { slmm_assert_high(i >= 0 && i < n_); return d_(i); }
+  SLMM_KIF T& operator() (const Int& i) { slmm_assert_high(i >= 0 && i < n_); return d_(i); }
+  SLMM_KIF void inc () { ++n_; slmm_assert_high(n_ <= static_cast<Int>(d_.size())); }
+  SLMM_KIF void inc (const Int& dn) { n_ += dn; slmm_assert_high(n_ <= static_cast<Int>(d_.size())); }
 
-  const T* data () const { return d_.data(); }
-  T* data () { return d_.data(); }  
-  const T& back () const { slmm_assert_high(n_ > 0); return d_[n_-1]; }
-  T& back () { slmm_assert_high(n_ > 0); return d_[n_-1]; }
-  const T* begin () const { return d_.data(); }
-  T* begin () { return d_.data(); }
-  const T* end () const { return d_.data() + n_; }
-  T* end () { return d_.data() + n_; }
+  SLMM_KIF const T* data () const { return d_.data(); }
+  SLMM_KIF T* data () { return d_.data(); }  
+  SLMM_KIF const T& back () const { slmm_assert_high(n_ > 0); return d_[n_-1]; }
+  SLMM_KIF T& back () { slmm_assert_high(n_ > 0); return d_[n_-1]; }
+  SLMM_KIF const T* begin () const { return d_.data(); }
+  SLMM_KIF T* begin () { return d_.data(); }
+  SLMM_KIF const T* end () const { return d_.data() + n_; }
+  SLMM_KIF T* end () { return d_.data() + n_; }
 
- private:
-  std::vector<T> d_;
+private:
+  typedef ko::View<T*, ES> Array;
+  Array d_;
   Int n_;
 };
 

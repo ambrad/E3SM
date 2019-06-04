@@ -26,6 +26,8 @@
     }                                                                   \
   } while (0)
 
+#define SLMM_KIF KOKKOS_INLINE_FUNCTION
+
 namespace slmm {
 using siqk::Int;
 using siqk::Real;
