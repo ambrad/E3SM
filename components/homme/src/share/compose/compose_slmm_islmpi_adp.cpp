@@ -29,7 +29,7 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
   for (Int tci = nets; tci <= nete; ++tci) {
     const auto& mesh = cm.advecter->local_mesh(tci);
     const auto tgt_idx = mesh.tgt_elem;
-    auto& ed = cm.ed_h(tci);
+    auto& ed = cm.ed_d(tci);
     ed.own.clear();
     for (Int lev = 0; lev < cm.nlev; ++lev)
       for (Int k = 0; k < cm.np2; ++k) {

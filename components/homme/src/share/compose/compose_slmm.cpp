@@ -35,10 +35,11 @@ init (const typename IslMpi<MT>::Advecter::ConstPtr& advecter,
 // For const clarity, take the non-const advecter as an arg, even though cm
 // already has a ref to the const'ed one.
 template <typename MT>
-void finalize_local_meshes (IslMpi<MT>& cm, typename IslMpi<MT>::Advecter& advecter) {
+void finalize_init_phase (IslMpi<MT>& cm, typename IslMpi<MT>::Advecter& advecter) {
   if (cm.halo == 2)
     extend_halo::extend_local_meshes<MT>(*cm.p, cm.ed_h, advecter);
   advecter.sync_to_device();
+  sync_to_device(cm);
 }
 
 // Set pointers to HOMME data arrays.
@@ -124,7 +125,7 @@ void slmm_init_local_mesh (
 
 void slmm_init_finalize () {
   if (g_csl_mpi)
-    homme::islmpi::finalize_local_meshes(*g_csl_mpi, *homme::g_advecter);
+    homme::islmpi::finalize_init_phase(*g_csl_mpi, *homme::g_advecter);
 }
 
 void slmm_check_ref2sphere (homme::Int ie, homme::Cartesian3D* p) {

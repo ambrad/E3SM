@@ -41,6 +41,19 @@ struct MachineTraits {
   typedef ko::DefaultExecutionSpace DES;
 };
 
+template <typename ES> struct OnGpu {
+  enum : bool { value =
+#ifdef COMPOSE_MIMIC_GPU
+                true
+#else
+                false
+#endif
+  };
+};
+#ifdef KOKKOS_ENABLE_CUDA
+template <> struct OnGpu<Kokkos::Cuda> { enum : bool { value = true }; };
+#endif
+
 // A 2D array A can be thought of as having nslices(A) rows and szslice(A)
 // columns. A slice can be obtained by
 //     auto ak = slice(A, k);

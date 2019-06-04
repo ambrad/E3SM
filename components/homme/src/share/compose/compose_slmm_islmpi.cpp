@@ -660,9 +660,18 @@ void setup_comm_pattern (IslMpi<MT>& cm, const Int* nbr_id_rank, const Int* nirp
   alloc_mpi_buffers(cm, rank2rmtgids, rank2owngids);
 }
 
+template <typename MT>
+void sync_to_device (IslMpi<MT>& cm) {
+  if ( ! slmm::OnGpu<typename MT::DES>::value) {
+    cm.ed_d = cm.ed_h;
+    return;
+  }
+}
+
 template void
 setup_comm_pattern(IslMpi<slmm::MachineTraits>& cm, const Int* nbr_id_rank,
                    const Int* nirptr);
+template void sync_to_device(IslMpi<slmm::MachineTraits>& cm);
 
 } // namespace islmpi
 } // namespace homme

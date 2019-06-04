@@ -68,7 +68,7 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const FA4<const Real>& dep_p
            end = cm.mylid_with_comm_tid_ptr(tid+1);
        ptr < end; ++ptr) {
     const Int tci = cm.mylid_with_comm(ptr);
-    auto& ed = cm.ed_h(tci);
+    auto& ed = cm.ed_d(tci);
     ed.rmt.clear();
     for (Int lev = 0; lev < cm.nlev; ++lev) {
       for (Int k = 0; k < cm.np2; ++k) {
