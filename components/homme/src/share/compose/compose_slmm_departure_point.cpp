@@ -88,7 +88,7 @@ Int test_fill_perim (const LocalMesh<ES>& m, const Int& tgt_ic) {
 }
 } // namespace nearest_point
 
-Int unittest (LocalMesh<ko::DefaultExecutionSpace>& m, const Int tgt_elem) {
+Int unittest (LocalMesh<slmm::MachineTraits::HES>& m, const Int tgt_elem) {
   Int nerr = 0, ne;
   const Int nc = len(m.e);
   for (Int ic = 0, ne = 0; ic < nc; ++ic) {
@@ -126,7 +126,7 @@ Int unittest (LocalMesh<ko::DefaultExecutionSpace>& m, const Int tgt_elem) {
   return nerr;
 }
 
-std::string to_string (const LocalMesh<ko::DefaultHostExecutionSpace>& m) {
+std::string to_string (const LocalMesh<slmm::MachineTraits::HES>& m) {
   std::stringstream ss;
   ss.precision(17);
   ss << "(mesh nnode " << nslices(m.p) << " nelem " << nslices(m.e);

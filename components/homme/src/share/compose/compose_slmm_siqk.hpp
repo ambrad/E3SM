@@ -89,14 +89,6 @@ using UnmanagedView = ko::View<
   typename ViewT::data_type, typename ViewT::array_layout,
   typename ViewT::device_type, ko::MemoryTraits<ko::Unmanaged> >;
 
-// Get the host or device version of the array.
-template <typename VT, typename ES> struct InExeSpace {
-  typedef VT type;
-};
-template <typename VT> struct InExeSpace<VT, ko::HostSpace> {
-  typedef typename VT::HostMirror type;
-};
-
 #ifdef KOKKOS_HAVE_CUDA
 // A 1D slice of an array.
 template <typename VT> KOKKOS_FORCEINLINE_FUNCTION

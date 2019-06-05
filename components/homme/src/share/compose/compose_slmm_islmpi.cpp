@@ -205,7 +205,7 @@ void extend_local_meshes (const mpi::Parallel& p,
   using slmm::nslices;
   using slmm::szslice;
   using slmm::len;
-  using RealArray3 = ko::View<Real***, ko::HostSpace>;
+  using RealArray3 = ko::View<Real***, typename MT::HES>;
 
   static const Int tag = 24;
   const Int my_rank = p.rank();
