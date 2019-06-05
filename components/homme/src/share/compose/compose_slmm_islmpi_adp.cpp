@@ -13,6 +13,37 @@ int get_nearest_point (const LocalMesh<ES>& m,
 namespace homme {
 namespace islmpi {
 
+template <typename MT>
+void throw_on_sci_error (
+  const IslMpi<MT>& cm, const FA4<Real>& dep_points, Int k, Int lev, Int tci,
+  typename std::enable_if< ! slmm::OnGpu<typename MT::DES>::value>::type* = 0)
+{
+  const auto& mesh = cm.advecter->local_mesh(tci);
+  const auto tgt_idx = mesh.tgt_elem;
+  auto& ed = cm.ed_d(tci);
+  std::stringstream ss;
+  ss.precision(17);
+  const auto* v = &dep_points(0,k,lev,tci);
+  ss << "Departure point is outside of halo:\n"
+     << "  nearest point permitted: "
+     << cm.advecter->nearest_point_permitted(lev)
+     << "\n  elem LID " << tci
+     << " elem GID " << ed.me->gid
+     << " (lev, k) (" << lev << ", " << k << ")"
+     << " v " << v[0] << " " << v[1] << " " << v[2]
+     << "\n  tgt_idx " << tgt_idx
+     << " local mesh:\n  " << slmm::to_string(mesh) << "\n";
+  slmm_throw_if(true, ss.str());
+}
+
+template <typename MT>
+void throw_on_sci_error (
+  const IslMpi<MT>& cm, const FA4<Real>& dep_points, Int k, Int lev, Int tci,
+  typename std::enable_if<slmm::OnGpu<typename MT::DES>::value>::type* = 0)
+{
+  ko::abort("throw_on_sci_error");
+}
+
 // Find where each departure point is.
 template <typename MT>
 void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
@@ -35,21 +66,8 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
         Int sci = slmm::get_src_cell(mesh, &dep_points(0,k,lev,tci), tgt_idx);
         if (sci == -1 && cm.advecter->nearest_point_permitted(lev))
           sci = slmm::get_nearest_point(mesh, &dep_points(0,k,lev,tci), tgt_idx);
-        if (sci == -1) {
-          std::stringstream ss;
-          ss.precision(17);
-          const auto* v = &dep_points(0,k,lev,tci);
-          ss << "Departure point is outside of halo:\n"
-             << "  nearest point permitted: "
-             << cm.advecter->nearest_point_permitted(lev)
-             << "\n  elem LID " << tci
-             << " elem GID " << ed.me->gid
-             << " (lev, k) (" << lev << ", " << k << ")"
-             << " v " << v[0] << " " << v[1] << " " << v[2]
-             << "\n  tgt_idx " << tgt_idx
-             << " local mesh:\n  " << slmm::to_string(mesh) << "\n";
-          slmm_throw_if(sci == -1, ss.str());
-        }
+        if (sci == -1)
+          throw_on_sci_error(cm, dep_points, k, lev, tci);
         ed.src(lev,k) = sci;
         if (ed.nbrs(sci).rank == myrank) {
           ed.own.inc();

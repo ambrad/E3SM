@@ -11,19 +11,28 @@
       std::stringstream _ss_;                                           \
       _ss_ << __FILE__ << ":" << __LINE__ << ": FAIL:\n" << #condition  \
         << "\n";                                                        \
-      throw std::logic_error(_ss_.str());                               \
+        throw std::logic_error(_ss_.str());                             \
     }                                                                   \
+  } while (0)
+# define slmm_kernel_assert(condition) do {     \
+    if ( ! (condition))                         \
+      Kokkos::abort(#condition);                \
   } while (0)
 #else
 # define slmm_assert(condition)
+# define slmm_kernel_assert(condition)
 #endif
 #define slmm_throw_if(condition, message) do {                          \
     if (condition) {                                                    \
       std::stringstream _ss_;                                           \
       _ss_ << __FILE__ << ":" << __LINE__ << ": The condition:\n"       \
            << #condition "\nled to the exception\n" << message << "\n"; \
-      throw std::logic_error(_ss_.str());                               \
+        throw std::logic_error(_ss_.str());                             \
     }                                                                   \
+  } while (0)
+#define slmm_kernel_throw_if(condition, message) do {               \
+    if (condition)                                                  \
+      Kokkos::abort(#condition " led to the exception\n" message);  \
   } while (0)
 
 #define SLMM_KIF KOKKOS_INLINE_FUNCTION
