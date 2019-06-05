@@ -26,44 +26,42 @@ Int test_canpoa () {
 }
 
 template <typename ES>
-Int test_calc (const LocalMesh<ES>& m, const Int& tgt_ic,
-               const MeshNearestPointData<ES>& md)
+Int test_calc (const LocalMesh<ES>& m, const Int& tgt_ic)
 {
   Int nerr = 0;
   // If a point is on the perim, then calc should return it as the nearest
   // point.
-  const Int np_perim = len(md.perimp);
+  const Int np_perim = len(m.perimp);
   for (Int k = 0; k < np_perim; ++k) {
-    const auto p0 = slice(m.p, md.perimp(k));
-    const auto p1 = slice(m.p, md.perimp((k+1) % np_perim));
+    const auto p0 = slice(m.p, m.perimp(k));
+    const auto p1 = slice(m.p, m.perimp((k+1) % np_perim));
     const auto L = calc_dist(p0, p1);
     Real v[3];
     for (Int d = 0; d < 3; ++d) v[d] = p0[d];
-    calc(m, md, v);
+    calc(m, v);
     if (calc_dist(p0, v) > std::numeric_limits<Real>::epsilon() / L) ++nerr;
     Real on[3];
     siqk::SphereGeometry::combine(p0, p1, 0.4, on);
     siqk::SphereGeometry::normalize(on);
     for (Int d = 0; d < 3; ++d) v[d] = on[d];
-    calc(m, md, v);
+    calc(m, v);
     if (calc_dist(on, v) > 1e2*std::numeric_limits<Real>::epsilon() / L) ++nerr;
   }
   return nerr;
 }
 
 template <typename ES>
-Int test_fill_perim (const LocalMesh<ES>& m, const Int& tgt_ic,
-                     const MeshNearestPointData<ES>& md) {
+Int test_fill_perim (const LocalMesh<ES>& m, const Int& tgt_ic) {
   using geo = siqk::SphereGeometry;
   Int nerr = 0;
   const auto tgt_cell = slice(m.e, tgt_ic);
-  const Int np_perim = len(md.perimp);
+  const Int np_perim = len(m.perimp);
   { // Check that no target-cell point is on the perim.
     Int on = 0;
     for (Int ip = 0; ip < 4; ++ip) {
       const auto p = slice(m.p, tgt_cell[ip]);
       for (Int k = 0; k < np_perim; ++k) {
-        const auto perim = slice(m.p, md.perimp(k));
+        const auto perim = slice(m.p, m.perimp(k));
         Real diff = 0;
         for (Int i = 0; i < 3; ++i) diff += std::abs(p[i] - perim[i]);
         if (diff == 0) ++on;
@@ -73,9 +71,9 @@ Int test_fill_perim (const LocalMesh<ES>& m, const Int& tgt_ic,
   }
   { // Check that adjacent perimeter points agree with the edge's normal.
     for (Int k = 0; k < np_perim; ++k) {
-      const auto p0 = slice(m.p, md.perimp(k));
-      const auto p1 = slice(m.p, md.perimp((k+1) % np_perim));
-      const auto nml = slice(m.nml, md.perimnml(k));
+      const auto p0 = slice(m.p, m.perimp(k));
+      const auto p1 = slice(m.p, m.perimp((k+1) % np_perim));
+      const auto nml = slice(m.nml, m.perimnml(k));
       const auto dot = geo::dot_c_amb(nml, p1, p0);
       const auto L = calc_dist(p0, p1);
       // Normal orthogonal to edge?
@@ -88,12 +86,9 @@ Int test_fill_perim (const LocalMesh<ES>& m, const Int& tgt_ic,
   }
   return nerr;
 }
-
 } // namespace nearest_point
 
-Int unittest (const LocalMesh<ko::DefaultExecutionSpace>& m, const Int tgt_elem) {
-  typedef nearest_point::MeshNearestPointData<> MeshNearestPointData;
-
+Int unittest (LocalMesh<ko::DefaultExecutionSpace>& m, const Int tgt_elem) {
   Int nerr = 0, ne;
   const Int nc = len(m.e);
   for (Int ic = 0, ne = 0; ic < nc; ++ic) {
@@ -120,12 +115,11 @@ Int unittest (const LocalMesh<ko::DefaultExecutionSpace>& m, const Int tgt_elem)
   nerr += ne;
   if (ne) pr("slmm::unittest: test_canpoa failed");
   {
-    MeshNearestPointData d;
-    nearest_point::fill_perim(m, d);
-    ne = nearest_point::test_fill_perim(m, tgt_elem, d);
+    nearest_point::fill_perim(m);
+    ne = nearest_point::test_fill_perim(m, tgt_elem);
     if (ne) pr("slmm::unittest: test_fill_perim failed");
     nerr += ne;
-    ne = nearest_point::test_calc(m, tgt_elem, d);
+    ne = nearest_point::test_calc(m, tgt_elem);
     if (ne) pr("slmm::unittest: test_calc failed");
     nerr += ne;
   }

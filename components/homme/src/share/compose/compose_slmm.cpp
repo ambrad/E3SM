@@ -38,6 +38,7 @@ template <typename MT>
 void finalize_init_phase (IslMpi<MT>& cm, typename IslMpi<MT>::Advecter& advecter) {
   if (cm.halo == 2)
     extend_halo::extend_local_meshes<MT>(*cm.p, cm.ed_h, advecter);
+  advecter.fill_nearest_points_if_needed();
   advecter.sync_to_device();
   sync_to_device(cm);
 }
@@ -76,7 +77,7 @@ int slmm_unittest () {
   {
     ne = 0;
     for (int i = 0; i < homme::g_advecter->nelem(); ++i) {
-      const auto& m = homme::g_advecter->local_mesh_host(i);
+      auto& m = homme::g_advecter->local_mesh_host(i);
       ne += slmm::unittest(m, m.tgt_elem);
     }
     if (ne)

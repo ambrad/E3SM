@@ -4,9 +4,8 @@
 namespace slmm {
 template <typename ES>
 int get_nearest_point (const LocalMesh<ES>& m,
-                       const nearest_point::MeshNearestPointData<ES>& d,
                        Real* v, const Int my_ic) {
-  nearest_point::calc(m, d, v);
+  nearest_point::calc(m, v);
   return get_src_cell(m, v, my_ic);
 }
 } // namespace slmm
@@ -35,9 +34,7 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
       for (Int k = 0; k < cm.np2; ++k) {
         Int sci = slmm::get_src_cell(mesh, &dep_points(0,k,lev,tci), tgt_idx);
         if (sci == -1 && cm.advecter->nearest_point_permitted(lev))
-          sci = slmm::get_nearest_point(
-            mesh, cm.advecter->nearest_point_data(tci),
-            &dep_points(0,k,lev,tci), tgt_idx);
+          sci = slmm::get_nearest_point(mesh, &dep_points(0,k,lev,tci), tgt_idx);
         if (sci == -1) {
           std::stringstream ss;
           ss.precision(17);

@@ -23,11 +23,19 @@ template <typename ES = ko::DefaultExecutionSpace>
 struct LocalMesh {
   using RealArray = ko::View<Real*[3], siqk::Layout, ES>;
   using IntArray = ko::View<Int**, siqk::Layout, ES>;
+  using Ints = ko::View<Int*, ES>;
 
+  // Local mesh data.
   RealArray p, nml;
   IntArray e, en;
-  // tgt_elem is the index of the target element in this mesh.
+
+  // Index of the target element in this local mesh.
   Int tgt_elem;
+
+  // If the nearest-point procedure is active, these data are allocated.
+  // mesh.p(perimp(k),:) is the k'th vertex in the mesh's perimeter. Similarly,
+  // mesh.nml(perimnml(k),:) is the k'th edge's normal.
+  Ints perimp, perimnml;
 };
 
 // Inward-oriented normal. In practice, we want to form high-quality normals
@@ -140,14 +148,6 @@ namespace nearest_point {
    Of the approx dists, take the point associated with smallest.
  */
 
-template <typename ES = ko::DefaultExecutionSpace>
-struct MeshNearestPointData {
-  typedef ko::View<Int*,ES> Ints;
-  // mesh.p(perimp(k),:) is the k'th vertex in the mesh's perimeter. Similarly,
-  // mesh.nml(perimnml(k),:) is the k'th edge's normal.
-  Ints perimp, perimnml;
-};
-
 template <typename V3a, typename V3b>
 inline Real calc_dist (const V3a& p0, const V3b& p1) {
   Real len = 0;
@@ -228,17 +228,18 @@ void find_external_edges (const LocalMesh<ES>& m, std::vector<Int>& external_edg
 }
 
 template <typename ES>
-void fill_perim (const LocalMesh<ES>& m, MeshNearestPointData<ES>& d) {
+void fill_perim (LocalMesh<ES>& m) {
   std::vector<Int> external_edges;
   find_external_edges(m, external_edges);
   const Int nee = external_edges.size();
-  d.perimp = MeshNearestPointData<ko::HostSpace>::Ints("perimp", nee);
-  d.perimnml = MeshNearestPointData<ko::HostSpace>::Ints("perimnml", nee);
+  const bool already = m.perimp.size() > 0;
+  m.perimp = LocalMesh<ko::HostSpace>::Ints("perimp", nee);
+  m.perimnml = LocalMesh<ko::HostSpace>::Ints("perimnml", nee);
   for (Int k = 0; k < nee; ++k) {
     const auto i = external_edges[k];
     const auto ic = i / 4, ie = i % 4;
-    d.perimp(k) = m.e(ic, ie);
-    d.perimnml(k) = m.en(ic, ie);
+    m.perimp(k) = m.e(ic, ie);
+    m.perimnml(k) = m.en(ic, ie);
   }
 }
 
@@ -267,13 +268,13 @@ void calc_approx_nearest_point_on_arc (
 }
 
 template <typename ES>
-void calc (const LocalMesh<ES>& m, const MeshNearestPointData<ES>& d, Real* v) {
+void calc (const LocalMesh<ES>& m, Real* v) {
   using geo = siqk::SphereGeometry;
-  const Int nedge = d.perimp.size();
+  const Int nedge = m.perimp.size();
   const auto canpoa = [&] (const Int& ie, Real* vn) {
-    calc_approx_nearest_point_on_arc(slice(m.p, d.perimp(ie)),
-                                     slice(m.p, d.perimp((ie+1) % nedge)),
-                                     slice(m.nml, d.perimnml(ie)),
+    calc_approx_nearest_point_on_arc(slice(m.p, m.perimp(ie)),
+                                     slice(m.p, m.perimp((ie+1) % nedge)),
+                                     slice(m.nml, m.perimnml(ie)),
                                      v, vn);
   };
   Real min_dist2 = 100;
@@ -297,9 +298,9 @@ void calc (const LocalMesh<ES>& m, const MeshNearestPointData<ES>& d, Real* v) {
 }
 } // namespace nearest_point
 
-Int unittest(const LocalMesh<ko::DefaultExecutionSpace>& m, const Int tgt_elem);
+Int unittest(LocalMesh<slmm::MachineTraits::HES>& m, const Int tgt_elem);
 
-std::string to_string(const LocalMesh<ko::DefaultHostExecutionSpace>& m);
+std::string to_string(const LocalMesh<slmm::MachineTraits::HES>& m);
 
 } // namespace slmm
 

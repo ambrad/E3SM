@@ -113,8 +113,6 @@ class Advecter {
   typedef typename MT::HES HES;
   typedef typename MT::DES DES;
 
-  typedef nearest_point::MeshNearestPointData<DES> MeshNearestPointData;
-
   typedef ko::View<LocalMesh<HES>*, HES> LocalMeshesH;
   typedef ko::View<LocalMesh<DES>*, DES> LocalMeshesD;
 
@@ -154,9 +152,9 @@ public:
     slmm_throw_if(cubed_sphere_map == 0 && Alg::is_cisl(alg_),
                   "When cubed_sphere_map = 0, SLMM supports only ISL methods.");
     local_mesh_h_ = LocalMeshesH("local_mesh_h_", nelem);
-    if (nearest_point_permitted_lev_bdy_ >= 0)
-      local_mesh_nearest_point_data_.resize(nelem);
   }
+
+  void fill_nearest_points_if_needed();
 
   // After Advecter is fully initialized, send all the data to device.
   void sync_to_device();
@@ -204,11 +202,6 @@ public:
     return local_mesh_d_(ie);
   }
 
-  const MeshNearestPointData& nearest_point_data (const Int ie) const {
-    slmm_assert(ie < static_cast<Int>(local_mesh_nearest_point_data_.size()));
-    return local_mesh_nearest_point_data_[ie];
-  }
-
   bool nearest_point_permitted (const Int& lev) const {
     return lev <= nearest_point_permitted_lev_bdy_;
   }
@@ -224,7 +217,6 @@ private:
   const Int tq_order_;
   // For recovery from get_src_cell failure:
   Int nearest_point_permitted_lev_bdy_;
-  std::vector<MeshNearestPointData> local_mesh_nearest_point_data_;
   // Meta data obtained at initialization that can be used later.
   Ints<DES> lid2facenum_;
   SphereToRef<DES> s2r_;
@@ -256,9 +248,13 @@ void Advecter<MT>
   m.tgt_elem = slmm::get_src_cell(m, p_inside);
   slmm_assert(m.tgt_elem >= 0 &&
               m.tgt_elem < ncell);
+}
+
+template <typename MT>
+void Advecter<MT>::fill_nearest_points_if_needed () {
   if (nearest_point_permitted_lev_bdy_ >= 0)
-    nearest_point::fill_perim(local_mesh_h_(ie),
-                              local_mesh_nearest_point_data_[ie]);
+    for (Int ie = 0; ie < local_mesh_h_.extent_int(0); ++ie)
+      nearest_point::fill_perim(local_mesh_h_(ie));
 }
 
 } // namespace slmm
