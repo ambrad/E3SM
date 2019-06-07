@@ -673,7 +673,6 @@ void deep_copy (typename IslMpi<MT>::template ElemData<ESD>& d,
   d.q_extrema = typename IslMpi<MT>::template Array<Real**[2], ESD>(
     "q_extrema", s.q_extrema.extent_int(0), s.q_extrema.extent_int(1));
   ko::deep_copy(d.q_extrema, s.q_extrema);
-  d.metdet = s.metdet;
   d.qdp = s.qdp;
   d.dp = s.dp;
   d.q = s.q;

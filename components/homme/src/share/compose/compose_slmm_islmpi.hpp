@@ -403,7 +403,7 @@ struct IslMpi {
     FixedCapList<RemoteItem, ES> rmt; // points computed by a remote rank's data
     Array<Int**, ES> src;             // src(lev,k) = get_src_cell
     Array<Real**[2], ES> q_extrema;
-    const Real* metdet, * qdp, * dp;  // the owned cell's data
+    const Real* qdp, * dp;  // the owned cell's data
     Real* q;
   };
 

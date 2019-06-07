@@ -10,6 +10,11 @@
 #ifdef COMPOSE_COLUMN_OPENMP
 # pragma message "COMPOSE_COLUMN_OPENMP"
 #endif
+#pragma message "NEXT: kernelize analyze_dep_points, including use of atomics"
+/*
+  - kernelize analyze_dep_points, including use of atomics
+  - pull qdp, dp, q out of ElemData; use idx() routines for them
+*/
 
 namespace slmm {
 template <typename ES>
