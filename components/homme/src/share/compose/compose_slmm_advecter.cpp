@@ -40,11 +40,22 @@ void Advecter<MT>::check_ref2sphere (const Int ie, const Real* p_homme) {
 }
 
 template <typename MT>
+void deep_copy (typename Advecter<MT>::LocalMeshesD& d,
+                const typename Advecter<MT>::LocalMeshesH& s) {
+  const Int nlm = s.extent_int(0);
+  d = typename Advecter<MT>::LocalMeshesD("LocalMeshes", nlm);
+  const auto m = ko::create_mirror_view(d);
+  for (Int i = 0; i < nlm; ++i)
+    deep_copy(m(i), s(i));
+  ko::deep_copy(d, m);
+}
+
+template <typename MT>
 void Advecter<MT>::sync_to_device() {
-  if ( ! slmm::OnGpu<typename MT::DES>::value) {
+  if (slmm::OnGpu<typename MT::DES>::value)
+    deep_copy<MT>(local_mesh_d_, local_mesh_h_);
+  else
     local_mesh_d_ = local_mesh_h_;
-    return;
-  }
 }
 
 template class Advecter<>;

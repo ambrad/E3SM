@@ -142,16 +142,21 @@ namespace islmpi {
 #define SLMM_BOUNDS_CHECK
 #ifdef SLMM_BOUNDS_CHECK
 # define slmm_assert_high(condition) slmm_assert(condition)
+# define slmm_kernel_assert_high(condition) slmm_kernel_assert(condition)
 #else
 # define slmm_assert_high(condition)
+# define slmm_kernel_assert_high(condition)
 #endif
 
 // FixedCapList, ListOfLists, and BufferLayoutArray are simple and somewhat
 // problem-specific array data structures for use in IslMpi.
 template <typename T, typename ES = slmm::MachineTraits::DES>
-struct FixedCapList { 
-  FixedCapList () : n_(0) {}
+struct FixedCapList {
+  typedef ko::View<T*, ES> Array;
+
+  SLMM_KIF FixedCapList () : n_(0) {}
   FixedCapList (const Int& cap) { slmm_assert_high(cap >= 0); reset_capacity(cap); }
+
   void reset_capacity (const Int& cap, const bool also_size = false) {
     slmm_assert(cap >= 0);
     ko::resize(d_, cap);
@@ -162,25 +167,54 @@ struct FixedCapList {
   SLMM_KIF Int n () const { return n_; }
   SLMM_KIF Int size () const { return n_; }
   SLMM_KIF Int capacity () const { return d_.size(); }
-  SLMM_KIF const T& operator() (const Int& i) const { slmm_assert_high(i >= 0 && i < n_); return d_[i]; }
-  SLMM_KIF T& operator() (const Int& i) { slmm_assert_high(i >= 0 && i < n_); return d_[i]; }
-  SLMM_KIF void inc () { ++n_; slmm_assert_high(n_ <= static_cast<Int>(d_.size())); }
-  SLMM_KIF void inc (const Int& dn) { n_ += dn; slmm_assert_high(n_ <= static_cast<Int>(d_.size())); }
+  SLMM_KIF const T& operator() (const Int& i) const { slmm_kernel_assert_high(i >= 0 && i < n_); return d_[i]; }
+  SLMM_KIF T& operator() (const Int& i) { slmm_kernel_assert_high(i >= 0 && i < n_); return d_[i]; }
+  SLMM_KIF void inc () { ++n_; slmm_kernel_assert_high(n_ <= static_cast<Int>(d_.size())); }
+  SLMM_KIF void inc (const Int& dn) { n_ += dn; slmm_kernel_assert_high(n_ <= static_cast<Int>(d_.size())); }
 
   SLMM_KIF const T* data () const { return d_.data(); }
   SLMM_KIF T* data () { return d_.data(); }  
-  SLMM_KIF const T& back () const { slmm_assert_high(n_ > 0); return d_[n_-1]; }
-  SLMM_KIF T& back () { slmm_assert_high(n_ > 0); return d_[n_-1]; }
+  SLMM_KIF const T& back () const { slmm_kernel_assert_high(n_ > 0); return d_[n_-1]; }
+  SLMM_KIF T& back () { slmm_kernel_assert_high(n_ > 0); return d_[n_-1]; }
   SLMM_KIF const T* begin () const { return d_.data(); }
   SLMM_KIF T* begin () { return d_.data(); }
   SLMM_KIF const T* end () const { return d_.data() + n_; }
   SLMM_KIF T* end () { return d_.data() + n_; }
 
+  // Copy from s to this.
+  template <typename ESS>
+  void copy (const FixedCapList<T, ESS>& s) {
+    siqk::resize_and_copy(d_, s.view());
+    n_ = s.size();
+  }
+
+  // Create a FixedCapList whose View is a mirror view of this.
+  FixedCapList<T, typename Array::host_mirror_space> mirror () const {
+    FixedCapList<T, typename Array::host_mirror_space> v;
+    v.set_view(ko::create_mirror_view(d_));
+    v.inc(n_);
+    return v;
+  }
+
+  // Use these only for low-level host-device things.
+  const Array& view () const { return d_; }
+  void set_view (const Array& v) {
+    slmm_assert_high(v.size() >= n_);
+    d_ = v;
+  }
+
 private:
-  typedef ko::View<T*, ES> Array;
   Array d_;
   Int n_;
 };
+
+template <typename T, typename ESD, typename ESS>
+void deep_copy (FixedCapList<T, ESD>& d, const FixedCapList<T, ESS>& s) {
+  slmm_assert_high(d.capacity() == s.capacity());
+  ko::deep_copy(d.view(), s.view());
+  d.clear();
+  d.inc(s.size());
+}
 
 template <typename ES> struct BufferLayoutArray;
 

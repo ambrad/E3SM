@@ -109,14 +109,14 @@ private:
 
 // Advecter has purely mesh-local knowledge, with once exception noted below.
 template <typename MT = MachineTraits>
-class Advecter {
+struct Advecter {
   typedef typename MT::HES HES;
   typedef typename MT::DES DES;
 
-  typedef ko::View<LocalMesh<HES>*, HES> LocalMeshesH;
-  typedef ko::View<LocalMesh<DES>*, DES> LocalMeshesD;
+  template <typename ES> using LocalMeshes = ko::View<LocalMesh<ES>*, ES>;
+  typedef LocalMeshes<HES> LocalMeshesH;
+  typedef LocalMeshes<DES> LocalMeshesD;
 
-public:
   typedef std::shared_ptr<Advecter> Ptr;
   typedef std::shared_ptr<const Advecter> ConstPtr;
 

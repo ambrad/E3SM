@@ -9,4 +9,11 @@
 # define COMPOSE_COLUMN_OPENMP
 #endif
 
+#define COMPOSE_MIMIC_GPU
+#if defined COMPOSE_MIMIC_GPU
+# if defined COMPOSE_COLUMN_OPENMP
+#  undef COMPOSE_COLUMN_OPENMP
+# endif
+#endif
+
 #endif

@@ -29,13 +29,13 @@ struct LocalMesh {
   RealArray p, nml;
   IntArray e, en;
 
-  // Index of the target element in this local mesh.
-  Int tgt_elem;
-
   // If the nearest-point procedure is active, these data are allocated.
   // mesh.p(perimp(k),:) is the k'th vertex in the mesh's perimeter. Similarly,
   // mesh.nml(perimnml(k),:) is the k'th edge's normal.
   Ints perimp, perimnml;
+
+  // Index of the target element in this local mesh.
+  Int tgt_elem;
 };
 
 // Inward-oriented normal. In practice, we want to form high-quality normals
@@ -68,6 +68,17 @@ void fill_normals (LocalMesh<ko::DefaultHostExecutionSpace>& m) {
       }
   m.en = en;
   m.nml = nml;
+}
+
+template <typename ESD, typename ESS>
+void deep_copy (LocalMesh<ESD>& d, const LocalMesh<ESS>& s) {
+  siqk::resize_and_copy(d.p, s.p);
+  siqk::resize_and_copy(d.nml, s.nml);
+  siqk::resize_and_copy(d.e, s.e);
+  siqk::resize_and_copy(d.en, s.en);
+  d.tgt_elem = s.tgt_elem;
+  siqk::resize_and_copy(d.perimp, s.perimp);
+  siqk::resize_and_copy(d.perimnml, s.perimnml);
 }
 
 // Is v inside, including on, the quad ic?

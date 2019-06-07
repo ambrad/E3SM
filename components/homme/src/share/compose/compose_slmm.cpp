@@ -47,9 +47,9 @@ void finalize_init_phase (IslMpi<MT>& cm, typename IslMpi<MT>::Advecter& advecte
 template <typename MT>
 void set_elem_data (IslMpi<MT>& cm, const Int ie, const Real* metdet, const Real* qdp,
                     const Real* dp, Real* q, const Int nelem_in_patch) {
-  slmm_assert(ie < cm.ed_h.size());
+  slmm_assert(ie < cm.ed_d.size());
   slmm_assert(cm.halo > 1 || cm.ed_h(ie).nbrs.size() == nelem_in_patch);
-  auto& e = cm.ed_h(ie);
+  auto& e = cm.ed_d(ie);
   e.metdet = metdet;
   e.qdp = qdp;
   e.dp = dp;

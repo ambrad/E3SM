@@ -1,6 +1,16 @@
 #include "compose_slmm_islmpi.hpp"
 #include "compose_slmm_departure_point.hpp"
 
+#ifdef COMPOSE_MIMIC_GPU
+# pragma message "COMPOSE_MIMIC_GPU"
+#endif
+#ifdef COMPOSE_HORIZ_OPENMP
+# pragma message "COMPOSE_HORIZ_OPENMP"
+#endif
+#ifdef COMPOSE_COLUMN_OPENMP
+# pragma message "COMPOSE_COLUMN_OPENMP"
+#endif
+
 namespace slmm {
 template <typename ES>
 int get_nearest_point (const LocalMesh<ES>& m,
