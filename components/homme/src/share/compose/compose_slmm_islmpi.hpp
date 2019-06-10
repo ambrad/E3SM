@@ -275,6 +275,14 @@ struct ListOfLists {
     return d_[ptr_[i] + j];
   }
 
+  void zero () {
+#ifdef COMPOSE_HORIZ_OPENMP
+#   pragma omp for
+#endif
+    for (Int i = 0; i < ptr_[n()]; ++i)
+      d_[i] = 0;
+  }
+
 private:
   template <typename T1> using Array = ko::View<T1*, ES>;
   friend class BufferLayoutArray<ES>;
@@ -324,17 +332,7 @@ struct BufferLayoutArray {
     d_.init(nrank, ns.data());
   }
 
-  void zero () {
-    const Int ni = d_.n();
-#ifdef COMPOSE_HORIZ_OPENMP
-#   pragma omp for
-#endif
-    for (Int i = 0; i < ni; ++i) {
-      auto&& l = d_(i);
-      for (Int j = 0, nj = l.n(); j < nj; ++j)
-        l(j) = 0;
-    }
-  }
+  void zero () { d_.zero(); }
 
   SLMM_KIF LayoutTriple& operator() (const Int& ri, const Int& lidi, const Int& lev) {
     slmm_assert_high(ri >= 0 && ri < d_.n() &&

@@ -66,11 +66,7 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
   const auto myrank = cm.p->rank();
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
   cm.bla.zero();
-#ifdef COMPOSE_HORIZ_OPENMP
-# pragma omp for
-#endif
-  for (Int ri = 0; ri < nrmtrank; ++ri)
-    cm.nx_in_lid(ri).zero();
+  cm.nx_in_lid.zero();
   for (Int tci = nets; tci <= nete; ++tci) {
     const auto& mesh = cm.advecter->local_mesh(tci);
     const auto tgt_idx = mesh.tgt_elem;
