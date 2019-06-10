@@ -278,9 +278,11 @@ struct ListOfLists {
   void zero () {
 #ifdef COMPOSE_HORIZ_OPENMP
 #   pragma omp for
-#endif
     for (Int i = 0; i < ptr_[n()]; ++i)
       d_[i] = 0;
+#else
+    ko::deep_copy(d_, 0);
+#endif
   }
 
 private:

@@ -3,6 +3,8 @@
 
 #include <Kokkos_Core.hpp>
 
+#include "compose.hpp"
+
 namespace homme {
 typedef int Int;
 typedef double Real;
