@@ -19,7 +19,7 @@ namespace slmm {
    mesh, the whole line of a square face can be used to compute the edge
    normal. Furthermore, there are far fewer unique edge normals than edges.
  */
-template <typename ES = ko::DefaultExecutionSpace>
+template <typename ES>
 struct LocalMesh {
   using RealArray = ko::View<Real*[3], siqk::Layout, ES>;
   using IntArray = ko::View<Int**, siqk::Layout, ES>;
@@ -42,7 +42,7 @@ struct LocalMesh {
 // using information about the cubed-sphere mesh. This is a low-quality
 // brute-force calculation.
 template <typename geo>
-void fill_normals (LocalMesh<ko::DefaultHostExecutionSpace>& m) {
+void fill_normals (LocalMesh<MachineTraits::HES>& m) {
   // Count number of edges.
   Int ne = 0;
   for (Int ip = 0; ip < nslices(m.e); ++ip)

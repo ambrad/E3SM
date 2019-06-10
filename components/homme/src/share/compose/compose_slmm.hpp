@@ -46,8 +46,13 @@ namespace ko = Kokkos;
 
 struct MachineTraits {
   // Host and device execution spaces.
-  typedef ko::DefaultHostExecutionSpace HES;
-  typedef ko::DefaultExecutionSpace DES;
+#if defined COMPOSE_HORIZ_OPENMP || defined COMPOSE_COLUMN_OPENMP
+  using HES = ko::Serial;
+  using DES = ko::Serial;
+#else
+  using HES = ko::DefaultHostExecutionSpace;
+  using DES = ko::DefaultExecutionSpace;
+#endif
 };
 
 template <typename ES> struct OnGpu {
