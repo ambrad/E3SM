@@ -165,27 +165,22 @@ struct FixedCapList {
     slmm_assert(cap >= 0);
     if (d_.size() == 0) init_n();
     ko::resize(d_, cap);
-    set_n(also_size ? cap : 0);
+    set_n_from_host(also_size ? cap : 0);
   }
 
   // If empty ctor was called, nothing below here is valid until reset_capacity
   // is called.
 
-  SLMM_KIF void clear () { set_n(0); }
+  SLMM_KIF void clear () const { set_n(0); }
   SLMM_KIF Int size () const { return n(); }
-  SLMM_KIF const T& operator() (const Int& i) const { slmm_kernel_assert_high(i >= 0 && i < n()); return d_[i]; }
-  SLMM_KIF T& operator() (const Int& i) { slmm_kernel_assert_high(i >= 0 && i < n()); return d_[i]; }
-  SLMM_KIF void inc () { ++n(); slmm_kernel_assert_high(n() <= static_cast<Int>(d_.size())); }
-  SLMM_KIF void inc (const Int& dn) { n() += dn; slmm_kernel_assert_high(n() <= static_cast<Int>(d_.size())); }
+  SLMM_KIF T& operator() (const Int& i) const { slmm_kernel_assert_high(i >= 0 && i < n()); return d_[i]; }
+  SLMM_KIF void inc () const { ++get_n_ref(); slmm_kernel_assert_high(n() <= static_cast<Int>(d_.size())); }
+  SLMM_KIF void inc (const Int& dn) const { get_n_ref() += dn; slmm_kernel_assert_high(n() <= static_cast<Int>(d_.size())); }
 
-  SLMM_KIF const T* data () const { return d_.data(); }
-  SLMM_KIF T* data () { return d_.data(); }  
-  SLMM_KIF const T& back () const { slmm_kernel_assert_high(n() > 0); return d_[n()-1]; }
-  SLMM_KIF T& back () { slmm_kernel_assert_high(n() > 0); return d_[n()-1]; }
-  SLMM_KIF const T* begin () const { return d_.data(); }
-  SLMM_KIF T* begin () { return d_.data(); }
-  SLMM_KIF const T* end () const { return d_.data() + n(); }
-  SLMM_KIF T* end () { return d_.data() + n(); }
+  SLMM_KIF T* data () const { return d_.data(); }  
+  SLMM_KIF T& back () const { slmm_kernel_assert_high(n() > 0); return d_[n()-1]; }
+  SLMM_KIF T* begin () const { return d_.data(); }
+  SLMM_KIF T* end () const { return d_.data() + n(); }
 
   // Copy from s to this.
   template <typename ESS>
@@ -194,16 +189,17 @@ struct FixedCapList {
     set_n(s);
   }
 
+  void set_n (const Int& n0) const { get_n_ref() = n0; }
+  template <typename ESS> void set_n (const ESS& s) const { get_n_ref() = s.n(); }
+
   // Use these only for low-level host-device things.
 #ifdef COMPOSE_PORT
   typedef ko::View<Int, ES> NT;
 
   SLMM_KIF Int n () const { return n_(); }
-  SLMM_KIF Int& n () { return n_(); }
 
   void init_n () { n_ = NT("FixedCapList::n_"); }
-  void set_n (const Int& n0) { ko::deep_copy(n_, n0); }
-  template <typename ESS> void set_n (const ESS& s) { ko::deep_copy(n_, s.n_view()); }
+  void set_n_from_host (const Int& n0) { ko::deep_copy(n_, n0); }
 
   // Create a FixedCapList whose View is a mirror view of this.
   FixedCapList<T, typename Array::host_mirror_space> mirror () const {
@@ -222,16 +218,26 @@ struct FixedCapList {
   typedef Int NT;
 
   SLMM_KIF Int n () const { return n_; }
-  SLMM_KIF Int& n () { return n_; }
 
   void init_n () {}
-  void set_n (const Int& n0) { n() = n0; }
-  template <typename ESS> void set_n (const ESS& s) { n() = s.n(); }
+  void set_n_from_host (const Int& n0) { set_n(n0); }
 #endif
 
 private:
   Array d_;
+
+#ifndef COMPOSE_PORT
+  // You'll notice in a number of spots that there is strange const/mutable
+  // stuff going on. This is to conform to Kokkos conventions.
+  mutable
+#endif
   NT n_;
+
+#ifdef COMPOSE_PORT
+  SLMM_KIF Int& get_n_ref () const { return n_(); }
+#else
+  SLMM_KIF Int& get_n_ref () const { return n_; }
+#endif
 };
 
 template <typename T, typename ESD, typename ESS>
@@ -250,17 +256,11 @@ struct ListOfLists {
   struct List {
     SLMM_KIF Int n () const { return n_; }
 
-    SLMM_KIF T& operator() (const Int& i) { slmm_assert_high(i >= 0 && i < n_); return d_[i]; }
-    SLMM_KIF const T& operator() (const Int& i) const { slmm_assert_high(i >= 0 && i < n_); return d_[i]; }
+    SLMM_KIF T& operator() (const Int& i) const { slmm_assert_high(i >= 0 && i < n_); return d_[i]; }
 
-    SLMM_KIF const T* data () const { return d_; }
-    SLMM_KIF T* data () { return d_; }
-    SLMM_KIF const T* begin () const { return d_; }
-    SLMM_KIF T* begin () { return d_; }
-    SLMM_KIF const T* end () const { return d_ + n_; }
-    SLMM_KIF T* end () { return d_ + n_; }
-
-    SLMM_KIF void zero () { for (Int i = 0; i < n_; ++i) d_[i] = 0; }
+    SLMM_KIF T* data () const { return d_; }
+    SLMM_KIF T* begin () const { return d_; }
+    SLMM_KIF T* end () const { return d_ + n_; }
 
   private:
     friend class ListOfLists<T>;
@@ -283,20 +283,11 @@ struct ListOfLists {
   }
 
   SLMM_KIF Int n () const { return static_cast<Int>(ptr_.size()) - 1; }
-  SLMM_KIF List operator() (const Int& i) {
-    slmm_assert_high(i >= 0 && i < static_cast<Int>(ptr_.size()) - 1);
-    return List(&d_[ptr_[i]], ptr_[i+1] - ptr_[i]);
-  }
-  SLMM_KIF const List operator() (const Int& i) const {
+  SLMM_KIF List operator() (const Int& i) const {
     slmm_assert_high(i >= 0 && i < static_cast<Int>(ptr_.size()) - 1);
     return List(const_cast<T*>(&d_[ptr_[i]]), ptr_[i+1] - ptr_[i]);
   }
-  SLMM_KIF T& operator() (const Int& i, const Int& j) {
-    slmm_assert_high(i >= 0 && i < static_cast<Int>(ptr_.size()) - 1 &&
-                     j >= 0 && j < ptr_[i+1] - ptr_[i]);
-    return d_[ptr_[i] + j];
-  }
-  SLMM_KIF const T& operator() (const Int& i, const Int& j) const {
+  SLMM_KIF T& operator() (const Int& i, const Int& j) const {
     slmm_assert_high(i >= 0 && i < static_cast<Int>(ptr_.size()) - 1 &&
                      j >= 0 && j < ptr_[i+1] - ptr_[i]);
     return d_[ptr_[i] + j];
@@ -317,8 +308,7 @@ private:
   friend class BufferLayoutArray<ES>;
   Array<T> d_;
   Array<Int> ptr_;
-  SLMM_KIF T* data () { return d_.data(); }
-  SLMM_KIF const T* data () const { return d_.data(); }
+  SLMM_KIF T* data () const { return d_.data(); }
 };
 
 struct LayoutTriple {
@@ -330,11 +320,7 @@ struct LayoutTriple {
 template <typename ES = slmm::MachineTraits::DES>
 struct BufferLayoutArray {
   struct BufferRankLayoutArray {
-    SLMM_KIF LayoutTriple& operator() (const Int& lidi, const Int& lev) {
-      slmm_assert_high(lidi >= 0 && lev >= 0 && lidi*nlev_ + lev < d_.n());
-      return d_(lidi*nlev_ + lev);
-    }
-    SLMM_KIF const LayoutTriple& operator() (const Int& lidi, const Int& lev) const {
+    SLMM_KIF LayoutTriple& operator() (const Int& lidi, const Int& lev) const {
       slmm_assert_high(lidi >= 0 && lev >= 0 && lidi*nlev_ + lev < d_.n());
       return d_(lidi*nlev_ + lev);
     }
@@ -349,7 +335,8 @@ struct BufferLayoutArray {
 
   BufferLayoutArray () : nlev_(0) {}
   BufferLayoutArray (const Int& nrank, const Int* nlid_per_rank, const Int& nlev)
-    { init(nrank, nlid_per_rank, nlev); }
+  { init(nrank, nlid_per_rank, nlev); }
+
   void init (const Int& nrank, const Int* nlid_per_rank, const Int& nlev) {
     slmm_assert(nrank >= 0 && nlev > 0);
     nlev_ = nlev;
@@ -363,20 +350,14 @@ struct BufferLayoutArray {
 
   void zero () { d_.zero(); }
 
-  SLMM_KIF LayoutTriple& operator() (const Int& ri, const Int& lidi, const Int& lev) {
+  SLMM_KIF LayoutTriple& operator() (const Int& ri, const Int& lidi, const Int& lev) const {
     slmm_assert_high(ri >= 0 && ri < d_.n() &&
                      lidi >= 0 && lev >= 0 &&
                      lidi*nlev_ + lev < d_(ri).n());
     return d_.data()[d_.ptr_[ri] + lidi*nlev_ + lev];
   }
-  SLMM_KIF const LayoutTriple& operator() (const Int& ri, const Int& lidi, const Int& lev) const {
-    return const_cast<BufferLayoutArray*>(this)->operator()(ri, lidi, lev);
-  }
-  SLMM_KIF BufferRankLayoutArray operator() (const Int& ri) {
-    slmm_assert_high(ri >= 0 && ri < d_.n());
-    return BufferRankLayoutArray(d_(ri), nlev_);
-  }
-  SLMM_KIF const BufferRankLayoutArray operator() (const Int& ri) const {
+
+  SLMM_KIF BufferRankLayoutArray operator() (const Int& ri) const {
     slmm_assert_high(ri >= 0 && ri < d_.n());
     return BufferRankLayoutArray(d_(ri), nlev_);
   }

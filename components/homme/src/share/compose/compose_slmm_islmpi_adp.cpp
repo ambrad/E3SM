@@ -14,8 +14,7 @@
 # pragma message "COMPOSE_PORT"
 #endif
 /*
-  - get COMPOSE_PORT stuff going
-  - convert anything that doesn't need FixedCapList's complexity to simple View
+  x get COMPOSE_PORT stuff going
   - kernelize analyze_dep_points, including use of atomics
   - pull qdp, dp, q out of ElemData; use idx() routines for them
 */
@@ -71,42 +70,50 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
   cm.bla.zero();
   cm.nx_in_lid.zero();
-  for (Int tci = nets; tci <= nete; ++tci) {
-    const auto& mesh = cm.advecter->local_mesh(tci);
-    const auto tgt_idx = mesh.tgt_elem;
-    auto& ed = cm.ed_d(tci);
-    ed.own.clear();
-    for (Int lev = 0; lev < cm.nlev; ++lev)
-      for (Int k = 0; k < cm.np2; ++k) {
-        Int sci = slmm::get_src_cell(mesh, &dep_points(0,k,lev,tci), tgt_idx);
-        if (sci == -1 && cm.advecter->nearest_point_permitted(lev))
-          sci = slmm::get_nearest_point(mesh, &dep_points(0,k,lev,tci), tgt_idx);
-        if (sci == -1)
-          throw_on_sci_error(cm, dep_points, k, lev, tci);
-        ed.src(lev,k) = sci;
-        if (ed.nbrs(sci).rank == myrank) {
-          ed.own.inc();
-          auto& t = ed.own.back();
-          t.lev = lev; t.k = k;
-        } else {
-          const auto ri = ed.nbrs(sci).rank_idx;
-          const auto lidi = ed.nbrs(sci).lid_on_rank_idx;
+  {
+    auto ed = cm.ed_d;
+    ko::parallel_for(ko::RangePolicy<typename MT::DES>(nets, nete+1),
+                     KOKKOS_LAMBDA (const Int& tci) { ed(tci).own.clear(); });
+  }
+  {
+    // N.B. Currently a race condition in COMPOSE_PORT build.
+    const auto f = KOKKOS_LAMBDA (const Int& tci) {
+      const auto& mesh = cm.advecter->local_mesh(tci);
+      const auto tgt_idx = mesh.tgt_elem;
+      auto& ed = cm.ed_d(tci);
+      for (Int lev = 0; lev < cm.nlev; ++lev)
+        for (Int k = 0; k < cm.np2; ++k) {
+          Int sci = slmm::get_src_cell(mesh, &dep_points(0,k,lev,tci), tgt_idx);
+          if (sci == -1 && cm.advecter->nearest_point_permitted(lev))
+            sci = slmm::get_nearest_point(mesh, &dep_points(0,k,lev,tci), tgt_idx);
+          if (sci == -1)
+            throw_on_sci_error(cm, dep_points, k, lev, tci);
+          ed.src(lev,k) = sci;
+          if (ed.nbrs(sci).rank == myrank) {
+            ed.own.inc();
+            auto& t = ed.own.back();
+            t.lev = lev; t.k = k;
+          } else {
+            const auto ri = ed.nbrs(sci).rank_idx;
+            const auto lidi = ed.nbrs(sci).lid_on_rank_idx;
 #ifdef COMPOSE_HORIZ_OPENMP
-          omp_lock_t* lock;
-          if (cm.horiz_openmp) {
-            lock = &cm.ri_lidi_locks(ri,lidi);
-            omp_set_lock(lock);
-          }
+            omp_lock_t* lock;
+            if (cm.horiz_openmp) {
+              lock = &cm.ri_lidi_locks(ri,lidi);
+              omp_set_lock(lock);
+            }
 #endif
-          {
-            ++cm.nx_in_lid(ri,lidi);
-            ++cm.bla(ri,lidi,lev).xptr;
-          }
+            {
+              ++cm.nx_in_lid(ri,lidi);
+              ++cm.bla(ri,lidi,lev).xptr;
+            }
 #ifdef COMPOSE_HORIZ_OPENMP
-          if (cm.horiz_openmp) omp_unset_lock(lock);
+            if (cm.horiz_openmp) omp_unset_lock(lock);
 #endif
+          }
         }
-      }
+    };
+    ko::parallel_for(ko::RangePolicy<typename MT::DES>(nets, nete+1), f);
   }
 #ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
