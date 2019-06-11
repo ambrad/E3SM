@@ -185,20 +185,20 @@ struct Advecter {
   void check_ref2sphere(const Int ie, const Real* p_homme);
 
   const LocalMesh<DES>& local_mesh_host (const Int ie) const {
-    slmm_assert(ie < static_cast<Int>(local_mesh_.size()));
+    slmm_assert(ie < static_cast<Int>(local_mesh_h_.size()));
     return local_mesh_h_(ie);
   }
   LocalMesh<DES>& local_mesh_host (const Int ie) {
-    slmm_assert(ie < static_cast<Int>(local_mesh_.size()));
+    slmm_assert(ie < static_cast<Int>(local_mesh_h_.size()));
     return local_mesh_h_(ie);
   }
 
   const LocalMesh<DES>& local_mesh (const Int ie) const {
-    slmm_assert(ie < static_cast<Int>(local_mesh_.size()));
+    slmm_assert(ie < static_cast<Int>(local_mesh_d_.size()));
     return local_mesh_d_(ie);
   }
   LocalMesh<DES>& local_mesh (const Int ie) {
-    slmm_assert(ie < static_cast<Int>(local_mesh_.size()));
+    slmm_assert(ie < static_cast<Int>(local_mesh_d_.size()));
     return local_mesh_d_(ie);
   }
 
@@ -227,7 +227,7 @@ template <typename Array3D>
 void Advecter<MT>
 ::init_local_mesh_if_needed (const Int ie, const Array3D& corners,
                              const Real* p_inside) {
-  slmm_assert(ie < static_cast<Int>(local_mesh_.size()));
+  slmm_assert(ie < static_cast<Int>(local_mesh_h_.size()));
   if (local_mesh_h_(ie).p.extent_int(0) != 0) return;
   const Int
     nd = 3,

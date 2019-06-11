@@ -660,6 +660,7 @@ void setup_comm_pattern (IslMpi<MT>& cm, const Int* nbr_id_rank, const Int* nirp
   alloc_mpi_buffers(cm, rank2rmtgids, rank2owngids);
 }
 
+#ifdef COMPOSE_PORT
 template <typename MT, typename ESD, typename ESS>
 void deep_copy (typename IslMpi<MT>::template ElemData<ESD>& d,
                 const typename IslMpi<MT>::template ElemData<ESS>& s) {
@@ -677,10 +678,12 @@ void deep_copy (typename IslMpi<MT>::template ElemData<ESD>& d,
   d.dp = s.dp;
   d.q = s.q;
 }
+#endif
 
 template <typename MT>
 void deep_copy (typename IslMpi<MT>::ElemDataListD& d,
                 const typename IslMpi<MT>::ElemDataListH& s) {
+#ifdef COMPOSE_PORT
   const Int ned = s.size();
   // device view of device views
   d = typename IslMpi<MT>::ElemDataListD(ned);
@@ -692,13 +695,16 @@ void deep_copy (typename IslMpi<MT>::ElemDataListD& d,
     deep_copy<MT>(m(i), s(i));
   }
   deep_copy(d, m);
+#endif
 }
 
 template <typename MT>
 void sync_to_device (IslMpi<MT>& cm) {
+#if 0
   if (slmm::OnGpu<typename MT::DES>::value)
     deep_copy<MT>(cm.ed_d, cm.ed_h);
   else
+#endif
     cm.ed_d = cm.ed_h;
 }
 

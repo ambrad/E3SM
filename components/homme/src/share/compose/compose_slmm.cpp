@@ -86,11 +86,13 @@ bool getenv (const std::string& varname, T& var) {
 }
 
 void dev_init_threads () {
-#if defined COMPOSE_MIMIC_GPU && ! defined COMPOSE_HORIZ_OPENMP
-  slmm_assert(omp_get_max_threads() == 1);
+#if defined COMPOSE_MIMIC_GPU
+  static int nthr = -1;
   slmm_assert(omp_get_thread_num() == 0);
-  int nthr = 1;
-  getenv("OMP_NUM_THREADS", nthr);
+  if (nthr < 0) {
+    nthr = 1;
+    getenv("OMP_NUM_THREADS", nthr);
+  }
   omp_set_num_threads(nthr);
   static_assert(std::is_same<slmm::MachineTraits::DES, Kokkos::OpenMP>::value,
                 "in this dev code, should have OpenMP exe space on");
@@ -98,7 +100,7 @@ void dev_init_threads () {
 }
 
 void dev_fin_threads () {
-#if defined COMPOSE_MIMIC_GPU && ! defined COMPOSE_HORIZ_OPENMP
+#if defined COMPOSE_MIMIC_GPU
   omp_set_num_threads(1);
 #endif
 }
@@ -125,6 +127,24 @@ int slmm_unittest () {
 static homme::HommeIslMpi::Ptr g_csl_mpi;
 
 extern "C" {
+// Interface for Homme, through compose_mod.F90.
+void kokkos_init () {
+  amb::dev_init_threads();
+  Kokkos::InitArguments args;
+  args.disable_warnings = true;
+  Kokkos::initialize(args);
+  Kokkos::View<int> v("hi");
+  Kokkos::deep_copy(v, 0);
+  homme::islmpi::FixedCapList<int,slmm::MachineTraits::DES> fcl;
+  amb::dev_fin_threads();
+}
+
+void kokkos_finalize () {
+  amb::dev_init_threads();
+  Kokkos::finalize_all();
+  amb::dev_fin_threads();
+}
+
 void slmm_init_impl (
   homme::Int fcomm, homme::Int transport_alg, homme::Int np,
   homme::Int nlev, homme::Int qsize, homme::Int qsized, homme::Int nelem,

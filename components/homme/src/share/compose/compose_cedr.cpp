@@ -5745,15 +5745,6 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
 } // namespace sl
 } // namespace homme
 
-// Interface for Homme, through compose_mod.F90.
-extern "C" void kokkos_init () {
-  Kokkos::InitArguments args;
-  args.disable_warnings = true;
-  Kokkos::initialize(args);
-}
-
-extern "C" void kokkos_finalize () { Kokkos::finalize_all(); }
-
 static homme::CDR::Ptr g_cdr;
 
 extern "C" void

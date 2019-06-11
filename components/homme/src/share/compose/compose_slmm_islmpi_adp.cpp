@@ -10,8 +10,12 @@
 #ifdef COMPOSE_COLUMN_OPENMP
 # pragma message "COMPOSE_COLUMN_OPENMP"
 #endif
-#pragma message "NEXT: kernelize analyze_dep_points, including use of atomics"
+#ifdef COMPOSE_PORT
+# pragma message "COMPOSE_PORT"
+#endif
 /*
+  - get COMPOSE_PORT stuff going
+  - convert anything that doesn't need FixedCapList's complexity to simple View
   - kernelize analyze_dep_points, including use of atomics
   - pull qdp, dp, q out of ElemData; use idx() routines for them
 */

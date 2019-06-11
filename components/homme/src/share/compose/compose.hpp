@@ -9,11 +9,17 @@
 # define COMPOSE_COLUMN_OPENMP
 #endif
 
-#define COMPOSE_MIMIC_GPU
+#if ! defined COMPOSE_HORIZ_OPENMP && ! defined COMPOSE_COLUMN_OPENMP
+# define COMPOSE_MIMIC_GPU
+#endif
 #if defined COMPOSE_MIMIC_GPU
 # if defined COMPOSE_COLUMN_OPENMP
 #  undef COMPOSE_COLUMN_OPENMP
 # endif
+#endif
+
+#if defined COMPOSE_MIMIC_GPU || defined KOKKOS_ENABLE_CUDA || defined HOMMEXX_VECTOR_SIZE
+# define COMPOSE_PORT
 #endif
 
 #endif
