@@ -54,11 +54,9 @@ void deep_copy (typename Advecter<MT>::LocalMeshesD& d,
 
 template <typename MT>
 void Advecter<MT>::sync_to_device() {
-#if 0
   if (slmm::OnGpu<typename MT::DES>::value)
     deep_copy<MT>(local_mesh_d_, local_mesh_h_);
   else
-#endif
     local_mesh_d_ = local_mesh_h_;
 }
 

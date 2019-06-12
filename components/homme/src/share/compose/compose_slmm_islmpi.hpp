@@ -187,13 +187,15 @@ struct FixedCapList {
   template <typename ESS>
   void copy (const FixedCapList<T, ESS>& s) {
     siqk::resize_and_copy(d_, s.view());
+    init_n();
     set_n(s);
   }
+
+  // Use everything that follows only for low-level host-device things.
 
   void set_n (const Int& n0) const { get_n_ref() = n0; }
   template <typename ESS> void set_n (const ESS& s) const { get_n_ref() = s.n(); }
 
-  // Use these only for low-level host-device things.
 #ifdef COMPOSE_PORT
   typedef ko::View<Int, ES> NT;
 
@@ -211,8 +213,6 @@ struct FixedCapList {
     return v;
   }
 
-  const Array& view () const { return d_; }
-  void set_view (const Array& v) { d_ = v; }
   const ko::View<Int, ES>& n_view () const { return n_; }
   void set_n_view (const NT& v) { n_ = v; }
 #else
@@ -223,6 +223,9 @@ struct FixedCapList {
   void init_n () {}
   void set_n_from_host (const Int& n0) { set_n(n0); }
 #endif
+
+  const Array& view () const { return d_; }
+  void set_view (const Array v) { d_ = v; }
 
 private:
   Array d_;
@@ -250,6 +253,18 @@ void deep_copy (FixedCapList<T, ESD>& d, const FixedCapList<T, ESS>& s) {
 #endif
 }
 
+template <typename MT, typename T>
+void h2d (FixedCapList<T, typename MT::DES>& d,
+          const FixedCapList<T, typename MT::HES>& s) {
+  if (slmm::OnGpu<typename MT::DES>::value) {
+    d.reset_capacity(s.capacity());
+    deep_copy(d, s);
+  } else {
+    d.set_view(s.view());
+    d.set_n(s.n());
+  }
+}
+
 template <typename ES> struct BufferLayoutArray;
 
 template <typename T, typename ES>
@@ -273,14 +288,16 @@ struct ListOfLists {
   ListOfLists () {}
   ListOfLists (const Int nlist, const Int* nlist_per_list) { init(nlist, nlist_per_list); }
   void init (const Int nlist, const Int* nlist_per_list) {
-    slmm_assert(nlist >= 0); 
+    slmm_assert(nlist >= 0);
     ptr_ = Array<Int>("ptr_", nlist+1);
-    ptr_[0] = 0;
+    const auto ptr = ko::create_mirror_view(ptr_);
+    ptr[0] = 0;
     for (Int i = 0; i < nlist; ++i) {
       slmm_assert(nlist_per_list[i] >= 0);
-      ptr_[i+1] = ptr_[i] + nlist_per_list[i];
+      ptr[i+1] = ptr[i] + nlist_per_list[i];
     }
-    d_ = Array<T>("d_", ptr_[nlist]);
+    ko::deep_copy(ptr_, ptr);
+    d_ = Array<T>("d_", ptr[nlist]);
   }
 
   SLMM_KIF Int n () const { return static_cast<Int>(ptr_.size()) - 1; }

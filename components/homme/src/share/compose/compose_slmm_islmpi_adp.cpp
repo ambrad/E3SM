@@ -15,8 +15,8 @@
 #endif
 /*
   x get COMPOSE_PORT stuff going
-  - get other containers in cm portable
-  - make ListOfLists::init portable
+  x get other containers in cm portable
+  x make ListOfLists::init and BufferLayoutArray::init portable
   - kernelize analyze_dep_points, including use of atomics
   - pull qdp, dp, q out of ElemData; use idx() routines for them
 */

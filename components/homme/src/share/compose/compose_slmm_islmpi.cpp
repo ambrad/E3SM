@@ -528,6 +528,7 @@ void comm_lid_on_rank (IslMpi<MT>& cm, const Rank2Gids& rank2rmtgids,
   cm.mylid_with_comm_h.reset_capacity(mylid_with_comm.size(), true);
   for (Int i = 0; i < cm.mylid_with_comm_h.n(); ++i)
     cm.mylid_with_comm_h(i) = mylid_with_comm[i];
+  h2d<MT>(cm.mylid_with_comm_d, cm.mylid_with_comm_h);
 
   mpi::waitall(sendreqs.size(), sendreqs.data());
 }
@@ -690,21 +691,17 @@ void deep_copy (typename IslMpi<MT>::ElemDataListD& d,
   d.inc(ned);
   // host view of device views
   auto m = d.mirror();
-  for (Int i = 0; i < ned; ++i) {
-    m.inc();
+  for (Int i = 0; i < ned; ++i)
     deep_copy<MT>(m(i), s(i));
-  }
   deep_copy(d, m);
 #endif
 }
 
 template <typename MT>
 void sync_to_device (IslMpi<MT>& cm) {
-#if 0
   if (slmm::OnGpu<typename MT::DES>::value)
     deep_copy<MT>(cm.ed_d, cm.ed_h);
   else
-#endif
     cm.ed_d = cm.ed_h;
 }
 

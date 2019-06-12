@@ -295,10 +295,10 @@ void copy_q (IslMpi<MT>& cm, const Int& nets,
              const FA4<Real>& q_min, const FA4<Real>& q_max) {
   const auto myrank = cm.p->rank();
   const int tid = get_tid();
-  for (Int ptr = cm.mylid_with_comm_tid_ptr_h(tid),
-           end = cm.mylid_with_comm_tid_ptr_h(tid+1);
+  for (Int ptr = cm.mylid_with_comm_tid_ptr_d(tid),
+           end = cm.mylid_with_comm_tid_ptr_d(tid+1);
        ptr < end; ++ptr) {
-    const Int tci = cm.mylid_with_comm_h(ptr);
+    const Int tci = cm.mylid_with_comm_d(ptr);
     const Int ie0 = tci - nets;
     auto& ed = cm.ed_d(tci);
     const FA3<Real> q_tgt(ed.q, cm.np2, cm.nlev, cm.qsize);

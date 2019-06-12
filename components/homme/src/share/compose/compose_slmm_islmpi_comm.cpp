@@ -30,6 +30,7 @@ void init_mylid_with_comm_threaded (IslMpi<MT>& cm, const Int& nets, const Int& 
                                        cm.mylid_with_comm_h.end(), nete+1);
     cm.mylid_with_comm_tid_ptr_h(tid+1) = end - cm.mylid_with_comm_h.begin();
   }
+  h2d<MT>(cm.mylid_with_comm_tid_ptr_d, cm.mylid_with_comm_tid_ptr_h);
 #ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
 #endif
