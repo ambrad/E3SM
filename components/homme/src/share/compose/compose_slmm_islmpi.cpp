@@ -525,9 +525,9 @@ void comm_lid_on_rank (IslMpi<MT>& cm, const Rank2Gids& rank2rmtgids,
     if (has_comm)
       mylid_with_comm.push_back(i);
   }
-  cm.mylid_with_comm.reset_capacity(mylid_with_comm.size(), true);
-  for (Int i = 0; i < cm.mylid_with_comm.n(); ++i)
-    cm.mylid_with_comm(i) = mylid_with_comm[i];
+  cm.mylid_with_comm_h.reset_capacity(mylid_with_comm.size(), true);
+  for (Int i = 0; i < cm.mylid_with_comm_h.n(); ++i)
+    cm.mylid_with_comm_h(i) = mylid_with_comm[i];
 
   mpi::waitall(sendreqs.size(), sendreqs.data());
 }

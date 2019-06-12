@@ -14,21 +14,21 @@ void init_mylid_with_comm_threaded (IslMpi<MT>& cm, const Int& nets, const Int& 
   {
     const int nthr = get_num_threads();
     cm.rwork = typename IslMpi<MT>::template ArrayD<Real**>("rwork", nthr, cm.qsize);
-    cm.mylid_with_comm_tid_ptr.reset_capacity(nthr+1, true);
+    cm.mylid_with_comm_tid_ptr_h.reset_capacity(nthr+1, true);
     cm.horiz_openmp = get_num_threads() > 1;
   }
 #ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
 #endif
   const int tid = get_tid();
-  const auto& beg = std::lower_bound(cm.mylid_with_comm.begin(),
-                                     cm.mylid_with_comm.end(), nets);
-  slmm_assert(cm.p->size() == 1 || beg != cm.mylid_with_comm.end());
-  cm.mylid_with_comm_tid_ptr(tid) = beg - cm.mylid_with_comm.begin();
-  if (tid == cm.mylid_with_comm_tid_ptr.n() - 2) {
-    const auto& end = std::lower_bound(cm.mylid_with_comm.begin(),
-                                       cm.mylid_with_comm.end(), nete+1);
-    cm.mylid_with_comm_tid_ptr(tid+1) = end - cm.mylid_with_comm.begin();
+  const auto& beg = std::lower_bound(cm.mylid_with_comm_h.begin(),
+                                     cm.mylid_with_comm_h.end(), nets);
+  slmm_assert(cm.p->size() == 1 || beg != cm.mylid_with_comm_h.end());
+  cm.mylid_with_comm_tid_ptr_h(tid) = beg - cm.mylid_with_comm_h.begin();
+  if (tid == cm.mylid_with_comm_tid_ptr_h.n() - 2) {
+    const auto& end = std::lower_bound(cm.mylid_with_comm_h.begin(),
+                                       cm.mylid_with_comm_h.end(), nete+1);
+    cm.mylid_with_comm_tid_ptr_h(tid+1) = end - cm.mylid_with_comm_h.begin();
   }
 #ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier

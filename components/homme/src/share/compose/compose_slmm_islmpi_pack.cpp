@@ -64,10 +64,10 @@ template <typename MT>
 void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const FA4<const Real>& dep_points) {
   const auto myrank = cm.p->rank();
   const int tid = get_tid();
-  for (Int ptr = cm.mylid_with_comm_tid_ptr(tid),
-           end = cm.mylid_with_comm_tid_ptr(tid+1);
+  for (Int ptr = cm.mylid_with_comm_tid_ptr_h(tid),
+           end = cm.mylid_with_comm_tid_ptr_h(tid+1);
        ptr < end; ++ptr) {
-    const Int tci = cm.mylid_with_comm(ptr);
+    const Int tci = cm.mylid_with_comm_h(ptr);
     auto& ed = cm.ed_d(tci);
     ed.rmt.clear();
     for (Int lev = 0; lev < cm.nlev; ++lev) {

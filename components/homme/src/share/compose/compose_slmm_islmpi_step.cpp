@@ -21,7 +21,7 @@ void step (
 
   // Partition my elements that communicate with remotes among threads, if I
   // haven't done that yet.
-  if (cm.mylid_with_comm_tid_ptr.capacity() == 0)
+  if (cm.mylid_with_comm_tid_ptr_h.capacity() == 0)
     init_mylid_with_comm_threaded(cm, nets, nete);
   // Set up to receive departure point requests from remotes.
   setup_irecv(cm);

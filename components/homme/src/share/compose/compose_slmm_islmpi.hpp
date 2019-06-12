@@ -150,9 +150,10 @@ namespace islmpi {
 
 // FixedCapList, ListOfLists, and BufferLayoutArray are simple and somewhat
 // problem-specific array data structures for use in IslMpi.
-template <typename T, typename ES = slmm::MachineTraits::DES>
+template <typename T, typename ES>
 struct FixedCapList {
   typedef ko::View<T*, ES> Array;
+  typedef FixedCapList<T, typename Array::host_mirror_space> Mirror;
 
   SLMM_KIF FixedCapList () {}
   FixedCapList (const Int& cap) {
@@ -202,8 +203,8 @@ struct FixedCapList {
   void set_n_from_host (const Int& n0) { ko::deep_copy(n_, n0); }
 
   // Create a FixedCapList whose View is a mirror view of this.
-  FixedCapList<T, typename Array::host_mirror_space> mirror () const {
-    FixedCapList<T, typename Array::host_mirror_space> v;
+  Mirror mirror () const {
+    Mirror v;
     v.set_view(ko::create_mirror_view(d_));
     v.set_n_view(ko::create_mirror_view(n_));
     ko::deep_copy(v.n_view(), n_);
@@ -228,7 +229,7 @@ private:
 
 #ifndef COMPOSE_PORT
   // You'll notice in a number of spots that there is strange const/mutable
-  // stuff going on. This is to conform to Kokkos conventions.
+  // stuff going on. This is driven by what Kokkos needs.
   mutable
 #endif
   NT n_;
@@ -251,7 +252,7 @@ void deep_copy (FixedCapList<T, ESD>& d, const FixedCapList<T, ESS>& s) {
 
 template <typename ES> struct BufferLayoutArray;
 
-template <typename T, typename ES = slmm::MachineTraits::DES>
+template <typename T, typename ES>
 struct ListOfLists {
   struct List {
     SLMM_KIF Int n () const { return n_; }
@@ -263,7 +264,7 @@ struct ListOfLists {
     SLMM_KIF T* end () const { return d_ + n_; }
 
   private:
-    friend class ListOfLists<T>;
+    friend class ListOfLists<T, ES>;
     SLMM_KIF List (T* d, const Int& n) : d_(d), n_(n) { slmm_assert_high(n_ >= 0); }
     T* const d_;
     const Int n_;
@@ -317,7 +318,7 @@ struct LayoutTriple {
   SLMM_KIF LayoutTriple (const Int& val) { xptr = qptr = cnt = 0; }
 };
 
-template <typename ES = slmm::MachineTraits::DES>
+template <typename ES>
 struct BufferLayoutArray {
   struct BufferRankLayoutArray {
     SLMM_KIF LayoutTriple& operator() (const Int& lidi, const Int& lev) const {
@@ -327,9 +328,10 @@ struct BufferLayoutArray {
 
   private:
     friend class BufferLayoutArray;
-    SLMM_KIF BufferRankLayoutArray (const ListOfLists<LayoutTriple>::List& d, const Int& nlev)
+    SLMM_KIF BufferRankLayoutArray (const typename ListOfLists<LayoutTriple, ES>::List& d,
+                                    const Int& nlev)
       : d_(d), nlev_(nlev) {}
-    ListOfLists<LayoutTriple>::List d_;
+    typename ListOfLists<LayoutTriple, ES>::List d_;
     Int nlev_;
   };
 
@@ -417,8 +419,8 @@ struct IslMpi {
 
   typedef ElemData<HES> ElemDataH;
   typedef ElemData<DES> ElemDataD;
-  typedef FixedCapList<ElemDataH> ElemDataListH;
-  typedef FixedCapList<ElemDataD> ElemDataListD;
+  typedef FixedCapList<ElemDataH, HES> ElemDataListH;
+  typedef FixedCapList<ElemDataD, DES> ElemDataListD;
 
   const mpi::Parallel::Ptr p;
   const typename Advecter::ConstPtr advecter;
@@ -428,18 +430,19 @@ struct IslMpi {
   ElemDataListD ed_d;
 
   // IDs.
-  FixedCapList<Int> ranks, nx_in_rank, mylid_with_comm, mylid_with_comm_tid_ptr;
-  ListOfLists <Int> nx_in_lid, lid_on_rank;
-  BufferLayoutArray<> bla;
+  FixedCapList<Int, HES> ranks, mylid_with_comm_h, mylid_with_comm_tid_ptr_h;
+  FixedCapList<Int, DES> nx_in_rank, mylid_with_comm_d, mylid_with_comm_tid_ptr_d;
+  ListOfLists <Int, HES> nx_in_lid, lid_on_rank;
+  BufferLayoutArray<DES> bla;
 
   // MPI comm data.
-  ListOfLists<Real> sendbuf, recvbuf;
-  FixedCapList<Int> sendcount;
-  FixedCapList<mpi::Request> sendreq, recvreq;
+  ListOfLists<Real, HES> sendbuf, recvbuf;
+  FixedCapList<Int, HES> sendcount;
+  FixedCapList<mpi::Request, HES> sendreq, recvreq;
 
   bool horiz_openmp;
 #ifdef COMPOSE_HORIZ_OPENMP
-  ListOfLists<omp_lock_t> ri_lidi_locks;
+ListOfLists<omp_lock_t, HES> ri_lidi_locks;
 #endif
 
   Array<Real**,DES> rwork;
