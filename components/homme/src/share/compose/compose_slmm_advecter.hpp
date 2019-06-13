@@ -197,13 +197,20 @@ struct Advecter {
     slmm_assert(ie < static_cast<Int>(local_mesh_d_.size()));
     return local_mesh_d_(ie);
   }
-  LocalMesh<DES>& local_mesh (const Int ie) {
-    slmm_assert(ie < static_cast<Int>(local_mesh_d_.size()));
-    return local_mesh_d_(ie);
+  const LocalMeshesD& local_meshes () const {
+    return local_mesh_d_;
   }
 
+  SLMM_KIF static bool nearest_point_permitted (
+    const Int& nearest_point_permitted_lev_bdy, const Int& lev)
+  {
+    return lev <= nearest_point_permitted_lev_bdy;
+  }
   bool nearest_point_permitted (const Int& lev) const {
-    return lev <= nearest_point_permitted_lev_bdy_;
+    return nearest_point_permitted(nearest_point_permitted_lev_bdy_, lev);
+  }
+  Int nearest_point_permitted_lev_bdy () const {
+    return nearest_point_permitted_lev_bdy_;
   }
 
   const SphereToRef<DES>& s2r () const { return s2r_; }

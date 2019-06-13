@@ -34,7 +34,7 @@ namespace homme {
 namespace islmpi {
 
 template <typename MT>
-void throw_on_sci_error (
+SLMM_KF void throw_on_sci_error (
   const IslMpi<MT>& cm, const FA4<Real>& dep_points, Int k, Int lev, Int tci,
   typename std::enable_if< ! slmm::OnGpu<typename MT::DES>::value>::type* = 0)
 {
@@ -57,7 +57,7 @@ void throw_on_sci_error (
 }
 
 template <typename MT>
-void throw_on_sci_error (
+SLMM_KF void throw_on_sci_error (
   const IslMpi<MT>& cm, const FA4<Real>& dep_points, Int k, Int lev, Int tci,
   typename std::enable_if<slmm::OnGpu<typename MT::DES>::value>::type* = 0)
 {
@@ -78,44 +78,54 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
                      KOKKOS_LAMBDA (const Int& tci) { ed(tci).own.clear(); });
   }
   {
+    const Int np2 = cm.np2, nlev = cm.nlev;
+    const Int nearest_point_permitted_lev_bdy =
+      cm.advecter->nearest_point_permitted_lev_bdy();
+    const auto local_meshes = cm.advecter->local_meshes();
+    const auto eds = cm.ed_d;
+    const auto nx_in_lid = cm.nx_in_lid;
+    const auto bla = cm.bla;
     // N.B. Currently a race condition in COMPOSE_PORT build.
-    const auto f = KOKKOS_LAMBDA (const Int& tci) {
-      const auto& mesh = cm.advecter->local_mesh(tci);
+    const auto f = KOKKOS_LAMBDA (const Int& ki) {
+      const Int tci = nets + ki/(nlev*np2);
+      const Int lev = (ki/np2) % nlev;
+      const Int k = ki % np2;
+      const auto& mesh = local_meshes(tci);
       const auto tgt_idx = mesh.tgt_elem;
-      auto& ed = cm.ed_d(tci);
-      for (Int lev = 0; lev < cm.nlev; ++lev)
-        for (Int k = 0; k < cm.np2; ++k) {
-          Int sci = slmm::get_src_cell(mesh, &dep_points(0,k,lev,tci), tgt_idx);
-          if (sci == -1 && cm.advecter->nearest_point_permitted(lev))
-            sci = slmm::get_nearest_point(mesh, &dep_points(0,k,lev,tci), tgt_idx);
-          if (sci == -1)
-            throw_on_sci_error(cm, dep_points, k, lev, tci);
-          ed.src(lev,k) = sci;
-          if (ed.nbrs(sci).rank == myrank) {
-            ed.own.inc();
-            auto& t = ed.own.back();
-            t.lev = lev; t.k = k;
-          } else {
-            const auto ri = ed.nbrs(sci).rank_idx;
-            const auto lidi = ed.nbrs(sci).lid_on_rank_idx;
+      auto& ed = eds(tci);
+      Int sci = slmm::get_src_cell(mesh, &dep_points(0,k,lev,tci), tgt_idx);
+      if (sci == -1 &&
+          slmm::Advecter<MT>::nearest_point_permitted(
+            nearest_point_permitted_lev_bdy, lev))
+        sci = slmm::get_nearest_point(mesh, &dep_points(0,k,lev,tci), tgt_idx);
+      if (sci == -1)
+        throw_on_sci_error(cm, dep_points, k, lev, tci);
+      ed.src(lev,k) = sci;
+      if (ed.nbrs(sci).rank == myrank) {
+        ed.own.inc();
+        auto& t = ed.own.back();
+        t.lev = lev; t.k = k;
+      } else {
+        const auto ri = ed.nbrs(sci).rank_idx;
+        const auto lidi = ed.nbrs(sci).lid_on_rank_idx;
 #ifdef COMPOSE_HORIZ_OPENMP
-            omp_lock_t* lock;
-            if (cm.horiz_openmp) {
-              lock = &cm.ri_lidi_locks(ri,lidi);
-              omp_set_lock(lock);
-            }
-#endif
-            {
-              ++cm.nx_in_lid(ri,lidi);
-              ++cm.bla(ri,lidi,lev).xptr;
-            }
-#ifdef COMPOSE_HORIZ_OPENMP
-            if (cm.horiz_openmp) omp_unset_lock(lock);
-#endif
-          }
+        omp_lock_t* lock;
+        if (cm.horiz_openmp) {
+          lock = &cm.ri_lidi_locks(ri,lidi);
+          omp_set_lock(lock);
         }
+#endif
+        {
+          ++nx_in_lid(ri,lidi);
+          ++bla(ri,lidi,lev).xptr;
+        }
+#ifdef COMPOSE_HORIZ_OPENMP
+        if (cm.horiz_openmp) omp_unset_lock(lock);
+#endif
+      }
     };
-    ko::parallel_for(ko::RangePolicy<typename MT::DES>(nets, nete+1), f);
+    ko::parallel_for(
+      ko::RangePolicy<typename MT::DES>(0, (nete - nets +1)*nlev*np2), f);
   }
 #ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
