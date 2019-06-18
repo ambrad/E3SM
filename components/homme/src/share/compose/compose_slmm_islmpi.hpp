@@ -465,7 +465,7 @@ struct IslMpi {
 
   // IDs.
   FixedCapList<Int, HES> ranks, mylid_with_comm_h, mylid_with_comm_tid_ptr_h;
-  FixedCapList<Int, DES> nx_in_rank, mylid_with_comm_d, mylid_with_comm_tid_ptr_d;
+  FixedCapList<Int, DES> nx_in_rank, mylid_with_comm_d;
   ListOfLists <Int, HES> nx_in_lid, lid_on_rank;
   BufferLayoutArray<DES> bla;
 

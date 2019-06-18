@@ -63,52 +63,73 @@ void pack_dep_points_sendbuf_pass1 (IslMpi<MT>& cm) {
 template <typename MT>
 void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const FA4<const Real>& dep_points) {
   const auto myrank = cm.p->rank();
-  const int tid = get_tid();
-  for (Int ptr = cm.mylid_with_comm_tid_ptr_h(tid),
-           end = cm.mylid_with_comm_tid_ptr_h(tid+1);
-       ptr < end; ++ptr) {
-    const Int tci = cm.mylid_with_comm_h(ptr);
-    auto& ed = cm.ed_d(tci);
-    ed.rmt.clear();
-    for (Int lev = 0; lev < cm.nlev; ++lev) {
-      for (Int k = 0; k < cm.np2; ++k) {
-        const Int sci = ed.src(lev,k);
-        const auto& nbr = ed.nbrs(sci);
-        if (nbr.rank == myrank) continue;
-        const Int ri = nbr.rank_idx;
-        const Int lidi = nbr.lid_on_rank_idx;
-        auto&& sb = cm.sendbuf(ri);
-#ifdef COMPOSE_HORIZ_OPENMP
-        omp_lock_t* lock;
-        if (cm.horiz_openmp) {
-          lock = &cm.ri_lidi_locks(ri,lidi);
-          omp_set_lock(lock);
-        }
-#endif
-        Int xptr, qptr, cnt; {
-          auto& t = cm.bla(ri,lidi,lev);
 #ifdef COMPOSE_PORT
-          cnt = ko::atomic_fetch_add(static_cast<volatile Int*>(&t.cnt), 1);
+  const Int start = 0, end = cm.mylid_with_comm_d.n();
 #else
-          cnt = t.cnt;
-          ++t.cnt;
+  const int tid = get_tid();
+  const Int
+    start = cm.mylid_with_comm_tid_ptr_h(tid),
+    end = cm.mylid_with_comm_tid_ptr_h(tid+1);
 #endif
-          qptr = t.qptr;
-          xptr = t.xptr + 3*cnt;
-        }
+  {
+    auto ed = cm.ed_d;
+    ko::parallel_for(
+      ko::RangePolicy<typename MT::DES>(start, end),
+      KOKKOS_LAMBDA (const Int& ptr) {
+        const Int tci = cm.mylid_with_comm_d(ptr);
+        ed(tci).rmt.clear();
+      });
+  }
+  {
+    const Int np2 = cm.np2, nlev = cm.nlev, qsize = cm.qsize;
+    const auto ed_d = cm.ed_d;
+    const auto mylid_with_comm_d = cm.mylid_with_comm_d;
+    const auto sendbuf = cm.sendbuf;
+    const auto bla = cm.bla;
+    const auto f = KOKKOS_LAMBDA (const Int& ki) {
+      const Int ptr = start + ki/(nlev*np2);
+      const Int lev = (ki/np2) % nlev;
+      const Int k = ki % np2;
+      const Int tci = mylid_with_comm_d(ptr);
+      auto& ed = ed_d(tci);
+      const Int sci = ed.src(lev,k);
+      const auto& nbr = ed.nbrs(sci);
+      if (nbr.rank == myrank) return;
+      const Int ri = nbr.rank_idx;
+      const Int lidi = nbr.lid_on_rank_idx;
+      auto&& sb = sendbuf(ri);
 #ifdef COMPOSE_HORIZ_OPENMP
-        if (cm.horiz_openmp) omp_unset_lock(lock);
-#endif
-        slmm_assert_high(xptr > 0);
-        for (Int i = 0; i < 3; ++i)
-          sb(xptr + i) = dep_points(i,k,lev,tci);
-        auto& item = ed.rmt.atomic_inc_and_return_next();
-        item.q_extrema_ptr = cm.qsize * qptr;
-        item.q_ptr = item.q_extrema_ptr + cm.qsize*(2 + cnt);
-        item.lev = lev;
-        item.k = k;
+      omp_lock_t* lock;
+      if (cm.horiz_openmp) {
+        lock = &cm.ri_lidi_locks(ri,lidi);
+        omp_set_lock(lock);
       }
-    }
+#endif
+      Int xptr, qptr, cnt; {
+        auto& t = bla(ri,lidi,lev);
+#ifdef COMPOSE_PORT
+        cnt = ko::atomic_fetch_add(static_cast<volatile Int*>(&t.cnt), 1);
+#else
+        cnt = t.cnt;
+        ++t.cnt;
+#endif
+        qptr = t.qptr;
+        xptr = t.xptr + 3*cnt;
+      }
+#ifdef COMPOSE_HORIZ_OPENMP
+      if (cm.horiz_openmp) omp_unset_lock(lock);
+#endif
+      slmm_assert_high(xptr > 0);
+      for (Int i = 0; i < 3; ++i)
+        sb(xptr + i) = dep_points(i,k,lev,tci);
+      auto& item = ed.rmt.atomic_inc_and_return_next();
+      item.q_extrema_ptr = qsize * qptr;
+      item.q_ptr = item.q_extrema_ptr + qsize*(2 + cnt);
+      item.lev = lev;
+      item.k = k;
+    };
+    ko::parallel_for(
+      ko::RangePolicy<typename MT::DES>(0, (end - start)*nlev*np2), f);
   }
 }
 

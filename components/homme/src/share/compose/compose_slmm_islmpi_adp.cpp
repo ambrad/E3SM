@@ -82,7 +82,7 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
     const Int nearest_point_permitted_lev_bdy =
       cm.advecter->nearest_point_permitted_lev_bdy();
     const auto local_meshes = cm.advecter->local_meshes();
-    const auto eds = cm.ed_d;
+    const auto ed_d = cm.ed_d;
     const auto nx_in_lid = cm.nx_in_lid;
     const auto bla = cm.bla;
 #ifdef COMPOSE_PORT
@@ -95,7 +95,7 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
       const Int k = ki % np2;
       const auto& mesh = local_meshes(tci);
       const auto tgt_idx = mesh.tgt_elem;
-      auto& ed = eds(tci);
+      auto& ed = ed_d(tci);
       Int sci = slmm::get_src_cell(mesh, &dep_points(0,k,lev,tci), tgt_idx);
       if (sci == -1 &&
           slmm::Advecter<MT>::nearest_point_permitted(
