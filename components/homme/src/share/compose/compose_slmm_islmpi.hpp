@@ -198,6 +198,8 @@ struct FixedCapList {
   SLMM_KIF T* begin () const { return d_.data(); }
   SLMM_KIF T* end () const { return d_.data() + n(); }
 
+  void zero () { ko::deep_copy(d_, 0); }
+
   // Copy from s to this.
   template <typename ESS>
   void copy (const FixedCapList<T, ESS>& s) {

@@ -85,7 +85,10 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
     const auto eds = cm.ed_d;
     const auto nx_in_lid = cm.nx_in_lid;
     const auto bla = cm.bla;
-    // N.B. Currently a race condition in COMPOSE_PORT build.
+#ifdef COMPOSE_PORT
+    auto nx_in_rank = cm.nx_in_rank;
+    nx_in_rank.zero();
+#endif
     const auto f = KOKKOS_LAMBDA (const Int& ki) {
       const Int tci = nets + ki/(nlev*np2);
       const Int lev = (ki/np2) % nlev;
@@ -119,6 +122,7 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
 #ifdef COMPOSE_PORT
           ko::atomic_increment(static_cast<volatile Int*>(&nx_in_lid(ri,lidi)));
           ko::atomic_increment(static_cast<volatile Int*>(&bla(ri,lidi,lev).xptr));
+          ko::atomic_increment(static_cast<volatile Int*>(&nx_in_rank(ri)));
 #else
           ++nx_in_lid(ri,lidi);
           ++bla(ri,lidi,lev).xptr;
@@ -132,16 +136,18 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
     ko::parallel_for(
       ko::RangePolicy<typename MT::DES>(0, (nete - nets +1)*nlev*np2), f);
   }
-#ifdef COMPOSE_HORIZ_OPENMP
+#if ! defined COMPOSE_PORT
+# ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
 # pragma omp for
-#endif
+# endif
   for (Int ri = 0; ri < nrmtrank; ++ri) {
     auto& nx_in_rank = cm.nx_in_rank(ri);
     nx_in_rank = 0;
     for (Int i = 0, n = cm.lid_on_rank(ri).n(); i < n; ++i)
       nx_in_rank += cm.nx_in_lid(ri,i);
   }
+#endif
 }
 
 template void analyze_dep_points(IslMpi<slmm::MachineTraits>& cm, const Int& nets,
