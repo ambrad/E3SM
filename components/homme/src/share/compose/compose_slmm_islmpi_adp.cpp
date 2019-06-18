@@ -102,9 +102,9 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
         throw_on_sci_error(cm, dep_points, k, lev, tci);
       ed.src(lev,k) = sci;
       if (ed.nbrs(sci).rank == myrank) {
-        ed.own.inc();
-        auto& t = ed.own.back();
-        t.lev = lev; t.k = k;
+        auto& t = ed.own.atomic_inc_and_return_next();
+        t.lev = lev;
+        t.k = k;
       } else {
         const auto ri = ed.nbrs(sci).rank_idx;
         const auto lidi = ed.nbrs(sci).lid_on_rank_idx;
@@ -116,8 +116,13 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
         }
 #endif
         {
+#ifdef COMPOSE_PORT
+          ko::atomic_increment(static_cast<volatile Int*>(&nx_in_lid(ri,lidi)));
+          ko::atomic_increment(static_cast<volatile Int*>(&bla(ri,lidi,lev).xptr));
+#else
           ++nx_in_lid(ri,lidi);
           ++bla(ri,lidi,lev).xptr;
+#endif
         }
 #ifdef COMPOSE_HORIZ_OPENMP
         if (cm.horiz_openmp) omp_unset_lock(lock);

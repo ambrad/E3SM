@@ -87,10 +87,14 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const FA4<const Real>& dep_p
 #endif
         Int xptr, qptr, cnt; {
           auto& t = cm.bla(ri,lidi,lev);
-          qptr = t.qptr;
+#ifdef COMPOSE_PORT
+          cnt = ko::atomic_fetch_add(static_cast<volatile Int*>(&t.cnt), 1);
+#else
           cnt = t.cnt;
-          xptr = t.xptr + 3*cnt;
           ++t.cnt;
+#endif
+          qptr = t.qptr;
+          xptr = t.xptr + 3*cnt;
         }
 #ifdef COMPOSE_HORIZ_OPENMP
         if (cm.horiz_openmp) omp_unset_lock(lock);
@@ -98,8 +102,7 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const FA4<const Real>& dep_p
         slmm_assert_high(xptr > 0);
         for (Int i = 0; i < 3; ++i)
           sb(xptr + i) = dep_points(i,k,lev,tci);
-        ed.rmt.inc();
-        auto& item = ed.rmt.back();
+        auto& item = ed.rmt.atomic_inc_and_return_next();
         item.q_extrema_ptr = cm.qsize * qptr;
         item.q_ptr = item.q_extrema_ptr + cm.qsize*(2 + cnt);
         item.lev = lev;

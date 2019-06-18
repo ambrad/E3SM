@@ -22,4 +22,10 @@
 # define COMPOSE_PORT
 #endif
 
+#ifdef COMPOSE_PORT
+# if defined COMPOSE_HORIZ_OPENMP || define COMPOSE_COLUMN_OPENMP
+"This should not happen."
+# endif
+#endif
+
 #endif

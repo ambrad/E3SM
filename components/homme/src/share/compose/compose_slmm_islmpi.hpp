@@ -177,6 +177,21 @@ struct FixedCapList {
   SLMM_KIF T& operator() (const Int& i) const { slmm_kernel_assert_high(i >= 0 && i < n()); return d_[i]; }
   SLMM_KIF void inc () const { ++get_n_ref(); slmm_kernel_assert_high(n() <= static_cast<Int>(d_.size())); }
   SLMM_KIF void inc (const Int& dn) const { get_n_ref() += dn; slmm_kernel_assert_high(n() <= static_cast<Int>(d_.size())); }
+  SLMM_KIF T& atomic_inc_and_return_next () const {
+#ifdef COMPOSE_PORT
+    volatile Int* n_vol = &n_();
+    Int n_read = -1;
+    for (;;) {
+      n_read = *n_vol;
+      if (ko::atomic_compare_exchange_strong(n_vol, n_read, n_read+1))
+        break;
+    }
+    return d_[n_read];
+#else
+    inc();
+    return back();
+#endif
+  }
 
   SLMM_KIF T* data () const { return d_.data(); }  
   SLMM_KIF T& back () const { slmm_kernel_assert_high(n() > 0); return d_[n()-1]; }
