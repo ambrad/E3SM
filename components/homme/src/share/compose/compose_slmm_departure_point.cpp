@@ -89,9 +89,9 @@ Int test_fill_perim (const LocalMesh<ES>& m, const Int& tgt_ic) {
 } // namespace nearest_point
 
 Int unittest (LocalMesh<slmm::MachineTraits::HES>& m, const Int tgt_elem) {
-  Int nerr = 0, ne;
+  Int nerr = 0, ne = 0;
   const Int nc = len(m.e);
-  for (Int ic = 0, ne = 0; ic < nc; ++ic) {
+  for (Int ic = 0; ic < nc; ++ic) {
     const auto cell = slice(m.e, ic);
     static const Real alphas[] = { 0.01, 0.99, 0, 1 };
     static const int nalphas = sizeof(alphas)/sizeof(*alphas);
