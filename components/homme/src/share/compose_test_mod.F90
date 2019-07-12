@@ -169,6 +169,7 @@ contains
     use hybvcoord_mod, only: hvcoord_t
     use perf_mod
     use sl_advection
+    use gllfvremap_mod !rip&tear
 
     type (hybrid_t), intent(in) :: hybrid
     type (derivative_t), intent(in) :: deriv
@@ -181,6 +182,10 @@ contains
     type (timelevel_t) :: tl
     integer :: nsteps, n0_qdp, np1_qdp, ie, i, j
     real (kind=real_kind) :: dt, tprev, t
+
+    call gfr_test(hybrid, nets, nete, hvcoord, deriv, elem) !rip&tear
+    print *, 'ALARUM: COMPOSE test is disabled while GFR is deved in this branch'
+    return
 
 #ifdef HOMME_ENABLE_COMPOSE  
     call t_startf('compose_stt')
