@@ -14,6 +14,7 @@ module gllfvremap_mod
 
   ! Data type and functions for high-order, shape-preserving FV <-> GLL remap.
   type, public :: GllFvRemap_t
+     integer :: nphys
      real(kind=real_kind) :: &
           w_gg(np,np), &
           w_ff(nphys_max,nphys_max), &
@@ -23,7 +24,7 @@ module gllfvremap_mod
           interp(np,np,nphys_max,nphys_max), &
           R(npsq,nphys_max*nphys_max)
      real(kind=real_kind), allocatable :: &
-          fv_metdet(:,:,:) ! (nphys_max,nphys_max,nelemd)
+          fv_metdet(:,:,:) ! (nphys,nphys,nelemd)
   end type GllFvRemap_t
 
   type (GllFvRemap_t), private :: gfr
@@ -38,10 +39,21 @@ module gllfvremap_mod
 
 contains
 
-  subroutine gfr_init()
+  subroutine gfr_init(nphys)
+    use parallel_mod, only: abortmp
+
+    integer, intent(in) :: nphys
+
+    if (nphys > np) then
+       call abortmp('nphys must be <= np')
+    end if
+
+    gfr%nphys = nphys
+    allocate(gfr%fv_metdet(nphys,nphys,nelemd))
   end subroutine gfr_init
 
   subroutine gfr_finish()
+    if (allocated(gfr%fv_metdet)) deallocate(gfr%fv_metdet)
   end subroutine gfr_finish
 
   subroutine gfr_fv_phys_to_dyn()
@@ -64,7 +76,14 @@ contains
     type (hvcoord_t) , intent(in) :: hvcoord
     integer, intent(in) :: nets, nete
 
+    integer :: nphys
+
     print *, 'gfr_test'
+
+    do nphys = 1, np
+       call gfr_init(nphys)
+       call gfr_finish()
+    end do
   end subroutine gfr_test
 
 end module gllfvremap_mod
