@@ -13,12 +13,8 @@
 ! the same, with simple weighted averaging over element subcells.
 ! 
 ! Author: Walter Hannah (LLNL)
-! AMB 2019/07 Add GllFvRemap_t API for high-order FV -> GLL remap and
-!             shape-preserving FV <-> GLL remap.
-! ---------------------------------------------------------------------------------------------------
+!---------------------------------------------------------------------------------------------------
 module fv_physics_coupling_mod
-  implicit none
-
   use element_mod,    only: element_t
   use shr_kind_mod,   only: r8=>shr_kind_r8
   use kinds,          only: real_kind, int_kind
@@ -34,26 +30,6 @@ module fv_physics_coupling_mod
   public :: fv_phys_to_dyn
   public :: fv_phys_to_dyn_topo
   public :: dyn_to_fv_phys
-
-  type, public :: GllFvRemap_t
-     real(kind=real_kind) :: &
-          w_gg(np,np), &
-          w_ff(fv_nphys,fv_nphys), &
-          M_gf(np,np,fv_nphys,fv_nphys), &
-          w_sgsg(np,np), &
-          M_sgf(np,np,fv_nphys,fv_nphys), &
-          interp(np,np,fv_nphys,fv_nphys), &
-          R(npsq,fv_nphys*fv_nphys), &
-          fv_metdet(fv_nphys,fv_nphys,nelem)
-  end type GllFvRemap_t
-
-  type (GllFvRemap_t), private :: gfr
-
-  public :: &
-       gfr_init, &
-       gfr_fv_phys_to_dyn, &
-       fv_phys_to_dyn_topo, &
-       gfr_dyn_to_fv_phys
 
 contains
   !=================================================================================================
