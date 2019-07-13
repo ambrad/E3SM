@@ -200,9 +200,35 @@ contains
   end subroutine gfr_init_M_gf
 
   subroutine gfr_init_R(np, nphys, w_gg, M_gf, R)
+    ! We want to solve
+    !     min_d 1/2 d'M_dd d - d' M_dp p
+    !      st   M_dp' d = M_pp p,
+    ! which gives
+    !     [M_dd -M_dp] [d] = [M_dp p]
+    !     [M_dp'  0  ] [y]   [M_pp p].
+    ! Recall M_dd, M_pp are diag. Let
+    !     S = M_dp' inv(M_dd) M_dp.
+    ! Then
+    !     d = inv(M_dd) M_dp inv(S) M_pp p.
+    ! Compute the QR factorization sqrt(inv(M_dd)) M_dp = Q R so that S = R'R.    
     integer, intent(in) :: np, nphys
     real(kind=real_kind), intent(in) :: w_gg(:,:), M_gf(:,:,:,:)
     real(kind=real_kind), intent(out) :: R(:,:)
+
+    real(kind=real_kind) :: wrk1(np*np*nphys*nphys), wrk2(np*np*nphys*nphys)
+    integer :: gi, gj, fi, fj, npsq, info
+
+    do fj = 1,nphys
+       do fi = 1,nphys
+          do gi = 1,np
+             do gj = 1,np
+                R(np*(gi-1) + gj, nphys*(fi-1) + fj) = &
+                     M_gf(gi,gj,fi,fj)/sqrt(w_gg(gi,gj))
+             end do
+          end do
+       end do
+    end do
+    call dgeqrf(np*np, nphys*nphys, R, size(R,1), wrk1, wrk2, np*np*nphys*nphys, info)
   end subroutine gfr_init_R
 
   subroutine gfr_init_fv_metdet(gfr)
@@ -247,6 +273,7 @@ contains
     print *, 'w_sgsg', gfr%npi, gfr%w_sgsg(:gfr%npi, :gfr%npi)
     print *, 'M_gf', np, gfr%nphys, gfr%M_gf(:np, :np, :gfr%nphys, :gfr%nphys)
     print *, 'M_sgf', gfr%npi, gfr%nphys, gfr%M_sgf(:gfr%npi, :gfr%npi, :gfr%nphys, :gfr%nphys)
+    print *, 'R', gfr%nphys, gfr%R(:gfr%nphys*gfr%nphys, :gfr%nphys*gfr%nphys)
     print *, 'interp', gfr%npi, np, gfr%interp(:gfr%npi, :gfr%npi, :np, :np)
   end subroutine gfr_print
 
