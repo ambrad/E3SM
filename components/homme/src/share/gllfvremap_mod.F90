@@ -1,5 +1,6 @@
 module gllfvremap_mod
   ! API for high-order, shape-preseving FV <-> GLL remap.
+  !
   ! AMB 2019/07 Initial
 
   use hybrid_mod, only: hybrid_t
@@ -11,6 +12,10 @@ module gllfvremap_mod
   private
 
   integer, parameter :: nphys_max = np
+
+  real(kind=real_kind), parameter :: &
+       zero = 0.0_real_kind, half = 0.5_real_kind, &
+       one = 1.0_real_kind, two = 2.0_real_kind
 
   ! Data type and functions for high-order, shape-preserving FV <-> GLL remap.
   type, public :: GllFvRemap_t
@@ -39,10 +44,12 @@ module gllfvremap_mod
 
 contains
 
-  subroutine gfr_init(nphys)
+  subroutine gfr_init(nphys, elem)
     use parallel_mod, only: abortmp
+    use element_mod, only: element_t
 
     integer, intent(in) :: nphys
+    type (element_t), intent(in) :: elem(nelemd)
 
     if (nphys > np) then
        call abortmp('nphys must be <= np')
@@ -64,7 +71,7 @@ contains
     call gfr_init_interp_matrix(gfr%npi, gfr%interp)
 
     allocate(gfr%fv_metdet(nphys,nphys,nelemd))
-    call gfr_init_fv_metdet(gfr)
+    call gfr_init_fv_metdet(elem, gfr)
   end subroutine gfr_init
 
   subroutine gfr_finish()
@@ -108,7 +115,7 @@ contains
 
     do j = 1,nphys
        do i = 1,nphys
-          w_ff(i,j) = 2.0_real_kind/real(nphys, real_kind)
+          w_ff(i,j) = two/real(nphys, real_kind)
        end do
     end do
   end subroutine gfr_init_w_ff
@@ -134,8 +141,6 @@ contains
     integer :: i, j
     real(kind=real_kind) :: f
 
-    real(kind=real_kind), parameter :: one = 1.0_real_kind
-
     do i = 1,np
        f = one
        do j = 1,np
@@ -156,10 +161,6 @@ contains
     type (quadrature_t) :: gll
     integer :: gi, gj, fi, fj, qi, qj
     real(kind=real_kind) :: xs, xe, ys, ye, ref, bi(np), bj(np)
-
-    real(kind=real_kind), parameter :: &
-         zero = 0.0_real_kind, half = 0.5_real_kind, &
-         one = 1.0_real_kind, two = 2.0_real_kind
 
     gll = gausslobatto(np)
 
@@ -231,10 +232,6 @@ contains
     call dgeqrf(np*np, nphys*nphys, R, size(R,1), wrk1, wrk2, np*np*nphys*nphys, info)
   end subroutine gfr_init_R
 
-  subroutine gfr_init_fv_metdet(gfr)
-    type (GllFvRemap_t), intent(inout) :: gfr
-  end subroutine gfr_init_fv_metdet
-
   subroutine gfr_init_interp_matrix(npsrc, interp)
     use quadrature_mod, only : gausslobatto, quadrature_t
 
@@ -263,6 +260,61 @@ contains
     call gll_cleanup(glls)
     call gll_cleanup(gllt)
   end subroutine gfr_init_interp_matrix
+
+  subroutine gfr_init_fv_metdet(elem, gfr)
+    use element_mod, only: element_t
+
+    type (element_t), intent(in) :: elem(nelemd)
+    type (GllFvRemap_t), intent(inout) :: gfr
+
+    real (kind=real_kind) :: ones_f(gfr%nphys, gfr%nphys), ones_g(np,np)
+    integer :: ie
+
+    ones_f = one
+    ones_g = one
+    do ie = 1,nelemd
+       call gfr_g2f_remapd(gfr, elem(ie)%metdet, ones_f, ones_g, gfr%fv_metdet(:,:,ie))
+    end do
+  end subroutine gfr_init_fv_metdet
+
+  subroutine gfr_g2f_remapd(gfr, gll_metdet, fv_metdet, g, f)
+    type (GllFvRemap_t), intent(in) :: gfr
+    real(kind=real_kind), intent(in) :: gll_metdet(:,:), fv_metdet(:,:), g(:,:)
+    real(kind=real_kind), intent(out) :: f(:,:)
+
+    integer :: gi, gj, fi, fj
+    real(kind=real_kind) :: accum
+
+    f = zero
+    do fj = 1,gfr%nphys
+       do fi = 1,gfr%nphys
+          accum = zero
+          do gj = 1,np
+             do gi = 1,np
+                accum = accum + gfr%M_gf(gi,gj,fi,fj)*g(gi,gj)*gll_metdet(gi,gj)
+             end do
+          end do
+          f(fi,fj) = accum/(gfr%w_ff(fi,fj)*fv_metdet(fi,fj))
+       end do
+    end do
+  end subroutine gfr_g2f_remapd
+
+  subroutine gfr_check(gfr, elem)
+    use element_mod, only: element_t
+
+    type (GllFvRemap_t), intent(in) :: gfr
+    type (element_t), intent(inout) :: elem(:)
+
+    real(kind=real_kind) :: a, b, rd
+    integer :: ie
+
+    do ie = 1,nelemd
+       a = sum(elem(ie)%metdet * gfr%w_gg)
+       b = sum(gfr%fv_metdet(:,:,ie) * gfr%w_ff)
+       rd = abs(b - a)/abs(a)
+       if (rd > 1e-15) print *, ie, rd
+    end do
+  end subroutine gfr_check
 
   subroutine gfr_print(gfr)
     type (GllFvRemap_t), intent(in) :: gfr
@@ -294,12 +346,13 @@ contains
 
     do nphys = 2,2 !1, np
        ! This is meant to be called before threading starts.
-       if (hybrid%masterthread) call gfr_init(nphys)
+       if (hybrid%masterthread) call gfr_init(nphys, elem)
 #ifdef HORIZ_OPENMP
        !$omp barrier
 #endif
 
-       call gfr_print(gfr)
+       call gfr_check(gfr, elem)
+       !call gfr_print(gfr)
 
        ! This is meant to be called after threading ends.
        if (hybrid%masterthread) call gfr_finish()
