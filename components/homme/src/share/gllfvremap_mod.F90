@@ -81,18 +81,122 @@ contains
   end subroutine gfr_dyn_to_fv_phys
 
   subroutine gfr_init_w_gg(np, w_gg)
+    use quadrature_mod, only : gausslobatto, quadrature_t
+    
     integer, intent(in) :: np
     real(kind=real_kind), intent(out) :: w_gg(:,:)
+
+    type (quadrature_t) :: gll
+    integer :: i,j
+
+    gll = gausslobatto(np)
+
+    do j = 1,np
+       do i = 1,np
+          w_gg(i,j) = gll%weights(i)*gll%weights(j)
+       end do
+    end do
+    
+    call gll_cleanup(gll)
   end subroutine gfr_init_w_gg
 
   subroutine gfr_init_w_ff(nphys, w_ff)
     integer, intent(in) :: nphys
     real(kind=real_kind), intent(out) :: w_ff(:,:)
+
+    integer :: i,j
+
+    do j = 1,nphys
+       do i = 1,nphys
+          w_ff(i,j) = 2.0_real_kind/real(nphys, real_kind)
+       end do
+    end do
   end subroutine gfr_init_w_ff
 
+  subroutine gll_cleanup(gll)
+    use quadrature_mod, only : quadrature_t
+
+    type (quadrature_t), intent(inout) :: gll
+
+    deallocate(gll%points, gll%weights)
+  end subroutine gll_cleanup
+
+  subroutine eval_lagrange_bases(gll, np, x, y)
+    ! Evaluate the GLL basis functions at x in [-1,1], writing the values to
+    ! y(1:np).
+    use quadrature_mod, only : quadrature_t
+    
+    type (quadrature_t), intent(in) :: gll
+    integer, intent(in) :: np
+    real(kind=real_kind), intent(in) :: x ! in [-1,1]
+    real(kind=real_kind), intent(out) :: y(np)
+
+    integer :: i, j
+    real(kind=real_kind) :: f
+
+    real(kind=real_kind), parameter :: one = 1.0_real_kind
+
+    do i = 1,np
+       f = one
+       do j = 1,np
+          if (j /= i) then
+             f = f*((x - gll%points(j))/(gll%points(i) - gll%points(j)))
+          end if
+       end do
+       y(i) = f
+    end do
+  end subroutine eval_lagrange_bases
+
   subroutine gfr_init_M_gf(np, nphys, M_gf)
+    use quadrature_mod, only : gausslobatto, quadrature_t
+
     integer, intent(in) :: np, nphys
     real(kind=real_kind), intent(out) :: M_gf(:,:,:,:)
+
+    type (quadrature_t) :: gll
+    integer :: gi, gj, fi, fj, qi, qj
+    real(kind=real_kind) :: xs, xe, ys, ye, ref, bi(np), bj(np)
+
+    real(kind=real_kind), parameter :: &
+         zero = 0.0_real_kind, half = 0.5_real_kind, &
+         one = 1.0_real_kind, two = 2.0_real_kind
+
+    gll = gausslobatto(np)
+
+    M_gf = zero
+
+    do fj = 1,nphys
+       ! The subcell is [xs,xe]x[ys,ye].
+       xs = two*real(fj-1, real_kind)/real(nphys, real_kind) - one
+       xe = two*real(fj, real_kind)/real(nphys, real_kind) - one
+       do fi = 1,nphys
+          ys = two*real(fi-1, real_kind)/real(nphys, real_kind) - one
+          ye = two*real(fi, real_kind)/real(nphys, real_kind) - one
+          ! Use GLL quadrature within this subcell.
+          do qj = 1,np
+             ! (xref,yref) are w.r.t. the [-1,1]^2 reference domain mapped to
+             ! the subcell.
+             ref = xs + half*(xe - xs)*(1 + gll%points(qj))
+             call eval_lagrange_bases(gll, np, ref, bj)
+             do qi = 1,np
+                ref = ys + half*(ye - ys)*(1 + gll%points(qi))
+                call eval_lagrange_bases(gll, np, ref, bi)
+                do gj = 1,np
+                   do gi = 1,np
+                      ! Accumulate each GLL basis's contribution to this
+                      ! subcell.
+                      M_gf(gi,gj,fi,fj) = M_gf(gi,gj,fi,fj) + &
+                           gll%weights(qi)*gll%weights(qj)*bi(gi)*bj(gj)
+                   end do
+                end do
+             end do
+          end do
+       end do
+    end do
+
+    M_gf = M_gf/real(nphys*nphys, real_kind)
+
+    call gll_cleanup(gll)
   end subroutine gfr_init_M_gf
 
   subroutine gfr_init_R(np, nphys, w_gg, M_gf, R)
@@ -110,6 +214,17 @@ contains
     real(kind=real_kind), intent(out) :: interp(:,:,:,:)
   end subroutine gfr_init_interp_matrix
 
+  subroutine gfr_print(gfr)
+    type (GllFvRemap_t), intent(in) :: gfr
+
+    print *,'npi', gfr%npi, 'nphys', gfr%nphys
+    print *,'w_ff', gfr%nphys, gfr%w_ff(:gfr%nphys, :gfr%nphys)
+    print *,'w_gg', np, gfr%w_gg(:np, :np)
+    print *,'w_sgsg', gfr%npi, gfr%w_sgsg(:gfr%npi, :gfr%npi)
+    print *,'M_gf', np, gfr%nphys, gfr%M_gf(:np, :np, :gfr%nphys, :gfr%nphys)
+    print *,'M_sgf', gfr%npi, gfr%nphys, gfr%M_sgf(:gfr%npi, :gfr%npi, :gfr%nphys, :gfr%nphys)
+  end subroutine gfr_print
+
   subroutine gfr_test(hybrid, nets, nete, hvcoord, deriv, elem)
     use derivative_mod, only: derivative_t
     use element_mod, only: element_t
@@ -125,12 +240,14 @@ contains
 
     print *, 'gfr_test'
 
-    do nphys = 1, np
+    do nphys = 2,2 !1, np
        ! This is meant to be called before threading starts.
        if (hybrid%masterthread) call gfr_init(nphys)
 #ifdef HORIZ_OPENMP
        !$omp barrier
 #endif
+
+       call gfr_print(gfr)
 
        ! This is meant to be called after threading ends.
        if (hybrid%masterthread) call gfr_finish()
