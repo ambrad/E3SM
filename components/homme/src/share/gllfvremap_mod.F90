@@ -22,7 +22,7 @@ module gllfvremap_mod
           w_sgsg(np,np), &
           M_sgf(np,np,nphys_max,nphys_max), &
           R(npsq,nphys_max*nphys_max), &
-          interp(np,np,nphys_max,nphys_max)
+          interp(nphys_max,nphys_max,np,np)
      real(kind=real_kind), allocatable :: &
           fv_metdet(:,:,:) ! (nphys,nphys,nelemd)
   end type GllFvRemap_t
@@ -210,19 +210,44 @@ contains
   end subroutine gfr_init_fv_metdet
 
   subroutine gfr_init_interp_matrix(npsrc, interp)
+    use quadrature_mod, only : gausslobatto, quadrature_t
+
     integer, intent(in) :: npsrc
     real(kind=real_kind), intent(out) :: interp(:,:,:,:)
+
+    type (quadrature_t) :: glls, gllt
+    integer :: si, sj, ti, tj
+    real(kind=real_kind) :: bi(npsrc), bj(npsrc)
+
+    glls = gausslobatto(npsrc)
+    gllt = gausslobatto(np)
+
+    do tj = 1,np
+       call eval_lagrange_bases(glls, npsrc, real(gllt%points(tj), real_kind), bj)
+       do ti = 1,np
+          call eval_lagrange_bases(glls, npsrc, real(gllt%points(ti), real_kind), bi)
+          do sj = 1,npsrc
+             do si = 1,npsrc
+                interp(si,sj,ti,tj) = bi(si)*bj(sj)
+             end do
+          end do
+       end do
+    end do
+
+    call gll_cleanup(glls)
+    call gll_cleanup(gllt)
   end subroutine gfr_init_interp_matrix
 
   subroutine gfr_print(gfr)
     type (GllFvRemap_t), intent(in) :: gfr
 
-    print *,'npi', gfr%npi, 'nphys', gfr%nphys
-    print *,'w_ff', gfr%nphys, gfr%w_ff(:gfr%nphys, :gfr%nphys)
-    print *,'w_gg', np, gfr%w_gg(:np, :np)
-    print *,'w_sgsg', gfr%npi, gfr%w_sgsg(:gfr%npi, :gfr%npi)
-    print *,'M_gf', np, gfr%nphys, gfr%M_gf(:np, :np, :gfr%nphys, :gfr%nphys)
-    print *,'M_sgf', gfr%npi, gfr%nphys, gfr%M_sgf(:gfr%npi, :gfr%npi, :gfr%nphys, :gfr%nphys)
+    print *, 'npi', gfr%npi, 'nphys', gfr%nphys
+    print *, 'w_ff', gfr%nphys, gfr%w_ff(:gfr%nphys, :gfr%nphys)
+    print *, 'w_gg', np, gfr%w_gg(:np, :np)
+    print *, 'w_sgsg', gfr%npi, gfr%w_sgsg(:gfr%npi, :gfr%npi)
+    print *, 'M_gf', np, gfr%nphys, gfr%M_gf(:np, :np, :gfr%nphys, :gfr%nphys)
+    print *, 'M_sgf', gfr%npi, gfr%nphys, gfr%M_sgf(:gfr%npi, :gfr%npi, :gfr%nphys, :gfr%nphys)
+    print *, 'interp', gfr%npi, np, gfr%interp(:gfr%npi, :gfr%npi, :np, :np)
   end subroutine gfr_print
 
   subroutine gfr_test(hybrid, nets, nete, hvcoord, deriv, elem)
