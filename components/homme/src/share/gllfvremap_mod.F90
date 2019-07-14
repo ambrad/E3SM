@@ -413,15 +413,44 @@ contains
     end do
   end subroutine gfr_f2g_remapd
 
-  subroutine gfr_check(gfr, hybrid, elem, nets, nete, verbose)
+  subroutine set_ps_Q(elem, nets, nete, timeidx, qidx, nlev)
+    use coordinate_systems_mod, only: cartesian3D_t, change_coordinates
+
+    type (element_t), intent(inout) :: elem(:)
+    integer, intent(in) :: nets, nete, timeidx, qidx, nlev
+
+    integer :: ie, i, j, k
+    type (cartesian3D_t) :: p
+    real(kind=real_kind) :: q
+
+    do ie = nets, nete
+       do j = 1,np
+          do i = 1,np
+             p = change_coordinates(elem(ie)%spherep(i,j))
+             elem(ie)%state%ps_v(i,j,timeidx) = &
+                  1.0d3*(1 + 0.05*sin(2*p%x+0.5)*sin(p%y+1.5)*sin(3*p%z+2.5))
+             q = 0.5*(1 + sin(3*p%x)*sin(3*p%y)*sin(4*p%z))
+             do k = 1,nlev
+                elem(ie)%state%Q(i,j,k,qidx) = q
+             end do
+          end do
+       end do
+    end do
+  end subroutine set_ps_Q
+
+  subroutine check(gfr, hybrid, elem, nets, nete, verbose)
+    use dimensions_mod, only: nlev
+
     type (GllFvRemap_t), intent(in) :: gfr
     type (hybrid_t), intent(in) :: hybrid
     type (element_t), intent(inout) :: elem(:)
     integer, intent(in) :: nets, nete
     logical, intent(in) :: verbose
 
-    real(kind=real_kind) :: a, b, rd, x, y, f0(np,np), f1(np,np), g(np,np), wrk(np,np)
-    integer :: nf, ie, i, j
+    real(kind=real_kind) :: a, b, rd, x, y, f0(np,np), f1(np,np), g(np,np), wrk(np,np), &
+         num, den
+    integer :: nf, ie, i, j, iremap
+    real(kind=real_kind), allocatable :: fv(:,:,:)
 
     nf = gfr%nphys
 
@@ -438,7 +467,8 @@ contains
        end if
     end if
 
-    do ie = nets,nete
+    ! Cell-local correctness checks
+    do ie = nets, nete
        ! Check that areas match.
        a = sum(elem(ie)%metdet * gfr%w_gg)
        b = sum(gfr%fv_metdet(:,:,ie) * gfr%w_ff(:nf, :nf))
@@ -462,7 +492,41 @@ contains
        rd = a/b
        if (rd /= rd .or. rd > 1e-15) print *, 'gfr> recover', ie, a, b, rd
     end do
-  end subroutine gfr_check
+
+    ! For convergence testing.
+    ! 0. Create synthetic q and ps_v.
+    call set_ps_Q(elem, nets, nete, 1, 1, nlev)
+    call set_ps_Q(elem, nets, nete, 2, 2, nlev)
+    allocate(fv(gfr%nphys, gfr%nphys, nete-nets+1))
+    do iremap = 1,1
+       ! 1. GLL -> FV
+       do ie = nets, nete
+
+       end do
+       ! 2. FV -> GLL
+       ! 2a. Get q bounds
+       do ie = nets, nete
+
+       end do
+       ! 2b. Halo exchange q bounds.
+
+       ! 2c. Remap
+       do ie = nets, nete
+
+       end do
+       ! 3. DSS
+
+       ! 4. pg1 special case
+
+    end do
+    deallocate(fv)
+    ! 5. Compute error.
+    num = zero
+    den = zero
+    do ie = nets, nete
+       
+    end do
+  end subroutine check
 
   subroutine gfr_test(hybrid, nets, nete, hvcoord, deriv, elem)
     use derivative_mod, only: derivative_t
@@ -476,8 +540,6 @@ contains
 
     integer :: nphys
 
-    print *, 'gfr_test'
-
     do nphys = 1, np
        ! This is meant to be called before threading starts.
        if (hybrid%masterthread) call gfr_init(nphys, elem)
@@ -485,7 +547,7 @@ contains
        !$omp barrier
 #endif
 
-       call gfr_check(gfr, hybrid, elem, nets, nete, .false.)
+       call check(gfr, hybrid, elem, nets, nete, .false.)
 
        ! This is meant to be called after threading ends.
 #ifdef HORIZ_OPENMP
