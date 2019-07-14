@@ -304,11 +304,13 @@ contains
   end subroutine gfr_g2f_remapd
 
   subroutine gfr_f2g_remapd(gfr, gll_metdet, fv_metdet, f, g)
+    !TODO There is enough work in this routine to justify creating a single
+    !     matrix to implement all the operations.
     type (GllFvRemap_t), intent(in) :: gfr
     real(kind=real_kind), intent(in) :: gll_metdet(:,:), fv_metdet(:,:), f(:,:)
     real(kind=real_kind), intent(out) :: g(:,:)
 
-    integer :: nf, nf2, npi, np2, gi, gj, fi, fj
+    integer :: nf, nf2, npi, np2, gi, gj, fi, fj, info
     real(kind=real_kind) :: accum, wrk(np,np)
 
     nf = gfr%nphys
@@ -319,8 +321,8 @@ contains
     ! Solve the constrained projection described in gfr_init_R:
     !     g = inv(M_sgsg) M_sgf inv(S) M_ff fv_metdet f
     wrk(:nf,:nf) = gfr%w_ff(:nf,:nf)*fv_metdet(:nf,:nf)*f(:nf,:nf)
-    call dtrtrs('u', 't', 'n', nf2, 1, gfr%R, size(gfr%R,1), wrk, np2)
-    call dtrtrs('u', 'n', 'n', nf2, 1, gfr%R, size(gfr%R,1), wrk, np2)
+    call dtrtrs('u', 't', 'n', nf2, 1, gfr%R, size(gfr%R,1), wrk, np2, info)
+    call dtrtrs('u', 'n', 'n', nf2, 1, gfr%R, size(gfr%R,1), wrk, np2, info)
     g(:npi,:npi) = zero
     do fj = 1,gfr%nphys
        do fi = 1,gfr%nphys
@@ -362,34 +364,54 @@ contains
     end if
   end subroutine gfr_f2g_remapd
 
-  subroutine gfr_print(gfr, elem, verbose)
+  subroutine gfr_check(gfr, elem, nets, nete, verbose)
     use element_mod, only: element_t
 
     type (GllFvRemap_t), intent(in) :: gfr
     type (element_t), intent(inout) :: elem(:)
+    integer, intent(in) :: nets, nete
     logical, intent(in) :: verbose
 
-    real(kind=real_kind) :: a, b, rd
-    integer :: ie
+    real(kind=real_kind) :: a, b, rd, x, y, f0(np,np), f1(np,np), g(np,np), wrk(np,np)
+    integer :: nf, ie, i, j
+
+    nf = gfr%nphys
 
     if (verbose) then
-       print *, 'npi', gfr%npi, 'nphys', gfr%nphys
-       print *, 'w_ff', gfr%nphys, gfr%w_ff(:gfr%nphys, :gfr%nphys)
+       print *, 'npi', gfr%npi, 'nphys', nf
+       print *, 'w_ff', nf, gfr%w_ff(:nf, :nf)
        print *, 'w_gg', np, gfr%w_gg(:np, :np)
        print *, 'w_sgsg', gfr%npi, gfr%w_sgsg(:gfr%npi, :gfr%npi)
-       print *, 'M_gf', np, gfr%nphys, gfr%M_gf(:np, :np, :gfr%nphys, :gfr%nphys)
-       print *, 'M_sgf', gfr%npi, gfr%nphys, gfr%M_sgf(:gfr%npi, :gfr%npi, :gfr%nphys, :gfr%nphys)
-       print *, 'R', gfr%nphys, gfr%R(:gfr%nphys*gfr%nphys, :gfr%nphys*gfr%nphys)
+       print *, 'M_gf', np, nf, gfr%M_gf(:np, :np, :nf, :nf)
+       print *, 'M_sgf', gfr%npi, nf, gfr%M_sgf(:gfr%npi, :gfr%npi, :nf, :nf)
+       print *, 'R', nf, gfr%R(:nf*nf, :nf*nf)
        print *, 'interp', gfr%npi, np, gfr%interp(:gfr%npi, :gfr%npi, :np, :np)
     end if
 
-    do ie = 1,nelemd
+    do ie = nets,nete
+       ! Check areas match.
        a = sum(elem(ie)%metdet * gfr%w_gg)
-       b = sum(gfr%fv_metdet(:,:,ie) * gfr%w_ff(:gfr%nphys, :gfr%nphys))
+       b = sum(gfr%fv_metdet(:,:,ie) * gfr%w_ff(:nf, :nf))
        rd = abs(b - a)/abs(a)
-       if (rd > 1e-15) print *, ie, rd
+       if (rd > 1e-15) print *, 'gfr> area', ie, rd
+
+       ! Check that FV -> GLL -> FV recovers the original FV values exactly
+       ! (with no DSS and no limiter).
+       do j = 1,nf
+          x = real(j-j, real_kind)/real(nf, real_kind)
+          do i = 1,nf
+             y = real(j-j, real_kind)/real(nf, real_kind)
+             f0(i,j) = x*x + ie*x + cos(ie + 4.2*y)
+          end do
+       end do
+       call gfr_f2g_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,:,ie), f0, g)
+       call gfr_g2f_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,:,ie), g, f1)
+       wrk(:nf,:nf) = gfr%w_ff(:nf,:nf)*gfr%fv_metdet(:nf,:nf,ie)
+       rd = sum(wrk(:nf,:nf)*abs(f1(:nf,:nf) - f0(:nf,:nf)))/ &
+            sum(wrk(:nf,:nf)*abs(f0))
+       if (rd > 1e-15) print *, 'gfr> recover', ie, rd
     end do
-  end subroutine gfr_print
+  end subroutine gfr_check
 
   subroutine gfr_test(hybrid, nets, nete, hvcoord, deriv, elem)
     use derivative_mod, only: derivative_t
@@ -413,7 +435,7 @@ contains
        !$omp barrier
 #endif
 
-       call gfr_print(gfr, elem, .false.)
+       call gfr_check(gfr, elem, nets, nete, .false.)
 
        ! This is meant to be called after threading ends.
        if (hybrid%masterthread) call gfr_finish()
