@@ -27,7 +27,8 @@ module gllfvremap_mod
           w_sgsg(np,np), &
           M_sgf(np,np,nphys_max,nphys_max), &
           R(npsq,nphys_max*nphys_max), &
-          interp(nphys_max,nphys_max,np,np)
+          interp(np,np,np,np), &
+          f2g_remapd(nphys_max,nphys_max,np,np)
      real(kind=real_kind), allocatable :: &
           fv_metdet(:,:,:) ! (nphys,nphys,nelemd)
   end type GllFvRemap_t
@@ -72,6 +73,7 @@ contains
     call gfr_init_M_gf(gfr%npi, nphys, gfr%M_sgf)
     call gfr_init_R(gfr%npi, nphys, gfr%w_sgsg, gfr%M_sgf, gfr%R)
     call gfr_init_interp_matrix(gfr%npi, gfr%interp)
+    call gfr_init_f2g_remapd(gfr)
 
     allocate(gfr%fv_metdet(nphys,nphys,nelemd))
     call gfr_init_fv_metdet(elem, gfr)
@@ -266,6 +268,83 @@ contains
     call gll_cleanup(gllt)
   end subroutine gfr_init_interp_matrix
 
+  subroutine gfr_init_f2g_remapd(gfr)
+    type (GllFvRemap_t), intent(inout) :: gfr
+
+    integer :: fi, fj
+    real(kind=real_kind) :: f(np,np), g(np,np)
+
+    ! Think of gfr_init_f2g_remapd_col as a matvec. Here we apply it to the Id
+    ! matrix to get its matrix representation.
+    f = zero
+    do fi = 1,gfr%nphys
+       do fj = 1,gfr%nphys
+          f(fi,fj) = one
+          call gfr_init_f2g_remapd_col(gfr, f, g)
+          gfr%f2g_remapd(fi,fj,:,:) = g
+          f(fi,fj) = zero
+       end do
+    end do
+  end subroutine gfr_init_f2g_remapd
+
+  subroutine gfr_init_f2g_remapd_col(gfr, f, g)
+    type (GllFvRemap_t), intent(in) :: gfr
+    real(kind=real_kind), intent(in) :: f(:,:)
+    real(kind=real_kind), intent(out) :: g(:,:)
+
+    integer :: nf, nf2, npi, np2, gi, gj, fi, fj, info
+    real(kind=real_kind) :: accum, wrk(np,np)
+
+    nf = gfr%nphys
+    nf2 = nf*nf
+    npi = gfr%npi
+    np2 = np*np
+
+    ! Solve the constrained projection described in gfr_init_R:
+    !     g = inv(M_sgsg) M_sgf inv(S) M_ff f
+    wrk(:nf,:nf) = gfr%w_ff(:nf,:nf)*f(:nf,:nf)
+    call dtrtrs('u', 't', 'n', nf2, 1, gfr%R, size(gfr%R,1), wrk, np2, info)
+    call dtrtrs('u', 'n', 'n', nf2, 1, gfr%R, size(gfr%R,1), wrk, np2, info)
+    g(:npi,:npi) = zero
+    do fj = 1,nf
+       do fi = 1,nf
+          do gj = 1,npi
+             do gi = 1,npi
+                g(gi,gj) = g(gi,gj) + gfr%M_sgf(gi,gj,fi,fj)*wrk(fi,fj)
+             end do
+          end do
+       end do
+    end do
+    if (npi < np) then
+       ! Finish the projection:
+       !     wrk = inv(M_sgsg) g
+       do gj = 1,npi
+          do gi = 1,npi
+             wrk(gi,gj) = g(gi,gj)/gfr%w_sgsg(gi,gj)
+          end do
+       end do 
+       ! Interpolate from npi to np; if npi = np, this is just the Id matrix.
+       do fj = 1,np
+          do fi = 1,np
+             accum = zero
+             do gj = 1,npi
+                do gi = 1,npi
+                   accum = accum + gfr%interp(gi,gj,fi,fj)*wrk(gi,gj)
+                end do
+             end do
+             g(fi,fj) = accum
+          end do
+       end do
+    else
+       ! Finish the projection.
+       do gj = 1,np
+          do gi = 1,np
+             g(gi,gj) = g(gi,gj)/gfr%w_gg(gi,gj)
+          end do
+       end do
+    end if
+  end subroutine gfr_init_f2g_remapd_col
+
   subroutine gfr_init_fv_metdet(elem, gfr)
     use element_mod, only: element_t
 
@@ -304,70 +383,31 @@ contains
   end subroutine gfr_g2f_remapd
 
   subroutine gfr_f2g_remapd(gfr, gll_metdet, fv_metdet, f, g)
-    !TODO There is enough work in this routine to justify creating a single
-    !     matrix to implement all the operations.
     type (GllFvRemap_t), intent(in) :: gfr
     real(kind=real_kind), intent(in) :: gll_metdet(:,:), fv_metdet(:,:), f(:,:)
     real(kind=real_kind), intent(out) :: g(:,:)
 
-    integer :: nf, nf2, npi, np2, gi, gj, fi, fj, info
-    real(kind=real_kind) :: accum, wrk(np,np)
+    integer :: gi, gj, fi, fj
+    real(kind=real_kind) :: accum
 
-    nf = gfr%nphys
-    nf2 = nf*nf
-    npi = gfr%npi
-    np2 = np*np
-
-    ! Solve the constrained projection described in gfr_init_R:
-    !     g = inv(M_sgsg) M_sgf inv(S) M_ff fv_metdet f
-    wrk(:nf,:nf) = gfr%w_ff(:nf,:nf)*fv_metdet(:nf,:nf)*f(:nf,:nf)
-    call dtrtrs('u', 't', 'n', nf2, 1, gfr%R, size(gfr%R,1), wrk, np2, info)
-    call dtrtrs('u', 'n', 'n', nf2, 1, gfr%R, size(gfr%R,1), wrk, np2, info)
-    g(:npi,:npi) = zero
-    do fj = 1,gfr%nphys
-       do fi = 1,gfr%nphys
-          do gj = 1,npi
-             do gi = 1,npi
-                g(gi,gj) = g(gi,gj) + gfr%M_sgf(gi,gj,fi,fj)*wrk(fi,fj)
+    do gj = 1,np
+       do gi = 1,np
+          accum = zero
+          do fj = 1,gfr%nphys
+             do fi = 1,gfr%nphys
+                accum = accum + gfr%f2g_remapd(fi,fj,gi,gj)*f(fi,fj)*fv_metdet(fi,fj)
              end do
           end do
+          g(gi,gj) = accum/gll_metdet(gi,gj)
        end do
     end do
-    if (npi < np) then
-       ! Finish the projection:
-       !     wrk = inv(M_sgsg) g
-       do gj = 1,npi
-          do gi = 1,npi
-             wrk(gi,gj) = g(gi,gj)/gfr%w_sgsg(gi,gj)
-          end do
-       end do 
-       ! Interpolate from npi to np; if npi = np, this is just the Id matrix.
-       do fj = 1,np
-          do fi = 1,np
-             accum = zero
-             do gj = 1,npi
-                do gi = 1,npi
-                   accum = accum + gfr%interp(gi,gj,fi,fj)*wrk(gi,gj)
-                end do
-             end do
-             ! Divide out the ref -> sphere jacobian.
-             g(fi,fj) = accum/gll_metdet(fi,fj)
-          end do
-       end do
-    else
-       ! Finish the projection and divide out the ref -> sphere jacobian.
-       do gj = 1,np
-          do gi = 1,np
-             g(gi,gj) = g(gi,gj)/(gfr%w_sgsg(gi,gj)*gll_metdet(gi,gj))
-          end do
-       end do
-    end if
   end subroutine gfr_f2g_remapd
 
-  subroutine gfr_check(gfr, elem, nets, nete, verbose)
+  subroutine gfr_check(gfr, hybrid, elem, nets, nete, verbose)
     use element_mod, only: element_t
 
     type (GllFvRemap_t), intent(in) :: gfr
+    type (hybrid_t), intent(in) :: hybrid
     type (element_t), intent(inout) :: elem(:)
     integer, intent(in) :: nets, nete
     logical, intent(in) :: verbose
@@ -377,15 +417,18 @@ contains
 
     nf = gfr%nphys
 
-    if (verbose) then
+    if (hybrid%par%masterproc .and. hybrid%masterthread) then
        print *, 'npi', gfr%npi, 'nphys', nf
-       print *, 'w_ff', nf, gfr%w_ff(:nf, :nf)
-       print *, 'w_gg', np, gfr%w_gg(:np, :np)
-       print *, 'w_sgsg', gfr%npi, gfr%w_sgsg(:gfr%npi, :gfr%npi)
-       print *, 'M_gf', np, nf, gfr%M_gf(:np, :np, :nf, :nf)
-       print *, 'M_sgf', gfr%npi, nf, gfr%M_sgf(:gfr%npi, :gfr%npi, :nf, :nf)
-       print *, 'R', nf, gfr%R(:nf*nf, :nf*nf)
-       print *, 'interp', gfr%npi, np, gfr%interp(:gfr%npi, :gfr%npi, :np, :np)
+       if (verbose) then
+          print *, 'w_ff', nf, gfr%w_ff(:nf, :nf)
+          print *, 'w_gg', np, gfr%w_gg(:np, :np)
+          print *, 'w_sgsg', gfr%npi, gfr%w_sgsg(:gfr%npi, :gfr%npi)
+          print *, 'M_gf', np, nf, gfr%M_gf(:np, :np, :nf, :nf)
+          print *, 'M_sgf', gfr%npi, nf, gfr%M_sgf(:gfr%npi, :gfr%npi, :nf, :nf)
+          print *, 'R', nf, gfr%R(:nf*nf, :nf*nf)
+          print *, 'interp', gfr%npi, np, gfr%interp(:gfr%npi, :gfr%npi, :np, :np)
+          print *, 'f2g_remapd', np, nf, gfr%f2g_remapd(:nf,:nf,:,:)
+       end if
     end if
 
     do ie = nets,nete
@@ -393,23 +436,28 @@ contains
        a = sum(elem(ie)%metdet * gfr%w_gg)
        b = sum(gfr%fv_metdet(:,:,ie) * gfr%w_ff(:nf, :nf))
        rd = abs(b - a)/abs(a)
-       if (rd > 1e-15) print *, 'gfr> area', ie, rd
+       if (rd /= rd .or. rd > 1e-15) print *, 'gfr> area', ie, rd
 
        ! Check that FV -> GLL -> FV recovers the original FV values exactly
        ! (with no DSS and no limiter).
        do j = 1,nf
-          x = real(j-j, real_kind)/real(nf, real_kind)
+          x = real(j-1, real_kind)/real(nf, real_kind)
           do i = 1,nf
-             y = real(j-j, real_kind)/real(nf, real_kind)
-             f0(i,j) = x*x + ie*x + cos(ie + 4.2*y)
+             y = real(i-1, real_kind)/real(nf, real_kind)
+             f0(i,j) = real(ie)/nelemd + x*x + ie*x + cos(ie + 4.2*y)
           end do
        end do
        call gfr_f2g_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,:,ie), f0, g)
        call gfr_g2f_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,:,ie), g, f1)
        wrk(:nf,:nf) = gfr%w_ff(:nf,:nf)*gfr%fv_metdet(:nf,:nf,ie)
-       rd = sum(wrk(:nf,:nf)*abs(f1(:nf,:nf) - f0(:nf,:nf)))/ &
-            sum(wrk(:nf,:nf)*abs(f0))
-       if (rd > 1e-15) print *, 'gfr> recover', ie, rd
+       a = sum(wrk(:nf,:nf)*abs(f1(:nf,:nf) - f0(:nf,:nf)))
+       b = sum(wrk(:nf,:nf)*abs(f0(:nf,:nf)))
+       rd = a/b
+       if (rd /= rd .or. rd > 1e-15) then
+          print *, 'gfr> recover', ie, a, b, rd
+          print *, 'f0', f0(:nf,:nf)
+          print *, 'f1', f1(:nf,:nf)
+       end if
     end do
   end subroutine gfr_check
 
@@ -435,14 +483,17 @@ contains
        !$omp barrier
 #endif
 
-       call gfr_check(gfr, elem, nets, nete, .false.)
+       call gfr_check(gfr, hybrid, elem, nets, nete, .false.)
 
        ! This is meant to be called after threading ends.
-       if (hybrid%masterthread) call gfr_finish()
 #ifdef HORIZ_OPENMP
        !$omp barrier
 #endif
+       if (hybrid%masterthread) call gfr_finish()
     end do
+#ifdef HORIZ_OPENMP
+    !$omp barrier
+#endif
   end subroutine gfr_test
 
 end module gllfvremap_mod
