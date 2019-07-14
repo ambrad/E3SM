@@ -3,7 +3,7 @@
 #endif
 
 module gllfvremap_mod
-  ! API for high-order, shape-preseving FV <-> GLL remap.
+  ! High-order, shape-preseving FV physics <-> GLL dynamics remap.
   !
   ! AMB 2019/07 Initial
 
@@ -65,12 +65,15 @@ contains
     if (nphys > np) then
        ! The FV -> GLL map is defined only if nphys <= np. If we ever are
        ! interested in the case of nphys > np, we will need to write a different
-       ! map.
+       ! map. See "!assume" annotations for mathematical assumptions in
+       ! particular routines.
        call abortmp('nphys must be <= np')
     end if
 
     gfr%nphys = nphys
     if (gfr%nphys == 1) then
+       ! If 3 is used, then the gfr_reconstructd_* routines must be mod'ed. In
+       ! particular, a limiter is needed, complicating the algorithm.
        gfr%npi = 2
     else
        gfr%npi = max(3, nphys)
@@ -236,6 +239,8 @@ contains
     real(kind=real_kind) :: wrk1(np*np*nphys*nphys), wrk2(np*np*nphys*nphys)
     integer :: gi, gj, fi, fj, npsq, info
 
+    !assume nphys <= np
+
     do fj = 1,nphys
        do fi = 1,nphys
           do gi = 1,np
@@ -285,6 +290,8 @@ contains
     integer :: fi, fj
     real(kind=real_kind) :: f(np,np), g(np,np)
 
+    !assume nphys <= np
+
     ! Apply gfr_init_f2g_remapd_col to the Id matrix to get the remap operator's
     ! matrix representation.
     f = zero
@@ -306,6 +313,8 @@ contains
 
     integer :: nf, nf2, npi, np2, gi, gj, fi, fj, info
     real(kind=real_kind) :: accum, wrk(gfr%nphys,gfr%nphys), x(np,np)
+
+    !assume nphys <= np
 
     nf = gfr%nphys
     nf2 = nf*nf
@@ -371,6 +380,7 @@ contains
     end do
   end subroutine gfr_init_fv_metdet
 
+  ! d suffix means the inputs, outputs are densities.
   subroutine gfr_g2f_remapd(gfr, gll_metdet, fv_metdet, g, f)
     type (GllFvRemap_t), intent(in) :: gfr
     real(kind=real_kind), intent(in) :: gll_metdet(:,:), fv_metdet(:,:), g(:,:)
@@ -413,6 +423,38 @@ contains
     end do
   end subroutine gfr_f2g_remapd
 
+  subroutine gfr_reconstructd_nphys1(gfr, gll_metdet, g)
+    type (GllFvRemap_t), intent(in) :: gfr
+    real(kind=real_kind), intent(in) :: gll_metdet(:,:)
+    real(kind=real_kind), intent(inout) :: g(:,:)
+
+    real(kind=real_kind) :: accum, wrk(2,2)
+    integer :: fi, fj, gi, gj
+
+    !assume np = 2
+
+    ! Use just the corner points. The idea is that the non-corner points have
+    ! not interacted with the corner points. Thus, the corners behave as though
+    ! everything has been done on a GLL np=2 grid. In particular, this means
+    ! that using just the corner values now is still mass conserving.
+    wrk(1,1) = gll_metdet(1 ,1 )*g(1 ,1 )
+    wrk(2,1) = gll_metdet(np,1 )*g(np,1 )
+    wrk(1,2) = gll_metdet(1 ,np)*g(1 ,np)
+    wrk(2,2) = gll_metdet(np,np)*g(np,np)
+
+    do fj = 1,np
+       do fi = 1,np
+          accum = zero
+          do gj = 1,gfr%npi
+             do gi = 1,gfr%npi
+                accum = accum + gfr%interp(gi,gj,fi,fj)*wrk(gi,gj)
+             end do
+          end do
+          g(fi,fj) = accum/gll_metdet(fi,fj)
+       end do
+    end do    
+  end subroutine gfr_reconstructd_nphys1
+
   subroutine set_ps_Q(elem, nets, nete, timeidx, qidx, nlev)
     use coordinate_systems_mod, only: cartesian3D_t, change_coordinates
 
@@ -449,7 +491,7 @@ contains
     logical, intent(in) :: verbose
 
     real(kind=real_kind) :: a, b, rd, x, y, f0(np,np), f1(np,np), g(np,np), wrk(np,np), &
-         num, den
+         err_num, err_den, mass_num, mass_den
     integer :: nf, ie, i, j, iremap, info
     real(kind=real_kind), allocatable :: fv(:,:,:)
 
@@ -522,29 +564,37 @@ contains
 
        ! 4. pg1 special case
        if (gfr%nphys == 1) then
-
+          do ie = nets, nete !TODO move to own routine
+             elem(ie)%state%Q(:,:,1,1) = elem(ie)%state%Q(:,:,1,1)*elem(ie)%state%ps_v(:,:,1)
+             call gfr_reconstructd_nphys1(gfr, elem(ie)%metdet, elem(ie)%state%Q(:,:,1,1))
+             elem(ie)%state%Q(:,:,1,1) = elem(ie)%state%Q(:,:,1,1)/elem(ie)%state%ps_v(:,:,1)
+          end do
        end if
     end do
     deallocate(fv)
     ! 5. Compute error.
-    num = zero
-    den = zero
+    !TODO threaded case
+    !TODO mass conservation
+    err_num = zero
+    err_den = zero
+    mass_num = zero
+    mass_den = zero
     do ie = nets, nete
        wrk(:nf,:nf) = gfr%w_gg(:,:)*elem(ie)%metdet(:,:)
        ! L2 on q. Might switch to q*ps_v.
        a = sum(wrk(:nf,:nf)*(elem(ie)%state%Q(:,:,1,1) - elem(ie)%state%Q(:,:,1,2))**2)
        b = sum(wrk(:nf,:nf)*elem(ie)%state%Q(:,:,1,2)**2)
-       num = num + a
-       den = den + b
+       err_num = err_num + a
+       err_den = err_den + b
     end do
-    wrk(1,1) = num
-    wrk(2,1) = den
+    wrk(1,1) = err_num
+    wrk(2,1) = err_den
     call MPI_Allreduce(wrk(1:2,1), wrk(1:2,2), 2, MPIreal_t, MPI_SUM, hybrid%par%comm, info)
-    num = wrk(1,2)
-    den = wrk(2,2)
     if (hybrid%par%masterproc .and. hybrid%masterthread) then
-       rd = sqrt(num/den)
+       rd = sqrt(wrk(1,2)/wrk(2,2))
        print *, 'gfr> conv', rd
+       rd = one
+       print *, 'gfr> mass', rd
     end if
   end subroutine check
 
