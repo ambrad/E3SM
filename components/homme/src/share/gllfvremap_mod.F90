@@ -26,7 +26,6 @@ module gllfvremap_mod
           M_gf(np,np,nphys_max,nphys_max), &
           w_sgsg(np,np), &
           M_sgf(np,np,nphys_max,nphys_max), &
-          R(npsq,nphys_max*nphys_max), &
           interp(np,np,np,np), &
           f2g_remapd(nphys_max,nphys_max,np,np)
      real(kind=real_kind), allocatable :: &
@@ -52,6 +51,8 @@ contains
     integer, intent(in) :: nphys
     type (element_t), intent(in) :: elem(nelemd)
 
+    real(real_kind) :: R(npsq,nphys_max*nphys_max)
+
     if (nphys > np) then
        ! The FV -> GLL map is defined only if nphys <= np. If we ever are
        ! interested in the case of nphys > np, we will need to write a different
@@ -71,9 +72,9 @@ contains
     call gfr_init_w_ff(nphys, gfr%w_ff)
     call gfr_init_M_gf(np, nphys, gfr%M_gf)
     call gfr_init_M_gf(gfr%npi, nphys, gfr%M_sgf)
-    call gfr_init_R(gfr%npi, nphys, gfr%w_sgsg, gfr%M_sgf, gfr%R)
+    call gfr_init_R(gfr%npi, nphys, gfr%w_sgsg, gfr%M_sgf, R)
     call gfr_init_interp_matrix(gfr%npi, gfr%interp)
-    call gfr_init_f2g_remapd(gfr)
+    call gfr_init_f2g_remapd(gfr, R)
 
     allocate(gfr%fv_metdet(nphys,nphys,nelemd))
     call gfr_init_fv_metdet(elem, gfr)
@@ -268,8 +269,9 @@ contains
     call gll_cleanup(gllt)
   end subroutine gfr_init_interp_matrix
 
-  subroutine gfr_init_f2g_remapd(gfr)
+  subroutine gfr_init_f2g_remapd(gfr, R)
     type (GllFvRemap_t), intent(inout) :: gfr
+    real(kind=real_kind), intent(in) :: R(:,:)
 
     integer :: fi, fj
     real(kind=real_kind) :: f(np,np), g(np,np)
@@ -280,15 +282,16 @@ contains
     do fi = 1,gfr%nphys
        do fj = 1,gfr%nphys
           f(fi,fj) = one
-          call gfr_init_f2g_remapd_col(gfr, f, g)
+          call gfr_init_f2g_remapd_col(gfr, R, f, g)
           gfr%f2g_remapd(fi,fj,:,:) = g
           f(fi,fj) = zero
        end do
     end do
   end subroutine gfr_init_f2g_remapd
 
-  subroutine gfr_init_f2g_remapd_col(gfr, f, g)
+  subroutine gfr_init_f2g_remapd_col(gfr, R, f, g)
     type (GllFvRemap_t), intent(in) :: gfr
+    real(kind=real_kind), intent(in) :: R(:,:)
     real(kind=real_kind), intent(in) :: f(:,:)
     real(kind=real_kind), intent(out) :: g(:,:)
 
@@ -303,8 +306,8 @@ contains
     ! Solve the constrained projection described in gfr_init_R:
     !     g = inv(M_sgsg) M_sgf inv(S) M_ff f
     wrk(:nf,:nf) = gfr%w_ff(:nf,:nf)*f(:nf,:nf)
-    call dtrtrs('u', 't', 'n', nf2, 1, gfr%R, size(gfr%R,1), wrk, np2, info)
-    call dtrtrs('u', 'n', 'n', nf2, 1, gfr%R, size(gfr%R,1), wrk, np2, info)
+    call dtrtrs('u', 't', 'n', nf2, 1, R, size(R,1), wrk, np2, info)
+    call dtrtrs('u', 'n', 'n', nf2, 1, R, size(R,1), wrk, np2, info)
     g(:npi,:npi) = zero
     do fj = 1,nf
        do fi = 1,nf
@@ -425,7 +428,6 @@ contains
           print *, 'w_sgsg', gfr%npi, gfr%w_sgsg(:gfr%npi, :gfr%npi)
           print *, 'M_gf', np, nf, gfr%M_gf(:np, :np, :nf, :nf)
           print *, 'M_sgf', gfr%npi, nf, gfr%M_sgf(:gfr%npi, :gfr%npi, :nf, :nf)
-          print *, 'R', nf, gfr%R(:nf*nf, :nf*nf)
           print *, 'interp', gfr%npi, np, gfr%interp(:gfr%npi, :gfr%npi, :np, :np)
           print *, 'f2g_remapd', np, nf, gfr%f2g_remapd(:nf,:nf,:,:)
        end if
