@@ -6,6 +6,7 @@ module gllfvremap_mod
   use hybrid_mod, only: hybrid_t
   use kinds, only: real_kind
   use dimensions_mod, only: np, npsq, qsize, nelemd
+  use element_mod, only: element_t
 
   implicit none
 
@@ -21,13 +22,18 @@ module gllfvremap_mod
   type, public :: GllFvRemap_t
      integer :: nphys, npi
      real(kind=real_kind) :: &
-          w_gg(np,np), &
-          w_ff(nphys_max,nphys_max), &
-          M_gf(np,np,nphys_max,nphys_max), &
-          w_sgsg(np,np), &
-          M_sgf(np,np,nphys_max,nphys_max), &
+          ! Node or cell weights
+          w_gg(np,np), &   ! GLL np
+          w_ff(nphys_max,nphys_max), & ! FV nphys
+          w_sgsg(np,np), & ! GLL npi
+          ! Mixed mass matrices
+          M_sgf(np,np,nphys_max,nphys_max), & ! GLL npi, FV nphys
+          M_gf(np,np,nphys_max,nphys_max), &  ! GLL np,  FV nphys
+          ! Interpolate from GLL npi to GLL np
           interp(np,np,np,np), &
+          ! Remap FV nphys -> GLL np
           f2g_remapd(nphys_max,nphys_max,np,np)
+     ! FV subcell areas; FV analogue of GLL elem(ie)%metdet arrays
      real(kind=real_kind), allocatable :: &
           fv_metdet(:,:,:) ! (nphys,nphys,nelemd)
   end type GllFvRemap_t
@@ -46,7 +52,6 @@ contains
 
   subroutine gfr_init(nphys, elem)
     use parallel_mod, only: abortmp
-    use element_mod, only: element_t
 
     integer, intent(in) :: nphys
     type (element_t), intent(in) :: elem(nelemd)
@@ -349,8 +354,6 @@ contains
   end subroutine gfr_init_f2g_remapd_col
 
   subroutine gfr_init_fv_metdet(elem, gfr)
-    use element_mod, only: element_t
-
     type (element_t), intent(in) :: elem(nelemd)
     type (GllFvRemap_t), intent(inout) :: gfr
 
@@ -407,8 +410,6 @@ contains
   end subroutine gfr_f2g_remapd
 
   subroutine gfr_check(gfr, hybrid, elem, nets, nete, verbose)
-    use element_mod, only: element_t
-
     type (GllFvRemap_t), intent(in) :: gfr
     type (hybrid_t), intent(in) :: hybrid
     type (element_t), intent(inout) :: elem(:)
@@ -461,7 +462,6 @@ contains
 
   subroutine gfr_test(hybrid, nets, nete, hvcoord, deriv, elem)
     use derivative_mod, only: derivative_t
-    use element_mod, only: element_t
     use hybvcoord_mod, only: hvcoord_t
 
     type (hybrid_t), intent(in) :: hybrid
