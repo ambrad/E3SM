@@ -5,7 +5,7 @@ module gllfvremap_mod
 
   use hybrid_mod, only: hybrid_t
   use kinds, only: real_kind
-  use dimensions_mod, only: nlev, np, npsq, qsize, nelemd
+  use dimensions_mod, only: np, npsq, qsize, nelemd
 
   implicit none
 
@@ -52,6 +52,9 @@ contains
     type (element_t), intent(in) :: elem(nelemd)
 
     if (nphys > np) then
+       ! The FV -> GLL map is defined only if nphys <= np. If we ever are
+       ! interested in the case of nphys > np, we will need to write a different
+       ! map.
        call abortmp('nphys must be <= np')
     end if
 
@@ -202,16 +205,18 @@ contains
 
   subroutine gfr_init_R(np, nphys, w_gg, M_gf, R)
     ! We want to solve
-    !     min_d 1/2 d'M_dd d - d' M_dp p
-    !      st   M_dp' d = M_pp p,
+    !     min_g 1/2 g'M_gg g - g' M_gf f
+    !      st   M_gf' g = M_ff f,
     ! which gives
-    !     [M_dd -M_dp] [d] = [M_dp p]
-    !     [M_dp'  0  ] [y]   [M_pp p].
-    ! Recall M_dd, M_pp are diag. Let
-    !     S = M_dp' inv(M_dd) M_dp.
+    !     [M_gg -M_gf] [g] = [M_gf f]
+    !     [M_gf'  0  ] [y]   [M_ff f].
+    ! Recall M_gg, M_ff are diag. Let
+    !     S = M_gf' inv(M_gg) M_gf.
     ! Then
-    !     d = inv(M_dd) M_dp inv(S) M_pp p.
-    ! Compute the QR factorization sqrt(inv(M_dd)) M_dp = Q R so that S = R'R.    
+    !     g = inv(M_gg) M_gf inv(S) M_ff f.
+    ! Compute the QR factorization sqrt(inv(M_gg)) M_gf = Q R so that S =
+    ! R'R. In this module, we can take M_gg = diag(w_gg) and M_ff = diag(w_ff)
+    ! with no loss of accuracy.
     integer, intent(in) :: np, nphys
     real(kind=real_kind), intent(in) :: w_gg(:,:), M_gf(:,:,:,:)
     real(kind=real_kind), intent(out) :: R(:,:)
@@ -285,7 +290,6 @@ contains
     integer :: gi, gj, fi, fj
     real(kind=real_kind) :: accum
 
-    f = zero
     do fj = 1,gfr%nphys
        do fi = 1,gfr%nphys
           accum = zero
@@ -299,34 +303,92 @@ contains
     end do
   end subroutine gfr_g2f_remapd
 
-  subroutine gfr_check(gfr, elem)
+  subroutine gfr_f2g_remapd(gfr, gll_metdet, fv_metdet, f, g)
+    type (GllFvRemap_t), intent(in) :: gfr
+    real(kind=real_kind), intent(in) :: gll_metdet(:,:), fv_metdet(:,:), f(:,:)
+    real(kind=real_kind), intent(out) :: g(:,:)
+
+    integer :: nf, nf2, npi, np2, gi, gj, fi, fj
+    real(kind=real_kind) :: accum, wrk(np,np)
+
+    nf = gfr%nphys
+    nf2 = nf*nf
+    npi = gfr%npi
+    np2 = np*np
+
+    ! Solve the constrained projection described in gfr_init_R:
+    !     g = inv(M_sgsg) M_sgf inv(S) M_ff fv_metdet f
+    wrk(:nf,:nf) = gfr%w_ff(:nf,:nf)*fv_metdet(:nf,:nf)*f(:nf,:nf)
+    call dtrtrs('u', 't', 'n', nf2, 1, gfr%R, size(gfr%R,1), wrk, np2)
+    call dtrtrs('u', 'n', 'n', nf2, 1, gfr%R, size(gfr%R,1), wrk, np2)
+    g(:npi,:npi) = zero
+    do fj = 1,gfr%nphys
+       do fi = 1,gfr%nphys
+          do gj = 1,npi
+             do gi = 1,npi
+                g(gi,gj) = g(gi,gj) + gfr%M_sgf(gi,gj,fi,fj)*wrk(fi,fj)
+             end do
+          end do
+       end do
+    end do
+    if (npi < np) then
+       ! Finish the projection:
+       !     wrk = inv(M_sgsg) g
+       do gj = 1,npi
+          do gi = 1,npi
+             wrk(gi,gj) = g(gi,gj)/gfr%w_sgsg(gi,gj)
+          end do
+       end do 
+       ! Interpolate from npi to np; if npi = np, this is just the Id matrix.
+       do fj = 1,np
+          do fi = 1,np
+             accum = zero
+             do gj = 1,npi
+                do gi = 1,npi
+                   accum = accum + gfr%interp(gi,gj,fi,fj)*wrk(gi,gj)
+                end do
+             end do
+             ! Divide out the ref -> sphere jacobian.
+             g(fi,fj) = accum/gll_metdet(fi,fj)
+          end do
+       end do
+    else
+       ! Finish the projection and divide out the ref -> sphere jacobian.
+       do gj = 1,np
+          do gi = 1,np
+             g(gi,gj) = g(gi,gj)/(gfr%w_sgsg(gi,gj)*gll_metdet(gi,gj))
+          end do
+       end do
+    end if
+  end subroutine gfr_f2g_remapd
+
+  subroutine gfr_print(gfr, elem, verbose)
     use element_mod, only: element_t
 
     type (GllFvRemap_t), intent(in) :: gfr
     type (element_t), intent(inout) :: elem(:)
+    logical, intent(in) :: verbose
 
     real(kind=real_kind) :: a, b, rd
     integer :: ie
 
+    if (verbose) then
+       print *, 'npi', gfr%npi, 'nphys', gfr%nphys
+       print *, 'w_ff', gfr%nphys, gfr%w_ff(:gfr%nphys, :gfr%nphys)
+       print *, 'w_gg', np, gfr%w_gg(:np, :np)
+       print *, 'w_sgsg', gfr%npi, gfr%w_sgsg(:gfr%npi, :gfr%npi)
+       print *, 'M_gf', np, gfr%nphys, gfr%M_gf(:np, :np, :gfr%nphys, :gfr%nphys)
+       print *, 'M_sgf', gfr%npi, gfr%nphys, gfr%M_sgf(:gfr%npi, :gfr%npi, :gfr%nphys, :gfr%nphys)
+       print *, 'R', gfr%nphys, gfr%R(:gfr%nphys*gfr%nphys, :gfr%nphys*gfr%nphys)
+       print *, 'interp', gfr%npi, np, gfr%interp(:gfr%npi, :gfr%npi, :np, :np)
+    end if
+
     do ie = 1,nelemd
        a = sum(elem(ie)%metdet * gfr%w_gg)
-       b = sum(gfr%fv_metdet(:,:,ie) * gfr%w_ff)
+       b = sum(gfr%fv_metdet(:,:,ie) * gfr%w_ff(:gfr%nphys, :gfr%nphys))
        rd = abs(b - a)/abs(a)
        if (rd > 1e-15) print *, ie, rd
     end do
-  end subroutine gfr_check
-
-  subroutine gfr_print(gfr)
-    type (GllFvRemap_t), intent(in) :: gfr
-
-    print *, 'npi', gfr%npi, 'nphys', gfr%nphys
-    print *, 'w_ff', gfr%nphys, gfr%w_ff(:gfr%nphys, :gfr%nphys)
-    print *, 'w_gg', np, gfr%w_gg(:np, :np)
-    print *, 'w_sgsg', gfr%npi, gfr%w_sgsg(:gfr%npi, :gfr%npi)
-    print *, 'M_gf', np, gfr%nphys, gfr%M_gf(:np, :np, :gfr%nphys, :gfr%nphys)
-    print *, 'M_sgf', gfr%npi, gfr%nphys, gfr%M_sgf(:gfr%npi, :gfr%npi, :gfr%nphys, :gfr%nphys)
-    print *, 'R', gfr%nphys, gfr%R(:gfr%nphys*gfr%nphys, :gfr%nphys*gfr%nphys)
-    print *, 'interp', gfr%npi, np, gfr%interp(:gfr%npi, :gfr%npi, :np, :np)
   end subroutine gfr_print
 
   subroutine gfr_test(hybrid, nets, nete, hvcoord, deriv, elem)
@@ -344,15 +406,14 @@ contains
 
     print *, 'gfr_test'
 
-    do nphys = 2,2 !1, np
+    do nphys = 1, np
        ! This is meant to be called before threading starts.
        if (hybrid%masterthread) call gfr_init(nphys, elem)
 #ifdef HORIZ_OPENMP
        !$omp barrier
 #endif
 
-       call gfr_check(gfr, elem)
-       !call gfr_print(gfr)
+       call gfr_print(gfr, elem, .false.)
 
        ! This is meant to be called after threading ends.
        if (hybrid%masterthread) call gfr_finish()
