@@ -501,8 +501,9 @@ contains
     allocate(fv(gfr%nphys, gfr%nphys, nete-nets+1))
     do iremap = 1,1
        ! 1. GLL -> FV
-       do ie = nets, nete
-
+       do ie = nets, nete !TODO move to own routine
+          call gfr_g2f_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,:,ie), &
+               elem(ie)%state%ps_v(:,:,1)*elem(ie)%state%Q(:,:,1,1), fv(:,:,ie))
        end do
        ! 2. FV -> GLL
        ! 2a. Get q bounds
@@ -512,8 +513,10 @@ contains
        ! 2b. Halo exchange q bounds.
 
        ! 2c. Remap
-       do ie = nets, nete
-
+       do ie = nets, nete !TODO move to own routine
+          call gfr_f2g_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,:,ie), &
+               fv(:,:,ie), elem(ie)%state%Q(:,:,1,1))
+          elem(ie)%state%Q(:,:,1,1) = elem(ie)%state%Q(:,:,1,1)/elem(ie)%state%ps_v(:,:,1)
        end do
        ! 3. DSS
 
