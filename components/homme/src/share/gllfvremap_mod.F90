@@ -440,6 +440,7 @@ contains
 
   subroutine check(gfr, hybrid, elem, nets, nete, verbose)
     use dimensions_mod, only: nlev
+    use parallel_mod, only: MPIreal_t, MPI_SUM
 
     type (GllFvRemap_t), intent(in) :: gfr
     type (hybrid_t), intent(in) :: hybrid
@@ -449,21 +450,21 @@ contains
 
     real(kind=real_kind) :: a, b, rd, x, y, f0(np,np), f1(np,np), g(np,np), wrk(np,np), &
          num, den
-    integer :: nf, ie, i, j, iremap
+    integer :: nf, ie, i, j, iremap, info
     real(kind=real_kind), allocatable :: fv(:,:,:)
 
     nf = gfr%nphys
 
     if (hybrid%par%masterproc .and. hybrid%masterthread) then
-       print *, 'npi', gfr%npi, 'nphys', nf
+       print *, 'gfr> npi', gfr%npi, 'nphys', nf
        if (verbose) then
-          print *, 'w_ff', nf, gfr%w_ff(:nf, :nf)
-          print *, 'w_gg', np, gfr%w_gg(:np, :np)
-          print *, 'w_sgsg', gfr%npi, gfr%w_sgsg(:gfr%npi, :gfr%npi)
-          print *, 'M_gf', np, nf, gfr%M_gf(:np, :np, :nf, :nf)
-          print *, 'M_sgf', gfr%npi, nf, gfr%M_sgf(:gfr%npi, :gfr%npi, :nf, :nf)
-          print *, 'interp', gfr%npi, np, gfr%interp(:gfr%npi, :gfr%npi, :np, :np)
-          print *, 'f2g_remapd', np, nf, gfr%f2g_remapd(:nf,:nf,:,:)
+          print *, 'gfr> w_ff', nf, gfr%w_ff(:nf, :nf)
+          print *, 'gfr> w_gg', np, gfr%w_gg(:np, :np)
+          print *, 'gfr> w_sgsg', gfr%npi, gfr%w_sgsg(:gfr%npi, :gfr%npi)
+          print *, 'gfr> M_gf', np, nf, gfr%M_gf(:np, :np, :nf, :nf)
+          print *, 'gfr> M_sgf', gfr%npi, nf, gfr%M_sgf(:gfr%npi, :gfr%npi, :nf, :nf)
+          print *, 'gfr> interp', gfr%npi, np, gfr%interp(:gfr%npi, :gfr%npi, :np, :np)
+          print *, 'gfr> f2g_remapd', np, nf, gfr%f2g_remapd(:nf,:nf,:,:)
        end if
     end if
 
@@ -517,15 +518,31 @@ contains
        ! 3. DSS
 
        ! 4. pg1 special case
+       if (gfr%nphys == 1) then
 
+       end if
     end do
     deallocate(fv)
     ! 5. Compute error.
     num = zero
     den = zero
     do ie = nets, nete
-       
+       wrk(:nf,:nf) = gfr%w_gg(:,:)*elem(ie)%metdet(:,:)
+       ! L2 on q. Might switch to q*ps_v.
+       a = sum(wrk(:nf,:nf)*(elem(ie)%state%Q(:,:,1,1) - elem(ie)%state%Q(:,:,1,2))**2)
+       b = sum(wrk(:nf,:nf)*elem(ie)%state%Q(:,:,1,2)**2)
+       num = num + a
+       den = den + b
     end do
+    wrk(1,1) = num
+    wrk(2,1) = den
+    call MPI_Allreduce(wrk(1:2,1), wrk(1:2,2), 2, MPIreal_t, MPI_SUM, hybrid%par%comm, info)
+    num = wrk(1,2)
+    den = wrk(2,2)
+    if (hybrid%par%masterproc .and. hybrid%masterthread) then
+       rd = sqrt(num/den)
+       print *, 'gfr> conv', rd
+    end if
   end subroutine check
 
   subroutine gfr_test(hybrid, nets, nete, hvcoord, deriv, elem)
