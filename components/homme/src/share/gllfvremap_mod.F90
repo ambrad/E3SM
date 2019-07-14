@@ -274,8 +274,8 @@ contains
     integer :: fi, fj
     real(kind=real_kind) :: f(np,np), g(np,np)
 
-    ! Think of gfr_init_f2g_remapd_col as a matvec. Here we apply it to the Id
-    ! matrix to get its matrix representation.
+    ! Apply gfr_init_f2g_remapd_col to the Id matrix to get the remap operator's
+    ! matrix representation.
     f = zero
     do fi = 1,gfr%nphys
        do fj = 1,gfr%nphys
@@ -293,7 +293,7 @@ contains
     real(kind=real_kind), intent(out) :: g(:,:)
 
     integer :: nf, nf2, npi, np2, gi, gj, fi, fj, info
-    real(kind=real_kind) :: accum, wrk(np,np)
+    real(kind=real_kind) :: accum, wrk(gfr%nphys,gfr%nphys), x(np,np)
 
     nf = gfr%nphys
     nf2 = nf*nf
@@ -320,7 +320,7 @@ contains
        !     wrk = inv(M_sgsg) g
        do gj = 1,npi
           do gi = 1,npi
-             wrk(gi,gj) = g(gi,gj)/gfr%w_sgsg(gi,gj)
+             x(gi,gj) = g(gi,gj)/gfr%w_sgsg(gi,gj)
           end do
        end do 
        ! Interpolate from npi to np; if npi = np, this is just the Id matrix.
@@ -329,7 +329,7 @@ contains
              accum = zero
              do gj = 1,npi
                 do gi = 1,npi
-                   accum = accum + gfr%interp(gi,gj,fi,fj)*wrk(gi,gj)
+                   accum = accum + gfr%interp(gi,gj,fi,fj)*x(gi,gj)
                 end do
              end do
              g(fi,fj) = accum
@@ -453,11 +453,7 @@ contains
        a = sum(wrk(:nf,:nf)*abs(f1(:nf,:nf) - f0(:nf,:nf)))
        b = sum(wrk(:nf,:nf)*abs(f0(:nf,:nf)))
        rd = a/b
-       if (rd /= rd .or. rd > 1e-15) then
-          print *, 'gfr> recover', ie, a, b, rd
-          print *, 'f0', f0(:nf,:nf)
-          print *, 'f1', f1(:nf,:nf)
-       end if
+       if (rd /= rd .or. rd > 1e-15) print *, 'gfr> recover', ie, a, b, rd
     end do
   end subroutine gfr_check
 
