@@ -1,3 +1,7 @@
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
 module gllfvremap_mod
   ! API for high-order, shape-preseving FV <-> GLL remap.
   !
@@ -435,7 +439,7 @@ contains
     end if
 
     do ie = nets,nete
-       ! Check areas match.
+       ! Check that areas match.
        a = sum(elem(ie)%metdet * gfr%w_gg)
        b = sum(gfr%fv_metdet(:,:,ie) * gfr%w_ff(:nf, :nf))
        rd = abs(b - a)/abs(a)
