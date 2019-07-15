@@ -499,8 +499,9 @@ contains
     logical, intent(in) :: verbose
 
     real(kind=real_kind) :: a, b, rd, x, y, f0(np,np), f1(np,np), g(np,np), wrk(np,np)
-    integer :: nf, ie, i, j, iremap, info
-    real(kind=real_kind), allocatable :: fv(:,:,:)
+    integer :: nf, ie, i, j, iremap, info, ilimit
+    real(kind=real_kind), allocatable :: Qdp_fv(:,:,:), ps_v_fv(:,:,:)
+    logical :: limit
 
     nf = gfr%nphys
 
@@ -545,70 +546,83 @@ contains
 
     ! For convergence testing.
     ! 0. Create synthetic q and ps_v.
-    call set_ps_Q(elem, nets, nete, 1, 1, nlev)
-    call set_ps_Q(elem, nets, nete, 2, 2, nlev)
-    allocate(fv(gfr%nphys, gfr%nphys, nets:nete))
-    do iremap = 1,1
-       ! 1. GLL -> FV
-       do ie = nets, nete !TODO move to own routine
-          call gfr_g2f_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,:,ie), &
-               elem(ie)%state%ps_v(:,:,1)*elem(ie)%state%Q(:,:,1,1), fv(:,:,ie))
-       end do
-       ! 2. FV -> GLL
-       ! 2a. Get q bounds
-       do ie = nets, nete
-
-       end do
-       ! 2b. Halo exchange q bounds.
-
-       ! 2c. Remap
-       do ie = nets, nete !TODO move to own routine
-          call gfr_f2g_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,:,ie), &
-               fv(:,:,ie), elem(ie)%state%Q(:,:,1,1))
-          elem(ie)%state%Q(:,:,1,1) = elem(ie)%state%Q(:,:,1,1)/elem(ie)%state%ps_v(:,:,1)
-       end do
-       ! 3. DSS
-       do ie = nets, nete
-          elem(ie)%state%Q(:,:,1,1) = &
-               elem(ie)%state%ps_v(:,:,1)*elem(ie)%state%Q(:,:,1,1)*elem(ie)%spheremp(:,:)
-          call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%Q(:,:,1,1), 1, 0, 1)
-       end do
-       call bndry_exchangeV(hybrid, edge_g)
-       do ie = nets, nete
-          call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%Q(:,:,1,1), 1, 0, 1)
-          elem(ie)%state%Q(:,:,1,1) = &
-               (elem(ie)%state%Q(:,:,1,1)*elem(ie)%rspheremp(:,:))/elem(ie)%state%ps_v(:,:,1)
-       end do
-       ! 4. pg1 special case
-       if (gfr%nphys == 1) then
+    allocate(Qdp_fv(gfr%nphys, gfr%nphys, nets:nete), ps_v_fv(gfr%nphys, gfr%nphys, nets:nete))
+    do ilimit = 0,1
+       limit = ilimit > 0
+       call set_ps_Q(elem, nets, nete, 1, 1, nlev)
+       call set_ps_Q(elem, nets, nete, 2, 2, nlev)
+       do iremap = 1,1
+          ! 1. GLL -> FV
           do ie = nets, nete !TODO move to own routine
-             elem(ie)%state%Q(:,:,1,1) = elem(ie)%state%Q(:,:,1,1)*elem(ie)%state%ps_v(:,:,1)
-             call gfr_reconstructd_nphys1(gfr, elem(ie)%metdet, elem(ie)%state%Q(:,:,1,1))
+             if (limit) then
+                call gfr_g2f_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,:,ie), &
+                     elem(ie)%state%ps_v(:,:,1), ps_v_fv(:,:,ie))
+             end if
+             call gfr_g2f_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,:,ie), &
+                  elem(ie)%state%ps_v(:,:,1)*elem(ie)%state%Q(:,:,1,1), Qdp_fv(:,:,ie))
+          end do
+          ! 2. FV -> GLL
+          if (limit) then
+             ! 2a. Get q bounds
+             do ie = nets, nete
+
+             end do
+             ! 2b. Halo exchange q bounds.
+
+          endif
+          ! 2c. Remap
+          do ie = nets, nete !TODO move to own routine
+             call gfr_f2g_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,:,ie), &
+                  Qdp_fv(:,:,ie), elem(ie)%state%Q(:,:,1,1))
+             if (limit) then
+                
+             end if
              elem(ie)%state%Q(:,:,1,1) = elem(ie)%state%Q(:,:,1,1)/elem(ie)%state%ps_v(:,:,1)
           end do
+          ! 3. DSS
+          do ie = nets, nete
+             elem(ie)%state%Q(:,:,1,1) = &
+                  elem(ie)%state%ps_v(:,:,1)*elem(ie)%state%Q(:,:,1,1)*elem(ie)%spheremp(:,:)
+             call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%Q(:,:,1,1), 1, 0, 1)
+          end do
+          call bndry_exchangeV(hybrid, edge_g)
+          do ie = nets, nete
+             call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%Q(:,:,1,1), 1, 0, 1)
+             elem(ie)%state%Q(:,:,1,1) = &
+                  (elem(ie)%state%Q(:,:,1,1)*elem(ie)%rspheremp(:,:))/elem(ie)%state%ps_v(:,:,1)
+          end do
+          ! 4. pg1 special case
+          if (gfr%nphys == 1) then
+             do ie = nets, nete !TODO move to own routine
+                elem(ie)%state%Q(:,:,1,1) = elem(ie)%state%Q(:,:,1,1)*elem(ie)%state%ps_v(:,:,1)
+                call gfr_reconstructd_nphys1(gfr, elem(ie)%metdet, elem(ie)%state%Q(:,:,1,1))
+                elem(ie)%state%Q(:,:,1,1) = elem(ie)%state%Q(:,:,1,1)/elem(ie)%state%ps_v(:,:,1)
+             end do
+          end if
+       end do
+       ! 5. Compute error.
+       do ie = nets, nete
+          wrk = gfr%w_gg(:,:)*elem(ie)%metdet(:,:)
+          ! L2 on q. Might switch to q*ps_v.
+          global_shared_buf(ie,1) = &
+               sum(wrk*(elem(ie)%state%Q(:,:,1,1) - elem(ie)%state%Q(:,:,1,2))**2)
+          global_shared_buf(ie,2) = &
+               sum(wrk*elem(ie)%state%Q(:,:,1,2)**2)
+          ! Mass conservation.
+          wrk = wrk*elem(ie)%state%ps_v(:,:,1)
+          global_shared_buf(ie,3) = sum(wrk*elem(ie)%state%Q(:,:,1,2))
+          global_shared_buf(ie,4) = sum(wrk*elem(ie)%state%Q(:,:,1,1))
+       end do
+       call wrap_repro_sum(nvars=4, comm=hybrid%par%comm)
+       if (hybrid%masterthread) then
+          print *, 'gfr> limit', ilimit
+          rd = sqrt(global_shared_sum(1)/global_shared_sum(2))
+          print *, 'gfr> l2  ', rd
+          rd = (global_shared_sum(4) - global_shared_sum(3))/global_shared_sum(3)
+          print *, 'gfr> mass', rd
        end if
     end do
-    deallocate(fv)
-    ! 5. Compute error.
-    do ie = nets, nete
-       wrk = gfr%w_gg(:,:)*elem(ie)%metdet(:,:)
-       ! L2 on q. Might switch to q*ps_v.
-       global_shared_buf(ie,1) = &
-            sum(wrk*(elem(ie)%state%Q(:,:,1,1) - elem(ie)%state%Q(:,:,1,2))**2)
-       global_shared_buf(ie,2) = &
-            sum(wrk*elem(ie)%state%Q(:,:,1,2)**2)
-       ! Mass conservation.
-       wrk = wrk*elem(ie)%state%ps_v(:,:,1)
-       global_shared_buf(ie,3) = sum(wrk*elem(ie)%state%Q(:,:,1,2))
-       global_shared_buf(ie,4) = sum(wrk*elem(ie)%state%Q(:,:,1,1))
-    end do
-    call wrap_repro_sum(nvars=4, comm=hybrid%par%comm)
-    if (hybrid%masterthread) then
-       rd = sqrt(global_shared_sum(1)/global_shared_sum(2))
-       print *, 'gfr> l2  ', rd
-       rd = (global_shared_sum(4) - global_shared_sum(3))/global_shared_sum(3)
-       print *, 'gfr> mass', rd
-    end if
+    deallocate(Qdp_fv, ps_v_fv)
   end subroutine check
 
   subroutine gfr_test(hybrid, nets, nete, hvcoord, deriv, elem)
