@@ -457,6 +457,80 @@ contains
     end do    
   end subroutine gfr_reconstructd_nphys1
 
+  subroutine limiter_clip_and_sum(n, spheremp, qmin, qmax, dp, Qdp)
+    use kinds, only: real_kind
+
+    integer, intent(in) :: n
+    real (kind=real_kind), intent(inout) :: qmin, qmax, Qdp(:,:)
+    real (kind=real_kind), intent(in) :: spheremp(:,:), dp(:,:)
+
+    integer :: k1, i, j
+    logical :: modified
+    real(kind=real_kind) :: addmass, mass, sumc, den
+    real(kind=real_kind) :: x(n*n), c(n*n), v(n*n)
+
+    k1 = 1
+    do j = 1, n
+       do i = 1, n
+          c(k1) = spheremp(i,j)*dp(i,j)
+          x(k1) = Qdp(i,j)/dp(i,j)
+          k1 = k1+1
+       enddo
+    enddo
+
+    sumc = sum(c)
+    mass = sum(c*x)
+    ! This should never happen, but if it does, don't limit.
+    if (sumc <= 0) return
+    ! Relax constraints to ensure limiter has a solution; this is only needed
+    ! if running with the SSP CFL>1 or due to roundoff errors.
+    if (mass < qmin*sumc) then
+       qmin = mass / sumc
+    endif
+    if (mass > qmax*sumc) then
+       qmax = mass / sumc
+    endif
+
+    addmass = zero
+
+    ! Clip.
+    modified = .false.
+    do k1 = 1, n*n
+       if (x(k1) > qmax) then
+          modified = .true.
+          addmass = addmass + (x(k1) - qmax)*c(k1)
+          x(k1) = qmax
+       elseif (x(k1) < qmin) then
+          modified = .true.
+          addmass = addmass + (x(k1) - qmin)*c(k1)
+          x(k1) = qmin
+       end if
+    end do
+    if (.not. modified) return
+
+    if (addmass /= zero) then
+       ! Determine weights.
+       if (addmass > zero) then
+          v(:) = qmax - x(:)
+       else
+          v(:) = x(:) - qmin
+       end if
+       den = sum(v*c)
+       if (den > zero) then
+          ! Update.
+          x(:) = x(:) + (addmass/den)*v(:)
+       end if
+    end if
+
+    k1 = 1
+    do j = 1,n
+       do i = 1,n
+          Qdp(i,j) = x(k1)*dp(i,j)
+          k1 = k1+1
+       end do
+    end do
+  end subroutine limiter_clip_and_sum
+
   ! --- testing ---
   ! Everything below is for testing.
 
@@ -491,6 +565,7 @@ contains
     use bndry_mod, only: bndry_exchangev
     use parallel_mod, only: global_shared_buf, global_shared_sum
     use global_norms_mod, only: wrap_repro_sum
+    use reduction_mod, only: ParallelMin, ParallelMax
 
     type (GllFvRemap_t), intent(in) :: gfr
     type (hybrid_t), intent(in) :: hybrid
@@ -498,7 +573,8 @@ contains
     integer, intent(in) :: nets, nete
     logical, intent(in) :: verbose
 
-    real(kind=real_kind) :: a, b, rd, x, y, f0(np,np), f1(np,np), g(np,np), wrk(np,np)
+    real(kind=real_kind) :: a, b, rd, x, y, f0(np,np), f1(np,np), g(np,np), &
+         wrk(np,np), qmin, qmax, gqmin, gqmax
     integer :: nf, ie, i, j, iremap, info, ilimit
     real(kind=real_kind), allocatable :: Qdp_fv(:,:,:), ps_v_fv(:,:,:)
     logical :: limit
@@ -554,18 +630,22 @@ contains
        do iremap = 1,1
           ! 1. GLL -> FV
           do ie = nets, nete !TODO move to own routine
+             call gfr_g2f_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,:,ie), &
+                  elem(ie)%state%ps_v(:,:,1)*elem(ie)%state%Q(:,:,1,1), Qdp_fv(:,:,ie))
              if (limit) then
                 call gfr_g2f_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,:,ie), &
                      elem(ie)%state%ps_v(:,:,1), ps_v_fv(:,:,ie))
+                qmin = minval(elem(ie)%state%Q(:,:,1,1))
+                qmax = maxval(elem(ie)%state%Q(:,:,1,1))
+                call limiter_clip_and_sum(nf, gfr%w_ff(:nf,:nf)*gfr%fv_metdet(:nf,:nf,ie), &
+                     qmin, qmax, ps_v_fv(:,:,ie), Qdp_fv(:,:,ie))
              end if
-             call gfr_g2f_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,:,ie), &
-                  elem(ie)%state%ps_v(:,:,1)*elem(ie)%state%Q(:,:,1,1), Qdp_fv(:,:,ie))
           end do
           ! 2. FV -> GLL
           if (limit) then
              ! 2a. Get q bounds
              do ie = nets, nete
-
+                
              end do
              ! 2b. Halo exchange q bounds.
 
@@ -601,6 +681,8 @@ contains
           end if
        end do
        ! 5. Compute error.
+       qmin = two
+       qmax = -two
        do ie = nets, nete
           wrk = gfr%w_gg(:,:)*elem(ie)%metdet(:,:)
           ! L2 on q. Might switch to q*ps_v.
@@ -612,14 +694,27 @@ contains
           wrk = wrk*elem(ie)%state%ps_v(:,:,1)
           global_shared_buf(ie,3) = sum(wrk*elem(ie)%state%Q(:,:,1,2))
           global_shared_buf(ie,4) = sum(wrk*elem(ie)%state%Q(:,:,1,1))
+          if (limit) then
+             qmin = min(qmin, minval(elem(ie)%state%Q(:,:,1,1) - elem(ie)%state%Q(:,:,1,2)))
+             qmax = max(qmax, maxval(elem(ie)%state%Q(:,:,1,1) - elem(ie)%state%Q(:,:,1,2)))
+          end if
        end do
        call wrap_repro_sum(nvars=4, comm=hybrid%par%comm)
+       if (limit) then
+          gqmin = ParallelMin(qmin, hybrid)
+          gqmin = min(zero, gqmin)
+          gqmax = ParallelMax(qmax, hybrid)
+          gqmax = max(zero, gqmax)
+       end if
        if (hybrid%masterthread) then
           print *, 'gfr> limit', ilimit
           rd = sqrt(global_shared_sum(1)/global_shared_sum(2))
           print *, 'gfr> l2  ', rd
           rd = (global_shared_sum(4) - global_shared_sum(3))/global_shared_sum(3)
           print *, 'gfr> mass', rd
+          if (limit) then
+             print *, 'gfr> limit', gqmin, gqmax
+          end if
        end if
     end do
     deallocate(Qdp_fv, ps_v_fv)
