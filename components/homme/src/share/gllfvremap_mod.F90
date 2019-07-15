@@ -294,20 +294,20 @@ contains
 
     !assume nphys <= np
 
-    ! Apply gfr_init_f2g_remapd_col to the Id matrix to get the remap operator's
+    ! Apply gfr_init_f2g_remapd_op to the Id matrix to get the remap operator's
     ! matrix representation.
     f = zero
     do fi = 1,gfr%nphys
        do fj = 1,gfr%nphys
           f(fi,fj) = one
-          call gfr_init_f2g_remapd_col(gfr, R, f, g)
+          call gfr_f2g_remapd_op(gfr, R, f, g)
           gfr%f2g_remapd(fi,fj,:,:) = g
           f(fi,fj) = zero
        end do
     end do
   end subroutine gfr_init_f2g_remapd
 
-  subroutine gfr_init_f2g_remapd_col(gfr, R, f, g)
+  subroutine gfr_f2g_remapd_op(gfr, R, f, g)
     type (GllFvRemap_t), intent(in) :: gfr
     real(kind=real_kind), intent(in) :: R(:,:)
     real(kind=real_kind), intent(in) :: f(:,:)
@@ -366,7 +366,7 @@ contains
           end do
        end do
     end if
-  end subroutine gfr_init_f2g_remapd_col
+  end subroutine gfr_f2g_remapd_op
 
   subroutine gfr_init_fv_metdet(elem, gfr)
     type (element_t), intent(in) :: elem(nelemd)
@@ -624,12 +624,12 @@ contains
     end do
 
     ! For convergence testing.
-    ! 0. Create synthetic q and ps_v.
     allocate(Qdp_fv(gfr%nphys, gfr%nphys, nets:nete), ps_v_fv(gfr%nphys, gfr%nphys, nets:nete))
     allocate(qmins(nlev,qsize,nets:nete), qmaxs(nlev,qsize,nets:nete))
     do ilimit = 0,1
        limit = ilimit > 0
        if (limit .and. nf == 1) cycle
+       ! 0. Create synthetic q and ps_v.
        call set_ps_Q(elem, nets, nete, 1, 1, nlev)
        call set_ps_Q(elem, nets, nete, 2, 2, nlev)
        do iremap = 1,1
