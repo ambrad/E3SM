@@ -560,12 +560,14 @@ contains
   end subroutine set_ps_Q
 
   subroutine check(gfr, hybrid, elem, nets, nete, verbose)
-    use dimensions_mod, only: nlev
+    use dimensions_mod, only: nlev, qsize
     use edge_mod, only: edge_g, edgevpack_nlyr, edgevunpack_nlyr
     use bndry_mod, only: bndry_exchangev
+    use viscosity_mod, only: neighbor_minmax
     use parallel_mod, only: global_shared_buf, global_shared_sum
     use global_norms_mod, only: wrap_repro_sum
     use reduction_mod, only: ParallelMin, ParallelMax
+    use prim_advection_base, only: edgeAdvQminmax
 
     type (GllFvRemap_t), intent(in) :: gfr
     type (hybrid_t), intent(in) :: hybrid
@@ -574,9 +576,10 @@ contains
     logical, intent(in) :: verbose
 
     real(kind=real_kind) :: a, b, rd, x, y, f0(np,np), f1(np,np), g(np,np), &
-         wrk(np,np), qmin, qmax, gqmin, gqmax
+         wrk(np,np), qmin, qmax, qmin1, qmax1
     integer :: nf, ie, i, j, iremap, info, ilimit
-    real(kind=real_kind), allocatable :: Qdp_fv(:,:,:), ps_v_fv(:,:,:)
+    real(kind=real_kind), allocatable :: Qdp_fv(:,:,:), ps_v_fv(:,:,:), &
+         qmins(:,:,:), qmaxs(:,:,:)
     logical :: limit
 
     nf = gfr%nphys
@@ -623,8 +626,10 @@ contains
     ! For convergence testing.
     ! 0. Create synthetic q and ps_v.
     allocate(Qdp_fv(gfr%nphys, gfr%nphys, nets:nete), ps_v_fv(gfr%nphys, gfr%nphys, nets:nete))
+    allocate(qmins(nlev,qsize,nets:nete), qmaxs(nlev,qsize,nets:nete))
     do ilimit = 0,1
        limit = ilimit > 0
+       if (limit .and. nf == 1) cycle
        call set_ps_Q(elem, nets, nete, 1, 1, nlev)
        call set_ps_Q(elem, nets, nete, 2, 2, nlev)
        do iremap = 1,1
@@ -645,17 +650,21 @@ contains
           if (limit) then
              ! 2a. Get q bounds
              do ie = nets, nete
-                
+                qmins(1,1,ie) = minval(Qdp_fv(:nf,:nf,ie)/ps_v_fv(:nf,:nf,ie))
+                qmaxs(1,1,ie) = maxval(Qdp_fv(:nf,:nf,ie)/ps_v_fv(:nf,:nf,ie))
              end do
              ! 2b. Halo exchange q bounds.
-
+             call neighbor_minmax(hybrid, edgeAdvQminmax, nets, nete, qmins, qmaxs)
           endif
           ! 2c. Remap
           do ie = nets, nete !TODO move to own routine
              call gfr_f2g_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,:,ie), &
                   Qdp_fv(:,:,ie), elem(ie)%state%Q(:,:,1,1))
              if (limit) then
-                
+                qmin = qmins(1,1,ie)
+                qmax = qmaxs(1,1,ie)
+                call limiter_clip_and_sum(np, elem(ie)%spheremp, & ! same as w_gg*gll_metdet
+                     qmin, qmax, elem(ie)%state%ps_v(:,:,1), elem(ie)%state%Q(:,:,1,1))
              end if
              elem(ie)%state%Q(:,:,1,1) = elem(ie)%state%Q(:,:,1,1)/elem(ie)%state%ps_v(:,:,1)
           end do
@@ -683,6 +692,8 @@ contains
        ! 5. Compute error.
        qmin = two
        qmax = -two
+       qmin1 = two
+       qmax1 = -two
        do ie = nets, nete
           wrk = gfr%w_gg(:,:)*elem(ie)%metdet(:,:)
           ! L2 on q. Might switch to q*ps_v.
@@ -694,30 +705,26 @@ contains
           wrk = wrk*elem(ie)%state%ps_v(:,:,1)
           global_shared_buf(ie,3) = sum(wrk*elem(ie)%state%Q(:,:,1,2))
           global_shared_buf(ie,4) = sum(wrk*elem(ie)%state%Q(:,:,1,1))
-          if (limit) then
-             qmin = min(qmin, minval(elem(ie)%state%Q(:,:,1,1) - elem(ie)%state%Q(:,:,1,2)))
-             qmax = max(qmax, maxval(elem(ie)%state%Q(:,:,1,1) - elem(ie)%state%Q(:,:,1,2)))
-          end if
+          qmin = min(qmin, minval(elem(ie)%state%Q(:,:,1,1)))
+          qmin1 = min(qmin1, minval(elem(ie)%state%Q(:,:,1,2)))
+          qmax = max(qmax, maxval(elem(ie)%state%Q(:,:,1,1)))
+          qmax1 = max(qmax1, maxval(elem(ie)%state%Q(:,:,1,2)))
        end do
        call wrap_repro_sum(nvars=4, comm=hybrid%par%comm)
-       if (limit) then
-          gqmin = ParallelMin(qmin, hybrid)
-          gqmin = min(zero, gqmin)
-          gqmax = ParallelMax(qmax, hybrid)
-          gqmax = max(zero, gqmax)
-       end if
+       qmin = ParallelMin(qmin, hybrid)
+       qmin1 = ParallelMin(qmin1, hybrid)
+       qmax = ParallelMax(qmax, hybrid)
+       qmax1 = ParallelMax(qmax1, hybrid)
        if (hybrid%masterthread) then
           print *, 'gfr> limit', ilimit
           rd = sqrt(global_shared_sum(1)/global_shared_sum(2))
           print *, 'gfr> l2  ', rd
           rd = (global_shared_sum(4) - global_shared_sum(3))/global_shared_sum(3)
           print *, 'gfr> mass', rd
-          if (limit) then
-             print *, 'gfr> limit', gqmin, gqmax
-          end if
+          print *, 'gfr> limit', min(zero, qmin - qmin1), max(zero, qmax - qmax1)
        end if
     end do
-    deallocate(Qdp_fv, ps_v_fv)
+    deallocate(Qdp_fv, ps_v_fv, qmins, qmaxs)
   end subroutine check
 
   subroutine gfr_test(hybrid, nets, nete, hvcoord, deriv, elem)
