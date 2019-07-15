@@ -3,7 +3,9 @@
 #endif
 
 module gllfvremap_mod
-  ! High-order, shape-preseving FV physics <-> GLL dynamics remap.
+  ! High-order, mass-conserving, optionally shape-preserving
+  !     FV physics <-> GLL dynamics
+  ! remap.
   !
   ! AMB 2019/07 Initial
 
@@ -455,6 +457,9 @@ contains
     end do    
   end subroutine gfr_reconstructd_nphys1
 
+  ! --- testing ---
+  ! Everything below is for testing.
+
   subroutine set_ps_Q(elem, nets, nete, timeidx, qidx, nlev)
     use coordinate_systems_mod, only: cartesian3D_t, change_coordinates
 
@@ -585,7 +590,6 @@ contains
     end do
     deallocate(fv)
     ! 5. Compute error.
-    !TODO threaded case
     err_num = zero
     err_den = zero
     mass0 = zero
@@ -612,7 +616,7 @@ contains
     call MPI_Allreduce(wrk(1:4,1), wrk(1:4,2), 4, MPIreal_t, MPI_SUM, hybrid%par%comm, info)
     if (hybrid%par%masterproc .and. hybrid%masterthread) then
        rd = sqrt(wrk(1,2)/wrk(2,2))
-       print *, 'gfr> conv', rd
+       print *, 'gfr> l2  ', rd
        rd = (wrk(4,2) - wrk(3,2))/wrk(3,2)
        print *, 'gfr> mass', rd
     end if
@@ -649,5 +653,4 @@ contains
     !$omp barrier
 #endif
   end subroutine gfr_test
-
 end module gllfvremap_mod
