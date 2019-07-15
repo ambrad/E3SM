@@ -483,6 +483,8 @@ contains
   subroutine check(gfr, hybrid, elem, nets, nete, verbose)
     use dimensions_mod, only: nlev
     use parallel_mod, only: MPIreal_t, MPI_SUM
+    use edge_mod, only: edge_g, edgevpack_nlyr, edgevunpack_nlyr
+    use bndry_mod, only: bndry_exchangev
 
     type (GllFvRemap_t), intent(in) :: gfr
     type (hybrid_t), intent(in) :: hybrid
@@ -561,7 +563,17 @@ contains
           elem(ie)%state%Q(:,:,1,1) = elem(ie)%state%Q(:,:,1,1)/elem(ie)%state%ps_v(:,:,1)
        end do
        ! 3. DSS
-
+       do ie = nets, nete
+          elem(ie)%state%Q(:,:,1,1) = &
+               elem(ie)%state%ps_v(:,:,1)*elem(ie)%state%Q(:,:,1,1)*elem(ie)%spheremp(:,:)
+          call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%Q(:,:,1,1), 1, 0, 1)
+       end do
+       call bndry_exchangeV(hybrid, edge_g)
+       do ie = nets, nete
+          call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%Q(:,:,1,1), 1, 0, 1)
+          elem(ie)%state%Q(:,:,1,1) = &
+               (elem(ie)%state%Q(:,:,1,1)*elem(ie)%rspheremp(:,:))/elem(ie)%state%ps_v(:,:,1)
+       end do
        ! 4. pg1 special case
        if (gfr%nphys == 1) then
           do ie = nets, nete !TODO move to own routine
@@ -574,7 +586,6 @@ contains
     deallocate(fv)
     ! 5. Compute error.
     !TODO threaded case
-    !TODO mass conservation
     err_num = zero
     err_den = zero
     mass0 = zero
