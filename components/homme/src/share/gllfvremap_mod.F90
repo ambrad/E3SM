@@ -491,7 +491,7 @@ contains
     logical, intent(in) :: verbose
 
     real(kind=real_kind) :: a, b, rd, x, y, f0(np,np), f1(np,np), g(np,np), wrk(np,np), &
-         err_num, err_den, mass_num, mass_den
+         err_num, err_den, mass0, mass1
     integer :: nf, ie, i, j, iremap, info
     real(kind=real_kind), allocatable :: fv(:,:,:)
 
@@ -577,23 +577,32 @@ contains
     !TODO mass conservation
     err_num = zero
     err_den = zero
-    mass_num = zero
-    mass_den = zero
+    mass0 = zero
+    mass1 = zero
     do ie = nets, nete
-       wrk(:nf,:nf) = gfr%w_gg(:,:)*elem(ie)%metdet(:,:)
+       wrk = gfr%w_gg(:,:)*elem(ie)%metdet(:,:)
        ! L2 on q. Might switch to q*ps_v.
-       a = sum(wrk(:nf,:nf)*(elem(ie)%state%Q(:,:,1,1) - elem(ie)%state%Q(:,:,1,2))**2)
-       b = sum(wrk(:nf,:nf)*elem(ie)%state%Q(:,:,1,2)**2)
+       a = sum(wrk*(elem(ie)%state%Q(:,:,1,1) - elem(ie)%state%Q(:,:,1,2))**2)
+       b = sum(wrk*elem(ie)%state%Q(:,:,1,2)**2)
        err_num = err_num + a
        err_den = err_den + b
+       ! Mass conservation.
+       wrk = wrk*elem(ie)%state%ps_v(:,:,1)
+       a = sum(wrk*elem(ie)%state%Q(:,:,1,2))
+       b = sum(wrk*elem(ie)%state%Q(:,:,1,1))
+       mass0 = mass0 + a
+       mass1 = mass1 + b
     end do
     wrk(1,1) = err_num
     wrk(2,1) = err_den
-    call MPI_Allreduce(wrk(1:2,1), wrk(1:2,2), 2, MPIreal_t, MPI_SUM, hybrid%par%comm, info)
+    wrk(3,1) = mass0
+    wrk(4,1) = mass1
+    !TODO for threads, need to switch to integration routine
+    call MPI_Allreduce(wrk(1:4,1), wrk(1:4,2), 4, MPIreal_t, MPI_SUM, hybrid%par%comm, info)
     if (hybrid%par%masterproc .and. hybrid%masterthread) then
        rd = sqrt(wrk(1,2)/wrk(2,2))
        print *, 'gfr> conv', rd
-       rd = one
+       rd = (wrk(4,2) - wrk(3,2))/wrk(3,2)
        print *, 'gfr> mass', rd
     end if
   end subroutine check
