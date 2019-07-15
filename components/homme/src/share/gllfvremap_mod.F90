@@ -487,9 +487,10 @@ contains
 
   subroutine check(gfr, hybrid, elem, nets, nete, verbose)
     use dimensions_mod, only: nlev
-    use parallel_mod, only: MPIreal_t, MPI_SUM
     use edge_mod, only: edge_g, edgevpack_nlyr, edgevunpack_nlyr
     use bndry_mod, only: bndry_exchangev
+    use parallel_mod, only: global_shared_buf, global_shared_sum
+    use global_norms_mod, only: wrap_repro_sum
 
     type (GllFvRemap_t), intent(in) :: gfr
     type (hybrid_t), intent(in) :: hybrid
@@ -497,14 +498,13 @@ contains
     integer, intent(in) :: nets, nete
     logical, intent(in) :: verbose
 
-    real(kind=real_kind) :: a, b, rd, x, y, f0(np,np), f1(np,np), g(np,np), wrk(np,np), &
-         err_num, err_den, mass0, mass1
+    real(kind=real_kind) :: a, b, rd, x, y, f0(np,np), f1(np,np), g(np,np), wrk(np,np)
     integer :: nf, ie, i, j, iremap, info
     real(kind=real_kind), allocatable :: fv(:,:,:)
 
     nf = gfr%nphys
 
-    if (hybrid%par%masterproc .and. hybrid%masterthread) then
+    if (hybrid%masterthread) then
        print *, 'gfr> npi', gfr%npi, 'nphys', nf
        if (verbose) then
           print *, 'gfr> w_ff', nf, gfr%w_ff(:nf, :nf)
@@ -590,34 +590,23 @@ contains
     end do
     deallocate(fv)
     ! 5. Compute error.
-    err_num = zero
-    err_den = zero
-    mass0 = zero
-    mass1 = zero
     do ie = nets, nete
        wrk = gfr%w_gg(:,:)*elem(ie)%metdet(:,:)
        ! L2 on q. Might switch to q*ps_v.
-       a = sum(wrk*(elem(ie)%state%Q(:,:,1,1) - elem(ie)%state%Q(:,:,1,2))**2)
-       b = sum(wrk*elem(ie)%state%Q(:,:,1,2)**2)
-       err_num = err_num + a
-       err_den = err_den + b
+       global_shared_buf(ie,1) = &
+            sum(wrk*(elem(ie)%state%Q(:,:,1,1) - elem(ie)%state%Q(:,:,1,2))**2)
+       global_shared_buf(ie,2) = &
+            sum(wrk*elem(ie)%state%Q(:,:,1,2)**2)
        ! Mass conservation.
        wrk = wrk*elem(ie)%state%ps_v(:,:,1)
-       a = sum(wrk*elem(ie)%state%Q(:,:,1,2))
-       b = sum(wrk*elem(ie)%state%Q(:,:,1,1))
-       mass0 = mass0 + a
-       mass1 = mass1 + b
+       global_shared_buf(ie,3) = sum(wrk*elem(ie)%state%Q(:,:,1,2))
+       global_shared_buf(ie,4) = sum(wrk*elem(ie)%state%Q(:,:,1,1))
     end do
-    wrk(1,1) = err_num
-    wrk(2,1) = err_den
-    wrk(3,1) = mass0
-    wrk(4,1) = mass1
-    !TODO for threads, need to switch to integration routine
-    call MPI_Allreduce(wrk(1:4,1), wrk(1:4,2), 4, MPIreal_t, MPI_SUM, hybrid%par%comm, info)
-    if (hybrid%par%masterproc .and. hybrid%masterthread) then
-       rd = sqrt(wrk(1,2)/wrk(2,2))
+    call wrap_repro_sum(nvars=4, comm=hybrid%par%comm)
+    if (hybrid%masterthread) then
+       rd = sqrt(global_shared_sum(1)/global_shared_sum(2))
        print *, 'gfr> l2  ', rd
-       rd = (wrk(4,2) - wrk(3,2))/wrk(3,2)
+       rd = (global_shared_sum(4) - global_shared_sum(3))/global_shared_sum(3)
        print *, 'gfr> mass', rd
     end if
   end subroutine check
@@ -636,7 +625,7 @@ contains
 
     do nphys = 1, np
        ! This is meant to be called before threading starts.
-       if (hybrid%masterthread) call gfr_init(nphys, elem)
+       if (hybrid%ithr == 0) call gfr_init(nphys, elem)
 #ifdef HORIZ_OPENMP
        !$omp barrier
 #endif
@@ -647,7 +636,7 @@ contains
 #ifdef HORIZ_OPENMP
        !$omp barrier
 #endif
-       if (hybrid%masterthread) call gfr_finish()
+       if (hybrid%ithr == 0) call gfr_finish()
     end do
 #ifdef HORIZ_OPENMP
     !$omp barrier
