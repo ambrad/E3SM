@@ -628,7 +628,7 @@ contains
     allocate(qmins(nlev,qsize,nets:nete), qmaxs(nlev,qsize,nets:nete))
     do ilimit = 0,1
        limit = ilimit > 0
-       if (limit .and. nf == 1) cycle
+       !if (limit .and. nf == 1) cycle
        ! 0. Create synthetic q and ps_v.
        call set_ps_Q(elem, nets, nete, 1, 1, nlev)
        call set_ps_Q(elem, nets, nete, 2, 2, nlev)
@@ -650,8 +650,9 @@ contains
           if (limit) then
              ! 2a. Get q bounds
              do ie = nets, nete
-                qmins(1,1,ie) = minval(Qdp_fv(:nf,:nf,ie)/ps_v_fv(:nf,:nf,ie))
-                qmaxs(1,1,ie) = maxval(Qdp_fv(:nf,:nf,ie)/ps_v_fv(:nf,:nf,ie))
+                wrk(:nf,:nf) = Qdp_fv(:nf,:nf,ie)/ps_v_fv(:nf,:nf,ie)
+                qmins(1,1,ie) = minval(wrk(:nf,:nf))
+                qmaxs(1,1,ie) = maxval(wrk(:nf,:nf))
              end do
              ! 2b. Halo exchange q bounds.
              call neighbor_minmax(hybrid, edgeAdvQminmax, nets, nete, qmins, qmaxs)
@@ -681,7 +682,7 @@ contains
                   (elem(ie)%state%Q(:,:,1,1)*elem(ie)%rspheremp(:,:))/elem(ie)%state%ps_v(:,:,1)
           end do
           ! 4. pg1 special case
-          if (gfr%nphys == 1) then
+          if (gfr%nphys == 1 .and. .not. limit) then
              do ie = nets, nete !TODO move to own routine
                 elem(ie)%state%Q(:,:,1,1) = elem(ie)%state%Q(:,:,1,1)*elem(ie)%state%ps_v(:,:,1)
                 call gfr_reconstructd_nphys1(gfr, elem(ie)%metdet, elem(ie)%state%Q(:,:,1,1))
