@@ -712,8 +712,8 @@ contains
        end do
        call wrap_repro_sum(nvars=4, comm=hybrid%par%comm)
        qmin = ParallelMin(qmin, hybrid)
-       qmin1 = ParallelMin(qmin1, hybrid)
        qmax = ParallelMax(qmax, hybrid)
+       qmin1 = ParallelMin(qmin1, hybrid)
        qmax1 = ParallelMax(qmax1, hybrid)
        if (hybrid%masterthread) then
           print *, 'gfr> limit', ilimit
