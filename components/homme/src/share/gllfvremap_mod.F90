@@ -547,7 +547,7 @@ contains
     ! 0. Create synthetic q and ps_v.
     call set_ps_Q(elem, nets, nete, 1, 1, nlev)
     call set_ps_Q(elem, nets, nete, 2, 2, nlev)
-    allocate(fv(gfr%nphys, gfr%nphys, nete-nets+1))
+    allocate(fv(gfr%nphys, gfr%nphys, nets:nete))
     do iremap = 1,1
        ! 1. GLL -> FV
        do ie = nets, nete !TODO move to own routine
