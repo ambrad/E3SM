@@ -532,7 +532,9 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   real(rl),           intent(in)            :: dt                       ! time-step size
   type(TimeLevel_t),  intent(in)            :: tl                       ! time level structure
 
-  integer :: i,j,k,ie                                                     ! loop indices
+  integer, parameter :: nphys = 2
+
+  integer :: i,j,k,ie
   real(rl), dimension(np,np,nlev) :: u,v,w,T,exner_kess,theta_kess,p,dp,rho,z,qv,qc,qr
   real(rl), dimension(np,np,nlev) :: u0,v0,T0,qv0,qc0,qr0,cl,cl2,ddt_cl,ddt_cl2
   real(rl), dimension(np,np,nlev) :: rho_dry,rho_new,Rstar,p_pk
@@ -557,6 +559,8 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
 
      ! get current element state
      call get_state(u,v,w,T,p,dp,ps,rho,z,zi,g,elem(ie),hvcoord,nt,ntQ)
+     !amb remap u,v,T,p,dp,ps; then redrive the remaining vars so they are self-consistent
+     !amb why does fv_physics_coupling_mod.F90 not multiply u,v by dp?
 
      ! compute form of exner pressure expected by Kessler physics
      exner_kess = (p/p0)**(Rgas/Cp)
@@ -574,7 +578,6 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      where(qv<0); qv=0; endwhere
      where(qc<0); qc=0; endwhere
      where(qr<0); qr=0; endwhere
-
 
      rho_dry = (1-qv)*rho  ! convert to dry density using wet mixing ratio
 
@@ -613,13 +616,14 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
         qr(i,j,:) = qr_c(nlev:1:-1)
         theta_kess(i,j,:) = th_c(nlev:1:-1)
 
+        !amb skip this for now
+#if 0
         lon = elem(ie)%spherep(i,j)%lon
         lat = elem(ie)%spherep(i,j)%lat
-
         do k=1,nlev
            call tendency_terminator( lat*rad2dg, lon*rad2dg, cl(i,j,k), cl2(i,j,k), dt, ddt_cl(i,j,k), ddt_cl2(i,j,k))
         enddo
-
+#endif
      enddo; enddo;
 
      ! convert from theta to T w.r.t. new model state
@@ -650,7 +654,6 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      max_w     = max( max_w    , maxval(w    ) )
      max_precl = max( max_precl, maxval(precl(:,:,ie)) )
      min_ps    = min( min_ps,    minval(ps) )
-
   enddo
 
   call dcmip2016_append_measurements(max_w,max_precl,min_ps,tl,hybrid)
