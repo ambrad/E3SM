@@ -523,6 +523,139 @@ subroutine dcmip2016_test1_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl)
 
 end subroutine
 
+subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl)
+  type(element_t),    intent(inout), target :: elem(:)                  ! element array
+  type(hybrid_t),     intent(in)            :: hybrid                   ! hybrid parallel structure
+  type(hvcoord_t),    intent(in)            :: hvcoord                  ! hybrid vertical coordinates
+  integer,            intent(in)            :: nets,nete                ! start, end element index
+  integer,            intent(in)            :: nt, ntQ                  ! time level index
+  real(rl),           intent(in)            :: dt                       ! time-step size
+  type(TimeLevel_t),  intent(in)            :: tl                       ! time level structure
+
+  integer :: i,j,k,ie                                                     ! loop indices
+  real(rl), dimension(np,np,nlev) :: u,v,w,T,exner_kess,theta_kess,p,dp,rho,z,qv,qc,qr
+  real(rl), dimension(np,np,nlev) :: u0,v0,T0,qv0,qc0,qr0,cl,cl2,ddt_cl,ddt_cl2
+  real(rl), dimension(np,np,nlev) :: rho_dry,rho_new,Rstar,p_pk
+  real(rl), dimension(nlev)       :: u_c,v_c,p_c,qv_c,qc_c,qr_c,rho_c,z_c, th_c
+  real(rl), dimension(np,np)      :: delta_ps(np,np)
+  real(rl) :: max_w, max_precl, min_ps
+  real(rl) :: lat, lon, dz_top(np,np), zi(np,np,nlevp),zi_c(nlevp), ps(np,np)
+
+  integer :: pbl_type, prec_type, qi
+  integer, parameter :: test = 1
+
+  prec_type = dcmip16_prec_type
+  pbl_type  = dcmip16_pbl_type
+
+  max_w     = -huge(rl)
+  max_precl = -huge(rl)
+  min_ps    = +huge(rl)
+
+  do ie = nets,nete
+
+     precl(:,:,ie) = -1.0d0
+
+     ! get current element state
+     call get_state(u,v,w,T,p,dp,ps,rho,z,zi,g,elem(ie),hvcoord,nt,ntQ)
+
+     ! compute form of exner pressure expected by Kessler physics
+     exner_kess = (p/p0)**(Rgas/Cp)
+     theta_kess = T/exner_kess
+
+     ! get mixing ratios
+     ! use qi to avoid compiler warnings when qsize_d<5
+     qi=1;  qv  = elem(ie)%state%Qdp(:,:,:,qi,ntQ)/dp
+     qi=2;  qc  = elem(ie)%state%Qdp(:,:,:,qi,ntQ)/dp
+     qi=3;  qr  = elem(ie)%state%Qdp(:,:,:,qi,ntQ)/dp
+     qi=4;  cl  = elem(ie)%state%Qdp(:,:,:,qi,ntQ)/dp
+     qi=5;  cl2 = elem(ie)%state%Qdp(:,:,:,qi,ntQ)/dp
+
+     ! ensure positivity
+     where(qv<0); qv=0; endwhere
+     where(qc<0); qc=0; endwhere
+     where(qr<0); qr=0; endwhere
+
+
+     rho_dry = (1-qv)*rho  ! convert to dry density using wet mixing ratio
+
+     ! convert to dry mixing ratios
+     qv  = qv*rho/rho_dry
+     qc  = qc*rho/rho_dry
+     qr  = qr*rho/rho_dry
+
+     ! save un-forced prognostics
+     u0=u; v0=v; T0=T; qv0=qv; qc0=qc; qr0=qr
+
+     ! apply forcing to columns
+     do j=1,np; do i=1,np
+
+        ! invert column
+        u_c  = u  (i,j,nlev:1:-1)
+        v_c  = v  (i,j,nlev:1:-1)
+        qv_c = qv (i,j,nlev:1:-1)
+        qc_c = qc (i,j,nlev:1:-1)
+        qr_c = qr (i,j,nlev:1:-1)
+        p_c  = p  (i,j,nlev:1:-1)
+        rho_c= rho_dry(i,j,nlev:1:-1)
+        z_c  = z  (i,j,nlev:1:-1)
+        zi_c = zi (i,j,nlevp:1:-1)
+        th_c = theta_kess(i,j,nlev:1:-1)
+
+        ! get forced versions of u,v,p,qv,qc,qr. rho is constant
+        call DCMIP2016_PHYSICS(test, u_c, v_c, p_c, th_c, qv_c, qc_c, qr_c, rho_c, dt, z_c, zi_c, lat, nlev, &
+             precl(i,j,ie), pbl_type, prec_type)
+
+        ! revert column
+        u(i,j,:)  = u_c(nlev:1:-1)
+        v(i,j,:)  = v_c(nlev:1:-1)
+        qv(i,j,:) = qv_c(nlev:1:-1)
+        qc(i,j,:) = qc_c(nlev:1:-1)
+        qr(i,j,:) = qr_c(nlev:1:-1)
+        theta_kess(i,j,:) = th_c(nlev:1:-1)
+
+        lon = elem(ie)%spherep(i,j)%lon
+        lat = elem(ie)%spherep(i,j)%lat
+
+        do k=1,nlev
+           call tendency_terminator( lat*rad2dg, lon*rad2dg, cl(i,j,k), cl2(i,j,k), dt, ddt_cl(i,j,k), ddt_cl2(i,j,k))
+        enddo
+
+     enddo; enddo;
+
+     ! convert from theta to T w.r.t. new model state
+     ! assume hydrostatic pressure pi changed by qv forcing
+     ! assume NH pressure perturbation unchanged
+     delta_ps = sum( (rho_dry/rho)*dp*(qv-qv0) , 3 )
+     do k=1,nlev
+        p(:,:,k) = p(:,:,k) + hvcoord%hybm(k)*delta_ps(:,:)
+     enddo
+     exner_kess = (p/p0)**(Rgas/Cp)
+     T = exner_kess*theta_kess
+
+     ! set dynamics forcing
+     elem(ie)%derived%FM(:,:,1,:) = (u - u0)/dt
+     elem(ie)%derived%FM(:,:,2,:) = (v - v0)/dt
+     elem(ie)%derived%FT(:,:,:)   = (T - T0)/dt
+
+     ! set tracer-mass forcing. conserve tracer mass
+     ! rho_dry*(qv-qv0)*dz = FQ deta, dz/deta = -dp/(g*rho)
+     elem(ie)%derived%FQ(:,:,:,1) = (rho_dry/rho)*dp*(qv-qv0)/dt
+     elem(ie)%derived%FQ(:,:,:,2) = (rho_dry/rho)*dp*(qc-qc0)/dt
+     elem(ie)%derived%FQ(:,:,:,3) = (rho_dry/rho)*dp*(qr-qr0)/dt
+
+     qi=4; elem(ie)%derived%FQ(:,:,:,qi) = dp*ddt_cl
+     qi=5; elem(ie)%derived%FQ(:,:,:,qi) = dp*ddt_cl2
+
+     ! perform measurements of max w, and max prect
+     max_w     = max( max_w    , maxval(w    ) )
+     max_precl = max( max_precl, maxval(precl(:,:,ie)) )
+     min_ps    = min( min_ps,    minval(ps) )
+
+  enddo
+
+  call dcmip2016_append_measurements(max_w,max_precl,min_ps,tl,hybrid)
+end subroutine dcmip2016_test1_pg_forcing
+
 !_______________________________________________________________________
 subroutine dcmip2016_test2_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl, test)
 
