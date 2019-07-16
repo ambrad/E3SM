@@ -524,6 +524,8 @@ subroutine dcmip2016_test1_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl)
 end subroutine
 
 subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl)
+  use gllfvremap_mod
+
   type(element_t),    intent(inout), target :: elem(:)                  ! element array
   type(hybrid_t),     intent(in)            :: hybrid                   ! hybrid parallel structure
   type(hvcoord_t),    intent(in)            :: hvcoord                  ! hybrid vertical coordinates
@@ -532,7 +534,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   real(rl),           intent(in)            :: dt                       ! time-step size
   type(TimeLevel_t),  intent(in)            :: tl                       ! time level structure
 
-  integer, parameter :: nphys = 2
+  integer, parameter :: nf = 2
 
   integer :: i,j,k,ie
   real(rl), dimension(np,np,nlev) :: u,v,w,T,exner_kess,theta_kess,p,dp,rho,z,qv,qc,qr
@@ -541,7 +543,8 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   real(rl), dimension(nlev)       :: u_c,v_c,p_c,qv_c,qc_c,qr_c,rho_c,z_c, th_c
   real(rl), dimension(np,np)      :: delta_ps(np,np)
   real(rl) :: max_w, max_precl, min_ps
-  real(rl) :: lat, lon, dz_top(np,np), zi(np,np,nlevp),zi_c(nlevp), ps(np,np)
+  real(rl) :: lat, lon, dz_top(np,np),phi_i(np,np,nlevp),zi(np,np,nlevp),zi_c(nlevp), ps(np,np), &
+       wrk(np,np), rd
 
   integer :: pbl_type, prec_type, qi
   integer, parameter :: test = 1
@@ -559,7 +562,8 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
 
      ! get current element state
      call get_state(u,v,w,T,p,dp,ps,rho,z,zi,g,elem(ie),hvcoord,nt,ntQ)
-     !amb remap u,v,T,p,dp,ps; then redrive the remaining vars so they are self-consistent
+     w = 0 ! w is unused
+     !amb remap u,v,T,p,dp,ps; then rederive the remaining vars so they are self-consistent
      !amb why does fv_physics_coupling_mod.F90 not multiply u,v by dp?
 
      ! compute form of exner pressure expected by Kessler physics
@@ -573,6 +577,36 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      qi=3;  qr  = elem(ie)%state%Qdp(:,:,:,qi,ntQ)/dp
      qi=4;  cl  = elem(ie)%state%Qdp(:,:,:,qi,ntQ)/dp
      qi=5;  cl2 = elem(ie)%state%Qdp(:,:,:,qi,ntQ)/dp
+
+     ! rederive the remaining vars so they are self-consistent, with hydrostatic
+     ! assumption.
+     !   i tested this by staying on the GLL grid, and i find that < ~1e-15 rel
+     ! diffs in rho, z, zi make precl diff at relative 1e-5, qv at 1e-9, u at
+     ! 1e-10 starting at day ~15.
+     if (use_moisture) then
+        Rstar = Rgas + (Rwater_vapor - Rgas)*qv
+     else
+        Rstar = Rgas
+     end if
+     rd = maxval(abs(p/(Rstar*T) - rho))/maxval(abs(rho))
+     if (rd > 1e-15) print *,'amb> rho reldif',rd
+     rho = p/(Rstar*T)
+     phi_i(:,:,nlevp) = g*zi(:,:,nlevp)
+     do k = nlev,1,-1
+        phi_i(:,:,k) = phi_i(:,:,k+1) + (Rstar(:,:,k)*(dp(:,:,k)*T(:,:,k)))/p(:,:,k)
+     end do
+     do k=1,nlev
+        wrk = z(:,:,k)
+        z(:,:,k) = (phi_i(:,:,k)+phi_i(:,:,k+1))/(2*g)
+        rd = maxval(abs(z(:,:,k) - wrk))/maxval(abs(wrk))
+        if (rd > 1e-15) print *,'amb> z reldif',k,rd
+     end do
+     do k=1,nlevp
+        wrk = zi(:,:,k)
+        zi(:,:,k) = phi_i(:,:,k)/g
+        rd = maxval(abs(zi(:,:,k) - wrk))/maxval(abs(wrk))
+        if (rd > 1e-15) print *,'amb> zi reldif',k,rd
+     end do
 
      ! ensure positivity
      where(qv<0); qv=0; endwhere
@@ -623,6 +657,9 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
         do k=1,nlev
            call tendency_terminator( lat*rad2dg, lon*rad2dg, cl(i,j,k), cl2(i,j,k), dt, ddt_cl(i,j,k), ddt_cl2(i,j,k))
         enddo
+#else
+        ddt_cl(i,j,:) = 0
+        ddt_cl2(i,j,:) = 0
 #endif
      enddo; enddo;
 
