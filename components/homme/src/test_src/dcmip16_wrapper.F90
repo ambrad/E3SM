@@ -42,7 +42,7 @@ real(rl), parameter :: rh2o    = 461.5d0,            &                  ! Gas co
 real(rl) :: sample_period  = 60.0_rl
 real(rl) :: rad2dg = 180.0_rl/pi
 
-integer, parameter :: gfr_nphys = 4
+integer, parameter :: gfr_nphys = 2
 
 contains
 
@@ -552,7 +552,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   integer, parameter :: nf = gfr_nphys, iqv = 1
 
   integer :: i,j,k,ie
-  real(rl), dimension(np,np,nlev) :: u,v,w,T,p,dp,rho,z
+  real(rl), dimension(np,np,nlev) :: u,v,w,T,p,dp,rho,rho_dry,z
   real(rl), dimension(np,np,nlev) :: ddt_cl,ddt_cl2
   real(rl), dimension(np,np,nlev) :: rho_new,p_pk
   real(rl), dimension(nlev)       :: u_c,v_c,p_c,qv_c,qc_c,qr_c,rho_c,z_c, th_c
@@ -561,7 +561,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
        wrk(np,np), rd, wrk3(np,np,nlev)
 
   real(rl), dimension(nf,nf,nlev) :: dp_fv, p_fv, u_fv, v_fv, T_fv, exner_kess, theta_kess, &
-       Rstar, rho_fv, rho_dry, u0, v0, T0, z_fv
+       Rstar, rho_fv, rho_dry_fv, u0, v0, T0, z_fv
   real(rl), dimension(nf,nf,nlev,qsize) :: Q_fv, Q0_fv
   real(rl), dimension(nf,nf,nlevp) :: phi_i, zi_fv
   real(rl), dimension(nf,nf) :: delta_ps
@@ -585,6 +585,9 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
 
      ! get current element state
      call get_state(u,v,w,T,p,dp,ps,rho,z,zi,g,elem(ie),hvcoord,nt,ntQ)
+
+     ! convert to dry density using wet mixing ratio
+     rho_dry = (1 - elem(ie)%state%Qdp(:,:,:,iqv,ntQ))*rho
 
      ! GLL -> FV
      call gfr_g2f_pressure(ie, elem(ie)%metdet, dp, dp_fv)
@@ -625,11 +628,11 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
         zi_fv(:,:,k) = phi_i(:,:,k)/g
      end do
 
-     rho_dry = (1-Q_fv(:,:,:,iqv))*rho_fv  ! convert to dry density using wet mixing ratio
+     rho_dry_fv = (1-Q_fv(:,:,:,iqv))*rho_fv
 
      ! convert to dry mixing ratios
      do i = 1,3
-        Q_fv(:,:,:,i) = Q_fv(:,:,:,i)*rho_fv/rho_dry
+        Q_fv(:,:,:,i) = Q_fv(:,:,:,i)*rho_fv/rho_dry_fv
      end do
 
      ! save un-forced prognostics
@@ -645,7 +648,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
            qc_c = Q_fv(i,j,nlev:1:-1,2)
            qr_c = Q_fv(i,j,nlev:1:-1,3)
            p_c  = p_fv(i,j,nlev:1:-1)
-           rho_c= rho_dry(i,j,nlev:1:-1)
+           rho_c= rho_dry_fv(i,j,nlev:1:-1)
            z_c  = z_fv(i,j,nlev:1:-1)
            zi_c = zi_fv(i,j,nlevp:1:-1)
            th_c = theta_kess(i,j,nlev:1:-1)
@@ -677,7 +680,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      ! convert from theta to T w.r.t. new model state
      ! assume hydrostatic pressure pi changed by qv forcing
      ! assume NH pressure perturbation unchanged
-     delta_ps = sum((rho_dry/rho_fv)*dp_fv*(Q_fv(:,:,:,iqv) - Q0_fv(:,:,:,iqv)), 3)
+     delta_ps = sum((rho_dry_fv/rho_fv)*dp_fv*(Q_fv(:,:,:,iqv) - Q0_fv(:,:,:,iqv)), 3)
      do k=1,nlev
         p_fv(:,:,k) = p_fv(:,:,k) + hvcoord%hybm(k)*delta_ps(:,:)
      enddo
