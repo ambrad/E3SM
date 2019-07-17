@@ -41,6 +41,9 @@ real(rl), parameter :: rh2o    = 461.5d0,            &                  ! Gas co
 
 real(rl) :: sample_period  = 60.0_rl
 real(rl) :: rad2dg = 180.0_rl/pi
+
+integer, parameter :: gfr_nphys = 4
+
 contains
 
 !---------------------------------------------------------------------
@@ -143,6 +146,18 @@ subroutine dcmip2016_test1(elem,hybrid,hvcoord,nets,nete)
 
 
 end subroutine
+
+subroutine dcmip2016_test1_pg(elem,hybrid,hvcoord,nets,nete)
+  use gllfvremap_mod, only: gfr_init
+
+  type(element_t),    intent(inout), target :: elem(:)                  ! element array
+  type(hybrid_t),     intent(in)            :: hybrid                   ! hybrid parallel structure
+  type(hvcoord_t),    intent(inout)         :: hvcoord                  ! hybrid vertical coordinates
+  integer,            intent(in)            :: nets,nete                ! start, end element index
+
+  call gfr_init(gfr_nphys, elem)
+  call dcmip2016_test1(elem,hybrid,hvcoord,nets,nete)
+end subroutine dcmip2016_test1_pg
 
 !_____________________________________________________________________
 subroutine dcmip2016_test2(elem,hybrid,hvcoord,nets,nete)
@@ -534,17 +549,23 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   real(rl),           intent(in)            :: dt                       ! time-step size
   type(TimeLevel_t),  intent(in)            :: tl                       ! time level structure
 
-  integer, parameter :: nf = 2
+  integer, parameter :: nf = gfr_nphys, iqv = 1
 
   integer :: i,j,k,ie
-  real(rl), dimension(np,np,nlev) :: u,v,w,T,exner_kess,theta_kess,p,dp,rho,z,qv,qc,qr
-  real(rl), dimension(np,np,nlev) :: u0,v0,T0,qv0,qc0,qr0,cl,cl2,ddt_cl,ddt_cl2
-  real(rl), dimension(np,np,nlev) :: rho_dry,rho_new,Rstar,p_pk
+  real(rl), dimension(np,np,nlev) :: u,v,w,T,p,dp,rho,z
+  real(rl), dimension(np,np,nlev) :: ddt_cl,ddt_cl2
+  real(rl), dimension(np,np,nlev) :: rho_new,p_pk
   real(rl), dimension(nlev)       :: u_c,v_c,p_c,qv_c,qc_c,qr_c,rho_c,z_c, th_c
-  real(rl), dimension(np,np)      :: delta_ps(np,np)
   real(rl) :: max_w, max_precl, min_ps
-  real(rl) :: lat, lon, dz_top(np,np),phi_i(np,np,nlevp),zi(np,np,nlevp),zi_c(nlevp), ps(np,np), &
-       wrk(np,np), rd
+  real(rl) :: lat, lon, dz_top(np,np),zi(np,np,nlevp),zi_c(nlevp), ps(np,np), &
+       wrk(np,np), rd, wrk3(np,np,nlev)
+
+  real(rl), dimension(nf,nf,nlev) :: dp_fv, p_fv, u_fv, v_fv, T_fv, exner_kess, theta_kess, &
+       Rstar, rho_fv, rho_dry, u0, v0, T0, precl_fv, z_fv
+  real(rl), dimension(nf,nf,nlev,qsize) :: Q_fv, Q0_fv
+  real(rl), dimension(nf,nf,nlevp) :: phi_i, zi_fv
+  real(rl), dimension(nf,nf) :: delta_ps
+  real(rl), allocatable :: qmin(:,:), qmax(:,:)
 
   integer :: pbl_type, prec_type, qi
   integer, parameter :: test = 1
@@ -556,27 +577,27 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   max_precl = -huge(rl)
   min_ps    = +huge(rl)
 
-  do ie = nets,nete
+  allocate(qmin(nlev,nets:nete), qmax(nlev,nets:nete))
 
-     precl(:,:,ie) = -1.0d0
+  do ie = nets,nete
+     precl_fv(:,:,ie) = -1.0d0
 
      ! get current element state
      call get_state(u,v,w,T,p,dp,ps,rho,z,zi,g,elem(ie),hvcoord,nt,ntQ)
-     w = 0 ! w is unused
-     !amb remap u,v,T,p,dp,ps; then rederive the remaining vars so they are self-consistent
-     !amb why does fv_physics_coupling_mod.F90 not multiply u,v by dp?
+
+     ! GLL -> FV
+     call gfr_g2f_pressure(ie, elem(ie)%metdet, dp, dp_fv)
+     call gfr_g2f_pressure(ie, elem(ie)%metdet, p, p_fv)
+     call gfr_g2f_scalar(ie, elem(ie)%metdet, zi(:,:,nlevp:), zi_fv(:,:,nlevp:))
+     call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, u, u_fv)
+     call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, v, v_fv)
+     call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, T, T_fv)
+     call gfr_g2f_mixing_ratio(ie, elem(ie)%metdet, dp, dp_fv, &
+          elem(ie)%state%Qdp(:,:,:,1:3,ntQ), Q_fv(:,:,:,1:3))
 
      ! compute form of exner pressure expected by Kessler physics
      exner_kess = (p/p0)**(Rgas/Cp)
-     theta_kess = T/exner_kess
-
-     ! get mixing ratios
-     ! use qi to avoid compiler warnings when qsize_d<5
-     qi=1;  qv  = elem(ie)%state%Qdp(:,:,:,qi,ntQ)/dp
-     qi=2;  qc  = elem(ie)%state%Qdp(:,:,:,qi,ntQ)/dp
-     qi=3;  qr  = elem(ie)%state%Qdp(:,:,:,qi,ntQ)/dp
-     qi=4;  cl  = elem(ie)%state%Qdp(:,:,:,qi,ntQ)/dp
-     qi=5;  cl2 = elem(ie)%state%Qdp(:,:,:,qi,ntQ)/dp
+     theta_kess = T_fv/exner_kess
 
      ! rederive the remaining vars so they are self-consistent, with hydrostatic
      ! assumption.
@@ -584,114 +605,126 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      ! diffs in rho, z, zi make precl diff at relative 1e-5, qv at 1e-9, u at
      ! 1e-10 starting at day ~15.
      if (use_moisture) then
-        Rstar = Rgas + (Rwater_vapor - Rgas)*qv
+        Rstar = Rgas + (Rwater_vapor - Rgas)*Q_fv(:,:,:,iqv)
      else
         Rstar = Rgas
      end if
-     rd = maxval(abs(p/(Rstar*T) - rho))/maxval(abs(rho))
-     if (rd > 1e-15) print *,'amb> rho reldif',rd
-     rho = p/(Rstar*T)
-     phi_i(:,:,nlevp) = g*zi(:,:,nlevp)
+     rho_fv = p_fv/(Rstar*T_fv)
+     phi_i(:,:,nlevp) = g*zi_fv(:,:,nlevp)
      do k = nlev,1,-1
-        phi_i(:,:,k) = phi_i(:,:,k+1) + (Rstar(:,:,k)*(dp(:,:,k)*T(:,:,k)))/p(:,:,k)
+        phi_i(:,:,k) = phi_i(:,:,k+1) + (Rstar(:,:,k)*(dp_fv(:,:,k)*T_fv(:,:,k)))/p_fv(:,:,k)
      end do
      do k=1,nlev
-        wrk = z(:,:,k)
-        z(:,:,k) = (phi_i(:,:,k)+phi_i(:,:,k+1))/(2*g)
-        rd = maxval(abs(z(:,:,k) - wrk))/maxval(abs(wrk))
-        if (rd > 1e-15) print *,'amb> z reldif',k,rd
+        z_fv(:,:,k) = (phi_i(:,:,k)+phi_i(:,:,k+1))/(2*g)
      end do
      do k=1,nlevp
-        wrk = zi(:,:,k)
-        zi(:,:,k) = phi_i(:,:,k)/g
-        rd = maxval(abs(zi(:,:,k) - wrk))/maxval(abs(wrk))
-        if (rd > 1e-15) print *,'amb> zi reldif',k,rd
+        zi_fv(:,:,k) = phi_i(:,:,k)/g
      end do
 
-     ! ensure positivity
-     where(qv<0); qv=0; endwhere
-     where(qc<0); qc=0; endwhere
-     where(qr<0); qr=0; endwhere
-
-     rho_dry = (1-qv)*rho  ! convert to dry density using wet mixing ratio
+     rho_dry = (1-Q_fv(:,:,:,iqv))*rho  ! convert to dry density using wet mixing ratio
 
      ! convert to dry mixing ratios
-     qv  = qv*rho/rho_dry
-     qc  = qc*rho/rho_dry
-     qr  = qr*rho/rho_dry
+     do i = 1,3
+        Q_fv(:,:,:,i) = Q_fv(:,:,:,i)*rho_fv/rho_dry
+     end do
 
      ! save un-forced prognostics
-     u0=u; v0=v; T0=T; qv0=qv; qc0=qc; qr0=qr
+     u0=u; v0=v; T0=T; Q0_fv = Q_fv
 
      ! apply forcing to columns
-     do j=1,np; do i=1,np
+     do j=1,nf
+        do i=1,nf
+           ! invert column
+           u_c  = u  (i,j,nlev:1:-1)
+           v_c  = v  (i,j,nlev:1:-1)
+           qv_c = Q_fv(i,j,nlev:1:-1,1)
+           qc_c = Q_fv(i,j,nlev:1:-1,2)
+           qr_c = Q_fv(i,j,nlev:1:-1,3)
+           p_c  = p  (i,j,nlev:1:-1)
+           rho_c= rho_dry(i,j,nlev:1:-1)
+           z_c  = z_fv(i,j,nlev:1:-1)
+           zi_c = zi_fv(i,j,nlevp:1:-1)
+           th_c = theta_kess(i,j,nlev:1:-1)
 
-        ! invert column
-        u_c  = u  (i,j,nlev:1:-1)
-        v_c  = v  (i,j,nlev:1:-1)
-        qv_c = qv (i,j,nlev:1:-1)
-        qc_c = qc (i,j,nlev:1:-1)
-        qr_c = qr (i,j,nlev:1:-1)
-        p_c  = p  (i,j,nlev:1:-1)
-        rho_c= rho_dry(i,j,nlev:1:-1)
-        z_c  = z  (i,j,nlev:1:-1)
-        zi_c = zi (i,j,nlevp:1:-1)
-        th_c = theta_kess(i,j,nlev:1:-1)
+           ! get forced versions of u,v,p,qv,qc,qr. rho is constant
+           call DCMIP2016_PHYSICS(test, u_c, v_c, p_c, th_c, qv_c, qc_c, qr_c, rho_c, dt, &
+                z_c, zi_c, lat, nlev, precl_fv(i,j,ie), pbl_type, prec_type)
 
-        ! get forced versions of u,v,p,qv,qc,qr. rho is constant
-        call DCMIP2016_PHYSICS(test, u_c, v_c, p_c, th_c, qv_c, qc_c, qr_c, rho_c, dt, z_c, zi_c, lat, nlev, &
-             precl(i,j,ie), pbl_type, prec_type)
+           ! revert column
+           u_fv(i,j,:)  = u_c(nlev:1:-1)
+           v_fv(i,j,:)  = v_c(nlev:1:-1)
+           Q_fv(i,j,:,1) = qv_c(nlev:1:-1)
+           Q_fv(i,j,:,2) = qc_c(nlev:1:-1)
+           Q_fv(i,j,:,3) = qr_c(nlev:1:-1)
+           theta_kess(i,j,:) = th_c(nlev:1:-1)
 
-        ! revert column
-        u(i,j,:)  = u_c(nlev:1:-1)
-        v(i,j,:)  = v_c(nlev:1:-1)
-        qv(i,j,:) = qv_c(nlev:1:-1)
-        qc(i,j,:) = qc_c(nlev:1:-1)
-        qr(i,j,:) = qr_c(nlev:1:-1)
-        theta_kess(i,j,:) = th_c(nlev:1:-1)
-
-        !amb skip this for now
 #if 0
-        lon = elem(ie)%spherep(i,j)%lon
-        lat = elem(ie)%spherep(i,j)%lat
-        do k=1,nlev
-           call tendency_terminator( lat*rad2dg, lon*rad2dg, cl(i,j,k), cl2(i,j,k), dt, ddt_cl(i,j,k), ddt_cl2(i,j,k))
-        enddo
-#else
-        ddt_cl(i,j,:) = 0
-        ddt_cl2(i,j,:) = 0
+           !amb skip this for now
+           lon = elem(ie)%spherep(i,j)%lon
+           lat = elem(ie)%spherep(i,j)%lat
+           do k=1,nlev
+              call tendency_terminator(lat*rad2dg, lon*rad2dg, cl(i,j,k), cl2(i,j,k), dt, &
+                   ddt_cl(i,j,k), ddt_cl2(i,j,k))
+           enddo
 #endif
-     enddo; enddo;
+        enddo
+     enddo
 
      ! convert from theta to T w.r.t. new model state
      ! assume hydrostatic pressure pi changed by qv forcing
      ! assume NH pressure perturbation unchanged
-     delta_ps = sum( (rho_dry/rho)*dp*(qv-qv0) , 3 )
+     delta_ps = sum((rho_dry/rho_fv)*dp_fv*(Q_fv(:,:,:,iqv) - Q0_fv(:,:,:,iqv)), 3)
      do k=1,nlev
-        p(:,:,k) = p(:,:,k) + hvcoord%hybm(k)*delta_ps(:,:)
+        p_fv(:,:,k) = p_fv(:,:,k) + hvcoord%hybm(k)*delta_ps(:,:)
      enddo
      exner_kess = (p/p0)**(Rgas/Cp)
-     T = exner_kess*theta_kess
+     T_fv = exner_kess*theta_kess
 
      ! set dynamics forcing
-     elem(ie)%derived%FM(:,:,1,:) = (u - u0)/dt
-     elem(ie)%derived%FM(:,:,2,:) = (v - v0)/dt
-     elem(ie)%derived%FT(:,:,:)   = (T - T0)/dt
+     call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, u - u0, wrk3)
+     elem(ie)%derived%FM(:,:,1,:) = wrk3/dt
+     call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, v - v0, wrk3)
+     elem(ie)%derived%FM(:,:,2,:) = wrk3/dt
+     call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, T - T0, wrk3)
+     elem(ie)%derived%FT(:,:,:)   = wrk3/dt
 
      ! set tracer-mass forcing. conserve tracer mass
      ! rho_dry*(qv-qv0)*dz = FQ deta, dz/deta = -dp/(g*rho)
-     elem(ie)%derived%FQ(:,:,:,1) = (rho_dry/rho)*dp*(qv-qv0)/dt
-     elem(ie)%derived%FQ(:,:,:,2) = (rho_dry/rho)*dp*(qc-qc0)/dt
-     elem(ie)%derived%FQ(:,:,:,3) = (rho_dry/rho)*dp*(qr-qr0)/dt
+     Q0_fv = Q_fv - Q0_fv
+     call gfr_f2g_mixing_ratio_a(ie, elem(ie)%metdet, dp_fv, dp, Q0_fv(:,:,:,1:3), &
+          elem(ie)%derived%FQ(:,:,:,1:3))
+     do k = 1,nlev
+        qmin(k,ie) = minval(elem(ie)%derived%FQ(:,:,k,1:3))
+        qmax(k,ie) = maxval(elem(ie)%derived%FQ(:,:,k,1:3))
+     end do
 
-     qi=4; elem(ie)%derived%FQ(:,:,:,qi) = dp*ddt_cl
-     qi=5; elem(ie)%derived%FQ(:,:,:,qi) = dp*ddt_cl2
-
+     !amb skip this for now
+     qi=4; elem(ie)%derived%FQ(:,:,:,qi) = 0 !dp*ddt_cl
+     qi=5; elem(ie)%derived%FQ(:,:,:,qi) = 0 !dp*ddt_cl2
+     
      ! perform measurements of max w, and max prect
+     ! w is not used in the physics, so just look at the GLL values.
      max_w     = max( max_w    , maxval(w    ) )
+     ! precl doesn't fit into the d-p coupling framework and it doesn't affect
+     ! dynamics, so don't worry about remapping to GLL.
      max_precl = max( max_precl, maxval(precl(:,:,ie)) )
+     ! ps isn't updated by the physics, so just look at the GLL values.
      min_ps    = min( min_ps,    minval(ps) )
   enddo
+
+  call gfr_f2g_mixing_ratio_b(hybrid, nets, nete, qmin, qmax)
+  do ie = nets,nete
+     ! ugh, just to get dp.
+     call get_state(u,v,w,T,p,dp,ps,rho,z,zi,g,elem(ie),hvcoord,nt,ntQ)
+     call gfr_f2g_mixing_ratio_c(ie, elem(ie)%metdet, qmin(:,ie), qmax(:,ie), dp, &
+          elem(ie)%derived%FQ(:,:,:,1:3))
+     do i = 1,3
+        elem(ie)%derived%FQ(:,:,:,i) = (rho_dry/rho)*dp*elem(ie)%derived%FQ(:,:,:,i)/dt
+     end do
+  end do
+
+  call gfr_f2g_dss(elem)
+  deallocate(qmin, qmax)
 
   call dcmip2016_append_measurements(max_w,max_precl,min_ps,tl,hybrid)
 end subroutine dcmip2016_test1_pg_forcing

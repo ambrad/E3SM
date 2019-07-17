@@ -2,6 +2,13 @@
 #include "config.h"
 #endif
 
+!todo
+! - contravariant u,v
+! - rho in u,v?
+! - online coords
+! - topo roughness
+! - np4-np2 instead of np4-pg2
+
 module gllfvremap_mod
   ! High-order, mass-conserving, optionally shape-preserving
   !     FV physics <-> GLL dynamics
@@ -46,13 +53,20 @@ module gllfvremap_mod
 
   type (GllFvRemap_t), private :: gfr
 
+  ! Main API.
   public :: &
        gfr_init, &
        gfr_finish, &
        gfr_fv_phys_to_dyn, &
        gfr_fv_phys_to_dyn_topo, &
-       gfr_dyn_to_fv_phys, &
-       gfr_test
+       gfr_dyn_to_fv_phys
+
+  ! Testing API.
+  public :: &
+       gfr_test, &
+       gfr_g2f_pressure, gfr_g2f_scalar, gfr_g2f_scalar_dp, gfr_g2f_mixing_ratio, &
+       gfr_f2g_scalar_dp, gfr_f2g_mixing_ratio_a, gfr_f2g_mixing_ratio_b, &
+       gfr_f2g_mixing_ratio_c, gfr_f2g_dss
 
 contains
 
@@ -381,6 +395,58 @@ contains
        call gfr_g2f_remapd(gfr, elem(ie)%metdet, ones_f, ones_g, gfr%fv_metdet(:,:,ie))
     end do
   end subroutine gfr_init_fv_metdet
+
+  subroutine gfr_g2f_pressure(ie, gll_metdet, p_g, p_f)
+    integer, intent(in) :: ie
+    real(kind=real_kind), intent(in) :: gll_metdet(:,:), p_g(:,:,:)
+    real(kind=real_kind), intent(out) :: p_f(:,:,:)
+  end subroutine gfr_g2f_pressure
+
+  subroutine gfr_g2f_scalar(ie, gll_metdet, g, f)
+    integer, intent(in) :: ie
+    real(kind=real_kind), intent(in) :: gll_metdet(:,:), g(:,:,:)
+    real(kind=real_kind), intent(out) :: f(:,:,:)
+  end subroutine gfr_g2f_scalar
+
+  subroutine gfr_g2f_scalar_dp(ie, gll_metdet, dp_g, dp_f, g, f)
+    integer, intent(in) :: ie
+    real(kind=real_kind), intent(in) :: gll_metdet(:,:), dp_g(:,:,:), dp_f(:,:,:), g(:,:,:)
+    real(kind=real_kind), intent(out) :: f(:,:,:)
+  end subroutine gfr_g2f_scalar_dp
+
+  subroutine gfr_g2f_mixing_ratio(ie, gll_metdet, dp_g, dp_f, g, f)
+    integer, intent(in) :: ie
+    real(kind=real_kind), intent(in) :: gll_metdet(:,:), dp_g(:,:,:), dp_f(:,:,:), g(:,:,:,:)
+    real(kind=real_kind), intent(out) :: f(:,:,:,:)
+  end subroutine gfr_g2f_mixing_ratio
+
+  subroutine gfr_f2g_scalar_dp(ie, gll_metdet, dp_f, dp_g, f, g)
+    integer, intent(in) :: ie
+    real(kind=real_kind), intent(in) :: gll_metdet(:,:), dp_f(:,:,:), dp_g(:,:,:), f(:,:,:)
+    real(kind=real_kind), intent(out) :: g(:,:,:)
+  end subroutine gfr_f2g_scalar_dp
+
+  subroutine gfr_f2g_mixing_ratio_a(ie, gll_metdet, dp_f, dp_g, f, g)
+    integer, intent(in) :: ie
+    real(kind=real_kind), intent(in) :: gll_metdet(:,:), dp_f(:,:,:), dp_g(:,:,:), f(:,:,:,:)
+    real(kind=real_kind), intent(out) :: g(:,:,:,:)
+  end subroutine gfr_f2g_mixing_ratio_a
+
+  subroutine gfr_f2g_mixing_ratio_b(hybrid, nets, nete, qmin, qmax)
+    type (hybrid_t), intent(in) :: hybrid
+    integer, intent(in) :: nets, nete
+    real(kind=real_kind), intent(inout) :: qmin(:,:), qmax(:,:)
+  end subroutine gfr_f2g_mixing_ratio_b
+
+  subroutine gfr_f2g_mixing_ratio_c(ie, gll_metdet, qmin, qmax, dp, q)
+    integer, intent(in) :: ie
+    real(kind=real_kind), intent(in) :: gll_metdet(:,:), qmin(:), qmax(:), dp(:,:,:)
+    real(kind=real_kind), intent(inout) :: q(:,:,:,:)
+  end subroutine gfr_f2g_mixing_ratio_c
+
+  subroutine gfr_f2g_dss(elem)
+    type (element_t), intent(inout) :: elem(:)
+  end subroutine gfr_f2g_dss
 
   ! d suffix means the inputs, outputs are densities.
   subroutine gfr_g2f_remapd(gfr, gll_metdet, fv_metdet, g, f)
