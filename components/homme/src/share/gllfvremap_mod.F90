@@ -444,7 +444,11 @@ contains
     real(kind=real_kind), intent(in) :: gll_metdet(:,:), f(:,:,:)
     real(kind=real_kind), intent(out) :: g(:,:,:)
 
-    g = f
+    integer :: k
+
+    do k = 1, size(g,3)
+       call gfr_f2g_remapd(gfr, gll_metdet, gfr%fv_metdet(:,:,ie), f(:,:,k), g(:,:,k))
+    end do
   end subroutine gfr_f2g_scalar
 
   subroutine gfr_f2g_scalar_dp(ie, gll_metdet, dp_f, dp_g, f, g)
@@ -452,15 +456,30 @@ contains
     real(kind=real_kind), intent(in) :: gll_metdet(:,:), dp_f(:,:,:), dp_g(:,:,:), f(:,:,:)
     real(kind=real_kind), intent(out) :: g(:,:,:)
 
-    g = f
+    integer :: k
+
+    do k = 1, size(g,3)
+       call gfr_f2g_remapd(gfr, gll_metdet, gfr%fv_metdet(:,:,ie), dp_f(:,:,k)*f(:,:,k), &
+            g(:,:,k))
+       g(:,:,k) = g(:,:,k)/dp_g(:,:,k)
+    end do
   end subroutine gfr_f2g_scalar_dp
 
-  subroutine gfr_f2g_mixing_ratio_a(ie, gll_metdet, dp_f, dp_g, f, g)
+  subroutine gfr_f2g_mixing_ratio_a(ie, gll_metdet, dp_f, dp_g, q_f, q_g)
     integer, intent(in) :: ie
-    real(kind=real_kind), intent(in) :: gll_metdet(:,:), dp_f(:,:,:), dp_g(:,:,:), f(:,:,:,:)
-    real(kind=real_kind), intent(out) :: g(:,:,:,:)
+    real(kind=real_kind), intent(in) :: gll_metdet(:,:), dp_f(:,:,:), dp_g(:,:,:), &
+         q_f(:,:,:,:)
+    real(kind=real_kind), intent(out) :: q_g(:,:,:,:)
 
-    g = f
+    integer :: q, k
+
+    do q = 1, size(q_f,4)
+       do k = 1, size(q_f,3)
+          call gfr_f2g_remapd(gfr, gll_metdet, gfr%fv_metdet(:,:,ie), &
+               dp_f(:,:,k)*q_f(:,:,k,q), q_g(:,:,k,q))
+          q_g(:,:,k,q) = q_g(:,:,k,q)/dp_g(:,:,k)
+       end do
+    end do
   end subroutine gfr_f2g_mixing_ratio_a
 
   subroutine gfr_f2g_mixing_ratio_b(hybrid, nets, nete, qmin, qmax)
