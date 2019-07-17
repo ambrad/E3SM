@@ -553,7 +553,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   real(rl), parameter :: one = 1.0_rl
 
   integer :: i,j,k,ie
-  real(rl), dimension(np,np,nlev) :: u,v,w,T,p,dp,rho,rho_dry,z
+  real(rl), dimension(np,np,nlev) :: u,v,w,T,p,dp,rho,rho_dry,z,exner_kess,theta_kess
   real(rl), dimension(np,np,nlev) :: ddt_cl,ddt_cl2
   real(rl), dimension(np,np,nlev) :: rho_new,p_pk
   real(rl), dimension(nlev)       :: u_c,v_c,p_c,qv_c,qc_c,qr_c,rho_c,z_c, th_c
@@ -561,8 +561,8 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   real(rl) :: lat, lon, dz_top(np,np),zi(np,np,nlevp),zi_c(nlevp), ps(np,np), &
        wrk(np,np), rd, wrk3(np,np,nlev)
 
-  real(rl), dimension(nf,nf,nlev) :: dp_fv, p_fv, u_fv, v_fv, T_fv, exner_kess, theta_kess, &
-       Rstar, rho_fv, rho_dry_fv, u0, v0, T0, z_fv
+  real(rl), dimension(nf,nf,nlev) :: dp_fv, p_fv, u_fv, v_fv, T_fv, exner_kess_fv, &
+       theta_kess_fv, Rstar, rho_fv, rho_dry_fv, u0, v0, T0, z_fv
   real(rl), dimension(nf,nf,nlev,qsize) :: Q_fv, Q0_fv
   real(rl), dimension(nf,nf,nlevp) :: phi_i, zi_fv
   real(rl), dimension(nf,nf) :: delta_ps
@@ -590,22 +590,28 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      ! convert to dry density using wet mixing ratio
      rho_dry = (1 - elem(ie)%state%Qdp(:,:,:,iqv,ntQ)/dp)*rho
 
+     ! compute form of exner pressure expected by Kessler physics
+     exner_kess = (p/p0)**(Rgas/Cp)
+     theta_kess = T/exner_kess
+
      ! GLL -> FV
      call gfr_g2f_scalar(ie, elem(ie)%metdet, dp, dp_fv)
      call gfr_g2f_scalar(ie, elem(ie)%metdet, p, p_fv)
+     exner_kess_fv = (p_fv/p0)**(Rgas/Cp)
      call gfr_g2f_scalar(ie, elem(ie)%metdet, zi(:,:,nlevp:), zi_fv(:,:,nlevp:))
      call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, u, u_fv)
      call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, v, v_fv)
-     !amb This particular call causes a dramatic diff. I'm thinking I need to
-     !    convert this to potential temperature before remapping. Only that is
-     !    conserved, right?
-     T_fv = T !call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, T, T_fv)
+#if 0
+     call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, theta_kess, theta_kess_fv) ! decent
+     !call gfr_g2f_scalar(ie, elem(ie)%metdet, theta_kess, theta_kess_fv) ! decent
+     !call gfr_g2f_scalar(ie, elem(ie)%metdet, T, T_fv); theta_kess_fv = T_fv/exner_kess ! decent
+     T_fv = exner_kess_fv*theta_kess_fv
+     !theta_kess_fv = theta_kess; T_fv = exner_kess_fv*theta_kess_fv ! good
+#else
+     T_fv = T; theta_kess_fv = T_fv/exner_kess_fv ! good
+#endif
      call gfr_g2f_mixing_ratio(ie, elem(ie)%metdet, dp, dp_fv, &
           elem(ie)%state%Qdp(:,:,:,1:3,ntQ), Q_fv(:,:,:,1:3))
-
-     ! compute form of exner pressure expected by Kessler physics
-     exner_kess = (p_fv/p0)**(Rgas/Cp)
-     theta_kess = T_fv/exner_kess
 
      ! ensure positivity
      where(Q_fv(:,:,:,1:3) < 0); Q_fv(:,:,:,1:3) = 0; endwhere
@@ -655,7 +661,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
            rho_c= rho_dry_fv(i,j,nlev:1:-1)
            z_c  = z_fv(i,j,nlev:1:-1)
            zi_c = zi_fv(i,j,nlevp:1:-1)
-           th_c = theta_kess(i,j,nlev:1:-1)
+           th_c = theta_kess_fv(i,j,nlev:1:-1)
 
            ! get forced versions of u,v,p,qv,qc,qr. rho is constant
            call DCMIP2016_PHYSICS(test, u_c, v_c, p_c, th_c, qv_c, qc_c, qr_c, rho_c, dt, &
@@ -667,7 +673,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
            Q_fv(i,j,:,1) = qv_c(nlev:1:-1)
            Q_fv(i,j,:,2) = qc_c(nlev:1:-1)
            Q_fv(i,j,:,3) = qr_c(nlev:1:-1)
-           theta_kess(i,j,:) = th_c(nlev:1:-1)
+           theta_kess_fv(i,j,:) = th_c(nlev:1:-1)
 
 #if 0
            !amb skip this for now
@@ -688,8 +694,8 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      do k=1,nlev
         p_fv(:,:,k) = p_fv(:,:,k) + hvcoord%hybm(k)*delta_ps(:,:)
      enddo
-     exner_kess = (p_fv/p0)**(Rgas/Cp)
-     T_fv = exner_kess*theta_kess
+     exner_kess_fv = (p_fv/p0)**(Rgas/Cp)
+     T_fv = exner_kess_fv*theta_kess_fv
 
      call gfr_f2g_scalar(ie, elem(ie)%metdet, precl_fv, wrk3(:,:,:1))
      precl(:,:,ie) = wrk3(:,:,1)
