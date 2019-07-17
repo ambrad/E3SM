@@ -566,7 +566,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   real(rl), dimension(nf,nf,nlevp) :: phi_i, zi_fv
   real(rl), dimension(nf,nf) :: delta_ps
   real(rl) :: precl_fv(nf,nf,1)
-  real(rl), allocatable :: qmin(:,:), qmax(:,:)
+  real(rl), allocatable :: qmin(:,:,:), qmax(:,:,:)
 
   integer :: pbl_type, prec_type, qi
   integer, parameter :: test = 1
@@ -578,7 +578,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   max_precl = -huge(rl)
   min_ps    = +huge(rl)
 
-  allocate(qmin(nlev,nets:nete), qmax(nlev,nets:nete))
+  allocate(qmin(nlev,qsize,nets:nete), qmax(nlev,qsize,nets:nete))
 
   do ie = nets,nete
      precl(:,:,ie) = -1.0d0
@@ -597,7 +597,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
           elem(ie)%state%Qdp(:,:,:,1:3,ntQ), Q_fv(:,:,:,1:3))
 
      ! compute form of exner pressure expected by Kessler physics
-     exner_kess = (p/p0)**(Rgas/Cp)
+     exner_kess = (p_fv/p0)**(Rgas/Cp)
      theta_kess = T_fv/exner_kess
 
      ! ensure positivity
@@ -681,7 +681,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      do k=1,nlev
         p_fv(:,:,k) = p_fv(:,:,k) + hvcoord%hybm(k)*delta_ps(:,:)
      enddo
-     exner_kess = (p/p0)**(Rgas/Cp)
+     exner_kess = (p_fv/p0)**(Rgas/Cp)
      T_fv = exner_kess*theta_kess
 
      call gfr_f2g_scalar(ie, elem(ie)%metdet, precl_fv, wrk3(:,:,:1))
@@ -700,9 +700,15 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      Q0_fv = Q_fv - Q0_fv
      call gfr_f2g_mixing_ratio_a(ie, elem(ie)%metdet, dp_fv, dp, Q0_fv(:,:,:,1:3), &
           elem(ie)%derived%FQ(:,:,:,1:3))
-     do k = 1,nlev
-        qmin(k,ie) = minval(elem(ie)%derived%FQ(:,:,k,1:3))
-        qmax(k,ie) = maxval(elem(ie)%derived%FQ(:,:,k,1:3))
+     !amb ALERT this isn't what we want yet; we need to limit Q, not Q_ten THIS ENDS THE ALERT
+     do i = 1,3
+        do k = 1,nlev
+           qmin(k,i,ie) = minval(elem(ie)%derived%FQ(:,:,k,i))
+           qmax(k,i,ie) = maxval(elem(ie)%derived%FQ(:,:,k,i))
+        end do
+     end do
+     do i = 1,3
+        elem(ie)%derived%FQ(:,:,:,i) = (rho_dry/rho)*dp*elem(ie)%derived%FQ(:,:,:,i)/dt
      end do
 
      !amb skip this for now
@@ -717,19 +723,18 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      min_ps    = min( min_ps,    minval(ps) )
   enddo
 
+  !amb not sure yet what i want to do here
+#if 0
   call gfr_f2g_mixing_ratio_b(hybrid, nets, nete, qmin, qmax)
   do ie = nets,nete
      ! ugh, just to get dp.
      call get_state(u,v,w,T,p,dp,ps,rho,z,zi,g,elem(ie),hvcoord,nt,ntQ)
-     call gfr_f2g_mixing_ratio_c(ie, elem(ie)%metdet, qmin(:,ie), qmax(:,ie), dp, &
+     call gfr_f2g_mixing_ratio_c(ie, elem(ie)%metdet, qmin(:,1:3,ie), qmax(:,1:3,ie), dp, &
           elem(ie)%derived%FQ(:,:,:,1:3))
-     do i = 1,3
-        elem(ie)%derived%FQ(:,:,:,i) = (rho_dry/rho)*dp*elem(ie)%derived%FQ(:,:,:,i)/dt
-     end do
   end do
-
   call gfr_f2g_dss(elem)
   deallocate(qmin, qmax)
+#endif
 
   call dcmip2016_append_measurements(max_w,max_precl,min_ps,tl,hybrid)
 end subroutine dcmip2016_test1_pg_forcing

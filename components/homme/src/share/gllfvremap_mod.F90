@@ -459,12 +459,12 @@ contains
   subroutine gfr_f2g_mixing_ratio_b(hybrid, nets, nete, qmin, qmax)
     type (hybrid_t), intent(in) :: hybrid
     integer, intent(in) :: nets, nete
-    real(kind=real_kind), intent(inout) :: qmin(:,:), qmax(:,:)
+    real(kind=real_kind), intent(inout) :: qmin(:,:,:), qmax(:,:,:)
   end subroutine gfr_f2g_mixing_ratio_b
 
   subroutine gfr_f2g_mixing_ratio_c(ie, gll_metdet, qmin, qmax, dp, q)
     integer, intent(in) :: ie
-    real(kind=real_kind), intent(in) :: gll_metdet(:,:), qmin(:), qmax(:), dp(:,:,:)
+    real(kind=real_kind), intent(in) :: gll_metdet(:,:), qmin(:,:), qmax(:,:), dp(:,:,:)
     real(kind=real_kind), intent(inout) :: q(:,:,:,:)
   end subroutine gfr_f2g_mixing_ratio_c
 
