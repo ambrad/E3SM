@@ -500,8 +500,62 @@ contains
     real(kind=real_kind), intent(inout) :: q_ten(:,:,:,:)
   end subroutine gfr_f2g_mixing_ratio_c
 
-  subroutine gfr_f2g_dss(elem)
+  subroutine gfr_f2g_dss(hybrid, elem, nets, nete)
+    use dimensions_mod, only: nlev, qsize
+    use edge_mod, only: edgevpack_nlyr, edgevunpack_nlyr, edge_g
+    use bndry_mod, only: bndry_exchangev
+
+    type (hybrid_t), intent(in) :: hybrid
     type (element_t), intent(inout) :: elem(:)
+    integer, intent(in) :: nets, nete
+
+    integer :: ie, q, k
+
+    !kludge 2 HEs until i get edge_g alloc'ed with the right size
+    !TODO fix this kludge
+
+    do ie = nets, nete
+       do q = 1,qsize
+          do k = 1,nlev
+             elem(ie)%derived%FQ(:,:,k,q) = elem(ie)%derived%FQ(:,:,k,q)*elem(ie)%spheremp(:,:)
+          end do
+       end do
+       do q = 1,2
+          do k = 1,nlev
+             elem(ie)%derived%FM(:,:,k,q) = elem(ie)%derived%FM(:,:,k,q)*elem(ie)%spheremp(:,:)
+          end do
+       end do
+       elem(ie)%derived%FT(:,:,k) = elem(ie)%derived%FT(:,:,k)*elem(ie)%spheremp(:,:)
+    end do
+    do ie = nets, nete
+       call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%FQ, qsize*nlev, 0, qsize*nlev)
+    end do
+    call bndry_exchangeV(hybrid, edge_g)
+    do ie = nets, nete
+       call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%FQ, qsize*nlev, 0, qsize*nlev)
+    end do
+    do ie = nets, nete
+       call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%FM, 2*nlev, 0, 3*nlev)
+       call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%FT, nlev, 2*nlev, 3*nlev)
+    end do
+    call bndry_exchangeV(hybrid, edge_g)
+    do ie = nets, nete
+       call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%FM, 2*nlev, 0, 3*nlev)
+       call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%FT, nlev, 2*nlev, 3*nlev)
+    end do
+    do ie = nets, nete
+       do q = 1,qsize
+          do k = 1,nlev
+             elem(ie)%derived%FQ(:,:,k,q) = elem(ie)%derived%FQ(:,:,k,q)*elem(ie)%rspheremp(:,:)
+          end do
+       end do
+       do q = 1,2
+          do k = 1,nlev
+             elem(ie)%derived%FM(:,:,k,q) = elem(ie)%derived%FM(:,:,k,q)*elem(ie)%rspheremp(:,:)
+          end do
+       end do
+       elem(ie)%derived%FT(:,:,k) = elem(ie)%derived%FT(:,:,k)*elem(ie)%rspheremp(:,:)
+    end do
   end subroutine gfr_f2g_dss
 
   ! d suffix means the inputs, outputs are densities.

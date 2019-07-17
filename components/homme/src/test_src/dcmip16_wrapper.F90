@@ -745,7 +745,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
         elem(ie)%derived%FQ(:,:,:,i) = dp*elem(ie)%derived%FQ(:,:,:,i)/dt
      end do
   end do
-  call gfr_f2g_dss(elem)
+  call gfr_f2g_dss(hybrid, elem, nets, nete)
   deallocate(qmin, qmax)
 
   call dcmip2016_append_measurements(max_w,max_precl,min_ps,tl,hybrid)
