@@ -597,18 +597,17 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      ! GLL -> FV
      call gfr_g2f_scalar(ie, elem(ie)%metdet, dp, dp_fv)
      call gfr_g2f_scalar(ie, elem(ie)%metdet, p, p_fv)
-     exner_kess_fv = (p_fv/p0)**(Rgas/Cp)
      call gfr_g2f_scalar(ie, elem(ie)%metdet, zi(:,:,nlevp:), zi_fv(:,:,nlevp:))
      call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, u, u_fv)
      call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, v, v_fv)
 #if 0
-     call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, theta_kess, theta_kess_fv) ! decent
-     !call gfr_g2f_scalar(ie, elem(ie)%metdet, theta_kess, theta_kess_fv) ! decent
-     !call gfr_g2f_scalar(ie, elem(ie)%metdet, T, T_fv); theta_kess_fv = T_fv/exner_kess ! decent
+     call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, theta_kess, theta_kess_fv)
+     exner_kess_fv = (p_fv/p0)**(Rgas/Cp)
      T_fv = exner_kess_fv*theta_kess_fv
-     !theta_kess_fv = theta_kess; T_fv = exner_kess_fv*theta_kess_fv ! good
 #else
-     T_fv = T; theta_kess_fv = T_fv/exner_kess_fv ! good
+     call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, T, T_fv)
+     exner_kess_fv = (p_fv/p0)**(Rgas/Cp)
+     theta_kess_fv = T_fv/exner_kess_fv
 #endif
      call gfr_g2f_mixing_ratio(ie, elem(ie)%metdet, dp, dp_fv, &
           elem(ie)%state%Qdp(:,:,:,1:3,ntQ), Q_fv(:,:,:,1:3))

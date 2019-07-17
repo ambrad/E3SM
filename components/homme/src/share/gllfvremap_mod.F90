@@ -422,15 +422,20 @@ contains
     end do
   end subroutine gfr_g2f_scalar_dp
 
-  subroutine gfr_g2f_mixing_ratio(ie, gll_metdet, dp_g, dp_f, g, f)
+  subroutine gfr_g2f_mixing_ratio(ie, gll_metdet, dp_g, dp_f, qdp_g, q_f)
     integer, intent(in) :: ie
-    real(kind=real_kind), intent(in) :: gll_metdet(:,:), dp_g(:,:,:), dp_f(:,:,:), g(:,:,:,:)
-    real(kind=real_kind), intent(out) :: f(:,:,:,:)
+    real(kind=real_kind), intent(in) :: gll_metdet(:,:), dp_g(:,:,:), dp_f(:,:,:), &
+         qdp_g(:,:,:,:)
+    real(kind=real_kind), intent(out) :: q_f(:,:,:,:)
 
     integer :: q, k
 
-    do q = 1, size(g,4)
-       f(:,:,:,q) = g(:,:,:,q)/dp_g
+    do q = 1, size(qdp_g,4)
+       do k = 1, size(qdp_g,3)
+          call gfr_g2f_remapd(gfr, gll_metdet, gfr%fv_metdet(:,:,ie), &
+               qdp_g(:,:,k,q), q_f(:,:,k,q))
+          q_f(:,:,k,q) = q_f(:,:,k,q)/dp_f(:,:,k)
+       end do
     end do
   end subroutine gfr_g2f_mixing_ratio
 
