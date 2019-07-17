@@ -42,7 +42,7 @@ real(rl), parameter :: rh2o    = 461.5d0,            &                  ! Gas co
 real(rl) :: sample_period  = 60.0_rl
 real(rl) :: rad2dg = 180.0_rl/pi
 
-integer, parameter :: gfr_nphys = 2
+integer, parameter :: gfr_nphys = 4
 
 contains
 
@@ -587,7 +587,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      call get_state(u,v,w,T,p,dp,ps,rho,z,zi,g,elem(ie),hvcoord,nt,ntQ)
 
      ! convert to dry density using wet mixing ratio
-     rho_dry = (1 - elem(ie)%state%Qdp(:,:,:,iqv,ntQ))*rho
+     rho_dry = (1 - elem(ie)%state%Qdp(:,:,:,iqv,ntQ)/dp)*rho
 
      ! GLL -> FV
      call gfr_g2f_pressure(ie, elem(ie)%metdet, dp, dp_fv)
