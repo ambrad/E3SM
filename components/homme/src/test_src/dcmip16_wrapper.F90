@@ -561,10 +561,11 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
        wrk(np,np), rd, wrk3(np,np,nlev)
 
   real(rl), dimension(nf,nf,nlev) :: dp_fv, p_fv, u_fv, v_fv, T_fv, exner_kess, theta_kess, &
-       Rstar, rho_fv, rho_dry, u0, v0, T0, precl_fv, z_fv
+       Rstar, rho_fv, rho_dry, u0, v0, T0, z_fv
   real(rl), dimension(nf,nf,nlev,qsize) :: Q_fv, Q0_fv
   real(rl), dimension(nf,nf,nlevp) :: phi_i, zi_fv
   real(rl), dimension(nf,nf) :: delta_ps
+  real(rl) :: precl_fv(nf,nf,1)
   real(rl), allocatable :: qmin(:,:), qmax(:,:)
 
   integer :: pbl_type, prec_type, qi
@@ -580,7 +581,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   allocate(qmin(nlev,nets:nete), qmax(nlev,nets:nete))
 
   do ie = nets,nete
-     precl_fv(:,:,ie) = -1.0d0
+     precl(:,:,ie) = -1.0d0
 
      ! get current element state
      call get_state(u,v,w,T,p,dp,ps,rho,z,zi,g,elem(ie),hvcoord,nt,ntQ)
@@ -598,6 +599,9 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      ! compute form of exner pressure expected by Kessler physics
      exner_kess = (p/p0)**(Rgas/Cp)
      theta_kess = T_fv/exner_kess
+
+     ! ensure positivity
+     where(Q_fv(:,:,:,1:3) < 0); Q_fv(:,:,:,1:3) = 0; endwhere
 
      ! rederive the remaining vars so they are self-consistent, with hydrostatic
      ! assumption.
@@ -621,7 +625,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
         zi_fv(:,:,k) = phi_i(:,:,k)/g
      end do
 
-     rho_dry = (1-Q_fv(:,:,:,iqv))*rho  ! convert to dry density using wet mixing ratio
+     rho_dry = (1-Q_fv(:,:,:,iqv))*rho_fv  ! convert to dry density using wet mixing ratio
 
      ! convert to dry mixing ratios
      do i = 1,3
@@ -629,18 +633,18 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      end do
 
      ! save un-forced prognostics
-     u0=u; v0=v; T0=T; Q0_fv = Q_fv
+     u0=u_fv; v0=v_fv; T0=T_fv; Q0_fv = Q_fv
 
      ! apply forcing to columns
      do j=1,nf
         do i=1,nf
            ! invert column
-           u_c  = u  (i,j,nlev:1:-1)
-           v_c  = v  (i,j,nlev:1:-1)
+           u_c  = u_fv(i,j,nlev:1:-1)
+           v_c  = v_fv(i,j,nlev:1:-1)
            qv_c = Q_fv(i,j,nlev:1:-1,1)
            qc_c = Q_fv(i,j,nlev:1:-1,2)
            qr_c = Q_fv(i,j,nlev:1:-1,3)
-           p_c  = p  (i,j,nlev:1:-1)
+           p_c  = p_fv(i,j,nlev:1:-1)
            rho_c= rho_dry(i,j,nlev:1:-1)
            z_c  = z_fv(i,j,nlev:1:-1)
            zi_c = zi_fv(i,j,nlevp:1:-1)
@@ -648,7 +652,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
 
            ! get forced versions of u,v,p,qv,qc,qr. rho is constant
            call DCMIP2016_PHYSICS(test, u_c, v_c, p_c, th_c, qv_c, qc_c, qr_c, rho_c, dt, &
-                z_c, zi_c, lat, nlev, precl_fv(i,j,ie), pbl_type, prec_type)
+                z_c, zi_c, lat, nlev, precl_fv(i,j,1), pbl_type, prec_type)
 
            ! revert column
            u_fv(i,j,:)  = u_c(nlev:1:-1)
@@ -680,12 +684,15 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      exner_kess = (p/p0)**(Rgas/Cp)
      T_fv = exner_kess*theta_kess
 
+     call gfr_f2g_scalar(ie, elem(ie)%metdet, precl_fv, wrk3(:,:,:1))
+     precl(:,:,ie) = wrk3(:,:,1)
+
      ! set dynamics forcing
-     call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, u - u0, wrk3)
+     call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, u_fv - u0, wrk3)
      elem(ie)%derived%FM(:,:,1,:) = wrk3/dt
-     call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, v - v0, wrk3)
+     call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, v_fv - v0, wrk3)
      elem(ie)%derived%FM(:,:,2,:) = wrk3/dt
-     call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, T - T0, wrk3)
+     call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, T_fv - T0, wrk3)
      elem(ie)%derived%FT(:,:,:)   = wrk3/dt
 
      ! set tracer-mass forcing. conserve tracer mass
@@ -705,8 +712,6 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      ! perform measurements of max w, and max prect
      ! w is not used in the physics, so just look at the GLL values.
      max_w     = max( max_w    , maxval(w    ) )
-     ! precl doesn't fit into the d-p coupling framework and it doesn't affect
-     ! dynamics, so don't worry about remapping to GLL.
      max_precl = max( max_precl, maxval(precl(:,:,ie)) )
      ! ps isn't updated by the physics, so just look at the GLL values.
      min_ps    = min( min_ps,    minval(ps) )
