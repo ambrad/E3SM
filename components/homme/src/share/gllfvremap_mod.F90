@@ -64,7 +64,7 @@ module gllfvremap_mod
   ! Testing API.
   public :: &
        gfr_test, &
-       gfr_g2f_pressure, gfr_g2f_scalar, gfr_g2f_scalar_dp, gfr_g2f_mixing_ratio, &
+       gfr_g2f_scalar, gfr_g2f_scalar_dp, gfr_g2f_mixing_ratio, &
        gfr_f2g_scalar, gfr_f2g_scalar_dp, gfr_f2g_mixing_ratio_a, &
        gfr_f2g_mixing_ratio_b, gfr_f2g_mixing_ratio_c, gfr_f2g_dss
 
@@ -396,20 +396,16 @@ contains
     end do
   end subroutine gfr_init_fv_metdet
 
-  subroutine gfr_g2f_pressure(ie, gll_metdet, p_g, p_f)
-    integer, intent(in) :: ie
-    real(kind=real_kind), intent(in) :: gll_metdet(:,:), p_g(:,:,:)
-    real(kind=real_kind), intent(out) :: p_f(:,:,:)
-
-    p_f = p_g
-  end subroutine gfr_g2f_pressure
-
   subroutine gfr_g2f_scalar(ie, gll_metdet, g, f)
     integer, intent(in) :: ie
     real(kind=real_kind), intent(in) :: gll_metdet(:,:), g(:,:,:)
     real(kind=real_kind), intent(out) :: f(:,:,:)
 
-    f = g
+    integer :: k
+
+    do k = 1, size(g,3)
+       call gfr_g2f_remapd(gfr, gll_metdet, gfr%fv_metdet(:,:,ie), g(:,:,k), f(:,:,k))
+    end do
   end subroutine gfr_g2f_scalar
 
   subroutine gfr_g2f_scalar_dp(ie, gll_metdet, dp_g, dp_f, g, f)
@@ -417,7 +413,13 @@ contains
     real(kind=real_kind), intent(in) :: gll_metdet(:,:), dp_g(:,:,:), dp_f(:,:,:), g(:,:,:)
     real(kind=real_kind), intent(out) :: f(:,:,:)
 
-    f = g
+    integer :: k
+
+    do k = 1, size(g,3)
+       call gfr_g2f_remapd(gfr, gll_metdet, gfr%fv_metdet(:,:,ie), &
+            dp_g(:,:,k)*g(:,:,k), f(:,:,k))
+       f(:,:,k) = f(:,:,k)/dp_f(:,:,k)
+    end do
   end subroutine gfr_g2f_scalar_dp
 
   subroutine gfr_g2f_mixing_ratio(ie, gll_metdet, dp_g, dp_f, g, f)

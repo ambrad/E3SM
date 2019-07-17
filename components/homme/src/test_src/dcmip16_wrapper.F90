@@ -550,6 +550,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   type(TimeLevel_t),  intent(in)            :: tl                       ! time level structure
 
   integer, parameter :: nf = gfr_nphys, iqv = 1
+  real(rl), parameter :: one = 1.0_rl
 
   integer :: i,j,k,ie
   real(rl), dimension(np,np,nlev) :: u,v,w,T,p,dp,rho,rho_dry,z
@@ -581,7 +582,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   allocate(qmin(nlev,qsize,nets:nete), qmax(nlev,qsize,nets:nete))
 
   do ie = nets,nete
-     precl(:,:,ie) = -1.0d0
+     precl(:,:,ie) = -one
 
      ! get current element state
      call get_state(u,v,w,T,p,dp,ps,rho,z,zi,g,elem(ie),hvcoord,nt,ntQ)
@@ -590,12 +591,15 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      rho_dry = (1 - elem(ie)%state%Qdp(:,:,:,iqv,ntQ)/dp)*rho
 
      ! GLL -> FV
-     call gfr_g2f_pressure(ie, elem(ie)%metdet, dp, dp_fv)
-     call gfr_g2f_pressure(ie, elem(ie)%metdet, p, p_fv)
+     call gfr_g2f_scalar(ie, elem(ie)%metdet, dp, dp_fv)
+     call gfr_g2f_scalar(ie, elem(ie)%metdet, p, p_fv)
      call gfr_g2f_scalar(ie, elem(ie)%metdet, zi(:,:,nlevp:), zi_fv(:,:,nlevp:))
      call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, u, u_fv)
      call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, v, v_fv)
-     call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, T, T_fv)
+     !amb This particular call causes a dramatic diff. I'm thinking I need to
+     !    convert this to potential temperature before remapping. Only that is
+     !    conserved, right?
+     T_fv = T !call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, T, T_fv)
      call gfr_g2f_mixing_ratio(ie, elem(ie)%metdet, dp, dp_fv, &
           elem(ie)%state%Qdp(:,:,:,1:3,ntQ), Q_fv(:,:,:,1:3))
 
