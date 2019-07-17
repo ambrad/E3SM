@@ -462,10 +462,16 @@ contains
     real(kind=real_kind), intent(inout) :: qmin(:,:,:), qmax(:,:,:)
   end subroutine gfr_f2g_mixing_ratio_b
 
-  subroutine gfr_f2g_mixing_ratio_c(ie, gll_metdet, qmin, qmax, dp, q)
+  subroutine gfr_f2g_mixing_ratio_c(ie, gll_metdet, qmin, qmax, dp, q0, q_ten)
+    ! Solve
+    !     min norm(q_ten - q_ten*, 1)
+    !      st dp'q_ten unchanged
+    !         qmin <= q0 + q_ten <= qmax
+    !TODO need to think about feasibility and safety problem
     integer, intent(in) :: ie
-    real(kind=real_kind), intent(in) :: gll_metdet(:,:), qmin(:,:), qmax(:,:), dp(:,:,:)
-    real(kind=real_kind), intent(inout) :: q(:,:,:,:)
+    real(kind=real_kind), intent(in) :: gll_metdet(:,:), qmin(:,:), qmax(:,:), &
+         dp(:,:,:), q0(:,:,:,:)
+    real(kind=real_kind), intent(inout) :: q_ten(:,:,:,:)
   end subroutine gfr_f2g_mixing_ratio_c
 
   subroutine gfr_f2g_dss(elem)

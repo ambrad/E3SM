@@ -698,20 +698,20 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, T_fv - T0, wrk3)
      elem(ie)%derived%FT(:,:,:)   = wrk3/dt
 
-     ! set tracer-mass forcing. conserve tracer mass
-     ! rho_dry*(qv-qv0)*dz = FQ deta, dz/deta = -dp/(g*rho)
+     ! set tracer-mass forcing.
      Q0_fv = Q_fv - Q0_fv
      call gfr_f2g_mixing_ratio_a(ie, elem(ie)%metdet, dp_fv, dp, Q0_fv(:,:,:,1:3), &
           elem(ie)%derived%FQ(:,:,:,1:3))
-     !amb ALERT this isn't what we want yet; we need to limit Q, not Q_ten THIS ENDS THE ALERT
      do i = 1,3
-        do k = 1,nlev
-           qmin(k,i,ie) = minval(elem(ie)%derived%FQ(:,:,k,i))
-           qmax(k,i,ie) = maxval(elem(ie)%derived%FQ(:,:,k,i))
-        end do
+        elem(ie)%derived%FQ(:,:,:,i) = (rho_dry/rho)*elem(ie)%derived%FQ(:,:,:,i)
      end do
+     ! get the min/max total (not tendency) q values on the FV grid.
      do i = 1,3
-        elem(ie)%derived%FQ(:,:,:,i) = (rho_dry/rho)*dp*elem(ie)%derived%FQ(:,:,:,i)/dt
+        wrk3(:nf,:nf,:) = (rho_dry_fv/rho_fv)*Q_fv(:,:,:,i)
+        do k = 1,nlev
+           qmin(k,i,ie) = minval(wrk3(:,:,k))
+           qmax(k,i,ie) = maxval(wrk3(:,:,k))
+        end do
      end do
 
      !amb skip this for now
@@ -726,18 +726,18 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      min_ps    = min( min_ps,    minval(ps) )
   enddo
 
-  !amb not sure yet what i want to do here
-#if 0
   call gfr_f2g_mixing_ratio_b(hybrid, nets, nete, qmin, qmax)
   do ie = nets,nete
-     ! ugh, just to get dp.
+     ! just for dp.
      call get_state(u,v,w,T,p,dp,ps,rho,z,zi,g,elem(ie),hvcoord,nt,ntQ)
      call gfr_f2g_mixing_ratio_c(ie, elem(ie)%metdet, qmin(:,1:3,ie), qmax(:,1:3,ie), dp, &
-          elem(ie)%derived%FQ(:,:,:,1:3))
+          elem(ie)%state%Q(:,:,:,1:3), elem(ie)%derived%FQ(:,:,:,1:3))
+     do i = 1,3
+        elem(ie)%derived%FQ(:,:,:,i) = dp*elem(ie)%derived%FQ(:,:,:,i)/dt
+     end do
   end do
   call gfr_f2g_dss(elem)
   deallocate(qmin, qmax)
-#endif
 
   call dcmip2016_append_measurements(max_w,max_precl,min_ps,tl,hybrid)
 end subroutine dcmip2016_test1_pg_forcing
