@@ -42,7 +42,7 @@ real(rl), parameter :: rh2o    = 461.5d0,            &                  ! Gas co
 real(rl) :: sample_period  = 60.0_rl
 real(rl) :: rad2dg = 180.0_rl/pi
 
-integer, parameter :: gfr_nphys = 4
+integer, parameter :: gfr_nphys = 2
 
 contains
 
@@ -155,7 +155,10 @@ subroutine dcmip2016_test1_pg(elem,hybrid,hvcoord,nets,nete)
   type(hvcoord_t),    intent(inout)         :: hvcoord                  ! hybrid vertical coordinates
   integer,            intent(in)            :: nets,nete                ! start, end element index
 
-  call gfr_init(gfr_nphys, elem)
+  if (hybrid%ithr == 0) call gfr_init(gfr_nphys, elem)
+#ifdef HORIZ_OPENMP
+  !$omp barrier
+#endif
   call dcmip2016_test1(elem,hybrid,hvcoord,nets,nete)
 end subroutine dcmip2016_test1_pg
 
