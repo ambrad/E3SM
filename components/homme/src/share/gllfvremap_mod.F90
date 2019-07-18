@@ -4,6 +4,8 @@
 
 !todo
 ! - less aggressive limiter?
+! - checker routine callable from dcmip1
+! - remap the right thermo var in dcmip1
 ! - contravariant u,v
 ! - rho in u,v?
 ! - online coords
@@ -432,12 +434,19 @@ contains
          qdp_g(:,:,:,:)
     real(kind=real_kind), intent(out) :: q_f(:,:,:,:)
 
-    integer :: q, k
+    real(kind=real_kind) :: qmin, qmax, wrk(np,np)
+    integer :: q, k, nf
 
+    nf = gfr%nphys
     do q = 1, size(qdp_g,4)
        do k = 1, size(qdp_g,3)
           call gfr_g2f_remapd(gfr, gll_metdet, gfr%fv_metdet(:,:,ie), &
                qdp_g(:,:,k,q), q_f(:,:,k,q))
+          wrk = qdp_g(:,:,k,q)/dp_g(:,:,k)
+          qmin = minval(wrk)
+          qmax = maxval(wrk)
+          call limiter_clip_and_sum(gfr%nphys, gfr%w_ff(:nf,:nf)*gfr%fv_metdet(:nf,:nf,ie), &
+               qmin, qmax, dp_f(:,:,k), q_f(:,:,k,q))
           q_f(:,:,k,q) = q_f(:,:,k,q)/dp_f(:,:,k)
        end do
     end do
