@@ -383,16 +383,15 @@ contains
   end subroutine gfr_f2g_remapd_op
 
   subroutine gfr_init_fv_metdet(elem, gfr)
-    type (element_t), intent(in) :: elem(nelemd)
+    type (element_t), intent(in) :: elem(:)
     type (GllFvRemap_t), intent(inout) :: gfr
 
-    real (kind=real_kind) :: ones_f(gfr%nphys, gfr%nphys), ones_g(np,np)
+    real (kind=real_kind) :: ones(np,np)
     integer :: ie
 
-    ones_f = one
-    ones_g = one
+    ones = one
     do ie = 1,nelemd
-       call gfr_g2f_remapd(gfr, elem(ie)%metdet, ones_f, ones_g, gfr%fv_metdet(:,:,ie))
+       call gfr_g2f_remapd(gfr, elem(ie)%metdet, ones, ones, gfr%fv_metdet(:,:,ie))
     end do
   end subroutine gfr_init_fv_metdet
 
