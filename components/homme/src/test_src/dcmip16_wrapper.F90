@@ -155,7 +155,7 @@ subroutine dcmip2016_test1_pg(elem,hybrid,hvcoord,nets,nete)
   type(hvcoord_t),    intent(inout)         :: hvcoord                  ! hybrid vertical coordinates
   integer,            intent(in)            :: nets,nete                ! start, end element index
 
-  if (hybrid%ithr == 0) call gfr_init(gfr_nphys, elem)
+  if (hybrid%ithr == 0) call gfr_init(hybrid, elem, gfr_nphys)
 #ifdef HORIZ_OPENMP
   !$omp barrier
 #endif
@@ -742,7 +742,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   do ie = nets,nete
      ! just for dp.
      call get_state(u,v,w,T,p,dp,ps,rho,z,zi,g,elem(ie),hvcoord,nt,ntQ)
-     call gfr_f2g_mixing_ratio_c(ie, elem(ie)%metdet, qmin(:,1:3,ie), qmax(:,1:3,ie), dp, &
+     call gfr_f2g_mixing_ratio_c(ie, elem, qmin(:,1:3,ie), qmax(:,1:3,ie), dp, &
           elem(ie)%state%Q(:,:,:,1:3), elem(ie)%derived%FQ(:,:,:,1:3))
      do i = 1,3
         elem(ie)%derived%FQ(:,:,:,i) = dp*elem(ie)%derived%FQ(:,:,:,i)/dt

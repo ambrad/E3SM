@@ -70,13 +70,16 @@ module gllfvremap_mod
 
 contains
 
-  subroutine gfr_init(nphys, elem)
+  subroutine gfr_init(hybrid, elem, nphys)
     use parallel_mod, only: abortmp
 
+    type (hybrid_t), intent(in) :: hybrid
+    type (element_t), intent(in) :: elem(:)
     integer, intent(in) :: nphys
-    type (element_t), intent(in) :: elem(nelemd)
 
     real(real_kind) :: R(npsq,nphys_max*nphys_max)
+
+    if (hybrid%masterthread) print *, 'gfr> init nphys',nphys
 
     if (nphys > np) then
        ! The FV -> GLL map is defined only if nphys <= np. If we ever are
@@ -482,21 +485,36 @@ contains
   end subroutine gfr_f2g_mixing_ratio_a
 
   subroutine gfr_f2g_mixing_ratio_b(hybrid, nets, nete, qmin, qmax)
+    use viscosity_mod, only: neighbor_minmax
+    use prim_advection_base, only: edgeAdvQminmax !TODO rm kludge
+
     type (hybrid_t), intent(in) :: hybrid
     integer, intent(in) :: nets, nete
     real(kind=real_kind), intent(inout) :: qmin(:,:,:), qmax(:,:,:)
+
+    call neighbor_minmax(hybrid, edgeAdvQminmax, nets, nete, qmin, qmax)
   end subroutine gfr_f2g_mixing_ratio_b
 
-  subroutine gfr_f2g_mixing_ratio_c(ie, gll_metdet, qmin, qmax, dp, q0, q_ten)
+  subroutine gfr_f2g_mixing_ratio_c(ie, elem, qmin, qmax, dp, q0, q_ten)
     ! Solve
     !     min norm(q_ten - q_ten*, 1)
     !      st dp'q_ten unchanged
     !         qmin <= q0 + q_ten <= qmax
-    !TODO need to think about feasibility and safety problem
     integer, intent(in) :: ie
-    real(kind=real_kind), intent(in) :: gll_metdet(:,:), qmin(:,:), qmax(:,:), &
-         dp(:,:,:), q0(:,:,:,:)
-    real(kind=real_kind), intent(inout) :: q_ten(:,:,:,:)
+    type (element_t), intent(in) :: elem(:)
+    real(kind=real_kind), intent(in) :: dp(:,:,:), q0(:,:,:,:)
+    real(kind=real_kind), intent(inout) :: qmin(:,:), qmax(:,:), q_ten(:,:,:,:)
+
+    real(kind=real_kind) :: wrk(np,np)
+    integer :: q, k
+
+    do q = 1, size(q0,4)
+       do k = 1, size(q0,3)
+          wrk = dp(:,:,k)*(q0(:,:,k,q) + q_ten(:,:,k,q))
+          call limiter_clip_and_sum(np, elem(ie)%spheremp, qmin(k,q), qmax(k,q), dp(:,:,k), wrk)
+          q_ten(:,:,k,q) = wrk/dp(:,:,k) - q0(:,:,k,q)
+       end do
+    end do
   end subroutine gfr_f2g_mixing_ratio_c
 
   subroutine gfr_f2g_dss(hybrid, elem, nets, nete)
@@ -917,7 +935,7 @@ contains
 
     do nphys = 1, np
        ! This is meant to be called before threading starts.
-       if (hybrid%ithr == 0) call gfr_init(nphys, elem)
+       if (hybrid%ithr == 0) call gfr_init(hybrid, elem, nphys)
 #ifdef HORIZ_OPENMP
        !$omp barrier
 #endif
