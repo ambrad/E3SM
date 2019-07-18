@@ -3,11 +3,12 @@
 #endif
 
 !todo
+! - less aggressive limiter?
 ! - contravariant u,v
 ! - rho in u,v?
 ! - online coords
 ! - topo roughness
-! - np4-np2 instead of np4-pg2
+! - np4-np2 instead of np4-pg1
 
 module gllfvremap_mod
   ! High-order, mass-conserving, optionally shape-preserving
@@ -66,7 +67,8 @@ module gllfvremap_mod
        gfr_test, &
        gfr_g2f_scalar, gfr_g2f_scalar_dp, gfr_g2f_mixing_ratio, &
        gfr_f2g_scalar, gfr_f2g_scalar_dp, gfr_f2g_mixing_ratio_a, &
-       gfr_f2g_mixing_ratio_b, gfr_f2g_mixing_ratio_c, gfr_f2g_dss
+       gfr_f2g_mixing_ratio_b, gfr_f2g_mixing_ratio_c, gfr_f2g_dss, &
+       gfr_g_make_nonnegative
 
 contains
 
@@ -575,6 +577,33 @@ contains
     end do
   end subroutine gfr_f2g_dss
 
+  subroutine gfr_g_make_nonnegative(gll_metdet, g)
+    real(kind=real_kind), intent(in) :: gll_metdet(:,:)
+    real(kind=real_kind), intent(inout) :: g(:,:,:)
+
+    integer :: k, i, j
+    real(kind=real_kind) :: nmass, spheremp(np,np), w(np,np)
+
+    spheremp = gfr%w_gg*gll_metdet
+    do k = 1, size(g,3)
+       nmass = zero
+       do j = 1,np
+          do i = 1,np
+             if (g(i,j,k) < zero) then
+                nmass = nmass + spheremp(i,j)*g(i,j,k)
+                g(i,j,k) = zero
+                w(i,j) = zero
+             else
+                w(i,j) = spheremp(i,j)
+             end if
+          end do
+       end do
+       if (nmass == zero) cycle
+       w = (w/sum(w))/spheremp
+       g(:,:,k) = g(:,:,k) + w*nmass
+    end do
+  end subroutine gfr_g_make_nonnegative
+
   ! d suffix means the inputs, outputs are densities.
   subroutine gfr_g2f_remapd(gfr, gll_metdet, fv_metdet, g, f)
     type (GllFvRemap_t), intent(in) :: gfr
@@ -769,8 +798,8 @@ contains
     logical, intent(in) :: verbose
 
     real(kind=real_kind) :: a, b, rd, x, y, f0(np,np), f1(np,np), g(np,np), &
-         wrk(np,np), qmin, qmax, qmin1, qmax1
-    integer :: nf, ie, i, j, iremap, info, ilimit
+         wrk(np,np), wrk3(np,np,1), qmin, qmax, qmin1, qmax1, mass0, mass1
+    integer :: nf, ie, i, j, iremap, info, ilimit, sign
     real(kind=real_kind), allocatable :: Qdp_fv(:,:,:), ps_v_fv(:,:,:), &
          qmins(:,:,:), qmaxs(:,:,:)
     logical :: limit
@@ -814,6 +843,20 @@ contains
        b = sum(wrk(:nf,:nf)*abs(f0(:nf,:nf)))
        rd = a/b
        if (rd /= rd .or. rd > 1e-15) print *, 'gfr> recover', ie, a, b, rd
+
+       ! Check gfr_g_make_nonnegative.
+       sign = 1
+       do j = 1,np
+          do i = 1,np
+             wrk3(i,j,1) = one + sign*i*j
+             sign = -sign
+          end do
+       end do
+       mass0 = sum(elem(ie)%spheremp*wrk3(:,:,1))
+       call gfr_g_make_nonnegative(elem(ie)%metdet, wrk3)
+       mass1 = sum(elem(ie)%spheremp*wrk3(:,:,1))
+       rd = (mass1 - mass0)/mass0
+       if (rd /= rd .or. rd > 1e-15) print *, 'gfr> nonnegative', ie, mass0, mass1
     end do
 
     ! For convergence testing.
@@ -821,7 +864,6 @@ contains
     allocate(qmins(nlev,qsize,nets:nete), qmaxs(nlev,qsize,nets:nete))
     do ilimit = 0,1
        limit = ilimit > 0
-       !if (limit .and. nf == 1) cycle
        ! 0. Create synthetic q and ps_v.
        call set_ps_Q(elem, nets, nete, 1, 1, nlev)
        call set_ps_Q(elem, nets, nete, 2, 2, nlev)

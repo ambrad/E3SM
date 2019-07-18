@@ -544,6 +544,10 @@ end subroutine
 subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl)
   use gllfvremap_mod
 
+  ! to DSS precl
+  use edge_mod, only: edgevpack_nlyr, edgevunpack_nlyr, edge_g
+  use bndry_mod, only: bndry_exchangev
+
   type(element_t),    intent(inout), target :: elem(:)                  ! element array
   type(hybrid_t),     intent(in)            :: hybrid                   ! hybrid parallel structure
   type(hvcoord_t),    intent(in)            :: hvcoord                  ! hybrid vertical coordinates
@@ -700,6 +704,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      T_fv = exner_kess_fv*theta_kess_fv
 
      call gfr_f2g_scalar(ie, elem(ie)%metdet, precl_fv, wrk3(:,:,:1))
+     call gfr_g_make_nonnegative(elem(ie)%metdet, wrk3(:,:,:1))
      precl(:,:,ie) = wrk3(:,:,1)
 
      ! set dynamics forcing
@@ -733,7 +738,6 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      ! perform measurements of max w, and max prect
      ! w is not used in the physics, so just look at the GLL values.
      max_w     = max( max_w    , maxval(w    ) )
-     max_precl = max( max_precl, maxval(precl(:,:,ie)) )
      ! ps isn't updated by the physics, so just look at the GLL values.
      min_ps    = min( min_ps,    minval(ps) )
   enddo
@@ -750,6 +754,18 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   end do
   call gfr_f2g_dss(hybrid, elem, nets, nete)
   deallocate(qmin, qmax)
+
+  ! DSS precl
+  do ie = nets,nete
+     precl(:,:,ie) = precl(:,:,ie)*elem(ie)%spheremp
+     call edgeVpack_nlyr(edge_g, elem(ie)%desc, precl(:,:,ie), 1, 0, 1)
+  end do
+  call bndry_exchangeV(hybrid, edge_g)
+  do ie = nets,nete
+     call edgeVunpack_nlyr(edge_g, elem(ie)%desc, precl(:,:,ie), 1, 0, 1)
+     precl(:,:,ie) = precl(:,:,ie)*elem(ie)%rspheremp
+     max_precl = max( max_precl, maxval(precl(:,:,ie)) )
+  end do
 
   call dcmip2016_append_measurements(max_w,max_precl,min_ps,tl,hybrid)
 end subroutine dcmip2016_test1_pg_forcing
