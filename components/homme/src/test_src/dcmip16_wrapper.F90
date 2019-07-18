@@ -610,7 +610,6 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      call gfr_g2f_mixing_ratio(ie, elem(ie)%metdet, dp, dp_fv, &
           elem(ie)%state%Qdp(:,:,:,1:3,ntQ), Q_fv(:,:,:,1:3))
 
-#if 1
      ! GLL th -> thv
      theta_kess = theta_kess*(one + (Rwater_vapor/Rgas - one)* &
           (elem(ie)%state%Qdp(:,:,:,iqv,ntQ)/dp))
@@ -620,11 +619,6 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      theta_kess_fv = theta_kess_fv/(one + (Rwater_vapor/Rgas - one)*Q_fv(:,:,:,iqv))
      ! FV th -> T
      T_fv = exner_kess_fv*theta_kess_fv
-#else
-     call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, T, T_fv)
-     exner_kess_fv = (p_fv/p0)**(Rgas/Cp)
-     theta_kess_fv = T_fv/exner_kess_fv
-#endif
 
      ! ensure positivity
      where(Q_fv(:,:,:,1:3) < 0); Q_fv(:,:,:,1:3) = 0; endwhere
