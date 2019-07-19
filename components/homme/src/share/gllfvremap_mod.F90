@@ -5,7 +5,6 @@
 !todo
 ! - checker routine callable from dcmip1
 ! - online coords
-! - contravariant u,v
 ! - toy chem in dcmip1
 ! - rho in u,v?
 ! - topo roughness
@@ -70,10 +69,10 @@ module gllfvremap_mod
   ! Testing API.
   public :: &
        gfr_test, &
-       gfr_g2f_scalar, gfr_g2f_scalar_dp, gfr_g2f_vector, gfr_g2f_mixing_ratio, &
-       gfr_f2g_scalar, gfr_f2g_scalar_dp, gfr_f2g_vector, gfr_f2g_mixing_ratio_a, &
-       gfr_f2g_mixing_ratio_b, gfr_f2g_mixing_ratio_c, gfr_f2g_dss, &
-       gfr_g_make_nonnegative
+       gfr_g2f_scalar, gfr_g2f_scalar_dp, gfr_g2f_vector, gfr_g2f_vector_dp, &
+       gfr_g2f_mixing_ratio, gfr_f2g_scalar, gfr_f2g_scalar_dp, gfr_f2g_vector, &
+       gfr_f2g_vector_dp, gfr_f2g_mixing_ratio_a, gfr_f2g_mixing_ratio_b, &
+       gfr_f2g_mixing_ratio_c, gfr_f2g_dss, gfr_g_make_nonnegative
 
 contains
 
@@ -464,13 +463,8 @@ contains
     real(kind=real_kind), intent(in) :: gll_metdet(:,:), dp_g(:,:,:), dp_f(:,:,:), g(:,:,:)
     real(kind=real_kind), intent(out) :: f(:,:,:)
 
-    integer :: k
-
-    do k = 1, size(g,3)
-       call gfr_g2f_remapd(gfr, gll_metdet, gfr%fv_metdet(:,:,ie), &
-            dp_g(:,:,k)*g(:,:,k), f(:,:,k))
-       f(:,:,k) = f(:,:,k)/dp_f(:,:,k)
-    end do
+    call gfr_g2f_scalar(ie, gll_metdet, dp_g*g, f)
+    f = f/dp_f
   end subroutine gfr_g2f_scalar_dp
 
   subroutine gfr_g2f_vector(ie, elem, u_g, v_g, u_f, v_f)
@@ -504,6 +498,17 @@ contains
        v_f(:nf,:nf,k) = wg(:nf,:nf,2)
     end do
   end subroutine gfr_g2f_vector
+
+  subroutine gfr_g2f_vector_dp(ie, elem, dp_g, dp_f, u_g, v_g, u_f, v_f)
+    integer, intent(in) :: ie
+    type (element_t), intent(in) :: elem(:)
+    real(kind=real_kind), intent(in) :: dp_g(:,:,:), dp_f(:,:,:), u_g(:,:,:), v_g(:,:,:)
+    real(kind=real_kind), intent(out) :: u_f(:,:,:), v_f(:,:,:)
+
+    call gfr_g2f_vector(ie, elem, dp_g*u_g, dp_g*v_g, u_f, v_f)
+    u_f = u_f/dp_f
+    v_f = v_f/dp_f
+  end subroutine gfr_g2f_vector_dp
 
   subroutine gfr_g2f_mixing_ratio(ie, gll_metdet, dp_g, dp_f, qdp_g, q_f)
     integer, intent(in) :: ie
@@ -546,13 +551,8 @@ contains
     real(kind=real_kind), intent(in) :: gll_metdet(:,:), dp_f(:,:,:), dp_g(:,:,:), f(:,:,:)
     real(kind=real_kind), intent(out) :: g(:,:,:)
 
-    integer :: k
-
-    do k = 1, size(g,3)
-       call gfr_f2g_remapd(gfr, gll_metdet, gfr%fv_metdet(:,:,ie), dp_f(:,:,k)*f(:,:,k), &
-            g(:,:,k))
-       g(:,:,k) = g(:,:,k)/dp_g(:,:,k)
-    end do
+    call gfr_f2g_scalar(ie, gll_metdet, dp_f*f, g)
+    g = g/dp_g
   end subroutine gfr_f2g_scalar_dp
 
   subroutine gfr_f2g_vector(ie, elem, u_f, v_f, u_g, v_g)
@@ -584,6 +584,17 @@ contains
        v_g(:,:,k) = wf(:,:,2)
     end do
   end subroutine gfr_f2g_vector
+
+  subroutine gfr_f2g_vector_dp(ie, elem, dp_f, dp_g, u_f, v_f, u_g, v_g)
+    integer, intent(in) :: ie
+    type (element_t), intent(in) :: elem(:)
+    real(kind=real_kind), intent(in) :: dp_f(:,:,:), dp_g(:,:,:), u_f(:,:,:), v_f(:,:,:)
+    real(kind=real_kind), intent(out) :: u_g(:,:,:), v_g(:,:,:)
+
+    call gfr_f2g_vector(ie, elem, dp_f*u_f, dp_f*v_f, u_g, v_g)
+    u_g = u_g/dp_g
+    v_g = v_g/dp_g
+  end subroutine gfr_f2g_vector_dp
 
   subroutine gfr_f2g_mixing_ratio_a(ie, gll_metdet, dp_f, dp_g, q_f, q_g)
     integer, intent(in) :: ie
