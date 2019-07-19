@@ -431,9 +431,9 @@ contains
 
     do ie = 1,nelemd
        do j = 1,nf
+          call gfr_f_ref_coord(nf, j, b)
           do i = 1,nf
              call gfr_f_ref_coord(nf, i, a)
-             call gfr_f_ref_coord(nf, j, b)
              call Dmap(wrk, a, b, elem(ie)%corners3D, cubed_sphere_map, elem(ie)%cartp, &
                   elem(ie)%facenum)
              gfr%D_f(i,j,:,:,ie) = wrk
@@ -480,7 +480,7 @@ contains
     real(kind=real_kind), intent(out) :: u_f(:,:,:), v_f(:,:,:)
 
     real(kind=real_kind) :: wg(np,np,2), wf(np,np,2), ones(np,np)
-    integer :: k, i, j, d, nf
+    integer :: k, d, nf
 
     nf = gfr%nphys
     ones = one
@@ -488,11 +488,7 @@ contains
     do k = 1, size(u_g,3)
        ! sphere -> GLL ref
        do d = 1,2
-          do j = 1,np
-             do i = 1,np
-                wg(i,j,d) = elem(ie)%D(i,j,d,1)*u_g(i,j,k) + elem(ie)%D(i,j,d,2)*v_g(i,j,k)
-             end do
-          end do
+          wg(:,:,d) = elem(ie)%D(:,:,d,1)*u_g(:,:,k) + elem(ie)%D(:,:,d,2)*v_g(:,:,k)
        end do
        ! Since we mapped to the ref element, we no longer should use the ref ->
        ! sphere Jacobians; use 1s instead.
@@ -501,11 +497,8 @@ contains
        end do
        ! FV ref -> sphere
        do d = 1,2
-          do j = 1, nf
-             do i = 1, nf
-                wg(i,j,d) = gfr%Dinv_f(i,j,d,1,ie)*wf(i,j,1) + gfr%Dinv_f(i,j,d,2,ie)*wf(i,j,2)
-             end do
-          end do
+          wg(:nf,:nf,d) = gfr%Dinv_f(:nf,:nf,d,1,ie)*wf(:nf,:nf,1) + &
+               gfr%Dinv_f(:nf,:nf,d,2,ie)*wf(:nf,:nf,2)
        end do
        u_f(:nf,:nf,k) = wg(:nf,:nf,1)
        v_f(:nf,:nf,k) = wg(:nf,:nf,2)
@@ -569,30 +562,23 @@ contains
     real(kind=real_kind), intent(out) :: u_g(:,:,:), v_g(:,:,:)
 
     real(kind=real_kind) :: wg(np,np,2), wf(np,np,2), ones(np,np)
-    integer :: k, i, j, d, nf
+    integer :: k, d, nf
 
     nf = gfr%nphys
     ones = one
 
     do k = 1, size(u_g,3)
-       ! sphere -> GLL ref
+       ! sphere -> FV ref
        do d = 1,2
-          do j = 1,nf
-             do i = 1,nf
-                wf(i,j,d) = elem(ie)%D(i,j,d,1)*u_f(i,j,k) + elem(ie)%D(i,j,d,2)*v_f(i,j,k)
-             end do
-          end do
+          wf(:nf,:nf,d) = gfr%D_f(:nf,:nf,d,1,ie)*u_f(:nf,:nf,k) + &
+               gfr%D_f(:nf,:nf,d,2,ie)*v_f(:nf,:nf,k)
        end do
        do d = 1,2
           call gfr_f2g_remapd(gfr, ones, ones, wf(:,:,d), wg(:,:,d))
        end do
-       ! FV ref -> sphere
+       ! GLL ref -> sphere
        do d = 1,2
-          do j = 1,np
-             do i = 1,np
-                wf(i,j,d) = gfr%Dinv_f(i,j,d,1,ie)*wg(i,j,1) + gfr%Dinv_f(i,j,d,2,ie)*wg(i,j,2)
-             end do
-          end do
+          wf(:,:,d) = elem(ie)%Dinv(:,:,d,1)*wg(:,:,1) + elem(ie)%Dinv(:,:,d,2)*wg(:,:,2)
        end do
        u_g(:,:,k) = wf(:,:,1)
        v_g(:,:,k) = wf(:,:,2)
