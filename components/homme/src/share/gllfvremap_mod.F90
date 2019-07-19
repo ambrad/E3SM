@@ -47,14 +47,14 @@ module gllfvremap_mod
           ! Interpolate from GLL npi to GLL np
           interp(np,np,np,np), &
           ! Remap FV nphys -> GLL np
-          f2g_remapd(nphys_max,nphys_max,np,np), &
-          ! Vector on ref elem -> vector on sphere
-          D_f(nphys_max,nphys_max,2,2), &
-          ! Inverse of D_f
-          Dinv_f(nphys_max,nphys_max,2,2)
+          f2g_remapd(nphys_max,nphys_max,np,np)
      ! FV subcell areas; FV analogue of GLL elem(ie)%metdet arrays
      real(kind=real_kind), allocatable :: &
-          fv_metdet(:,:,:) ! (nphys,nphys,nelemd)
+          fv_metdet(:,:,:), & ! (nphys,nphys,nelemd)
+          ! Vector on ref elem -> vector on sphere
+          D_f(:,:,:,:,:), &   ! (nphys,nphys,2,2,nelemd)
+          ! Inverse of D_f
+          Dinv_f(:,:,:,:,:)
   end type GllFvRemap_t
 
   type (GllFvRemap_t), private :: gfr
@@ -114,12 +114,16 @@ contains
     call gfr_init_interp_matrix(gfr%npi, gfr%interp)
     call gfr_init_f2g_remapd(gfr, R)
 
-    allocate(gfr%fv_metdet(nphys,nphys,nelemd))
+    allocate(gfr%fv_metdet(nphys,nphys,nelemd), &
+         gfr%D_f(nphys,nphys,2,2,nelemd), gfr%Dinv_f(nphys,nphys,2,2,nelemd))
     call gfr_init_fv_metdet(elem, gfr)
+    call gfr_init_Df(elem, gfr)
   end subroutine gfr_init
 
   subroutine gfr_finish()
-    if (allocated(gfr%fv_metdet)) deallocate(gfr%fv_metdet)
+    if (allocated(gfr%fv_metdet)) then
+       deallocate(gfr%fv_metdet, gfr%D_f, gfr%Dinv_f)
+    end if
   end subroutine gfr_finish
 
   subroutine gfr_fv_phys_to_dyn()
@@ -405,6 +409,44 @@ contains
     end do
   end subroutine gfr_init_fv_metdet
 
+  subroutine gfr_f_ref_coord(nphys, i, a)
+    ! FV subcell center in ref [-1,1]^2 coord.
+    integer, intent(in) :: nphys, i
+    real(kind=real_kind), intent(out) :: a
+
+    a = two*((real(i-1, real_kind) + half)/real(nphys, real_kind)) - one
+  end subroutine gfr_f_ref_coord
+
+  subroutine gfr_init_Df(elem, gfr)
+    use cube_mod, only: Dmap
+    use control_mod, only: cubed_sphere_map
+
+    type (element_t), intent(in) :: elem(:)
+    type (GllFvRemap_t), intent(inout) :: gfr
+
+    real(kind=real_kind) :: wrk(2,2), det, a, b
+    integer :: ie, nf, i, j
+
+    nf = gfr%nphys
+
+    do ie = 1,nelemd
+       do j = 1,nf
+          do i = 1,nf
+             call gfr_f_ref_coord(nf, i, a)
+             call gfr_f_ref_coord(nf, j, b)
+             call Dmap(wrk, a, b, elem(ie)%corners3D, cubed_sphere_map, elem(ie)%cartp, &
+                  elem(ie)%facenum)
+             gfr%D_f(i,j,:,:,ie) = wrk
+             det = wrk(1,1)*wrk(2,2) - wrk(1,2)*wrk(2,1)
+             gfr%Dinv_f(i,j,1,1,ie) =  wrk(2,2)/det
+             gfr%Dinv_f(i,j,1,2,ie) = -wrk(1,2)/det
+             gfr%Dinv_f(i,j,2,1,ie) = -wrk(2,1)/det
+             gfr%Dinv_f(i,j,2,2,ie) =  wrk(1,1)/det
+          end do
+       end do
+    end do
+  end subroutine gfr_init_Df
+
   subroutine gfr_g2f_scalar(ie, gll_metdet, g, f)
     integer, intent(in) :: ie
     real(kind=real_kind), intent(in) :: gll_metdet(:,:), g(:,:,:)
@@ -459,7 +501,7 @@ contains
        do d = 1,2
           do j = 1, gfr%nphys
              do i = 1, gfr%nphys
-                f(i,j,d,k) = gfr%Dinv_f(i,j,d,1)*wf(i,j,1) + gfr%Dinv_f(i,j,d,2)*wf(i,j,2)
+                f(i,j,d,k) = gfr%Dinv_f(i,j,d,1,ie)*wf(i,j,1) + gfr%Dinv_f(i,j,d,2,ie)*wf(i,j,2)
              end do
           end do
        end do
@@ -542,7 +584,7 @@ contains
        do d = 1,2
           do j = 1, gfr%nphys
              do i = 1, gfr%nphys
-                f(i,j,d,k) = gfr%Dinv_f(i,j,d,1)*wf(i,j,1) + gfr%Dinv_f(i,j,d,2)*wf(i,j,2)
+                f(i,j,d,k) = gfr%Dinv_f(i,j,d,1,ie)*wf(i,j,1) + gfr%Dinv_f(i,j,d,2,ie)*wf(i,j,2)
              end do
           end do
        end do
