@@ -76,7 +76,7 @@ module gllfvremap_mod
        gfr_g2f_scalar, gfr_g2f_scalar_dp, gfr_g2f_vector, gfr_g2f_vector_dp, &
        gfr_g2f_mixing_ratio, gfr_f2g_scalar, gfr_f2g_scalar_dp, gfr_f2g_vector, &
        gfr_f2g_vector_dp, gfr_f2g_mixing_ratio_a, gfr_f2g_mixing_ratio_b, &
-       gfr_f2g_mixing_ratio_c, gfr_f2g_dss, gfr_g_make_nonnegative
+       gfr_f2g_mixing_ratio_c, gfr_f2g_dss, gfr_get_latlon, gfr_g_make_nonnegative
 
 contains
 
@@ -740,6 +740,14 @@ contains
        g(:,:,k) = g(:,:,k) + w*nmass
     end do
   end subroutine gfr_g_make_nonnegative
+
+  subroutine gfr_get_latlon(ie, i, j, lat, lon)
+    integer, intent(in) :: ie, i, j
+    real(kind=real_kind), intent(out) :: lat, lon
+
+    lat = gfr%spherep_f(i,j,ie)%lat
+    lon = gfr%spherep_f(i,j,ie)%lon
+  end subroutine gfr_get_latlon
 
   ! d suffix means the inputs, outputs are densities.
   subroutine gfr_g2f_remapd(gfr, gll_metdet, fv_metdet, g, f)

@@ -561,7 +561,6 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
 
   integer :: i,j,k,ie
   real(rl), dimension(np,np,nlev) :: u,v,w,T,p,dp,rho,rho_dry,z,exner_kess,theta_kess
-  real(rl), dimension(np,np,nlev) :: ddt_cl,ddt_cl2
   real(rl), dimension(np,np,nlev) :: rho_new,p_pk
   real(rl), dimension(nlev)       :: u_c,v_c,p_c,qv_c,qc_c,qr_c,rho_c,z_c, th_c
   real(rl) :: max_w, max_precl, min_ps
@@ -569,7 +568,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
        wrk(np,np), rd, wrk3(np,np,nlev)
 
   real(rl), dimension(nf,nf,nlev) :: dp_fv, p_fv, u_fv, v_fv, T_fv, exner_kess_fv, &
-       theta_kess_fv, Rstar, rho_fv, rho_dry_fv, u0, v0, T0, z_fv
+       theta_kess_fv, Rstar, rho_fv, rho_dry_fv, u0, v0, T0, z_fv, ddt_cl, ddt_cl2
   real(rl), dimension(nf,nf,nlev,qsize) :: Q_fv, Q0_fv
   real(rl), dimension(nf,nf,nlevp) :: phi_i, zi_fv
   real(rl), dimension(nf,nf) :: delta_ps
@@ -612,7 +611,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      call gfr_g2f_vector_dp(ie, elem, dp, dp_fv, u, v, u_fv, v_fv)
 #endif
      call gfr_g2f_mixing_ratio(ie, elem(ie)%metdet, dp, dp_fv, &
-          elem(ie)%state%Qdp(:,:,:,1:3,ntQ), Q_fv(:,:,:,1:3))
+          elem(ie)%state%Qdp(:,:,:,1:5,ntQ), Q_fv(:,:,:,1:5))
 
      ! GLL th -> thv
      theta_kess = theta_kess*(one + (Rwater_vapor/Rgas - one)* &
@@ -623,9 +622,6 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      theta_kess_fv = theta_kess_fv/(one + (Rwater_vapor/Rgas - one)*Q_fv(:,:,:,iqv))
      ! FV th -> T
      T_fv = exner_kess_fv*theta_kess_fv
-
-     ! ensure positivity
-     where(Q_fv(:,:,:,1:3) < 0); Q_fv(:,:,:,1:3) = 0; endwhere
 
      ! Rederive the remaining vars so they are self-consistent, with hydrostatic
      ! assumption.
@@ -686,15 +682,11 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
            Q_fv(i,j,:,3) = qr_c(nlev:1:-1)
            theta_kess_fv(i,j,:) = th_c(nlev:1:-1)
 
-#if 0
-           !amb skip this for now
-           lon = elem(ie)%spherep(i,j)%lon
-           lat = elem(ie)%spherep(i,j)%lat
+           call gfr_get_latlon(ie, i, j, lat, lon)
            do k=1,nlev
-              call tendency_terminator(lat*rad2dg, lon*rad2dg, cl(i,j,k), cl2(i,j,k), dt, &
-                   ddt_cl(i,j,k), ddt_cl2(i,j,k))
+              call tendency_terminator(lat*rad2dg, lon*rad2dg, Q_fv(i,j,k,4), Q_fv(i,j,k,5), &
+                   dt, ddt_cl(i,j,k), ddt_cl2(i,j,k))
            enddo
-#endif
         enddo
      enddo
 
@@ -727,24 +719,23 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      elem(ie)%derived%FT(:,:,:)   = wrk3/dt
 
      ! set tracer-mass forcing.
-     Q0_fv = Q_fv - Q0_fv
-     call gfr_f2g_mixing_ratio_a(ie, elem(ie)%metdet, dp_fv, dp, Q0_fv(:,:,:,1:3), &
-          elem(ie)%derived%FQ(:,:,:,1:3))
+     Q0_fv(:,:,:,1:3) = Q_fv(:,:,:,1:3) - Q0_fv(:,:,:,1:3)
+     Q0_fv(:,:,:,4) = dt*dp_fv*ddt_cl
+     Q0_fv(:,:,:,5) = dt*dp_fv*ddt_cl2
+     call gfr_f2g_mixing_ratio_a(ie, elem(ie)%metdet, dp_fv, dp, Q0_fv(:,:,:,1:5), &
+          elem(ie)%derived%FQ(:,:,:,1:5))
      do i = 1,3
         elem(ie)%derived%FQ(:,:,:,i) = (rho_dry/rho)*elem(ie)%derived%FQ(:,:,:,i)
      end do
      ! get the min/max total (not tendency) q values on the FV grid.
-     do i = 1,3
-        wrk3(:nf,:nf,:) = (rho_dry_fv/rho_fv)*Q_fv(:,:,:,i)
+     do i = 1,5
+        wrk3(:nf,:nf,:) = Q_fv(:,:,:,i)
+        if (i <= 3) wrk3(:nf,:nf,:) = (rho_dry_fv/rho_fv)*wrk3(:nf,:nf,:)
         do k = 1,nlev
            qmin(k,i,ie) = minval(wrk3(:,:,k))
            qmax(k,i,ie) = maxval(wrk3(:,:,k))
         end do
      end do
-
-     !amb skip this for now
-     qi=4; elem(ie)%derived%FQ(:,:,:,qi) = 0 !dp*ddt_cl
-     qi=5; elem(ie)%derived%FQ(:,:,:,qi) = 0 !dp*ddt_cl2
      
      ! perform measurements of max w, and max prect
      ! w is not used in the physics, so just look at the GLL values.
@@ -758,8 +749,8 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      ! just for dp.
      call get_state(u,v,w,T,p,dp,ps,rho,z,zi,g,elem(ie),hvcoord,nt,ntQ)
      call gfr_f2g_mixing_ratio_c(ie, elem, qmin(:,1:3,ie), qmax(:,1:3,ie), dp, &
-          elem(ie)%state%Q(:,:,:,1:3), elem(ie)%derived%FQ(:,:,:,1:3))
-     do i = 1,3
+          elem(ie)%state%Q(:,:,:,1:5), elem(ie)%derived%FQ(:,:,:,1:5))
+     do i = 1,5
         elem(ie)%derived%FQ(:,:,:,i) = dp*elem(ie)%derived%FQ(:,:,:,i)/dt
      end do
   end do
