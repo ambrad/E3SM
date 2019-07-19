@@ -5,9 +5,7 @@
 !todo
 ! - checker routine callable from dcmip1
 ! - test vector_dp routines: conservation
-! - online coords
-! - toy chem in dcmip1
-! - rho in u,v?
+! - area correction: alpha
 ! - topo roughness
 ! - np4-np2 instead of np4-pg1
 
@@ -449,6 +447,8 @@ contains
              gfr%Dinv_f(i,j,2,1,ie) = -wrk(2,1)/det
              gfr%Dinv_f(i,j,2,2,ie) =  wrk(1,1)/det
 
+             !print *,'alpha>',ie,i,j,gfr%fv_metdet(i,j,ie)/abs(half*det)
+
              gfr%spherep_f(i,j,ie) = ref2sphere(a, b, elem(ie)%corners3D, cubed_sphere_map, &
                   elem(ie)%corners, elem(ie)%facenum)
           end do
@@ -615,11 +615,7 @@ contains
     integer :: q, k
 
     do q = 1, size(q_f,4)
-       do k = 1, size(q_f,3)
-          call gfr_f2g_remapd(gfr, gll_metdet, gfr%fv_metdet(:,:,ie), &
-               dp_f(:,:,k)*q_f(:,:,k,q), q_g(:,:,k,q))
-          q_g(:,:,k,q) = q_g(:,:,k,q)/dp_g(:,:,k)
-       end do
+       call gfr_f2g_scalar_dp(ie, gll_metdet, dp_f, dp_g, q_f(:,:,:,q), q_g(:,:,:,q))
     end do
   end subroutine gfr_f2g_mixing_ratio_a
 
