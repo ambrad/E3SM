@@ -3,12 +3,11 @@
 #endif
 
 !todo
-! - less aggressive limiter?
 ! - checker routine callable from dcmip1
-! - remap the right thermo var in dcmip1
-! - contravariant u,v
-! - rho in u,v?
 ! - online coords
+! - contravariant u,v
+! - toy chem in dcmip1
+! - rho in u,v?
 ! - topo roughness
 ! - np4-np2 instead of np4-pg1
 
@@ -48,7 +47,11 @@ module gllfvremap_mod
           ! Interpolate from GLL npi to GLL np
           interp(np,np,np,np), &
           ! Remap FV nphys -> GLL np
-          f2g_remapd(nphys_max,nphys_max,np,np)
+          f2g_remapd(nphys_max,nphys_max,np,np), &
+          ! Vector on ref elem -> vector on sphere
+          D_f(nphys_max,nphys_max,2,2), &
+          ! Inverse of D_f
+          Dinv_f(nphys_max,nphys_max,2,2)
      ! FV subcell areas; FV analogue of GLL elem(ie)%metdet arrays
      real(kind=real_kind), allocatable :: &
           fv_metdet(:,:,:) ! (nphys,nphys,nelemd)
@@ -67,8 +70,8 @@ module gllfvremap_mod
   ! Testing API.
   public :: &
        gfr_test, &
-       gfr_g2f_scalar, gfr_g2f_scalar_dp, gfr_g2f_mixing_ratio, &
-       gfr_f2g_scalar, gfr_f2g_scalar_dp, gfr_f2g_mixing_ratio_a, &
+       gfr_g2f_scalar, gfr_g2f_scalar_dp, gfr_g2f_vector, gfr_g2f_mixing_ratio, &
+       gfr_f2g_scalar, gfr_f2g_scalar_dp, gfr_f2g_vector, gfr_f2g_mixing_ratio_a, &
        gfr_f2g_mixing_ratio_b, gfr_f2g_mixing_ratio_c, gfr_f2g_dss, &
        gfr_g_make_nonnegative
 
@@ -393,7 +396,7 @@ contains
     type (element_t), intent(in) :: elem(:)
     type (GllFvRemap_t), intent(inout) :: gfr
 
-    real (kind=real_kind) :: ones(np,np)
+    real(kind=real_kind) :: ones(np,np)
     integer :: ie
 
     ones = one
@@ -427,6 +430,41 @@ contains
        f(:,:,k) = f(:,:,k)/dp_f(:,:,k)
     end do
   end subroutine gfr_g2f_scalar_dp
+
+  subroutine gfr_g2f_vector(ie, elem, gll_metdet, g, f)
+    integer, intent(in) :: ie
+    type (element_t), intent(in) :: elem(:)
+    real(kind=real_kind), intent(in) :: gll_metdet(:,:), g(:,:,:,:)
+    real(kind=real_kind), intent(out) :: f(:,:,:,:) ! (np,np,2,nlev)
+
+    real(kind=real_kind) :: wg(np,np,2), wf(np,np,2), ones(np,np)
+    integer :: k, i, j, d
+
+    ones = one
+    do k = 1, size(g,4)
+       ! sphere -> GLL ref
+       do j = 1,np
+          do i = 1,np
+             do d = 1,2
+                wg(i,j,d) = elem(ie)%D(i,j,d,1)*g(i,j,1,k) + elem(ie)%D(i,j,d,2)*g(i,j,2,k)
+             end do
+          end do
+       end do
+       ! Since we mapped to the ref element, we no longer should use the ref ->
+       ! sphere Jacobians; use 1s instead.
+       do d = 1,2
+          call gfr_g2f_remapd(gfr, ones, ones, wg(:,:,d), wf(:,:,d))
+       end do
+       ! FV ref -> sphere
+       do j = 1, gfr%nphys
+          do i = 1, gfr%nphys
+             do d = 1,2
+                f(i,j,d,k) = gfr%Dinv_f(i,j,d,1)*wf(i,j,1) + gfr%Dinv_f(i,j,d,2)*wf(i,j,2)
+             end do
+          end do
+       end do
+    end do
+  end subroutine gfr_g2f_vector
 
   subroutine gfr_g2f_mixing_ratio(ie, gll_metdet, dp_g, dp_f, qdp_g, q_f)
     integer, intent(in) :: ie
@@ -477,6 +515,39 @@ contains
        g(:,:,k) = g(:,:,k)/dp_g(:,:,k)
     end do
   end subroutine gfr_f2g_scalar_dp
+
+  subroutine gfr_f2g_vector(ie, elem, gll_metdet, g, f)
+    integer, intent(in) :: ie
+    type (element_t), intent(in) :: elem(:)
+    real(kind=real_kind), intent(in) :: gll_metdet(:,:), g(:,:,:,:)
+    real(kind=real_kind), intent(out) :: f(:,:,:,:) ! (np,np,2,nlev)
+
+    real(kind=real_kind) :: wg(np,np,2), wf(np,np,2), ones(np,np)
+    integer :: k, i, j, d
+
+    ones = one
+    do k = 1, size(g,4)
+       ! sphere -> GLL ref
+       do j = 1,np
+          do i = 1,np
+             do d = 1,2
+                wg(i,j,d) = elem(ie)%D(i,j,d,1)*g(i,j,1,k) + elem(ie)%D(i,j,d,2)*g(i,j,2,k)
+             end do
+          end do
+       end do
+       do d = 1,2
+          call gfr_f2g_remapd(gfr, ones, ones, wf(:,:,d), wg(:,:,d))
+       end do
+       ! FV ref -> sphere
+       do j = 1, gfr%nphys
+          do i = 1, gfr%nphys
+             do d = 1,2
+                f(i,j,d,k) = gfr%Dinv_f(i,j,d,1)*wf(i,j,1) + gfr%Dinv_f(i,j,d,2)*wf(i,j,2)
+             end do
+          end do
+       end do
+    end do
+  end subroutine gfr_f2g_vector
 
   subroutine gfr_f2g_mixing_ratio_a(ie, gll_metdet, dp_f, dp_g, q_f, q_g)
     integer, intent(in) :: ie
