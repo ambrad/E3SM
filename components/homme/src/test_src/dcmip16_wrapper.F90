@@ -605,8 +605,12 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      call gfr_g2f_scalar(ie, elem(ie)%metdet, dp, dp_fv)
      call gfr_g2f_scalar(ie, elem(ie)%metdet, p, p_fv)
      call gfr_g2f_scalar(ie, elem(ie)%metdet, zi(:,:,nlevp:), zi_fv(:,:,nlevp:))
+#if 0
      call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, u, u_fv)
      call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, v, v_fv)
+#else
+     call gfr_g2f_vector(ie, elem, u, v, u_fv, v_fv)
+#endif
      call gfr_g2f_mixing_ratio(ie, elem(ie)%metdet, dp, dp_fv, &
           elem(ie)%state%Qdp(:,:,:,1:3,ntQ), Q_fv(:,:,:,1:3))
 
@@ -709,10 +713,16 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      precl(:,:,ie) = wrk3(:,:,1)
 
      ! set dynamics forcing
+#if 0
      call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, u_fv - u0, wrk3)
      elem(ie)%derived%FM(:,:,1,:) = wrk3/dt
      call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, v_fv - v0, wrk3)
      elem(ie)%derived%FM(:,:,2,:) = wrk3/dt
+#else
+     call gfr_f2g_vector(ie, elem, u_fv - u0, v_fv - v0, &
+          elem(ie)%derived%FM(:,:,1,:), elem(ie)%derived%FM(:,:,2,:))
+     elem(ie)%derived%FM = elem(ie)%derived%FM/dt
+#endif
      call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, T_fv - T0, wrk3)
      elem(ie)%derived%FT(:,:,:)   = wrk3/dt
 

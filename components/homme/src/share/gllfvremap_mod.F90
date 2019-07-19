@@ -473,22 +473,24 @@ contains
     end do
   end subroutine gfr_g2f_scalar_dp
 
-  subroutine gfr_g2f_vector(ie, elem, gll_metdet, g, f)
+  subroutine gfr_g2f_vector(ie, elem, u_g, v_g, u_f, v_f)
     integer, intent(in) :: ie
     type (element_t), intent(in) :: elem(:)
-    real(kind=real_kind), intent(in) :: gll_metdet(:,:), g(:,:,:,:)
-    real(kind=real_kind), intent(out) :: f(:,:,:,:) ! (np,np,2,nlev)
+    real(kind=real_kind), intent(in) :: u_g(:,:,:), v_g(:,:,:)
+    real(kind=real_kind), intent(out) :: u_f(:,:,:), v_f(:,:,:)
 
     real(kind=real_kind) :: wg(np,np,2), wf(np,np,2), ones(np,np)
-    integer :: k, i, j, d
+    integer :: k, i, j, d, nf
 
+    nf = gfr%nphys
     ones = one
-    do k = 1, size(g,4)
+
+    do k = 1, size(u_g,3)
        ! sphere -> GLL ref
        do d = 1,2
           do j = 1,np
              do i = 1,np
-                wg(i,j,d) = elem(ie)%D(i,j,d,1)*g(i,j,1,k) + elem(ie)%D(i,j,d,2)*g(i,j,2,k)
+                wg(i,j,d) = elem(ie)%D(i,j,d,1)*u_g(i,j,k) + elem(ie)%D(i,j,d,2)*v_g(i,j,k)
              end do
           end do
        end do
@@ -499,12 +501,14 @@ contains
        end do
        ! FV ref -> sphere
        do d = 1,2
-          do j = 1, gfr%nphys
-             do i = 1, gfr%nphys
-                f(i,j,d,k) = gfr%Dinv_f(i,j,d,1,ie)*wf(i,j,1) + gfr%Dinv_f(i,j,d,2,ie)*wf(i,j,2)
+          do j = 1, nf
+             do i = 1, nf
+                wg(i,j,d) = gfr%Dinv_f(i,j,d,1,ie)*wf(i,j,1) + gfr%Dinv_f(i,j,d,2,ie)*wf(i,j,2)
              end do
           end do
        end do
+       u_f(:nf,:nf,k) = wg(:nf,:nf,1)
+       v_f(:nf,:nf,k) = wg(:nf,:nf,2)
     end do
   end subroutine gfr_g2f_vector
 
@@ -558,22 +562,24 @@ contains
     end do
   end subroutine gfr_f2g_scalar_dp
 
-  subroutine gfr_f2g_vector(ie, elem, gll_metdet, g, f)
+  subroutine gfr_f2g_vector(ie, elem, u_f, v_f, u_g, v_g)
     integer, intent(in) :: ie
     type (element_t), intent(in) :: elem(:)
-    real(kind=real_kind), intent(in) :: gll_metdet(:,:), g(:,:,:,:)
-    real(kind=real_kind), intent(out) :: f(:,:,:,:) ! (np,np,2,nlev)
+    real(kind=real_kind), intent(in) :: u_f(:,:,:), v_f(:,:,:)
+    real(kind=real_kind), intent(out) :: u_g(:,:,:), v_g(:,:,:)
 
     real(kind=real_kind) :: wg(np,np,2), wf(np,np,2), ones(np,np)
-    integer :: k, i, j, d
+    integer :: k, i, j, d, nf
 
+    nf = gfr%nphys
     ones = one
-    do k = 1, size(g,4)
+
+    do k = 1, size(u_g,3)
        ! sphere -> GLL ref
        do d = 1,2
-          do j = 1,np
-             do i = 1,np
-                wg(i,j,d) = elem(ie)%D(i,j,d,1)*g(i,j,1,k) + elem(ie)%D(i,j,d,2)*g(i,j,2,k)
+          do j = 1,nf
+             do i = 1,nf
+                wf(i,j,d) = elem(ie)%D(i,j,d,1)*u_f(i,j,k) + elem(ie)%D(i,j,d,2)*v_f(i,j,k)
              end do
           end do
        end do
@@ -582,12 +588,14 @@ contains
        end do
        ! FV ref -> sphere
        do d = 1,2
-          do j = 1, gfr%nphys
-             do i = 1, gfr%nphys
-                f(i,j,d,k) = gfr%Dinv_f(i,j,d,1,ie)*wf(i,j,1) + gfr%Dinv_f(i,j,d,2,ie)*wf(i,j,2)
+          do j = 1,np
+             do i = 1,np
+                wf(i,j,d) = gfr%Dinv_f(i,j,d,1,ie)*wg(i,j,1) + gfr%Dinv_f(i,j,d,2,ie)*wg(i,j,2)
              end do
           end do
        end do
+       u_g(:,:,k) = wf(:,:,1)
+       v_g(:,:,k) = wf(:,:,2)
     end do
   end subroutine gfr_f2g_vector
 
