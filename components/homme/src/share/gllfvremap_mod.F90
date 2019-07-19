@@ -4,6 +4,7 @@
 
 !todo
 ! - checker routine callable from dcmip1
+! - test vector_dp routines: conservation
 ! - online coords
 ! - toy chem in dcmip1
 ! - rho in u,v?
@@ -21,6 +22,7 @@ module gllfvremap_mod
   use kinds, only: real_kind
   use dimensions_mod, only: np, npsq, qsize, nelemd
   use element_mod, only: element_t
+  use coordinate_systems_mod, only: spherical_polar_t
 
   implicit none
 
@@ -54,6 +56,8 @@ module gllfvremap_mod
           D_f(:,:,:,:,:), &   ! (nphys,nphys,2,2,nelemd)
           ! Inverse of D_f
           Dinv_f(:,:,:,:,:)
+     type (spherical_polar_t), allocatable :: &
+          spherep_f(:,:,:) ! (nphys,nphys,nelemd)
   end type GllFvRemap_t
 
   type (GllFvRemap_t), private :: gfr
@@ -114,14 +118,15 @@ contains
     call gfr_init_f2g_remapd(gfr, R)
 
     allocate(gfr%fv_metdet(nphys,nphys,nelemd), &
-         gfr%D_f(nphys,nphys,2,2,nelemd), gfr%Dinv_f(nphys,nphys,2,2,nelemd))
+         gfr%D_f(nphys,nphys,2,2,nelemd), gfr%Dinv_f(nphys,nphys,2,2,nelemd), &
+         gfr%spherep_f(nphys,nphys,nelemd))
     call gfr_init_fv_metdet(elem, gfr)
-    call gfr_init_Df(elem, gfr)
+    call gfr_init_geometry(elem, gfr)
   end subroutine gfr_init
 
   subroutine gfr_finish()
     if (allocated(gfr%fv_metdet)) then
-       deallocate(gfr%fv_metdet, gfr%D_f, gfr%Dinv_f)
+       deallocate(gfr%fv_metdet, gfr%D_f, gfr%Dinv_f, gfr%spherep_f)
     end if
   end subroutine gfr_finish
 
@@ -416,8 +421,8 @@ contains
     a = two*((real(i-1, real_kind) + half)/real(nphys, real_kind)) - one
   end subroutine gfr_f_ref_coord
 
-  subroutine gfr_init_Df(elem, gfr)
-    use cube_mod, only: Dmap
+  subroutine gfr_init_geometry(elem, gfr)
+    use cube_mod, only: Dmap, ref2sphere
     use control_mod, only: cubed_sphere_map
 
     type (element_t), intent(in) :: elem(:)
@@ -433,18 +438,23 @@ contains
           call gfr_f_ref_coord(nf, j, b)
           do i = 1,nf
              call gfr_f_ref_coord(nf, i, a)
+
              call Dmap(wrk, a, b, elem(ie)%corners3D, cubed_sphere_map, elem(ie)%cartp, &
                   elem(ie)%facenum)
              gfr%D_f(i,j,:,:,ie) = wrk
+
              det = wrk(1,1)*wrk(2,2) - wrk(1,2)*wrk(2,1)
              gfr%Dinv_f(i,j,1,1,ie) =  wrk(2,2)/det
              gfr%Dinv_f(i,j,1,2,ie) = -wrk(1,2)/det
              gfr%Dinv_f(i,j,2,1,ie) = -wrk(2,1)/det
              gfr%Dinv_f(i,j,2,2,ie) =  wrk(1,1)/det
+
+             gfr%spherep_f(i,j,ie) = ref2sphere(a, b, elem(ie)%corners3D, cubed_sphere_map, &
+                  elem(ie)%corners, elem(ie)%facenum)
           end do
        end do
     end do
-  end subroutine gfr_init_Df
+  end subroutine gfr_init_geometry
 
   subroutine gfr_g2f_scalar(ie, gll_metdet, g, f)
     integer, intent(in) :: ie
