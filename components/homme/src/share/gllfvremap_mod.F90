@@ -86,7 +86,7 @@ contains
 
     real(real_kind) :: R(npsq,nphys_max*nphys_max)
 
-    if (hybrid%masterthread) print *, 'gfr> init nphys',nphys
+    if (hybrid%masterthread) print *, 'gfr> init nphys', nphys
 
     if (nphys > np) then
        ! The FV -> GLL map is defined only if nphys <= np. If we ever are
@@ -443,9 +443,9 @@ contains
     ones = one
     do k = 1, size(g,4)
        ! sphere -> GLL ref
-       do j = 1,np
-          do i = 1,np
-             do d = 1,2
+       do d = 1,2
+          do j = 1,np
+             do i = 1,np
                 wg(i,j,d) = elem(ie)%D(i,j,d,1)*g(i,j,1,k) + elem(ie)%D(i,j,d,2)*g(i,j,2,k)
              end do
           end do
@@ -456,9 +456,9 @@ contains
           call gfr_g2f_remapd(gfr, ones, ones, wg(:,:,d), wf(:,:,d))
        end do
        ! FV ref -> sphere
-       do j = 1, gfr%nphys
-          do i = 1, gfr%nphys
-             do d = 1,2
+       do d = 1,2
+          do j = 1, gfr%nphys
+             do i = 1, gfr%nphys
                 f(i,j,d,k) = gfr%Dinv_f(i,j,d,1)*wf(i,j,1) + gfr%Dinv_f(i,j,d,2)*wf(i,j,2)
              end do
           end do
@@ -528,9 +528,9 @@ contains
     ones = one
     do k = 1, size(g,4)
        ! sphere -> GLL ref
-       do j = 1,np
-          do i = 1,np
-             do d = 1,2
+       do d = 1,2
+          do j = 1,np
+             do i = 1,np
                 wg(i,j,d) = elem(ie)%D(i,j,d,1)*g(i,j,1,k) + elem(ie)%D(i,j,d,2)*g(i,j,2,k)
              end do
           end do
@@ -539,9 +539,9 @@ contains
           call gfr_f2g_remapd(gfr, ones, ones, wf(:,:,d), wg(:,:,d))
        end do
        ! FV ref -> sphere
-       do j = 1, gfr%nphys
-          do i = 1, gfr%nphys
-             do d = 1,2
+       do d = 1,2
+          do j = 1, gfr%nphys
+             do i = 1, gfr%nphys
                 f(i,j,d,k) = gfr%Dinv_f(i,j,d,1)*wf(i,j,1) + gfr%Dinv_f(i,j,d,2)*wf(i,j,2)
              end do
           end do
@@ -939,7 +939,8 @@ contains
        if (rd /= rd .or. rd > 1e-15) print *, 'gfr> nonnegative', ie, mass0, mass1
     end do
 
-    ! For convergence testing.
+    ! For convergence testing. Run this testing routine with a sequence of ne
+    ! values and plot log l2 error vs log ne.
     allocate(Qdp_fv(gfr%nphys, gfr%nphys, nets:nete), ps_v_fv(gfr%nphys, gfr%nphys, nets:nete))
     allocate(qmins(nlev,qsize,nets:nete), qmaxs(nlev,qsize,nets:nete))
     do ilimit = 0,1
