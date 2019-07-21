@@ -160,6 +160,7 @@ subroutine dcmip2016_test1_pg(elem,hybrid,hvcoord,nets,nete)
   !$omp barrier
 #endif
   call dcmip2016_test1(elem,hybrid,hvcoord,nets,nete)
+  sample_period = 3600*24
 end subroutine dcmip2016_test1_pg
 
 !_____________________________________________________________________
@@ -542,6 +543,7 @@ subroutine dcmip2016_test1_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl)
 end subroutine
 
 subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl)
+  use reduction_mod, only: ParallelMin, ParallelMax
   use gllfvremap_mod
 
   ! to DSS precl
@@ -572,8 +574,9 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   real(rl), dimension(nf,nf,nlev,qsize) :: Q_fv, Q0_fv
   real(rl), dimension(nf,nf,nlevp) :: phi_i, zi_fv
   real(rl), dimension(nf,nf) :: delta_ps
-  real(rl) :: precl_fv(nf,nf,1)
+  real(rl) :: precl_fv(nf,nf,1), rcd(6)
   real(rl), allocatable :: qmin(:,:,:), qmax(:,:,:)
+  integer :: count = 0
 
   integer :: pbl_type, prec_type, qi
   integer, parameter :: test = 1
@@ -688,6 +691,20 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      ! convert from theta to T w.r.t. new model state
      ! assume hydrostatic pressure pi changed by qv forcing
      ! assume NH pressure perturbation unchanged
+#if 1
+     ! make delta_ps 0 by scaling qv so that total column qv change is 0.
+     wrk3(:nf,:nf,1) = sum((rho_dry_fv/rho_fv)*dp_fv*Q_fv(:,:,:,iqv), 3)
+     wrk3(:nf,:nf,2) = sum((rho_dry_fv/rho_fv)*dp_fv*Q0_fv(:,:,:,iqv), 3)
+     do j=1,nf
+        do i=1,nf
+           do k=1,nlev
+              if (wrk3(i,j,1) > 0) then
+                 Q_fv(i,j,k,iqv) = Q_fv(i,j,k,iqv)*(wrk3(i,j,2)/wrk3(i,j,1))
+              end if
+           end do
+        end do
+     end do
+#endif
      delta_ps = sum((rho_dry_fv/rho_fv)*dp_fv*(Q_fv(:,:,:,iqv) - Q0_fv(:,:,:,iqv)), 3)
      do k=1,nlev
         p_fv(:,:,k) = p_fv(:,:,k) + hvcoord%hybm(k)*delta_ps(:,:)
@@ -735,15 +752,35 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   enddo
 
   call gfr_f2g_mixing_ratio_b(hybrid, nets, nete, qmin, qmax)
+  rcd(1) = 1; rcd(2) = -1; rcd(3) = 1; rcd(4) = -1; rcd(5) = 1; rcd(6) = -1
   do ie = nets,nete
      ! just for dp.
      call get_state(u,v,w,T,p,dp,ps,rho,z,zi,g,elem(ie),hvcoord,nt,ntQ)
      call gfr_f2g_mixing_ratio_c(ie, elem, qmin(:,1:5,ie), qmax(:,1:5,ie), dp, &
           elem(ie)%state%Q(:,:,:,1:5), elem(ie)%derived%FQ(:,:,:,1:5))
+     wrk3 = elem(ie)%state%Q(:,:,:,4) + elem(ie)%derived%FQ(:,:,:,4)
+     rcd(1) = min(rcd(1), minval(wrk3))
+     rcd(2) = max(rcd(2), maxval(wrk3))
+     wrk3 = elem(ie)%state%Q(:,:,:,5) + elem(ie)%derived%FQ(:,:,:,5)
+     rcd(3) = min(rcd(3), minval(wrk3))
+     rcd(4) = max(rcd(4), maxval(wrk3))
+     wrk3 = 2*wrk3 + elem(ie)%state%Q(:,:,:,4) + elem(ie)%derived%FQ(:,:,:,4)
+     rcd(5) = min(rcd(5), minval(wrk3))
+     rcd(6) = max(rcd(6), maxval(wrk3))
      do i = 1,5
         elem(ie)%derived%FQ(:,:,:,i) = dp*elem(ie)%derived%FQ(:,:,:,i)/dt
      end do
   end do
+  rcd(1) = ParallelMin(rcd(1), hybrid)
+  rcd(2) = ParallelMax(rcd(2), hybrid)
+  rcd(3) = ParallelMin(rcd(3), hybrid)
+  rcd(4) = ParallelMax(rcd(4), hybrid)
+  rcd(5) = ParallelMin(rcd(5), hybrid)
+  rcd(6) = ParallelMax(rcd(6), hybrid)
+  if (hybrid%masterthread .and. modulo(count,10) == 0) then
+     write(*,'(i5,es11.3,es11.3,es11.3,es11.3,es11.3,es11.3)'), count, rcd
+  end if
+  count = count + 1
   call gfr_f2g_dss(hybrid, elem, nets, nete)
   deallocate(qmin, qmax)
 
