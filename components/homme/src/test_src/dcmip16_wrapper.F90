@@ -568,7 +568,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
        wrk(np,np), rd, wrk3(np,np,nlev)
 
   real(rl), dimension(nf,nf,nlev) :: dp_fv, p_fv, u_fv, v_fv, T_fv, exner_kess_fv, &
-       theta_kess_fv, Rstar, rho_fv, rho_dry_fv, u0, v0, T0, z_fv, ddt_cl, ddt_cl2
+       theta_kess_fv, Rstar, rho_fv, rho_dry_fv, u0, v0, theta_kess0, z_fv, ddt_cl, ddt_cl2
   real(rl), dimension(nf,nf,nlev,qsize) :: Q_fv, Q0_fv
   real(rl), dimension(nf,nf,nlevp) :: phi_i, zi_fv
   real(rl), dimension(nf,nf) :: delta_ps
@@ -603,26 +603,17 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      ! GLL -> FV
      call gfr_g2f_scalar(ie, elem(ie)%metdet, dp, dp_fv)
      call gfr_g2f_scalar(ie, elem(ie)%metdet, p, p_fv)
+     call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, theta_kess, theta_kess_fv)
      call gfr_g2f_scalar(ie, elem(ie)%metdet, zi(:,:,nlevp:), zi_fv(:,:,nlevp:))
      call gfr_g2f_vector_dp(ie, elem, dp, dp_fv, u, v, u_fv, v_fv)
      call gfr_g2f_mixing_ratio(ie, elem(ie)%metdet, dp, dp_fv, &
           elem(ie)%state%Qdp(:,:,:,1:5,ntQ), Q_fv(:,:,:,1:5))
 
-     ! GLL th -> thv
-     theta_kess = theta_kess*(one + (Rwater_vapor/Rgas - one)* &
-          (elem(ie)%state%Qdp(:,:,:,iqv,ntQ)/dp))
-     call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, theta_kess, theta_kess_fv)
      exner_kess_fv = (p_fv/p0)**(Rgas/Cp)
-     ! FV thv -> th
-     theta_kess_fv = theta_kess_fv/(one + (Rwater_vapor/Rgas - one)*Q_fv(:,:,:,iqv))
-     ! FV th -> T
-     T_fv = exner_kess_fv*theta_kess_fv
+     T_fv = theta_kess_fv*exner_kess_fv
 
-     ! Rederive the remaining vars so they are self-consistent, with hydrostatic
-     ! assumption.
-     !   I tested this by staying on the GLL grid, and I find that < ~1e-15 rel
-     ! diffs in rho, z, zi make precl diff at relative 1e-5, qv at 1e-9, u at
-     ! 1e-10 starting at day ~15.
+     ! Rederive the remaining vars so they are self-consistent; use
+     ! hydrostatic assumption.
      if (use_moisture) then
         Rstar = Rgas + (Rwater_vapor - Rgas)*Q_fv(:,:,:,iqv)
      else
@@ -648,7 +639,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      end do
 
      ! save un-forced prognostics
-     u0=u_fv; v0=v_fv; T0=T_fv; Q0_fv = Q_fv
+     u0=u_fv; v0=v_fv; Q0_fv = Q_fv; theta_kess0 = theta_kess_fv
 
      ! apply forcing to columns
      do j=1,nf
@@ -703,8 +694,8 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      call gfr_f2g_vector_dp(ie, elem, dp_fv, dp, u_fv - u0, v_fv - v0, &
           elem(ie)%derived%FM(:,:,1,:), elem(ie)%derived%FM(:,:,2,:))
      elem(ie)%derived%FM = elem(ie)%derived%FM/dt
-     call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, T_fv - T0, wrk3)
-     elem(ie)%derived%FT(:,:,:) = wrk3/dt
+     call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, theta_kess_fv - theta_kess0, wrk3)
+     elem(ie)%derived%FT(:,:,:) = wrk3*exner_kess/dt
 
      ! set tracer-mass forcing.
      Q0_fv(:,:,:,1:3) = Q_fv(:,:,:,1:3) - Q0_fv(:,:,:,1:3)
