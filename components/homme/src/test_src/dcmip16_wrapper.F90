@@ -593,19 +593,22 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   real(rl), dimension(nlev)       :: u_c,v_c,p_c,qv_c,qc_c,qr_c,rho_c,z_c, th_c
   real(rl) :: max_w, max_precl, min_ps
   real(rl) :: lat, lon, dz_top(np,np),zi(np,np,nlevp),zi_c(nlevp), ps(np,np), &
-       wrk(np,np), rd, wrk3(np,np,nlev)
+       wrk(np,np), rd, wrk3(np,np,nlev), delta_ps(np,np)
 
   real(rl), dimension(nf,nf,nlev) :: dp_fv, p_fv, u_fv, v_fv, T_fv, exner_kess_fv, &
-       theta_kess_fv, Rstar, rho_fv, rho_dry_fv, u0, v0, T0, z_fv, ddt_cl, ddt_cl2
+       theta_kess_fv, Rstar, rho_fv, rho_dry_fv, u0, v0, T0, z_fv, ddt_cl, ddt_cl2, theta_kess0
   real(rl), dimension(nf,nf,nlev,qsize) :: Q_fv, Q0_fv
   real(rl), dimension(nf,nf,nlevp) :: phi_i, zi_fv
-  real(rl), dimension(nf,nf) :: delta_ps
+  real(rl), dimension(nf,nf) :: delta_ps_fv
   real(rl) :: precl_fv(nf,nf,1), rcd(6)
   real(rl), allocatable :: qmin(:,:,:), qmax(:,:,:)
   integer :: count = 0
+  logical :: convert_FT
 
   integer :: pbl_type, prec_type, qi
   integer, parameter :: test = 1
+
+  convert_FT = .false.
 
   prec_type = dcmip16_prec_type
   pbl_type  = dcmip16_pbl_type
@@ -637,7 +640,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      call gfr_g2f_mixing_ratio(ie, elem(ie)%metdet, dp, dp_fv, &
           elem(ie)%state%Qdp(:,:,:,1:5,ntQ), Q_fv(:,:,:,1:5))
 
-#if 1
+#if 0
      ! GLL th -> thv
      theta_kess = theta_kess*(one + (Rwater_vapor/Rgas - one)* &
           (elem(ie)%state%Qdp(:,:,:,iqv,ntQ)/dp))
@@ -648,16 +651,13 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      ! FV th -> T
      T_fv = exner_kess_fv*theta_kess_fv
 #else
-     call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, T, T_fv)
+     call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, theta_kess, theta_kess_fv)
      exner_kess_fv = (p_fv/p0)**(Rgas/Cp)
-     theta_kess_fv = T_fv/exner_kess_fv
+     T_fv = theta_kess_fv*exner_kess_fv
 #endif
 
-     ! Rederive the remaining vars so they are self-consistent, with hydrostatic
-     ! assumption.
-     !   I tested this by staying on the GLL grid, and I find that < ~1e-15 rel
-     ! diffs in rho, z, zi make precl diff at relative 1e-5, qv at 1e-9, u at
-     ! 1e-10 starting at day ~15.
+     ! Rederive the remaining vars so they are self-consistent; use
+     ! hydrostatic assumption.
      if (use_moisture) then
         Rstar = Rgas + (Rwater_vapor - Rgas)*Q_fv(:,:,:,iqv)
      else
@@ -683,7 +683,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      end do
 
      ! save un-forced prognostics
-     u0=u_fv; v0=v_fv; T0=T_fv; Q0_fv = Q_fv
+     u0=u_fv; v0=v_fv; T0=T_fv; Q0_fv = Q_fv; theta_kess0 = theta_kess_fv
 
      ! apply forcing to columns
      do j=1,nf
@@ -711,12 +711,12 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
            Q_fv(i,j,:,2) = qc_c(nlev:1:-1)
            Q_fv(i,j,:,3) = qr_c(nlev:1:-1)
            theta_kess_fv(i,j,:) = th_c(nlev:1:-1)
-           !p_fv(i,j,:) = p_c(nlev:1:-1)
+           p_fv(i,j,nlev:1:-1) = p_c(nlev:1:-1)
 
            call gfr_get_latlon(ie, i, j, lat, lon)
            do k=1,nlev
               call tendency_terminator(lat*rad2dg, lon*rad2dg, Q_fv(i,j,k,4), Q_fv(i,j,k,5), &
-                   dt, ddt_cl(i,j,k), ddt_cl2(i,j,k))
+                   dt, ddt_cl(i,j,k), ddt_cl2(i,j,k))              
            enddo
         enddo
      enddo
@@ -729,27 +729,51 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
           elem(ie)%derived%FM(:,:,1,:), elem(ie)%derived%FM(:,:,2,:))
      elem(ie)%derived%FM = elem(ie)%derived%FM/dt
 
-     delta_ps = sum((rho_dry_fv/rho_fv)*dp_fv*(Q_fv(:,:,:,iqv) - Q0_fv(:,:,:,iqv)), 3)
+     delta_ps_fv = sum((rho_dry_fv/rho_fv)*dp_fv*(Q_fv(:,:,:,iqv) - Q0_fv(:,:,:,iqv)), 3)
 #if 0
+     ! bad
      do k=1,nlev
-        p_fv(:,:,k) = p_fv(:,:,k) + hvcoord%hybm(k)*delta_ps(:,:)
+        p_fv(:,:,k) = p_fv(:,:,k) + hvcoord%hybm(k)*delta_ps_fv(:,:)
      enddo
      exner_kess_fv = (p_fv/p0)**(Rgas/Cp)
      T_fv = exner_kess_fv*theta_kess_fv
      call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, T_fv - T0, wrk3)
      elem(ie)%derived%FT(:,:,:) = wrk3/dt
-#else
-     wrk3(:nf,:nf,1) = delta_ps
+#elif 0
+     ! good
+     wrk3(:nf,:nf,1) = delta_ps_fv
      call gfr_f2g_scalar(ie, elem(ie)%metdet, wrk3(:,:,:1), wrk3(:,:,2:2))
-     wrk = wrk3(:,:,2) ! GLL delta_ps
+     delta_ps = wrk3(:,:,2)
      do k=1,nlev
-        p(:,:,k) = p(:,:,k) + hvcoord%hybm(k)*wrk
+        p(:,:,k) = p(:,:,k) + hvcoord%hybm(k)*delta_ps
      enddo
      T_fv = exner_kess_fv*theta_kess_fv
      call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, T_fv - T0, wrk3)
      theta_kess = (T + wrk3)/exner_kess
      exner_kess = (p/p0)**(Rgas/Cp)
      elem(ie)%derived%FT(:,:,:) = (theta_kess*exner_kess - T)/dt
+#elif 1
+     ! also good
+     call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, theta_kess_fv - theta_kess0, wrk3)
+     elem(ie)%derived%FT(:,:,:) = wrk3*exner_kess/dt
+#elif 0
+     ! bad
+     call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, theta_kess_fv - theta_kess0, wrk3)
+     wrk3(:nf,:nf,1) = delta_ps_fv
+     call gfr_f2g_scalar(ie, elem(ie)%metdet, wrk3(:,:,:1), wrk3(:,:,2:2))
+     delta_ps = wrk3(:,:,2)
+     do k=1,nlev
+        p(:,:,k) = p(:,:,k) + hvcoord%hybm(k)*delta_ps
+     enddo
+     exner_kess = (p/p0)**(Rgas/Cp)
+     elem(ie)%derived%FT(:,:,:) = wrk3*exner_kess/dt
+#else
+     ! bad
+     theta_kess0 = theta_kess0*(one + (Rwater_vapor/Rgas - one)*Q0_fv(:,:,:,iqv))
+     theta_kess_fv = theta_kess_fv*(one + (Rwater_vapor/Rgas - one)*Q_fv(:,:,:,iqv))
+     call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, theta_kess_fv - theta_kess0, wrk3)
+     elem(ie)%derived%FT(:,:,:) = (wrk3*exner_kess)/dt
+     convert_FT = .true.
 #endif
 
      ! set tracer-mass forcing.
@@ -800,18 +824,26 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
         elem(ie)%derived%FQ(:,:,:,i) = dp*elem(ie)%derived%FQ(:,:,:,i)/dt
      end do
   end do
-  rcd(1) = ParallelMin(rcd(1), hybrid)
-  rcd(2) = ParallelMax(rcd(2), hybrid)
-  rcd(3) = ParallelMin(rcd(3), hybrid)
-  rcd(4) = ParallelMax(rcd(4), hybrid)
-  rcd(5) = ParallelMin(rcd(5), hybrid)
-  rcd(6) = ParallelMax(rcd(6), hybrid)
-  if (hybrid%masterthread .and. modulo(count,10) == 0) then
-     write(*,'(i5,es11.3,es11.3,es11.3,es11.3,es11.3,es11.3)'), count, rcd
+  if (modulo(count,50) == 0) then
+     rcd(1) = ParallelMin(rcd(1), hybrid)
+     rcd(2) = ParallelMax(rcd(2), hybrid)
+     rcd(3) = ParallelMin(rcd(3), hybrid)
+     rcd(4) = ParallelMax(rcd(4), hybrid)
+     rcd(5) = ParallelMin(rcd(5), hybrid)
+     rcd(6) = ParallelMax(rcd(6), hybrid)
+     if (hybrid%masterthread) &
+          write(*,'(i5,es11.3,es11.3,es11.3,es11.3,es11.3,es11.3)'), count, rcd
   end if
   count = count + 1
   call gfr_f2g_dss(hybrid, elem, nets, nete)
   deallocate(qmin, qmax)
+
+  if (convert_FT) then
+     do ie = nets,nete
+        elem(ie)%derived%FT(:,:,:) = elem(ie)%derived%FT(:,:,:)/ &
+             (one + (Rwater_vapor/Rgas - one)*((elem(ie)%state%Qdp(:,:,:,iqv,ntQ) + dt*elem(ie)%derived%FQ(:,:,:,iqv))/dp))
+     end do
+  end if
 
   ! DSS precl
   do ie = nets,nete
