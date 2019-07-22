@@ -144,7 +144,7 @@ subroutine dcmip2016_test1(elem,hybrid,hvcoord,nets,nete)
   sample_period = 1800.0 ! sec
   !print *,"min thetav = ",min_thetav, "max thetav=",max_thetav
 
-
+  sample_period = 3600*24
 end subroutine
 
 subroutine dcmip2016_test1_pg(elem,hybrid,hvcoord,nets,nete)
@@ -429,6 +429,9 @@ subroutine dcmip2016_test1_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl)
   integer :: pbl_type, prec_type, qi
   integer, parameter :: test = 1
 
+  real(rl) :: rcd(6), wrk3(np,np,nlev)
+  integer :: count = 0
+
   prec_type = dcmip16_prec_type
   pbl_type  = dcmip16_pbl_type
 
@@ -537,6 +540,29 @@ subroutine dcmip2016_test1_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl)
     min_ps    = min( min_ps,    minval(ps) )
 
   enddo
+
+  rcd(1) = 1; rcd(2) = -1; rcd(3) = 1; rcd(4) = -1; rcd(5) = 1; rcd(6) = -1
+  do ie = nets,nete
+     wrk3 = elem(ie)%state%Q(:,:,:,4) + dt*elem(ie)%derived%FQ(:,:,:,4)/dp
+     rcd(1) = min(rcd(1), minval(wrk3))
+     rcd(2) = max(rcd(2), maxval(wrk3))
+     wrk3 = elem(ie)%state%Q(:,:,:,5) + dt*elem(ie)%derived%FQ(:,:,:,5)/dp
+     rcd(3) = min(rcd(3), minval(wrk3))
+     rcd(4) = max(rcd(4), maxval(wrk3))
+     wrk3 = 2*wrk3 + elem(ie)%state%Q(:,:,:,4) + dt*elem(ie)%derived%FQ(:,:,:,4)/dp
+     rcd(5) = min(rcd(5), minval(wrk3))
+     rcd(6) = max(rcd(6), maxval(wrk3))
+  end do
+  rcd(1) = ParallelMin(rcd(1), hybrid)
+  rcd(2) = ParallelMax(rcd(2), hybrid)
+  rcd(3) = ParallelMin(rcd(3), hybrid)
+  rcd(4) = ParallelMax(rcd(4), hybrid)
+  rcd(5) = ParallelMin(rcd(5), hybrid)
+  rcd(6) = ParallelMax(rcd(6), hybrid)
+  if (hybrid%masterthread .and. modulo(count,10) == 0) then
+     write(*,'(i5,es11.3,es11.3,es11.3,es11.3,es11.3,es11.3)'), count, rcd
+  end if
+  count = count + 1
 
   call dcmip2016_append_measurements(max_w,max_precl,min_ps,tl,hybrid)
 
@@ -691,7 +717,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      ! convert from theta to T w.r.t. new model state
      ! assume hydrostatic pressure pi changed by qv forcing
      ! assume NH pressure perturbation unchanged
-#if 1
+#if 0
      ! make delta_ps 0 by scaling qv so that total column qv change is 0.
      wrk3(:nf,:nf,1) = sum((rho_dry_fv/rho_fv)*dp_fv*Q_fv(:,:,:,iqv), 3)
      wrk3(:nf,:nf,2) = sum((rho_dry_fv/rho_fv)*dp_fv*Q0_fv(:,:,:,iqv), 3)
@@ -707,6 +733,8 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
 #endif
      delta_ps = sum((rho_dry_fv/rho_fv)*dp_fv*(Q_fv(:,:,:,iqv) - Q0_fv(:,:,:,iqv)), 3)
      do k=1,nlev
+        !amb If this line is removed, the toy-chem problem goes away
+        ! or is substantially reduced.
         p_fv(:,:,k) = p_fv(:,:,k) + hvcoord%hybm(k)*delta_ps(:,:)
      enddo
      exner_kess_fv = (p_fv/p0)**(Rgas/Cp)
