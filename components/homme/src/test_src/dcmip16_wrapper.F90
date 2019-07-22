@@ -637,6 +637,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      call gfr_g2f_mixing_ratio(ie, elem(ie)%metdet, dp, dp_fv, &
           elem(ie)%state%Qdp(:,:,:,1:5,ntQ), Q_fv(:,:,:,1:5))
 
+#if 1
      ! GLL th -> thv
      theta_kess = theta_kess*(one + (Rwater_vapor/Rgas - one)* &
           (elem(ie)%state%Qdp(:,:,:,iqv,ntQ)/dp))
@@ -646,6 +647,11 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      theta_kess_fv = theta_kess_fv/(one + (Rwater_vapor/Rgas - one)*Q_fv(:,:,:,iqv))
      ! FV th -> T
      T_fv = exner_kess_fv*theta_kess_fv
+#else
+     call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, T, T_fv)
+     exner_kess_fv = (p_fv/p0)**(Rgas/Cp)
+     theta_kess_fv = T_fv/exner_kess_fv
+#endif
 
      ! Rederive the remaining vars so they are self-consistent, with hydrostatic
      ! assumption.
@@ -705,6 +711,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
            Q_fv(i,j,:,2) = qc_c(nlev:1:-1)
            Q_fv(i,j,:,3) = qr_c(nlev:1:-1)
            theta_kess_fv(i,j,:) = th_c(nlev:1:-1)
+           !p_fv(i,j,:) = p_c(nlev:1:-1)
 
            call gfr_get_latlon(ie, i, j, lat, lon)
            do k=1,nlev
@@ -714,42 +721,36 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
         enddo
      enddo
 
-     ! convert from theta to T w.r.t. new model state
-     ! assume hydrostatic pressure pi changed by qv forcing
-     ! assume NH pressure perturbation unchanged
-#if 0
-     ! make delta_ps 0 by scaling qv so that total column qv change is 0.
-     wrk3(:nf,:nf,1) = sum((rho_dry_fv/rho_fv)*dp_fv*Q_fv(:,:,:,iqv), 3)
-     wrk3(:nf,:nf,2) = sum((rho_dry_fv/rho_fv)*dp_fv*Q0_fv(:,:,:,iqv), 3)
-     do j=1,nf
-        do i=1,nf
-           do k=1,nlev
-              if (wrk3(i,j,1) > 0) then
-                 Q_fv(i,j,k,iqv) = Q_fv(i,j,k,iqv)*(wrk3(i,j,2)/wrk3(i,j,1))
-              end if
-           end do
-        end do
-     end do
-#endif
-     delta_ps = sum((rho_dry_fv/rho_fv)*dp_fv*(Q_fv(:,:,:,iqv) - Q0_fv(:,:,:,iqv)), 3)
-     do k=1,nlev
-        !amb If this line is removed, the toy-chem problem goes away
-        ! or is substantially reduced.
-        p_fv(:,:,k) = p_fv(:,:,k) + hvcoord%hybm(k)*delta_ps(:,:)
-     enddo
-     exner_kess_fv = (p_fv/p0)**(Rgas/Cp)
-     T_fv = exner_kess_fv*theta_kess_fv
-
      call gfr_f2g_scalar(ie, elem(ie)%metdet, precl_fv, wrk3(:,:,:1))
      call gfr_g_make_nonnegative(elem(ie)%metdet, wrk3(:,:,:1))
      precl(:,:,ie) = wrk3(:,:,1)
 
-     ! set dynamics forcing
      call gfr_f2g_vector_dp(ie, elem, dp_fv, dp, u_fv - u0, v_fv - v0, &
           elem(ie)%derived%FM(:,:,1,:), elem(ie)%derived%FM(:,:,2,:))
      elem(ie)%derived%FM = elem(ie)%derived%FM/dt
+
+     delta_ps = sum((rho_dry_fv/rho_fv)*dp_fv*(Q_fv(:,:,:,iqv) - Q0_fv(:,:,:,iqv)), 3)
+#if 0
+     do k=1,nlev
+        p_fv(:,:,k) = p_fv(:,:,k) + hvcoord%hybm(k)*delta_ps(:,:)
+     enddo
+     exner_kess_fv = (p_fv/p0)**(Rgas/Cp)
+     T_fv = exner_kess_fv*theta_kess_fv
      call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, T_fv - T0, wrk3)
      elem(ie)%derived%FT(:,:,:) = wrk3/dt
+#else
+     wrk3(:nf,:nf,1) = delta_ps
+     call gfr_f2g_scalar(ie, elem(ie)%metdet, wrk3(:,:,:1), wrk3(:,:,2:2))
+     wrk = wrk3(:,:,2) ! GLL delta_ps
+     do k=1,nlev
+        p(:,:,k) = p(:,:,k) + hvcoord%hybm(k)*wrk
+     enddo
+     T_fv = exner_kess_fv*theta_kess_fv
+     call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, T_fv - T0, wrk3)
+     theta_kess = (T + wrk3)/exner_kess
+     exner_kess = (p/p0)**(Rgas/Cp)
+     elem(ie)%derived%FT(:,:,:) = (theta_kess*exner_kess - T)/dt
+#endif
 
      ! set tracer-mass forcing.
      Q0_fv(:,:,:,1:3) = Q_fv(:,:,:,1:3) - Q0_fv(:,:,:,1:3)
