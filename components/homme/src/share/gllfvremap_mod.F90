@@ -8,6 +8,7 @@
 ! - area correction: alpha
 ! - topo roughness
 ! - np4-np2 instead of np4-pg1
+! - halo exchange buffers
 
 module gllfvremap_mod
   ! High-order, mass-conserving, optionally shape-preserving
