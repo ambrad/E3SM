@@ -594,7 +594,7 @@ subroutine toy_print(hybrid, rcd)
   count = count + 1
 end subroutine toy_print
 
-#if 1
+#if 0
 subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl)
   use gllfvremap_mod
 
@@ -852,7 +852,6 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   do ie = nets,nete
      precl(:,:,ie) = -one
 
-     ! get current element state
      T_fv = reshape(pg_data%T(:,:,ie), (/nf,nf,nlev/))
      u_fv = reshape(pg_data%uv(:,1,:,ie), (/nf,nf,nlev/))
      v_fv = reshape(pg_data%uv(:,2,:,ie), (/nf,nf,nlev/))
@@ -960,7 +959,11 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      min_ps    = min( min_ps,    minval(elem(i)%state%ps_v(:,:,nt)) )
   enddo
 
-  call gfr_fv_phys_to_dyn(hybrid, elem, pg_data%ps, pg_data%T, pg_data%uv, pg_data%q, nets, nete)
+  call gfr_fv_phys_to_dyn(hybrid, nt, hvcoord, elem, pg_data%ps, pg_data%T, &
+       pg_data%uv, pg_data%q, nets, nete)
+  ! dp_coupling doesn't do the DSS; stepon does. Thus, this DCMIP test
+  ! also needs to do its own DSS.
+  call gfr_f2g_dss(hybrid, elem, nets, nete)
 
   call toy_init(rcd)
   do ie = nets,nete

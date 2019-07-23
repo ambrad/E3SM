@@ -81,6 +81,7 @@ module gllfvremap_mod
 contains
 
   subroutine gfr_init(hybrid, elem, nphys)
+    use dimensions_mod, only: nlev
     use parallel_mod, only: abortmp
 
     type (hybrid_t), intent(in) :: hybrid
@@ -119,6 +120,7 @@ contains
 
     allocate(gfr%fv_metdet(nphys,nphys,nelemd), &
          gfr%D_f(nphys,nphys,2,2,nelemd), gfr%Dinv_f(nphys,nphys,2,2,nelemd), &
+         gfr%qmin(nlev,qsize,nelemd), gfr%qmax(nlev,qsize,nelemd), &
          gfr%spherep_f(nphys,nphys,nelemd))
     call gfr_init_fv_metdet(elem, gfr)
     call gfr_init_geometry(elem, gfr)
@@ -126,7 +128,7 @@ contains
 
   subroutine gfr_finish()
     if (allocated(gfr%fv_metdet)) then
-       deallocate(gfr%fv_metdet, gfr%D_f, gfr%Dinv_f, gfr%spherep_f)
+       deallocate(gfr%fv_metdet, gfr%D_f, gfr%Dinv_f, gfr%qmin, gfr%qmax, gfr%spherep_f)
     end if
   end subroutine gfr_finish
 
@@ -159,7 +161,8 @@ contains
     qsize = size(q,3)
     
     do ie = nets,nete
-       call gfr_g2f_scalar(ie, elem(ie)%metdet, elem(ie)%state%ps_v(:,:,nt:nt), wr(:,:,:1))
+       call gfr_g2f_scalar(ie, elem(ie)%metdet, elem(ie)%state%ps_v(:,:,nt:nt), &
+            wr(:,:,:1))
        ps(:ncol,ie) = reshape(wr(:nf,:nf,1), (/ncol/))
        wr1(:,:,1) = elem(ie)%state%phis(:,:)
        call gfr_g2f_scalar(ie, elem(ie)%metdet, wr1, wr(:,:,:1))
@@ -185,13 +188,18 @@ contains
     end do
   end subroutine gfr_dyn_to_fv_phys
 
-  subroutine gfr_fv_phys_to_dyn(hybrid, elem, ps, T, uv, q, nets_in, nete_in)
+  subroutine gfr_fv_phys_to_dyn(hybrid, nt, hvcoord, elem, ps, T, uv, q, nets_in, nete_in)
+    use dimensions_mod, only: nlev
+    use hybvcoord_mod, only: hvcoord_t
+
     type (hybrid_t), intent(in) :: hybrid
+    integer, intent(in) :: nt
+    type (hvcoord_t), intent(in) :: hvcoord
     type (element_t), intent(in) :: elem(:)
     real(kind=real_kind), intent(in) :: ps(:,:), T(:,:,:), uv(:,:,:,:), q(:,:,:,:)
     integer, intent(in), optional :: nets_in, nete_in
 
-    integer :: nets, nete, ncol, i
+    integer :: nets, nete, nf, ncol, k, qsize
 
     if (present(nets_in)) then
        nets = nets_in
@@ -200,7 +208,11 @@ contains
        nets = 1
        nete = size(elem)
     end if
-    ncol = gfr%nphys*gfr%nphys
+    nf = gfr%nphys
+    ncol = nf*nf
+
+    qsize = size(q,3)
+
   end subroutine gfr_fv_phys_to_dyn
 
   subroutine gfr_fv_phys_to_dyn_topo()
