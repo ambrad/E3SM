@@ -45,8 +45,7 @@ real(rl) :: rad2dg = 180.0_rl/pi
 integer, parameter :: gfr_nphys = 2
 
 type :: PhysgridData_t
-   real(rl), allocatable :: ps(:,:,:), zs(:,:,:), T(:,:,:,:), uv(:,:,:,:,:), &
-        omega_p(:,:,:,:), q(:,:,:,:,:)
+   real(rl), allocatable :: ps(:,:), zs(:,:), T(:,:,:), uv(:,:,:,:), omega_p(:,:,:), q(:,:,:,:)
 end type PhysgridData_t
 
 type (PhysgridData_t) :: pg_data
@@ -162,11 +161,14 @@ subroutine dcmip2016_test1_pg(elem,hybrid,hvcoord,nets,nete)
   type(hvcoord_t),    intent(inout)         :: hvcoord                  ! hybrid vertical coordinates
   integer,            intent(in)            :: nets,nete                ! start, end element index
 
+  integer :: ncol
+
   if (hybrid%ithr == 0) then
+     ncol = gfr_nphys*gfr_nphys
      call gfr_init(hybrid, elem, gfr_nphys)
-     allocate(pg_data%ps(np,np,nelemd), pg_data%zs(np,np,nelemd), pg_data%T(np,np,nlev,nelemd), &
-          pg_data%omega_p(np,np,nlev,nelemd), pg_data%uv(np,np,nlev,2,nelemd), &
-          pg_data%q(np,np,nlev,qsize,nelemd))
+     allocate(pg_data%ps(ncol,nelemd), pg_data%zs(ncol,nelemd), pg_data%T(ncol,nlev,nelemd), &
+          pg_data%omega_p(ncol,nlev,nelemd), pg_data%uv(ncol,nlev,2,nelemd), &
+          pg_data%q(ncol,nlev,qsize,nelemd))
   end if
 #ifdef HORIZ_OPENMP
   !$omp barrier
@@ -830,7 +832,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
        theta_kess_fv, Rstar, rho_fv, rho_dry_fv, u0, v0, theta_kess0, z_fv, ddt_cl, ddt_cl2
   real(rl), dimension(nf,nf,nlev,qsize) :: Q_fv, Q0_fv
   real(rl), dimension(nf,nf,nlevp) :: phi_i, zi_fv
-  real(rl), dimension(nf,nf) :: delta_ps
+  real(rl), dimension(nf,nf) :: zs_fv, ps_fv
   real(rl) :: precl_fv(nf,nf,1), rcd(6)
   real(rl), allocatable :: qmin(:,:,:), qmax(:,:,:)
 
@@ -844,22 +846,24 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   max_precl = -huge(rl)
   min_ps    = +huge(rl)
 
-  call gfr_dyn_to_fv_phys_2d(elem, pg_data%ps, pg_data%zs, pg_data%T, pg_data%uv, &
-       pg_data%omega_p, pg_data%q)
+  call gfr_dyn_to_fv_phys(elem, pg_data%ps, pg_data%zs, pg_data%T, pg_data%uv, &
+       pg_data%omega_p, pg_data%q, nets, nete)
 
   do ie = nets,nete
      precl(:,:,ie) = -one
 
      ! get current element state
+     T_fv = reshape(pg_data%T(:,:,ie), (/nf,nf,nlev/))
+     u_fv = reshape(pg_data%uv(:,:,1,ie), (/nf,nf,nlev/))
+     v_fv = reshape(pg_data%uv(:,:,2,ie), (/nf,nf,nlev/))
+     Q_fv = reshape(pg_data%q(:,:,1:5,ie), (/nf,nf,nlev,5/))
+     ps_fv = reshape(pg_data%ps(:,ie), (/nf,nf/))
+     zs_fv = reshape(pg_data%zs(:,ie), (/nf,nf/))
      do k = 1,nlev
-        p_fv(:,:,k) = hvcoord%hyam(k)*hvcoord%ps0 + hvcoord%hybm(k)*pg_data%ps(:nf,:nf,ie)
+        p_fv(:,:,k) = hvcoord%hyam(k)*hvcoord%ps0 + hvcoord%hybm(k)*ps_fv
         dp_fv(:,:,k) = (hvcoord%hyai(k+1) - hvcoord%hyai(k))*hvcoord%ps0 + &
-             (hvcoord%hybi(k+1) - hvcoord%hybi(k))*pg_data%ps(:nf,:nf,ie)
+             (hvcoord%hybi(k+1) - hvcoord%hybi(k))*ps_fv
      end do
-     T_fv = pg_data%T(:nf,:nf,:,ie)
-     u_fv = pg_data%uv(:nf,:nf,:,1,ie)
-     v_fv = pg_data%uv(:nf,:nf,:,2,ie)
-     Q_fv = pg_data%q(:nf,:nf,:,1:5,ie)
 
      ! Rederive the remaining vars so they are self-consistent; use
      ! hydrostatic assumption.
@@ -869,7 +873,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
         Rstar = Rgas
      end if
      rho_fv = p_fv/(Rstar*T_fv)
-     phi_i(:,:,nlevp) = g*pg_data%zs(:nf,:nf,ie)
+     phi_i(:,:,nlevp) = g*zs_fv
      do k = nlev,1,-1
         phi_i(:,:,k) = phi_i(:,:,k+1) + (Rstar(:,:,k)*(dp_fv(:,:,k)*T_fv(:,:,k)))/p_fv(:,:,k)
      end do
@@ -943,10 +947,10 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      precl(:,:,ie) = wrk3(:,:,1)
 
      exner_kess_fv = (p_fv/p0)**(Rgas/Cp)
-     pg_data%T(:nf,:nf,:,ie) = exner_kess_fv*(theta_kess_fv - theta_kess0)/dt
-     pg_data%uv(:nf,:nf,:,1,ie) = (u_fv - u0)/dt
-     pg_data%uv(:nf,:nf,:,2,ie) = (v_fv - v0)/dt
-     pg_data%q(:nf,:nf,:,1:5,ie) = Q_fv(:,:,:,1:5)
+     pg_data%T(:,:,ie) = reshape(exner_kess_fv*(theta_kess_fv - theta_kess0)/dt, (/ncol,nlev/))
+     pg_data%uv(:,:,1,ie) = reshape((u_fv - u0)/dt, (/ncol,nlev/))
+     pg_data%uv(:,:,2,ie) = reshape((v_fv - v0)/dt, (/ncol,nlev/))
+     pg_data%q(:,:,1:5,ie) = reshape(Q_fv(:,:,:,1:5), (/ncol,nlev,5/))
      
      ! perform measurements of max w, and max prect
      ! w is not used in the physics, so just look at the GLL values.
@@ -955,7 +959,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      min_ps    = min( min_ps,    minval(elem(i)%state%ps_v(:,:,nt)) )
   enddo
 
-  call gfr_fv_phys_to_dyn_2d(hybrid, elem, pg_data%ps, pg_data%T, pg_data%uv, pg_data%q)
+  call gfr_fv_phys_to_dyn(hybrid, elem, pg_data%ps, pg_data%T, pg_data%uv, pg_data%q, nets, nete)
 
   call toy_init(rcd)
   do ie = nets,nete
@@ -965,7 +969,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      ! for E3SM coupling), FQ is mixing ratio.
      do k = 1,nlev
         dp(:,:,k) = (hvcoord%hyai(k+1) - hvcoord%hyai(k))*hvcoord%ps0 + &
-             (hvcoord%hybi(k+1) - hvcoord%hybi(k))*pg_data%ps(:nf,:nf,ie)
+             (hvcoord%hybi(k+1) - hvcoord%hybi(k))*elem(i)%state%ps_v(:,:,nt)
      end do
      do i = 1,5
         elem(ie)%derived%FQ(:,:,:,i) = dp*(elem(ie)%derived%FQ(:,:,:,i) - elem(ie)%state%Q(:,:,:,i))/dt
