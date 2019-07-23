@@ -852,8 +852,8 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
 
      ! get current element state
      do k = 1,nlev
-        p(:,:,k) = hvcoord%hyam(k)*hvcoord%ps0 + hvcoord%hybm(k)*pg_data%ps(:nf,:nf,ie)
-        dp(:,:,k) = (hvcoord%hyai(k+1) - hvcoord%hyai(k))*hvcoord%ps0 + &
+        p_fv(:,:,k) = hvcoord%hyam(k)*hvcoord%ps0 + hvcoord%hybm(k)*pg_data%ps(:nf,:nf,ie)
+        dp_fv(:,:,k) = (hvcoord%hyai(k+1) - hvcoord%hyai(k))*hvcoord%ps0 + &
              (hvcoord%hybi(k+1) - hvcoord%hybi(k))*pg_data%ps(:nf,:nf,ie)
      end do
      T_fv = pg_data%T(:nf,:nf,:,ie)
@@ -880,7 +880,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
         zi_fv(:,:,k) = phi_i(:,:,k)/g
      end do
 
-     rho_dry_fv = (1-Q_fv(:,:,:,iqv))*rho_fv
+     rho_dry_fv = (1 - Q_fv(:,:,:,iqv))*rho_fv
 
      ! convert to dry mixing ratios
      do i = 1,3
@@ -959,7 +959,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
 
   call toy_init(rcd)
   do ie = nets,nete
-     call toy_rcd(elem(ie)%state%Q(:,:,:,4:5) + dt*elem(ie)%derived%FQ(:,:,:,4:5), rcd)     
+     call toy_rcd(elem(ie)%derived%FQ(:,:,:,4:5), rcd)     
      ! Compensate for that fact that in standalone tests, FQ is a
      ! density, while in E3SM coupled runs (and so the gfr interface
      ! for E3SM coupling), FQ is mixing ratio.
@@ -968,7 +968,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
              (hvcoord%hybi(k+1) - hvcoord%hybi(k))*pg_data%ps(:nf,:nf,ie)
      end do
      do i = 1,5
-        elem(ie)%derived%FQ(:,:,:,i) = dp*elem(ie)%derived%FQ(:,:,:,i)
+        elem(ie)%derived%FQ(:,:,:,i) = dp*(elem(ie)%derived%FQ(:,:,:,i) - elem(ie)%state%Q(:,:,:,i))/dt
      end do
   end do
   call toy_print(hybrid, rcd)
