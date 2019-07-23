@@ -607,7 +607,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
        wrk(np,np), rd, wrk3(np,np,nlev)
 
   real(rl), dimension(nf,nf,nlev) :: dp_fv, p_fv, u_fv, v_fv, T_fv, exner_kess_fv, &
-       theta_kess_fv, Rstar, rho_fv, rho_dry_fv, u0, v0, T0, z_fv, ddt_cl, ddt_cl2
+       theta_kess_fv, Rstar, rho_fv, rho_dry_fv, u0, v0, theta_kess0, z_fv, ddt_cl, ddt_cl2
   real(rl), dimension(nf,nf,nlev,qsize) :: Q_fv, Q0_fv
   real(rl), dimension(nf,nf,nlevp) :: phi_i, zi_fv
   real(rl), dimension(nf,nf) :: delta_ps
@@ -678,7 +678,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      end do
 
      ! save un-forced prognostics
-     u0=u_fv; v0=v_fv; Q0_fv = Q_fv; T0 = T_fv
+     u0=u_fv; v0=v_fv; Q0_fv = Q_fv; theta_kess0 = theta_kess_fv
 
      ! apply forcing to columns
      do j=1,nf
@@ -706,6 +706,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
            Q_fv(i,j,:,2) = qc_c(nlev:1:-1)
            Q_fv(i,j,:,3) = qr_c(nlev:1:-1)
            theta_kess_fv(i,j,:) = th_c(nlev:1:-1)
+           p_fv(i,j,:) = p_c(nlev:1:-1)
 
            call gfr_get_latlon(ie, i, j, lat, lon)
            do k=1,nlev
@@ -723,8 +724,9 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      call gfr_f2g_vector_dp(ie, elem, dp_fv, dp, u_fv - u0, v_fv - v0, &
           elem(ie)%derived%FM(:,:,1,:), elem(ie)%derived%FM(:,:,2,:))
      elem(ie)%derived%FM = elem(ie)%derived%FM/dt
-     T_fv = exner_kess_fv*theta_kess_fv
-     call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, T_fv - T0, wrk3)
+     exner_kess_fv = (p_fv/p0)**(Rgas/Cp)
+     call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, &
+          exner_kess_fv*(theta_kess_fv - theta_kess0), wrk3)
      elem(ie)%derived%FT(:,:,:) = wrk3/dt
 
      ! set tracer-mass forcing.
