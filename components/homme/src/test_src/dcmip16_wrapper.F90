@@ -160,6 +160,7 @@ subroutine dcmip2016_test1_pg(elem,hybrid,hvcoord,nets,nete)
   !$omp barrier
 #endif
   call dcmip2016_test1(elem,hybrid,hvcoord,nets,nete)
+  sample_period = 3600*24
 end subroutine dcmip2016_test1_pg
 
 !_____________________________________________________________________
@@ -541,6 +542,44 @@ subroutine dcmip2016_test1_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl)
 
 end subroutine
 
+subroutine toy_init(rcd)
+  real(rl), intent(inout) :: rcd(6)
+  rcd(1) = 1; rcd(2) = -1; rcd(3) = 1; rcd(4) = -1; rcd(5) = 1; rcd(6) = -1
+end subroutine toy_init
+
+subroutine toy_rcd(q, rcd)
+  real(rl), intent(in) :: q(:,:,:,:)
+  real(rl), intent(inout) :: rcd(6)
+
+  rcd(1) = min(rcd(1), minval(q(:,:,:,1)))
+  rcd(2) = max(rcd(2), maxval(q(:,:,:,1)))
+  rcd(3) = min(rcd(3), minval(q(:,:,:,2)))
+  rcd(4) = max(rcd(4), maxval(q(:,:,:,2)))
+  rcd(5) = min(rcd(5), minval(q(:,:,:,1) + 2*q(:,:,:,2)))
+  rcd(6) = max(rcd(6), maxval(q(:,:,:,1) + 2*q(:,:,:,2)))
+end subroutine toy_rcd
+
+subroutine toy_print(hybrid, rcd)
+  use reduction_mod, only: ParallelMin, ParallelMax
+
+  type(hybrid_t), intent(in) :: hybrid
+  real(rl), intent(inout) :: rcd(6)
+
+  integer :: count = 0
+
+  if (modulo(count,50) == 0) then
+     rcd(1) = ParallelMin(rcd(1), hybrid)
+     rcd(2) = ParallelMax(rcd(2), hybrid)
+     rcd(3) = ParallelMin(rcd(3), hybrid)
+     rcd(4) = ParallelMax(rcd(4), hybrid)
+     rcd(5) = ParallelMin(rcd(5), hybrid)
+     rcd(6) = ParallelMax(rcd(6), hybrid)
+     if (hybrid%masterthread) &
+          write(*,'(i5,es11.3,es11.3,es11.3,es11.3,es11.3,es11.3)'), count, rcd
+  end if
+  count = count + 1
+end subroutine toy_print
+
 subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl)
   use gllfvremap_mod
 
@@ -568,11 +607,11 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
        wrk(np,np), rd, wrk3(np,np,nlev)
 
   real(rl), dimension(nf,nf,nlev) :: dp_fv, p_fv, u_fv, v_fv, T_fv, exner_kess_fv, &
-       theta_kess_fv, Rstar, rho_fv, rho_dry_fv, u0, v0, theta_kess0, z_fv, ddt_cl, ddt_cl2
+       theta_kess_fv, Rstar, rho_fv, rho_dry_fv, u0, v0, T0, z_fv, ddt_cl, ddt_cl2
   real(rl), dimension(nf,nf,nlev,qsize) :: Q_fv, Q0_fv
   real(rl), dimension(nf,nf,nlevp) :: phi_i, zi_fv
   real(rl), dimension(nf,nf) :: delta_ps
-  real(rl) :: precl_fv(nf,nf,1)
+  real(rl) :: precl_fv(nf,nf,1), rcd(6)
   real(rl), allocatable :: qmin(:,:,:), qmax(:,:,:)
 
   integer :: pbl_type, prec_type, qi
@@ -603,14 +642,14 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      ! GLL -> FV
      call gfr_g2f_scalar(ie, elem(ie)%metdet, dp, dp_fv)
      call gfr_g2f_scalar(ie, elem(ie)%metdet, p, p_fv)
-     call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, theta_kess, theta_kess_fv)
+     call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, T, T_fv)
      call gfr_g2f_scalar(ie, elem(ie)%metdet, zi(:,:,nlevp:), zi_fv(:,:,nlevp:))
      call gfr_g2f_vector_dp(ie, elem, dp, dp_fv, u, v, u_fv, v_fv)
      call gfr_g2f_mixing_ratio(ie, elem(ie)%metdet, dp, dp_fv, &
           elem(ie)%state%Qdp(:,:,:,1:5,ntQ), Q_fv(:,:,:,1:5))
 
      exner_kess_fv = (p_fv/p0)**(Rgas/Cp)
-     T_fv = theta_kess_fv*exner_kess_fv
+     theta_kess_fv = T_fv/exner_kess_fv
 
      ! Rederive the remaining vars so they are self-consistent; use
      ! hydrostatic assumption.
@@ -639,7 +678,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      end do
 
      ! save un-forced prognostics
-     u0=u_fv; v0=v_fv; Q0_fv = Q_fv; theta_kess0 = theta_kess_fv
+     u0=u_fv; v0=v_fv; Q0_fv = Q_fv; T0 = T_fv
 
      ! apply forcing to columns
      do j=1,nf
@@ -676,16 +715,6 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
         enddo
      enddo
 
-     ! convert from theta to T w.r.t. new model state
-     ! assume hydrostatic pressure pi changed by qv forcing
-     ! assume NH pressure perturbation unchanged
-     delta_ps = sum((rho_dry_fv/rho_fv)*dp_fv*(Q_fv(:,:,:,iqv) - Q0_fv(:,:,:,iqv)), 3)
-     do k=1,nlev
-        p_fv(:,:,k) = p_fv(:,:,k) + hvcoord%hybm(k)*delta_ps(:,:)
-     enddo
-     exner_kess_fv = (p_fv/p0)**(Rgas/Cp)
-     T_fv = exner_kess_fv*theta_kess_fv
-
      call gfr_f2g_scalar(ie, elem(ie)%metdet, precl_fv, wrk3(:,:,:1))
      call gfr_g_make_nonnegative(elem(ie)%metdet, wrk3(:,:,:1))
      precl(:,:,ie) = wrk3(:,:,1)
@@ -694,8 +723,9 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      call gfr_f2g_vector_dp(ie, elem, dp_fv, dp, u_fv - u0, v_fv - v0, &
           elem(ie)%derived%FM(:,:,1,:), elem(ie)%derived%FM(:,:,2,:))
      elem(ie)%derived%FM = elem(ie)%derived%FM/dt
-     call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, theta_kess_fv - theta_kess0, wrk3)
-     elem(ie)%derived%FT(:,:,:) = wrk3*exner_kess/dt
+     T_fv = exner_kess_fv*theta_kess_fv
+     call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, T_fv - T0, wrk3)
+     elem(ie)%derived%FT(:,:,:) = wrk3/dt
 
      ! set tracer-mass forcing.
      Q0_fv(:,:,:,1:3) = Q_fv(:,:,:,1:3) - Q0_fv(:,:,:,1:3)
@@ -726,15 +756,18 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   enddo
 
   call gfr_f2g_mixing_ratio_b(hybrid, nets, nete, qmin, qmax)
+  call toy_init(rcd)
   do ie = nets,nete
      ! just for dp.
      call get_state(u,v,w,T,p,dp,ps,rho,z,zi,g,elem(ie),hvcoord,nt,ntQ)
      call gfr_f2g_mixing_ratio_c(ie, elem, qmin(:,1:5,ie), qmax(:,1:5,ie), dp, &
           elem(ie)%state%Q(:,:,:,1:5), elem(ie)%derived%FQ(:,:,:,1:5))
+     call toy_rcd(elem(ie)%state%Q(:,:,:,4:5) + elem(ie)%derived%FQ(:,:,:,4:5), rcd)
      do i = 1,5
         elem(ie)%derived%FQ(:,:,:,i) = dp*elem(ie)%derived%FQ(:,:,:,i)/dt
      end do
   end do
+  call toy_print(hybrid, rcd)
   call gfr_f2g_dss(hybrid, elem, nets, nete)
   deallocate(qmin, qmax)
 
