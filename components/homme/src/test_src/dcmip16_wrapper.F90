@@ -650,10 +650,14 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      theta_kess_fv = theta_kess_fv/(one + (Rwater_vapor/Rgas - one)*Q_fv(:,:,:,iqv))
      ! FV th -> T
      T_fv = exner_kess_fv*theta_kess_fv
-#else
+#elif 0
      call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, theta_kess, theta_kess_fv)
      exner_kess_fv = (p_fv/p0)**(Rgas/Cp)
      T_fv = theta_kess_fv*exner_kess_fv
+#else
+     call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, T, T_fv)
+     exner_kess_fv = (p_fv/p0)**(Rgas/Cp)
+     theta_kess_fv = T_fv/exner_kess_fv
 #endif
 
      ! Rederive the remaining vars so they are self-consistent; use
@@ -752,10 +756,14 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      theta_kess = (T + wrk3)/exner_kess
      exner_kess = (p/p0)**(Rgas/Cp)
      elem(ie)%derived%FT(:,:,:) = (theta_kess*exner_kess - T)/dt
-#elif 1
+#elif 0
      ! also good
      call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, theta_kess_fv - theta_kess0, wrk3)
      elem(ie)%derived%FT(:,:,:) = wrk3*exner_kess/dt
+#elif 1
+     ! also good
+     call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, T_fv - T0, wrk3)
+     elem(ie)%derived%FT(:,:,:) = wrk3/dt
 #elif 0
      ! bad
      call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, theta_kess_fv - theta_kess0, wrk3)
