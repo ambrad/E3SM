@@ -167,7 +167,7 @@ subroutine dcmip2016_test1_pg(elem,hybrid,hvcoord,nets,nete)
      ncol = gfr_nphys*gfr_nphys
      call gfr_init(hybrid, elem, gfr_nphys)
      allocate(pg_data%ps(ncol,nelemd), pg_data%zs(ncol,nelemd), pg_data%T(ncol,nlev,nelemd), &
-          pg_data%omega_p(ncol,nlev,nelemd), pg_data%uv(ncol,nlev,2,nelemd), &
+          pg_data%omega_p(ncol,nlev,nelemd), pg_data%uv(ncol,2,nlev,nelemd), &
           pg_data%q(ncol,nlev,qsize,nelemd))
   end if
 #ifdef HORIZ_OPENMP
@@ -594,7 +594,7 @@ subroutine toy_print(hybrid, rcd)
   count = count + 1
 end subroutine toy_print
 
-#if 0
+#if 1
 subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl)
   use gllfvremap_mod
 
@@ -657,7 +657,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, T, T_fv)
      call gfr_g2f_scalar(ie, elem(ie)%metdet, zi(:,:,nlevp:), zi_fv(:,:,nlevp:))
      call gfr_g2f_vector_dp(ie, elem, dp, dp_fv, u, v, u_fv, v_fv)
-     call gfr_g2f_mixing_ratio(ie, elem(ie)%metdet, dp, dp_fv, &
+     call gfr_g2f_mixing_ratios(ie, elem(ie)%metdet, dp, dp_fv, &
           elem(ie)%state%Qdp(:,:,:,1:5,ntQ), Q_fv(:,:,:,1:5))
 
      exner_kess_fv = (p_fv/p0)**(Rgas/Cp)
@@ -753,7 +753,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      Q0_fv(:,:,:,5) = dt*ddt_cl2
      Q_fv(:,:,:,4) = Q_fv(:,:,:,4) + dt*ddt_cl
      Q_fv(:,:,:,5) = Q_fv(:,:,:,5) + dt*ddt_cl2
-     call gfr_f2g_mixing_ratio_a(ie, elem(ie)%metdet, dp_fv, dp, Q0_fv(:,:,:,1:5), &
+     call gfr_f2g_mixing_ratios_a(ie, elem(ie)%metdet, dp_fv, dp, Q0_fv(:,:,:,1:5), &
           elem(ie)%derived%FQ(:,:,:,1:5))
      ! get the min/max total (not tendency) q values on the FV grid.
      do i = 1,5
@@ -771,12 +771,12 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      min_ps    = min( min_ps,    minval(ps) )
   enddo
 
-  call gfr_f2g_mixing_ratio_b(hybrid, nets, nete, qmin, qmax)
+  call gfr_f2g_mixing_ratios_b(hybrid, nets, nete, qmin, qmax)
   call toy_init(rcd)
   do ie = nets,nete
      ! just for dp.
      call get_state(u,v,w,T,p,dp,ps,rho,z,zi,g,elem(ie),hvcoord,nt,ntQ)
-     call gfr_f2g_mixing_ratio_c(ie, elem, qmin(:,1:5,ie), qmax(:,1:5,ie), dp, &
+     call gfr_f2g_mixing_ratios_c(ie, elem, qmin(:,1:5,ie), qmax(:,1:5,ie), dp, &
           elem(ie)%state%Q(:,:,:,1:5), elem(ie)%derived%FQ(:,:,:,1:5))
      call toy_rcd(elem(ie)%state%Q(:,:,:,4:5) + elem(ie)%derived%FQ(:,:,:,4:5), rcd)
      do i = 1,5
@@ -846,19 +846,20 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   max_precl = -huge(rl)
   min_ps    = +huge(rl)
 
-  call gfr_dyn_to_fv_phys(elem, pg_data%ps, pg_data%zs, pg_data%T, pg_data%uv, &
-       pg_data%omega_p, pg_data%q, nets, nete)
+  call gfr_dyn_to_fv_phys(nt, hvcoord, elem, pg_data%ps, pg_data%zs, pg_data%T, &
+       pg_data%uv, pg_data%omega_p, pg_data%q, nets, nete)
 
   do ie = nets,nete
      precl(:,:,ie) = -one
 
      ! get current element state
      T_fv = reshape(pg_data%T(:,:,ie), (/nf,nf,nlev/))
-     u_fv = reshape(pg_data%uv(:,:,1,ie), (/nf,nf,nlev/))
-     v_fv = reshape(pg_data%uv(:,:,2,ie), (/nf,nf,nlev/))
+     u_fv = reshape(pg_data%uv(:,1,:,ie), (/nf,nf,nlev/))
+     v_fv = reshape(pg_data%uv(:,2,:,ie), (/nf,nf,nlev/))
      Q_fv = reshape(pg_data%q(:,:,1:5,ie), (/nf,nf,nlev,5/))
      ps_fv = reshape(pg_data%ps(:,ie), (/nf,nf/))
      zs_fv = reshape(pg_data%zs(:,ie), (/nf,nf/))
+     zs_fv = zs_fv/g
      do k = 1,nlev
         p_fv(:,:,k) = hvcoord%hyam(k)*hvcoord%ps0 + hvcoord%hybm(k)*ps_fv
         dp_fv(:,:,k) = (hvcoord%hyai(k+1) - hvcoord%hyai(k))*hvcoord%ps0 + &
@@ -948,8 +949,8 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
 
      exner_kess_fv = (p_fv/p0)**(Rgas/Cp)
      pg_data%T(:,:,ie) = reshape(exner_kess_fv*(theta_kess_fv - theta_kess0)/dt, (/ncol,nlev/))
-     pg_data%uv(:,:,1,ie) = reshape((u_fv - u0)/dt, (/ncol,nlev/))
-     pg_data%uv(:,:,2,ie) = reshape((v_fv - v0)/dt, (/ncol,nlev/))
+     pg_data%uv(:,1,:,ie) = reshape((u_fv - u0)/dt, (/ncol,nlev/))
+     pg_data%uv(:,2,:,ie) = reshape((v_fv - v0)/dt, (/ncol,nlev/))
      pg_data%q(:,:,1:5,ie) = reshape(Q_fv(:,:,:,1:5), (/ncol,nlev,5/))
      
      ! perform measurements of max w, and max prect
