@@ -54,7 +54,8 @@ module gllfvremap_mod
           ! Vector on ref elem -> vector on sphere
           D_f(:,:,:,:,:), &   ! (nphys,nphys,2,2,nelemd)
           ! Inverse of D_f
-          Dinv_f(:,:,:,:,:)
+          Dinv_f(:,:,:,:,:), &
+          qmin(:,:,:), qmax(:,:,:)
      type (spherical_polar_t), allocatable :: &
           spherep_f(:,:,:) ! (nphys,nphys,nelemd)
   end type GllFvRemap_t
@@ -75,7 +76,8 @@ module gllfvremap_mod
        gfr_g2f_scalar, gfr_g2f_scalar_dp, gfr_g2f_vector, gfr_g2f_vector_dp, &
        gfr_g2f_mixing_ratio, gfr_f2g_scalar, gfr_f2g_scalar_dp, gfr_f2g_vector, &
        gfr_f2g_vector_dp, gfr_f2g_mixing_ratio_a, gfr_f2g_mixing_ratio_b, &
-       gfr_f2g_mixing_ratio_c, gfr_f2g_dss, gfr_get_latlon, gfr_g_make_nonnegative
+       gfr_f2g_mixing_ratio_c, gfr_f2g_dss, gfr_get_latlon, gfr_g_make_nonnegative, &
+       gfr_fv_phys_to_dyn_2d, gfr_dyn_to_fv_phys_2d
 
 contains
 
@@ -129,14 +131,26 @@ contains
     end if
   end subroutine gfr_finish
 
+  subroutine gfr_dyn_to_fv_phys()
+  end subroutine gfr_dyn_to_fv_phys
+
+  subroutine gfr_dyn_to_fv_phys_2d(elem, ps, zs, T, uv, omega_p, q)
+    type (element_t), intent(in) :: elem(:)
+    real(kind=real_kind), intent(inout) :: ps(:,:,:), zs(:,:,:), T(:,:,:,:), &
+         uv(:,:,:,:,:), omega_p(:,:,:,:), q(:,:,:,:,:)
+  end subroutine gfr_dyn_to_fv_phys_2d
+
   subroutine gfr_fv_phys_to_dyn()
   end subroutine gfr_fv_phys_to_dyn
 
+  subroutine gfr_fv_phys_to_dyn_2d(hybrid, elem, ps, T, uv, q)
+    type (hybrid_t), intent(in) :: hybrid
+    type (element_t), intent(in) :: elem(:)
+    real(kind=real_kind), intent(in) :: ps(:,:,:), T(:,:,:,:), uv(:,:,:,:,:), q(:,:,:,:,:)
+  end subroutine gfr_fv_phys_to_dyn_2d
+
   subroutine gfr_fv_phys_to_dyn_topo()
   end subroutine gfr_fv_phys_to_dyn_topo
-
-  subroutine gfr_dyn_to_fv_phys()
-  end subroutine gfr_dyn_to_fv_phys
 
   subroutine gfr_init_w_gg(np, w_gg)
     use quadrature_mod, only : gausslobatto, quadrature_t

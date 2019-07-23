@@ -44,6 +44,13 @@ real(rl) :: rad2dg = 180.0_rl/pi
 
 integer, parameter :: gfr_nphys = 2
 
+type :: PhysgridData_t
+   real(rl), allocatable :: ps(:,:,:), zs(:,:,:), T(:,:,:,:), uv(:,:,:,:,:), &
+        omega_p(:,:,:,:), q(:,:,:,:,:)
+end type PhysgridData_t
+
+type (PhysgridData_t) :: pg_data
+
 contains
 
 !---------------------------------------------------------------------
@@ -155,7 +162,12 @@ subroutine dcmip2016_test1_pg(elem,hybrid,hvcoord,nets,nete)
   type(hvcoord_t),    intent(inout)         :: hvcoord                  ! hybrid vertical coordinates
   integer,            intent(in)            :: nets,nete                ! start, end element index
 
-  if (hybrid%ithr == 0) call gfr_init(hybrid, elem, gfr_nphys)
+  if (hybrid%ithr == 0) then
+     call gfr_init(hybrid, elem, gfr_nphys)
+     allocate(pg_data%ps(np,np,nelemd), pg_data%zs(np,np,nelemd), pg_data%T(np,np,nlev,nelemd), &
+          pg_data%omega_p(np,np,nlev,nelemd), pg_data%uv(np,np,nlev,2,nelemd), &
+          pg_data%q(np,np,nlev,qsize,nelemd))
+  end if
 #ifdef HORIZ_OPENMP
   !$omp barrier
 #endif
@@ -580,6 +592,7 @@ subroutine toy_print(hybrid, rcd)
   count = count + 1
 end subroutine toy_print
 
+#if 0
 subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl)
   use gllfvremap_mod
 
@@ -697,8 +710,8 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
                 z_c, zi_c, lat, nlev, precl_fv(i,j,1), pbl_type, prec_type)
 
            ! revert column
-           u_fv(i,j,:)  = u_c(nlev:1:-1)
-           v_fv(i,j,:)  = v_c(nlev:1:-1)
+           u_fv(i,j,:)   = u_c(nlev:1:-1)
+           v_fv(i,j,:)   = v_c(nlev:1:-1)
            Q_fv(i,j,:,1) = qv_c(nlev:1:-1)
            Q_fv(i,j,:,2) = qc_c(nlev:1:-1)
            Q_fv(i,j,:,3) = qr_c(nlev:1:-1)
@@ -786,8 +799,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
 
   call dcmip2016_append_measurements(max_w,max_precl,min_ps,tl,hybrid)
 end subroutine dcmip2016_test1_pg_forcing
-
-#if 0
+#else
 subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl)
   use gllfvremap_mod
 
@@ -832,23 +844,22 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   max_precl = -huge(rl)
   min_ps    = +huge(rl)
 
-  allocate(qmin(nlev,qsize,nets:nete), qmax(nlev,qsize,nets:nete))
-
-  call gfr_dyn_to_fv_phys_2d(elem, ps_a, zs_a, T_a, uv_a, omega_p_a, q_a)
+  call gfr_dyn_to_fv_phys_2d(elem, pg_data%ps, pg_data%zs, pg_data%T, pg_data%uv, &
+       pg_data%omega_p, pg_data%q)
 
   do ie = nets,nete
      precl(:,:,ie) = -one
 
      ! get current element state
      do k = 1,nlev
-        p(:,:,k) = hvcoord%hyam(k)*hvcoord%ps0 + hvcoord%hybm(k)*ps_a(:nf,:nf,ie)
+        p(:,:,k) = hvcoord%hyam(k)*hvcoord%ps0 + hvcoord%hybm(k)*pg_data%ps(:nf,:nf,ie)
         dp(:,:,k) = (hvcoord%hyai(k+1) - hvcoord%hyai(k))*hvcoord%ps0 + &
-             (hvcoord%hybi(k+1) - hvcoord%hybi(k))*ps_a(:nf,:nf,ie)
+             (hvcoord%hybi(k+1) - hvcoord%hybi(k))*pg_data%ps(:nf,:nf,ie)
      end do
-     T_fv = T_a(:nf,:nf,:,ie)
-     u_fv = uv_a(:nf,:nf,:,1,ie)
-     v_fv = uv_a(:nf,:nf,:,2,ie)
-     Q_fv = q_a(:nf,:nf,:,1:5,ie)
+     T_fv = pg_data%T(:nf,:nf,:,ie)
+     u_fv = pg_data%uv(:nf,:nf,:,1,ie)
+     v_fv = pg_data%uv(:nf,:nf,:,2,ie)
+     Q_fv = pg_data%q(:nf,:nf,:,1:5,ie)
 
      ! Rederive the remaining vars so they are self-consistent; use
      ! hydrostatic assumption.
@@ -858,7 +869,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
         Rstar = Rgas
      end if
      rho_fv = p_fv/(Rstar*T_fv)
-     phi_i(:,:,nlevp) = g*zs_a(:nf,:nf,ie)
+     phi_i(:,:,nlevp) = g*pg_data%zs(:nf,:nf,ie)
      do k = nlev,1,-1
         phi_i(:,:,k) = phi_i(:,:,k+1) + (Rstar(:,:,k)*(dp_fv(:,:,k)*T_fv(:,:,k)))/p_fv(:,:,k)
      end do
@@ -903,8 +914,8 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
                 z_c, zi_c, lat, nlev, precl_fv(i,j,1), pbl_type, prec_type)
 
            ! revert column
-           u_fv(i,j,:)  = u_c(nlev:1:-1)
-           v_fv(i,j,:)  = v_c(nlev:1:-1)
+           u_fv(i,j,:)   = u_c(nlev:1:-1)
+           v_fv(i,j,:)   = v_c(nlev:1:-1)
            Q_fv(i,j,:,1) = qv_c(nlev:1:-1)
            Q_fv(i,j,:,2) = qc_c(nlev:1:-1)
            Q_fv(i,j,:,3) = qr_c(nlev:1:-1)
@@ -922,7 +933,8 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      enddo
 
      do i = 1,3
-        Q_fv(:,:,:,i) = (rho_dry/rho)
+        Q_fv(:,:,:,i) = (rho_dry_fv/rho_fv)*Q_fv(:,:,:,i)
+     end do
 
      ! These gfr calls are special to this routine, to handle
      ! DCMIP-specific precl.
@@ -931,49 +943,35 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      precl(:,:,ie) = wrk3(:,:,1)
 
      exner_kess_fv = (p_fv/p0)**(Rgas/Cp)
-     T_tmp(:,:,:,ie) = exner_kess_fv*(theta_kess_fv - theta_kess0)/dt
-     uv_tmp(:,:,:,1,ie) = (u_fv - u0)/dt
-     uv_tmp(:,:,:,2,ie) = (v_fv - v0)/dt
-     q_tmp(:,:,:,1:5,ie) = Q_fv(:,:,:,1:5)
-
-
-     call gfr_f2g_mixing_ratio_a(ie, elem(ie)%metdet, dp_fv, dp, Q0_fv(:,:,:,1:5), &
-          elem(ie)%derived%FQ(:,:,:,1:5))
-     do i = 1,3
-        elem(ie)%derived%FQ(:,:,:,i) = (rho_dry/rho)*elem(ie)%derived%FQ(:,:,:,i)
-     end do
-     ! get the min/max total (not tendency) q values on the FV grid.
-     do i = 1,5
-        wrk3(:nf,:nf,:) = Q_fv(:,:,:,i)
-        if (i <= 3) wrk3(:nf,:nf,:) = (rho_dry_fv/rho_fv)*wrk3(:nf,:nf,:)
-        do k = 1,nlev
-           qmin(k,i,ie) = minval(wrk3(:,:,k))
-           qmax(k,i,ie) = maxval(wrk3(:,:,k))
-        end do
-     end do
+     pg_data%T(:nf,:nf,:,ie) = exner_kess_fv*(theta_kess_fv - theta_kess0)/dt
+     pg_data%uv(:nf,:nf,:,1,ie) = (u_fv - u0)/dt
+     pg_data%uv(:nf,:nf,:,2,ie) = (v_fv - v0)/dt
+     pg_data%q(:nf,:nf,:,1:5,ie) = Q_fv(:,:,:,1:5)
      
      ! perform measurements of max w, and max prect
      ! w is not used in the physics, so just look at the GLL values.
      max_w     = max( max_w    , maxval(w    ) )
      ! ps isn't updated by the physics, so just look at the GLL values.
-     min_ps    = min( min_ps,    minval(elem(i)%state%ps_v(:,:,:,nt)) )
+     min_ps    = min( min_ps,    minval(elem(i)%state%ps_v(:,:,nt)) )
   enddo
 
-  call gfr_f2g_mixing_ratio_b(hybrid, nets, nete, qmin, qmax)
+  call gfr_fv_phys_to_dyn_2d(hybrid, elem, pg_data%ps, pg_data%T, pg_data%uv, pg_data%q)
+
   call toy_init(rcd)
   do ie = nets,nete
-     ! just for dp.
-     call get_state(u,v,w,T,p,dp,ps,rho,z,zi,g,elem(ie),hvcoord,nt,ntQ)
-     call gfr_f2g_mixing_ratio_c(ie, elem, qmin(:,1:5,ie), qmax(:,1:5,ie), dp, &
-          elem(ie)%state%Q(:,:,:,1:5), elem(ie)%derived%FQ(:,:,:,1:5))
-     call toy_rcd(elem(ie)%state%Q(:,:,:,4:5) + elem(ie)%derived%FQ(:,:,:,4:5), rcd)
+     call toy_rcd(elem(ie)%state%Q(:,:,:,4:5) + dt*elem(ie)%derived%FQ(:,:,:,4:5), rcd)     
+     ! Compensate for that fact that in standalone tests, FQ is a
+     ! density, while in E3SM coupled runs (and so the gfr interface
+     ! for E3SM coupling), FQ is mixing ratio.
+     do k = 1,nlev
+        dp(:,:,k) = (hvcoord%hyai(k+1) - hvcoord%hyai(k))*hvcoord%ps0 + &
+             (hvcoord%hybi(k+1) - hvcoord%hybi(k))*pg_data%ps(:nf,:nf,ie)
+     end do
      do i = 1,5
-        elem(ie)%derived%FQ(:,:,:,i) = dp*elem(ie)%derived%FQ(:,:,:,i)/dt
+        elem(ie)%derived%FQ(:,:,:,i) = dp*elem(ie)%derived%FQ(:,:,:,i)
      end do
   end do
   call toy_print(hybrid, rcd)
-  call gfr_f2g_dss(hybrid, elem, nets, nete)
-  deallocate(qmin, qmax)
 
   ! DSS precl
   do ie = nets,nete
