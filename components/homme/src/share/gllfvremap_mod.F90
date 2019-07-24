@@ -232,13 +232,13 @@ contains
           ! FV Q_ten
           !   GLL Q0 -> FV Q0
           call gfr_g2f_mixing_ratio(ie, elem(ie)%metdet, dp, dp_fv, &
-               dp*elem(ie)%state%Q(:,:,:,k), wr)
+               dp*elem(ie)%state%Q(:,:,:,qi), wr)
           !   FV Q_ten = FV Q1 - FV Q0
           wr(:nf,:nf,:) = reshape(q(:ncol,:,qi,ie), (/nf,nf,nlev/)) - wr(:nf,:nf,:)
           ! GLL Q_ten
           call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, wr, wr1)
           ! GLL Q1
-          elem(ie)%derived%FQ(:,:,:,qi) = elem(ie)%state%Q(:,:,:,k) + wr1
+          elem(ie)%derived%FQ(:,:,:,qi) = elem(ie)%state%Q(:,:,:,qi) + wr1
           ! Get limiter bounds.
           do k = 1,nlev
              gfr%qmin(k,qi,ie) = minval(q(:ncol,:,qi,ie))
