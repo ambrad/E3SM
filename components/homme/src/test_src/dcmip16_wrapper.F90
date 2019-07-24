@@ -886,22 +886,19 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
 
      rho_dry_fv = (1 - Q_fv(:,:,:,iqv))*rho_fv
 
-     ! convert to dry mixing ratios
+     ! Convert to dry mixing ratios.
      do i = 1,3
         Q_fv(:,:,:,i) = (rho_fv/rho_dry_fv)*Q_fv(:,:,:,i)
      end do
 
-     ! compute form of exner pressure expected by Kessler physics
+     ! Compute form of exner pressure expected by Kessler physics.
      exner_kess_fv = (p_fv/p0)**(Rgas/Cp)
      theta_kess_fv = T_fv/exner_kess_fv
 
-     ! save un-forced prognostics
-     u0=u_fv; v0=v_fv; Q0_fv = Q_fv; theta_kess0 = theta_kess_fv
+     u0 = u_fv; v0 = v_fv; Q0_fv = Q_fv; theta_kess0 = theta_kess_fv
 
-     ! apply forcing to columns
-     do j=1,nf
-        do i=1,nf
-           ! invert column
+     do j = 1,nf
+        do i = 1,nf
            u_c  = u_fv(i,j,nlev:1:-1)
            v_c  = v_fv(i,j,nlev:1:-1)
            qv_c = Q_fv(i,j,nlev:1:-1,1)
@@ -913,25 +910,22 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
            zi_c = zi_fv(i,j,nlevp:1:-1)
            th_c = theta_kess_fv(i,j,nlev:1:-1)
 
-           ! get forced versions of u,v,p,qv,qc,qr. rho is constant
+           ! Get forced versions of u,v,p,qv,qc,qr. rho is constant.
            call DCMIP2016_PHYSICS(test, u_c, v_c, p_c, th_c, qv_c, qc_c, qr_c, rho_c, dt, &
                 z_c, zi_c, lat, nlev, precl_fv(i,j,1), pbl_type, prec_type)
 
-           ! revert column
            u_fv(i,j,:)   = u_c(nlev:1:-1)
            v_fv(i,j,:)   = v_c(nlev:1:-1)
            Q_fv(i,j,:,1) = qv_c(nlev:1:-1)
            Q_fv(i,j,:,2) = qc_c(nlev:1:-1)
            Q_fv(i,j,:,3) = qr_c(nlev:1:-1)
+           p_fv(i,j,:)   = p_c(nlev:1:-1)
            theta_kess_fv(i,j,:) = th_c(nlev:1:-1)
-           p_fv(i,j,:) = p_c(nlev:1:-1)
 
            call gfr_get_latlon(ie, i, j, lat, lon)
            do k=1,nlev
               call tendency_terminator(lat*rad2dg, lon*rad2dg, Q_fv(i,j,k,4), Q_fv(i,j,k,5), &
                    dt, ddt_cl(i,j,k), ddt_cl2(i,j,k))
-              Q_fv(:,:,:,4) = Q_fv(:,:,:,4) + dt*ddt_cl
-              Q_fv(:,:,:,5) = Q_fv(:,:,:,5) + dt*ddt_cl2
            enddo
         enddo
      enddo
@@ -939,6 +933,8 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      do i = 1,3
         Q_fv(:,:,:,i) = (rho_dry_fv/rho_fv)*Q_fv(:,:,:,i)
      end do
+     Q_fv(:,:,:,4) = Q_fv(:,:,:,4) + dt*ddt_cl
+     Q_fv(:,:,:,5) = Q_fv(:,:,:,5) + dt*ddt_cl2
 
      ! These gfr calls are special to this routine, to handle
      ! DCMIP-specific precl.
@@ -952,28 +948,27 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      pg_data%uv(:,2,:,ie) = reshape((v_fv - v0)/dt, (/ncol,nlev/))
      pg_data%q(:,:,1:5,ie) = reshape(Q_fv(:,:,:,1:5), (/ncol,nlev,5/))
      
-     ! perform measurements of max w, and max prect
-     ! w is not used in the physics, so just look at the GLL values.
+     ! Measure max w and max prect. w is not used in the physics, so
+     ! just look at the GLL values.
      max_w     = max( max_w    , maxval(w    ) )
      ! ps isn't updated by the physics, so just look at the GLL values.
      min_ps    = min( min_ps,    minval(elem(i)%state%ps_v(:,:,nt)) )
   enddo
 
-  call gfr_fv_phys_to_dyn(hybrid, nt, hvcoord, elem, pg_data%ps, pg_data%T, &
-       pg_data%uv, pg_data%q, nets, nete)
+  call gfr_fv_phys_to_dyn(hybrid, nt, hvcoord, elem, pg_data%T, pg_data%uv, pg_data%q, nets, nete)
   ! dp_coupling doesn't do the DSS; stepon does. Thus, this DCMIP test
   ! also needs to do its own DSS.
   call gfr_f2g_dss(hybrid, elem, nets, nete)
 
   call toy_init(rcd)
   do ie = nets,nete
-     call toy_rcd(elem(ie)%derived%FQ(:,:,:,4:5), rcd)     
-     ! Compensate for that fact that in standalone tests, FQ is a
+     call toy_rcd(elem(ie)%derived%FQ(:,:,:,4:5), rcd)
+     ! Compensate for that fact that in standalone tests, FQ is
      ! density, while in E3SM coupled runs (and so the gfr interface
      ! for E3SM coupling), FQ is mixing ratio.
      do k = 1,nlev
         dp(:,:,k) = (hvcoord%hyai(k+1) - hvcoord%hyai(k))*hvcoord%ps0 + &
-             (hvcoord%hybi(k+1) - hvcoord%hybi(k))*elem(i)%state%ps_v(:,:,nt)
+             (hvcoord%hybi(k+1) - hvcoord%hybi(k))*elem(ie)%state%ps_v(:,:,nt)
      end do
      do i = 1,5
         elem(ie)%derived%FQ(:,:,:,i) = dp*(elem(ie)%derived%FQ(:,:,:,i) - elem(ie)%state%Q(:,:,:,i))/dt

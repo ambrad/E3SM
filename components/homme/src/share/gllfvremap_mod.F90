@@ -3,6 +3,8 @@
 #endif
 
 !todo
+! - omega_p
+! - mod vector_dp routine to do in/out arrays efficiently in dp_coupling
 ! - checker routine callable from dcmip1
 ! - test vector_dp routines: conservation
 ! - area correction: alpha
@@ -145,8 +147,8 @@ contains
          uv(:,:,:,:), omega_p(:,:,:), q(:,:,:,:)
     integer, intent(in), optional :: nets_in, nete_in
 
-    real(kind=real_kind) :: dp(np,np,nlev), dp_fv(np,np,nlev), wr(np,np,nlev), wr1(np,np,nlev)
-    integer :: nets, nete, ie, nf, ncol, k, qsize
+    real(kind=real_kind) :: dp(np,np,nlev), dp_fv(np,np,nlev), wr1(np,np,nlev), wr2(np,np,nlev)
+    integer :: nets, nete, ie, nf, ncol, qi, qsize
 
     if (present(nets_in)) then
        nets = nets_in
@@ -162,35 +164,37 @@ contains
     
     do ie = nets,nete
        call gfr_g2f_scalar(ie, elem(ie)%metdet, elem(ie)%state%ps_v(:,:,nt:nt), &
-            wr(:,:,:1))
-       ps(:ncol,ie) = reshape(wr(:nf,:nf,1), (/ncol/))
+            wr1(:,:,:1))
+       ps(:ncol,ie) = reshape(wr1(:nf,:nf,1), (/ncol/))
 
-       wr1(:,:,1) = elem(ie)%state%phis(:,:)
-       call gfr_g2f_scalar(ie, elem(ie)%metdet, wr1, wr(:,:,:1))
-       phis(:ncol,ie) = reshape(wr(:nf,:nf,1), (/ncol/))
+       wr2(:,:,1) = elem(ie)%state%phis(:,:)
+       call gfr_g2f_scalar(ie, elem(ie)%metdet, wr2(:,:,:1), wr1(:,:,:1))
+       phis(:ncol,ie) = reshape(wr1(:nf,:nf,1), (/ncol/))
 
        call calc_dp(hvcoord, elem(ie)%state%ps_v(:,:,nt), dp)
        call gfr_g2f_scalar(ie, elem(ie)%metdet, dp, dp_fv)
 
-       call get_temperature(elem(ie), wr1, hvcoord, nt)
-       call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, wr1, wr)
-       T(:ncol,:,ie) = reshape(wr(:nf,:nf,:), (/ncol,nlev/))
+       call get_temperature(elem(ie), wr2, hvcoord, nt)
+       call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, wr2, wr1)
+       T(:ncol,:,ie) = reshape(wr1(:nf,:nf,:), (/ncol,nlev/))
 
        call gfr_g2f_vector_dp(ie, elem, dp, dp_fv, &
             elem(ie)%state%v(:,:,1,:,nt), elem(ie)%state%v(:,:,2,:,nt), &
-            wr, wr1)
-       uv(:ncol,1,:,ie) = reshape(wr (:nf,:nf,:), (/ncol,nlev/))
-       uv(:ncol,2,:,ie) = reshape(wr1(:nf,:nf,:), (/ncol,nlev/))
+            wr1, wr2)
+       uv(:ncol,1,:,ie) = reshape(wr1(:nf,:nf,:), (/ncol,nlev/))
+       uv(:ncol,2,:,ie) = reshape(wr2(:nf,:nf,:), (/ncol,nlev/))
 
-       do k = 1,qsize
+       !TODO omega_p
+
+       do qi = 1,qsize
           call gfr_g2f_mixing_ratio(ie, elem(ie)%metdet, dp, dp_fv, &
-               dp*elem(ie)%state%Q(:,:,:,k), wr)
-          q(:ncol,:,k,ie) = reshape(wr(:nf,:nf,:), (/ncol,nlev/))
+               dp*elem(ie)%state%Q(:,:,:,qi), wr1)
+          q(:ncol,:,qi,ie) = reshape(wr1(:nf,:nf,:), (/ncol,nlev/))
        end do
     end do
   end subroutine gfr_dyn_to_fv_phys
 
-  subroutine gfr_fv_phys_to_dyn(hybrid, nt, hvcoord, elem, ps, T, uv, q, nets_in, nete_in)
+  subroutine gfr_fv_phys_to_dyn(hybrid, nt, hvcoord, elem, T, uv, q, nets_in, nete_in)
     use dimensions_mod, only: nlev
     use hybvcoord_mod, only: hvcoord_t
 
@@ -198,10 +202,10 @@ contains
     integer, intent(in) :: nt
     type (hvcoord_t), intent(in) :: hvcoord
     type (element_t), intent(inout) :: elem(:)
-    real(kind=real_kind), intent(in) :: ps(:,:), T(:,:,:), uv(:,:,:,:), q(:,:,:,:)
+    real(kind=real_kind), intent(in) :: T(:,:,:), uv(:,:,:,:), q(:,:,:,:)
     integer, intent(in), optional :: nets_in, nete_in
 
-    real(kind=real_kind) :: dp(np,np,nlev), dp_fv(np,np,nlev), wr(np,np,nlev), wr1(np,np,nlev)
+    real(kind=real_kind) :: dp(np,np,nlev), dp_fv(np,np,nlev), wr1(np,np,nlev), wr2(np,np,nlev)
     integer :: nets, nete, ie, nf, ncol, k, qsize, qi
 
     if (present(nets_in)) then
@@ -220,29 +224,29 @@ contains
        call calc_dp(hvcoord, elem(ie)%state%ps_v(:,:,nt), dp)
        call gfr_g2f_scalar(ie, elem(ie)%metdet, dp, dp_fv)
 
-       wr(:nf,:nf,:) = reshape(uv(:ncol,1,:,ie), (/nf,nf,nlev/))
-       wr1(:nf,:nf,:) = reshape(uv(:ncol,2,:,ie), (/nf,nf,nlev/))
-       call gfr_f2g_vector_dp(ie, elem, dp_fv, dp, wr, wr1, &
+       wr1(:nf,:nf,:) = reshape(uv(:ncol,1,:,ie), (/nf,nf,nlev/))
+       wr2(:nf,:nf,:) = reshape(uv(:ncol,2,:,ie), (/nf,nf,nlev/))
+       call gfr_f2g_vector_dp(ie, elem, dp_fv, dp, wr1, wr2, &
             elem(ie)%derived%FM(:,:,1,:), elem(ie)%derived%FM(:,:,2,:))
 
-       wr(:nf,:nf,:) = reshape(T(:ncol,:,ie), (/nf,nf,nlev/))
-       call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, wr, elem(ie)%derived%FT)
+       wr1(:nf,:nf,:) = reshape(T(:ncol,:,ie), (/nf,nf,nlev/))
+       call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, wr1, elem(ie)%derived%FT)
 
        do qi = 1,qsize
           ! FV Q_ten
           !   GLL Q0 -> FV Q0
           call gfr_g2f_mixing_ratio(ie, elem(ie)%metdet, dp, dp_fv, &
-               dp*elem(ie)%state%Q(:,:,:,qi), wr)
+               dp*elem(ie)%state%Q(:,:,:,qi), wr1)
           !   FV Q_ten = FV Q1 - FV Q0
-          wr(:nf,:nf,:) = reshape(q(:ncol,:,qi,ie), (/nf,nf,nlev/)) - wr(:nf,:nf,:)
+          wr1(:nf,:nf,:) = reshape(q(:ncol,:,qi,ie), (/nf,nf,nlev/)) - wr1(:nf,:nf,:)
           ! GLL Q_ten
-          call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, wr, wr1)
+          call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, wr1, wr2)
           ! GLL Q1
-          elem(ie)%derived%FQ(:,:,:,qi) = elem(ie)%state%Q(:,:,:,qi) + wr1
+          elem(ie)%derived%FQ(:,:,:,qi) = elem(ie)%state%Q(:,:,:,qi) + wr2
           ! Get limiter bounds.
           do k = 1,nlev
-             gfr%qmin(k,qi,ie) = minval(q(:ncol,:,qi,ie))
-             gfr%qmax(k,qi,ie) = maxval(q(:ncol,:,qi,ie))
+             gfr%qmin(k,qi,ie) = minval(q(:ncol,k,qi,ie))
+             gfr%qmax(k,qi,ie) = maxval(q(:ncol,k,qi,ie))
           end do
        end do
     end do
