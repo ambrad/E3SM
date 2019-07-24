@@ -164,22 +164,24 @@ contains
        call gfr_g2f_scalar(ie, elem(ie)%metdet, elem(ie)%state%ps_v(:,:,nt:nt), &
             wr(:,:,:1))
        ps(:ncol,ie) = reshape(wr(:nf,:nf,1), (/ncol/))
+
        wr1(:,:,1) = elem(ie)%state%phis(:,:)
        call gfr_g2f_scalar(ie, elem(ie)%metdet, wr1, wr(:,:,:1))
        phis(:ncol,ie) = reshape(wr(:nf,:nf,1), (/ncol/))
-       do k = 1,nlev
-          dp(:,:,k) = (hvcoord%hyai(k+1) - hvcoord%hyai(k))*hvcoord%ps0 + &
-               (hvcoord%hybi(k+1) - hvcoord%hybi(k))*elem(ie)%state%ps_v(:,:,nt)
-       end do
+
+       call calc_dp(hvcoord, elem(ie)%state%ps_v(:,:,nt), dp)
        call gfr_g2f_scalar(ie, elem(ie)%metdet, dp, dp_fv)
+
        call get_temperature(elem(ie), wr1, hvcoord, nt)
        call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, wr1, wr)
        T(:ncol,:,ie) = reshape(wr(:nf,:nf,:), (/ncol,nlev/))
+
        call gfr_g2f_vector_dp(ie, elem, dp, dp_fv, &
             elem(ie)%state%v(:,:,1,:,nt), elem(ie)%state%v(:,:,2,:,nt), &
             wr, wr1)
        uv(:ncol,1,:,ie) = reshape(wr (:nf,:nf,:), (/ncol,nlev/))
        uv(:ncol,2,:,ie) = reshape(wr1(:nf,:nf,:), (/ncol,nlev/))
+
        do k = 1,qsize
           call gfr_g2f_mixing_ratio(ie, elem(ie)%metdet, dp, dp_fv, &
                dp*elem(ie)%state%Q(:,:,:,k), wr)
@@ -195,11 +197,12 @@ contains
     type (hybrid_t), intent(in) :: hybrid
     integer, intent(in) :: nt
     type (hvcoord_t), intent(in) :: hvcoord
-    type (element_t), intent(in) :: elem(:)
+    type (element_t), intent(inout) :: elem(:)
     real(kind=real_kind), intent(in) :: ps(:,:), T(:,:,:), uv(:,:,:,:), q(:,:,:,:)
     integer, intent(in), optional :: nets_in, nete_in
 
-    integer :: nets, nete, nf, ncol, k, qsize
+    real(kind=real_kind) :: dp(np,np,nlev), dp_fv(np,np,nlev), wr(np,np,nlev), wr1(np,np,nlev)
+    integer :: nets, nete, ie, nf, ncol, k, qsize, qi
 
     if (present(nets_in)) then
        nets = nets_in
@@ -213,6 +216,52 @@ contains
 
     qsize = size(q,3)
 
+    do ie = nets,nete
+       call calc_dp(hvcoord, elem(ie)%state%ps_v(:,:,nt), dp)
+       call gfr_g2f_scalar(ie, elem(ie)%metdet, dp, dp_fv)
+
+       wr(:nf,:nf,:) = reshape(uv(:ncol,1,:,ie), (/nf,nf,nlev/))
+       wr1(:nf,:nf,:) = reshape(uv(:ncol,2,:,ie), (/nf,nf,nlev/))
+       call gfr_f2g_vector_dp(ie, elem, dp_fv, dp, wr, wr1, &
+            elem(ie)%derived%FM(:,:,1,:), elem(ie)%derived%FM(:,:,2,:))
+
+       wr(:nf,:nf,:) = reshape(T(:ncol,:,ie), (/nf,nf,nlev/))
+       call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, wr, elem(ie)%derived%FT)
+
+       do qi = 1,qsize
+          ! FV Q_ten
+          !   GLL Q0 -> FV Q0
+          call gfr_g2f_mixing_ratio(ie, elem(ie)%metdet, dp, dp_fv, &
+               dp*elem(ie)%state%Q(:,:,:,k), wr)
+          !   FV Q_ten = FV Q1 - FV Q0
+          wr(:nf,:nf,:) = reshape(q(:ncol,:,qi,ie), (/nf,nf,nlev/)) - wr(:nf,:nf,:)
+          ! GLL Q_ten
+          call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, wr, wr1)
+          ! GLL Q1
+          elem(ie)%derived%FQ(:,:,:,qi) = elem(ie)%state%Q(:,:,:,k) + wr1
+          ! Get limiter bounds.
+          do k = 1,nlev
+             gfr%qmin(k,qi,ie) = minval(q(:ncol,:,qi,ie))
+             gfr%qmax(k,qi,ie) = maxval(q(:ncol,:,qi,ie))
+          end do
+       end do
+    end do
+
+    ! Halo exchange limiter bounds.
+    call gfr_f2g_mixing_ratios_b(hybrid, nets, nete, gfr%qmin, gfr%qmax)
+
+    do ie = nets,nete
+       call calc_dp(hvcoord, elem(ie)%state%ps_v(:,:,nt), dp)
+       do qi = 1,qsize
+          ! Limit GLL Q1.
+          do k = 1,nlev
+             call limiter_clip_and_sum(np, elem(ie)%spheremp, gfr%qmin(k,qi,ie), &
+                  gfr%qmax(k,qi,ie), dp(:,:,k), elem(ie)%derived%FQ(:,:,k,qi))
+          end do
+          ! Final GLL Q1, except for DSS, which is not done in this routine.
+          elem(ie)%derived%FQ(:,:,:,qi) = elem(ie)%derived%FQ(:,:,:,qi)/dp
+       end do
+    end do
   end subroutine gfr_fv_phys_to_dyn
 
   subroutine gfr_fv_phys_to_dyn_topo()
@@ -242,13 +291,7 @@ contains
     integer, intent(in) :: nphys
     real(kind=real_kind), intent(out) :: w_ff(:,:)
 
-    integer :: i,j
-
-    do j = 1,nphys
-       do i = 1,nphys
-          w_ff(i,j) = two/real(nphys, real_kind)
-       end do
-    end do
+    w_ff(:nphys,:nphys) = two/real(nphys, real_kind)
   end subroutine gfr_init_w_ff
 
   subroutine gll_cleanup(gll)
@@ -258,6 +301,22 @@ contains
 
     deallocate(gll%points, gll%weights)
   end subroutine gll_cleanup
+
+  subroutine calc_dp(hvcoord, ps, dp)
+    use hybvcoord_mod, only: hvcoord_t
+    use dimensions_mod, only: nlev
+
+    type (hvcoord_t), intent(in) :: hvcoord
+    real(kind=real_kind), intent(in) :: ps(:,:)
+    real(kind=real_kind), intent(out) :: dp(:,:,:)
+
+    integer :: k
+
+    do k = 1,nlev
+       dp(:,:,k) = (hvcoord%hyai(k+1) - hvcoord%hyai(k))*hvcoord%ps0 + &
+            (hvcoord%hybi(k+1) - hvcoord%hybi(k))*ps
+    end do
+  end subroutine calc_dp
 
   subroutine eval_lagrange_bases(gll, np, x, y)
     ! Evaluate the GLL basis functions at x in [-1,1], writing the values to
@@ -527,8 +586,6 @@ contains
              gfr%Dinv_f(i,j,1,2,ie) = -wrk(1,2)/det
              gfr%Dinv_f(i,j,2,1,ie) = -wrk(2,1)/det
              gfr%Dinv_f(i,j,2,2,ie) =  wrk(1,1)/det
-
-             !print *,'alpha>',ie,i,j,gfr%fv_metdet(i,j,ie)/abs(half*det)
 
              gfr%spherep_f(i,j,ie) = ref2sphere(a, b, elem(ie)%corners3D, cubed_sphere_map, &
                   elem(ie)%corners, elem(ie)%facenum)
