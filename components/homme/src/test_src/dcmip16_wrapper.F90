@@ -589,7 +589,7 @@ subroutine toy_print(hybrid, rcd)
      rcd(5) = ParallelMin(rcd(5), hybrid)
      rcd(6) = ParallelMax(rcd(6), hybrid)
      if (hybrid%masterthread) &
-          write(*,'(i5,es11.3,es11.3,es11.3,es11.3,es11.3,es11.3)'), count, rcd
+          write(*,'(a,i5,es11.3,es11.3,es11.3,es11.3,es11.3,es11.3)'), 'toy>', count, rcd
   end if
   count = count + 1
 end subroutine toy_print
@@ -772,20 +772,26 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   enddo
 
   call gfr_f2g_mixing_ratios_b(hybrid, nets, nete, qmin, qmax)
-  call toy_init(rcd)
   do ie = nets,nete
      ! just for dp.
      call get_state(u,v,w,T,p,dp,ps,rho,z,zi,g,elem(ie),hvcoord,nt,ntQ)
      call gfr_f2g_mixing_ratios_c(ie, elem, qmin(:,1:5,ie), qmax(:,1:5,ie), dp, &
           elem(ie)%state%Q(:,:,:,1:5), elem(ie)%derived%FQ(:,:,:,1:5))
+  end do
+  ! dp is continuous, so it's ok to DSS mixing ratios.
+  call gfr_f2g_dss(hybrid, elem, nets, nete)
+  deallocate(qmin, qmax)
+
+  call toy_init(rcd)
+  do ie = nets,nete
+     ! just for dp.
+     call get_state(u,v,w,T,p,dp,ps,rho,z,zi,g,elem(ie),hvcoord,nt,ntQ)
      call toy_rcd(elem(ie)%state%Q(:,:,:,4:5) + elem(ie)%derived%FQ(:,:,:,4:5), rcd)
      do i = 1,5
         elem(ie)%derived%FQ(:,:,:,i) = dp*elem(ie)%derived%FQ(:,:,:,i)/dt
      end do
   end do
   call toy_print(hybrid, rcd)
-  call gfr_f2g_dss(hybrid, elem, nets, nete)
-  deallocate(qmin, qmax)
 
   ! DSS precl
   do ie = nets,nete
@@ -855,7 +861,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      T_fv = reshape(pg_data%T(:,:,ie), (/nf,nf,nlev/))
      u_fv = reshape(pg_data%uv(:,1,:,ie), (/nf,nf,nlev/))
      v_fv = reshape(pg_data%uv(:,2,:,ie), (/nf,nf,nlev/))
-     Q_fv = reshape(pg_data%q(:,:,1:5,ie), (/nf,nf,nlev,5/))
+     Q_fv = reshape(pg_data%q(:,:,:,ie), (/nf,nf,nlev,qsize/))
      ps_fv = reshape(pg_data%ps(:,ie), (/nf,nf/))
      zs_fv = reshape(pg_data%zs(:,ie), (/nf,nf/))
      zs_fv = zs_fv/g
@@ -946,7 +952,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      pg_data%T(:,:,ie) = reshape(exner_kess_fv*(theta_kess_fv - theta_kess0)/dt, (/ncol,nlev/))
      pg_data%uv(:,1,:,ie) = reshape((u_fv - u0)/dt, (/ncol,nlev/))
      pg_data%uv(:,2,:,ie) = reshape((v_fv - v0)/dt, (/ncol,nlev/))
-     pg_data%q(:,:,1:5,ie) = reshape(Q_fv(:,:,:,1:5), (/ncol,nlev,5/))
+     pg_data%q(:,:,:,ie) = reshape(Q_fv, (/ncol,nlev,qsize/))
      
      ! Measure max w and max prect. w is not used in the physics, so
      ! just look at the GLL values.
@@ -970,7 +976,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
         dp(:,:,k) = (hvcoord%hyai(k+1) - hvcoord%hyai(k))*hvcoord%ps0 + &
              (hvcoord%hybi(k+1) - hvcoord%hybi(k))*elem(ie)%state%ps_v(:,:,nt)
      end do
-     do i = 1,5
+     do i = 1,qsize
         elem(ie)%derived%FQ(:,:,:,i) = dp*(elem(ie)%derived%FQ(:,:,:,i) - elem(ie)%state%Q(:,:,:,i))/dt
      end do
   end do

@@ -258,12 +258,13 @@ contains
        call calc_dp(hvcoord, elem(ie)%state%ps_v(:,:,nt), dp)
        do qi = 1,qsize
           ! Limit GLL Q1.
+          wr1 = dp*elem(ie)%derived%FQ(:,:,:,qi)
           do k = 1,nlev
              call limiter_clip_and_sum(np, elem(ie)%spheremp, gfr%qmin(k,qi,ie), &
-                  gfr%qmax(k,qi,ie), dp(:,:,k), elem(ie)%derived%FQ(:,:,k,qi))
+                  gfr%qmax(k,qi,ie), dp(:,:,k), wr1(:,:,k))
           end do
           ! Final GLL Q1, except for DSS, which is not done in this routine.
-          elem(ie)%derived%FQ(:,:,:,qi) = elem(ie)%derived%FQ(:,:,:,qi)/dp
+          elem(ie)%derived%FQ(:,:,:,qi) = wr1/dp
        end do
     end do
   end subroutine gfr_fv_phys_to_dyn
