@@ -622,7 +622,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
        wrk(np,np), rd, wrk3(np,np,nlev)
 
   real(rl), dimension(nf,nf,nlev) :: dp_fv, p_fv, u_fv, v_fv, T_fv, exner_kess_fv, &
-       theta_kess_fv, Rstar, rho_fv, rho_dry_fv, u0, v0, theta_kess0, z_fv, ddt_cl, ddt_cl2
+       theta_kess_fv, Rstar, rho_fv, rho_dry_fv, u0, v0, T0, z_fv, ddt_cl, ddt_cl2
   real(rl), dimension(nf,nf,nlev,qsize) :: Q_fv, Q0_fv
   real(rl), dimension(nf,nf,nlevp) :: phi_i, zi_fv
   real(rl), dimension(nf,nf) :: delta_ps
@@ -685,7 +685,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      rho_dry_fv = (1-Q_fv(:,:,:,iqv))*rho_fv
 
      ! save un-forced prognostics
-     u0=u_fv; v0=v_fv; Q0_fv = Q_fv; theta_kess0 = theta_kess_fv
+     u0 = u_fv; v0 = v_fv; Q0_fv = Q_fv; T0 = T_fv
 
      ! convert to dry mixing ratios
      do i = 1,3
@@ -718,7 +718,6 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
            Q_fv(i,j,:,2) = qc_c(nlev:1:-1)
            Q_fv(i,j,:,3) = qr_c(nlev:1:-1)
            theta_kess_fv(i,j,:) = th_c(nlev:1:-1)
-           p_fv(i,j,:) = p_c(nlev:1:-1)
 
            call gfr_get_latlon(ie, i, j, lat, lon)
            do k=1,nlev
@@ -733,6 +732,16 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
         Q_fv(:,:,:,i) = (rho_dry_fv/rho_fv)*Q_fv(:,:,:,i)
      end do
 
+     ! convert from theta to T w.r.t. new model state
+     ! assume hydrostatic pressure pi changed by qv forcing
+     ! assume NH pressure perturbation unchanged
+     delta_ps = sum(dp_fv*(Q_fv(:,:,:,iqv) - Q0_fv(:,:,:,iqv)), 3)
+     do k = 1,nlev
+        p_fv(:,:,k) = p_fv(:,:,k) + hvcoord%hybm(k)*delta_ps(:,:)
+     enddo
+     exner_kess_fv = (p_fv/p0)**(Rgas/Cp)
+     T_fv = exner_kess_fv*theta_kess_fv
+
      call gfr_f2g_scalar(ie, elem(ie)%metdet, precl_fv, wrk3(:,:,:1))
      call gfr_g_make_nonnegative(elem(ie)%metdet, wrk3(:,:,:1))
      precl(:,:,ie) = wrk3(:,:,1)
@@ -741,9 +750,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      call gfr_f2g_vector_dp(ie, elem, dp_fv, dp, u_fv - u0, v_fv - v0, &
           elem(ie)%derived%FM(:,:,1,:), elem(ie)%derived%FM(:,:,2,:))
      elem(ie)%derived%FM = elem(ie)%derived%FM/dt
-     exner_kess_fv = (p_fv/p0)**(Rgas/Cp)
-     call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, &
-          exner_kess_fv*(theta_kess_fv - theta_kess0), wrk3)
+     call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, T_fv - T0, wrk3)
      elem(ie)%derived%FT(:,:,:) = wrk3/dt
 
      ! set tracer-mass forcing.
@@ -834,10 +841,10 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
        wrk(np,np), rd, wrk3(np,np,nlev)
 
   real(rl), dimension(nf,nf,nlev) :: dp_fv, p_fv, u_fv, v_fv, T_fv, exner_kess_fv, &
-       theta_kess_fv, Rstar, rho_fv, rho_dry_fv, u0, v0, theta_kess0, z_fv, ddt_cl, ddt_cl2
+       theta_kess_fv, Rstar, rho_fv, rho_dry_fv, u0, v0, T0, z_fv, ddt_cl, ddt_cl2
   real(rl), dimension(nf,nf,nlev,qsize) :: Q_fv, Q0_fv
   real(rl), dimension(nf,nf,nlevp) :: phi_i, zi_fv
-  real(rl), dimension(nf,nf) :: zs_fv, ps_fv
+  real(rl), dimension(nf,nf) :: zs_fv, ps_fv, delta_ps
   real(rl) :: precl_fv(nf,nf,1), rcd(6)
   real(rl), allocatable :: qmin(:,:,:), qmax(:,:,:)
 
@@ -891,16 +898,16 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
 
      rho_dry_fv = (1 - Q_fv(:,:,:,iqv))*rho_fv
 
-     ! Convert to dry mixing ratios.
-     do i = 1,3
-        Q_fv(:,:,:,i) = (rho_fv/rho_dry_fv)*Q_fv(:,:,:,i)
-     end do
-
      ! Compute form of exner pressure expected by Kessler physics.
      exner_kess_fv = (p_fv/p0)**(Rgas/Cp)
      theta_kess_fv = T_fv/exner_kess_fv
 
-     u0 = u_fv; v0 = v_fv; Q0_fv = Q_fv; theta_kess0 = theta_kess_fv
+     u0 = u_fv; v0 = v_fv; Q0_fv = Q_fv; T0 = T_fv
+
+     ! Convert to dry mixing ratios.
+     do i = 1,3
+        Q_fv(:,:,:,i) = (rho_fv/rho_dry_fv)*Q_fv(:,:,:,i)
+     end do
 
      do j = 1,nf
         do i = 1,nf
@@ -924,7 +931,6 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
            Q_fv(i,j,:,1) = qv_c(nlev:1:-1)
            Q_fv(i,j,:,2) = qc_c(nlev:1:-1)
            Q_fv(i,j,:,3) = qr_c(nlev:1:-1)
-           p_fv(i,j,:)   = p_c(nlev:1:-1)
            theta_kess_fv(i,j,:) = th_c(nlev:1:-1)
 
            call gfr_get_latlon(ie, i, j, lat, lon)
@@ -941,14 +947,23 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      Q_fv(:,:,:,4) = Q_fv(:,:,:,4) + dt*ddt_cl
      Q_fv(:,:,:,5) = Q_fv(:,:,:,5) + dt*ddt_cl2
 
+     ! convert from theta to T w.r.t. new model state
+     ! assume hydrostatic pressure pi changed by qv forcing
+     ! assume NH pressure perturbation unchanged
+     delta_ps = sum(dp_fv*(Q_fv(:,:,:,iqv) - Q0_fv(:,:,:,iqv)), 3)
+     do k = 1,nlev
+        p_fv(:,:,k) = p_fv(:,:,k) + hvcoord%hybm(k)*delta_ps(:,:)
+     enddo
+     exner_kess_fv = (p_fv/p0)**(Rgas/Cp)
+     T_fv = exner_kess_fv*theta_kess_fv
+
      ! These gfr calls are special to this routine, to handle
      ! DCMIP-specific precl.
      call gfr_f2g_scalar(ie, elem(ie)%metdet, precl_fv, wrk3(:,:,:1))
      call gfr_g_make_nonnegative(elem(ie)%metdet, wrk3(:,:,:1))
      precl(:,:,ie) = wrk3(:,:,1)
 
-     exner_kess_fv = (p_fv/p0)**(Rgas/Cp)
-     pg_data%T(:,:,ie) = reshape(exner_kess_fv*(theta_kess_fv - theta_kess0)/dt, (/ncol,nlev/))
+     pg_data%T(:,:,ie) = reshape((T_fv - T0)/dt, (/ncol,nlev/))
      pg_data%uv(:,1,:,ie) = reshape((u_fv - u0)/dt, (/ncol,nlev/))
      pg_data%uv(:,2,:,ie) = reshape((v_fv - v0)/dt, (/ncol,nlev/))
      pg_data%q(:,:,:,ie) = reshape(Q_fv, (/ncol,nlev,qsize/))
