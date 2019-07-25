@@ -11,6 +11,7 @@
 ! - topo roughness
 ! - np4-np2 instead of np4-pg1
 ! - halo exchange buffers
+! - impl original pg2 to compare
 
 module gllfvremap_mod
   ! High-order, mass-conserving, optionally shape-preserving
@@ -70,15 +71,13 @@ module gllfvremap_mod
        gfr_finish, &
        gfr_fv_phys_to_dyn, &
        gfr_fv_phys_to_dyn_topo, &
-       gfr_dyn_to_fv_phys
+       gfr_dyn_to_fv_phys, &
+       gfr_f2g_dss
 
   ! Testing API.
   public :: &
        gfr_test, &
-       gfr_g2f_scalar, gfr_g2f_scalar_dp, gfr_g2f_vector, gfr_g2f_vector_dp, &
-       gfr_g2f_mixing_ratios, gfr_f2g_scalar, gfr_f2g_scalar_dp, gfr_f2g_vector, &
-       gfr_f2g_vector_dp, gfr_f2g_mixing_ratios_a, gfr_f2g_mixing_ratios_b, &
-       gfr_f2g_mixing_ratios_c, gfr_f2g_dss, gfr_get_latlon, gfr_g_make_nonnegative
+       gfr_f2g_scalar, gfr_get_latlon, gfr_g_make_nonnegative
 
 contains
 
@@ -252,7 +251,7 @@ contains
     end do
 
     ! Halo exchange limiter bounds.
-    call gfr_f2g_mixing_ratios_b(hybrid, nets, nete, gfr%qmin(:,:,nets:nete), &
+    call gfr_f2g_mixing_ratios_he(hybrid, nets, nete, gfr%qmin(:,:,nets:nete), &
          gfr%qmax(:,:,nets:nete))
 
     do ie = nets,nete
@@ -763,20 +762,7 @@ contains
     v_g = v_g/dp_g
   end subroutine gfr_f2g_vector_dp
 
-  subroutine gfr_f2g_mixing_ratios_a(ie, gll_metdet, dp_f, dp_g, q_f, q_g)
-    integer, intent(in) :: ie
-    real(kind=real_kind), intent(in) :: gll_metdet(:,:), dp_f(:,:,:), dp_g(:,:,:), &
-         q_f(:,:,:,:)
-    real(kind=real_kind), intent(out) :: q_g(:,:,:,:)
-
-    integer :: q, k
-
-    do q = 1, size(q_f,4)
-       call gfr_f2g_scalar_dp(ie, gll_metdet, dp_f, dp_g, q_f(:,:,:,q), q_g(:,:,:,q))
-    end do
-  end subroutine gfr_f2g_mixing_ratios_a
-
-  subroutine gfr_f2g_mixing_ratios_b(hybrid, nets, nete, qmin, qmax)
+  subroutine gfr_f2g_mixing_ratios_he(hybrid, nets, nete, qmin, qmax)
     use viscosity_mod, only: neighbor_minmax
     use prim_advection_base, only: edgeAdvQminmax !TODO rm kludge
 
@@ -785,29 +771,7 @@ contains
     real(kind=real_kind), intent(inout) :: qmin(:,:,:), qmax(:,:,:)
 
     call neighbor_minmax(hybrid, edgeAdvQminmax, nets, nete, qmin, qmax)
-  end subroutine gfr_f2g_mixing_ratios_b
-
-  subroutine gfr_f2g_mixing_ratios_c(ie, elem, qmin, qmax, dp, q0, q_ten)
-    ! Solve
-    !     min norm(q_ten - q_ten*, 1)
-    !      st dp'q_ten unchanged
-    !         qmin <= q0 + q_ten <= qmax
-    integer, intent(in) :: ie
-    type (element_t), intent(in) :: elem(:)
-    real(kind=real_kind), intent(in) :: dp(:,:,:), q0(:,:,:,:)
-    real(kind=real_kind), intent(inout) :: qmin(:,:), qmax(:,:), q_ten(:,:,:,:)
-
-    real(kind=real_kind) :: wrk(np,np)
-    integer :: q, k
-
-    do q = 1, size(q0,4)
-       do k = 1, size(q0,3)
-          wrk = dp(:,:,k)*(q0(:,:,k,q) + q_ten(:,:,k,q))
-          call limiter_clip_and_sum(np, elem(ie)%spheremp, qmin(k,q), qmax(k,q), dp(:,:,k), wrk)
-          q_ten(:,:,k,q) = wrk/dp(:,:,k) - q0(:,:,k,q)
-       end do
-    end do
-  end subroutine gfr_f2g_mixing_ratios_c
+  end subroutine gfr_f2g_mixing_ratios_he
 
   subroutine gfr_f2g_dss(hybrid, elem, nets, nete)
     use dimensions_mod, only: nlev, qsize
