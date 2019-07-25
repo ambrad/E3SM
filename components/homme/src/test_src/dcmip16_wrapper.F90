@@ -759,8 +759,8 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      do i = 1,5
         wrk3(:nf,:nf,:) = Q_fv(:,:,:,i)
         do k = 1,nlev
-           qmin(k,i,ie) = minval(wrk3(:,:,k))
-           qmax(k,i,ie) = maxval(wrk3(:,:,k))
+           qmin(k,i,ie) = minval(wrk3(:nf,:nf,k))
+           qmax(k,i,ie) = maxval(wrk3(:nf,:nf,k))
         end do
      end do
      

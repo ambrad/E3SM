@@ -252,7 +252,8 @@ contains
     end do
 
     ! Halo exchange limiter bounds.
-    call gfr_f2g_mixing_ratios_b(hybrid, nets, nete, gfr%qmin, gfr%qmax)
+    call gfr_f2g_mixing_ratios_b(hybrid, nets, nete, gfr%qmin(:,:,nets:nete), &
+         gfr%qmax(:,:,nets:nete))
 
     do ie = nets,nete
        call calc_dp(hvcoord, elem(ie)%state%ps_v(:,:,nt), dp)
