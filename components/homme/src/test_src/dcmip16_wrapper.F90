@@ -684,13 +684,13 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
 
      rho_dry_fv = (1-Q_fv(:,:,:,iqv))*rho_fv
 
+     ! save un-forced prognostics
+     u0=u_fv; v0=v_fv; Q0_fv = Q_fv; theta_kess0 = theta_kess_fv
+
      ! convert to dry mixing ratios
      do i = 1,3
         Q_fv(:,:,:,i) = (rho_fv/rho_dry_fv)*Q_fv(:,:,:,i)
      end do
-
-     ! save un-forced prognostics
-     u0=u_fv; v0=v_fv; Q0_fv = Q_fv; theta_kess0 = theta_kess_fv
 
      ! apply forcing to columns
      do j=1,nf
@@ -730,7 +730,6 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
 
      ! convert to wet mixing ratios
      do i = 1,3
-        Q0_fv(:,:,:,i) = (rho_dry_fv/rho_fv)*Q0_fv(:,:,:,i)
         Q_fv(:,:,:,i) = (rho_dry_fv/rho_fv)*Q_fv(:,:,:,i)
      end do
 
