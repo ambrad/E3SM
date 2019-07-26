@@ -1092,7 +1092,6 @@ contains
        b = sum(gfr%fv_metdet(:,:,ie) * gfr%w_ff(:nf, :nf))
        rd = abs(b - a)/abs(a)
        if (rd /= rd .or. rd > 1e-15) print *, 'gfr> area', ie, a, b, rd
-       cycle
 
        ! Check that FV -> GLL -> FV recovers the original FV values exactly
        ! (with no DSS and no limiter).
