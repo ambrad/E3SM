@@ -334,7 +334,7 @@ contains
     type (quadrature_t), intent(in) :: gll
     integer, intent(in) :: np
     real(kind=real_kind), intent(in) :: x ! in [-1,1]
-    real(kind=real_kind), intent(out) :: y(np)
+    real(kind=real_kind), intent(out) :: y(:)
 
     integer :: i, j
     real(kind=real_kind) :: f
@@ -1091,7 +1091,8 @@ contains
        a = sum(elem(ie)%metdet * gfr%w_gg)
        b = sum(gfr%fv_metdet(:,:,ie) * gfr%w_ff(:nf, :nf))
        rd = abs(b - a)/abs(a)
-       if (rd /= rd .or. rd > 1e-15) print *, 'gfr> area', ie, a, b, rd, gfr%fv_metdet(:,:,ie)
+       if (rd /= rd .or. rd > 1e-15) print *, 'gfr> area', ie, a, b, rd
+       cycle
 
        ! Check that FV -> GLL -> FV recovers the original FV values exactly
        ! (with no DSS and no limiter).
@@ -1108,7 +1109,7 @@ contains
        a = sum(wrk(:nf,:nf)*abs(f1(:nf,:nf) - f0(:nf,:nf)))
        b = sum(wrk(:nf,:nf)*abs(f0(:nf,:nf)))
        rd = a/b
-       if (rd /= rd .or. rd > 1e-15) print *, 'gfr> recover', ie, a, b, rd
+       if (rd /= rd .or. rd > 1e-15) print *, 'gfr> recover', ie, a, b, rd, gfr%fv_metdet(:,:,ie)
 
        ! Check gfr_g_make_nonnegative.
        sign = 1
