@@ -64,7 +64,8 @@ subroutine set_test_initial_conditions(elem, deriv, hybrid, hvcoord, tl, nets, n
     case('dcmip2012_test3');
     case('dcmip2012_test4');
     case('dcmip2016_test1');    call dcmip2016_init();
-    case('dcmip2016_test1_pg'); call dcmip2016_init();
+    case('dcmip2016_test1_pg1', 'dcmip2016_test1_pg2', 'dcmip2016_test1_pg3', 'dcmip2016_test1_pg4')
+       call dcmip2016_init();
     case('dcmip2016_test2');    call dcmip2016_init();
     case('dcmip2016_test3');    call dcmip2016_init();
     case('mtest1');
@@ -94,7 +95,10 @@ subroutine set_test_initial_conditions(elem, deriv, hybrid, hvcoord, tl, nets, n
       case('dcmip2012_test3');    call dcmip2012_test3  (elem,hybrid,hvcoord,nets,nete)
       case('dcmip2012_test4');    call dcmip2012_test4_init(elem,hybrid,hvcoord,nets,nete)
       case('dcmip2016_test1');    call dcmip2016_test1  (elem,hybrid,hvcoord,nets,nete)
-      case('dcmip2016_test1_pg'); call dcmip2016_test1_pg(elem,hybrid,hvcoord,nets,nete)
+      case('dcmip2016_test1_pg1'); call dcmip2016_test1_pg(elem,hybrid,hvcoord,nets,nete,1)
+      case('dcmip2016_test1_pg2'); call dcmip2016_test1_pg(elem,hybrid,hvcoord,nets,nete,2)
+      case('dcmip2016_test1_pg3'); call dcmip2016_test1_pg(elem,hybrid,hvcoord,nets,nete,3)
+      case('dcmip2016_test1_pg4'); call dcmip2016_test1_pg(elem,hybrid,hvcoord,nets,nete,4)
       case('dcmip2016_test2');    call dcmip2016_test2  (elem,hybrid,hvcoord,nets,nete)
       case('dcmip2016_test3');    call dcmip2016_test3  (elem,hybrid,hvcoord,nets,nete)
       case('mtest1');             call mtest_init       (elem,hybrid,hvcoord,nets,nete,1)
@@ -184,7 +188,8 @@ subroutine compute_test_forcing(elem,hybrid,hvcoord,nt,ntQ,dt,nets,nete,tl)
     case('mtest3');             call dcmip2012_test2_x_forcing(elem,hybrid,hvcoord,nets,nete,nt,dt)
 
     case('dcmip2016_test1');    call dcmip2016_test1_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl)
-    case('dcmip2016_test1_pg'); call dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl)
+    case('dcmip2016_test1_pg1', 'dcmip2016_test1_pg2', 'dcmip2016_test1_pg3', 'dcmip2016_test1_pg4')
+       call dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl)
     case('dcmip2016_test2');    call dcmip2016_test2_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl,2)
     case('dcmip2016_test3');    call dcmip2016_test3_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl)
 

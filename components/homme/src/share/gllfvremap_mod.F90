@@ -9,6 +9,7 @@
 ! - topo roughness
 ! - ftype other than 2,4
 ! - checker routine callable from dcmip1
+! - permit any nphys in dcmip1
 ! - np4-np2 instead of np4-pg1
 ! - halo exchange buffers
 ! - impl original pg2 to compare

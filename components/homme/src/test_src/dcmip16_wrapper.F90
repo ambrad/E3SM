@@ -42,9 +42,8 @@ real(rl), parameter :: rh2o    = 461.5d0,            &                  ! Gas co
 real(rl) :: sample_period  = 60.0_rl
 real(rl) :: rad2dg = 180.0_rl/pi
 
-integer, parameter :: gfr_nphys = 2
-
 type :: PhysgridData_t
+   integer :: nphys
    real(rl), allocatable :: ps(:,:), zs(:,:), T(:,:,:), uv(:,:,:,:), omega_p(:,:,:), q(:,:,:,:)
 end type PhysgridData_t
 
@@ -153,28 +152,28 @@ subroutine dcmip2016_test1(elem,hybrid,hvcoord,nets,nete)
 
 end subroutine
 
-subroutine dcmip2016_test1_pg(elem,hybrid,hvcoord,nets,nete)
+subroutine dcmip2016_test1_pg(elem,hybrid,hvcoord,nets,nete,nphys)
   use gllfvremap_mod, only: gfr_init
 
   type(element_t),    intent(inout), target :: elem(:)                  ! element array
   type(hybrid_t),     intent(in)            :: hybrid                   ! hybrid parallel structure
   type(hvcoord_t),    intent(inout)         :: hvcoord                  ! hybrid vertical coordinates
   integer,            intent(in)            :: nets,nete                ! start, end element index
+  integer,            intent(in)            :: nphys                    ! pgN, N parameter, for physgrid
 
   integer :: ncol
 
   if (hybrid%ithr == 0) then
-     ncol = gfr_nphys*gfr_nphys
-     call gfr_init(hybrid, elem, gfr_nphys)
+     ncol = nphys*nphys
+     pg_data%nphys = nphys
+     call gfr_init(hybrid, elem, nphys)
      allocate(pg_data%ps(ncol,nelemd), pg_data%zs(ncol,nelemd), pg_data%T(ncol,nlev,nelemd), &
           pg_data%omega_p(ncol,nlev,nelemd), pg_data%uv(ncol,2,nlev,nelemd), &
           pg_data%q(ncol,nlev,qsize,nelemd))
   end if
-#ifdef HORIZ_OPENMP
   !$omp barrier
-#endif
   call dcmip2016_test1(elem,hybrid,hvcoord,nets,nete)
-  sample_period = 3600*24
+  sample_period = 3600*4
 end subroutine dcmip2016_test1_pg
 
 !_____________________________________________________________________
@@ -607,10 +606,10 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   real(rl),           intent(in)            :: dt                       ! time-step size
   type(TimeLevel_t),  intent(in)            :: tl                       ! time level structure
 
-  integer, parameter :: nf = gfr_nphys, ncol = nf*nf, iqv = 1
+  integer, parameter :: iqv = 1
   real(rl), parameter :: one = 1.0_rl
 
-  integer :: i,j,k,ie
+  integer :: i,j,k,ie,qi
   real(rl), dimension(np,np,nlev) :: u,v,w,T,p,dp,rho,rho_dry,z,exner_kess,theta_kess
   real(rl), dimension(np,np,nlev) :: rho_new,p_pk
   real(rl), dimension(nlev)       :: u_c,v_c,p_c,qv_c,qc_c,qr_c,rho_c,z_c, th_c
@@ -618,16 +617,20 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   real(rl) :: lat, lon, dz_top(np,np),zi(np,np,nlevp),zi_c(nlevp), ps(np,np), &
        wrk(np,np), rd, wrk3(np,np,nlev)
 
-  real(rl), dimension(nf,nf,nlev) :: dp_fv, p_fv, u_fv, v_fv, T_fv, exner_kess_fv, &
+  integer :: nf, ncol
+  real(rl), dimension(np,np,nlev) :: dp_fv, p_fv, u_fv, v_fv, T_fv, exner_kess_fv, &
        theta_kess_fv, Rstar, rho_fv, rho_dry_fv, u0, v0, T0, z_fv, ddt_cl, ddt_cl2
-  real(rl), dimension(nf,nf,nlev,qsize) :: Q_fv, Q0_fv
-  real(rl), dimension(nf,nf,nlevp) :: phi_i, zi_fv
-  real(rl), dimension(nf,nf) :: zs_fv, ps_fv, delta_ps
-  real(rl) :: precl_fv(nf,nf,1), rcd(6)
+  real(rl), dimension(np,np,nlev,qsize) :: Q_fv, Q0_fv
+  real(rl), dimension(np,np,nlevp) :: phi_i, zi_fv
+  real(rl), dimension(np,np) :: zs_fv, ps_fv, delta_ps
+  real(rl) :: precl_fv(np,np,1), rcd(6)
   real(rl), allocatable :: qmin(:,:,:), qmax(:,:,:)
 
-  integer :: pbl_type, prec_type, qi
+  integer :: pbl_type, prec_type
   integer, parameter :: test = 1
+
+  nf = pg_data%nphys
+  ncol = nf*nf
 
   prec_type = dcmip16_prec_type
   pbl_type  = dcmip16_pbl_type
@@ -642,49 +645,51 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   do ie = nets,nete
      precl(:,:,ie) = -one
 
-     T_fv = reshape(pg_data%T(:,:,ie), (/nf,nf,nlev/))
-     u_fv = reshape(pg_data%uv(:,1,:,ie), (/nf,nf,nlev/))
-     v_fv = reshape(pg_data%uv(:,2,:,ie), (/nf,nf,nlev/))
-     Q_fv = reshape(pg_data%q(:,:,:,ie), (/nf,nf,nlev,qsize/))
-     ps_fv = reshape(pg_data%ps(:,ie), (/nf,nf/))
-     zs_fv = reshape(pg_data%zs(:,ie), (/nf,nf/))
-     zs_fv = zs_fv/g
+     T_fv(:nf,:nf,:) = reshape(pg_data%T(:,:,ie), (/nf,nf,nlev/))
+     u_fv(:nf,:nf,:) = reshape(pg_data%uv(:,1,:,ie), (/nf,nf,nlev/))
+     v_fv(:nf,:nf,:) = reshape(pg_data%uv(:,2,:,ie), (/nf,nf,nlev/))
+     Q_fv(:nf,:nf,:,:) = reshape(pg_data%q(:,:,:,ie), (/nf,nf,nlev,qsize/))
+     ps_fv(:nf,:nf) = reshape(pg_data%ps(:,ie), (/nf,nf/))
+     zs_fv(:nf,:nf) = reshape(pg_data%zs(:,ie), (/nf,nf/))
+     zs_fv(:nf,:nf) = zs_fv(:nf,:nf)/g
      do k = 1,nlev
-        p_fv(:,:,k) = hvcoord%hyam(k)*hvcoord%ps0 + hvcoord%hybm(k)*ps_fv
-        dp_fv(:,:,k) = (hvcoord%hyai(k+1) - hvcoord%hyai(k))*hvcoord%ps0 + &
+        p_fv(:nf,:nf,k) = hvcoord%hyam(k)*hvcoord%ps0 + hvcoord%hybm(k)*ps_fv
+        dp_fv(:nf,:nf,k) = (hvcoord%hyai(k+1) - hvcoord%hyai(k))*hvcoord%ps0 + &
              (hvcoord%hybi(k+1) - hvcoord%hybi(k))*ps_fv
      end do
 
      ! Rederive the remaining vars so they are self-consistent; use
      ! hydrostatic assumption.
      if (use_moisture) then
-        Rstar = Rgas + (Rwater_vapor - Rgas)*Q_fv(:,:,:,iqv)
+        Rstar = Rgas + (Rwater_vapor - Rgas)*Q_fv(:nf,:nf,:,iqv)
      else
         Rstar = Rgas
      end if
      rho_fv = p_fv/(Rstar*T_fv)
-     phi_i(:,:,nlevp) = g*zs_fv
+     phi_i(:nf,:nf,nlevp) = g*zs_fv
      do k = nlev,1,-1
-        phi_i(:,:,k) = phi_i(:,:,k+1) + (Rstar(:,:,k)*(dp_fv(:,:,k)*T_fv(:,:,k)))/p_fv(:,:,k)
+        phi_i(:nf,:nf,k) = phi_i(:nf,:nf,k+1) + &
+             (Rstar(:nf,:nf,k)*(dp_fv(:nf,:nf,k)*T_fv(:nf,:nf,k)))/p_fv(:nf,:nf,k)
      end do
      do k=1,nlev
-        z_fv(:,:,k) = (phi_i(:,:,k)+phi_i(:,:,k+1))/(2*g)
+        z_fv(:nf,:nf,k) = (phi_i(:nf,:nf,k)+phi_i(:nf,:nf,k+1))/(2*g)
      end do
      do k=1,nlevp
-        zi_fv(:,:,k) = phi_i(:,:,k)/g
+        zi_fv(:nf,:nf,k) = phi_i(:nf,:nf,k)/g
      end do
 
-     rho_dry_fv = (1 - Q_fv(:,:,:,iqv))*rho_fv
+     rho_dry_fv(:nf,:nf,:) = (1 - Q_fv(:nf,:nf,:,iqv))*rho_fv(:nf,:nf,:)
 
      ! Compute form of exner pressure expected by Kessler physics.
      exner_kess_fv = (p_fv/p0)**(Rgas/Cp)
      theta_kess_fv = T_fv/exner_kess_fv
 
-     u0 = u_fv; v0 = v_fv; Q0_fv = Q_fv; T0 = T_fv
+     u0(:nf,:nf,:) = u_fv(:nf,:nf,:); v0(:nf,:nf,:) = v_fv(:nf,:nf,:); T0(:nf,:nf,:) = T_fv(:nf,:nf,:)
+     Q0_fv(:nf,:nf,:,:) = Q_fv(:nf,:nf,:,:);
 
      ! Convert to dry mixing ratios.
      do i = 1,3
-        Q_fv(:,:,:,i) = (rho_fv/rho_dry_fv)*Q_fv(:,:,:,i)
+        Q_fv(:nf,:nf,:,i) = (rho_fv(:nf,:nf,:)/rho_dry_fv(:nf,:nf,:))*Q_fv(:nf,:nf,:,i)
      end do
 
      do j = 1,nf
@@ -720,20 +725,20 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      enddo
 
      do i = 1,3
-        Q_fv(:,:,:,i) = (rho_dry_fv/rho_fv)*Q_fv(:,:,:,i)
+        Q_fv(:nf,:nf,:,i) = (rho_dry_fv(:nf,:nf,:)/rho_fv(:nf,:nf,:))*Q_fv(:nf,:nf,:,i)
      end do
-     Q_fv(:,:,:,4) = Q_fv(:,:,:,4) + dt*ddt_cl
-     Q_fv(:,:,:,5) = Q_fv(:,:,:,5) + dt*ddt_cl2
+     Q_fv(:nf,:nf,:,4) = Q_fv(:nf,:nf,:,4) + dt*ddt_cl
+     Q_fv(:nf,:nf,:,5) = Q_fv(:nf,:nf,:,5) + dt*ddt_cl2
 
      ! Convert from theta to T w.r.t. new model state.
      ! Assume hydrostatic pressure pi changed by qv forcing.
      ! Assume NH pressure perturbation is unchanged.
-     delta_ps = sum(dp_fv*(Q_fv(:,:,:,iqv) - Q0_fv(:,:,:,iqv)), 3)
+     delta_ps(:nf,:nf) = sum(dp_fv(:nf,:nf,:)*(Q_fv(:nf,:nf,:,iqv) - Q0_fv(:nf,:nf,:,iqv)), 3)
      do k = 1,nlev
-        p_fv(:,:,k) = p_fv(:,:,k) + hvcoord%hybm(k)*delta_ps(:,:)
+        p_fv(:nf,:nf,k) = p_fv(:nf,:nf,k) + hvcoord%hybm(k)*delta_ps(:nf,:nf)
      enddo
-     exner_kess_fv = (p_fv/p0)**(Rgas/Cp)
-     T_fv = exner_kess_fv*theta_kess_fv
+     exner_kess_fv(:nf,:nf,:) = (p_fv(:nf,:nf,:)/p0)**(Rgas/Cp)
+     T_fv(:nf,:nf,:) = exner_kess_fv(:nf,:nf,:)*theta_kess_fv(:nf,:nf,:)
 
      ! These gfr calls are special to this routine, to handle
      ! DCMIP-specific precl.
@@ -741,10 +746,10 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      call gfr_g_make_nonnegative(elem(ie)%metdet, wrk3(:,:,:1))
      precl(:,:,ie) = wrk3(:,:,1)
 
-     pg_data%T(:,:,ie) = reshape((T_fv - T0)/dt, (/ncol,nlev/))
-     pg_data%uv(:,1,:,ie) = reshape((u_fv - u0)/dt, (/ncol,nlev/))
-     pg_data%uv(:,2,:,ie) = reshape((v_fv - v0)/dt, (/ncol,nlev/))
-     pg_data%q(:,:,:,ie) = reshape(Q_fv, (/ncol,nlev,qsize/))
+     pg_data%T(:,:,ie) = reshape((T_fv(:nf,:nf,:) - T0(:nf,:nf,:))/dt, (/ncol,nlev/))
+     pg_data%uv(:,1,:,ie) = reshape((u_fv(:nf,:nf,:) - u0(:nf,:nf,:))/dt, (/ncol,nlev/))
+     pg_data%uv(:,2,:,ie) = reshape((v_fv(:nf,:nf,:) - v0(:nf,:nf,:))/dt, (/ncol,nlev/))
+     pg_data%q(:,:,:,ie) = reshape(Q_fv(:nf,:nf,:,:), (/ncol,nlev,qsize/))
      
      ! Measure max w and max prect. w is not used in the physics, so
      ! just look at the GLL values.
