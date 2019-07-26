@@ -589,7 +589,7 @@ subroutine toy_print(hybrid, rcd)
      rcd(5) = ParallelMin(rcd(5), hybrid)
      rcd(6) = ParallelMax(rcd(6), hybrid)
      if (hybrid%masterthread) &
-          write(*,'(a,i5,es11.3,es11.3,es11.3,es11.3,es11.3,es11.3)'), 'toy>', count, rcd
+          write(*,'(a,i5,es11.3,es11.3,es11.3,es11.3,es11.3,es11.3)') 'toy>', count, rcd
   end if
   count = count + 1
 end subroutine toy_print
