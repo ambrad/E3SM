@@ -573,15 +573,14 @@ subroutine toy_rcd(q, rcd)
   rcd(6) = max(rcd(6), maxval(q(:,:,:,1) + 2*q(:,:,:,2)))
 end subroutine toy_rcd
 
-subroutine toy_print(hybrid, rcd)
+subroutine toy_print(hybrid, nstep, rcd)
   use reduction_mod, only: ParallelMin, ParallelMax
 
   type(hybrid_t), intent(in) :: hybrid
+  integer, intent(in) :: nstep
   real(rl), intent(inout) :: rcd(6)
 
-  integer :: count = 0
-
-  if (modulo(count,50) == 0) then
+  if (modulo(nstep,50) == 1) then
      rcd(1) = ParallelMin(rcd(1), hybrid)
      rcd(2) = ParallelMax(rcd(2), hybrid)
      rcd(3) = ParallelMin(rcd(3), hybrid)
@@ -589,9 +588,8 @@ subroutine toy_print(hybrid, rcd)
      rcd(5) = ParallelMin(rcd(5), hybrid)
      rcd(6) = ParallelMax(rcd(6), hybrid)
      if (hybrid%masterthread) &
-          write(*,'(a,i5,es11.3,es11.3,es11.3,es11.3,es11.3,es11.3)') 'toy>', count, rcd
+          write(*,'(a,i5,es11.3,es11.3,es11.3,es11.3,es11.3,es11.3)') 'toy>', nstep-1, rcd
   end if
-  count = count + 1
 end subroutine toy_print
 
 subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl)
@@ -763,7 +761,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   call toy_init(rcd)
   do ie = nets,nete
      call toy_rcd(elem(ie)%derived%FQ(:,:,:,4:5), rcd)
-     ! Compensate for that fact that in standalone tests, FQ is
+     ! Compensate for the fact that in standalone tests, FQ is
      ! density, while in E3SM coupled runs (and so the gfr interface
      ! for E3SM coupling), FQ is mixing ratio.
      do k = 1,nlev
@@ -774,7 +772,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
         elem(ie)%derived%FQ(:,:,:,i) = dp*(elem(ie)%derived%FQ(:,:,:,i) - elem(ie)%state%Q(:,:,:,i))/dt
      end do
   end do
-  call toy_print(hybrid, rcd)
+  call toy_print(hybrid, tl%nstep, rcd)
 
   ! DSS precl
   do ie = nets,nete
