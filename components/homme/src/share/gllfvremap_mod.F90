@@ -91,7 +91,8 @@ contains
 
     real(real_kind) :: R(npsq,nphys_max*nphys_max)
 
-    if (hybrid%masterthread) print *, 'gfr> init nphys', nphys
+    if (hybrid%masterthread) print '(a,i3)', 'gfr> init nphys', nphys
+    if (hybrid%ithr > 0) return
 
     if (nphys > np) then
        ! The FV -> GLL map is defined only if nphys <= np. If we ever are
@@ -1067,11 +1068,12 @@ contains
     real(kind=real_kind), allocatable :: Qdp_fv(:,:,:), ps_v_fv(:,:,:), &
          qmins(:,:,:), qmaxs(:,:,:)
     logical :: limit
+    character(32) :: msg
 
     nf = gfr%nphys
 
     if (hybrid%masterthread) then
-       print *, 'gfr> npi', gfr%npi, 'nphys', nf
+       print '(a,i3,a,i3)', 'gfr> npi', gfr%npi, ' nphys', nf
        if (verbose) then
           print *, 'gfr> w_ff', nf, gfr%w_ff(:nf, :nf)
           print *, 'gfr> w_gg', np, gfr%w_gg(:np, :np)
@@ -1089,7 +1091,7 @@ contains
        a = sum(elem(ie)%metdet * gfr%w_gg)
        b = sum(gfr%fv_metdet(:,:,ie) * gfr%w_ff(:nf, :nf))
        rd = abs(b - a)/abs(a)
-       if (rd /= rd .or. rd > 1e-15) print *, 'gfr> area', ie, rd
+       if (rd /= rd .or. rd > 1e-15) print *, 'gfr> area', ie, a, b, rd, gfr%fv_metdet(:,:,ie)
 
        ! Check that FV -> GLL -> FV recovers the original FV values exactly
        ! (with no DSS and no limiter).
@@ -1120,7 +1122,7 @@ contains
        call gfr_g_make_nonnegative(elem(ie)%metdet, wrk3)
        mass1 = sum(elem(ie)%spheremp*wrk3(:,:,1))
        rd = (mass1 - mass0)/mass0
-       if (rd /= rd .or. rd > 1e-15) print *, 'gfr> nonnegative', ie, mass0, mass1
+       if (rd /= rd .or. rd > 2e-15) print *, 'gfr> nonnegative', ie, rd, mass0, mass1, 'ERROR'
     end do
 
     ! For convergence testing. Run this testing routine with a sequence of ne
@@ -1217,12 +1219,17 @@ contains
        qmin1 = ParallelMin(qmin1, hybrid)
        qmax1 = ParallelMax(qmax1, hybrid)
        if (hybrid%masterthread) then
-          print *, 'gfr> limit', ilimit
+          print '(a,i3)', 'gfr> limiter', ilimit
           rd = sqrt(global_shared_sum(1)/global_shared_sum(2))
-          print *, 'gfr> l2  ', rd
+          print '(a,es12.4)', 'gfr> l2  ', rd
           rd = (global_shared_sum(4) - global_shared_sum(3))/global_shared_sum(3)
-          print *, 'gfr> mass', rd
-          print *, 'gfr> limit', min(zero, qmin - qmin1), max(zero, qmax - qmax1)
+          msg = ''
+          if (rd > 1e-15) msg = ' ERROR'
+          print '(a,es11.3,a8)', 'gfr> mass', rd, msg
+          msg = ''
+          if (limit .and. (qmin < qmin1 - 5e-16 .or. qmax > qmax1 + 5e-16)) msg = ' ERROR'
+          print '(a,es11.3,es11.3,a8)', 'gfr> limit', min(zero, qmin - qmin1), &
+               max(zero, qmax - qmax1), msg
        end if
     end do
     deallocate(Qdp_fv, ps_v_fv, qmins, qmaxs)
@@ -1243,20 +1250,14 @@ contains
     do nphys = 1, np
        ! This is meant to be called before threading starts.
        if (hybrid%ithr == 0) call gfr_init(hybrid, elem, nphys)
-#ifdef HORIZ_OPENMP
        !$omp barrier
-#endif
 
        call check(gfr, hybrid, elem, nets, nete, .false.)
 
        ! This is meant to be called after threading ends.
-#ifdef HORIZ_OPENMP
        !$omp barrier
-#endif
        if (hybrid%ithr == 0) call gfr_finish()
+       !$omp barrier
     end do
-#ifdef HORIZ_OPENMP
-    !$omp barrier
-#endif
   end subroutine gfr_test
 end module gllfvremap_mod
