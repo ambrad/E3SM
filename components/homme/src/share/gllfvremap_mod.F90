@@ -1179,7 +1179,7 @@ contains
           do ie = nets, nete !TODO move to own routine
              call gfr_f2g_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,:,ie), &
                   Qdp_fv(:,:,ie), elem(ie)%state%Q(:,:,1,1))
-             if (limit) then
+             if (limit .and. gfr%nphys > 1) then
                 qmin = qmins(1,1,ie)
                 qmax = qmaxs(1,1,ie)
                 call limiter_clip_and_sum(np, elem(ie)%spheremp, & ! same as w_gg*gll_metdet
@@ -1187,26 +1187,35 @@ contains
              end if
              elem(ie)%state%Q(:,:,1,1) = elem(ie)%state%Q(:,:,1,1)/elem(ie)%state%ps_v(:,:,1)
           end do
-          ! 3. DSS
-          do ie = nets, nete
-             elem(ie)%state%Q(:,:,1,1) = &
-                  elem(ie)%state%ps_v(:,:,1)*elem(ie)%state%Q(:,:,1,1)*elem(ie)%spheremp(:,:)
-             call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%Q(:,:,1,1), 1, 0, 1)
-          end do
-          call bndry_exchangeV(hybrid, edge_g)
-          do ie = nets, nete
-             call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%Q(:,:,1,1), 1, 0, 1)
-             elem(ie)%state%Q(:,:,1,1) = &
-                  (elem(ie)%state%Q(:,:,1,1)*elem(ie)%rspheremp(:,:))/elem(ie)%state%ps_v(:,:,1)
-          end do
-          ! 4. pg1 special case
-          if (gfr%nphys == 1 .and. .not. limit) then
-             do ie = nets, nete !TODO move to own routine
-                elem(ie)%state%Q(:,:,1,1) = elem(ie)%state%Q(:,:,1,1)*elem(ie)%state%ps_v(:,:,1)
-                call gfr_reconstructd_nphys1(gfr, elem(ie)%metdet, elem(ie)%state%Q(:,:,1,1))
-                elem(ie)%state%Q(:,:,1,1) = elem(ie)%state%Q(:,:,1,1)/elem(ie)%state%ps_v(:,:,1)
+          do i = 1,2
+             ! 3. DSS
+             do ie = nets, nete
+                elem(ie)%state%Q(:,:,1,1) = &
+                     elem(ie)%state%ps_v(:,:,1)*elem(ie)%state%Q(:,:,1,1)*elem(ie)%spheremp(:,:)
+                call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%Q(:,:,1,1), 1, 0, 1)
              end do
-          end if
+             call bndry_exchangeV(hybrid, edge_g)
+             do ie = nets, nete
+                call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%Q(:,:,1,1), 1, 0, 1)
+                elem(ie)%state%Q(:,:,1,1) = &
+                     (elem(ie)%state%Q(:,:,1,1)*elem(ie)%rspheremp(:,:))/elem(ie)%state%ps_v(:,:,1)
+             end do
+             ! 4. pg1 special case
+             if (gfr%nphys == 1 .and. i == 1) then
+                do ie = nets, nete !TODO move to own routine
+                   elem(ie)%state%Q(:,:,1,1) = elem(ie)%state%Q(:,:,1,1)*elem(ie)%state%ps_v(:,:,1)
+                   call gfr_reconstructd_nphys1(gfr, elem(ie)%metdet, elem(ie)%state%Q(:,:,1,1))
+                   if (limit) then
+                      qmin = qmins(1,1,ie)
+                      qmax = qmaxs(1,1,ie)
+                      call limiter_clip_and_sum(np, elem(ie)%spheremp, &
+                           qmin, qmax, elem(ie)%state%ps_v(:,:,1), elem(ie)%state%Q(:,:,1,1))
+                   end if
+                   elem(ie)%state%Q(:,:,1,1) = elem(ie)%state%Q(:,:,1,1)/elem(ie)%state%ps_v(:,:,1)
+                end do
+             end if
+             if (gfr%nphys > 1 .or. .not. limit) exit
+          end do
        end do
        ! 5. Compute error.
        qmin = two
