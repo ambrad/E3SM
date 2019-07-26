@@ -3,12 +3,12 @@
 #endif
 
 !todo
-! - omega_p
-! - mod vector_dp routine to do in/out arrays efficiently in dp_coupling
-! - checker routine callable from dcmip1
-! - test vector_dp routines: conservation
 ! - area correction: alpha
+! - test vector_dp routines: conservation
+! - test top-level phys<->dyn routines: conservation and limiting
 ! - topo roughness
+! - ftype other than 2,4
+! - checker routine callable from dcmip1
 ! - np4-np2 instead of np4-pg1
 ! - halo exchange buffers
 ! - impl original pg2 to compare
@@ -183,7 +183,9 @@ contains
        uv(:ncol,1,:,ie) = reshape(wr1(:nf,:nf,:), (/ncol,nlev/))
        uv(:ncol,2,:,ie) = reshape(wr2(:nf,:nf,:), (/ncol,nlev/))
 
-       !TODO omega_p
+       call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, &
+            elem(ie)%derived%omega_p, wr1)
+       omega_p(:ncol,:,ie) = reshape(wr1(:nf,:nf,:), (/ncol,nlev/))
 
        do qi = 1,qsize
           call gfr_g2f_mixing_ratio(ie, elem(ie)%metdet, dp, dp_fv, &
