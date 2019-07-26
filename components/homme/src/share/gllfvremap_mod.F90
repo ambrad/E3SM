@@ -9,11 +9,9 @@
 ! - topo roughness
 ! - ftype other than 2,4
 ! - checker routine callable from dcmip1
-! - permit any nphys in dcmip1
 ! - np4-np2 instead of np4-pg1
 ! - halo exchange buffers
 ! - impl original pg2 to compare
-! - figure out gfr_g_make_nonnegative test issue when running threaded
 
 module gllfvremap_mod
   ! High-order, mass-conserving, optionally shape-preserving
@@ -1051,6 +1049,31 @@ contains
        end do
     end do
   end subroutine set_ps_Q
+  
+  subroutine check_nonnegative(elem, nets, nete)
+    ! Check gfr_g_make_nonnegative.
+
+    type (element_t), intent(inout) :: elem(:)
+    integer, intent(in) :: nets, nete
+
+    real(kind=real_kind) :: wrk3(np,np,1), mass0, mass1, rd
+    integer :: ie, i, j, sign
+
+    do ie = nets,nete
+       sign = 1
+       do j = 1,np
+          do i = 1,np
+             wrk3(i,j,1) = one + sign*i*j
+             sign = -sign
+          end do
+       end do
+       mass0 = sum(elem(ie)%spheremp*wrk3(:,:,1))
+       call gfr_g_make_nonnegative(elem(ie)%metdet, wrk3)
+       mass1 = sum(elem(ie)%spheremp*wrk3(:,:,1))
+       rd = (mass1 - mass0)/mass0
+       if (rd /= rd .or. rd > 2e-15) print *, 'gfr> nonnegative', ie, rd, mass0, mass1, 'ERROR'
+    end do
+  end subroutine check_nonnegative
 
   subroutine check(gfr, hybrid, elem, nets, nete, verbose)
     use dimensions_mod, only: nlev, qsize
@@ -1069,8 +1092,8 @@ contains
     logical, intent(in) :: verbose
 
     real(kind=real_kind) :: a, b, rd, x, y, f0(np,np), f1(np,np), g(np,np), &
-         wrk(np,np), wrk3(np,np,1), qmin, qmax, qmin1, qmax1, mass0, mass1
-    integer :: nf, ie, i, j, iremap, info, ilimit, sign
+         wrk(np,np), qmin, qmax, qmin1, qmax1
+    integer :: nf, ie, i, j, iremap, info, ilimit
     real(kind=real_kind), allocatable :: Qdp_fv(:,:,:), ps_v_fv(:,:,:), &
          qmins(:,:,:), qmaxs(:,:,:)
     logical :: limit
@@ -1115,23 +1138,8 @@ contains
        b = sum(wrk(:nf,:nf)*abs(f0(:nf,:nf)))
        rd = a/b
        if (rd /= rd .or. rd > 1e-15) print *, 'gfr> recover', ie, a, b, rd, gfr%fv_metdet(:,:,ie)
-
-       ! Check gfr_g_make_nonnegative.
-       sign = 1
-       do j = 1,np
-          do i = 1,np
-             wrk3(i,j,1) = one + sign*i*j
-             sign = -sign
-          end do
-       end do
-       mass0 = sum(elem(ie)%spheremp*wrk3(:,:,1))
-#if 0
-       call gfr_g_make_nonnegative(elem(ie)%metdet, wrk3)
-       mass1 = sum(elem(ie)%spheremp*wrk3(:,:,1))
-       rd = (mass1 - mass0)/mass0
-       if (rd /= rd .or. rd > 2e-15) print *, 'gfr> nonnegative', ie, rd, mass0, mass1, 'ERROR'
-#endif
     end do
+    call check_nonnegative(elem, nets, nete)
 
     ! For convergence testing. Run this testing routine with a sequence of ne
     ! values and plot log l2 error vs log ne.
