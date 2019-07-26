@@ -580,7 +580,7 @@ subroutine toy_print(hybrid, nstep, rcd)
   integer, intent(in) :: nstep
   real(rl), intent(inout) :: rcd(6)
 
-  if (modulo(nstep,50) == 1) then
+  if (modulo(nstep,50) == 0) then
      rcd(1) = ParallelMin(rcd(1), hybrid)
      rcd(2) = ParallelMax(rcd(2), hybrid)
      rcd(3) = ParallelMin(rcd(3), hybrid)
@@ -588,7 +588,7 @@ subroutine toy_print(hybrid, nstep, rcd)
      rcd(5) = ParallelMin(rcd(5), hybrid)
      rcd(6) = ParallelMax(rcd(6), hybrid)
      if (hybrid%masterthread) &
-          write(*,'(a,i5,es11.3,es11.3,es11.3,es11.3,es11.3,es11.3)') 'toy>', nstep-1, rcd
+          write(*,'(a,i5,es11.3,es11.3,es11.3,es11.3,es11.3,es11.3)') 'toy>', nstep, rcd
   end if
 end subroutine toy_print
 
