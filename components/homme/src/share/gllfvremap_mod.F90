@@ -3,9 +3,11 @@
 #endif
 
 !todo
+! - pg1 boost in dcmip1
+! - global mass checks
+! - global extrema checks
 ! - area correction: alpha
 ! - test vector_dp routines: conservation
-! - test top-level phys<->dyn routines: conservation and limiting
 ! - topo roughness
 ! - ftype other than 2,4
 ! - checker routine callable from dcmip1
@@ -219,7 +221,8 @@ contains
     real(kind=real_kind), intent(in) :: T(:,:,:), uv(:,:,:,:), q(:,:,:,:)
     integer, intent(in), optional :: nets_in, nete_in
 
-    real(kind=real_kind) :: dp(np,np,nlev), dp_fv(np,np,nlev), wr1(np,np,nlev), wr2(np,np,nlev)
+    real(kind=real_kind) :: dp(np,np,nlev), dp_fv(np,np,nlev), wr1(np,np,nlev), &
+         wr2(np,np,nlev), qmin, qmax
     integer :: nets, nete, ie, nf, ncol, k, qsize, qi
 
     if (present(nets_in)) then
@@ -273,8 +276,11 @@ contains
        call calc_dp(hvcoord, elem(ie)%state%ps_v(:,:,nt), dp)
        do qi = 1,qsize
           ! Limit GLL Q1.
-          if (gfr%check) wr1 = elem(ie)%derived%FQ(:,:,:,qi)
+          if (gfr%check) wr1 = elem(ie)%derived%FQ(:,:,:,qi)          
           do k = 1,nlev
+             ! Augment bounds with GLL Q0 bounds.
+             gfr%qmin(k,qi,ie) = min(minval(elem(ie)%state%Q(:,:,k,qi)), gfr%qmin(k,qi,ie))
+             gfr%qmax(k,qi,ie) = max(maxval(elem(ie)%state%Q(:,:,k,qi)), gfr%qmax(k,qi,ie))
              ! Final GLL Q1, except for DSS, which is not done in this routine.
              call limiter_clip_and_sum(np, elem(ie)%spheremp, gfr%qmin(k,qi,ie), &
                   gfr%qmax(k,qi,ie), dp(:,:,k), elem(ie)%derived%FQ(:,:,k,qi))
