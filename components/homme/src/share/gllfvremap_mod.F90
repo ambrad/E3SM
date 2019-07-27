@@ -97,7 +97,7 @@ contains
 
     if (hybrid%ithr > 0) return
 
-    gfr%check = .false.
+    gfr%check = .true.
     gfr%tolfac = one
     if (hybrid%masterthread) print '(a,i3)', 'gfr> init nphys', nphys, 'check', gfr%check
 
@@ -978,11 +978,9 @@ contains
   end subroutine gfr_reconstructd_nphys1
 
   subroutine limiter_clip_and_sum(n, spheremp, qmin, qmax, dp, q)
-    use kinds, only: real_kind
-
     integer, intent(in) :: n
-    real (kind=real_kind), intent(inout) :: qmin, qmax, q(:,:)
-    real (kind=real_kind), intent(in) :: spheremp(:,:), dp(:,:)
+    real (kind=real_kind), intent(in) :: spheremp(:,:), dp(:,:), qmin, qmax
+    real (kind=real_kind), intent(inout) :: q(:,:)
 
     integer :: k1, i, j
     logical :: modified
@@ -994,15 +992,6 @@ contains
 
     sumc = sum(c)
     mass = sum(c*x)
-    ! This should never happen, but if it does, don't limit.
-    if (sumc <= 0) return
-    if (mass < qmin*sumc) then
-       qmin = mass / sumc
-    endif
-    if (mass > qmax*sumc) then
-       qmax = mass / sumc
-    endif
-
     addmass = zero
 
     ! Clip.
@@ -1028,10 +1017,7 @@ contains
           v = x - qmin
        end if
        den = sum(v*c)
-       if (den > zero) then
-          ! Update.
-          x = x + (addmass/den)*v
-       end if
+       if (den > zero) x = x + addmass*(v/den)
     end if
 
     q(:n,:n) = reshape(x, (/n,n/))
@@ -1100,22 +1086,25 @@ contains
     type (element_t), intent(in) :: elem(:)
     real(kind=real_kind), intent(in) :: qmin(:), qmax(:), dp(:,:,:), q0_g(:,:,:), q1_g(:,:,:)
 
-    real(kind=real_kind) :: qmin_f, qmin_g, qmax_f, qmax_g, mass_f, mass0, mass1, den, wr(np,np)
-    integer :: q, k
+    real(kind=real_kind) :: qmin_f, qmin_g, qmax_f, qmax_g, mass_f, mass0, mass1, den, &
+         wr(np,np)
+    integer :: q, k, nf
 
+    nf = gfr%nphys
     do k = 1,size(dp,3)
        qmin_f = qmin(k)
        qmax_f = qmax(k)
        qmin_g = minval(q1_g(:,:,k))
        qmax_g = maxval(q1_g(:,:,k))
-       den = gfr%tolfac*max(1e-10, qmax_f)
-       mass0 = sum(elem(ie)%spheremp*dp(:,:,k)*q0_g(:,:,k))
-       mass1 = sum(elem(ie)%spheremp*dp(:,:,k)*q1_g(:,:,k))
-       if (qmin_g < qmin_f - 10*eps*den .or. qmax_g > qmax_f + 10*eps*den) then
+       den = gfr%tolfac*max(1e-10, maxval(abs(q0_g(:,:,k))))
+       if (qmin_g < qmin_f - 50*eps*den .or. qmax_g > qmax_f + 50*eps*den) then
           print *, 'gfr> f2g mixing ratio limits:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
                qmin_f, qmin_g-qmin_f, qmax_g-qmax_f, qmax_f, mass0, mass1
        end if
-       if (abs(mass1 - mass0) > gfr%tolfac*20*eps*max(mass0, mass0)) then
+       mass0 = sum(elem(ie)%spheremp*dp(:,:,k)*q0_g(:,:,k))
+       mass1 = sum(elem(ie)%spheremp*dp(:,:,k)*q1_g(:,:,k))
+       den = sum(elem(ie)%spheremp*dp(:,:,k)*maxval(abs(q0_g(:,:,k))))
+       if (abs(mass1 - mass0) > gfr%tolfac*20*eps*den) then
           print *, 'gfr> f2g mixing ratio mass:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
                qmin_f, qmin_g, qmax_g, qmax_f, mass0, mass1
        end if
