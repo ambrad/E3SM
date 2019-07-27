@@ -41,6 +41,7 @@ module gllfvremap_mod
   type, public :: GllFvRemap_t
      integer :: nphys, npi
      logical :: check
+     real(kind=real_kind) :: tolfac ! for checking
      real(kind=real_kind) :: &
           ! Node or cell weights
           w_gg(np,np), &   ! GLL np
@@ -96,7 +97,8 @@ contains
 
     if (hybrid%ithr > 0) return
 
-    gfr%check = .true.
+    gfr%check = .false.
+    gfr%tolfac = one
     if (hybrid%masterthread) print '(a,i3)', 'gfr> init nphys', nphys, 'check', gfr%check
 
     if (nphys > np) then
@@ -271,13 +273,16 @@ contains
        call calc_dp(hvcoord, elem(ie)%state%ps_v(:,:,nt), dp)
        do qi = 1,qsize
           ! Limit GLL Q1.
-          wr1 = dp*elem(ie)%derived%FQ(:,:,:,qi)
+          if (gfr%check) wr1 = elem(ie)%derived%FQ(:,:,:,qi)
           do k = 1,nlev
+             ! Final GLL Q1, except for DSS, which is not done in this routine.
              call limiter_clip_and_sum(np, elem(ie)%spheremp, gfr%qmin(k,qi,ie), &
-                  gfr%qmax(k,qi,ie), dp(:,:,k), wr1(:,:,k))
+                  gfr%qmax(k,qi,ie), dp(:,:,k), elem(ie)%derived%FQ(:,:,k,qi))
           end do
-          ! Final GLL Q1, except for DSS, which is not done in this routine.
-          elem(ie)%derived%FQ(:,:,:,qi) = wr1/dp
+          if (gfr%check) then
+             call check_f2g_mixing_ratio(hybrid, ie, qi, elem, gfr%qmin(:,qi,ie), &
+                  gfr%qmax(:,qi,ie), dp, wr1, elem(ie)%derived%FQ(:,:,:,qi))
+          end if
        end do
     end do
   end subroutine gfr_fv_phys_to_dyn
@@ -704,12 +709,12 @@ contains
     do k = 1, size(qdp_g,3)
        call gfr_g2f_remapd(gfr, gll_metdet, gfr%fv_metdet(:,:,ie), &
             qdp_g(:,:,k), q_f(:,:,k))
+       q_f(:,:,k) = q_f(:,:,k)/dp_f(:,:,k)
        wrk = qdp_g(:,:,k)/dp_g(:,:,k)
        qmin = minval(wrk)
        qmax = maxval(wrk)
        call limiter_clip_and_sum(gfr%nphys, gfr%w_ff(:nf,:nf)*gfr%fv_metdet(:nf,:nf,ie), &
             qmin, qmax, dp_f(:,:,k), q_f(:,:,k))
-       q_f(:,:,k) = q_f(:,:,k)/dp_f(:,:,k)
     end do
   end subroutine gfr_g2f_mixing_ratio
 
@@ -727,35 +732,6 @@ contains
        call gfr_g2f_mixing_ratio(ie, gll_metdet, dp_g, dp_f, qdp_g(:,:,:,q), q_f(:,:,:,q))
     end do
   end subroutine gfr_g2f_mixing_ratios
-
-  subroutine check_g2f_mixing_ratio(hybrid, ie, qi, elem, dp, dp_fv, q_g, q_f)
-    type (hybrid_t), intent(in) :: hybrid
-    integer, intent(in) :: ie, qi
-    type (element_t), intent(in) :: elem(:)
-    real(kind=real_kind), intent(in) :: dp(:,:,:), dp_fv(:,:,:), q_g(:,:,:), q_f(:,:,:)
-
-    real(kind=real_kind) :: qmin_f, qmin_g, qmax_f, qmax_g, mass_f, mass_g, den
-    integer :: q, k, nf
-
-    nf = gfr%nphys
-    do k = 1,size(dp,3)
-       qmin_f = minval(q_f(:nf,:nf,k))
-       qmax_f = maxval(q_f(:nf,:nf,k))
-       qmin_g = minval(elem(ie)%state%Q(:,:,k,qi))
-       qmax_g = maxval(elem(ie)%state%Q(:,:,k,qi))
-       den = max(1e-10, maxval(abs(elem(ie)%state%Q(:,:,k,qi))))
-       mass_f = sum(gfr%w_ff(:nf,:nf)*gfr%fv_metdet(:,:,ie)*dp_fv(:nf,:nf,k)*q_f(:nf,:nf,k))
-       mass_g = sum(elem(ie)%spheremp*dp(:,:,k)*q_g(:,:,k))
-       if (qmin_f < qmin_g - 10*eps*den .or. qmax_f > qmax_g + 10*eps*den) then
-          print *, 'gfr> g2f mixing ratio limits:', hybrid%par%rank, hybrid%ithr, ie, k, &
-               qmin_g, qmin_f-qmin_g, qmax_f-qmax_g, qmax_g, mass_f, mass_g
-       end if
-       if (abs(mass_f - mass_g) > 10*eps*mass_g) then
-          print *, 'gfr> g2f mixing ratio mass:', hybrid%par%rank, hybrid%ithr, ie, k, &
-               mass_f, mass_g
-       end if
-    end do
-  end subroutine check_g2f_mixing_ratio
 
   subroutine gfr_f2g_scalar(ie, gll_metdet, f, g)
     integer, intent(in) :: ie
@@ -1001,33 +977,25 @@ contains
     end do    
   end subroutine gfr_reconstructd_nphys1
 
-  subroutine limiter_clip_and_sum(n, spheremp, qmin, qmax, dp, Qdp)
+  subroutine limiter_clip_and_sum(n, spheremp, qmin, qmax, dp, q)
     use kinds, only: real_kind
 
     integer, intent(in) :: n
-    real (kind=real_kind), intent(inout) :: qmin, qmax, Qdp(:,:)
+    real (kind=real_kind), intent(inout) :: qmin, qmax, q(:,:)
     real (kind=real_kind), intent(in) :: spheremp(:,:), dp(:,:)
 
     integer :: k1, i, j
     logical :: modified
     real(kind=real_kind) :: addmass, mass, sumc, den
-    real(kind=real_kind) :: x(n*n), c(n*n), v(n*n)
+    real(kind=real_kind) :: c(n*n), v(n*n), x(n*n)
 
-    k1 = 1
-    do j = 1, n
-       do i = 1, n
-          c(k1) = spheremp(i,j)*dp(i,j)
-          x(k1) = Qdp(i,j)/dp(i,j)
-          k1 = k1+1
-       enddo
-    enddo
+    x = reshape(q(:n,:n), (/n*n/))
+    c = reshape(spheremp(:n,:n)*dp(:n,:n), (/n*n/))
 
     sumc = sum(c)
     mass = sum(c*x)
     ! This should never happen, but if it does, don't limit.
     if (sumc <= 0) return
-    ! Relax constraints to ensure limiter has a solution; this is only needed
-    ! if running with the SSP CFL>1 or due to roundoff errors.
     if (mass < qmin*sumc) then
        qmin = mass / sumc
     endif
@@ -1055,24 +1023,18 @@ contains
     if (addmass /= zero) then
        ! Determine weights.
        if (addmass > zero) then
-          v(:) = qmax - x(:)
+          v = qmax - x
        else
-          v(:) = x(:) - qmin
+          v = x - qmin
        end if
        den = sum(v*c)
        if (den > zero) then
           ! Update.
-          x(:) = x(:) + (addmass/den)*v(:)
+          x = x + (addmass/den)*v
        end if
     end if
 
-    k1 = 1
-    do j = 1,n
-       do i = 1,n
-          Qdp(i,j) = x(k1)*dp(i,j)
-          k1 = k1+1
-       end do
-    end do
+    q(:n,:n) = reshape(x, (/n,n/))
   end subroutine limiter_clip_and_sum
 
   ! --- testing ---
@@ -1102,6 +1064,63 @@ contains
        end do
     end do
   end subroutine set_ps_Q
+
+  subroutine check_g2f_mixing_ratio(hybrid, ie, qi, elem, dp, dp_fv, q_g, q_f)
+    type (hybrid_t), intent(in) :: hybrid
+    integer, intent(in) :: ie, qi
+    type (element_t), intent(in) :: elem(:)
+    real(kind=real_kind), intent(in) :: dp(:,:,:), dp_fv(:,:,:), q_g(:,:,:), q_f(:,:,:)
+
+    real(kind=real_kind) :: qmin_f, qmin_g, qmax_f, qmax_g, mass_f, mass_g, den
+    integer :: q, k, nf
+
+    nf = gfr%nphys
+    do k = 1,size(dp,3)
+       qmin_f = minval(q_f(:nf,:nf,k))
+       qmax_f = maxval(q_f(:nf,:nf,k))
+       qmin_g = minval(elem(ie)%state%Q(:,:,k,qi))
+       qmax_g = maxval(elem(ie)%state%Q(:,:,k,qi))
+       den = gfr%tolfac*max(1e-10, maxval(abs(elem(ie)%state%Q(:,:,k,qi))))
+       mass_f = sum(gfr%w_ff(:nf,:nf)*gfr%fv_metdet(:,:,ie)*dp_fv(:nf,:nf,k)*q_f(:nf,:nf,k))
+       mass_g = sum(elem(ie)%spheremp*dp(:,:,k)*q_g(:,:,k))
+       if (qmin_f < qmin_g - 10*eps*den .or. qmax_f > qmax_g + 10*eps*den) then
+          print *, 'gfr> g2f mixing ratio limits:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
+               qmin_g, qmin_f-qmin_g, qmax_f-qmax_g, qmax_g, mass_f, mass_g
+       end if
+       if (abs(mass_f - mass_g) > gfr%tolfac*20*eps*max(mass_f, mass_g)) then
+          print *, 'gfr> g2f mixing ratio mass:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
+               qmin_g, qmax_g, mass_f, mass_g
+       end if
+    end do
+  end subroutine check_g2f_mixing_ratio
+
+  subroutine check_f2g_mixing_ratio(hybrid, ie, qi, elem, qmin, qmax, dp, q0_g, q1_g)
+    type (hybrid_t), intent(in) :: hybrid
+    integer, intent(in) :: ie, qi
+    type (element_t), intent(in) :: elem(:)
+    real(kind=real_kind), intent(in) :: qmin(:), qmax(:), dp(:,:,:), q0_g(:,:,:), q1_g(:,:,:)
+
+    real(kind=real_kind) :: qmin_f, qmin_g, qmax_f, qmax_g, mass_f, mass0, mass1, den, wr(np,np)
+    integer :: q, k
+
+    do k = 1,size(dp,3)
+       qmin_f = qmin(k)
+       qmax_f = qmax(k)
+       qmin_g = minval(q1_g(:,:,k))
+       qmax_g = maxval(q1_g(:,:,k))
+       den = gfr%tolfac*max(1e-10, qmax_f)
+       mass0 = sum(elem(ie)%spheremp*dp(:,:,k)*q0_g(:,:,k))
+       mass1 = sum(elem(ie)%spheremp*dp(:,:,k)*q1_g(:,:,k))
+       if (qmin_g < qmin_f - 10*eps*den .or. qmax_g > qmax_f + 10*eps*den) then
+          print *, 'gfr> f2g mixing ratio limits:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
+               qmin_f, qmin_g-qmin_f, qmax_g-qmax_f, qmax_f, mass0, mass1
+       end if
+       if (abs(mass1 - mass0) > gfr%tolfac*20*eps*max(mass0, mass0)) then
+          print *, 'gfr> f2g mixing ratio mass:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
+               qmin_f, qmin_g, qmax_g, qmax_f, mass0, mass1
+       end if
+    end do
+  end subroutine check_f2g_mixing_ratio
   
   subroutine check_nonnegative(elem, nets, nete)
     ! Check gfr_g_make_nonnegative.
@@ -1213,8 +1232,10 @@ contains
                      elem(ie)%state%ps_v(:,:,1), ps_v_fv(:,:,ie))
                 qmin = minval(elem(ie)%state%Q(:,:,1,1))
                 qmax = maxval(elem(ie)%state%Q(:,:,1,1))
+                wrk(:nf,:nf) = Qdp_fv(:nf,:nf,ie)/ps_v_fv(:nf,:nf,ie)
                 call limiter_clip_and_sum(nf, gfr%w_ff(:nf,:nf)*gfr%fv_metdet(:nf,:nf,ie), &
-                     qmin, qmax, ps_v_fv(:,:,ie), Qdp_fv(:,:,ie))
+                     qmin, qmax, ps_v_fv(:,:,ie), wrk)
+                Qdp_fv(:nf,:nf,ie) = wrk(:nf,:nf)*ps_v_fv(:nf,:nf,ie)
              end if
           end do
           ! 2. FV -> GLL
@@ -1232,13 +1253,13 @@ contains
           do ie = nets, nete !TODO move to own routine
              call gfr_f2g_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,:,ie), &
                   Qdp_fv(:,:,ie), elem(ie)%state%Q(:,:,1,1))
+             elem(ie)%state%Q(:,:,1,1) = elem(ie)%state%Q(:,:,1,1)/elem(ie)%state%ps_v(:,:,1)
              if (limit .and. gfr%nphys > 1) then
                 qmin = qmins(1,1,ie)
                 qmax = qmaxs(1,1,ie)
                 call limiter_clip_and_sum(np, elem(ie)%spheremp, & ! same as w_gg*gll_metdet
                      qmin, qmax, elem(ie)%state%ps_v(:,:,1), elem(ie)%state%Q(:,:,1,1))
              end if
-             elem(ie)%state%Q(:,:,1,1) = elem(ie)%state%Q(:,:,1,1)/elem(ie)%state%ps_v(:,:,1)
           end do
           do i = 1,2
              ! 3. DSS
@@ -1258,13 +1279,13 @@ contains
                 do ie = nets, nete !TODO move to own routine
                    elem(ie)%state%Q(:,:,1,1) = elem(ie)%state%Q(:,:,1,1)*elem(ie)%state%ps_v(:,:,1)
                    call gfr_reconstructd_nphys1(gfr, elem(ie)%metdet, elem(ie)%state%Q(:,:,1,1))
+                   elem(ie)%state%Q(:,:,1,1) = elem(ie)%state%Q(:,:,1,1)/elem(ie)%state%ps_v(:,:,1)
                    if (limit) then
                       qmin = qmins(1,1,ie)
                       qmax = qmaxs(1,1,ie)
                       call limiter_clip_and_sum(np, elem(ie)%spheremp, &
                            qmin, qmax, elem(ie)%state%ps_v(:,:,1), elem(ie)%state%Q(:,:,1,1))
                    end if
-                   elem(ie)%state%Q(:,:,1,1) = elem(ie)%state%Q(:,:,1,1)/elem(ie)%state%ps_v(:,:,1)
                 end do
              end if
              if (gfr%nphys > 1 .or. .not. limit) exit
