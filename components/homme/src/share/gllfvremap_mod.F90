@@ -278,7 +278,8 @@ contains
           ! Limit GLL Q1.
           if (gfr%check) wr1 = elem(ie)%derived%FQ(:,:,:,qi)          
           do k = 1,nlev
-             ! Augment bounds with GLL Q0 bounds.
+             ! Augment bounds with GLL Q0 bounds. This assures that if
+             ! the tendency is 0, GLL Q1 = GLL Q0.
              gfr%qmin(k,qi,ie) = min(minval(elem(ie)%state%Q(:,:,k,qi)), gfr%qmin(k,qi,ie))
              gfr%qmax(k,qi,ie) = max(maxval(elem(ie)%state%Q(:,:,k,qi)), gfr%qmax(k,qi,ie))
              ! Final GLL Q1, except for DSS, which is not done in this routine.
@@ -1246,12 +1247,13 @@ contains
           endif
           ! 2c. Remap
           do ie = nets, nete !TODO move to own routine
+             wrk = elem(ie)%state%Q(:,:,1,1)
              call gfr_f2g_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,:,ie), &
                   Qdp_fv(:,:,ie), elem(ie)%state%Q(:,:,1,1))
              elem(ie)%state%Q(:,:,1,1) = elem(ie)%state%Q(:,:,1,1)/elem(ie)%state%ps_v(:,:,1)
              if (limit .and. gfr%nphys > 1) then
-                qmin = qmins(1,1,ie)
-                qmax = qmaxs(1,1,ie)
+                qmin = min(qmins(1,1,ie), minval(wrk))
+                qmax = max(qmaxs(1,1,ie), maxval(wrk))
                 call limiter_clip_and_sum(np, elem(ie)%spheremp, & ! same as w_gg*gll_metdet
                      qmin, qmax, elem(ie)%state%ps_v(:,:,1), elem(ie)%state%Q(:,:,1,1))
              end if
