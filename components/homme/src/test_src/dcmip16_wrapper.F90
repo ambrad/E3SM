@@ -173,7 +173,7 @@ subroutine dcmip2016_test1_pg(elem,hybrid,hvcoord,nets,nete,nphys)
   end if
   !$omp barrier
   call dcmip2016_test1(elem,hybrid,hvcoord,nets,nete)
-  sample_period = 3600*4
+  sample_period = 3600*24
 end subroutine dcmip2016_test1_pg
 
 !_____________________________________________________________________
@@ -592,6 +592,7 @@ subroutine toy_print(hybrid, nstep, rcd)
 end subroutine toy_print
 
 subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl)
+  use element_ops, only: get_field
   use gllfvremap_mod
 
   ! to DSS precl
@@ -644,6 +645,8 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
 
   do ie = nets,nete
      precl(:,:,ie) = -one
+     ! for max_w
+     call get_field(elem(ie), 'w', w, hvcoord, nt, ntQ)
 
      T_fv(:nf,:nf,:) = reshape(pg_data%T(:,:,ie), (/nf,nf,nlev/))
      u_fv(:nf,:nf,:) = reshape(pg_data%uv(:,1,:,ie), (/nf,nf,nlev/))
@@ -758,10 +761,16 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      min_ps    = min( min_ps,    minval(elem(i)%state%ps_v(:,:,nt)) )
   enddo
 
-  call gfr_fv_phys_to_dyn(hybrid, nt, hvcoord, elem, pg_data%T, pg_data%uv, pg_data%q, nets, nete)
+  call gfr_fv_phys_to_dyn(hybrid, nt, hvcoord, elem, pg_data%T, pg_data%uv, pg_data%q, &
+       nets, nete)
   ! dp_coupling doesn't do the DSS; stepon does. Thus, this DCMIP test
   ! also needs to do its own DSS.
   call gfr_f2g_dss(hybrid, elem, nets, nete)
+  if (nf == 1) then
+     call gfr_fv_phys_to_dyn_boost_pg1(hybrid, nt, hvcoord, elem, pg_data%T, pg_data%uv, &
+          pg_data%q, nets, nete)
+     call gfr_f2g_dss(hybrid, elem, nets, nete)
+  end if
 
   call toy_init(rcd)
   do ie = nets,nete

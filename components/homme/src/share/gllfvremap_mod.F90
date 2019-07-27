@@ -70,6 +70,7 @@ module gllfvremap_mod
        gfr_init, &
        gfr_finish, &
        gfr_fv_phys_to_dyn, &
+       gfr_fv_phys_to_dyn_boost_pg1, &
        gfr_fv_phys_to_dyn_topo, &
        gfr_dyn_to_fv_phys, &
        gfr_f2g_dss
@@ -271,6 +272,20 @@ contains
        end do
     end do
   end subroutine gfr_fv_phys_to_dyn
+
+  subroutine gfr_fv_phys_to_dyn_boost_pg1(hybrid, nt, hvcoord, elem, T, uv, q, nets_in, nete_in)
+    use dimensions_mod, only: nlev
+    use hybvcoord_mod, only: hvcoord_t
+
+    type (hybrid_t), intent(in) :: hybrid
+    integer, intent(in) :: nt
+    type (hvcoord_t), intent(in) :: hvcoord
+    type (element_t), intent(inout) :: elem(:)
+    real(kind=real_kind), intent(in) :: T(:,:,:), uv(:,:,:,:), q(:,:,:,:)
+    integer, intent(in), optional :: nets_in, nete_in
+
+    
+  end subroutine gfr_fv_phys_to_dyn_boost_pg1
 
   subroutine gfr_fv_phys_to_dyn_topo()
   end subroutine gfr_fv_phys_to_dyn_topo
