@@ -34,11 +34,13 @@ module gllfvremap_mod
 
   real(kind=real_kind), parameter :: &
        zero = 0.0_real_kind, half = 0.5_real_kind, &
-       one = 1.0_real_kind, two = 2.0_real_kind
+       one = 1.0_real_kind, two = 2.0_real_kind, &
+       eps = epsilon(1.0_real_kind)
 
   ! Data type and functions for high-order, shape-preserving FV <-> GLL remap.
   type, public :: GllFvRemap_t
      integer :: nphys, npi
+     logical :: check
      real(kind=real_kind) :: &
           ! Node or cell weights
           w_gg(np,np), &   ! GLL np
@@ -92,8 +94,10 @@ contains
 
     real(real_kind) :: R(npsq,nphys_max*nphys_max)
 
-    if (hybrid%masterthread) print '(a,i3)', 'gfr> init nphys', nphys
     if (hybrid%ithr > 0) return
+
+    gfr%check = .true.
+    if (hybrid%masterthread) print '(a,i3)', 'gfr> init nphys', nphys, 'check', gfr%check
 
     if (nphys > np) then
        ! The FV -> GLL map is defined only if nphys <= np. If we ever are
@@ -135,12 +139,13 @@ contains
     end if
   end subroutine gfr_finish
 
-  subroutine gfr_dyn_to_fv_phys(nt, hvcoord, elem, ps, phis, T, uv, omega_p, q, &
+  subroutine gfr_dyn_to_fv_phys(hybrid, nt, hvcoord, elem, ps, phis, T, uv, omega_p, q, &
        nets_in, nete_in)
     use dimensions_mod, only: nlev
     use hybvcoord_mod, only: hvcoord_t
     use element_ops, only: get_temperature
 
+    type (hybrid_t), intent(in) :: hybrid
     integer, intent(in) :: nt
     type (hvcoord_t), intent(in) :: hvcoord
     type (element_t), intent(in) :: elem(:)
@@ -193,6 +198,10 @@ contains
           call gfr_g2f_mixing_ratio(ie, elem(ie)%metdet, dp, dp_fv, &
                dp*elem(ie)%state%Q(:,:,:,qi), wr1)
           q(:ncol,:,qi,ie) = reshape(wr1(:nf,:nf,:), (/ncol,nlev/))
+          if (gfr%check) then
+             call check_g2f_mixing_ratio(hybrid, ie, qi, elem, dp, dp_fv, &
+                  elem(ie)%state%Q(:,:,:,qi), wr1)
+          end if
        end do
     end do
   end subroutine gfr_dyn_to_fv_phys
@@ -719,6 +728,35 @@ contains
     end do
   end subroutine gfr_g2f_mixing_ratios
 
+  subroutine check_g2f_mixing_ratio(hybrid, ie, qi, elem, dp, dp_fv, q_g, q_f)
+    type (hybrid_t), intent(in) :: hybrid
+    integer, intent(in) :: ie, qi
+    type (element_t), intent(in) :: elem(:)
+    real(kind=real_kind), intent(in) :: dp(:,:,:), dp_fv(:,:,:), q_g(:,:,:), q_f(:,:,:)
+
+    real(kind=real_kind) :: qmin_f, qmin_g, qmax_f, qmax_g, mass_f, mass_g, den
+    integer :: q, k, nf
+
+    nf = gfr%nphys
+    do k = 1,size(dp,3)
+       qmin_f = minval(q_f(:nf,:nf,k))
+       qmax_f = maxval(q_f(:nf,:nf,k))
+       qmin_g = minval(elem(ie)%state%Q(:,:,k,qi))
+       qmax_g = maxval(elem(ie)%state%Q(:,:,k,qi))
+       den = max(1e-10, maxval(abs(elem(ie)%state%Q(:,:,k,qi))))
+       mass_f = sum(gfr%w_ff(:nf,:nf)*gfr%fv_metdet(:,:,ie)*dp_fv(:nf,:nf,k)*q_f(:nf,:nf,k))
+       mass_g = sum(elem(ie)%spheremp*dp(:,:,k)*q_g(:,:,k))
+       if (qmin_f < qmin_g - 10*eps*den .or. qmax_f > qmax_g + 10*eps*den) then
+          print *, 'gfr> g2f mixing ratio limits:', hybrid%par%rank, hybrid%ithr, ie, k, &
+               qmin_g, qmin_f-qmin_g, qmax_f-qmax_g, qmax_g, mass_f, mass_g
+       end if
+       if (abs(mass_f - mass_g) > 10*eps*mass_g) then
+          print *, 'gfr> g2f mixing ratio mass:', hybrid%par%rank, hybrid%ithr, ie, k, &
+               mass_f, mass_g
+       end if
+    end do
+  end subroutine check_g2f_mixing_ratio
+
   subroutine gfr_f2g_scalar(ie, gll_metdet, f, g)
     integer, intent(in) :: ie
     real(kind=real_kind), intent(in) :: gll_metdet(:,:), f(:,:,:)
@@ -1086,7 +1124,7 @@ contains
        call gfr_g_make_nonnegative(elem(ie)%metdet, wrk3)
        mass1 = sum(elem(ie)%spheremp*wrk3(:,:,1))
        rd = (mass1 - mass0)/mass0
-       if (rd /= rd .or. rd > 2e-15) print *, 'gfr> nonnegative', ie, rd, mass0, mass1, 'ERROR'
+       if (rd /= rd .or. rd > 20*eps) print *, 'gfr> nonnegative', ie, rd, mass0, mass1, 'ERROR'
     end do
   end subroutine check_nonnegative
 
@@ -1135,7 +1173,7 @@ contains
        a = sum(elem(ie)%metdet * gfr%w_gg)
        b = sum(gfr%fv_metdet(:,:,ie) * gfr%w_ff(:nf, :nf))
        rd = abs(b - a)/abs(a)
-       if (rd /= rd .or. rd > 1e-15) print *, 'gfr> area', ie, a, b, rd
+       if (rd /= rd .or. rd > 10*eps) print *, 'gfr> area', ie, a, b, rd
 
        ! Check that FV -> GLL -> FV recovers the original FV values exactly
        ! (with no DSS and no limiter).
@@ -1152,7 +1190,7 @@ contains
        a = sum(wrk(:nf,:nf)*abs(f1(:nf,:nf) - f0(:nf,:nf)))
        b = sum(wrk(:nf,:nf)*abs(f0(:nf,:nf)))
        rd = a/b
-       if (rd /= rd .or. rd > 1e-15) print *, 'gfr> recover', ie, a, b, rd, gfr%fv_metdet(:,:,ie)
+       if (rd /= rd .or. rd > 10*eps) print *, 'gfr> recover', ie, a, b, rd, gfr%fv_metdet(:,:,ie)
     end do
     call check_nonnegative(elem, nets, nete)
 
@@ -1264,10 +1302,10 @@ contains
           print '(a,es12.4)', 'gfr> l2  ', rd
           rd = (global_shared_sum(4) - global_shared_sum(3))/global_shared_sum(3)
           msg = ''
-          if (rd > 1e-15) msg = ' ERROR'
+          if (rd > 10*eps) msg = ' ERROR'
           print '(a,es11.3,a8)', 'gfr> mass', rd, msg
           msg = ''
-          if (limit .and. (qmin < qmin1 - 5e-16 .or. qmax > qmax1 + 5e-16)) msg = ' ERROR'
+          if (limit .and. (qmin < qmin1 - 5*eps .or. qmax > qmax1 + 5*eps)) msg = ' ERROR'
           print '(a,es11.3,es11.3,a8)', 'gfr> limit', min(zero, qmin - qmin1), &
                max(zero, qmax - qmax1), msg
        end if

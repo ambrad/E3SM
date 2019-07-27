@@ -640,7 +640,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   max_precl = -huge(rl)
   min_ps    = +huge(rl)
 
-  call gfr_dyn_to_fv_phys(nt, hvcoord, elem, pg_data%ps, pg_data%zs, pg_data%T, &
+  call gfr_dyn_to_fv_phys(hybrid, nt, hvcoord, elem, pg_data%ps, pg_data%zs, pg_data%T, &
        pg_data%uv, pg_data%omega_p, pg_data%q, nets, nete)
 
   do ie = nets,nete
