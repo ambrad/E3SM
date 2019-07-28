@@ -65,7 +65,7 @@ contains
     integer, intent(in) :: nets, nete, nphys
     logical, intent(in) :: tendency
 
-    real(kind=real_kind) :: wr(np,np,nlev), lat, lon, f, a, b, rd
+    real(kind=real_kind) :: wr(np,np,nlev), tend(np,np,nlev), lat, lon, f, a, b, rd
     integer :: nf, ncol, nt1, nt2, ie, i, j, k, d, q, tl, col
     type (cartesian3D_t) :: p
 
@@ -77,12 +77,11 @@ contains
     ! Set analytical GLL values. nt1 contains the original, true
     ! values for later use.
     do ie = nets,nete
-       elem(ie)%state%Q(:,:,:,1) = zero ! no moisture
        do j = 1,np
           do i = 1,np
              p = change_coordinates(elem(ie)%spherep(i,j))
              do k = 1,nlev
-                do q = 2,qsize
+                do q = 1,qsize
                    elem(ie)%state%Q(i,j,k,q) = 1 + &
                         0.5*sin((0.5 + modulo(q,2))*p%x)* &
                         sin((0.5 + modulo(q,3))*1.5*p%y)* &
@@ -125,16 +124,11 @@ contains
              do i = 1,nf
                 col = nf*(j-1) + i
                 call gfr_f_get_latlon(ie, i, j, lat, lon)
-                f = 0.25*sin(lat)*sin(lon)
-                do k = 1,nlev
-                   do d = 1,2
-                      pg_data%uv(col,d,k,ie) = f
-                   end do
-                   pg_data%T(col,k,ie) = f
-                   do q = 2,qsize
-                      pg_data%q(col,k,q,ie) = pg_data%q(col,k,q,ie) + f
-                   end do
-                end do
+                f = 0.25_real_kind*sin(lat)*sin(lon)
+                pg_data%uv(col,:,:,ie) = f
+                pg_data%T(col,:,ie) = f
+                ! no moisture adjustment => no dp3d adjustment
+                pg_data%q(col,:,2:qsize,ie) = pg_data%q(col,:,2:qsize,ie) + f
              end do
           end do
        end do
@@ -162,27 +156,33 @@ contains
 
     ! Test GLL state nt2 vs the original state nt1.
     if (hybrid%masterthread) print '(a,i2)', 'gfrt> tendency', tendency
+    tend = zero
     do q = 1,qsize
        do ie = nets,nete
           do k = 1,nlev
              wr(:,:,k) = elem(ie)%spheremp
           end do
+          if (tendency .and. q > 1) then
+             do j = 1,np
+                do i = 1,np
+                   lat = elem(ie)%spherep(i,j)%lat
+                   lon = elem(ie)%spherep(i,j)%lon
+                   tend(i,j,:) = 0.25_real_kind*sin(lat)*sin(lon)
+                end do
+             end do
+          end if
           global_shared_buf(ie,1) = &
                sum(wr*( &
                elem(ie)%state%Q(:,:,:,q) - &
-               elem(ie)%state%Qdp(:,:,:,q,nt1)/elem(ie)%state%dp3d(:,:,:,nt1))**2)
+               (elem(ie)%state%Qdp(:,:,:,q,nt1)/elem(ie)%state%dp3d(:,:,:,nt1) + tend))**2)
           global_shared_buf(ie,2) = &
                sum(wr*( &
                elem(ie)%state%Qdp(:,:,:,q,nt1)/elem(ie)%state%dp3d(:,:,:,nt1))**2)
        end do
        call wrap_repro_sum(nvars=2, comm=hybrid%par%comm)
        if (hybrid%masterthread) then
-          if (q == 1) then
-             print '(a,es12.4)', 'gfrt> q=1 2-norm', sqrt(global_shared_sum(2))
-          else
-             rd = sqrt(global_shared_sum(1)/global_shared_sum(2))
-             print '(a,i3,es12.4)', 'gfrt> q l2', q, rd
-          end if
+          rd = sqrt(global_shared_sum(1)/global_shared_sum(2))
+          print '(a,i3,es12.4)', 'gfrt> q l2', q, rd
        end if
     end do
     do ie = nets,nete
