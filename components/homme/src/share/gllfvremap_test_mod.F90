@@ -77,11 +77,12 @@ contains
     ! Set analytical GLL values. nt1 contains the original, true
     ! values for later use.
     do ie = nets,nete
+       elem(ie)%state%Q(:,:,:,1) = zero ! no moisture
        do j = 1,np
           do i = 1,np
              p = change_coordinates(elem(ie)%spherep(i,j))
              do k = 1,nlev
-                do q = 1,qsize
+                do q = 2,qsize
                    elem(ie)%state%Q(i,j,k,q) = 1 + &
                         0.5*sin((0.5 + modulo(q,2))*p%x)* &
                         sin((0.5 + modulo(q,3))*1.5*p%y)* &
@@ -102,15 +103,13 @@ contains
                 wr(i,j,k) = &
                      1 + 0.5*sin(p%x+1.5)*sin(1.5*p%y+0.5)*sin(2*p%z-0.5)
              end do
-             call set_thermostate(elem(ie), elem(ie)%state%ps_v(i,j,nt1), wr, hvcoord)
-             do k = 1,nlev
-                do q = 1,qsize
-                   do tl = nt1,nt2
-                      elem(ie)%state%Qdp(i,j,k,q,tl) = &
-                           elem(ie)%state%Q(i,j,k,q)*elem(ie)%state%dp3d(i,j,k,nt1)
-                   end do
-                end do
-             end do
+          end do
+       end do
+       call set_thermostate(elem(ie), elem(ie)%state%ps_v(:,:,nt1), wr, hvcoord)
+       do q = 1,qsize
+          do tl = nt1,nt2
+             elem(ie)%state%Qdp(:,:,:,q,tl) = &
+                  elem(ie)%state%Q(:,:,:,q)*elem(ie)%state%dp3d(:,:,:,nt1)
           end do
        end do
     end do
@@ -129,10 +128,10 @@ contains
                 f = 0.25*sin(lat)*sin(lon)
                 do k = 1,nlev
                    do d = 1,2
-                      pg_data%uv(col,d,k,ie) = pg_data%uv(col,d,k,ie) + f
+                      pg_data%uv(col,d,k,ie) = f
                    end do
-                   pg_data%T(col,k,ie) = pg_data%T(col,k,ie) + f
-                   do q = 1,qsize
+                   pg_data%T(col,k,ie) = f
+                   do q = 2,qsize
                       pg_data%q(col,k,q,ie) = pg_data%q(col,k,q,ie) + f
                    end do
                 end do
@@ -170,7 +169,7 @@ contains
           end do
           global_shared_buf(ie,1) = &
                sum(wr*( &
-               elem(ie)%state%Qdp(:,:,:,q,nt2)/elem(ie)%state%dp3d(:,:,:,nt1) - &
+               elem(ie)%state%Q(:,:,:,q) - &
                elem(ie)%state%Qdp(:,:,:,q,nt1)/elem(ie)%state%dp3d(:,:,:,nt1))**2)
           global_shared_buf(ie,2) = &
                sum(wr*( &
@@ -178,8 +177,12 @@ contains
        end do
        call wrap_repro_sum(nvars=2, comm=hybrid%par%comm)
        if (hybrid%masterthread) then
-          rd = sqrt(global_shared_sum(1)/global_shared_sum(2))
-          print '(a,i3,es12.4)', 'gfrt> q l2', q, rd
+          if (q == 1) then
+             print '(a,es12.4)', 'gfrt> q=1 2-norm', sqrt(global_shared_sum(2))
+          else
+             rd = sqrt(global_shared_sum(1)/global_shared_sum(2))
+             print '(a,i3,es12.4)', 'gfrt> q l2', q, rd
+          end if
        end if
     end do
     do ie = nets,nete
