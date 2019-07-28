@@ -3,7 +3,6 @@
 #endif
 
 !todo
-! - pg1 boost in dcmip1
 ! - global mass checks
 ! - global extrema checks
 ! - area correction: alpha
@@ -11,6 +10,8 @@
 ! - topo roughness
 ! - ftype other than 2,4
 ! - checker routine callable from dcmip1
+! - pg1 boost in dcmip1; has to be applied to tendency to recover Q0 if tend = 0
+! - pg1 is failing limiter check; debug
 ! - np4-np2 instead of np4-pg1
 ! - halo exchange buffers
 ! - impl original pg2 to compare
@@ -101,7 +102,7 @@ contains
 
     gfr%check = .true.
     gfr%tolfac = one
-    if (hybrid%masterthread) print '(a,i3)', 'gfr> init nphys', nphys, 'check', gfr%check
+    if (hybrid%masterthread) print '(a,i3,a,i3)', 'gfr> init nphys', nphys, ' check', gfr%check
 
     if (nphys > np) then
        ! The FV -> GLL map is defined only if nphys <= np. If we ever are
@@ -295,6 +296,8 @@ contains
   end subroutine gfr_fv_phys_to_dyn
 
   subroutine gfr_fv_phys_to_dyn_boost_pg1(hybrid, nt, hvcoord, elem, T, uv, q, nets_in, nete_in)
+    !assume nphys = 1
+
     use dimensions_mod, only: nlev
     use hybvcoord_mod, only: hvcoord_t
 
@@ -305,7 +308,45 @@ contains
     real(kind=real_kind), intent(in) :: T(:,:,:), uv(:,:,:,:), q(:,:,:,:)
     integer, intent(in), optional :: nets_in, nete_in
 
-    
+    real(kind=real_kind) :: dp(np,np,nlev), wr1(np,np,nlev), wr2(np,np,nlev)
+    integer :: nets, nete, ie, nf, ncol, d, k, qsize, qi
+
+    if (present(nets_in)) then
+       nets = nets_in
+       nete = nete_in
+    else
+       nets = 1
+       nete = size(elem)
+    end if
+    nf = gfr%nphys
+    ncol = nf*nf
+
+    qsize = size(q,3)
+
+    do ie = nets,nete
+       call calc_dp(hvcoord, elem(ie)%state%ps_v(:,:,nt), dp)
+
+       do k = 1,nlev
+          do d = 1,2
+             call gfr_reconstructd_nphys1(gfr, elem(ie)%metdet, dp(:,:,k), &
+                  elem(ie)%derived%FM(:,:,d,k))
+          end do
+       end do
+
+       do k = 1,nlev
+          call gfr_reconstructd_nphys1(gfr, elem(ie)%metdet, dp(:,:,k), &
+               elem(ie)%derived%FT(:,:,k))
+       end do
+
+       do qi = 1,qsize
+          do k = 1,nlev
+             call gfr_reconstructd_nphys1(gfr, elem(ie)%metdet, dp(:,:,k), &
+                  elem(ie)%derived%FQ(:,:,k,qi))
+             call limiter_clip_and_sum(np, elem(ie)%spheremp, gfr%qmin(k,qi,ie), &
+                  gfr%qmax(k,qi,ie), dp(:,:,k), elem(ie)%derived%FQ(:,:,k,qi))
+          end do
+       end do
+    end do       
   end subroutine gfr_fv_phys_to_dyn_boost_pg1
 
   subroutine gfr_fv_phys_to_dyn_topo()
@@ -448,14 +489,15 @@ contains
     ! Compute the QR factorization sqrt(inv(M_gg)) M_gf = Q R so that S =
     ! R'R. In this module, we can take M_gg = diag(w_gg) and M_ff = diag(w_ff)
     ! with no loss of accuracy.
+    !
+    !assume nphys <= np
+
     integer, intent(in) :: np, nphys
     real(kind=real_kind), intent(in) :: w_gg(:,:), M_gf(:,:,:,:)
     real(kind=real_kind), intent(out) :: R(:,:)
 
     real(kind=real_kind) :: wrk1(np*np*nphys*nphys), wrk2(np*np*nphys*nphys)
     integer :: gi, gj, fi, fj, npsq, info
-
-    !assume nphys <= np
 
     do fj = 1,nphys
        do fi = 1,nphys
@@ -500,13 +542,13 @@ contains
   end subroutine gfr_init_interp_matrix
 
   subroutine gfr_init_f2g_remapd(gfr, R)
+    !assume nphys <= np
+
     type (GllFvRemap_t), intent(inout) :: gfr
     real(kind=real_kind), intent(in) :: R(:,:)
 
     integer :: nf, fi, fj
     real(kind=real_kind) :: f(np,np), g(np,np)
-
-    !assume nphys <= np
 
     ! Apply gfr_init_f2g_remapd_op to the Id matrix to get the remap operator's
     ! matrix representation.
@@ -523,6 +565,8 @@ contains
   end subroutine gfr_init_f2g_remapd
 
   subroutine gfr_f2g_remapd_op(gfr, R, f, g)
+    !assume nphys <= np
+
     type (GllFvRemap_t), intent(in) :: gfr
     real(kind=real_kind), intent(in) :: R(:,:)
     real(kind=real_kind), intent(in) :: f(:,:)
@@ -530,8 +574,6 @@ contains
 
     integer :: nf, nf2, npi, np2, gi, gj, fi, fj, info
     real(kind=real_kind) :: accum, wrk(gfr%nphys,gfr%nphys), x(np,np)
-
-    !assume nphys <= np
 
     nf = gfr%nphys
     nf2 = nf*nf
@@ -960,24 +1002,24 @@ contains
     end do
   end subroutine gfr_f2g_remapd
 
-  subroutine gfr_reconstructd_nphys1(gfr, gll_metdet, g)
+  subroutine gfr_reconstructd_nphys1(gfr, gll_metdet, dp, g)
+    !assume npi = 2
+
     type (GllFvRemap_t), intent(in) :: gfr
-    real(kind=real_kind), intent(in) :: gll_metdet(:,:)
+    real(kind=real_kind), intent(in) :: gll_metdet(:,:), dp(:,:)
     real(kind=real_kind), intent(inout) :: g(:,:)
 
     real(kind=real_kind) :: accum, wrk(2,2)
     integer :: npi, fi, fj, gi, gj
 
-    !assume np = 2
-
     ! Use just the corner points. The idea is that the non-corner points have
     ! not interacted with the corner points. Thus, the corners behave as though
     ! everything has been done on a GLL np=2 grid. In particular, this means
     ! that using just the corner values now is still mass conserving.
-    wrk(1,1) = gll_metdet(1 ,1 )*g(1 ,1 )
-    wrk(2,1) = gll_metdet(np,1 )*g(np,1 )
-    wrk(1,2) = gll_metdet(1 ,np)*g(1 ,np)
-    wrk(2,2) = gll_metdet(np,np)*g(np,np)
+    wrk(1,1) = gll_metdet(1 ,1 )*dp(1 ,1 )*g(1 ,1 )
+    wrk(2,1) = gll_metdet(np,1 )*dp(np,1 )*g(np,1 )
+    wrk(1,2) = gll_metdet(1 ,np)*dp(1 ,np)*g(1 ,np)
+    wrk(2,2) = gll_metdet(np,np)*dp(np,np)*g(np,np)
 
     npi = gfr%npi
     do fj = 1,np
@@ -988,7 +1030,7 @@ contains
                 accum = accum + gfr%interp(gi,gj,fi,fj)*wrk(gi,gj)
              end do
           end do
-          g(fi,fj) = accum/gll_metdet(fi,fj)
+          g(fi,fj) = accum/(dp(fi,fj)*gll_metdet(fi,fj))
        end do
     end do    
   end subroutine gfr_reconstructd_nphys1
@@ -1283,9 +1325,8 @@ contains
              ! 4. pg1 special case
              if (gfr%nphys == 1 .and. i == 1) then
                 do ie = nets, nete !TODO move to own routine
-                   elem(ie)%state%Q(:,:,1,1) = elem(ie)%state%Q(:,:,1,1)*elem(ie)%state%ps_v(:,:,1)
-                   call gfr_reconstructd_nphys1(gfr, elem(ie)%metdet, elem(ie)%state%Q(:,:,1,1))
-                   elem(ie)%state%Q(:,:,1,1) = elem(ie)%state%Q(:,:,1,1)/elem(ie)%state%ps_v(:,:,1)
+                   call gfr_reconstructd_nphys1(gfr, elem(ie)%metdet, elem(ie)%state%ps_v(:,:,1), &
+                        elem(ie)%state%Q(:,:,1,1))
                    if (limit) then
                       qmin = qmins(1,1,ie)
                       qmax = qmaxs(1,1,ie)

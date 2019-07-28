@@ -155,7 +155,7 @@ contains
     call applyCAMforcing_dynamics(elem, hvcoord, nt2, one, nets, nete)
 
     ! Test GLL state nt2 vs the original state nt1.
-    if (hybrid%masterthread) print '(a,i2)', 'gfrt> tendency', tendency
+    if (hybrid%masterthread) print '(a,i3)', 'gfrt> tendency', tendency
     tend = zero
     do q = 1,qsize
        do ie = nets,nete
