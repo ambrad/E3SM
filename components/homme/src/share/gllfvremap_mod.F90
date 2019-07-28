@@ -85,6 +85,15 @@ module gllfvremap_mod
        gfr_test, &
        gfr_f2g_scalar, gfr_get_latlon, gfr_g_make_nonnegative
 
+  ! For internal testing.
+  type, private :: PhysgridData_t
+     integer :: nphys
+     real(kind=real_kind), allocatable :: ps(:,:), zs(:,:), T(:,:,:), uv(:,:,:,:), &
+          omega_p(:,:,:), q(:,:,:,:)
+  end type PhysgridData_t
+
+  type (PhysgridData_t), private :: pg_data
+
 contains
 
   subroutine gfr_init(hybrid, elem, nphys)
@@ -1331,6 +1340,60 @@ contains
     deallocate(Qdp_fv, ps_v_fv, qmins, qmaxs)
   end subroutine check
 
+  subroutine check_init(nphys)
+    use dimensions_mod, only: nelemd, nlev, qsize
+
+    integer, intent(in) :: nphys
+
+    integer :: ncol
+
+    ncol = nphys*nphys
+    pg_data%nphys = nphys
+    allocate(pg_data%ps(ncol,nelemd), pg_data%zs(ncol,nelemd), pg_data%T(ncol,nlev,nelemd), &
+         pg_data%omega_p(ncol,nlev,nelemd), pg_data%uv(ncol,2,nlev,nelemd), &
+         pg_data%q(ncol,nlev,qsize,nelemd))
+  end subroutine check_init
+
+  subroutine check_finish()
+    deallocate(pg_data%ps, pg_data%zs, pg_data%T, pg_data%uv, pg_data%omega_p, pg_data%q)
+  end subroutine check_finish
+
+  subroutine check_api(gfr, hybrid, hvcoord, elem, nets, nete, verbose)
+    use hybvcoord_mod, only: hvcoord_t
+    use dimensions_mod, only: nlev, qsize
+    use parallel_mod, only: global_shared_buf, global_shared_sum
+    use global_norms_mod, only: wrap_repro_sum
+    use reduction_mod, only: ParallelMin, ParallelMax
+
+    type (GllFvRemap_t), intent(in) :: gfr
+    type (hybrid_t), intent(in) :: hybrid
+    type (hvcoord_t) , intent(in) :: hvcoord
+    type (element_t), intent(inout) :: elem(:)
+    integer, intent(in) :: nets, nete
+    logical, intent(in) :: verbose
+
+    real(kind=real_kind), allocatable :: ps(:,:), zs(:,:), T(:,:,:), uv(:,:,:,:), &
+         omega_p(:,:,:), q(:,:,:,:)
+    integer :: nf, ncol, nt1, nt2
+
+    nf = gfr%nphys
+    ncol = nf*nf
+    nt1 = 1
+    nt2 = 2 
+
+    call gfr_dyn_to_fv_phys(hybrid, nt2, hvcoord, elem, pg_data%ps, pg_data%zs, pg_data%T, &
+         pg_data%uv, pg_data%omega_p, pg_data%q, nets, nete)
+
+    call gfr_fv_phys_to_dyn(hybrid, nt2, hvcoord, elem, pg_data%T, pg_data%uv, pg_data%q, &
+         nets, nete)
+    call gfr_f2g_dss(hybrid, elem, nets, nete)
+    if (nf == 1) then
+       call gfr_fv_phys_to_dyn_boost_pg1(hybrid, nt2, hvcoord, elem, pg_data%T, pg_data%uv, &
+            pg_data%q, nets, nete)
+       call gfr_f2g_dss(hybrid, elem, nets, nete)
+    end if
+  end subroutine check_api
+
   subroutine gfr_test(hybrid, nets, nete, hvcoord, deriv, elem)
     use derivative_mod, only: derivative_t
     use hybvcoord_mod, only: hvcoord_t
@@ -1345,14 +1408,21 @@ contains
 
     do nphys = 1, np
        ! This is meant to be called before threading starts.
-       if (hybrid%ithr == 0) call gfr_init(hybrid, elem, nphys)
+       if (hybrid%ithr == 0) then
+          call gfr_init(hybrid, elem, nphys)
+          call check_init(nphys)
+       end if
        !$omp barrier
 
        call check(gfr, hybrid, elem, nets, nete, .false.)
+       call check_api(gfr, hybrid, hvcoord, elem, nets, nete, .false.)
 
        ! This is meant to be called after threading ends.
        !$omp barrier
-       if (hybrid%ithr == 0) call gfr_finish()
+       if (hybrid%ithr == 0) then
+          call gfr_finish()
+          call check_finish()
+       end if
        !$omp barrier
     end do
   end subroutine gfr_test
