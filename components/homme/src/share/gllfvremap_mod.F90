@@ -1345,22 +1345,14 @@ contains
 
     do nphys = 1, np
        ! This is meant to be called before threading starts.
-       if (hybrid%ithr == 0) then
-          call gfr_init(hybrid, elem, nphys)
-          call check_init(nphys)
-       end if
+       if (hybrid%ithr == 0) call gfr_init(hybrid, elem, nphys)
        !$omp barrier
 
        call check(gfr, hybrid, elem, nets, nete, .false.)
-       call check_api(gfr, hybrid, hvcoord, elem, nets, nete, .false.)
-       call check_api(gfr, hybrid, hvcoord, elem, nets, nete, .true.)
 
        ! This is meant to be called after threading ends.
        !$omp barrier
-       if (hybrid%ithr == 0) then
-          call gfr_finish()
-          call check_finish()
-       end if
+       if (hybrid%ithr == 0) call gfr_finish()
        !$omp barrier
     end do
   end subroutine gfr_test

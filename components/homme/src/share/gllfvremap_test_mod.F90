@@ -9,11 +9,13 @@ module gllfvremap_test_mod
   use kinds, only: real_kind
   use dimensions_mod, only: np, qsize, nelemd
   use element_mod, only: element_t
-  use coordinate_systems_mod, only: spherical_polar_t
 
   implicit none
 
   private
+
+  real(kind=real_kind), parameter :: &
+       zero = 0.0_real_kind, one = 1.0_real_kind, eps = epsilon(1.0_real_kind)
 
   type :: PhysgridData_t
      integer :: nphys
@@ -45,31 +47,33 @@ contains
     deallocate(pg_data%ps, pg_data%zs, pg_data%T, pg_data%uv, pg_data%omega_p, pg_data%q)
   end subroutine check_finish
 
-  subroutine check_api(gfr, hybrid, hvcoord, elem, nets, nete, tendency)
+  subroutine check_api(hybrid, hvcoord, elem, nets, nete, nphys, tendency)
     use hybvcoord_mod, only: hvcoord_t
     use dimensions_mod, only: nlev, qsize
     use element_ops, only: set_thermostate, get_temperature
+    use coordinate_systems_mod, only: cartesian3D_t, change_coordinates
     use prim_driver_base, only: applyCAMforcing_tracers
     use prim_advance_mod, only: applyCAMforcing_dynamics
     use parallel_mod, only: global_shared_buf, global_shared_sum
     use global_norms_mod, only: wrap_repro_sum
     use reduction_mod, only: ParallelMin, ParallelMax
+    use gllfvremap_mod
 
-    type (GllFvRemap_t), intent(in) :: gfr
     type (hybrid_t), intent(in) :: hybrid
     type (hvcoord_t) , intent(in) :: hvcoord
     type (element_t), intent(inout) :: elem(:)
-    integer, intent(in) :: nets, nete
+    integer, intent(in) :: nets, nete, nphys
     logical, intent(in) :: tendency
 
     real(kind=real_kind) :: wr(np,np,nlev)
     integer :: nf, ncol, nt1, nt2, ie, i, j, k, d, q, tl
+    type (cartesian3D_t) :: p
 
-    nf = gfr%nphys
+    nf = nphys
     ncol = nf*nf
     nt1 = 1
     nt2 = 2
-
+    
     ! Set analytical GLL values. nt1 contains the original, true
     ! values for later use.
     do ie = nets,nete
@@ -78,7 +82,10 @@ contains
              p = change_coordinates(elem(ie)%spherep(i,j))
              do k = 1,nlev
                 do q = 1,qsize
-                   elem(ie)%state%Q(i,j,k,q) = 
+                   elem(ie)%state%Q(i,j,k,q) = 1 + &
+                        0.5*sin((0.5 + modulo(q,2))*p%x)* &
+                        sin((0.5 + modulo(q,3))*1.5*p%y)* &
+                        sin((-2.3 + modulo(q,5))*2.5*p%z)
                 end do
              end do
              elem(ie)%state%ps_v(i,j,nt1:nt2) = &
@@ -86,11 +93,11 @@ contains
              elem(ie)%state%phis(i,j) = &
                   1 + 0.5*sin(p%x-0.5)*sin(0.5*p%y+2.5)*sin(2*p%z-2.5)
              do d = 1,2
-                elem%state%v(i,j,d,k,nt1:nt2) = &
+                elem(ie)%state%v(i,j,d,k,nt1:nt2) = &
                      sin(0.5*d*p%x+d-0.5)*sin(1.5*p%y-d++2.5)*sin(d*p%z+d-2.5)
              end do
              ! Set omega_p to a v component so we know its true value later.
-             elem%derived%omega_p(i,j,k) = elem%state%v(i,j,1,k,nt1)
+             elem(ie)%derived%omega_p(i,j,k) = elem(ie)%state%v(i,j,1,k,nt1)
              do k = 1,nlev
                 wr(i,j,k) = &
                      1 + 0.5*sin(p%x+1.5)*sin(1.5*p%y+0.5)*sin(2*p%z-0.5)
@@ -100,19 +107,19 @@ contains
                 do q = 1,qsize
                    do tl = nt1,nt2
                       elem(ie)%state%Qdp(i,j,k,q,tl) = &
-                           elem(ie)%state%Q(i,j,k,qi)*elem(ie)%state%dp3d(i,j,k,nt1)
+                           elem(ie)%state%Q(i,j,k,q)*elem(ie)%state%dp3d(i,j,k,nt1)
+                   end do
                 end do
              end do
           end do
        end do
     end do
-
     ! GLL -> FV.
     call gfr_dyn_to_fv_phys(hybrid, nt2, hvcoord, elem, pg_data%ps, pg_data%zs, pg_data%T, &
          pg_data%uv, pg_data%omega_p, pg_data%q, nets, nete)
-
+    
     ! Set FV tendencies.
-    if (tendencies) then
+    if (tendency) then
     else
        ! Test that if tendencies are 0, then the original fields are unchanged.
        pg_data%T = zero
@@ -131,7 +138,9 @@ contains
     end if
 
     ! Apply the tendencies.
-    call applyCAMforcing_tracers(elem, hvcoord, nt2, nt2, one, .true.)
+    do ie = nets,nete
+       call applyCAMforcing_tracers(elem(ie), hvcoord, nt2, nt2, one, .true.)
+    end do
     call applyCAMforcing_dynamics(elem, hvcoord, nt2, one, nets, nete)
 
     ! Test GLL state nt2 vs the original state nt1.
@@ -151,6 +160,8 @@ contains
 
     integer :: nphys
 
+    return
+
     do nphys = 1, np
        ! This is meant to be called before threading starts.
        if (hybrid%ithr == 0) then
@@ -159,8 +170,8 @@ contains
        end if
        !$omp barrier
 
-       call check_api(gfr, hybrid, hvcoord, elem, nets, nete, .false.)
-       call check_api(gfr, hybrid, hvcoord, elem, nets, nete, .true.)
+       call check_api(hybrid, hvcoord, elem, nets, nete, nphys, .false.)
+       call check_api(hybrid, hvcoord, elem, nets, nete, nphys, .true.)
 
        ! This is meant to be called after threading ends.
        !$omp barrier
