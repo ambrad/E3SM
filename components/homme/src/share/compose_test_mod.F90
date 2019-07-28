@@ -170,6 +170,7 @@ contains
     use perf_mod
     use sl_advection
     use gllfvremap_mod !rip&tear
+    use gllfvremap_test_mod
 
     type (hybrid_t), intent(in) :: hybrid
     type (derivative_t), intent(in) :: deriv
@@ -185,7 +186,8 @@ contains
 
     if (hybrid%masterthread) &
          print *, 'ALARUM: COMPOSE test is disabled while GFR is deved in this branch'
-    call gfr_test(hybrid, nets, nete, hvcoord, deriv, elem) !rip&tear
+    call gfr_test(hybrid, nets, nete, hvcoord, deriv, elem)
+    call gfr_check_api(hybrid, nets, nete, hvcoord, deriv, elem)
     return
 
 #ifdef HOMME_ENABLE_COMPOSE  
