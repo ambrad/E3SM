@@ -142,11 +142,6 @@ contains
     call gfr_fv_phys_to_dyn(hybrid, nt2, hvcoord, elem, pg_data%T, pg_data%uv, pg_data%q, &
          nets, nete)
     call gfr_f2g_dss(hybrid, elem, nets, nete)
-    if (nf == 1) then
-       call gfr_fv_phys_to_dyn_boost_pg1(hybrid, nt2, hvcoord, elem, pg_data%T, pg_data%uv, &
-            pg_data%q, nets, nete)
-       call gfr_f2g_dss(hybrid, elem, nets, nete)
-    end if
 
     ! Apply the tendencies.
     do ie = nets,nete

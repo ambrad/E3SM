@@ -10,8 +10,6 @@
 ! - topo roughness
 ! - ftype other than 2,4
 ! - checker routine callable from dcmip1
-! - pg1 boost in dcmip1; has to be applied to tendency to recover Q0 if tend = 0
-! - pg1 is failing limiter check; debug
 ! - np4-np2 instead of np4-pg1
 ! - halo exchange buffers
 ! - impl original pg2 to compare
@@ -76,7 +74,6 @@ module gllfvremap_mod
        gfr_init, &
        gfr_finish, &
        gfr_fv_phys_to_dyn, &
-       gfr_fv_phys_to_dyn_boost_pg1, &
        gfr_fv_phys_to_dyn_topo, &
        gfr_dyn_to_fv_phys, &
        gfr_f2g_dss
@@ -113,13 +110,7 @@ contains
     end if
 
     gfr%nphys = nphys
-    if (gfr%nphys == 1) then
-       ! If 3 is used, then the gfr_reconstructd_* routines must be mod'ed. In
-       ! particular, a limiter is needed, complicating the algorithm.
-       gfr%npi = 2
-    else
-       gfr%npi = max(3, nphys)
-    end if
+    gfr%npi = max(3, nphys)
 
     call gfr_init_w_gg(np, gfr%w_gg)
     call gfr_init_w_gg(gfr%npi, gfr%w_sgsg)
@@ -294,60 +285,6 @@ contains
        end do
     end do
   end subroutine gfr_fv_phys_to_dyn
-
-  subroutine gfr_fv_phys_to_dyn_boost_pg1(hybrid, nt, hvcoord, elem, T, uv, q, nets_in, nete_in)
-    !assume nphys = 1
-
-    use dimensions_mod, only: nlev
-    use hybvcoord_mod, only: hvcoord_t
-
-    type (hybrid_t), intent(in) :: hybrid
-    integer, intent(in) :: nt
-    type (hvcoord_t), intent(in) :: hvcoord
-    type (element_t), intent(inout) :: elem(:)
-    real(kind=real_kind), intent(in) :: T(:,:,:), uv(:,:,:,:), q(:,:,:,:)
-    integer, intent(in), optional :: nets_in, nete_in
-
-    real(kind=real_kind) :: dp(np,np,nlev), wr1(np,np,nlev), wr2(np,np,nlev)
-    integer :: nets, nete, ie, nf, ncol, d, k, qsize, qi
-
-    if (present(nets_in)) then
-       nets = nets_in
-       nete = nete_in
-    else
-       nets = 1
-       nete = size(elem)
-    end if
-    nf = gfr%nphys
-    ncol = nf*nf
-
-    qsize = size(q,3)
-
-    do ie = nets,nete
-       call calc_dp(hvcoord, elem(ie)%state%ps_v(:,:,nt), dp)
-
-       do k = 1,nlev
-          do d = 1,2
-             call gfr_reconstructd_nphys1(gfr, elem(ie)%metdet, dp(:,:,k), &
-                  elem(ie)%derived%FM(:,:,d,k))
-          end do
-       end do
-
-       do k = 1,nlev
-          call gfr_reconstructd_nphys1(gfr, elem(ie)%metdet, dp(:,:,k), &
-               elem(ie)%derived%FT(:,:,k))
-       end do
-
-       do qi = 1,qsize
-          do k = 1,nlev
-             call gfr_reconstructd_nphys1(gfr, elem(ie)%metdet, dp(:,:,k), &
-                  elem(ie)%derived%FQ(:,:,k,qi))
-             call limiter_clip_and_sum(np, elem(ie)%spheremp, gfr%qmin(k,qi,ie), &
-                  gfr%qmax(k,qi,ie), dp(:,:,k), elem(ie)%derived%FQ(:,:,k,qi))
-          end do
-       end do
-    end do       
-  end subroutine gfr_fv_phys_to_dyn_boost_pg1
 
   subroutine gfr_fv_phys_to_dyn_topo()
   end subroutine gfr_fv_phys_to_dyn_topo
@@ -1002,43 +939,10 @@ contains
     end do
   end subroutine gfr_f2g_remapd
 
-  subroutine gfr_reconstructd_nphys1(gfr, gll_metdet, dp, g)
-    !assume npi = 2
-
-    type (GllFvRemap_t), intent(in) :: gfr
-    real(kind=real_kind), intent(in) :: gll_metdet(:,:), dp(:,:)
-    real(kind=real_kind), intent(inout) :: g(:,:)
-
-    real(kind=real_kind) :: accum, wrk(2,2)
-    integer :: npi, fi, fj, gi, gj
-
-    ! Use just the corner points. The idea is that the non-corner points have
-    ! not interacted with the corner points. Thus, the corners behave as though
-    ! everything has been done on a GLL np=2 grid. In particular, this means
-    ! that using just the corner values now is still mass conserving.
-    wrk(1,1) = gll_metdet(1 ,1 )*dp(1 ,1 )*g(1 ,1 )
-    wrk(2,1) = gll_metdet(np,1 )*dp(np,1 )*g(np,1 )
-    wrk(1,2) = gll_metdet(1 ,np)*dp(1 ,np)*g(1 ,np)
-    wrk(2,2) = gll_metdet(np,np)*dp(np,np)*g(np,np)
-
-    npi = gfr%npi
-    do fj = 1,np
-       do fi = 1,np
-          accum = zero
-          do gj = 1,npi
-             do gi = 1,npi
-                accum = accum + gfr%interp(gi,gj,fi,fj)*wrk(gi,gj)
-             end do
-          end do
-          g(fi,fj) = accum/(dp(fi,fj)*gll_metdet(fi,fj))
-       end do
-    end do    
-  end subroutine gfr_reconstructd_nphys1
-
   subroutine limiter_clip_and_sum(n, spheremp, qmin, qmax, dp, q)
     integer, intent(in) :: n
-    real (kind=real_kind), intent(in) :: spheremp(:,:), dp(:,:), qmin, qmax
-    real (kind=real_kind), intent(inout) :: q(:,:)
+    real (kind=real_kind), intent(in) :: spheremp(:,:), dp(:,:)
+    real (kind=real_kind), intent(inout) :: qmin, qmax, q(:,:)
 
     integer :: k1, i, j
     logical :: modified
@@ -1050,6 +954,11 @@ contains
 
     sumc = sum(c)
     mass = sum(c*x)
+    ! In the case of an infeasible problem< prefer to conserve mass
+    ! and violate a bound.
+    if (mass < qmin*sumc) qmin = mass / sumc
+    if (mass > qmax*sumc) qmax = mass / sumc
+
     addmass = zero
 
     ! Clip.
@@ -1271,7 +1180,7 @@ contains
        call set_ps_Q(elem, nets, nete, 2, 2, nlev)
        do iremap = 1,1
           ! 1. GLL -> FV
-          do ie = nets, nete !TODO move to own routine
+          do ie = nets, nete
              call gfr_g2f_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,:,ie), &
                   elem(ie)%state%ps_v(:,:,1)*elem(ie)%state%Q(:,:,1,1), Qdp_fv(:,:,ie))
              if (limit) then
@@ -1302,40 +1211,25 @@ contains
              call gfr_f2g_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,:,ie), &
                   Qdp_fv(:,:,ie), elem(ie)%state%Q(:,:,1,1))
              elem(ie)%state%Q(:,:,1,1) = elem(ie)%state%Q(:,:,1,1)/elem(ie)%state%ps_v(:,:,1)
-             if (limit .and. gfr%nphys > 1) then
-                qmin = min(qmins(1,1,ie), minval(wrk))
-                qmax = max(qmaxs(1,1,ie), maxval(wrk))
+             if (limit) then
+                qmins(1,1,ie) = min(qmins(1,1,ie), minval(wrk))
+                qmaxs(1,1,ie) = max(qmaxs(1,1,ie), maxval(wrk))
                 call limiter_clip_and_sum(np, elem(ie)%spheremp, & ! same as w_gg*gll_metdet
-                     qmin, qmax, elem(ie)%state%ps_v(:,:,1), elem(ie)%state%Q(:,:,1,1))
+                     qmins(1,1,ie), qmaxs(1,1,ie), elem(ie)%state%ps_v(:,:,1), &
+                     elem(ie)%state%Q(:,:,1,1))
              end if
           end do
-          do i = 1,2
-             ! 3. DSS
-             do ie = nets, nete
-                elem(ie)%state%Q(:,:,1,1) = &
-                     elem(ie)%state%ps_v(:,:,1)*elem(ie)%state%Q(:,:,1,1)*elem(ie)%spheremp(:,:)
-                call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%Q(:,:,1,1), 1, 0, 1)
-             end do
-             call bndry_exchangeV(hybrid, edge_g)
-             do ie = nets, nete
-                call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%Q(:,:,1,1), 1, 0, 1)
-                elem(ie)%state%Q(:,:,1,1) = &
-                     (elem(ie)%state%Q(:,:,1,1)*elem(ie)%rspheremp(:,:))/elem(ie)%state%ps_v(:,:,1)
-             end do
-             ! 4. pg1 special case
-             if (gfr%nphys == 1 .and. i == 1) then
-                do ie = nets, nete !TODO move to own routine
-                   call gfr_reconstructd_nphys1(gfr, elem(ie)%metdet, elem(ie)%state%ps_v(:,:,1), &
-                        elem(ie)%state%Q(:,:,1,1))
-                   if (limit) then
-                      qmin = qmins(1,1,ie)
-                      qmax = qmaxs(1,1,ie)
-                      call limiter_clip_and_sum(np, elem(ie)%spheremp, &
-                           qmin, qmax, elem(ie)%state%ps_v(:,:,1), elem(ie)%state%Q(:,:,1,1))
-                   end if
-                end do
-             end if
-             if (gfr%nphys > 1 .or. .not. limit) exit
+          ! 3. DSS
+          do ie = nets, nete
+             elem(ie)%state%Q(:,:,1,1) = &
+                  elem(ie)%state%ps_v(:,:,1)*elem(ie)%state%Q(:,:,1,1)*elem(ie)%spheremp(:,:)
+             call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%Q(:,:,1,1), 1, 0, 1)
+          end do
+          call bndry_exchangeV(hybrid, edge_g)
+          do ie = nets, nete
+             call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%Q(:,:,1,1), 1, 0, 1)
+             elem(ie)%state%Q(:,:,1,1) = &
+                  (elem(ie)%state%Q(:,:,1,1)*elem(ie)%rspheremp(:,:))/elem(ie)%state%ps_v(:,:,1)
           end do
        end do
        ! 5. Compute error.
@@ -1368,7 +1262,7 @@ contains
           print '(a,i3)', 'gfr> limiter', ilimit
           rd = sqrt(global_shared_sum(1)/global_shared_sum(2))
           print '(a,es12.4)', 'gfr> l2  ', rd
-          rd = (global_shared_sum(4) - global_shared_sum(3))/global_shared_sum(3)
+          rd = abs(global_shared_sum(4) - global_shared_sum(3))/global_shared_sum(3)
           msg = ''
           if (rd > 10*eps) msg = ' ERROR'
           print '(a,es11.3,a8)', 'gfr> mass', rd, msg
