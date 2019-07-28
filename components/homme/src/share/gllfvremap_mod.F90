@@ -83,7 +83,7 @@ module gllfvremap_mod
   ! Testing API.
   public :: &
        gfr_test, &
-       gfr_f2g_scalar, gfr_f_get_latlon, gfr_g_make_nonnegative
+       gfr_f2g_scalar, gfr_f_get_latlon, gfr_f_get_cartesian3d, gfr_g_make_nonnegative
 
 contains
 
@@ -905,6 +905,15 @@ contains
     lat = gfr%spherep_f(i,j,ie)%lat
     lon = gfr%spherep_f(i,j,ie)%lon
   end subroutine gfr_f_get_latlon
+
+  subroutine gfr_f_get_cartesian3d(ie, i, j, p)
+    use coordinate_systems_mod, only: cartesian3D_t, change_coordinates
+
+    integer, intent(in) :: ie, i, j
+    type (cartesian3D_t), intent(out) :: p
+
+    p = change_coordinates(gfr%spherep_f(i,j,ie))
+  end subroutine gfr_f_get_cartesian3d
 
   ! d suffix means the inputs, outputs are densities.
   subroutine gfr_g2f_remapd(gfr, gll_metdet, fv_metdet, g, f)

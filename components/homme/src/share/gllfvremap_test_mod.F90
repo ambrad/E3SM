@@ -65,7 +65,7 @@ contains
     integer, intent(in) :: nets, nete, nphys
     logical, intent(in) :: tendency
 
-    real(kind=real_kind) :: wr(np,np,nlev), tend(np,np,nlev), lat, lon, f, a, b, rd
+    real(kind=real_kind) :: wr(np,np,nlev), tend(np,np,nlev), f, a, b, rd
     integer :: nf, ncol, nt1, nt2, ie, i, j, k, d, q, tl, col
     type (cartesian3D_t) :: p
 
@@ -123,8 +123,8 @@ contains
           do j = 1,nf
              do i = 1,nf
                 col = nf*(j-1) + i
-                call gfr_f_get_latlon(ie, i, j, lat, lon)
-                f = 0.25_real_kind*sin(lat)*sin(lon)
+                call gfr_f_get_cartesian3d(ie, i, j, p)
+                f = 0.25_real_kind*sin(3.2*p%x)*sin(4.2*p%y)*sin(2.3*p%z)
                 pg_data%uv(col,:,:,ie) = f
                 pg_data%T(col,:,ie) = f
                 ! no moisture adjustment => no dp3d adjustment
@@ -165,9 +165,8 @@ contains
           if (tendency .and. q > 1) then
              do j = 1,np
                 do i = 1,np
-                   lat = elem(ie)%spherep(i,j)%lat
-                   lon = elem(ie)%spherep(i,j)%lon
-                   tend(i,j,:) = 0.25_real_kind*sin(lat)*sin(lon)
+                   p = change_coordinates(elem(ie)%spherep(i,j))
+                   tend(i,j,:) = 0.25_real_kind*sin(3.2*p%x)*sin(4.2*p%y)*sin(2.3*p%z)
                 end do
              end do
           end if
@@ -177,7 +176,7 @@ contains
                (elem(ie)%state%Qdp(:,:,:,q,nt1)/elem(ie)%state%dp3d(:,:,:,nt1) + tend))**2)
           global_shared_buf(ie,2) = &
                sum(wr*( &
-               elem(ie)%state%Qdp(:,:,:,q,nt1)/elem(ie)%state%dp3d(:,:,:,nt1))**2)
+               elem(ie)%state%Qdp(:,:,:,q,nt1)/elem(ie)%state%dp3d(:,:,:,nt1) + tend)**2)
        end do
        call wrap_repro_sum(nvars=2, comm=hybrid%par%comm)
        if (hybrid%masterthread) then
