@@ -64,9 +64,11 @@ contains
     type (element_t), intent(inout) :: elem(:)
     integer, intent(in) :: nets, nete, nphys
     logical, intent(in) :: tendency
+    character(32) :: msg
 
-    real(kind=real_kind) :: wr(np,np,nlev), tend(np,np,nlev), f, a, b, rd
-    integer :: nf, ncol, nt1, nt2, ie, i, j, k, d, q, tl, col
+    real(kind=real_kind) :: wr(np,np,nlev), tend(np,np,nlev), f, a, b, rd, qmin1, qmax1, &
+         qmin2, qmax2, mass1, mass2, wr1(np,np,nlev), wr2(np,np,nlev)
+    integer :: nf, ncol, nt1, nt2, ie, i, j, k, d, q, qi, tl, col
     type (cartesian3D_t) :: p
 
     nf = nphys
@@ -92,12 +94,14 @@ contains
                   1.0d3*(1 + 0.05*sin(2*p%x+0.5)*sin(p%y+1.5)*sin(3*p%z+2.5))
              elem(ie)%state%phis(i,j) = &
                   1 + 0.5*sin(p%x-0.5)*sin(0.5*p%y+2.5)*sin(2*p%z-2.5)
-             do d = 1,2
-                elem(ie)%state%v(i,j,d,k,nt1:nt2) = &
-                     sin(0.5*d*p%x+d-0.5)*sin(1.5*p%y-d++2.5)*sin(d*p%z+d-2.5)
+             do k = 1,nlev
+                do d = 1,2
+                   elem(ie)%state%v(i,j,d,k,nt1:nt2) = &
+                        sin(0.5*d*p%x+d-0.5)*sin(1.5*p%y-d++2.5)*sin(d*p%z+d-2.5)
+                end do
+                ! Set omega_p to a v component so we know its true value later.
+                elem(ie)%derived%omega_p(i,j,k) = elem(ie)%state%v(i,j,1,k,nt1)
              end do
-             ! Set omega_p to a v component so we know its true value later.
-             elem(ie)%derived%omega_p(i,j,k) = elem(ie)%state%v(i,j,1,k,nt1)
              do k = 1,nlev
                 wr(i,j,k) = &
                      1 + 0.5*sin(p%x+1.5)*sin(1.5*p%y+0.5)*sin(2*p%z-0.5)
@@ -152,7 +156,10 @@ contains
     ! Test GLL state nt2 vs the original state nt1.
     if (hybrid%masterthread) print '(a,i3)', 'gfrt> tendency', tendency
     tend = zero
-    do q = 1,qsize
+    mass1 = zero; mass2 = zero
+    qmin1 = one; qmax1 = -one
+    qmin2 = one; qmax2 = -one
+    do q = 1, qsize+3
        do ie = nets,nete
           do k = 1,nlev
              wr(:,:,k) = elem(ie)%spheremp
@@ -165,18 +172,37 @@ contains
                 end do
              end do
           end if
-          global_shared_buf(ie,1) = &
-               sum(wr*( &
-               elem(ie)%state%Q(:,:,:,q) - &
-               (elem(ie)%state%Qdp(:,:,:,q,nt1)/elem(ie)%state%dp3d(:,:,:,nt1) + tend))**2)
-          global_shared_buf(ie,2) = &
-               sum(wr*( &
-               elem(ie)%state%Qdp(:,:,:,q,nt1)/elem(ie)%state%dp3d(:,:,:,nt1) + tend)**2)
+          if (q > qsize) then
+             qi = q - qsize
+             if (qi < 3) then
+                global_shared_buf(ie,1) = &
+                     sum(wr*( &
+                     elem(ie)%state%v(:,:,qi,:,nt2) - &
+                     (elem(ie)%state%v(:,:,qi,:,nt1) + tend))**2)
+                global_shared_buf(ie,2) = &
+                     sum(wr*(elem(ie)%state%v(:,:,qi,:,nt1) + tend)**2)
+             else
+                call get_temperature(elem(ie), wr1, hvcoord, nt1)
+                call get_temperature(elem(ie), wr2, hvcoord, nt2)
+                global_shared_buf(ie,1) = sum(wr*(wr2 - (wr1 + tend))**2)
+                global_shared_buf(ie,2) = sum(wr*(wr1 + tend)**2)                
+             end if
+          else
+             global_shared_buf(ie,1) = &
+                  sum(wr*( &
+                  elem(ie)%state%Q(:,:,:,q) - &
+                  (elem(ie)%state%Qdp(:,:,:,q,nt1)/elem(ie)%state%dp3d(:,:,:,nt1) + tend))**2)
+             global_shared_buf(ie,2) = &
+                  sum(wr*( &
+                  elem(ie)%state%Qdp(:,:,:,q,nt1)/elem(ie)%state%dp3d(:,:,:,nt1) + tend)**2)
+          end if
        end do
        call wrap_repro_sum(nvars=2, comm=hybrid%par%comm)
        if (hybrid%masterthread) then
           rd = sqrt(global_shared_sum(1)/global_shared_sum(2))
-          print '(a,i3,es12.4)', 'gfrt> q l2', q, rd
+          msg = ''
+          if (.not. tendency .and. rd > 5*eps) msg = ' ERROR'
+          print '(a,i3,a,i3,es12.4,a8)', 'gfrt> q l2', q, ' of', qsize, rd, msg
        end if
     end do
     do ie = nets,nete
@@ -200,7 +226,7 @@ contains
     do nphys = 1, np
        ! This is meant to be called before threading starts.
        if (hybrid%ithr == 0) then
-          call gfr_init(hybrid, elem, nphys)
+          call gfr_init(hybrid, elem, nphys, check=.true.)
           call check_init(nphys)
        end if
        !$omp barrier

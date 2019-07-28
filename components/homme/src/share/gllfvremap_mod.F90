@@ -85,21 +85,24 @@ module gllfvremap_mod
 
 contains
 
-  subroutine gfr_init(hybrid, elem, nphys)
+  subroutine gfr_init(hybrid, elem, nphys, check)
     use dimensions_mod, only: nlev
     use parallel_mod, only: abortmp
 
     type (hybrid_t), intent(in) :: hybrid
     type (element_t), intent(in) :: elem(:)
     integer, intent(in) :: nphys
+    logical, intent(in), optional :: check
 
     real(real_kind) :: R(npsq,nphys_max*nphys_max)
 
     if (hybrid%ithr > 0) return
 
-    gfr%check = .true.
+    gfr%check = .false.
+    if (present(check)) gfr%check = check
+
     gfr%tolfac = one
-    if (hybrid%masterthread) print '(a,i3,a,i3)', 'gfr> init nphys', nphys, ' check', gfr%check
+    if (hybrid%masterthread) print '(a,i3,a,l2)', 'gfr> init nphys', nphys, ' check', gfr%check
 
     if (nphys > np) then
        ! The FV -> GLL map is defined only if nphys <= np. If we ever are
@@ -954,10 +957,12 @@ contains
 
     sumc = sum(c)
     mass = sum(c*x)
+#if 0
     ! In the case of an infeasible problem< prefer to conserve mass
     ! and violate a bound.
     if (mass < qmin*sumc) qmin = mass / sumc
     if (mass > qmax*sumc) qmax = mass / sumc
+#endif
 
     addmass = zero
 
