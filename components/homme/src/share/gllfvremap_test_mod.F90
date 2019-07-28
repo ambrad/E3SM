@@ -65,7 +65,7 @@ contains
     integer, intent(in) :: nets, nete, nphys
     logical, intent(in) :: tendency
 
-    real(kind=real_kind) :: wr(np,np,nlev), lat, lon, f
+    real(kind=real_kind) :: wr(np,np,nlev), lat, lon, f, a, b, rd
     integer :: nf, ncol, nt1, nt2, ie, i, j, k, d, q, tl, col
     type (cartesian3D_t) :: p
 
@@ -114,6 +114,7 @@ contains
           end do
        end do
     end do
+
     ! GLL -> FV.
     call gfr_dyn_to_fv_phys(hybrid, nt2, hvcoord, elem, pg_data%ps, pg_data%zs, pg_data%T, &
          pg_data%uv, pg_data%omega_p, pg_data%q, nets, nete)
@@ -125,7 +126,7 @@ contains
              do i = 1,nf
                 col = nf*(j-1) + i
                 call gfr_f_get_latlon(ie, i, j, lat, lon)
-                f = 0.1*sin(lat)*sin(lon)
+                f = 0.25*sin(lat)*sin(lon)
                 do k = 1,nlev
                    do d = 1,2
                       pg_data%uv(col,d,k,ie) = pg_data%uv(col,d,k,ie) + f
@@ -161,7 +162,29 @@ contains
     call applyCAMforcing_dynamics(elem, hvcoord, nt2, one, nets, nete)
 
     ! Test GLL state nt2 vs the original state nt1.
-    
+    if (hybrid%masterthread) print '(a,i2)', 'gfrt> tendency', tendency
+    do q = 1,qsize
+       do ie = nets,nete
+          do k = 1,nlev
+             wr(:,:,k) = elem(ie)%spheremp
+          end do
+          global_shared_buf(ie,1) = &
+               sum(wr*( &
+               elem(ie)%state%Qdp(:,:,:,q,nt2)/elem(ie)%state%dp3d(:,:,:,nt1) - &
+               elem(ie)%state%Qdp(:,:,:,q,nt1)/elem(ie)%state%dp3d(:,:,:,nt1))**2)
+          global_shared_buf(ie,2) = &
+               sum(wr*( &
+               elem(ie)%state%Qdp(:,:,:,q,nt1)/elem(ie)%state%dp3d(:,:,:,nt1))**2)
+       end do
+       call wrap_repro_sum(nvars=2, comm=hybrid%par%comm)
+       if (hybrid%masterthread) then
+          rd = sqrt(global_shared_sum(1)/global_shared_sum(2))
+          print '(a,i3,es12.4)', 'gfrt> q l2', q, rd
+       end if
+    end do
+    do ie = nets,nete
+    end do
+    call wrap_repro_sum(nvars=3, comm=hybrid%par%comm)
   end subroutine check_api
 
   subroutine gfr_check_api(hybrid, nets, nete, hvcoord, deriv, elem)
