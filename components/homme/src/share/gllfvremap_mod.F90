@@ -83,7 +83,7 @@ module gllfvremap_mod
   ! Testing API.
   public :: &
        gfr_test, &
-       gfr_f2g_scalar, gfr_get_latlon, gfr_g_make_nonnegative
+       gfr_f2g_scalar, gfr_f_get_latlon, gfr_g_make_nonnegative
 
 contains
 
@@ -898,13 +898,13 @@ contains
     end do
   end subroutine gfr_g_make_nonnegative
 
-  subroutine gfr_get_latlon(ie, i, j, lat, lon)
+  subroutine gfr_f_get_latlon(ie, i, j, lat, lon)
     integer, intent(in) :: ie, i, j
     real(kind=real_kind), intent(out) :: lat, lon
 
     lat = gfr%spherep_f(i,j,ie)%lat
     lon = gfr%spherep_f(i,j,ie)%lon
-  end subroutine gfr_get_latlon
+  end subroutine gfr_f_get_latlon
 
   ! d suffix means the inputs, outputs are densities.
   subroutine gfr_g2f_remapd(gfr, gll_metdet, fv_metdet, g, f)

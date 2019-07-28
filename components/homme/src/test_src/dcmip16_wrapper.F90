@@ -719,7 +719,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
            Q_fv(i,j,:,3) = qr_c(nlev:1:-1)
            theta_kess_fv(i,j,:) = th_c(nlev:1:-1)
 
-           call gfr_get_latlon(ie, i, j, lat, lon)
+           call gfr_f_get_latlon(ie, i, j, lat, lon)
            do k=1,nlev
               call tendency_terminator(lat*rad2dg, lon*rad2dg, Q_fv(i,j,k,4), Q_fv(i,j,k,5), &
                    dt, ddt_cl(i,j,k), ddt_cl2(i,j,k))

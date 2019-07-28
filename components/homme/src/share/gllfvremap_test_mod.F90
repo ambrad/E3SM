@@ -65,8 +65,8 @@ contains
     integer, intent(in) :: nets, nete, nphys
     logical, intent(in) :: tendency
 
-    real(kind=real_kind) :: wr(np,np,nlev)
-    integer :: nf, ncol, nt1, nt2, ie, i, j, k, d, q, tl
+    real(kind=real_kind) :: wr(np,np,nlev), lat, lon, f
+    integer :: nf, ncol, nt1, nt2, ie, i, j, k, d, q, tl, col
     type (cartesian3D_t) :: p
 
     nf = nphys
@@ -120,11 +120,28 @@ contains
     
     ! Set FV tendencies.
     if (tendency) then
+       do ie = nets,nete
+          do j = 1,nf
+             do i = 1,nf
+                col = nf*(j-1) + i
+                call gfr_f_get_latlon(ie, i, j, lat, lon)
+                f = 0.1*sin(lat)*sin(lon)
+                do k = 1,nlev
+                   do d = 1,2
+                      pg_data%uv(col,d,k,ie) = pg_data%uv(col,d,k,ie) + f
+                   end do
+                   pg_data%T(col,k,ie) = pg_data%T(col,k,ie) + f
+                   do q = 1,qsize
+                      pg_data%q(col,k,q,ie) = pg_data%q(col,k,q,ie) + f
+                   end do
+                end do
+             end do
+          end do
+       end do
     else
        ! Test that if tendencies are 0, then the original fields are unchanged.
        pg_data%T = zero
        pg_data%uv = zero
-       pg_data%q = zero
     end if
 
     ! FV -> GLL.
@@ -159,8 +176,6 @@ contains
     integer, intent(in) :: nets, nete
 
     integer :: nphys
-
-    return
 
     do nphys = 1, np
        ! This is meant to be called before threading starts.
