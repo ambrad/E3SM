@@ -250,8 +250,23 @@ contains
     end do
 
     ! Test topo routines.
+    ! Stash initial phis for later comparison.
+    do ie = nets,nete
+       elem(ie)%derived%vstar(:,:,1,1) = elem(ie)%state%phis
+    end do
     call gfr_dyn_to_fv_phys_topo(hybrid, elem, pg_data%zs, nets, nete)
     call gfr_fv_phys_to_dyn_topo(hybrid, elem, pg_data%zs, nets, nete)
+    ! Compare GLL phis1 against GLL phis0.
+    do ie = nets,nete
+       global_shared_buf(ie,1) = sum(elem(ie)%spheremp*(elem(ie)%state%phis - &
+            elem(ie)%derived%vstar(:,:,1,1))**2)
+       global_shared_buf(ie,2) = sum(elem(ie)%spheremp*elem(ie)%derived%vstar(:,:,1,1)**2)
+    end do
+    call wrap_repro_sum(nvars=2, comm=hybrid%par%comm)
+    if (hybrid%masterthread) then
+       rd = sqrt(global_shared_sum(1)/global_shared_sum(2))
+       print '(a,es12.4)', 'gfrt> topo l2', rd
+    end if
   end subroutine run
 
   subroutine gfr_check_api(hybrid, nets, nete, hvcoord, deriv, elem)
