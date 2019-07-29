@@ -238,8 +238,13 @@ contains
 
        wr1(:nf,:nf,:) = reshape(uv(:ncol,1,:,ie), (/nf,nf,nlev/))
        wr2(:nf,:nf,:) = reshape(uv(:ncol,2,:,ie), (/nf,nf,nlev/))
+#if 1
        call gfr_f2g_vector_dp(ie, elem, dp_fv, dp, wr1, wr2, &
             elem(ie)%derived%FM(:,:,1,:), elem(ie)%derived%FM(:,:,2,:))
+#else
+       call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, wr1, elem(ie)%derived%FM(:,:,1,:))
+       call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, wr2, elem(ie)%derived%FM(:,:,2,:))
+#endif
 
        wr1(:nf,:nf,:) = reshape(T(:ncol,:,ie), (/nf,nf,nlev/))
        call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, wr1, elem(ie)%derived%FT)
@@ -580,6 +585,7 @@ contains
 
   subroutine gfr_f_ref_coord(nphys, i, a)
     ! FV subcell center in ref [-1,1]^2 coord.
+
     integer, intent(in) :: nphys, i
     real(kind=real_kind), intent(out) :: a
 
@@ -638,8 +644,11 @@ contains
     real(kind=real_kind), intent(in) :: gll_metdet(:,:), dp_g(:,:,:), dp_f(:,:,:), g(:,:,:)
     real(kind=real_kind), intent(out) :: f(:,:,:)
 
+    integer :: nf
+
+    nf = gfr%nphys
     call gfr_g2f_scalar(ie, gll_metdet, dp_g*g, f)
-    f = f/dp_f
+    f = f(:nf,:nf,:)/dp_f(:nf,:nf,:)
   end subroutine gfr_g2f_scalar_dp
 
   subroutine gfr_g2f_vector(ie, elem, u_g, v_g, u_f, v_f)
@@ -649,15 +658,16 @@ contains
     real(kind=real_kind), intent(out) :: u_f(:,:,:), v_f(:,:,:)
 
     real(kind=real_kind) :: wg(np,np,2), wf(np,np,2), ones(np,np)
-    integer :: k, d, nf
+    integer :: k, d, nf, nlev
 
     nf = gfr%nphys
     ones = one
 
-    do k = 1, size(u_g,3)
+    nlev = size(u_g,3)
+    do k = 1, nlev
        ! sphere -> GLL ref
        do d = 1,2
-          wg(:,:,d) = elem(ie)%D(:,:,d,1)*u_g(:,:,k) + elem(ie)%D(:,:,d,2)*v_g(:,:,k)
+          wg(:,:,d) = elem(ie)%Dinv(:,:,d,1)*u_g(:,:,k) + elem(ie)%Dinv(:,:,d,2)*v_g(:,:,k)
        end do
        ! Since we mapped to the ref element, we no longer should use the ref ->
        ! sphere Jacobians; use 1s instead.
@@ -666,8 +676,8 @@ contains
        end do
        ! FV ref -> sphere
        do d = 1,2
-          wg(:nf,:nf,d) = gfr%Dinv_f(:nf,:nf,d,1,ie)*wf(:nf,:nf,1) + &
-               gfr%Dinv_f(:nf,:nf,d,2,ie)*wf(:nf,:nf,2)
+          wg(:nf,:nf,d) = gfr%D_f(:nf,:nf,d,1,ie)*wf(:nf,:nf,1) + &
+               gfr%D_f(:nf,:nf,d,2,ie)*wf(:nf,:nf,2)
        end do
        u_f(:nf,:nf,k) = wg(:nf,:nf,1)
        v_f(:nf,:nf,k) = wg(:nf,:nf,2)
@@ -680,9 +690,12 @@ contains
     real(kind=real_kind), intent(in) :: dp_g(:,:,:), dp_f(:,:,:), u_g(:,:,:), v_g(:,:,:)
     real(kind=real_kind), intent(out) :: u_f(:,:,:), v_f(:,:,:)
 
+    integer :: nf
+
+    nf = gfr%nphys
     call gfr_g2f_vector(ie, elem, dp_g*u_g, dp_g*v_g, u_f, v_f)
-    u_f = u_f/dp_f
-    v_f = v_f/dp_f
+    u_f(:nf,:nf,:) = u_f(:nf,:nf,:)/dp_f(:nf,:nf,:)
+    v_f(:nf,:nf,:) = v_f(:nf,:nf,:)/dp_f(:nf,:nf,:)
   end subroutine gfr_g2f_vector_dp
 
   subroutine gfr_g2f_mixing_ratio(ie, gll_metdet, dp_g, dp_f, qdp_g, q_f)
@@ -698,7 +711,7 @@ contains
     do k = 1, size(qdp_g,3)
        call gfr_g2f_remapd(gfr, gll_metdet, gfr%fv_metdet(:,:,ie), &
             qdp_g(:,:,k), q_f(:,:,k))
-       q_f(:,:,k) = q_f(:,:,k)/dp_f(:,:,k)
+       q_f(:nf,:nf,k) = q_f(:nf,:nf,k)/dp_f(:nf,:nf,k)
        wrk = qdp_g(:,:,k)/dp_g(:,:,k)
        qmin = minval(wrk)
        qmax = maxval(wrk)
@@ -739,7 +752,10 @@ contains
     real(kind=real_kind), intent(in) :: gll_metdet(:,:), dp_f(:,:,:), dp_g(:,:,:), f(:,:,:)
     real(kind=real_kind), intent(out) :: g(:,:,:)
 
-    call gfr_f2g_scalar(ie, gll_metdet, dp_f*f, g)
+    integer :: nf
+
+    nf = gfr%nphys
+    call gfr_f2g_scalar(ie, gll_metdet, dp_f(:nf,:nf,:)*f(:nf,:nf,:), g)
     g = g/dp_g
   end subroutine gfr_f2g_scalar_dp
 
@@ -750,23 +766,24 @@ contains
     real(kind=real_kind), intent(out) :: u_g(:,:,:), v_g(:,:,:)
 
     real(kind=real_kind) :: wg(np,np,2), wf(np,np,2), ones(np,np)
-    integer :: k, d, nf
+    integer :: k, d, nf, nlev
 
     nf = gfr%nphys
     ones = one
 
-    do k = 1, size(u_g,3)
+    nlev = size(u_g,3)
+    do k = 1, nlev
        ! sphere -> FV ref
        do d = 1,2
-          wf(:nf,:nf,d) = gfr%D_f(:nf,:nf,d,1,ie)*u_f(:nf,:nf,k) + &
-               gfr%D_f(:nf,:nf,d,2,ie)*v_f(:nf,:nf,k)
+          wf(:nf,:nf,d) = gfr%Dinv_f(:nf,:nf,d,1,ie)*u_f(:nf,:nf,k) + &
+               gfr%Dinv_f(:nf,:nf,d,2,ie)*v_f(:nf,:nf,k)
        end do
        do d = 1,2
           call gfr_f2g_remapd(gfr, ones, ones, wf(:,:,d), wg(:,:,d))
        end do
        ! GLL ref -> sphere
        do d = 1,2
-          wf(:,:,d) = elem(ie)%Dinv(:,:,d,1)*wg(:,:,1) + elem(ie)%Dinv(:,:,d,2)*wg(:,:,2)
+          wf(:,:,d) = elem(ie)%D(:,:,d,1)*wg(:,:,1) + elem(ie)%D(:,:,d,2)*wg(:,:,2)
        end do
        u_g(:,:,k) = wf(:,:,1)
        v_g(:,:,k) = wf(:,:,2)
@@ -779,7 +796,11 @@ contains
     real(kind=real_kind), intent(in) :: dp_f(:,:,:), dp_g(:,:,:), u_f(:,:,:), v_f(:,:,:)
     real(kind=real_kind), intent(out) :: u_g(:,:,:), v_g(:,:,:)
 
-    call gfr_f2g_vector(ie, elem, dp_f*u_f, dp_f*v_f, u_g, v_g)
+    integer :: nf
+
+    nf = gfr%nphys
+    call gfr_f2g_vector(ie, elem, dp_f(:nf,:nf,:)*u_f(:nf,:nf,:), &
+         dp_f(:nf,:nf,:)*v_f(:nf,:nf,:), u_g, v_g)
     u_g = u_g/dp_g
     v_g = v_g/dp_g
   end subroutine gfr_f2g_vector_dp
@@ -817,7 +838,7 @@ contains
        end do
        do q = 1,2
           do k = 1,nlev
-             elem(ie)%derived%FM(:,:,k,q) = elem(ie)%derived%FM(:,:,k,q)*elem(ie)%spheremp(:,:)
+             elem(ie)%derived%FM(:,:,q,k) = elem(ie)%derived%FM(:,:,q,k)*elem(ie)%spheremp(:,:)
           end do
        end do
        elem(ie)%derived%FT(:,:,k) = elem(ie)%derived%FT(:,:,k)*elem(ie)%spheremp(:,:)
@@ -846,7 +867,7 @@ contains
        end do
        do q = 1,2
           do k = 1,nlev
-             elem(ie)%derived%FM(:,:,k,q) = elem(ie)%derived%FM(:,:,k,q)*elem(ie)%rspheremp(:,:)
+             elem(ie)%derived%FM(:,:,q,k) = elem(ie)%derived%FM(:,:,q,k)*elem(ie)%rspheremp(:,:)
           end do
        end do
        elem(ie)%derived%FT(:,:,k) = elem(ie)%derived%FT(:,:,k)*elem(ie)%rspheremp(:,:)
@@ -1136,6 +1157,10 @@ contains
 
     if (hybrid%masterthread) then
        print '(a,i3,a,i3)', 'gfr> npi', gfr%npi, ' nphys', nf
+       print *,'gfr> D',elem(1)%D(1,1,:,:)
+       print *,'gfr> Dinv',elem(1)%Dinv(1,1,:,:)
+       print *,'gfr> D_f',gfr%D_f(1,1,:,:,1)
+       print *,'gfr> Dinv_f',gfr%Dinv_f(1,1,:,:,1)
        if (verbose) then
           print *, 'gfr> w_ff', nf, gfr%w_ff(:nf, :nf)
           print *, 'gfr> w_gg', np, gfr%w_gg(:np, :np)
