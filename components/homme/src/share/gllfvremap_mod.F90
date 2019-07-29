@@ -1164,10 +1164,6 @@ contains
 
     if (hybrid%masterthread) then
        print '(a,i3,a,i3)', 'gfr> npi', gfr%npi, ' nphys', nf
-       print *,'gfr> D',elem(1)%D(1,1,:,:)
-       print *,'gfr> Dinv',elem(1)%Dinv(1,1,:,:)
-       print *,'gfr> D_f',gfr%D_f(1,1,:,:,1)
-       print *,'gfr> Dinv_f',gfr%Dinv_f(1,1,:,:,1)
        if (verbose) then
           print *, 'gfr> w_ff', nf, gfr%w_ff(:nf, :nf)
           print *, 'gfr> w_gg', np, gfr%w_gg(:np, :np)

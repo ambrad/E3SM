@@ -7,7 +7,7 @@ module gllfvremap_test_mod
 
   use hybrid_mod, only: hybrid_t
   use kinds, only: real_kind
-  use dimensions_mod, only: np, qsize, nelemd
+  use dimensions_mod, only: nelemd, np, nlev, nlevp, qsize
   use element_mod, only: element_t
 
   implicit none
@@ -23,6 +23,12 @@ module gllfvremap_test_mod
           omega_p(:,:,:), q(:,:,:,:)
   end type PhysgridData_t
 
+  type :: State_t
+     real(kind=real_kind), dimension(np,np,nlev) :: u, v, w, T, p, dp, rho, z
+     real(kind=real_kind), dimension(np,np,nlevp) :: zi, wi
+     real(kind=real_kind), dimension(np,np) :: ps, phis
+  end type State_t
+
   type (PhysgridData_t), private :: pg_data
 
   public :: gfr_check_api
@@ -30,8 +36,6 @@ module gllfvremap_test_mod
 contains
   
   subroutine check_init(nphys)
-    use dimensions_mod, only: nelemd, nlev, qsize
-
     integer, intent(in) :: nphys
 
     integer :: ncol
@@ -47,16 +51,45 @@ contains
     deallocate(pg_data%ps, pg_data%zs, pg_data%T, pg_data%uv, pg_data%omega_p, pg_data%q)
   end subroutine check_finish
 
+  subroutine check_set_state(s, hvcoord, nt1, nt2, ntq, elem)
+    use physical_constants, only: g
+    use element_ops, only: set_elem_state
+    use hybvcoord_mod, only: hvcoord_t
+
+    type (State_t), intent(in) :: s
+    type (hvcoord_t), intent(in) :: hvcoord
+    integer, intent(in) :: nt1, nt2, ntq
+    type (element_t), intent(inout) :: elem
+
+    call set_elem_state(s%u, s%v, s%w, s%wi, s%T, s%ps, s%phis, s%p, s%dp, s%z, s%zi, &
+         g, elem, nt1, nt2, ntq)
+  end subroutine check_set_state
+
+  subroutine check_get_state(elem, hvcoord, nt, ntq, s)
+    use physical_constants, only: g
+    use element_ops, only: get_state
+    use hybvcoord_mod, only: hvcoord_t
+
+    type (element_t), intent(inout) :: elem
+    type (hvcoord_t), intent(in) :: hvcoord
+    integer, intent(in) :: nt, ntq
+    type (State_t), intent(out) :: s
+
+    call get_state(s%u, s%v, s%w, s%T, s%p, s%dp, s%ps, s%rho, s%z, s%zi, &
+         g, elem, hvcoord, nt, ntq)
+  end subroutine check_get_state
+
   subroutine check_api(hybrid, hvcoord, elem, nets, nete, nphys, tendency)
     use hybvcoord_mod, only: hvcoord_t
     use dimensions_mod, only: nlev, qsize
-    use element_ops, only: set_thermostate, get_temperature
+    use element_ops, only: get_temperature, get_field
     use coordinate_systems_mod, only: cartesian3D_t, change_coordinates
     use prim_driver_base, only: applyCAMforcing_tracers
     use prim_advance_mod, only: applyCAMforcing_dynamics
     use parallel_mod, only: global_shared_buf, global_shared_sum
     use global_norms_mod, only: wrap_repro_sum
     use reduction_mod, only: ParallelMin, ParallelMax
+    use physical_constants, only: g
     use gllfvremap_mod
 
     type (hybrid_t), intent(in) :: hybrid
@@ -66,7 +99,8 @@ contains
     logical, intent(in) :: tendency
     character(32) :: msg
 
-    real(kind=real_kind) :: wr(np,np,nlev), tend(np,np,nlev), f, a, b, rd, qmin1, qmax1, &
+    type (State_t) :: s1, s2
+    real(kind=real_kind) :: wr(np,np,nlev,2), tend(np,np,nlev), f, a, b, rd, qmin1, qmax1, &
          qmin2, qmax2, mass1, mass2, wr1(np,np,nlev), wr2(np,np,nlev)
     integer :: nf, ncol, nt1, nt2, ie, i, j, k, d, q, qi, tl, col
     type (cartesian3D_t) :: p
@@ -76,8 +110,7 @@ contains
     nt1 = 1
     nt2 = 2
     
-    ! Set analytical GLL values. nt1 contains the original, true
-    ! values for later use.
+    ! Set analytical GLL values.
     do ie = nets,nete
        do j = 1,np
           do i = 1,np
@@ -90,25 +123,35 @@ contains
                         sin((-2.3 + modulo(q,5))*2.5*p%z)
                 end do
              end do
-             elem(ie)%state%ps_v(i,j,nt1:nt2) = &
-                  1.0d3*(1 + 0.05*sin(2*p%x+0.5)*sin(p%y+1.5)*sin(3*p%z+2.5))
-             elem(ie)%state%phis(i,j) = &
-                  1 + 0.5*sin(p%x-0.5)*sin(0.5*p%y+2.5)*sin(2*p%z-2.5)
+             s1%ps(i,j) = 1.0d3*(1 + 0.05*sin(2*p%x+0.5)*sin(p%y+1.5)*sin(3*p%z+2.5))
+             s1%phis(i,j) = 1 + 0.5*sin(p%x-0.5)*sin(0.5*p%y+2.5)*sin(2*p%z-2.5)
              do k = 1,nlev
                 do d = 1,2
-                   elem(ie)%state%v(i,j,d,k,nt1:nt2) = &
-                        sin(0.5*d*p%x+d-0.5)*sin(1.5*p%y-d++2.5)*sin(d*p%z+d-2.5)
+                   wr(i,j,k,d) = sin(0.5*d*p%x+d-0.5)*sin(1.5*p%y-d++2.5)*sin(d*p%z+d-2.5)
                 end do
-                ! Set omega_p to a v component so we know its true value later.
-                elem(ie)%derived%omega_p(i,j,k) = elem(ie)%state%v(i,j,1,k,nt1)
+                elem%derived%omega_p(i,j,k) = wr(i,j,k,1)
              end do
              do k = 1,nlev
-                wr(i,j,k) = &
-                     1 + 0.5*sin(p%x+1.5)*sin(1.5*p%y+0.5)*sin(2*p%z-0.5)
+                s1%T(i,j,k) = 1 + 0.5*sin(p%x+1.5)*sin(1.5*p%y+0.5)*sin(2*p%z-0.5)
              end do
           end do
        end do
-       call set_thermostate(elem(ie), elem(ie)%state%ps_v(:,:,nt1), wr, hvcoord)
+       s1%u = wr(:,:,:,1)
+       s1%v = wr(:,:,:,2)
+       do k = 1,nlev
+          s1%p(:,:,k) = hvcoord%hyam(k)*hvcoord%ps0 + hvcoord%hybm(k)*s1%ps
+          s1%dp(:,:,k) = (hvcoord%hyai(k+1) - hvcoord%hyai(k))*hvcoord%ps0 + &
+               (hvcoord%hybi(k+1) - hvcoord%hybi(k))*s1%ps
+       end do
+       s1%z = zero
+       s1%zi = zero
+       ! a bit of a kludge
+       call check_set_state(s1, hvcoord, nt1, nt2, nt1, elem(ie))
+       call get_field(elem(ie), 'rho', wr(:,:,:,1), hvcoord, nt1, nt1)
+       s1%w = -elem(ie)%derived%omega_p/(wr(:,:,:,1)*g)
+       s1%wi(:,:,:nlev) = s1%w
+       s1%wi(:,:,nlevp) = s1%w(:,:,nlev)
+       call check_set_state(s1, hvcoord, nt1, nt2, nt1, elem(ie))
        do q = 1,qsize
           do tl = nt1,nt2
              elem(ie)%state%Qdp(:,:,:,q,tl) = &
@@ -162,7 +205,7 @@ contains
     do q = 1, qsize+3
        do ie = nets,nete
           do k = 1,nlev
-             wr(:,:,k) = elem(ie)%spheremp
+             wr(:,:,k,1) = elem(ie)%spheremp
           end do
           if (tendency .and. q > 1) then
              do j = 1,np
@@ -176,24 +219,24 @@ contains
              qi = q - qsize
              if (qi < 3) then
                 global_shared_buf(ie,1) = &
-                     sum(wr*( &
+                     sum(wr(:,:,:,1)*( &
                      elem(ie)%state%v(:,:,qi,:,nt2) - &
                      (elem(ie)%state%v(:,:,qi,:,nt1) + tend))**2)
                 global_shared_buf(ie,2) = &
-                     sum(wr*(elem(ie)%state%v(:,:,qi,:,nt1) + tend)**2)
+                     sum(wr(:,:,:,1)*(elem(ie)%state%v(:,:,qi,:,nt1) + tend)**2)
              else
                 call get_temperature(elem(ie), wr1, hvcoord, nt1)
                 call get_temperature(elem(ie), wr2, hvcoord, nt2)
-                global_shared_buf(ie,1) = sum(wr*(wr2 - (wr1 + tend))**2)
-                global_shared_buf(ie,2) = sum(wr*(wr1 + tend)**2)                
+                global_shared_buf(ie,1) = sum(wr(:,:,:,1)*(wr2 - (wr1 + tend))**2)
+                global_shared_buf(ie,2) = sum(wr(:,:,:,1)*(wr1 + tend)**2)                
              end if
           else
              global_shared_buf(ie,1) = &
-                  sum(wr*( &
+                  sum(wr(:,:,:,1)*( &
                   elem(ie)%state%Q(:,:,:,q) - &
                   (elem(ie)%state%Qdp(:,:,:,q,nt1)/elem(ie)%state%dp3d(:,:,:,nt1) + tend))**2)
              global_shared_buf(ie,2) = &
-                  sum(wr*( &
+                  sum(wr(:,:,:,1)*( &
                   elem(ie)%state%Qdp(:,:,:,q,nt1)/elem(ie)%state%dp3d(:,:,:,nt1) + tend)**2)
           end if
        end do
@@ -205,9 +248,6 @@ contains
           print '(a,i3,a,i3,es12.4,a8)', 'gfrt> q l2', q, ' of', qsize, rd, msg
        end if
     end do
-    do ie = nets,nete
-    end do
-    call wrap_repro_sum(nvars=3, comm=hybrid%par%comm)
   end subroutine check_api
 
   subroutine gfr_check_api(hybrid, nets, nete, hvcoord, deriv, elem)
