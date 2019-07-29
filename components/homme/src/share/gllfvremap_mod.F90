@@ -301,7 +301,74 @@ contains
     end do
   end subroutine gfr_fv_phys_to_dyn
 
-  subroutine gfr_fv_phys_to_dyn_topo()
+  subroutine gfr_fv_dyn_to_phys_topo(hybrid, elem, phis, nets_in, nete_in)
+    type (hybrid_t), intent(in) :: hybrid
+    type (element_t), intent(in) :: elem(:)
+    real(kind=real_kind), intent(out) :: phis(:,:)
+    integer, intent(in), optional :: nets_in, nete_in
+
+    real(kind=real_kind) :: wr(np,np,2)
+    integer :: nets, nete, ie, nf, ncol
+
+    if (present(nets_in)) then
+       nets = nets_in
+       nete = nete_in
+    else
+       nets = 1
+       nete = size(elem)
+    end if
+    nf = gfr%nphys
+    ncol = nf*nf
+
+    do ie = nets,nete
+       wr(:,:,1) = elem(ie)%state%phis(:,:)
+       call gfr_g2f_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
+       phis(:ncol,ie) = reshape(wr(:nf,:nf,2), (/ncol/))
+    end do
+  end subroutine gfr_fv_dyn_to_phys_topo
+
+  subroutine gfr_fv_phys_to_dyn_topo(hybrid, elem, phis, nets_in, nete_in)
+    use edgetype_mod, only: EdgeBuffer_t
+    use edge_mod, only: initEdgeBuffer, freeEdgeBuffer, edgeVpack, edgeVunpack
+    use bndry_mod, only: bndry_exchangeV
+
+    type (hybrid_t), intent(in) :: hybrid
+    type (element_t), intent(inout) :: elem(:)
+    real(kind=real_kind), intent(in) :: phis(:,:)
+    integer, intent(in), optional :: nets_in, nete_in
+
+    type (EdgeBuffer_t) :: edgebuf
+    real(kind=real_kind) :: wr(np,np,2)
+    integer :: nets, nete, ie, nf, ncol
+
+    if (present(nets_in)) then
+       nets = nets_in
+       nete = nete_in
+    else
+       nets = 1
+       nete = size(elem)
+    end if
+    nf = gfr%nphys
+    ncol = nf*nf
+
+    do ie = nets,nete
+       wr(:nf,:nf,1) = reshape(phis(:ncol,ie), (/nf,nf/))
+       call gfr_g2f_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
+       elem(ie)%state%phis = wr(:,:,2)
+    end do
+    if (hybrid%par%dynproc) then
+       call initEdgeBuffer(hybrid%par, edgebuf, elem, 1)
+       do ie = nets,nete
+          elem(ie)%state%phis = elem(ie)%state%phis*elem(ie)%spheremp
+          call edgeVpack(edgebuf, elem(ie)%state%phis, 0, 0, ie)
+       end do
+       call bndry_exchangeV(hybrid%par, edgebuf)
+       do ie = 1,nelemd
+          call edgeVunpack(edgebuf, elem(ie)%state%phis, 0, 0, ie)
+          elem(ie)%state%phis = elem(ie)%state%phis*elem(ie)%rspheremp
+       end do
+       call freeEdgeBuffer(edgebuf)
+    end if
   end subroutine gfr_fv_phys_to_dyn_topo
 
   subroutine gfr_init_w_gg(np, w_gg)
