@@ -3,6 +3,10 @@
 #endif
 
 !todo
+! - in test 1, i'm seeing OOA 2 for pg3 when i expect OOA 3. is this
+!   b/c of how the solution sampling is done? or is it indicating that
+!   sphere_f has a 2nd-order error?
+! x tests 2 and 3 have design OOA for l2 error
 ! - global mass checks
 ! - global extrema checks
 ! - area correction: alpha
@@ -26,7 +30,9 @@ module gllfvremap_test_mod
   private
 
   real(kind=real_kind), parameter :: &
-       zero = 0.0_real_kind, one = 1.0_real_kind, eps = epsilon(1.0_real_kind)
+       zero = 0.0_real_kind, half = 0.5_real_kind, &
+       one = 1.0_real_kind, two = 2.0_real_kind, &
+       eps = epsilon(1.0_real_kind)
 
   type :: PhysgridData_t
      integer :: nphys
@@ -183,7 +189,12 @@ contains
     ncol = nf*nf
     nt1 = 1
     nt2 = 2
-    
+
+    !! Test 1.
+    ! Test physgrid API.
+    !   Test that if tendency is 0, then the original field is
+    ! recovered with error eps ~ machine precision.
+
     ! Set analytical GLL values.
     do ie = nets,nete
        call set_gll_state(hvcoord, elem(ie), nt1, nt2)
@@ -274,11 +285,14 @@ contains
           rd = sqrt(global_shared_sum(1)/global_shared_sum(2))
           msg = ''
           if (.not. tendency .and. rd > 5*eps) msg = ' ERROR'
-          print '(a,i3,a,i3,es12.4,a8)', 'gfrt> q l2', q, ' of', qsize, rd, msg
+          print '(a,i3,a,i3,es12.4,a8)', 'gfrt> test1 q l2', q, ' of', qsize, rd, msg
        end if
     end do
 
-    ! Test topo routines.
+    !! Test 2.
+    ! Test topo routines. OOA should be N for pgN, N=1,3,4. Error
+    ! should be eps for pg4; see Test 3 text for explanation.
+  
     ! Stash initial phis for later comparison.
     do ie = nets,nete
        elem(ie)%derived%vstar(:,:,1,1) = elem(ie)%state%phis
@@ -294,8 +308,72 @@ contains
     call wrap_repro_sum(nvars=2, comm=hybrid%par%comm)
     if (hybrid%masterthread) then
        rd = sqrt(global_shared_sum(1)/global_shared_sum(2))
-       print '(a,es12.4)', 'gfrt> topo l2', rd
+       print '(a,es12.4)', 'gfrt> test2 topo l2', rd
     end if
+
+    if (.not. tendency) return
+
+    !! Test 3.
+    ! Test FV fields that were not covered in the previous tests. This
+    ! is done by copying them to look like tendencies.
+    !   For pg4, u,v,T should have l2 errors that are eps because pg4
+    ! reconstructions the fields exactly, even with DSS.
+    !   For pg4, q should have l2 errors that converge at OOA >= 2. 2
+    ! is the formal OOA b/c of the limiter. The limiter acts on the
+    ! tendency, which in this case is exactly what is being examined.
+    !   For pgN, N=1,2,3, u,v,T should have OOA N.
+    !   For pgN, q should have OOA min(N,2).
+
+    do ie = nets,nete
+       call set_gll_state(hvcoord, elem(ie), nt1, nt2)
+    end do
+    call gfr_dyn_to_fv_phys(hybrid, nt2, hvcoord, elem, pg_data%ps, pg_data%zs, pg_data%T, &
+         pg_data%uv, pg_data%omega_p, pg_data%q, nets, nete)
+    ! Leave T, uv as they are. They will be mapped back as
+    ! tendencies. Double Q so that this new value minus the
+    ! original is Q.
+    do ie = nets,nete
+       pg_data%q(:ncol,:,:,ie) = two*pg_data%q(:ncol,:,:,ie)
+    end do
+    call gfr_fv_phys_to_dyn(hybrid, nt2, hvcoord, elem, pg_data%T, pg_data%uv, pg_data%q, &
+         nets, nete)
+    call gfr_f2g_dss(hybrid, elem, nets, nete)
+    ! Don't apply forcings; rather, the forcing fields now have the
+    ! remapped quantities we want to compare against the original.
+    do q = 2, qsize+3
+       do ie = nets,nete
+          do k = 1,nlev
+             wr(:,:,k) = elem(ie)%spheremp
+          end do
+          if (q > qsize) then
+             qi = q - qsize
+             if (qi < 3) then
+                global_shared_buf(ie,1) = &
+                     sum(wr*( &
+                     elem(ie)%derived%FM(:,:,qi,:) - &
+                     elem(ie)%state%v(:,:,qi,:,nt1))**2)
+                global_shared_buf(ie,2) = &
+                     sum(wr*elem(ie)%state%v(:,:,qi,:,nt1)**2)
+             else
+                call get_temperature(elem(ie), wr1, hvcoord, nt1)
+                global_shared_buf(ie,1) = sum(wr*(elem(ie)%derived%FT - wr1)**2)
+                global_shared_buf(ie,2) = sum(wr*wr1**2)                
+             end if
+          else
+             global_shared_buf(ie,1) = &
+                  sum(wr*( &
+                  elem(ie)%derived%FQ(:,:,:,q) - &
+                  two*elem(ie)%state%Q(:,:,:,q))**2)
+             global_shared_buf(ie,2) = &
+                  sum(wr*elem(ie)%state%Q(:,:,:,q)**2)
+          end if
+       end do
+       call wrap_repro_sum(nvars=2, comm=hybrid%par%comm)
+       if (hybrid%masterthread) then
+          rd = sqrt(global_shared_sum(1)/global_shared_sum(2))
+          print '(a,i3,a,i3,es12.4)', 'gfrt> test3 q l2', q, ' of', qsize, rd
+       end if
+    end do
   end subroutine run
 
   subroutine gfr_check_api(hybrid, nets, nete, hvcoord, deriv, elem)
