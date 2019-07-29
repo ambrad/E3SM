@@ -35,7 +35,7 @@ module gllfvremap_test_mod
 
 contains
   
-  subroutine check_init(nphys)
+  subroutine init(nphys)
     integer, intent(in) :: nphys
 
     integer :: ncol
@@ -45,13 +45,13 @@ contains
     allocate(pg_data%ps(ncol,nelemd), pg_data%zs(ncol,nelemd), pg_data%T(ncol,nlev,nelemd), &
          pg_data%omega_p(ncol,nlev,nelemd), pg_data%uv(ncol,2,nlev,nelemd), &
          pg_data%q(ncol,nlev,qsize,nelemd))
-  end subroutine check_init
+  end subroutine init
 
-  subroutine check_finish()
+  subroutine finish()
     deallocate(pg_data%ps, pg_data%zs, pg_data%T, pg_data%uv, pg_data%omega_p, pg_data%q)
-  end subroutine check_finish
+  end subroutine finish
 
-  subroutine check_set_state(s, hvcoord, nt1, nt2, ntq, elem)
+  subroutine set_state(s, hvcoord, nt1, nt2, ntq, elem)
     use physical_constants, only: g
     use element_ops, only: set_elem_state
     use hybvcoord_mod, only: hvcoord_t
@@ -63,11 +63,11 @@ contains
 
     call set_elem_state(s%u, s%v, s%w, s%wi, s%T, s%ps, s%phis, s%p, s%dp, s%z, s%zi, &
          g, elem, nt1, nt2, ntq)
-  end subroutine check_set_state
+  end subroutine set_state
 
-  subroutine check_get_state(elem, hvcoord, nt, ntq, s)
+  subroutine get_state(elem, hvcoord, nt, ntq, s)
     use physical_constants, only: g
-    use element_ops, only: get_state
+    use element_ops, only: get_elem_state => get_state
     use hybvcoord_mod, only: hvcoord_t
 
     type (element_t), intent(inout) :: elem
@@ -75,11 +75,11 @@ contains
     integer, intent(in) :: nt, ntq
     type (State_t), intent(out) :: s
 
-    call get_state(s%u, s%v, s%w, s%T, s%p, s%dp, s%ps, s%rho, s%z, s%zi, &
+    call get_elem_state(s%u, s%v, s%w, s%T, s%p, s%dp, s%ps, s%rho, s%z, s%zi, &
          g, elem, hvcoord, nt, ntq)
-  end subroutine check_get_state
+  end subroutine get_state
 
-  subroutine check_api(hybrid, hvcoord, elem, nets, nete, nphys, tendency)
+  subroutine run(hybrid, hvcoord, elem, nets, nete, nphys, tendency)
     use hybvcoord_mod, only: hvcoord_t
     use dimensions_mod, only: nlev, qsize
     use element_ops, only: get_temperature, get_field
@@ -146,12 +146,12 @@ contains
        s1%z = zero
        s1%zi = zero
        ! a bit of a kludge
-       call check_set_state(s1, hvcoord, nt1, nt2, nt1, elem(ie))
+       call set_state(s1, hvcoord, nt1, nt2, nt1, elem(ie))
        call get_field(elem(ie), 'rho', wr(:,:,:,1), hvcoord, nt1, nt1)
        s1%w = -elem(ie)%derived%omega_p/(wr(:,:,:,1)*g)
        s1%wi(:,:,:nlev) = s1%w
        s1%wi(:,:,nlevp) = s1%w(:,:,nlev)
-       call check_set_state(s1, hvcoord, nt1, nt2, nt1, elem(ie))
+       call set_state(s1, hvcoord, nt1, nt2, nt1, elem(ie))
        do q = 1,qsize
           do tl = nt1,nt2
              elem(ie)%state%Qdp(:,:,:,q,tl) = &
@@ -248,7 +248,7 @@ contains
           print '(a,i3,a,i3,es12.4,a8)', 'gfrt> q l2', q, ' of', qsize, rd, msg
        end if
     end do
-  end subroutine check_api
+  end subroutine run
 
   subroutine gfr_check_api(hybrid, nets, nete, hvcoord, deriv, elem)
     use derivative_mod, only: derivative_t
@@ -267,18 +267,18 @@ contains
        ! This is meant to be called before threading starts.
        if (hybrid%ithr == 0) then
           call gfr_init(hybrid, elem, nphys, check=.true.)
-          call check_init(nphys)
+          call init(nphys)
        end if
        !$omp barrier
 
-       call check_api(hybrid, hvcoord, elem, nets, nete, nphys, .false.)
-       call check_api(hybrid, hvcoord, elem, nets, nete, nphys, .true.)
+       call run(hybrid, hvcoord, elem, nets, nete, nphys, .false.)
+       call run(hybrid, hvcoord, elem, nets, nete, nphys, .true.)
 
        ! This is meant to be called after threading ends.
        !$omp barrier
        if (hybrid%ithr == 0) then
           call gfr_finish()
-          call check_finish()
+          call finish()
        end if
        !$omp barrier
     end do
