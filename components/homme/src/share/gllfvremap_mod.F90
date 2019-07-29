@@ -73,9 +73,10 @@ module gllfvremap_mod
   public :: &
        gfr_init, &
        gfr_finish, &
-       gfr_fv_phys_to_dyn, &
-       gfr_fv_phys_to_dyn_topo, &
        gfr_dyn_to_fv_phys, &
+       gfr_fv_phys_to_dyn, &
+       gfr_dyn_to_fv_phys_topo, &
+       gfr_fv_phys_to_dyn_topo, &
        gfr_f2g_dss
 
   ! Testing API.
@@ -133,9 +134,8 @@ contains
   end subroutine gfr_init
 
   subroutine gfr_finish()
-    if (allocated(gfr%fv_metdet)) then
-       deallocate(gfr%fv_metdet, gfr%D_f, gfr%Dinv_f, gfr%qmin, gfr%qmax, gfr%spherep_f)
-    end if
+    if (.not. allocated(gfr%fv_metdet)) return
+    deallocate(gfr%fv_metdet, gfr%D_f, gfr%Dinv_f, gfr%qmin, gfr%qmax, gfr%spherep_f)
   end subroutine gfr_finish
 
   subroutine gfr_dyn_to_fv_phys(hybrid, nt, hvcoord, elem, ps, phis, T, uv, omega_p, q, &
@@ -301,7 +301,7 @@ contains
     end do
   end subroutine gfr_fv_phys_to_dyn
 
-  subroutine gfr_fv_dyn_to_phys_topo(hybrid, elem, phis, nets_in, nete_in)
+  subroutine gfr_dyn_to_fv_phys_topo(hybrid, elem, phis, nets_in, nete_in)
     type (hybrid_t), intent(in) :: hybrid
     type (element_t), intent(in) :: elem(:)
     real(kind=real_kind), intent(out) :: phis(:,:)
@@ -325,11 +325,10 @@ contains
        call gfr_g2f_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
        phis(:ncol,ie) = reshape(wr(:nf,:nf,2), (/ncol/))
     end do
-  end subroutine gfr_fv_dyn_to_phys_topo
+  end subroutine gfr_dyn_to_fv_phys_topo
 
   subroutine gfr_fv_phys_to_dyn_topo(hybrid, elem, phis, nets_in, nete_in)
-    use edgetype_mod, only: EdgeBuffer_t
-    use edge_mod, only: initEdgeBuffer, freeEdgeBuffer, edgeVpack, edgeVunpack
+    use edge_mod, only: edgeVpack_nlyr, edgeVunpack_nlyr, edge_g
     use bndry_mod, only: bndry_exchangeV
 
     type (hybrid_t), intent(in) :: hybrid
@@ -337,7 +336,6 @@ contains
     real(kind=real_kind), intent(in) :: phis(:,:)
     integer, intent(in), optional :: nets_in, nete_in
 
-    type (EdgeBuffer_t) :: edgebuf
     real(kind=real_kind) :: wr(np,np,2)
     integer :: nets, nete, ie, nf, ncol
 
@@ -353,22 +351,19 @@ contains
 
     do ie = nets,nete
        wr(:nf,:nf,1) = reshape(phis(:ncol,ie), (/nf,nf/))
-       call gfr_g2f_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
+       call gfr_f2g_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
        elem(ie)%state%phis = wr(:,:,2)
     end do
-    if (hybrid%par%dynproc) then
-       call initEdgeBuffer(hybrid%par, edgebuf, elem, 1)
-       do ie = nets,nete
-          elem(ie)%state%phis = elem(ie)%state%phis*elem(ie)%spheremp
-          call edgeVpack(edgebuf, elem(ie)%state%phis, 0, 0, ie)
-       end do
-       call bndry_exchangeV(hybrid%par, edgebuf)
-       do ie = 1,nelemd
-          call edgeVunpack(edgebuf, elem(ie)%state%phis, 0, 0, ie)
-          elem(ie)%state%phis = elem(ie)%state%phis*elem(ie)%rspheremp
-       end do
-       call freeEdgeBuffer(edgebuf)
-    end if
+
+    do ie = nets,nete
+       elem(ie)%state%phis = elem(ie)%state%phis*elem(ie)%spheremp
+       call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%phis, 1, 0, 1)
+    end do
+    call bndry_exchangeV(hybrid, edge_g)
+    do ie = nets,nete
+       call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%phis, 1, 0, 1)
+       elem(ie)%state%phis = elem(ie)%state%phis*elem(ie)%rspheremp
+    end do
   end subroutine gfr_fv_phys_to_dyn_topo
 
   subroutine gfr_init_w_gg(np, w_gg)

@@ -248,6 +248,10 @@ contains
           print '(a,i3,a,i3,es12.4,a8)', 'gfrt> q l2', q, ' of', qsize, rd, msg
        end if
     end do
+
+    ! Test topo routines.
+    call gfr_dyn_to_fv_phys_topo(hybrid, elem, pg_data%zs, nets, nete)
+    call gfr_fv_phys_to_dyn_topo(hybrid, elem, pg_data%zs, nets, nete)
   end subroutine run
 
   subroutine gfr_check_api(hybrid, nets, nete, hvcoord, deriv, elem)
