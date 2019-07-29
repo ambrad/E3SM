@@ -2,6 +2,17 @@
 #include "config.h"
 #endif
 
+!todo
+! - global mass checks
+! - global extrema checks
+! - area correction: alpha
+! - test vector_dp routines: conservation
+! - topo roughness
+! - ftype other than 2,4
+! - np4-np2 instead of np4-pg1
+! - halo exchange buffers
+! - impl original pg2 to compare
+
 module gllfvremap_test_mod
   ! Test gllfvremap's main API.
 
@@ -79,11 +90,75 @@ contains
          g, elem, hvcoord, nt, ntq)
   end subroutine get_state
 
+  subroutine set_gll_state(hvcoord, elem, nt1, nt2)
+    use dimensions_mod, only: nlev, qsize
+    use physical_constants, only: g
+    use coordinate_systems_mod, only: cartesian3D_t, change_coordinates
+    use hybvcoord_mod, only: hvcoord_t
+    use element_ops, only: get_field
+
+    type (hvcoord_t) , intent(in) :: hvcoord
+    type (element_t), intent(inout) :: elem
+    integer, intent(in) :: nt1, nt2
+
+    type (State_t) :: s1
+    type (cartesian3D_t) :: p
+    real(kind=real_kind) :: wr(np,np,nlev,2)
+    integer :: i, j, k, q, d, tl
+
+    do j = 1,np
+       do i = 1,np
+          p = change_coordinates(elem%spherep(i,j))
+          do k = 1,nlev
+             do q = 1,qsize
+                elem%state%Q(i,j,k,q) = 1 + &
+                     0.5*sin((0.5 + modulo(q,2))*p%x)* &
+                     sin((0.5 + modulo(q,3))*1.5*p%y)* &
+                     sin((-2.3 + modulo(q,5))*2.5*p%z)
+             end do
+          end do
+          s1%ps(i,j) = 1.0d3*(1 + 0.05*sin(2*p%x+0.5)*sin(p%y+1.5)*sin(3*p%z+2.5))
+          s1%phis(i,j) = 1 + 0.5*sin(p%x-0.5)*sin(0.5*p%y+2.5)*sin(2*p%z-2.5)
+          do k = 1,nlev
+             do d = 1,2
+                wr(i,j,k,d) = sin(0.5*d*p%x+d-0.5)*sin(1.5*p%y-d++2.5)*sin(d*p%z+d-2.5)
+             end do
+             elem%derived%omega_p(i,j,k) = wr(i,j,k,1)
+          end do
+          do k = 1,nlev
+             s1%T(i,j,k) = 1 + 0.5*sin(p%x+1.5)*sin(1.5*p%y+0.5)*sin(2*p%z-0.5)
+          end do
+       end do
+    end do
+    s1%u = wr(:,:,:,1)
+    s1%v = wr(:,:,:,2)
+    do k = 1,nlev
+       s1%p(:,:,k) = hvcoord%hyam(k)*hvcoord%ps0 + hvcoord%hybm(k)*s1%ps
+       s1%dp(:,:,k) = (hvcoord%hyai(k+1) - hvcoord%hyai(k))*hvcoord%ps0 + &
+            (hvcoord%hybi(k+1) - hvcoord%hybi(k))*s1%ps
+    end do
+    s1%z = zero
+    s1%zi = zero
+    ! a bit of a kludge
+    call set_state(s1, hvcoord, nt1, nt2, nt1, elem)
+    call get_field(elem, 'rho', wr(:,:,:,1), hvcoord, nt1, nt1)
+    s1%w = -elem%derived%omega_p/(wr(:,:,:,1)*g)
+    s1%wi(:,:,:nlev) = s1%w
+    s1%wi(:,:,nlevp) = s1%w(:,:,nlev)
+    call set_state(s1, hvcoord, nt1, nt2, nt1, elem)
+    do q = 1,qsize
+       do tl = nt1,nt2
+          elem%state%Qdp(:,:,:,q,tl) = &
+               elem%state%Q(:,:,:,q)*elem%state%dp3d(:,:,:,nt1)
+       end do
+    end do
+  end subroutine set_gll_state
+
   subroutine run(hybrid, hvcoord, elem, nets, nete, nphys, tendency)
     use hybvcoord_mod, only: hvcoord_t
     use dimensions_mod, only: nlev, qsize
-    use element_ops, only: get_temperature, get_field
     use coordinate_systems_mod, only: cartesian3D_t, change_coordinates
+    use element_ops, only: get_temperature
     use prim_driver_base, only: applyCAMforcing_tracers
     use prim_advance_mod, only: applyCAMforcing_dynamics
     use parallel_mod, only: global_shared_buf, global_shared_sum
@@ -99,11 +174,10 @@ contains
     logical, intent(in) :: tendency
     character(32) :: msg
 
-    type (State_t) :: s1, s2
-    real(kind=real_kind) :: wr(np,np,nlev,2), tend(np,np,nlev), f, a, b, rd, qmin1, qmax1, &
+    type (cartesian3D_t) :: p
+    real(kind=real_kind) :: wr(np,np,nlev), tend(np,np,nlev), f, a, b, rd, qmin1, qmax1, &
          qmin2, qmax2, mass1, mass2, wr1(np,np,nlev), wr2(np,np,nlev)
     integer :: nf, ncol, nt1, nt2, ie, i, j, k, d, q, qi, tl, col
-    type (cartesian3D_t) :: p
 
     nf = nphys
     ncol = nf*nf
@@ -112,52 +186,7 @@ contains
     
     ! Set analytical GLL values.
     do ie = nets,nete
-       do j = 1,np
-          do i = 1,np
-             p = change_coordinates(elem(ie)%spherep(i,j))
-             do k = 1,nlev
-                do q = 1,qsize
-                   elem(ie)%state%Q(i,j,k,q) = 1 + &
-                        0.5*sin((0.5 + modulo(q,2))*p%x)* &
-                        sin((0.5 + modulo(q,3))*1.5*p%y)* &
-                        sin((-2.3 + modulo(q,5))*2.5*p%z)
-                end do
-             end do
-             s1%ps(i,j) = 1.0d3*(1 + 0.05*sin(2*p%x+0.5)*sin(p%y+1.5)*sin(3*p%z+2.5))
-             s1%phis(i,j) = 1 + 0.5*sin(p%x-0.5)*sin(0.5*p%y+2.5)*sin(2*p%z-2.5)
-             do k = 1,nlev
-                do d = 1,2
-                   wr(i,j,k,d) = sin(0.5*d*p%x+d-0.5)*sin(1.5*p%y-d++2.5)*sin(d*p%z+d-2.5)
-                end do
-                elem%derived%omega_p(i,j,k) = wr(i,j,k,1)
-             end do
-             do k = 1,nlev
-                s1%T(i,j,k) = 1 + 0.5*sin(p%x+1.5)*sin(1.5*p%y+0.5)*sin(2*p%z-0.5)
-             end do
-          end do
-       end do
-       s1%u = wr(:,:,:,1)
-       s1%v = wr(:,:,:,2)
-       do k = 1,nlev
-          s1%p(:,:,k) = hvcoord%hyam(k)*hvcoord%ps0 + hvcoord%hybm(k)*s1%ps
-          s1%dp(:,:,k) = (hvcoord%hyai(k+1) - hvcoord%hyai(k))*hvcoord%ps0 + &
-               (hvcoord%hybi(k+1) - hvcoord%hybi(k))*s1%ps
-       end do
-       s1%z = zero
-       s1%zi = zero
-       ! a bit of a kludge
-       call set_state(s1, hvcoord, nt1, nt2, nt1, elem(ie))
-       call get_field(elem(ie), 'rho', wr(:,:,:,1), hvcoord, nt1, nt1)
-       s1%w = -elem(ie)%derived%omega_p/(wr(:,:,:,1)*g)
-       s1%wi(:,:,:nlev) = s1%w
-       s1%wi(:,:,nlevp) = s1%w(:,:,nlev)
-       call set_state(s1, hvcoord, nt1, nt2, nt1, elem(ie))
-       do q = 1,qsize
-          do tl = nt1,nt2
-             elem(ie)%state%Qdp(:,:,:,q,tl) = &
-                  elem(ie)%state%Q(:,:,:,q)*elem(ie)%state%dp3d(:,:,:,nt1)
-          end do
-       end do
+       call set_gll_state(hvcoord, elem(ie), nt1, nt2)
     end do
 
     ! GLL -> FV.
@@ -205,7 +234,7 @@ contains
     do q = 1, qsize+3
        do ie = nets,nete
           do k = 1,nlev
-             wr(:,:,k,1) = elem(ie)%spheremp
+             wr(:,:,k) = elem(ie)%spheremp
           end do
           if (tendency .and. q > 1) then
              do j = 1,np
@@ -219,24 +248,24 @@ contains
              qi = q - qsize
              if (qi < 3) then
                 global_shared_buf(ie,1) = &
-                     sum(wr(:,:,:,1)*( &
+                     sum(wr*( &
                      elem(ie)%state%v(:,:,qi,:,nt2) - &
                      (elem(ie)%state%v(:,:,qi,:,nt1) + tend))**2)
                 global_shared_buf(ie,2) = &
-                     sum(wr(:,:,:,1)*(elem(ie)%state%v(:,:,qi,:,nt1) + tend)**2)
+                     sum(wr*(elem(ie)%state%v(:,:,qi,:,nt1) + tend)**2)
              else
                 call get_temperature(elem(ie), wr1, hvcoord, nt1)
                 call get_temperature(elem(ie), wr2, hvcoord, nt2)
-                global_shared_buf(ie,1) = sum(wr(:,:,:,1)*(wr2 - (wr1 + tend))**2)
-                global_shared_buf(ie,2) = sum(wr(:,:,:,1)*(wr1 + tend)**2)                
+                global_shared_buf(ie,1) = sum(wr*(wr2 - (wr1 + tend))**2)
+                global_shared_buf(ie,2) = sum(wr*(wr1 + tend)**2)                
              end if
           else
              global_shared_buf(ie,1) = &
-                  sum(wr(:,:,:,1)*( &
+                  sum(wr*( &
                   elem(ie)%state%Q(:,:,:,q) - &
                   (elem(ie)%state%Qdp(:,:,:,q,nt1)/elem(ie)%state%dp3d(:,:,:,nt1) + tend))**2)
              global_shared_buf(ie,2) = &
-                  sum(wr(:,:,:,1)*( &
+                  sum(wr*( &
                   elem(ie)%state%Qdp(:,:,:,q,nt1)/elem(ie)%state%dp3d(:,:,:,nt1) + tend)**2)
           end if
        end do

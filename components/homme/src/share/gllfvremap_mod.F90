@@ -2,18 +2,6 @@
 #include "config.h"
 #endif
 
-!todo
-! - global mass checks
-! - global extrema checks
-! - area correction: alpha
-! - test vector_dp routines: conservation
-! - topo roughness
-! - ftype other than 2,4
-! - checker routine callable from dcmip1
-! - np4-np2 instead of np4-pg1
-! - halo exchange buffers
-! - impl original pg2 to compare
-
 module gllfvremap_mod
   ! High-order, mass-conserving, optionally shape-preserving
   !     FV physics <-> GLL dynamics
