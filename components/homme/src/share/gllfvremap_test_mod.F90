@@ -3,8 +3,6 @@
 #endif
 
 !todo
-! - global mass checks
-! - global extrema checks
 ! - area correction: alpha
 ! - test vector_dp routines: conservation
 ! - topo roughness
@@ -361,6 +359,10 @@ contains
           if (q > qsize) then
              qi = q - qsize
              if (qi < 3) then
+                global_shared_buf(ie,3) = sum(wr(:,:,1)*elem(ie)%state%dp3d(:,:,1,nt1)* &
+                     elem(ie)%derived%FM(:,:,qi,1))
+                global_shared_buf(ie,4) = sum(wr(:,:,1)*elem(ie)%state%dp3d(:,:,1,nt1)* &
+                     elem(ie)%state%v(:,:,qi,1,nt1))
                 global_shared_buf(ie,1) = &
                      sum(wr*( &
                      elem(ie)%derived%FM(:,:,qi,:) - &
@@ -369,13 +371,22 @@ contains
                      sum(wr*elem(ie)%state%v(:,:,qi,:,nt1)**2)
              else
                 call get_temperature(elem(ie), wr1, hvcoord, nt1)
+                global_shared_buf(ie,3) = sum(wr(:,:,1)*elem(ie)%state%dp3d(:,:,1,nt1)* &
+                     elem(ie)%derived%FT(:,:,1))
+                global_shared_buf(ie,4) = sum(wr(:,:,1)*elem(ie)%state%dp3d(:,:,1,nt1)*wr1(:,:,1))
                 global_shared_buf(ie,1) = sum(wr*(elem(ie)%derived%FT - wr1)**2)
                 global_shared_buf(ie,2) = sum(wr*wr1**2)                
              end if
           else
-             ! Check extrema in level 1.
+             ! Extrema in level 1.
              qmin2 = min(qmin2, minval(elem(ie)%derived%FQ(:,:,1,q)))
              qmax2 = max(qmax2, maxval(elem(ie)%derived%FQ(:,:,1,q)))
+             ! Mass in level 1.
+             global_shared_buf(ie,3) = sum(wr(:,:,1)*elem(ie)%state%dp3d(:,:,1,nt1)* &
+                  elem(ie)%derived%FQ(:,:,1,q))
+             global_shared_buf(ie,4) = sum(wr(:,:,1)*elem(ie)%state%dp3d(:,:,1,nt1)* &
+                  two*elem(ie)%state%Q(:,:,1,q))
+             ! l2 error in volume.
              global_shared_buf(ie,1) = &
                   sum(wr*( &
                   elem(ie)%derived%FQ(:,:,:,q) - &
@@ -384,7 +395,7 @@ contains
                   sum(wr*elem(ie)%state%Q(:,:,:,q)**2)
           end if
        end do
-       call wrap_repro_sum(nvars=2, comm=hybrid%par%comm)
+       call wrap_repro_sum(nvars=4, comm=hybrid%par%comm)
        qmin1(q) = ParallelMin(qmin1(q), hybrid)
        qmax1(q) = ParallelMax(qmax1(q), hybrid)
        qmin2 = ParallelMin(qmin2, hybrid)
@@ -397,6 +408,12 @@ contains
                qmax2 > qmax1(q) + 5*eps*b) then
              print '(a,i3,es12.4,es12.4,es12.4,es12.4)', 'gfrt> test3 q extrema', &
                   q, qmin1(q), qmin2-qmin1(q), qmax2-qmax1(q), qmax1(q)
+          end if
+          a = global_shared_sum(3)
+          b = global_shared_sum(4)
+          if (abs(b - a) > 5*eps*abs(a)) then
+             print '(a,i3,es12.4,es12.4,es12.4)', 'gfrt> test3 q mass', &
+                  q, a, b, abs(b - a)/abs(a)
           end if
        end if
     end do
