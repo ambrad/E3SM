@@ -74,24 +74,22 @@ module gllfvremap_mod
 
 contains
 
-  subroutine gfr_init(hybrid, elem, nphys, check)
+  subroutine gfr_init(par, elem, nphys, check)
     use dimensions_mod, only: nlev
-    use parallel_mod, only: abortmp
+    use parallel_mod, only: parallel_t, abortmp
 
-    type (hybrid_t), intent(in) :: hybrid
+    type (parallel_t), intent(in) :: par
     type (element_t), intent(in) :: elem(:)
     integer, intent(in) :: nphys
     logical, intent(in), optional :: check
 
     real(real_kind) :: R(npsq,nphys_max*nphys_max)
 
-    if (hybrid%ithr > 0) return
-
     gfr%check = .false.
     if (present(check)) gfr%check = check
 
     gfr%tolfac = one
-    if (hybrid%masterthread) print '(a,i3,a,l2)', 'gfr> init nphys', nphys, ' check', gfr%check
+    if (par%masterproc) print '(a,i3,a,l2)', 'gfr> init nphys', nphys, ' check', gfr%check
 
     if (nphys > np) then
        ! The FV -> GLL map is defined only if nphys <= np. If we ever are
@@ -1378,7 +1376,7 @@ contains
 
     do nphys = 1, np
        ! This is meant to be called before threading starts.
-       if (hybrid%ithr == 0) call gfr_init(hybrid, elem, nphys)
+       if (hybrid%ithr == 0) call gfr_init(hybrid%par, elem, nphys)
        !$omp barrier
 
        call check(gfr, hybrid, elem, nets, nete, .false.)

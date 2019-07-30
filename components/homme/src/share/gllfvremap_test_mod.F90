@@ -435,7 +435,7 @@ contains
     do nphys = 1, np
        ! This is meant to be called before threading starts.
        if (hybrid%ithr == 0) then
-          call gfr_init(hybrid, elem, nphys, check=.true.)
+          call gfr_init(hybrid%par, elem, nphys, check=.true.)
           call init(nphys)
        end if
        !$omp barrier
