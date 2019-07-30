@@ -111,22 +111,22 @@ contains
           p = change_coordinates(elem%spherep(i,j))
           do k = 1,nlev
              do q = 1,qsize
-                elem%state%Q(i,j,k,q) = 1 + &
-                     0.5*sin((0.5 + modulo(q,2))*p%x)* &
-                     sin((0.5 + modulo(q,3))*1.5*p%y)* &
-                     sin((-2.3 + modulo(q,5))*2.5*p%z)
+                elem%state%Q(i,j,k,q) = one + &
+                     half*sin((half + modulo(q,2))*p%x)* &
+                     sin((half + modulo(q,3))*1.5d0*p%y)* &
+                     sin((-2.3d0 + modulo(q,5))*p%z)
              end do
           end do
-          s1%ps(i,j) = 1.0d3*(1 + 0.05*sin(2*p%x+0.5)*sin(p%y+1.5)*sin(3*p%z+2.5))
-          s1%phis(i,j) = 1 + 0.5*sin(p%x-0.5)*sin(0.5*p%y+2.5)*sin(2*p%z-2.5)
+          s1%ps(i,j) = 1.0d3*(one + 0.05d0*sin(two*p%x+half)*sin(p%y+1.5d0)*sin(3*p%z+2.5d0))
+          s1%phis(i,j) = one + half*sin(p%x-half)*sin(half*p%y+2.5d0)*sin(2*p%z-2.5d0)
           do k = 1,nlev
              do d = 1,2
-                wr(i,j,k,d) = sin(0.5*d*p%x+d-0.5)*sin(1.5*p%y-d++2.5)*sin(d*p%z+d-2.5)
+                wr(i,j,k,d) = sin(half*d*p%x+d-half)*sin(1.5*p%y-d+2.5d0)*sin(d*p%z+d-2.5d0)
              end do
              elem%derived%omega_p(i,j,k) = wr(i,j,k,1)
           end do
           do k = 1,nlev
-             s1%T(i,j,k) = 1 + 0.5*sin(p%x+1.5)*sin(1.5*p%y+0.5)*sin(2*p%z-0.5)
+             s1%T(i,j,k) = one + half*sin(p%x+1.5d0)*sin(1.5d0*p%y+half)*sin(two*p%z-half)
           end do
        end do
     end do
