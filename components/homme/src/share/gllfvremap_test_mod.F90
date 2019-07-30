@@ -177,8 +177,9 @@ contains
     character(32) :: msg
 
     type (cartesian3D_t) :: p
-    real(kind=real_kind) :: wr(np,np,nlev), tend(np,np,nlev), f, a, b, rd, qmin1, qmax1, &
-         qmin2, qmax2, mass1, mass2, wr1(np,np,nlev), wr2(np,np,nlev)
+    real(kind=real_kind) :: wr(np,np,nlev), tend(np,np,nlev), f, a, b, rd, &
+         qmin1(qsize), qmax1(qsize), qmin2, qmax2, mass1, mass2, &
+         wr1(np,np,nlev), wr2(np,np,nlev)
     integer :: nf, ncol, nt1, nt2, ie, i, j, k, d, q, qi, tl, col
 
     nf = nphys
@@ -335,8 +336,15 @@ contains
     ! Leave T, uv as they are. They will be mapped back as
     ! tendencies. Double Q so that this new value minus the
     ! original is Q.
+    qmin1 = one; qmax1 = -one
     do ie = nets,nete
        pg_data%q(:ncol,:,:,ie) = two*pg_data%q(:ncol,:,:,ie)
+       do q = 2,qsize
+          qmin1(q) = min(qmin1(q), minval(elem(ie)%state%Q(:,:,1,q)))
+          qmax1(q) = max(qmax1(q), maxval(elem(ie)%state%Q(:,:,1,q)))
+          qmin1(q) = min(qmin1(q), minval(pg_data%q(:ncol,1,q,ie)))
+          qmax1(q) = max(qmax1(q), maxval(pg_data%q(:ncol,1,q,ie)))
+       end do
     end do
     call gfr_fv_phys_to_dyn(hybrid, nt2, hvcoord, elem, pg_data%T, pg_data%uv, pg_data%q, &
          nets, nete)
@@ -344,6 +352,8 @@ contains
     ! Don't apply forcings; rather, the forcing fields now have the
     ! remapped quantities we want to compare against the original.
     do q = 2, qsize+3
+       mass1 = zero; mass2 = zero
+       qmin2 = one; qmax2 = -one
        do ie = nets,nete
           do k = 1,nlev
              wr(:,:,k) = elem(ie)%spheremp
@@ -363,6 +373,9 @@ contains
                 global_shared_buf(ie,2) = sum(wr*wr1**2)                
              end if
           else
+             ! Check extrema in level 1.
+             qmin2 = min(qmin2, minval(elem(ie)%derived%FQ(:,:,1,q)))
+             qmax2 = max(qmax2, maxval(elem(ie)%derived%FQ(:,:,1,q)))
              global_shared_buf(ie,1) = &
                   sum(wr*( &
                   elem(ie)%derived%FQ(:,:,:,q) - &
@@ -372,9 +385,19 @@ contains
           end if
        end do
        call wrap_repro_sum(nvars=2, comm=hybrid%par%comm)
+       qmin1(q) = ParallelMin(qmin1(q), hybrid)
+       qmax1(q) = ParallelMax(qmax1(q), hybrid)
+       qmin2 = ParallelMin(qmin2, hybrid)
+       qmax2 = ParallelMax(qmax2, hybrid)
        if (hybrid%masterthread) then
           rd = sqrt(global_shared_sum(1)/global_shared_sum(2))
           print '(a,i3,a,i3,es12.4)', 'gfrt> test3 q l2', q, ' of', qsize, rd
+          b = max(abs(qmin1(q)), abs(qmax1(q)))
+          if (q <= qsize .and. qmin2 < qmin1(q) - 5*eps*b .or. &
+               qmax2 > qmax1(q) + 5*eps*b) then
+             print '(a,i3,es12.4,es12.4,es12.4,es12.4)', 'gfrt> test3 q extrema', &
+                  q, qmin1(q), qmin2-qmin1(q), qmax2-qmax1(q), qmax1(q)
+          end if
        end if
     end do
   end subroutine run
