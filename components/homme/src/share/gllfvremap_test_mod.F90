@@ -3,10 +3,6 @@
 #endif
 
 !todo
-! - in test 1, i'm seeing OOA 2 for pg3 when i expect OOA 3. is this
-!   b/c of how the solution sampling is done? or is it indicating that
-!   sphere_f has a 2nd-order error?
-! x tests 2 and 3 have design OOA for l2 error
 ! - global mass checks
 ! - global extrema checks
 ! - area correction: alpha
@@ -194,6 +190,13 @@ contains
     ! Test physgrid API.
     !   Test that if tendency is 0, then the original field is
     ! recovered with error eps ~ machine precision.
+    !   OOA for pgN should min(N, 2). The OOA is limited to 2 because
+    ! of the way the tendencies are created. Instead of setting the FV
+    ! value to the average over the subcell, the sampled value at the
+    ! cell midpoint (ref midpoint mapped to sphere) is used. This
+    ! creates a 2nd-order error. Tests 2 and 3 test whether the remaps
+    ! achieve design OOA, in particular OOA 3 for pg3 u, v, T, phis
+    ! fields.
 
     ! Set analytical GLL values.
     do ie = nets,nete
