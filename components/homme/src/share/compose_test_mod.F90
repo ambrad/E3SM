@@ -115,7 +115,7 @@ contains
 
     ! 2. Standalone tracer advection test, useful as a basic but comprehensive
     ! correctness test and also as part of a convergence test.
-    call compose_stt(hybrid, nets, nete, hvcoord, deriv, elem)
+    call compose_stt(hybrid, dom_mt, nets, nete, hvcoord, deriv, elem)
 #if (defined HORIZ_OPENMP)
     !$omp end parallel
 #endif
@@ -153,9 +153,10 @@ contains
     end if
   end subroutine print_software_statistics
 
-  subroutine compose_stt(hybrid, nets, nete, hvcoord, deriv, elem)
+  subroutine compose_stt(hybrid, dom_mt, nets, nete, hvcoord, deriv, elem)
     use iso_c_binding, only: c_loc
     use parallel_mod, only: parallel_t
+    use domain_mod, only: domain1d_t
     use hybrid_mod, only: hybrid_t
     use element_mod, only: element_t
     use time_mod, only: timelevel_t, timelevel_init_default, timelevel_qdp
@@ -173,6 +174,7 @@ contains
     use gllfvremap_test_mod
 
     type (hybrid_t), intent(in) :: hybrid
+    type (domain1d_t), pointer, intent(in) :: dom_mt(:)
     type (derivative_t), intent(in) :: deriv
     type (element_t), intent(inout) :: elem(:)
     type (hvcoord_t) , intent(in) :: hvcoord
@@ -186,8 +188,8 @@ contains
 
     if (hybrid%masterthread) &
          print *, 'ALARUM: COMPOSE test is disabled while GFR is deved in this branch'
-    call gfr_test(hybrid, nets, nete, hvcoord, deriv, elem)
-    call gfr_check_api(hybrid, nets, nete, hvcoord, deriv, elem)
+    call gfr_test(hybrid, dom_mt, hvcoord, deriv, elem)
+    call gfr_check_api(hybrid, nets, nete, hvcoord, elem)
     return
 
 #ifdef HOMME_ENABLE_COMPOSE  

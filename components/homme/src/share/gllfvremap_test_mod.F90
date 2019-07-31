@@ -203,8 +203,8 @@ contains
     end do
 
     ! GLL -> FV.
-    call gfr_dyn_to_fv_phys(hybrid, nt2, hvcoord, elem, pg_data%ps, pg_data%zs, pg_data%T, &
-         pg_data%uv, pg_data%omega_p, pg_data%q, nets, nete)
+    call gfr_dyn_to_fv_phys(hybrid, nt2, hvcoord, elem, nets, nete, &
+         pg_data%ps, pg_data%zs, pg_data%T, pg_data%uv, pg_data%omega_p, pg_data%q)
     
     ! Set FV tendencies.
     if (tendency) then
@@ -228,8 +228,8 @@ contains
     end if
 
     ! FV -> GLL.
-    call gfr_fv_phys_to_dyn(hybrid, nt2, hvcoord, elem, pg_data%T, pg_data%uv, pg_data%q, &
-         nets, nete)
+    call gfr_fv_phys_to_dyn(hybrid, nt2, hvcoord, elem, nets, nete, &
+         pg_data%T, pg_data%uv, pg_data%q)
     call gfr_f2g_dss(hybrid, elem, nets, nete)
 
     ! Apply the tendencies.
@@ -299,8 +299,8 @@ contains
     do ie = nets,nete
        elem(ie)%derived%vstar(:,:,1,1) = elem(ie)%state%phis
     end do
-    call gfr_dyn_to_fv_phys_topo(hybrid, elem, pg_data%zs, nets, nete)
-    call gfr_fv_phys_to_dyn_topo(hybrid, elem, pg_data%zs, nets, nete)
+    call gfr_dyn_to_fv_phys_topo(hybrid, elem, nets, nete, pg_data%zs)
+    call gfr_fv_phys_to_dyn_topo(hybrid, elem, nets, nete, pg_data%zs)
     ! Compare GLL phis1 against GLL phis0.
     do ie = nets,nete
        global_shared_buf(ie,1) = sum(elem(ie)%spheremp*(elem(ie)%state%phis - &
@@ -329,8 +329,8 @@ contains
     do ie = nets,nete
        call set_gll_state(hvcoord, elem(ie), nt1, nt2)
     end do
-    call gfr_dyn_to_fv_phys(hybrid, nt2, hvcoord, elem, pg_data%ps, pg_data%zs, pg_data%T, &
-         pg_data%uv, pg_data%omega_p, pg_data%q, nets, nete)
+    call gfr_dyn_to_fv_phys(hybrid, nt2, hvcoord, elem, nets, nete, &
+         pg_data%ps, pg_data%zs, pg_data%T, pg_data%uv, pg_data%omega_p, pg_data%q)
     ! Leave T, uv as they are. They will be mapped back as
     ! tendencies. Double Q so that this new value minus the
     ! original is Q.
@@ -344,8 +344,8 @@ contains
           qmax1(q) = max(qmax1(q), maxval(pg_data%q(:ncol,1,q,ie)))
        end do
     end do
-    call gfr_fv_phys_to_dyn(hybrid, nt2, hvcoord, elem, pg_data%T, pg_data%uv, pg_data%q, &
-         nets, nete)
+    call gfr_fv_phys_to_dyn(hybrid, nt2, hvcoord, elem, nets, nete, &
+         pg_data%T, pg_data%uv, pg_data%q)
     call gfr_f2g_dss(hybrid, elem, nets, nete)
     ! Don't apply forcings; rather, the forcing fields now have the
     ! remapped quantities we want to compare against the original.
@@ -419,13 +419,11 @@ contains
     end do
   end subroutine run
 
-  subroutine gfr_check_api(hybrid, nets, nete, hvcoord, deriv, elem)
-    use derivative_mod, only: derivative_t
+  subroutine gfr_check_api(hybrid, nets, nete, hvcoord, elem)
     use hybvcoord_mod, only: hvcoord_t
     use gllfvremap_mod
 
     type (hybrid_t), intent(in) :: hybrid
-    type (derivative_t), intent(in) :: deriv
     type (element_t), intent(inout) :: elem(:)
     type (hvcoord_t) , intent(in) :: hvcoord
     integer, intent(in) :: nets, nete

@@ -640,8 +640,8 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   max_precl = -huge(rl)
   min_ps    = +huge(rl)
 
-  call gfr_dyn_to_fv_phys(hybrid, nt, hvcoord, elem, pg_data%ps, pg_data%zs, pg_data%T, &
-       pg_data%uv, pg_data%omega_p, pg_data%q, nets, nete)
+  call gfr_dyn_to_fv_phys(hybrid, nt, hvcoord, elem, nets, nete, &
+       pg_data%ps, pg_data%zs, pg_data%T, pg_data%uv, pg_data%omega_p, pg_data%q)
 
   do ie = nets,nete
      precl(:,:,ie) = -one
@@ -761,8 +761,8 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      min_ps    = min( min_ps,    minval(elem(i)%state%ps_v(:,:,nt)) )
   enddo
 
-  call gfr_fv_phys_to_dyn(hybrid, nt, hvcoord, elem, pg_data%T, pg_data%uv, pg_data%q, &
-       nets, nete)
+  call gfr_fv_phys_to_dyn(hybrid, nt, hvcoord, elem, nets, nete, &
+       pg_data%T, pg_data%uv, pg_data%q)
   ! dp_coupling doesn't do the DSS; stepon does. Thus, this DCMIP test
   ! also needs to do its own DSS.
   call gfr_f2g_dss(hybrid, elem, nets, nete)

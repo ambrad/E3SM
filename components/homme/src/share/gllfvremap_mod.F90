@@ -67,6 +67,21 @@ module gllfvremap_mod
        gfr_fv_phys_to_dyn_topo, &
        gfr_f2g_dss
 
+  interface gfr_dyn_to_fv_phys
+     module procedure gfr_dyn_to_fv_phys_hybrid
+     !module procedure gfr_dyn_to_fv_phys_dom_mt
+  end interface gfr_dyn_to_fv_phys
+
+  interface gfr_fv_phys_to_dyn
+     module procedure gfr_fv_phys_to_dyn_hybrid
+     !module procedure gfr_fv_phys_to_dyn_dom_mt
+  end interface gfr_fv_phys_to_dyn
+
+  interface gfr_fv_phys_to_dyn_topo
+     module procedure gfr_fv_phys_to_dyn_topo_hybrid
+     !module procedure gfr_fv_phys_to_dyn_topo_dom_mt
+  end interface gfr_fv_phys_to_dyn_topo
+
   ! Testing API.
   public :: &
        gfr_test, &
@@ -124,8 +139,8 @@ contains
     deallocate(gfr%fv_metdet, gfr%D_f, gfr%Dinv_f, gfr%qmin, gfr%qmax, gfr%spherep_f)
   end subroutine gfr_finish
 
-  subroutine gfr_dyn_to_fv_phys(hybrid, nt, hvcoord, elem, ps, phis, T, uv, omega_p, q, &
-       nets_in, nete_in)
+  subroutine gfr_dyn_to_fv_phys_hybrid(hybrid, nt, hvcoord, elem, nets, nete, &
+       ps, phis, T, uv, omega_p, q)
     use dimensions_mod, only: nlev
     use hybvcoord_mod, only: hvcoord_t
     use element_ops, only: get_temperature
@@ -134,20 +149,13 @@ contains
     integer, intent(in) :: nt
     type (hvcoord_t), intent(in) :: hvcoord
     type (element_t), intent(in) :: elem(:)
+    integer, intent(in) :: nets, nete
     real(kind=real_kind), intent(inout) :: ps(:,:), phis(:,:), T(:,:,:), &
          uv(:,:,:,:), omega_p(:,:,:), q(:,:,:,:)
-    integer, intent(in), optional :: nets_in, nete_in
 
     real(kind=real_kind) :: dp(np,np,nlev), dp_fv(np,np,nlev), wr1(np,np,nlev), wr2(np,np,nlev)
-    integer :: nets, nete, ie, nf, ncol, qi, qsize
+    integer :: ie, nf, ncol, qi, qsize
 
-    if (present(nets_in)) then
-       nets = nets_in
-       nete = nete_in
-    else
-       nets = 1
-       nete = size(elem)
-    end if
     nf = gfr%nphys
     ncol = nf*nf
 
@@ -196,9 +204,9 @@ contains
           end if
        end do
     end do
-  end subroutine gfr_dyn_to_fv_phys
+  end subroutine gfr_dyn_to_fv_phys_hybrid
 
-  subroutine gfr_fv_phys_to_dyn(hybrid, nt, hvcoord, elem, T, uv, q, nets_in, nete_in)
+  subroutine gfr_fv_phys_to_dyn_hybrid(hybrid, nt, hvcoord, elem, nets, nete, T, uv, q)
     use dimensions_mod, only: nlev
     use hybvcoord_mod, only: hvcoord_t
 
@@ -206,20 +214,13 @@ contains
     integer, intent(in) :: nt
     type (hvcoord_t), intent(in) :: hvcoord
     type (element_t), intent(inout) :: elem(:)
+    integer, intent(in), optional :: nets, nete
     real(kind=real_kind), intent(in) :: T(:,:,:), uv(:,:,:,:), q(:,:,:,:)
-    integer, intent(in), optional :: nets_in, nete_in
 
     real(kind=real_kind) :: dp(np,np,nlev), dp_fv(np,np,nlev), wr1(np,np,nlev), &
          wr2(np,np,nlev), qmin, qmax
-    integer :: nets, nete, ie, nf, ncol, k, qsize, qi
+    integer :: ie, nf, ncol, k, qsize, qi
 
-    if (present(nets_in)) then
-       nets = nets_in
-       nete = nete_in
-    else
-       nets = 1
-       nete = size(elem)
-    end if
     nf = gfr%nphys
     ncol = nf*nf
 
@@ -285,24 +286,17 @@ contains
           end if
        end do
     end do
-  end subroutine gfr_fv_phys_to_dyn
+  end subroutine gfr_fv_phys_to_dyn_hybrid
 
-  subroutine gfr_dyn_to_fv_phys_topo(hybrid, elem, phis, nets_in, nete_in)
+  subroutine gfr_dyn_to_fv_phys_topo(hybrid, elem, nets, nete, phis)
     type (hybrid_t), intent(in) :: hybrid
     type (element_t), intent(in) :: elem(:)
+    integer, intent(in), optional :: nets, nete
     real(kind=real_kind), intent(out) :: phis(:,:)
-    integer, intent(in), optional :: nets_in, nete_in
 
     real(kind=real_kind) :: wr(np,np,2)
-    integer :: nets, nete, ie, nf, ncol
+    integer :: ie, nf, ncol
 
-    if (present(nets_in)) then
-       nets = nets_in
-       nete = nete_in
-    else
-       nets = 1
-       nete = size(elem)
-    end if
     nf = gfr%nphys
     ncol = nf*nf
 
@@ -313,25 +307,18 @@ contains
     end do
   end subroutine gfr_dyn_to_fv_phys_topo
 
-  subroutine gfr_fv_phys_to_dyn_topo(hybrid, elem, phis, nets_in, nete_in)
+  subroutine gfr_fv_phys_to_dyn_topo_hybrid(hybrid, elem, nets, nete, phis)
     use edge_mod, only: edgeVpack_nlyr, edgeVunpack_nlyr, edge_g
     use bndry_mod, only: bndry_exchangeV
 
     type (hybrid_t), intent(in) :: hybrid
     type (element_t), intent(inout) :: elem(:)
+    integer, intent(in), optional :: nets, nete
     real(kind=real_kind), intent(in) :: phis(:,:)
-    integer, intent(in), optional :: nets_in, nete_in
 
     real(kind=real_kind) :: wr(np,np,2)
-    integer :: nets, nete, ie, nf, ncol
+    integer :: ie, nf, ncol
 
-    if (present(nets_in)) then
-       nets = nets_in
-       nete = nete_in
-    else
-       nets = 1
-       nete = size(elem)
-    end if
     nf = gfr%nphys
     ncol = nf*nf
 
@@ -352,7 +339,32 @@ contains
           elem(ie)%state%phis = elem(ie)%state%phis*elem(ie)%rspheremp
        end do
     end if
-  end subroutine gfr_fv_phys_to_dyn_topo
+  end subroutine gfr_fv_phys_to_dyn_topo_hybrid
+
+  subroutine gfr_hybrid_create(par, dom_mt, hybrid, nets, nete)
+    use parallel_mod, only: parallel_t
+    use domain_mod, only: domain1d_t
+    use hybrid_mod, only: hybrid_t, hybrid_create
+    use thread_mod, only: omp_get_thread_num, hthreads
+
+    type (parallel_t), intent(in) :: par
+    type (domain1d_t), intent(in) :: dom_mt(:)
+    type (hybrid_t), intent(out) :: hybrid
+    integer, intent(out) :: nets, nete
+
+    integer :: ithr
+
+    ithr = omp_get_thread_num()
+    nets = dom_mt(ithr+1)%start
+    nete = dom_mt(ithr+1)%end
+    hybrid = hybrid_create(par, ithr, hthreads)
+  end subroutine gfr_hybrid_create
+
+#if 0
+  subroutine gfr_dyn_to_fv_phys_dom_mt(par, dom_mt, nt, hvcoord, elem, &
+       ps, phis, T, uv, omega_p, q)
+  end subroutine gfr_dyn_to_fv_phys_dom_mt
+#endif
 
   subroutine gfr_init_w_gg(np, w_gg)
     use quadrature_mod, only : gausslobatto, quadrature_t
@@ -1190,8 +1202,10 @@ contains
     end do
   end subroutine check_nonnegative
 
-  subroutine check(gfr, hybrid, elem, nets, nete, verbose)
+  subroutine check(par, dom_mt, gfr, elem, verbose)
+    use parallel_mod, only: parallel_t
     use dimensions_mod, only: nlev, qsize
+    use domain_mod, only: domain1d_t
     use edge_mod, only: edge_g, edgevpack_nlyr, edgevunpack_nlyr
     use bndry_mod, only: bndry_exchangev
     use viscosity_mod, only: neighbor_minmax
@@ -1200,10 +1214,10 @@ contains
     use reduction_mod, only: ParallelMin, ParallelMax
     use prim_advection_base, only: edgeAdvQminmax
 
+    type (parallel_t), intent(in) :: par
+    type (domain1d_t), intent(in) :: dom_mt(:)
     type (GllFvRemap_t), intent(in) :: gfr
-    type (hybrid_t), intent(in) :: hybrid
     type (element_t), intent(inout) :: elem(:)
-    integer, intent(in) :: nets, nete
     logical, intent(in) :: verbose
 
     real(kind=real_kind) :: a, b, rd, x, y, f0(np,np), f1(np,np), g(np,np), &
@@ -1214,7 +1228,13 @@ contains
     logical :: limit
     character(32) :: msg
 
+    ! Purposely construct our own hybrid object to test gfr_hybrid_create.
+    type (hybrid_t) :: hybrid
+    integer :: nets, nete
+
     nf = gfr%nphys
+
+    call gfr_hybrid_create(par, dom_mt, hybrid, nets, nete)
 
     if (hybrid%masterthread) then
        print '(a,i3,a,i3)', 'gfr> npi', gfr%npi, ' nphys', nf
@@ -1362,15 +1382,16 @@ contains
     deallocate(Qdp_fv, ps_v_fv, qmins, qmaxs)
   end subroutine check
 
-  subroutine gfr_test(hybrid, nets, nete, hvcoord, deriv, elem)
+  subroutine gfr_test(hybrid, dom_mt, hvcoord, deriv, elem)
+    use domain_mod, only: domain1d_t
     use derivative_mod, only: derivative_t
     use hybvcoord_mod, only: hvcoord_t
 
     type (hybrid_t), intent(in) :: hybrid
+    type (domain1d_t), intent(in) :: dom_mt(:)
     type (derivative_t), intent(in) :: deriv
     type (element_t), intent(inout) :: elem(:)
     type (hvcoord_t) , intent(in) :: hvcoord
-    integer, intent(in) :: nets, nete
 
     integer :: nphys
 
@@ -1379,7 +1400,7 @@ contains
        if (hybrid%ithr == 0) call gfr_init(hybrid%par, elem, nphys)
        !$omp barrier
 
-       call check(gfr, hybrid, elem, nets, nete, .false.)
+       call check(hybrid%par, dom_mt, gfr, elem, .false.)
 
        ! This is meant to be called after threading ends.
        !$omp barrier
