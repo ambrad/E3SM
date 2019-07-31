@@ -111,7 +111,10 @@ contains
        ! interested in the case of nphys > np, we will need to write a different
        ! map. See "!assume" annotations for mathematical assumptions in
        ! particular routines.
-       call abortmp('nphys must be <= np')
+       call abortmp('gllfvremap_mod: nphys must be <= np')
+    end if
+    if (qsize == 0) then
+       call abortmp('gllfvremap_mod: qsize must be >= 1')
     end if
 
     gfr%nphys = nphys
@@ -128,7 +131,7 @@ contains
 
     allocate(gfr%fv_metdet(nphys,nphys,nelemd), &
          gfr%D_f(nphys,nphys,2,2,nelemd), gfr%Dinv_f(nphys,nphys,2,2,nelemd), &
-         gfr%qmin(nlev,qsize,nelemd), gfr%qmax(nlev,qsize,nelemd), &
+         gfr%qmin(nlev,max(1,qsize),nelemd), gfr%qmax(nlev,max(1,qsize),nelemd), &
          gfr%spherep_f(nphys,nphys,nelemd))
     call gfr_init_fv_metdet(elem, gfr)
     call gfr_init_geometry(elem, gfr)
@@ -270,7 +273,7 @@ contains
        call calc_dp(hvcoord, elem(ie)%state%ps_v(:,:,nt), dp)
        do qi = 1,qsize
           ! Limit GLL Q1.
-          if (gfr%check) wr1 = elem(ie)%derived%FQ(:,:,:,qi)          
+          if (gfr%check) wr1 = elem(ie)%derived%FQ(:,:,:,qi)
           do k = 1,nlev
              ! Augment bounds with GLL Q0 bounds. This assures that if
              ! the tendency is 0, GLL Q1 = GLL Q0.
@@ -294,15 +297,20 @@ contains
     integer, intent(in), optional :: nets, nete
     real(kind=real_kind), intent(out) :: phis(:,:)
 
-    real(kind=real_kind) :: wr(np,np,2)
+    real(kind=real_kind) :: wr(np,np,2), ones(np,np), qmin, qmax
     integer :: ie, nf, ncol
 
+    ones = one
     nf = gfr%nphys
     ncol = nf*nf
 
     do ie = nets,nete
        wr(:,:,1) = elem(ie)%state%phis(:,:)
        call gfr_g2f_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
+       qmin = minval(elem(ie)%state%phis)
+       qmax = maxval(elem(ie)%state%phis)
+       call limiter_clip_and_sum(gfr%nphys, gfr%w_ff(:nf,:nf)*gfr%fv_metdet(:nf,:nf,ie), &
+            qmin, qmax, ones, wr(:nf,:nf,2))
        phis(:ncol,ie) = reshape(wr(:nf,:nf,2), (/ncol/))
     end do
   end subroutine gfr_dyn_to_fv_phys_topo
@@ -316,16 +324,36 @@ contains
     integer, intent(in), optional :: nets, nete
     real(kind=real_kind), intent(in) :: phis(:,:)
 
-    real(kind=real_kind) :: wr(np,np,2)
+    real(kind=real_kind) :: wr(np,np,2), ones(np,np,1)
     integer :: ie, nf, ncol
 
+    ones = one
     nf = gfr%nphys
     ncol = nf*nf
 
     do ie = nets,nete
        wr(:nf,:nf,1) = reshape(phis(:ncol,ie), (/nf,nf/))
+       gfr%qmin(:,:,ie) = minval(wr(:nf,:nf,1))
+       gfr%qmax(:,:,ie) = maxval(wr(:nf,:nf,1))
        call gfr_f2g_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
        elem(ie)%state%phis = wr(:,:,2)
+    end do
+
+    call gfr_f2g_mixing_ratios_he(hybrid, nets, nete, gfr%qmin(:,:,nets:nete), &
+         gfr%qmax(:,:,nets:nete))
+
+    do ie = nets,nete
+       if (gfr%check) wr(:,:,1) = elem(ie)%state%phis
+       call limiter_clip_and_sum(np, elem(ie)%spheremp, gfr%qmin(1,1,ie), &
+            gfr%qmax(1,1,ie), ones(:,:,1), elem(ie)%state%phis)
+       if (gfr%check) then
+          if (gfr%qmin(1,1,ie) < zero) then
+             print *, 'gfr> topo min:', hybrid%par%rank, hybrid%ithr, ie, gfr%qmin(1,1,ie)
+          end if
+          wr(:,:,2) = elem(ie)%state%phis
+          call check_f2g_mixing_ratio(hybrid, ie, 1, elem, gfr%qmin(:1,1,ie), &
+               gfr%qmax(:1,1,ie), ones, wr(:,:,:1), wr(:,:,2:))
+       end if
     end do
 
     if (hybrid%par%dynproc) then
@@ -1036,7 +1064,7 @@ contains
                 g(i,j,k) = zero
                 w(i,j) = zero
              else
-                w(i,j) = spheremp(i,j)
+                w(i,j) = spheremp(i,j)*g(i,j,k)
              end if
           end do
        end do
@@ -1262,7 +1290,7 @@ contains
        sign = 1
        do j = 1,np
           do i = 1,np
-             wrk3(i,j,1) = one + sign*i*j
+             wrk3(i,j,1) = one + sign*(one + cos(real(i,real_kind)))*j
              sign = -sign
           end do
        end do
@@ -1270,7 +1298,9 @@ contains
        call gfr_g_make_nonnegative(elem(ie)%metdet, wrk3)
        mass1 = sum(elem(ie)%spheremp*wrk3(:,:,1))
        rd = (mass1 - mass0)/mass0
-       if (rd /= rd .or. rd > 20*eps) print *, 'gfr> nonnegative', ie, rd, mass0, mass1, 'ERROR'
+       if (rd /= rd .or. rd > 20*eps .or. any(wrk3(:,:,1) < zero)) then
+          print *, 'gfr> nonnegative', ie, rd, mass0, mass1, wrk3(:,:,1), 'ERROR'
+       end if
     end do
   end subroutine check_nonnegative
 

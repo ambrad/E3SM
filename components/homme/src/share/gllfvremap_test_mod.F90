@@ -3,6 +3,9 @@
 #endif
 
 !todo
+! - test with HORIZ_OPENMP off
+! - test on KNL
+! - maybe switch to npi = max(2,nphys)
 ! - area correction: alpha
 ! - test vector_dp routines: conservation
 ! - topo roughness
@@ -292,8 +295,8 @@ contains
     end do
 
     !! Test 2.
-    ! Test topo routines. OOA should be N for pgN, N=1,3,4. Error
-    ! should be eps for pg4; see Test 3 text for explanation.
+    ! Test topo routines. For pgN, phis should have OOA min(N,2)
+    ! because the field is limited.
   
     ! Stash initial phis for later comparison.
     do ie = nets,nete
@@ -433,6 +436,9 @@ contains
     do nphys = 1, np
        ! This is meant to be called before threading starts.
        if (hybrid%ithr == 0) then
+          ! check=.true. means that the remap routines to
+          ! element-level verification of properties and output
+          ! messages if a property fails.
           call gfr_init(hybrid%par, elem, nphys, check=.true.)
           call init(nphys)
        end if
