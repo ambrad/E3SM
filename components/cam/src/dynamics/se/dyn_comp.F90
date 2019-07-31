@@ -96,12 +96,13 @@ CONTAINS
     use prim_driver_mod,  only: prim_init1
     use parallel_mod,     only: par, initmp
     use namelist_mod,     only: readnl
-    use control_mod,      only: runtype, qsplit, rsplit
+    use control_mod,      only: runtype, qsplit, rsplit, se_fv_phys_remap_alg
     use time_mod,         only: tstep
     use phys_control,     only: use_gw_front
     use physics_buffer,   only: pbuf_add_field, dtype_r8
     use ppgrid,           only: pcols, pver
     use cam_abortutils,   only : endrun
+    use gllfvremap_mod,   only: gfr_init
 
     ! PARAMETERS:
     type(file_desc_t),   intent(in)  :: fh       ! PIO file handle for initial or restart file
@@ -161,6 +162,10 @@ CONTAINS
        neltmp(1) = nelemdmax
        neltmp(2) = nelem
        neltmp(3) = get_dyn_grid_parm('plon')
+
+       if (fv_nphys > 0 .and. se_fv_phys_remap_alg == 1) then
+          call gfr_init(par, elem, fv_nphys)
+       end if
     else
        nelemd = 0
        neltmp(1) = 0
