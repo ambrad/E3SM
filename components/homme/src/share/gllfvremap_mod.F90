@@ -69,17 +69,17 @@ module gllfvremap_mod
 
   interface gfr_dyn_to_fv_phys
      module procedure gfr_dyn_to_fv_phys_hybrid
-     !module procedure gfr_dyn_to_fv_phys_dom_mt
+     module procedure gfr_dyn_to_fv_phys_dom_mt
   end interface gfr_dyn_to_fv_phys
 
   interface gfr_fv_phys_to_dyn
      module procedure gfr_fv_phys_to_dyn_hybrid
-     !module procedure gfr_fv_phys_to_dyn_dom_mt
+     module procedure gfr_fv_phys_to_dyn_dom_mt
   end interface gfr_fv_phys_to_dyn
 
   interface gfr_fv_phys_to_dyn_topo
      module procedure gfr_fv_phys_to_dyn_topo_hybrid
-     !module procedure gfr_fv_phys_to_dyn_topo_dom_mt
+     module procedure gfr_fv_phys_to_dyn_topo_dom_mt
   end interface gfr_fv_phys_to_dyn_topo
 
   ! Testing API.
@@ -360,11 +360,83 @@ contains
     hybrid = hybrid_create(par, ithr, hthreads)
   end subroutine gfr_hybrid_create
 
-#if 0
   subroutine gfr_dyn_to_fv_phys_dom_mt(par, dom_mt, nt, hvcoord, elem, &
        ps, phis, T, uv, omega_p, q)
-  end subroutine gfr_dyn_to_fv_phys_dom_mt
+    use parallel_mod, only: parallel_t
+    use domain_mod, only: domain1d_t
+    use hybvcoord_mod, only: hvcoord_t
+    use thread_mod, only: hthreads
+
+    type (parallel_t), intent(in) :: par
+    type (domain1d_t), intent(in) :: dom_mt(:)
+    integer, intent(in) :: nt
+    type (hvcoord_t), intent(in) :: hvcoord
+    type (element_t), intent(in) :: elem(:)
+    real(kind=real_kind), intent(inout) :: ps(:,:), phis(:,:), T(:,:,:), &
+         uv(:,:,:,:), omega_p(:,:,:), q(:,:,:,:)
+
+    type (hybrid_t) :: hybrid
+    integer :: nets, nete
+
+#ifdef HORIZ_OPENMP
+    !$omp parallel num_threads(hthreads), default(shared), private(nets,nete,hybrid)
 #endif
+    call gfr_hybrid_create(par, dom_mt, hybrid, nets, nete)
+    call gfr_dyn_to_fv_phys_hybrid(hybrid, nt, hvcoord, elem, nets, nete, ps, &
+         phis, T, uv, omega_p, q)
+#ifdef HORIZ_OPENMP
+    !$omp end parallel
+#endif
+  end subroutine gfr_dyn_to_fv_phys_dom_mt
+
+  subroutine gfr_fv_phys_to_dyn_dom_mt(par, dom_mt, nt, hvcoord, elem, T, uv, q)
+    use parallel_mod, only: parallel_t
+    use domain_mod, only: domain1d_t
+    use hybvcoord_mod, only: hvcoord_t
+    use thread_mod, only: hthreads
+
+    type (parallel_t), intent(in) :: par
+    type (domain1d_t), intent(in) :: dom_mt(:)
+    integer, intent(in) :: nt
+    type (hvcoord_t), intent(in) :: hvcoord
+    type (element_t), intent(inout) :: elem(:)
+    real(kind=real_kind), intent(inout) :: T(:,:,:), uv(:,:,:,:), q(:,:,:,:)
+
+    type (hybrid_t) :: hybrid
+    integer :: nets, nete
+
+#ifdef HORIZ_OPENMP
+    !$omp parallel num_threads(hthreads), default(shared), private(nets,nete,hybrid)
+#endif
+    call gfr_hybrid_create(par, dom_mt, hybrid, nets, nete)
+    call gfr_fv_phys_to_dyn_hybrid(hybrid, nt, hvcoord, elem, nets, nete, T, uv, q)
+#ifdef HORIZ_OPENMP
+    !$omp end parallel
+#endif
+  end subroutine gfr_fv_phys_to_dyn_dom_mt
+
+  subroutine gfr_fv_phys_to_dyn_topo_dom_mt(par, dom_mt, elem, phis)
+    use parallel_mod, only: parallel_t
+    use domain_mod, only: domain1d_t
+    use thread_mod, only: hthreads
+
+    type (parallel_t), intent(in) :: par
+    type (domain1d_t), intent(in) :: dom_mt(:)
+    type (element_t), intent(inout) :: elem(:)
+    real(kind=real_kind), intent(in) :: phis(:,:)
+
+    type (hybrid_t) :: hybrid
+    integer :: nets, nete
+
+#ifdef HORIZ_OPENMP
+    !$omp parallel num_threads(hthreads), default(shared), private(nets,nete,hybrid)
+#endif
+    call gfr_hybrid_create(par, dom_mt, hybrid, nets, nete)
+    call gfr_fv_phys_to_dyn_topo_hybrid(hybrid, elem, nets, nete, phis)
+#ifdef HORIZ_OPENMP
+    !$omp end parallel
+#endif
+  end subroutine gfr_fv_phys_to_dyn_topo_dom_mt
 
   subroutine gfr_init_w_gg(np, w_gg)
     use quadrature_mod, only : gausslobatto, quadrature_t
