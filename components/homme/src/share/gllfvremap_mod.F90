@@ -67,6 +67,11 @@ module gllfvremap_mod
        gfr_fv_phys_to_dyn_topo, &
        gfr_f2g_dss
 
+  ! For testing.
+  public :: &
+       gfr_test, &
+       gfr_f2g_scalar, gfr_f_get_latlon, gfr_f_get_cartesian3d, gfr_g_make_nonnegative
+
   interface gfr_dyn_to_fv_phys
      module procedure gfr_dyn_to_fv_phys_hybrid
      module procedure gfr_dyn_to_fv_phys_dom_mt
@@ -81,11 +86,6 @@ module gllfvremap_mod
      module procedure gfr_fv_phys_to_dyn_topo_hybrid
      module procedure gfr_fv_phys_to_dyn_topo_dom_mt
   end interface gfr_fv_phys_to_dyn_topo
-
-  ! Testing API.
-  public :: &
-       gfr_test, &
-       gfr_f2g_scalar, gfr_f_get_latlon, gfr_f_get_cartesian3d, gfr_g_make_nonnegative
 
 contains
 
@@ -382,8 +382,8 @@ contains
     !$omp parallel num_threads(hthreads), default(shared), private(nets,nete,hybrid)
 #endif
     call gfr_hybrid_create(par, dom_mt, hybrid, nets, nete)
-    call gfr_dyn_to_fv_phys_hybrid(hybrid, nt, hvcoord, elem, nets, nete, ps, &
-         phis, T, uv, omega_p, q)
+    call gfr_dyn_to_fv_phys_hybrid(hybrid, nt, hvcoord, elem, nets, nete, &
+         ps, phis, T, uv, omega_p, q)
 #ifdef HORIZ_OPENMP
     !$omp end parallel
 #endif
