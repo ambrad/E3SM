@@ -339,8 +339,15 @@ contains
        elem(ie)%state%phis = wr(:,:,2)
     end do
 
-    call gfr_f2g_mixing_ratios_he(hybrid, nets, nete, gfr%qmin(:,:,nets:nete), &
-         gfr%qmax(:,:,nets:nete))
+#if 0
+    ! ne4pg2_ne4pg2 is failing when I expand the limiter bounds. For
+    ! now, disable expansion. This makes the topo map just first-order
+    ! accurate.
+    if (hybrid%par%dynproc) then
+       call gfr_f2g_mixing_ratios_he(hybrid, nets, nete, gfr%qmin(:,:,nets:nete), &
+            gfr%qmax(:,:,nets:nete))
+    end if
+#endif
 
     do ie = nets,nete
        if (gfr%check) wr(:,:,1) = elem(ie)%state%phis
@@ -1254,9 +1261,8 @@ contains
 
     real(kind=real_kind) :: qmin_f, qmin_g, qmax_f, qmax_g, mass_f, mass0, mass1, den, &
          wr(np,np)
-    integer :: q, k, nf
+    integer :: q, k
 
-    nf = gfr%nphys
     do k = 1,size(dp,3)
        qmin_f = qmin(k)
        qmax_f = qmax(k)
