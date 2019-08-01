@@ -86,6 +86,7 @@ def create_namelists(self, component=None):
             expect(os.path.isfile(cmd), "Could not find buildnml file for component {}".format(compname))
             run_sub_or_cmd(cmd, (caseroot), "buildnml", (self, caseroot, compname), case=self)
 
+    os.system("bash ~/climate/casestuff/pg2test/overwritepg2files.sh")
     logger.info("Finished creating component namelists")
 
     # Save namelists to docdir
@@ -107,3 +108,4 @@ def create_namelists(self, component=None):
     if (os.path.isdir(os.path.join(casebuild, "camconf"))):
         for file_to_copy in glob.glob(os.path.join(casebuild, "camconf", "*chem_mech*")):
             safe_copy(file_to_copy, docdir)
+

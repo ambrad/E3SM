@@ -312,6 +312,7 @@ class GenericXML(object):
         return version
 
     def check_timestamp(self):
+        return
         timestamp_cache = self._FILEMAP[self.filename].modtime
         if timestamp_cache != 0.0:
             timestamp_file  = os.path.getmtime(self.filename)
