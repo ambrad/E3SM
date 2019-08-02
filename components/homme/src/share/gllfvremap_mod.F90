@@ -160,8 +160,6 @@ contains
     real(kind=real_kind) :: dp(np,np,nlev), dp_fv(np,np,nlev), wr1(np,np,nlev), wr2(np,np,nlev), ones(np,np), qmin, qmax
     integer :: ie, nf, ncol, qi, qsize
 
-    if (hybrid%masterthread) print *,'gfr> gfr_dyn_to_fv_phys_hybrid'
-
     ones = one
     nf = gfr%nphys
     ncol = nf*nf
@@ -232,8 +230,6 @@ contains
     real(kind=real_kind) :: dp(np,np,nlev), dp_fv(np,np,nlev), wr1(np,np,nlev), &
          wr2(np,np,nlev), qmin, qmax
     integer :: ie, nf, ncol, k, qsize, qi
-
-    if (hybrid%masterthread) print *,'gfr> gfr_fv_phys_to_dyn_hybrid'
 
     nf = gfr%nphys
     ncol = nf*nf
