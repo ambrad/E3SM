@@ -24,7 +24,8 @@ module prim_driver_base
   use perf_mod,         only: t_startf, t_stopf
   use quadrature_mod,   only: quadrature_t, gausslobatto
   use reduction_mod,    only: reductionbuffer_ordered_1d_t, red_min, red_max, red_max_int, &
-                              red_sum, red_sum_int, red_flops, initreductionbuffer
+                              red_sum, red_sum_int, red_flops, initreductionbuffer, &
+                              red_max_index, red_min_index
 #ifndef CAM
   use prim_restart_mod, only : initrestartfile
   use restart_io_mod ,  only : readrestart
@@ -470,6 +471,8 @@ contains
     call InitReductionBuffer(red_max_int,1)
     call InitReductionBuffer(red_min,1)
     call initReductionBuffer(red_flops,1)
+    call initReductionBuffer(red_min_index,2)
+    call initReductionBuffer(red_max_index,2)
 
     gp=gausslobatto(np)  ! GLL points
 
@@ -644,10 +647,10 @@ contains
     type (parallel_t),  intent(in)  :: par
 
     ! single global edge buffer for all models:
-    ! hydrostatic 4*nlev      NH:  6*nlev+1
-    ! SL tracers: (qsize+1)*nlev
+    ! hydrostatic 4*nlev      NH:  6*nlev+1  
+    ! SL tracers: (qsize+1)*nlev   e3sm:  (qsize+3)*nlev+2
     ! if this is too small, code will abort with an error message
-    call initEdgeBuffer(par,edge_g,elem,max((qsize+1)*nlev,6*nlev+1))
+    call initEdgeBuffer(par,edge_g,elem,max((qsize+3)*nlev+2,6*nlev+1))
 
     call prim_advance_init1(par,elem,integration)
 #ifdef TRILINOS
