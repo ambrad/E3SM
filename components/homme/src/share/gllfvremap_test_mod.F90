@@ -4,10 +4,8 @@
 
 !todo
 ! - test with HORIZ_OPENMP off
-! - test on KNL
 ! - maybe switch to npi = max(2,nphys)
-! - area correction: alpha
-! - test vector_dp routines: conservation
+! - can vector_dp routines be conservative in some sense?
 ! - topo roughness
 ! - ftype other than 2,4
 ! - np4-np2 instead of np4-pg1
