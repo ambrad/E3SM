@@ -181,7 +181,7 @@ contains
        T(:ncol,:,ie) = reshape(wr1(:nf,:nf,:), (/ncol,nlev/))
 
 #if 0
-       call gfr_g2f_vector_dp(ie, elem, dp, dp_fv, &
+       call gfr_g2f_vector(ie, elem, & !dp, dp_fv, &
             elem(ie)%state%v(:,:,1,:,nt), elem(ie)%state%v(:,:,2,:,nt), &
             wr1, wr2)
 #else
@@ -236,8 +236,8 @@ contains
        wr1(:nf,:nf,:) = reshape(uv(:ncol,1,:,ie), (/nf,nf,nlev/))
        wr2(:nf,:nf,:) = reshape(uv(:ncol,2,:,ie), (/nf,nf,nlev/))
 #if 0
-       call gfr_f2g_vector_dp(ie, elem, dp_fv, dp, wr1, wr2, &
-            elem(ie)%derived%FM(:,:,1,:), elem(ie)%derived%FM(:,:,2,:))
+       call gfr_f2g_vector(ie, elem, & !dp_fv, dp,
+            wr1, wr2, elem(ie)%derived%FM(:,:,1,:), elem(ie)%derived%FM(:,:,2,:))
 #else
        call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, wr1, elem(ie)%derived%FM(:,:,1,:))
        call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, wr2, elem(ie)%derived%FM(:,:,2,:))
@@ -339,7 +339,6 @@ contains
        elem(ie)%state%phis = wr(:,:,2)
     end do
 
-#if 0
     ! ne4pg2_ne4pg2 is failing when I expand the limiter bounds. For
     ! now, disable expansion. This makes the topo map just first-order
     ! accurate.
@@ -347,7 +346,6 @@ contains
        call gfr_f2g_mixing_ratios_he(hybrid, nets, nete, gfr%qmin(:,:,nets:nete), &
             gfr%qmax(:,:,nets:nete))
     end if
-#endif
 
     do ie = nets,nete
        if (gfr%check) wr(:,:,1) = elem(ie)%state%phis
@@ -788,9 +786,16 @@ contains
 
              call Dmap(wrk, a, b, elem(ie)%corners3D, cubed_sphere_map, elem(ie)%cartp, &
                   elem(ie)%facenum)
-             gfr%D_f(i,j,:,:,ie) = wrk
 
              det = wrk(1,1)*wrk(2,2) - wrk(1,2)*wrk(2,1)
+
+             ! fv_metdet was obtained by remapping metdet. Make det(D)
+             ! = fv_metdet.
+             wrk = wrk*sqrt(gfr%fv_metdet(i,j,ie)/abs(det))
+             det = gfr%fv_metdet(i,j,ie)
+
+             gfr%D_f(i,j,:,:,ie) = wrk
+
              gfr%Dinv_f(i,j,1,1,ie) =  wrk(2,2)/det
              gfr%Dinv_f(i,j,1,2,ie) = -wrk(1,2)/det
              gfr%Dinv_f(i,j,2,1,ie) = -wrk(2,1)/det
@@ -841,19 +846,20 @@ contains
 
     nlev = size(u_g,3)
     do k = 1, nlev
-       ! sphere -> GLL ref
+       ! sphere -> GLL ref, but don't change the area.
        do d = 1,2
-          wg(:,:,d) = elem(ie)%Dinv(:,:,d,1)*u_g(:,:,k) + elem(ie)%Dinv(:,:,d,2)*v_g(:,:,k)
+          wg(:,:,d) = sqrt(elem(ie)%metdet)* &
+               (elem(ie)%Dinv(:,:,d,1)*u_g(:,:,k) + elem(ie)%Dinv(:,:,d,2)*v_g(:,:,k))
        end do
-       ! Since we mapped to the ref element, we no longer should use the ref ->
-       ! sphere Jacobians; use 1s instead.
        do d = 1,2
-          call gfr_g2f_remapd(gfr, ones, ones, wg(:,:,d), wf(:,:,d))
+          call gfr_g2f_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,:,ie), wg(:,:,d), wf(:,:,d))
        end do
-       ! FV ref -> sphere
+       ! FV ref -> sphere, and again don't change the area.
        do d = 1,2
-          wg(:nf,:nf,d) = gfr%D_f(:nf,:nf,d,1,ie)*wf(:nf,:nf,1) + &
-               gfr%D_f(:nf,:nf,d,2,ie)*wf(:nf,:nf,2)
+          wg(:nf,:nf,d) = &
+               (gfr%D_f(:nf,:nf,d,1,ie)*wf(:nf,:nf,1)  + &
+                gfr%D_f(:nf,:nf,d,2,ie)*wf(:nf,:nf,2)) / &
+               sqrt(gfr%fv_metdet(:,:,ie))
        end do
        u_f(:nf,:nf,k) = wg(:nf,:nf,1)
        v_f(:nf,:nf,k) = wg(:nf,:nf,2)
@@ -951,15 +957,17 @@ contains
     do k = 1, nlev
        ! sphere -> FV ref
        do d = 1,2
-          wf(:nf,:nf,d) = gfr%Dinv_f(:nf,:nf,d,1,ie)*u_f(:nf,:nf,k) + &
-               gfr%Dinv_f(:nf,:nf,d,2,ie)*v_f(:nf,:nf,k)
+          wf(:nf,:nf,d) = sqrt(gfr%fv_metdet(:,:,ie))*( &
+               gfr%Dinv_f(:nf,:nf,d,1,ie)*u_f(:nf,:nf,k) + &
+               gfr%Dinv_f(:nf,:nf,d,2,ie)*v_f(:nf,:nf,k))
        end do
        do d = 1,2
-          call gfr_f2g_remapd(gfr, ones, ones, wf(:,:,d), wg(:,:,d))
+          call gfr_f2g_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,:,ie), wf(:,:,d), wg(:,:,d))
        end do
        ! GLL ref -> sphere
        do d = 1,2
-          wf(:,:,d) = elem(ie)%D(:,:,d,1)*wg(:,:,1) + elem(ie)%D(:,:,d,2)*wg(:,:,2)
+          wf(:,:,d) = (elem(ie)%D(:,:,d,1)*wg(:,:,1) + elem(ie)%D(:,:,d,2)*wg(:,:,2))/ &
+               sqrt(elem(ie)%metdet)
        end do
        u_g(:,:,k) = wf(:,:,1)
        v_g(:,:,k) = wf(:,:,2)
