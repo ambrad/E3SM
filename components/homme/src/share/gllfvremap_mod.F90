@@ -789,11 +789,6 @@ contains
 
              det = wrk(1,1)*wrk(2,2) - wrk(1,2)*wrk(2,1)
 
-             ! fv_metdet was obtained by remapping metdet. Make det(D)
-             ! = fv_metdet.
-             wrk = wrk*sqrt(gfr%fv_metdet(i,j,ie)/abs(det))
-             det = gfr%fv_metdet(i,j,ie)
-
              gfr%D_f(i,j,:,:,ie) = wrk
 
              gfr%Dinv_f(i,j,1,1,ie) =  wrk(2,2)/det
