@@ -90,6 +90,7 @@ module gllfvremap_mod
 contains
 
   subroutine gfr_init(par, elem, nphys, check)
+    use kinds, only: iulog
     use dimensions_mod, only: nlev
     use parallel_mod, only: parallel_t, abortmp
 
@@ -104,7 +105,7 @@ contains
     if (present(check)) gfr%check = check
 
     gfr%tolfac = one
-    if (par%masterproc) print '(a,i3,a,l2)', 'gfr> init nphys', nphys, ' check', gfr%check
+    if (par%masterproc) write(iulog,  '(a,i3,a,l2)') 'gfr> init nphys', nphys, ' check', gfr%check
 
     if (nphys > np) then
        ! The FV -> GLL map is defined only if nphys <= np. If we ever are
@@ -316,6 +317,7 @@ contains
   end subroutine gfr_dyn_to_fv_phys_topo
 
   subroutine gfr_fv_phys_to_dyn_topo_hybrid(hybrid, elem, nets, nete, phis)
+    use kinds, only: iulog
     use edge_mod, only: edgeVpack_nlyr, edgeVunpack_nlyr, edge_g
     use bndry_mod, only: bndry_exchangeV
 
@@ -353,7 +355,7 @@ contains
             gfr%qmax(1,1,ie), ones(:,:,1), elem(ie)%state%phis)
        if (gfr%check) then
           if (gfr%qmin(1,1,ie) < zero) then
-             print *, 'gfr> topo min:', hybrid%par%rank, hybrid%ithr, ie, gfr%qmin(1,1,ie)
+             write(iulog,*) 'gfr> topo min:', hybrid%par%rank, hybrid%ithr, ie, gfr%qmin(1,1,ie)
           end if
           wr(:,:,2) = elem(ie)%state%phis
           call check_f2g_mixing_ratio(hybrid, ie, 1, elem, gfr%qmin(:1,1,ie), &
@@ -1225,6 +1227,7 @@ contains
   end subroutine set_ps_Q
 
   subroutine check_g2f_mixing_ratio(hybrid, ie, qi, elem, dp, dp_fv, q_g, q_f)
+    use kinds, only: iulog
     type (hybrid_t), intent(in) :: hybrid
     integer, intent(in) :: ie, qi
     type (element_t), intent(in) :: elem(:)
@@ -1243,17 +1246,18 @@ contains
        mass_f = sum(gfr%w_ff(:nf,:nf)*gfr%fv_metdet(:,:,ie)*dp_fv(:nf,:nf,k)*q_f(:nf,:nf,k))
        mass_g = sum(elem(ie)%spheremp*dp(:,:,k)*q_g(:,:,k))
        if (qmin_f < qmin_g - 10*eps*den .or. qmax_f > qmax_g + 10*eps*den) then
-          print *, 'gfr> g2f mixing ratio limits:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
+          write(iulog,*) 'gfr> g2f mixing ratio limits:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
                qmin_g, qmin_f-qmin_g, qmax_f-qmax_g, qmax_g, mass_f, mass_g
        end if
        if (abs(mass_f - mass_g) > gfr%tolfac*20*eps*max(mass_f, mass_g)) then
-          print *, 'gfr> g2f mixing ratio mass:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
+          write(iulog,*) 'gfr> g2f mixing ratio mass:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
                qmin_g, qmax_g, mass_f, mass_g
        end if
     end do
   end subroutine check_g2f_mixing_ratio
 
   subroutine check_f2g_mixing_ratio(hybrid, ie, qi, elem, qmin, qmax, dp, q0_g, q1_g)
+    use kinds, only: iulog
     type (hybrid_t), intent(in) :: hybrid
     integer, intent(in) :: ie, qi
     type (element_t), intent(in) :: elem(:)
@@ -1270,14 +1274,14 @@ contains
        qmax_g = maxval(q1_g(:,:,k))
        den = gfr%tolfac*max(1e-10, maxval(abs(q0_g(:,:,k))))
        if (qmin_g < qmin_f - 50*eps*den .or. qmax_g > qmax_f + 50*eps*den) then
-          print *, 'gfr> f2g mixing ratio limits:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
+          write(iulog,*) 'gfr> f2g mixing ratio limits:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
                qmin_f, qmin_g-qmin_f, qmax_g-qmax_f, qmax_f, mass0, mass1
        end if
        mass0 = sum(elem(ie)%spheremp*dp(:,:,k)*q0_g(:,:,k))
        mass1 = sum(elem(ie)%spheremp*dp(:,:,k)*q1_g(:,:,k))
        den = sum(elem(ie)%spheremp*dp(:,:,k)*maxval(abs(q0_g(:,:,k))))
        if (abs(mass1 - mass0) > gfr%tolfac*20*eps*den) then
-          print *, 'gfr> f2g mixing ratio mass:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
+          write(iulog,*) 'gfr> f2g mixing ratio mass:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
                qmin_f, qmin_g, qmax_g, qmax_f, mass0, mass1
        end if
     end do
@@ -1285,6 +1289,8 @@ contains
   
   subroutine check_nonnegative(elem, nets, nete)
     ! Check gfr_g_make_nonnegative.
+
+    use kinds, only: iulog
 
     type (element_t), intent(inout) :: elem(:)
     integer, intent(in) :: nets, nete
@@ -1305,12 +1311,13 @@ contains
        mass1 = sum(elem(ie)%spheremp*wrk3(:,:,1))
        rd = (mass1 - mass0)/mass0
        if (rd /= rd .or. rd > 20*eps .or. any(wrk3(:,:,1) < zero)) then
-          print *, 'gfr> nonnegative', ie, rd, mass0, mass1, wrk3(:,:,1), 'ERROR'
+          write(iulog,*) 'gfr> nonnegative', ie, rd, mass0, mass1, wrk3(:,:,1), 'ERROR'
        end if
     end do
   end subroutine check_nonnegative
 
   subroutine check(par, dom_mt, gfr, elem, verbose)
+    use kinds, only: iulog
     use parallel_mod, only: parallel_t
     use dimensions_mod, only: nlev, qsize
     use domain_mod, only: domain1d_t
@@ -1345,15 +1352,15 @@ contains
     call gfr_hybrid_create(par, dom_mt, hybrid, nets, nete)
 
     if (hybrid%masterthread) then
-       print '(a,i3,a,i3)', 'gfr> npi', gfr%npi, ' nphys', nf
+       write(iulog,  '(a,i3,a,i3)'), 'gfr> npi', gfr%npi, ' nphys', nf
        if (verbose) then
-          print *, 'gfr> w_ff', nf, gfr%w_ff(:nf, :nf)
-          print *, 'gfr> w_gg', np, gfr%w_gg(:np, :np)
-          print *, 'gfr> w_sgsg', gfr%npi, gfr%w_sgsg(:gfr%npi, :gfr%npi)
-          print *, 'gfr> M_gf', np, nf, gfr%M_gf(:np, :np, :nf, :nf)
-          print *, 'gfr> M_sgf', gfr%npi, nf, gfr%M_sgf(:gfr%npi, :gfr%npi, :nf, :nf)
-          print *, 'gfr> interp', gfr%npi, np, gfr%interp(:gfr%npi, :gfr%npi, :np, :np)
-          print *, 'gfr> f2g_remapd', np, nf, gfr%f2g_remapd(:nf,:nf,:,:)
+          write(iulog,*) 'gfr> w_ff', nf, gfr%w_ff(:nf, :nf)
+          write(iulog,*) 'gfr> w_gg', np, gfr%w_gg(:np, :np)
+          write(iulog,*) 'gfr> w_sgsg', gfr%npi, gfr%w_sgsg(:gfr%npi, :gfr%npi)
+          write(iulog,*) 'gfr> M_gf', np, nf, gfr%M_gf(:np, :np, :nf, :nf)
+          write(iulog,*) 'gfr> M_sgf', gfr%npi, nf, gfr%M_sgf(:gfr%npi, :gfr%npi, :nf, :nf)
+          write(iulog,*) 'gfr> interp', gfr%npi, np, gfr%interp(:gfr%npi, :gfr%npi, :np, :np)
+          write(iulog,*) 'gfr> f2g_remapd', np, nf, gfr%f2g_remapd(:nf,:nf,:,:)
        end if
     end if
 
@@ -1363,7 +1370,7 @@ contains
        a = sum(elem(ie)%metdet * gfr%w_gg)
        b = sum(gfr%fv_metdet(:,:,ie) * gfr%w_ff(:nf, :nf))
        rd = abs(b - a)/abs(a)
-       if (rd /= rd .or. rd > 10*eps) print *, 'gfr> area', ie, a, b, rd
+       if (rd /= rd .or. rd > 10*eps) write(iulog,*) 'gfr> area', ie, a, b, rd
 
        ! Check that FV -> GLL -> FV recovers the original FV values exactly
        ! (with no DSS and no limiter).
@@ -1380,7 +1387,7 @@ contains
        a = sum(wrk(:nf,:nf)*abs(f1(:nf,:nf) - f0(:nf,:nf)))
        b = sum(wrk(:nf,:nf)*abs(f0(:nf,:nf)))
        rd = a/b
-       if (rd /= rd .or. rd > 10*eps) print *, 'gfr> recover', ie, a, b, rd, gfr%fv_metdet(:,:,ie)
+       if (rd /= rd .or. rd > 10*eps) write(iulog,*) 'gfr> recover', ie, a, b, rd, gfr%fv_metdet(:,:,ie)
     end do
     call check_nonnegative(elem, nets, nete)
 
@@ -1474,16 +1481,16 @@ contains
        qmin1 = ParallelMin(qmin1, hybrid)
        qmax1 = ParallelMax(qmax1, hybrid)
        if (hybrid%masterthread) then
-          print '(a,i3)', 'gfr> limiter', ilimit
+          write(iulog, '(a,i3)') 'gfr> limiter', ilimit
           rd = sqrt(global_shared_sum(1)/global_shared_sum(2))
-          print '(a,es12.4)', 'gfr> l2  ', rd
+          write(iulog, '(a,es12.4)') 'gfr> l2  ', rd
           rd = abs(global_shared_sum(4) - global_shared_sum(3))/global_shared_sum(3)
           msg = ''
           if (rd > 10*eps) msg = ' ERROR'
-          print '(a,es11.3,a8)', 'gfr> mass', rd, msg
+          write(iulog, '(a,es11.3,a8)') 'gfr> mass', rd, msg
           msg = ''
           if (limit .and. (qmin < qmin1 - 5*eps .or. qmax > qmax1 + 5*eps)) msg = ' ERROR'
-          print '(a,es11.3,es11.3,a8)', 'gfr> limit', min(zero, qmin - qmin1), &
+          write(iulog, '(a,es11.3,es11.3,a8)') 'gfr> limit', min(zero, qmin - qmin1), &
                max(zero, qmax - qmax1), msg
        end if
     end do

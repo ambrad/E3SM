@@ -156,6 +156,7 @@ contains
   end subroutine set_gll_state
 
   subroutine run(hybrid, hvcoord, elem, nets, nete, nphys, tendency)
+    use kinds, only: iulog
     use hybvcoord_mod, only: hvcoord_t
     use dimensions_mod, only: nlev, qsize
     use coordinate_systems_mod, only: cartesian3D_t, change_coordinates
@@ -240,7 +241,7 @@ contains
     call applyCAMforcing_dynamics(elem, hvcoord, nt2, one, nets, nete)
 
     ! Test GLL state nt2 vs the original state nt1.
-    if (hybrid%masterthread) print '(a,l2)', 'gfrt> tendency', tendency
+    if (hybrid%masterthread) write(iulog, '(a,l2)') 'gfrt> tendency', tendency
     tend = zero
     mass1 = zero; mass2 = zero
     qmin1 = one; qmax1 = -one
@@ -288,7 +289,7 @@ contains
           rd = sqrt(global_shared_sum(1)/global_shared_sum(2))
           msg = ''
           if (.not. tendency .and. rd > 5*eps) msg = ' ERROR'
-          print '(a,i3,a,i3,es12.4,a8)', 'gfrt> test1 q l2', q, ' of', qsize, rd, msg
+          write(iulog, '(a,i3,a,i3,es12.4,a8)') 'gfrt> test1 q l2', q, ' of', qsize, rd, msg
        end if
     end do
 
@@ -311,7 +312,7 @@ contains
     call wrap_repro_sum(nvars=2, comm=hybrid%par%comm)
     if (hybrid%masterthread) then
        rd = sqrt(global_shared_sum(1)/global_shared_sum(2))
-       print '(a,es12.4)', 'gfrt> test2 topo l2', rd
+       write(iulog, '(a,es12.4)') 'gfrt> test2 topo l2', rd
     end if
 
     if (.not. tendency) return
@@ -403,17 +404,17 @@ contains
        qmax2 = ParallelMax(qmax2, hybrid)
        if (hybrid%masterthread) then
           rd = sqrt(global_shared_sum(1)/global_shared_sum(2))
-          print '(a,i3,a,i3,es12.4)', 'gfrt> test3 q l2', q, ' of', qsize, rd
+          write(iulog, '(a,i3,a,i3,es12.4)') 'gfrt> test3 q l2', q, ' of', qsize, rd
           b = max(abs(qmin1(q)), abs(qmax1(q)))
           if (q <= qsize .and. qmin2 < qmin1(q) - 5*eps*b .or. &
                qmax2 > qmax1(q) + 5*eps*b) then
-             print '(a,i3,es12.4,es12.4,es12.4,es12.4)', 'gfrt> test3 q extrema', &
+             write(iulog, '(a,i3,es12.4,es12.4,es12.4,es12.4)') 'gfrt> test3 q extrema', &
                   q, qmin1(q), qmin2-qmin1(q), qmax2-qmax1(q), qmax1(q)
           end if
           a = global_shared_sum(3)
           b = global_shared_sum(4)
           if (abs(b - a) > 5*eps*abs(a)) then
-             print '(a,i3,es12.4,es12.4,es12.4)', 'gfrt> test3 q mass', &
+             write(iulog, '(a,i3,es12.4,es12.4,es12.4)') 'gfrt> test3 q mass', &
                   q, a, b, abs(b - a)/abs(a)
           end if
        end if
