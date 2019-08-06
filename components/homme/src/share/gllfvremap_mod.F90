@@ -182,7 +182,7 @@ contains
        T(:ncol,:,ie) = reshape(wr1(:nf,:nf,:), (/ncol,nlev/))
 
 #if 1
-       call gfr_g2f_vector(ie, elem, & !dp, dp_fv, &
+       call gfr_g2f_vector(ie, elem, &
             elem(ie)%state%v(:,:,1,:,nt), elem(ie)%state%v(:,:,2,:,nt), &
             wr1, wr2)
 #else
@@ -237,7 +237,7 @@ contains
        wr1(:nf,:nf,:) = reshape(uv(:ncol,1,:,ie), (/nf,nf,nlev/))
        wr2(:nf,:nf,:) = reshape(uv(:ncol,2,:,ie), (/nf,nf,nlev/))
 #if 1
-       call gfr_f2g_vector(ie, elem, & !dp_fv, dp,
+       call gfr_f2g_vector(ie, elem, &
             wr1, wr2, elem(ie)%derived%FM(:,:,1,:), elem(ie)%derived%FM(:,:,2,:))
 #else
        call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, wr1, elem(ie)%derived%FM(:,:,1,:))
@@ -855,7 +855,7 @@ contains
        do d = 1,2
           call gfr_g2f_remapd(gfr, ones, ones, wg(:,:,d), wf(:,:,d))
        end do
-       ! FV ref -> sphere, and again don't change the area.
+       ! FV ref -> sphere
        do d = 1,2
           wg(:nf,:nf,d) = &
                gfr%D_f(:nf,:nf,d,1,ie)*wf(:nf,:nf,1) + &
@@ -1376,6 +1376,18 @@ contains
        b = sum(gfr%fv_metdet(:,:,ie) * gfr%w_ff(:nf, :nf))
        rd = abs(b - a)/abs(a)
        if (rd /= rd .or. rd > 10*eps) write(iulog,*) 'gfr> area', ie, a, b, rd
+
+       ! Check FV geometry.
+       f0(:nf,:nf) = gfr%D_f(:,:,1,1,ie)*gfr%D_f(:,:,2,2,ie) - &
+            gfr%D_f(:,:,1,2,ie)*gfr%D_f(:,:,2,1,ie)
+       rd = maxval(abs(f0(:nf,:nf)) - gfr%fv_metdet(:,:,ie))/ &
+            maxval(gfr%fv_metdet(:,:,ie))
+       if (rd > 10*eps) write(iulog,*) 'gfr> D', ie, rd
+       f0(:nf,:nf) = gfr%Dinv_f(:,:,1,1,ie)*gfr%Dinv_f(:,:,2,2,ie) - &
+            gfr%Dinv_f(:,:,1,2,ie)*gfr%Dinv_f(:,:,2,1,ie)
+       rd = maxval(abs(f0(:nf,:nf)) - one/gfr%fv_metdet(:,:,ie))/ &
+            maxval(one/gfr%fv_metdet(:,:,ie))
+       if (rd > 10*eps) write(iulog,*) 'gfr> Dinv', ie, rd
 
        ! Check that FV -> GLL -> FV recovers the original FV values exactly
        ! (with no DSS and no limiter).
