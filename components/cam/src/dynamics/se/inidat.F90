@@ -457,6 +457,7 @@ contains
       fieldname = 'PHIS'
       tmp(:,1,:) = 0.0_r8
       if (fv_nphys > 0) then
+         ! Copy phis field to GLL grid
          if (se_fv_phys_remap_alg == 0) then
             call infld(fieldname, ncid_topo, 'ncol', 1, nphys_sq, &
                  1, nelemd, phys_tmp, found, gridname='physgrid_d')
