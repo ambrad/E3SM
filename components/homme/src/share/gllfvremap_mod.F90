@@ -341,9 +341,6 @@ contains
        elem(ie)%state%phis = wr(:,:,2)
     end do
 
-    ! ne4pg2_ne4pg2 is failing when I expand the limiter bounds. For
-    ! now, disable expansion. This makes the topo map just first-order
-    ! accurate.
     if (hybrid%par%dynproc) then
        call gfr_f2g_mixing_ratios_he(hybrid, nets, nete, gfr%qmin(:,:,nets:nete), &
             gfr%qmax(:,:,nets:nete))
