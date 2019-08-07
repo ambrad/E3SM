@@ -996,7 +996,7 @@ contains
 
   subroutine gfr_f2g_mixing_ratios_he(hybrid, nets, nete, qmin, qmax)
     use viscosity_mod, only: neighbor_minmax
-    use prim_advection_base, only: edgeAdvQminmax !TODO rm kludge
+    use prim_advection_base, only: edgeAdvQminmax
 
     type (hybrid_t), intent(in) :: hybrid
     integer, intent(in) :: nets, nete
@@ -1015,9 +1015,6 @@ contains
     integer, intent(in) :: nets, nete
 
     integer :: ie, q, k
-
-    !kludge 2 HEs until i get edge_g alloc'ed with the right size
-    !TODO fix this kludge
 
     do ie = nets, nete
        do q = 1,qsize
@@ -1455,7 +1452,7 @@ contains
              call neighbor_minmax(hybrid, edgeAdvQminmax, nets, nete, qmins, qmaxs)
           endif
           ! 2c. Remap
-          do ie = nets, nete !TODO move to own routine
+          do ie = nets, nete
              wrk = elem(ie)%state%Q(:,:,1,1)
              call gfr_f2g_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,:,ie), &
                   Qdp_fv(:,:,ie), elem(ie)%state%Q(:,:,1,1))
