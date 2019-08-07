@@ -9,8 +9,6 @@
 ! - topo roughness
 ! - ftype other than 2,4
 ! - np4-np2 instead of np4-pg1
-! - halo exchange buffers
-! - impl original pg2 to compare
 
 module gllfvremap_test_mod
   ! Test gllfvremap's main API.

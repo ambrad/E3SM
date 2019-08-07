@@ -1168,12 +1168,10 @@ contains
 
     sumc = sum(c)
     mass = sum(c*x)
-#if 0
-    ! In the case of an infeasible problem< prefer to conserve mass
+    ! In the case of an infeasible problem, prefer to conserve mass
     ! and violate a bound.
     if (mass < qmin*sumc) qmin = mass / sumc
     if (mass > qmax*sumc) qmax = mass / sumc
-#endif
 
     addmass = zero
 
