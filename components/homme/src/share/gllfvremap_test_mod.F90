@@ -179,7 +179,7 @@ contains
 
     type (cartesian3D_t) :: p
     real(kind=real_kind) :: wr(np,np,nlev), tend(np,np,nlev), f, a, b, rd, &
-         qmin1(qsize), qmax1(qsize), qmin2, qmax2, mass1, mass2, &
+         qmin1(qsize+3), qmax1(qsize+3), qmin2, qmax2, mass1, mass2, &
          wr1(np,np,nlev), wr2(np,np,nlev)
     integer :: nf, ncol, nt1, nt2, ie, i, j, k, d, q, qi, tl, col
     logical :: domass
