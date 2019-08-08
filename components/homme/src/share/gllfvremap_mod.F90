@@ -159,8 +159,10 @@ contains
          uv(:,:,:,:), omega_p(:,:,:), q(:,:,:,:)
 
     real(kind=real_kind), dimension(np,np,nlev) :: dp, dp_fv, wr1, wr2, p, p_fv
+    real(kind=real_kind) :: qmin, qmax, ones(np,np)
     integer :: ie, nf, ncol, qi, qsize
 
+    ones = one
     nf = gfr%nphys
     ncol = nf*nf
 
@@ -173,6 +175,10 @@ contains
 
        wr2(:,:,1) = elem(ie)%state%phis(:,:)
        call gfr_g2f_scalar(gfr, ie, elem(ie)%metdet, wr2(:,:,:1), wr1(:,:,:1))
+       qmin = minval(wr2(:,:,1))
+       qmax = maxval(wr2(:,:,1))
+       call limiter_clip_and_sum(nf, gfr%w_ff(:nf,:nf)*gfr%fv_metdet(:nf,:nf,ie), &
+            qmin, qmax, ones, wr1(:,:,1))
        phis(:ncol,ie) = reshape(wr1(:nf,:nf,1), (/ncol/))
 
        call calc_dp(hvcoord, elem(ie)%state%ps_v(:,:,nt), dp)
