@@ -4,13 +4,9 @@
 
 !todo
 ! - test with HORIZ_OPENMP off
-! - maybe switch to npi = max(2,nphys)
-! - can vector_dp routines be conservative in some sense?
 ! - topo roughness
 ! - ftype other than 2,4
 ! - np4-np2 instead of np4-pg1
-! - halo exchange buffers
-! - impl original pg2 to compare
 
 module gllfvremap_test_mod
   ! Test gllfvremap's main API.
@@ -169,7 +165,7 @@ contains
     use parallel_mod, only: global_shared_buf, global_shared_sum
     use global_norms_mod, only: wrap_repro_sum
     use reduction_mod, only: ParallelMin, ParallelMax
-    use physical_constants, only: g
+    use physical_constants, only: g, p0, kappa
     use gllfvremap_mod
 
     type (hybrid_t), intent(in) :: hybrid
@@ -181,7 +177,7 @@ contains
 
     type (cartesian3D_t) :: p
     real(kind=real_kind) :: wr(np,np,nlev), tend(np,np,nlev), f, a, b, rd, &
-         qmin1(qsize), qmax1(qsize), qmin2, qmax2, mass1, mass2, &
+         qmin1(qsize+3), qmax1(qsize+3), qmin2, qmax2, mass1, mass2, &
          wr1(np,np,nlev), wr2(np,np,nlev)
     integer :: nf, ncol, nt1, nt2, ie, i, j, k, d, q, qi, tl, col
     logical :: domass
@@ -381,11 +377,13 @@ contains
                      sum(wr*elem(ie)%state%v(:,:,qi,:,nt1)**2)
              else
                 call get_temperature(elem(ie), wr1, hvcoord, nt1)
-                global_shared_buf(ie,3) = sum(wr(:,:,1)*elem(ie)%state%dp3d(:,:,1,nt1)* &
-                     elem(ie)%derived%FT(:,:,1))
-                global_shared_buf(ie,4) = sum(wr(:,:,1)*elem(ie)%state%dp3d(:,:,1,nt1)*wr1(:,:,1))
                 global_shared_buf(ie,1) = sum(wr*(elem(ie)%derived%FT - wr1)**2)
                 global_shared_buf(ie,2) = sum(wr*wr1**2)                
+                wr1 = wr1*(elem(ie)%state%dp3d(:,:,:,nt1)/p0)**kappa
+                global_shared_buf(ie,4) = sum(wr(:,:,1)*elem(ie)%state%dp3d(:,:,1,nt1)*wr1(:,:,1))
+                wr1 = elem(ie)%derived%FT
+                wr1 = wr1*(elem(ie)%state%dp3d(:,:,:,nt1)/p0)**kappa
+                global_shared_buf(ie,3) = sum(wr(:,:,1)*elem(ie)%state%dp3d(:,:,1,nt1)*wr1(:,:,1))
              end if
           else
              ! Extrema in level 1.
