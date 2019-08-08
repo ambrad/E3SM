@@ -119,7 +119,7 @@ contains
     end if
 
     gfr%nphys = nphys
-    gfr%npi = max(3, nphys)
+    gfr%npi = max(2, nphys)
 
     call gfr_init_w_gg(np, gfr%w_gg)
     call gfr_init_w_gg(gfr%npi, gfr%w_sgsg)
@@ -607,6 +607,9 @@ contains
     ! Compute the QR factorization sqrt(inv(M_gg)) M_gf = Q R so that S =
     ! R'R. In this module, we can take M_gg = diag(w_gg) and M_ff = diag(w_ff)
     ! with no loss of accuracy.
+    !   If nphys = np, then the problem reduces to
+    !     M_gf' g = M_ff f,
+    ! but the same linear algebra can be used.
     !
     !assume nphys <= np
 
