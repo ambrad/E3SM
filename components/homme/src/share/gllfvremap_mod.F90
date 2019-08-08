@@ -99,7 +99,7 @@ contains
     integer, intent(in) :: nphys
     logical, intent(in), optional :: check
 
-    real(real_kind) :: R(npsq,nphys_max*nphys_max)
+    real(real_kind) :: R(npsq,nphys_max*nphys_max), tau(npsq)
 
     gfr%check = .false.
     if (present(check)) gfr%check = check
@@ -126,9 +126,9 @@ contains
     call gfr_init_w_ff(nphys, gfr%w_ff)
     call gfr_init_M_gf(np, nphys, gfr%M_gf)
     call gfr_init_M_gf(gfr%npi, nphys, gfr%M_sgf)
-    call gfr_init_R(gfr%npi, nphys, gfr%w_sgsg, gfr%M_sgf, R)
+    call gfr_init_R(gfr%npi, nphys, gfr%w_sgsg, gfr%M_sgf, R, tau)
     call gfr_init_interp_matrix(gfr%npi, gfr%interp)
-    call gfr_init_f2g_remapd(gfr, R)
+    call gfr_init_f2g_remapd(gfr, R, tau)
 
     allocate(gfr%fv_metdet(nphys,nphys,nelemd), &
          gfr%D_f(nphys,nphys,2,2,nelemd), gfr%Dinv_f(nphys,nphys,2,2,nelemd), &
@@ -593,7 +593,7 @@ contains
     call gll_cleanup(gll)
   end subroutine gfr_init_M_gf
 
-  subroutine gfr_init_R(np, nphys, w_gg, M_gf, R)
+  subroutine gfr_init_R(np, nphys, w_gg, M_gf, R, tau)
     ! We want to solve
     !     min_g 1/2 g'M_gg g - g' M_gf f
     !      st   M_gf' g = M_ff f,
@@ -607,27 +607,37 @@ contains
     ! Compute the QR factorization sqrt(inv(M_gg)) M_gf = Q R so that S =
     ! R'R. In this module, we can take M_gg = diag(w_gg) and M_ff = diag(w_ff)
     ! with no loss of accuracy.
+    !   If nphys = np, then the problem reduces to
+    !     M_gf' g = M_ff f.
+    ! M_gf is symmetric. We could use the same computations as above
+    ! or, to gain a bit more accuracy, compute the simpler
+    !     M_gf = Q R
+    ! and later solve
+    !     R'Q' g = M_ff f.
+    !   In either case, all of this is one-time initialization; during
+    ! time stepping, just a matvec is computed.
     !
     !assume nphys <= np
 
     integer, intent(in) :: np, nphys
     real(kind=real_kind), intent(in) :: w_gg(:,:), M_gf(:,:,:,:)
-    real(kind=real_kind), intent(out) :: R(:,:)
+    real(kind=real_kind), intent(out) :: R(:,:), tau(:)
 
-    real(kind=real_kind) :: wrk1(np*np*nphys*nphys), wrk2(np*np*nphys*nphys)
+    real(kind=real_kind) :: wrk(np*np*nphys*nphys), v
     integer :: gi, gj, fi, fj, npsq, info
 
     do fj = 1,nphys
        do fi = 1,nphys
           do gi = 1,np
              do gj = 1,np
-                R(np*(gi-1) + gj, nphys*(fi-1) + fj) = &
-                     M_gf(gi,gj,fi,fj)/sqrt(w_gg(gi,gj))
+                v = M_gf(gi,gj,fi,fj)
+                if (nphys < np) v = v/sqrt(w_gg(gi,gj))
+                R(np*(gi-1) + gj, nphys*(fi-1) + fj) = v
              end do
           end do
        end do
     end do
-    call dgeqrf(np*np, nphys*nphys, R, size(R,1), wrk1, wrk2, np*np*nphys*nphys, info)
+    call dgeqrf(np*np, nphys*nphys, R, size(R,1), tau, wrk, np*np*nphys*nphys, info)
   end subroutine gfr_init_R
 
   subroutine gfr_init_interp_matrix(npsrc, interp)
@@ -659,11 +669,11 @@ contains
     call gll_cleanup(gllt)
   end subroutine gfr_init_interp_matrix
 
-  subroutine gfr_init_f2g_remapd(gfr, R)
+  subroutine gfr_init_f2g_remapd(gfr, R, tau)
     !assume nphys <= np
 
     type (GllFvRemap_t), intent(inout) :: gfr
-    real(kind=real_kind), intent(in) :: R(:,:)
+    real(kind=real_kind), intent(in) :: R(:,:), tau(:)
 
     integer :: nf, fi, fj
     real(kind=real_kind) :: f(np,np), g(np,np)
@@ -675,23 +685,22 @@ contains
     do fi = 1,nf
        do fj = 1,nf
           f(fi,fj) = one
-          call gfr_f2g_remapd_op(gfr, R, f, g)
+          call gfr_f2g_remapd_op(gfr, R, tau, f, g)
           gfr%f2g_remapd(fi,fj,:,:) = g
           f(fi,fj) = zero
        end do
     end do
   end subroutine gfr_init_f2g_remapd
 
-  subroutine gfr_f2g_remapd_op(gfr, R, f, g)
+  subroutine gfr_f2g_remapd_op(gfr, R, tau, f, g)
     !assume nphys <= np
 
     type (GllFvRemap_t), intent(in) :: gfr
-    real(kind=real_kind), intent(in) :: R(:,:)
-    real(kind=real_kind), intent(in) :: f(:,:)
+    real(kind=real_kind), intent(in) :: R(:,:), tau(:), f(:,:)
     real(kind=real_kind), intent(out) :: g(:,:)
 
     integer :: nf, nf2, npi, np2, gi, gj, fi, fj, info
-    real(kind=real_kind) :: accum, wrk(gfr%nphys,gfr%nphys), x(np,np)
+    real(kind=real_kind) :: accum, wrk(gfr%nphys,gfr%nphys), x(np,np), wr(np*np)
 
     nf = gfr%nphys
     nf2 = nf*nf
@@ -700,27 +709,37 @@ contains
 
     ! Solve the constrained projection described in gfr_init_R:
     !     g = inv(M_sgsg) M_sgf inv(S) M_ff f
-    wrk(:nf,:nf) = gfr%w_ff(:nf,:nf)*f(:nf,:nf)
-    call dtrtrs('u', 't', 'n', nf2, 1, R, size(R,1), wrk, np2, info)
-    call dtrtrs('u', 'n', 'n', nf2, 1, R, size(R,1), wrk, np2, info)
-    g(:npi,:npi) = zero
-    do fj = 1,nf
-       do fi = 1,nf
-          do gj = 1,npi
-             do gi = 1,npi
-                g(gi,gj) = g(gi,gj) + gfr%M_sgf(gi,gj,fi,fj)*wrk(fi,fj)
+    wrk = gfr%w_ff(:nf,:nf)*f(:nf,:nf)
+    if (nf == npi) then
+       call dtrsm('l', 'u', 't', 'n', nf2, 1, one, R, size(R,1), wrk, nf2)
+       call dormqr('l', 'n', nf2, 1, nf2, R, size(R,1), tau, wrk, nf2, wr, np2, info)
+       g(:npi,:npi) =  wrk
+    else
+       call dtrtrs('u', 't', 'n', nf2, 1, R, size(R,1), wrk, nf2, info)
+       call dtrtrs('u', 'n', 'n', nf2, 1, R, size(R,1), wrk, nf2, info)
+       g(:npi,:npi) = zero
+       do fj = 1,nf
+          do fi = 1,nf
+             do gj = 1,npi
+                do gi = 1,npi
+                   g(gi,gj) = g(gi,gj) + gfr%M_sgf(gi,gj,fi,fj)*wrk(fi,fj)
+                end do
              end do
           end do
        end do
-    end do
+    end if
     if (npi < np) then
-       ! Finish the projection:
-       !     wrk = inv(M_sgsg) g
-       do gj = 1,npi
-          do gi = 1,npi
-             x(gi,gj) = g(gi,gj)/gfr%w_sgsg(gi,gj)
+       if (nf == npi) then
+          x(:nf,:nf) = g(:nf,:nf)
+       else
+          ! Finish the projection:
+          !     wrk = inv(M_sgsg) g
+          do gj = 1,npi
+             do gi = 1,npi
+                x(gi,gj) = g(gi,gj)/gfr%w_sgsg(gi,gj)
+             end do
           end do
-       end do 
+       end if
        ! Interpolate from npi to np; if npi = np, this is just the Id matrix.
        do fj = 1,np
           do fi = 1,np
@@ -733,7 +752,7 @@ contains
              g(fi,fj) = accum
           end do
        end do
-    else
+    elseif (nf < npi) then
        ! Finish the projection.
        do gj = 1,np
           do gi = 1,np
@@ -1409,7 +1428,8 @@ contains
        a = sum(wrk(:nf,:nf)*abs(f1(:nf,:nf) - f0(:nf,:nf)))
        b = sum(wrk(:nf,:nf)*abs(f0(:nf,:nf)))
        rd = a/b
-       if (rd /= rd .or. rd > 10*eps) write(iulog,*) 'gfr> recover', ie, a, b, rd, gfr%fv_metdet(:,:,ie)
+       if (rd /= rd .or. rd > 10*eps) &
+            write(iulog,*) 'gfr> recover', ie, a, b, rd, gfr%fv_metdet(:,:,ie)
     end do
     call check_nonnegative(elem, nets, nete)
 
