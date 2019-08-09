@@ -29,7 +29,7 @@ module gllfvremap_mod
   ! Data type and functions for high-order, shape-preserving FV <-> GLL remap.
   type, public :: GllFvRemap_t
      integer :: nphys, npi
-     logical :: check
+     logical :: check, have_fv_topo_file_phis
      real(kind=real_kind) :: tolfac ! for checking
      real(kind=real_kind) :: &
           ! Node or cell weights
@@ -50,7 +50,8 @@ module gllfvremap_mod
           D_f(:,:,:,:,:), &   ! (nphys,nphys,2,2,nelemd)
           ! Inverse of D_f
           Dinv_f(:,:,:,:,:), &
-          qmin(:,:,:), qmax(:,:,:)
+          qmin(:,:,:), qmax(:,:,:), &
+          phis(:,:)
      type (spherical_polar_t), allocatable :: &
           spherep_f(:,:,:) ! (nphys,nphys,nelemd)
   end type GllFvRemap_t
@@ -118,6 +119,7 @@ contains
        call abortmp('gllfvremap_mod: qsize must be >= 1')
     end if
 
+    gfr%have_fv_topo_file_phis = .false.
     gfr%nphys = nphys
     gfr%npi = max(2, nphys)
 
@@ -133,14 +135,15 @@ contains
     allocate(gfr%fv_metdet(nphys,nphys,nelemd), &
          gfr%D_f(nphys,nphys,2,2,nelemd), gfr%Dinv_f(nphys,nphys,2,2,nelemd), &
          gfr%qmin(nlev,max(1,qsize),nelemd), gfr%qmax(nlev,max(1,qsize),nelemd), &
-         gfr%spherep_f(nphys,nphys,nelemd))
+         gfr%phis(nphys*nphys,nelemd), gfr%spherep_f(nphys,nphys,nelemd))
     call gfr_init_fv_metdet(elem, gfr)
     call gfr_init_geometry(elem, gfr)
   end subroutine gfr_init
 
   subroutine gfr_finish()
     if (.not. allocated(gfr%fv_metdet)) return
-    deallocate(gfr%fv_metdet, gfr%D_f, gfr%Dinv_f, gfr%qmin, gfr%qmax, gfr%spherep_f)
+    deallocate(gfr%fv_metdet, gfr%D_f, gfr%Dinv_f, gfr%qmin, gfr%qmax, gfr%phis, &
+         gfr%spherep_f)
   end subroutine gfr_finish
 
   subroutine gfr_dyn_to_fv_phys_hybrid(hybrid, nt, hvcoord, elem, nets, nete, &
@@ -173,13 +176,17 @@ contains
             wr1(:,:,:1))
        ps(:ncol,ie) = reshape(wr1(:nf,:nf,1), (/ncol/))
 
-       wr2(:,:,1) = elem(ie)%state%phis(:,:)
-       call gfr_g2f_scalar(gfr, ie, elem(ie)%metdet, wr2(:,:,:1), wr1(:,:,:1))
-       qmin = minval(wr2(:,:,1))
-       qmax = maxval(wr2(:,:,1))
-       call limiter_clip_and_sum(nf, gfr%w_ff(:nf,:nf)*gfr%fv_metdet(:nf,:nf,ie), &
-            qmin, qmax, ones, wr1(:,:,1))
-       phis(:ncol,ie) = reshape(wr1(:nf,:nf,1), (/ncol/))
+       if (gfr%have_fv_topo_file_phis) then
+          phis(:ncol,ie) = gfr%phis(:,ie)
+       else
+          wr2(:,:,1) = elem(ie)%state%phis(:,:)
+          call gfr_g2f_scalar(gfr, ie, elem(ie)%metdet, wr2(:,:,:1), wr1(:,:,:1))
+          qmin = minval(wr2(:,:,1))
+          qmax = maxval(wr2(:,:,1))
+          call limiter_clip_and_sum(nf, gfr%w_ff(:nf,:nf)*gfr%fv_metdet(:nf,:nf,ie), &
+               qmin, qmax, ones, wr1(:,:,1))
+          phis(:ncol,ie) = reshape(wr1(:nf,:nf,1), (/ncol/))
+       end if
 
        call calc_dp(hvcoord, elem(ie)%state%ps_v(:,:,nt), dp)
        call gfr_g2f_scalar(gfr, ie, elem(ie)%metdet, dp, dp_fv)
@@ -336,8 +343,10 @@ contains
     ones = one
     nf = gfr%nphys
     ncol = nf*nf
+    gfr%have_fv_topo_file_phis = .true.
 
     do ie = nets,nete
+       gfr%phis(:,ie) = phis(:ncol,ie)
        wr(:nf,:nf,1) = reshape(phis(:ncol,ie), (/nf,nf/))
        gfr%qmin(:,:,ie) = minval(wr(:nf,:nf,1))
        gfr%qmax(:,:,ie) = maxval(wr(:nf,:nf,1))

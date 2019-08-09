@@ -3,6 +3,7 @@
 #endif
 
 !todo
+! - adjust FV cell center for v computation to match dyn_grid::fv_physgrid_init
 ! - test with HORIZ_OPENMP off
 ! - ftype other than 2,4
 ! - np4-np2 instead of np4-pg1
