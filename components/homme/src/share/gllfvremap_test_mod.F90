@@ -430,6 +430,8 @@ contains
   end subroutine run
 
   subroutine study_topo(hybrid, elem, nf)
+    use interpolate_driver_mod, only: pio_read_phis
+    use common_io_mod, only: infilenames
     use gllfvremap_mod
     use netcdf
 
@@ -437,48 +439,66 @@ contains
     type (element_t), intent(inout) :: elem(:)
     integer, intent(in) :: nf
 
-    integer :: s1, s2, ncid(2), i, var_id, ncol(2), ie
+    integer :: s1, s2, ncid, i, var_id, ncol, ie
+    real(kind=real_kind) :: a, b, rd
     real(kind=real_kind), allocatable :: buf(:), phis_gll(:,:,:), phis_fv(:,:), &
          phis_fv2dyn2fv(:,:), phis_dyn2fv(:,:)
 
-    if (hybrid%ithr > 0) return
+    infilenames(1) = 'USGS-gtopo30_ne30np4_16xdel2-PFC-consistentSGH.nc'
+    call pio_read_phis(elem, hybrid%par)
 
-    s1 = nf90_open('USGS-gtopo30_ne30np4_16xdel2-PFC-consistentSGH.nc', NF90_NOWRITE, ncid(1))
-    s2 = nf90_open('USGS-gtopo30_ne30pg2_16xdel2-PFC-consistentSGH.c20190417.nc', NF90_NOWRITE, ncid(2))
-    if (s1 /= nf90_NoErr .or. s2 /= nf90_NoErr) then
+    s1 = nf90_open('USGS-gtopo30_ne30pg2_16xdel2-PFC-consistentSGH.c20190417.nc', &
+         NF90_NOWRITE, ncid)
+    if (s1 /= nf90_NoErr) then
        print *, 'cannot open topo file'
        return
     end if
 
-    do i = 1,2
-       s1 = nf90_inq_dimid(ncid(i), 'ncol', var_id)
-       s1 = nf90_inquire_dimension(ncid(i), var_id, len=ncol(i))
-    end do
-    allocate(buf(ncol(1)), phis_gll(np,np,nelemd), phis_fv(nf*nf,nelemd), &
+    s1 = nf90_inq_dimid(ncid, 'ncol', var_id)
+    s1 = nf90_inquire_dimension(ncid, var_id, len=ncol)
+
+    allocate(buf(ncol), phis_gll(np,np,nelemd), phis_fv(nf*nf,nelemd), &
          phis_fv2dyn2fv(nf*nf,nelemd), phis_dyn2fv(nf*nf,nelemd))
 
-    s1 = nf90_inq_varid(ncid(1), "PHIS", var_id)
-    s1 = nf90_get_var(ncid(1), var_id, buf)
     do ie = 1,nelemd
-       i = np*np*(ie-1)
-       phis_gll(:,:,ie) = reshape(buf(i+1:i+np*np), (/np,np/))
-       elem(ie)%state%phis(:,:) = phis_gll(:,:,ie)
+       phis_gll(:,:,ie) = elem(ie)%state%phis
     end do
     call gfr_dyn_to_fv_phys_topo(hybrid, elem, 1, nelemd, phis_dyn2fv)
+    call gfr_fv_phys_to_dyn_topo(hybrid, elem, 1, nelemd, phis_dyn2fv)
+    a = zero
+    b = zero
+    do ie = 1,nelemd
+       a = a + sum(elem(ie)%spheremp*(elem(ie)%state%phis - phis_gll(:,:,ie))**2)
+       b = b + sum(elem(ie)%spheremp*phis_gll(:,:,ie)**2)
+    end do
+    if (hybrid%masterthread) then
+       rd = sqrt(a/b)
+       print *, 'topo> dyn2fv2dyn', sqrt(a), sqrt(b), rd
+    end if
 
-    s1 = nf90_inq_varid(ncid(2), "PHIS", var_id)
-    s1 = nf90_get_var(ncid(2), var_id, buf)
+    s1 = nf90_inq_varid(ncid, "PHIS", var_id)
+    s1 = nf90_get_var(ncid, var_id, buf)
     do ie = 1,nelemd
        i = nf*nf*(ie-1)
        phis_fv(:,ie) = buf(i+1:i+nf*nf)
     end do
     call gfr_fv_phys_to_dyn_topo(hybrid, elem, 1, nelemd, phis_fv)
     call gfr_dyn_to_fv_phys_topo(hybrid, elem, 1, nelemd, phis_fv2dyn2fv)
+    a = zero
+    b = zero
+    do ie = 1,nelemd
+       a = a + sum(gfr%w_ff(:nf,:nf)*gfr%fv_metdet(:,:,ie)* &
+            reshape((phis_fv2dyn2fv(:,ie) - phis_fv(:,ie))**2, (/nf,nf/)))
+       b = b + sum(gfr%w_ff(:nf,:nf)*gfr%fv_metdet(:,:,ie)* &
+            reshape(phis_fv(:,ie)**2, (/nf,nf/)))
+    end do
+    if (hybrid%masterthread) then
+       rd = sqrt(a/b)
+       print *, 'topo> fv2dyn2fv', sqrt(a), sqrt(b), rd
+    end if
 
     deallocate(buf, phis_gll, phis_fv, phis_fv2dyn2fv, phis_dyn2fv)
-    do i = 1,2
-       s1 = nf90_close(ncid(i))
-    end do
+    s1 = nf90_close(ncid)
   end subroutine study_topo
 
   subroutine gfr_check_api(hybrid, nets, nete, hvcoord, elem)
@@ -492,12 +512,12 @@ contains
 
     integer :: nphys
 
-    if (hybrid%hthreads > 1) then
-       print *, 'topo study requires just 1 thread'
+    if (hybrid%par%nprocs > 1 .or. hybrid%hthreads > 1) then
+       print *, 'topo study requires just 1 thread and 1 rank'
        call exit(-1)
     end if
     nphys = 2
-    call gfr_init(hybrid%par, elem, nphys, check=.true.)
+    call gfr_init(hybrid%par, elem, nphys)
     call init(nphys)
     call study_topo(hybrid, elem, nphys)
     return

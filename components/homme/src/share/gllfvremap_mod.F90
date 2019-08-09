@@ -55,7 +55,8 @@ module gllfvremap_mod
           spherep_f(:,:,:) ! (nphys,nphys,nelemd)
   end type GllFvRemap_t
 
-  type (GllFvRemap_t), private :: gfr
+  !type (GllFvRemap_t), private :: gfr
+  type (GllFvRemap_t), public :: gfr
 
   ! Main API.
   public :: &

@@ -188,7 +188,7 @@ contains
 
     if (hybrid%masterthread) &
          print *, 'ALARUM: COMPOSE test is disabled while GFR is deved in this branch'
-    call gfr_test(hybrid, dom_mt, hvcoord, deriv, elem)
+    !call gfr_test(hybrid, dom_mt, hvcoord, deriv, elem)
     call gfr_check_api(hybrid, nets, nete, hvcoord, elem)
     return
 
