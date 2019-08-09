@@ -481,6 +481,7 @@ contains
     do ie = 1,nelemd
        i = nf*nf*(ie-1)
        phis_fv(:,ie) = buf(i+1:i+nf*nf)
+       elem(ie)%state%phis = zero ! make sure old phis is definitely gone
     end do
     call gfr_fv_phys_to_dyn_topo(hybrid, elem, 1, nelemd, phis_fv)
     call gfr_dyn_to_fv_phys_topo(hybrid, elem, 1, nelemd, phis_fv2dyn2fv)
@@ -495,6 +496,30 @@ contains
     if (hybrid%masterthread) then
        rd = sqrt(a/b)
        print *, 'topo> fv2dyn2fv', sqrt(a), sqrt(b), rd
+    end if
+
+    a = zero
+    b = zero
+    do ie = 1,nelemd
+       a = a + sum(elem(ie)%spheremp*(elem(ie)%state%phis - phis_gll(:,:,ie))**2)
+       b = b + sum(elem(ie)%spheremp*phis_gll(:,:,ie)**2)
+    end do
+    if (hybrid%masterthread) then
+       rd = sqrt(a/b)
+       print *, 'topo> topo gll vs topo fv->dyn', sqrt(a), sqrt(b), rd
+    end if
+
+    a = zero
+    b = zero
+    do ie = 1,nelemd
+       a = a + sum(gfr%w_ff(:nf,:nf)*gfr%fv_metdet(:,:,ie)* &
+            reshape((phis_dyn2fv(:,ie) - phis_fv(:,ie))**2, (/nf,nf/)))
+       b = b + sum(gfr%w_ff(:nf,:nf)*gfr%fv_metdet(:,:,ie)* &
+            reshape(phis_fv(:,ie)**2, (/nf,nf/)))
+    end do
+    if (hybrid%masterthread) then
+       rd = sqrt(a/b)
+       print *, 'topo> topo fv vs topo dyn->fv', sqrt(a), sqrt(b), rd
     end if
 
     deallocate(buf, phis_gll, phis_fv, phis_fv2dyn2fv, phis_dyn2fv)
