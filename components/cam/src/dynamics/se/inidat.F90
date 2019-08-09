@@ -464,12 +464,18 @@ contains
                  1, nelemd, phys_tmp, found, gridname='physgrid_d')
             call fv_phys_to_dyn_topo(elem,phys_tmp)
          else
+#if 0
             call infld(fieldname, ncid_topo, ncol_name,      &
                  1, npsq, 1, nelemd, tmp(:,1,:), found, gridname=grid_name)
             !call gfr_fv_phys_to_dyn_topo(par, dom_mt, elem, phys_tmp)
             do ie = 1,nelemd
                elem(ie)%state%phis = reshape(tmp(:np*np,1,ie), (/np,np/))
             end do
+#else
+            call infld(fieldname, ncid_topo, 'ncol', 1, nphys_sq, &
+                 1, nelemd, phys_tmp, found, gridname='physgrid_d')
+            call gfr_fv_phys_to_dyn_topo(par, dom_mt, elem, phys_tmp)
+#endif
          end if
       else
          call infld(fieldname, ncid_topo, ncol_name,      &
