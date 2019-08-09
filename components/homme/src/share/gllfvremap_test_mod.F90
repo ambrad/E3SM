@@ -3,16 +3,10 @@
 #endif
 
 !todo
+! - adjust FV cell center for v computation to match dyn_grid::fv_physgrid_init
 ! - test with HORIZ_OPENMP off
-! - test on KNL
-! - maybe switch to npi = max(2,nphys)
-! - area correction: alpha
-! - test vector_dp routines: conservation
-! - topo roughness
 ! - ftype other than 2,4
 ! - np4-np2 instead of np4-pg1
-! - halo exchange buffers
-! - impl original pg2 to compare
 
 module gllfvremap_test_mod
   ! Test gllfvremap's main API.
@@ -95,7 +89,7 @@ contains
 
   subroutine set_gll_state(hvcoord, elem, nt1, nt2)
     use dimensions_mod, only: nlev, qsize
-    use physical_constants, only: g
+    use physical_constants, only: g, dd_pi
     use coordinate_systems_mod, only: cartesian3D_t, change_coordinates
     use hybvcoord_mod, only: hvcoord_t
     use element_ops, only: get_field
@@ -123,9 +117,12 @@ contains
           s1%ps(i,j) = 1.0d3*(one + 0.05d0*sin(two*p%x+half)*sin(p%y+1.5d0)*sin(3*p%z+2.5d0))
           s1%phis(i,j) = one + half*sin(p%x-half)*sin(half*p%y+2.5d0)*sin(2*p%z-2.5d0)
           do k = 1,nlev
-             do d = 1,2
-                wr(i,j,k,d) = sin(half*d*p%x+d-half)*sin(1.5*p%y-d+2.5d0)*sin(d*p%z+d-2.5d0)
-             end do
+             ! u, v have to be set carefully because they are
+             ! converted to contravarient velocity. Thus, at the
+             ! poles, we need u, v to make sense to measure OOA
+             ! correctly.
+             wr(i,j,k,1) = sin(p%x)*sin(1.5*p%y)*cos(1.7*p%z)
+             wr(i,j,k,2) = sin(half*p%x)*sin(1.5*p%y)*cos(half*dd_pi*p%z)
              elem%derived%omega_p(i,j,k) = wr(i,j,k,1)
           end do
           do k = 1,nlev
@@ -158,6 +155,7 @@ contains
   end subroutine set_gll_state
 
   subroutine run(hybrid, hvcoord, elem, nets, nete, nphys, tendency)
+    use kinds, only: iulog
     use hybvcoord_mod, only: hvcoord_t
     use dimensions_mod, only: nlev, qsize
     use coordinate_systems_mod, only: cartesian3D_t, change_coordinates
@@ -167,7 +165,9 @@ contains
     use parallel_mod, only: global_shared_buf, global_shared_sum
     use global_norms_mod, only: wrap_repro_sum
     use reduction_mod, only: ParallelMin, ParallelMax
-    use physical_constants, only: g
+    use physical_constants, only: g, p0, kappa
+    use edge_mod, only: edgevpack_nlyr, edgevunpack_nlyr, edge_g
+    use bndry_mod, only: bndry_exchangev
     use gllfvremap_mod
 
     type (hybrid_t), intent(in) :: hybrid
@@ -179,9 +179,10 @@ contains
 
     type (cartesian3D_t) :: p
     real(kind=real_kind) :: wr(np,np,nlev), tend(np,np,nlev), f, a, b, rd, &
-         qmin1(qsize), qmax1(qsize), qmin2, qmax2, mass1, mass2, &
+         qmin1(qsize+3), qmax1(qsize+3), qmin2, qmax2, mass1, mass2, &
          wr1(np,np,nlev), wr2(np,np,nlev)
     integer :: nf, ncol, nt1, nt2, ie, i, j, k, d, q, qi, tl, col
+    logical :: domass
 
     nf = nphys
     ncol = nf*nf
@@ -242,7 +243,7 @@ contains
     call applyCAMforcing_dynamics(elem, hvcoord, nt2, one, nets, nete)
 
     ! Test GLL state nt2 vs the original state nt1.
-    if (hybrid%masterthread) print '(a,l2)', 'gfrt> tendency', tendency
+    if (hybrid%masterthread) write(iulog, '(a,l2)') 'gfrt> tendency', tendency
     tend = zero
     mass1 = zero; mass2 = zero
     qmin1 = one; qmax1 = -one
@@ -290,7 +291,7 @@ contains
           rd = sqrt(global_shared_sum(1)/global_shared_sum(2))
           msg = ''
           if (.not. tendency .and. rd > 5*eps) msg = ' ERROR'
-          print '(a,i3,a,i3,es12.4,a8)', 'gfrt> test1 q l2', q, ' of', qsize, rd, msg
+          write(iulog, '(a,i3,a,i3,es12.4,a8)') 'gfrt> test1 q l2', q, ' of', qsize, rd, msg
        end if
     end do
 
@@ -304,6 +305,15 @@ contains
     end do
     call gfr_dyn_to_fv_phys_topo(hybrid, elem, nets, nete, pg_data%zs)
     call gfr_fv_phys_to_dyn_topo(hybrid, elem, nets, nete, pg_data%zs)
+    ! Do the DSS w/o (r)spheremp, as in inidata.F90. gfr_fv_phys_to_dyn_topo has
+    ! prepped phis for this.
+    do ie = nets, nete
+       call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%phis, 1, 0, 1)
+    end do
+    call bndry_exchangeV(hybrid, edge_g)
+    do ie = nets, nete
+       call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%phis, 1, 0, 1)
+    end do
     ! Compare GLL phis1 against GLL phis0.
     do ie = nets,nete
        global_shared_buf(ie,1) = sum(elem(ie)%spheremp*(elem(ie)%state%phis - &
@@ -313,7 +323,7 @@ contains
     call wrap_repro_sum(nvars=2, comm=hybrid%par%comm)
     if (hybrid%masterthread) then
        rd = sqrt(global_shared_sum(1)/global_shared_sum(2))
-       print '(a,es12.4)', 'gfrt> test2 topo l2', rd
+       write(iulog, '(a,es12.4)') 'gfrt> test2 topo l2', rd
     end if
 
     if (.not. tendency) return
@@ -353,6 +363,7 @@ contains
     ! Don't apply forcings; rather, the forcing fields now have the
     ! remapped quantities we want to compare against the original.
     do q = 2, qsize+3
+       domass = .true.
        mass1 = zero; mass2 = zero
        qmin2 = one; qmax2 = -one
        do ie = nets,nete
@@ -362,6 +373,9 @@ contains
           if (q > qsize) then
              qi = q - qsize
              if (qi < 3) then
+                ! With contravariant-velocity approach, we don't
+                ! expect mass conservation.
+                domass = .false.
                 global_shared_buf(ie,3) = sum(wr(:,:,1)*elem(ie)%state%dp3d(:,:,1,nt1)* &
                      elem(ie)%derived%FM(:,:,qi,1))
                 global_shared_buf(ie,4) = sum(wr(:,:,1)*elem(ie)%state%dp3d(:,:,1,nt1)* &
@@ -374,11 +388,13 @@ contains
                      sum(wr*elem(ie)%state%v(:,:,qi,:,nt1)**2)
              else
                 call get_temperature(elem(ie), wr1, hvcoord, nt1)
-                global_shared_buf(ie,3) = sum(wr(:,:,1)*elem(ie)%state%dp3d(:,:,1,nt1)* &
-                     elem(ie)%derived%FT(:,:,1))
-                global_shared_buf(ie,4) = sum(wr(:,:,1)*elem(ie)%state%dp3d(:,:,1,nt1)*wr1(:,:,1))
                 global_shared_buf(ie,1) = sum(wr*(elem(ie)%derived%FT - wr1)**2)
                 global_shared_buf(ie,2) = sum(wr*wr1**2)                
+                wr1 = wr1*(elem(ie)%state%dp3d(:,:,:,nt1)/p0)**kappa
+                global_shared_buf(ie,4) = sum(wr(:,:,1)*elem(ie)%state%dp3d(:,:,1,nt1)*wr1(:,:,1))
+                wr1 = elem(ie)%derived%FT
+                wr1 = wr1*(elem(ie)%state%dp3d(:,:,:,nt1)/p0)**kappa
+                global_shared_buf(ie,3) = sum(wr(:,:,1)*elem(ie)%state%dp3d(:,:,1,nt1)*wr1(:,:,1))
              end if
           else
              ! Extrema in level 1.
@@ -405,18 +421,20 @@ contains
        qmax2 = ParallelMax(qmax2, hybrid)
        if (hybrid%masterthread) then
           rd = sqrt(global_shared_sum(1)/global_shared_sum(2))
-          print '(a,i3,a,i3,es12.4)', 'gfrt> test3 q l2', q, ' of', qsize, rd
+          write(iulog, '(a,i3,a,i3,es12.4)') 'gfrt> test3 q l2', q, ' of', qsize, rd
           b = max(abs(qmin1(q)), abs(qmax1(q)))
           if (q <= qsize .and. qmin2 < qmin1(q) - 5*eps*b .or. &
                qmax2 > qmax1(q) + 5*eps*b) then
-             print '(a,i3,es12.4,es12.4,es12.4,es12.4)', 'gfrt> test3 q extrema', &
+             write(iulog, '(a,i3,es12.4,es12.4,es12.4,es12.4)') 'gfrt> test3 q extrema', &
                   q, qmin1(q), qmin2-qmin1(q), qmax2-qmax1(q), qmax1(q)
           end if
-          a = global_shared_sum(3)
-          b = global_shared_sum(4)
-          if (abs(b - a) > 5*eps*abs(a)) then
-             print '(a,i3,es12.4,es12.4,es12.4)', 'gfrt> test3 q mass', &
-                  q, a, b, abs(b - a)/abs(a)
+          if (domass) then
+             a = global_shared_sum(3)
+             b = global_shared_sum(4)
+             if (abs(b - a) > 5*eps*abs(a)) then
+                write(iulog, '(a,i3,es12.4,es12.4,es12.4)') 'gfrt> test3 q mass', &
+                     q, a, b, abs(b - a)/abs(a)
+             end if
           end if
        end if
     end do

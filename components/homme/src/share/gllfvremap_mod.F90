@@ -29,7 +29,7 @@ module gllfvremap_mod
   ! Data type and functions for high-order, shape-preserving FV <-> GLL remap.
   type, public :: GllFvRemap_t
      integer :: nphys, npi
-     logical :: check
+     logical :: check, have_fv_topo_file_phis
      real(kind=real_kind) :: tolfac ! for checking
      real(kind=real_kind) :: &
           ! Node or cell weights
@@ -91,6 +91,7 @@ module gllfvremap_mod
 contains
 
   subroutine gfr_init(par, elem, nphys, check)
+    use kinds, only: iulog
     use dimensions_mod, only: nlev
     use parallel_mod, only: parallel_t, abortmp
 
@@ -105,7 +106,7 @@ contains
     if (present(check)) gfr%check = check
 
     gfr%tolfac = one
-    if (par%masterproc) print '(a,i3,a,l2)', 'gfr> init nphys', nphys, ' check', gfr%check
+    if (par%masterproc) write(iulog,  '(a,i3,a,l2)') 'gfr> init nphys', nphys, ' check', gfr%check
 
     if (nphys > np) then
        ! The FV -> GLL map is defined only if nphys <= np. If we ever are
@@ -118,8 +119,9 @@ contains
        call abortmp('gllfvremap_mod: qsize must be >= 1')
     end if
 
+    gfr%have_fv_topo_file_phis = .false.
     gfr%nphys = nphys
-    gfr%npi = max(3, nphys)
+    gfr%npi = max(2, nphys)
 
     call gfr_init_w_gg(np, gfr%w_gg)
     call gfr_init_w_gg(gfr%npi, gfr%w_sgsg)
@@ -133,14 +135,15 @@ contains
     allocate(gfr%fv_metdet(nphys,nphys,nelemd), &
          gfr%D_f(nphys,nphys,2,2,nelemd), gfr%Dinv_f(nphys,nphys,2,2,nelemd), &
          gfr%qmin(nlev,max(1,qsize),nelemd), gfr%qmax(nlev,max(1,qsize),nelemd), &
-         gfr%spherep_f(nphys,nphys,nelemd), gfr%phis(nphys*nphys,nelemd))
+         gfr%phis(nphys*nphys,nelemd), gfr%spherep_f(nphys,nphys,nelemd))
     call gfr_init_fv_metdet(elem, gfr)
     call gfr_init_geometry(elem, gfr)
   end subroutine gfr_init
 
   subroutine gfr_finish()
     if (.not. allocated(gfr%fv_metdet)) return
-    deallocate(gfr%fv_metdet, gfr%D_f, gfr%Dinv_f, gfr%qmin, gfr%qmax, gfr%spherep_f, gfr%phis)
+    deallocate(gfr%fv_metdet, gfr%D_f, gfr%Dinv_f, gfr%qmin, gfr%qmax, gfr%phis, &
+         gfr%spherep_f)
   end subroutine gfr_finish
 
   subroutine gfr_dyn_to_fv_phys_hybrid(hybrid, nt, hvcoord, elem, nets, nete, &
@@ -148,6 +151,7 @@ contains
     use dimensions_mod, only: nlev
     use hybvcoord_mod, only: hvcoord_t
     use element_ops, only: get_temperature
+    use physical_constants, only: p0, kappa
 
     type (hybrid_t), intent(in) :: hybrid
     integer, intent(in) :: nt
@@ -157,7 +161,8 @@ contains
     real(kind=real_kind), intent(inout) :: ps(:,:), phis(:,:), T(:,:,:), &
          uv(:,:,:,:), omega_p(:,:,:), q(:,:,:,:)
 
-    real(kind=real_kind) :: dp(np,np,nlev), dp_fv(np,np,nlev), wr1(np,np,nlev), wr2(np,np,nlev), ones(np,np), qmin, qmax
+    real(kind=real_kind), dimension(np,np,nlev) :: dp, dp_fv, wr1, wr2, p, p_fv
+    real(kind=real_kind) :: qmin, qmax, ones(np,np)
     integer :: ie, nf, ncol, qi, qsize
 
     ones = one
@@ -167,49 +172,49 @@ contains
     qsize = size(q,3)
     
     do ie = nets,nete
-       call gfr_g2f_scalar(ie, elem(ie)%metdet, elem(ie)%state%ps_v(:,:,nt:nt), &
+       call gfr_g2f_scalar(gfr, ie, elem(ie)%metdet, elem(ie)%state%ps_v(:,:,nt:nt), &
             wr1(:,:,:1))
        ps(:ncol,ie) = reshape(wr1(:nf,:nf,1), (/ncol/))
 
-       wr2(:,:,1) = elem(ie)%state%phis(:,:)
-       call gfr_g2f_scalar(ie, elem(ie)%metdet, wr2(:,:,:1), wr1(:,:,:1))
-       qmin = minval(wr2(:,:,1))
-       qmax = maxval(wr2(:,:,1))
-       call limiter_clip_and_sum(nf, gfr%w_ff(:nf,:nf)*gfr%fv_metdet(:nf,:nf,ie), &
-            qmin, qmax, ones, wr1(:,:,1))
-       phis(:ncol,ie) = reshape(wr1(:nf,:nf,1), (/ncol/))
-       !phis(:ncol,ie) = gfr%phis(:ncol,ie)
+       if (gfr%have_fv_topo_file_phis) then
+          phis(:ncol,ie) = gfr%phis(:,ie)
+       else
+          wr2(:,:,1) = elem(ie)%state%phis(:,:)
+          call gfr_g2f_scalar(gfr, ie, elem(ie)%metdet, wr2(:,:,:1), wr1(:,:,:1))
+          qmin = minval(wr2(:,:,1))
+          qmax = maxval(wr2(:,:,1))
+          call limiter_clip_and_sum(nf, gfr%w_ff(:nf,:nf)*gfr%fv_metdet(:nf,:nf,ie), &
+               qmin, qmax, ones, wr1(:,:,1))
+          phis(:ncol,ie) = reshape(wr1(:nf,:nf,1), (/ncol/))
+       end if
 
        call calc_dp(hvcoord, elem(ie)%state%ps_v(:,:,nt), dp)
-       call gfr_g2f_scalar(ie, elem(ie)%metdet, dp, dp_fv)
+       call gfr_g2f_scalar(gfr, ie, elem(ie)%metdet, dp, dp_fv)
 
        call get_temperature(elem(ie), wr2, hvcoord, nt)
-       call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, wr2, wr1)
+       call calc_p(hvcoord, elem(ie)%state%ps_v(:,:,nt), p)
+       call gfr_g2f_scalar(gfr, ie, elem(ie)%metdet, p, p_fv)
+       wr2 = wr2*(p/p0)**kappa
+       call gfr_g2f_scalar_dp(gfr, ie, elem(ie)%metdet, dp, dp_fv, wr2, wr1)
+       wr1(:nf,:nf,:) = wr1(:nf,:nf,:)/(p_fv(:nf,:nf,:)/p0)**kappa
        T(:ncol,:,ie) = reshape(wr1(:nf,:nf,:), (/ncol,nlev/))
 
-#if 0
-       call gfr_g2f_vector_dp(ie, elem, dp, dp_fv, &
+       call gfr_g2f_vector(gfr, ie, elem, &
             elem(ie)%state%v(:,:,1,:,nt), elem(ie)%state%v(:,:,2,:,nt), &
             wr1, wr2)
-#else
-       call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, &
-            elem(ie)%state%v(:,:,1,:,nt), wr1)
-       call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, &
-            elem(ie)%state%v(:,:,2,:,nt), wr2)
-#endif
        uv(:ncol,1,:,ie) = reshape(wr1(:nf,:nf,:), (/ncol,nlev/))
        uv(:ncol,2,:,ie) = reshape(wr2(:nf,:nf,:), (/ncol,nlev/))
 
-       call gfr_g2f_scalar_dp(ie, elem(ie)%metdet, dp, dp_fv, &
+       call gfr_g2f_scalar_dp(gfr, ie, elem(ie)%metdet, dp, dp_fv, &
             elem(ie)%derived%omega_p, wr1)
        omega_p(:ncol,:,ie) = reshape(wr1(:nf,:nf,:), (/ncol,nlev/))
 
        do qi = 1,qsize
-          call gfr_g2f_mixing_ratio(ie, elem(ie)%metdet, dp, dp_fv, &
+          call gfr_g2f_mixing_ratio(gfr, ie, elem(ie)%metdet, dp, dp_fv, &
                dp*elem(ie)%state%Q(:,:,:,qi), wr1)
           q(:ncol,:,qi,ie) = reshape(wr1(:nf,:nf,:), (/ncol,nlev/))
           if (gfr%check) then
-             call check_g2f_mixing_ratio(hybrid, ie, qi, elem, dp, dp_fv, &
+             call check_g2f_mixing_ratio(gfr, hybrid, ie, qi, elem, dp, dp_fv, &
                   elem(ie)%state%Q(:,:,:,qi), wr1)
           end if
        end do
@@ -219,6 +224,7 @@ contains
   subroutine gfr_fv_phys_to_dyn_hybrid(hybrid, nt, hvcoord, elem, nets, nete, T, uv, q)
     use dimensions_mod, only: nlev
     use hybvcoord_mod, only: hvcoord_t
+    use physical_constants, only: p0, kappa
 
     type (hybrid_t), intent(in) :: hybrid
     integer, intent(in) :: nt
@@ -227,8 +233,8 @@ contains
     integer, intent(in), optional :: nets, nete
     real(kind=real_kind), intent(in) :: T(:,:,:), uv(:,:,:,:), q(:,:,:,:)
 
-    real(kind=real_kind) :: dp(np,np,nlev), dp_fv(np,np,nlev), wr1(np,np,nlev), &
-         wr2(np,np,nlev), qmin, qmax
+    real(kind=real_kind), dimension(np,np,nlev) :: dp, dp_fv, wr1, wr2, p, p_fv
+    real(kind=real_kind) :: qmin, qmax
     integer :: ie, nf, ncol, k, qsize, qi
 
     nf = gfr%nphys
@@ -238,30 +244,29 @@ contains
 
     do ie = nets,nete
        call calc_dp(hvcoord, elem(ie)%state%ps_v(:,:,nt), dp)
-       call gfr_g2f_scalar(ie, elem(ie)%metdet, dp, dp_fv)
+       call gfr_g2f_scalar(gfr, ie, elem(ie)%metdet, dp, dp_fv)
 
        wr1(:nf,:nf,:) = reshape(uv(:ncol,1,:,ie), (/nf,nf,nlev/))
        wr2(:nf,:nf,:) = reshape(uv(:ncol,2,:,ie), (/nf,nf,nlev/))
-#if 0
-       call gfr_f2g_vector_dp(ie, elem, dp_fv, dp, wr1, wr2, &
-            elem(ie)%derived%FM(:,:,1,:), elem(ie)%derived%FM(:,:,2,:))
-#else
-       call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, wr1, elem(ie)%derived%FM(:,:,1,:))
-       call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, wr2, elem(ie)%derived%FM(:,:,2,:))
-#endif
+       call gfr_f2g_vector(gfr, ie, elem, &
+            wr1, wr2, elem(ie)%derived%FM(:,:,1,:), elem(ie)%derived%FM(:,:,2,:))
 
+       call calc_p(hvcoord, elem(ie)%state%ps_v(:,:,nt), p)
+       call gfr_g2f_scalar(gfr, ie, elem(ie)%metdet, p, p_fv)
        wr1(:nf,:nf,:) = reshape(T(:ncol,:,ie), (/nf,nf,nlev/))
-       call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, wr1, elem(ie)%derived%FT)
+       wr1(:nf,:nf,:) = wr1(:nf,:nf,:)*(p_fv(:nf,:nf,:)/p0)**kappa
+       call gfr_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wr1, elem(ie)%derived%FT)
+       elem(ie)%derived%FT = elem(ie)%derived%FT/(p/p0)**kappa
 
        do qi = 1,qsize
           ! FV Q_ten
           !   GLL Q0 -> FV Q0
-          call gfr_g2f_mixing_ratio(ie, elem(ie)%metdet, dp, dp_fv, &
+          call gfr_g2f_mixing_ratio(gfr, ie, elem(ie)%metdet, dp, dp_fv, &
                dp*elem(ie)%state%Q(:,:,:,qi), wr1)
           !   FV Q_ten = FV Q1 - FV Q0
           wr1(:nf,:nf,:) = reshape(q(:ncol,:,qi,ie), (/nf,nf,nlev/)) - wr1(:nf,:nf,:)
           ! GLL Q_ten
-          call gfr_f2g_scalar_dp(ie, elem(ie)%metdet, dp_fv, dp, wr1, wr2)
+          call gfr_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wr1, wr2)
           ! GLL Q1
           elem(ie)%derived%FQ(:,:,:,qi) = elem(ie)%state%Q(:,:,:,qi) + wr2
           ! Get limiter bounds.
@@ -291,7 +296,7 @@ contains
                   gfr%qmax(k,qi,ie), dp(:,:,k), elem(ie)%derived%FQ(:,:,k,qi))
           end do
           if (gfr%check) then
-             call check_f2g_mixing_ratio(hybrid, ie, qi, elem, gfr%qmin(:,qi,ie), &
+             call check_f2g_mixing_ratio(gfr, hybrid, ie, qi, elem, gfr%qmin(:,qi,ie), &
                   gfr%qmax(:,qi,ie), dp, wr1, elem(ie)%derived%FQ(:,:,:,qi))
           end if
        end do
@@ -313,7 +318,7 @@ contains
 
     do ie = nets,nete
        wr(:,:,1) = elem(ie)%state%phis(:,:)
-       call gfr_g2f_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
+       call gfr_g2f_scalar(gfr, ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
        qmin = minval(elem(ie)%state%phis)
        qmax = maxval(elem(ie)%state%phis)
        call limiter_clip_and_sum(gfr%nphys, gfr%w_ff(:nf,:nf)*gfr%fv_metdet(:nf,:nf,ie), &
@@ -323,6 +328,7 @@ contains
   end subroutine gfr_dyn_to_fv_phys_topo
 
   subroutine gfr_fv_phys_to_dyn_topo_hybrid(hybrid, elem, nets, nete, phis)
+    use kinds, only: iulog
     use edge_mod, only: edgeVpack_nlyr, edgeVunpack_nlyr, edge_g
     use bndry_mod, only: bndry_exchangeV
 
@@ -337,9 +343,10 @@ contains
     ones = one
     nf = gfr%nphys
     ncol = nf*nf
+    gfr%have_fv_topo_file_phis = .true.
 
     do ie = nets,nete
-       gfr%phis(:ncol,ie) = phis(:ncol,ie)
+       gfr%phis(:,ie) = phis(:ncol,ie)
        wr(:nf,:nf,1) = reshape(phis(:ncol,ie), (/nf,nf/))
        gfr%qmin(:,:,ie) = minval(wr(:nf,:nf,1))
        gfr%qmax(:,:,ie) = maxval(wr(:nf,:nf,1))
@@ -347,15 +354,10 @@ contains
        elem(ie)%state%phis = wr(:,:,2)
     end do
 
-#if 1
-    ! ne4pg2_ne4pg2 is failing when I expand the limiter bounds. For
-    ! now, disable expansion. This makes the topo map just first-order
-    ! accurate.
     if (hybrid%par%dynproc) then
        call gfr_f2g_mixing_ratios_he(hybrid, nets, nete, gfr%qmin(:,:,nets:nete), &
             gfr%qmax(:,:,nets:nete))
     end if
-#endif
 
     do ie = nets,nete
        if (gfr%check) wr(:,:,1) = elem(ie)%state%phis
@@ -363,25 +365,17 @@ contains
             gfr%qmax(1,1,ie), ones(:,:,1), elem(ie)%state%phis)
        if (gfr%check) then
           if (gfr%qmin(1,1,ie) < zero) then
-             print *, 'gfr> topo min:', hybrid%par%rank, hybrid%ithr, ie, gfr%qmin(1,1,ie)
+             write(iulog,*) 'gfr> topo min:', hybrid%par%rank, hybrid%ithr, ie, gfr%qmin(1,1,ie)
           end if
           wr(:,:,2) = elem(ie)%state%phis
-          call check_f2g_mixing_ratio(hybrid, ie, 1, elem, gfr%qmin(:1,1,ie), &
+          call check_f2g_mixing_ratio(gfr, hybrid, ie, 1, elem, gfr%qmin(:1,1,ie), &
                gfr%qmax(:1,1,ie), ones, wr(:,:,:1), wr(:,:,2:))
        end if
     end do
 
-    if (hybrid%par%dynproc) then
-       do ie = nets,nete
-          elem(ie)%state%phis = elem(ie)%state%phis*elem(ie)%spheremp
-          call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%phis, 1, 0, 1)
-       end do
-       call bndry_exchangeV(hybrid, edge_g)
-       do ie = nets,nete
-          call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%phis, 1, 0, 1)
-          elem(ie)%state%phis = elem(ie)%state%phis*elem(ie)%rspheremp
-       end do
-    end if
+    do ie = nets,nete
+       elem(ie)%state%phis = elem(ie)%state%phis*elem(ie)%spheremp*elem(ie)%rspheremp
+    end do
   end subroutine gfr_fv_phys_to_dyn_topo_hybrid
 
   subroutine gfr_hybrid_create(par, dom_mt, hybrid, nets, nete)
@@ -505,7 +499,7 @@ contains
     integer, intent(in) :: nphys
     real(kind=real_kind), intent(out) :: w_ff(:,:)
 
-    w_ff(:nphys,:nphys) = two/real(nphys, real_kind)
+    w_ff(:nphys,:nphys) = two*two/real(nphys*nphys, real_kind)
   end subroutine gfr_init_w_ff
 
   subroutine gll_cleanup(gll)
@@ -531,6 +525,21 @@ contains
             (hvcoord%hybi(k+1) - hvcoord%hybi(k))*ps
     end do
   end subroutine calc_dp
+
+  subroutine calc_p(hvcoord, ps, p)
+    use hybvcoord_mod, only: hvcoord_t
+    use dimensions_mod, only: nlev
+
+    type (hvcoord_t), intent(in) :: hvcoord
+    real(kind=real_kind), intent(in) :: ps(:,:)
+    real(kind=real_kind), intent(out) :: p(:,:,:)
+
+    integer :: k
+
+    do k = 1,nlev
+       p(:,:,k) = hvcoord%hyam(k)*hvcoord%ps0 + hvcoord%hybm(k)*ps
+    end do
+  end subroutine calc_p
 
   subroutine eval_lagrange_bases(gll, np, x, y)
     ! Evaluate the GLL basis functions at x in [-1,1], writing the values to
@@ -618,6 +627,9 @@ contains
     ! Compute the QR factorization sqrt(inv(M_gg)) M_gf = Q R so that S =
     ! R'R. In this module, we can take M_gg = diag(w_gg) and M_ff = diag(w_ff)
     ! with no loss of accuracy.
+    !   If nphys = np, then the problem reduces to
+    !     M_gf' g = M_ff f,
+    ! but the same linear algebra can be used.
     !
     !assume nphys <= np
 
@@ -796,9 +808,16 @@ contains
 
              call Dmap(wrk, a, b, elem(ie)%corners3D, cubed_sphere_map, elem(ie)%cartp, &
                   elem(ie)%facenum)
-             gfr%D_f(i,j,:,:,ie) = wrk
 
              det = wrk(1,1)*wrk(2,2) - wrk(1,2)*wrk(2,1)
+
+             ! fv_metdet was obtained by remapping metdet. Make det(D)
+             ! = fv_metdet.
+             wrk = wrk*sqrt(gfr%fv_metdet(i,j,ie)/abs(det))
+             det = gfr%fv_metdet(i,j,ie)
+
+             gfr%D_f(i,j,:,:,ie) = wrk
+
              gfr%Dinv_f(i,j,1,1,ie) =  wrk(2,2)/det
              gfr%Dinv_f(i,j,1,2,ie) = -wrk(1,2)/det
              gfr%Dinv_f(i,j,2,1,ie) = -wrk(2,1)/det
@@ -811,7 +830,8 @@ contains
     end do
   end subroutine gfr_init_geometry
 
-  subroutine gfr_g2f_scalar(ie, gll_metdet, g, f)
+  subroutine gfr_g2f_scalar(gfr, ie, gll_metdet, g, f)
+    type (GllFvRemap_t), intent(in) :: gfr
     integer, intent(in) :: ie
     real(kind=real_kind), intent(in) :: gll_metdet(:,:), g(:,:,:)
     real(kind=real_kind), intent(out) :: f(:,:,:)
@@ -823,7 +843,8 @@ contains
     end do
   end subroutine gfr_g2f_scalar
 
-  subroutine gfr_g2f_scalar_dp(ie, gll_metdet, dp_g, dp_f, g, f)
+  subroutine gfr_g2f_scalar_dp(gfr, ie, gll_metdet, dp_g, dp_f, g, f)
+    type (GllFvRemap_t), intent(in) :: gfr
     integer, intent(in) :: ie
     real(kind=real_kind), intent(in) :: gll_metdet(:,:), dp_g(:,:,:), dp_f(:,:,:), g(:,:,:)
     real(kind=real_kind), intent(out) :: f(:,:,:)
@@ -831,11 +852,12 @@ contains
     integer :: nf
 
     nf = gfr%nphys
-    call gfr_g2f_scalar(ie, gll_metdet, dp_g*g, f)
+    call gfr_g2f_scalar(gfr, ie, gll_metdet, dp_g*g, f)
     f = f(:nf,:nf,:)/dp_f(:nf,:nf,:)
   end subroutine gfr_g2f_scalar_dp
 
-  subroutine gfr_g2f_vector(ie, elem, u_g, v_g, u_f, v_f)
+  subroutine gfr_g2f_vector(gfr, ie, elem, u_g, v_g, u_f, v_f)
+    type (GllFvRemap_t), intent(in) :: gfr
     integer, intent(in) :: ie
     type (element_t), intent(in) :: elem(:)
     real(kind=real_kind), intent(in) :: u_g(:,:,:), v_g(:,:,:)
@@ -853,14 +875,13 @@ contains
        do d = 1,2
           wg(:,:,d) = elem(ie)%Dinv(:,:,d,1)*u_g(:,:,k) + elem(ie)%Dinv(:,:,d,2)*v_g(:,:,k)
        end do
-       ! Since we mapped to the ref element, we no longer should use the ref ->
-       ! sphere Jacobians; use 1s instead.
        do d = 1,2
           call gfr_g2f_remapd(gfr, ones, ones, wg(:,:,d), wf(:,:,d))
        end do
        ! FV ref -> sphere
        do d = 1,2
-          wg(:nf,:nf,d) = gfr%D_f(:nf,:nf,d,1,ie)*wf(:nf,:nf,1) + &
+          wg(:nf,:nf,d) = &
+               gfr%D_f(:nf,:nf,d,1,ie)*wf(:nf,:nf,1) + &
                gfr%D_f(:nf,:nf,d,2,ie)*wf(:nf,:nf,2)
        end do
        u_f(:nf,:nf,k) = wg(:nf,:nf,1)
@@ -868,7 +889,8 @@ contains
     end do
   end subroutine gfr_g2f_vector
 
-  subroutine gfr_g2f_vector_dp(ie, elem, dp_g, dp_f, u_g, v_g, u_f, v_f)
+  subroutine gfr_g2f_vector_dp(gfr, ie, elem, dp_g, dp_f, u_g, v_g, u_f, v_f)
+    type (GllFvRemap_t), intent(in) :: gfr
     integer, intent(in) :: ie
     type (element_t), intent(in) :: elem(:)
     real(kind=real_kind), intent(in) :: dp_g(:,:,:), dp_f(:,:,:), u_g(:,:,:), v_g(:,:,:)
@@ -877,12 +899,13 @@ contains
     integer :: nf
 
     nf = gfr%nphys
-    call gfr_g2f_vector(ie, elem, dp_g*u_g, dp_g*v_g, u_f, v_f)
+    call gfr_g2f_vector(gfr, ie, elem, dp_g*u_g, dp_g*v_g, u_f, v_f)
     u_f(:nf,:nf,:) = u_f(:nf,:nf,:)/dp_f(:nf,:nf,:)
     v_f(:nf,:nf,:) = v_f(:nf,:nf,:)/dp_f(:nf,:nf,:)
   end subroutine gfr_g2f_vector_dp
 
-  subroutine gfr_g2f_mixing_ratio(ie, gll_metdet, dp_g, dp_f, qdp_g, q_f)
+  subroutine gfr_g2f_mixing_ratio(gfr, ie, gll_metdet, dp_g, dp_f, qdp_g, q_f)
+    type (GllFvRemap_t), intent(in) :: gfr
     integer, intent(in) :: ie
     real(kind=real_kind), intent(in) :: gll_metdet(:,:), dp_g(:,:,:), dp_f(:,:,:), &
          qdp_g(:,:,:)
@@ -904,7 +927,8 @@ contains
     end do
   end subroutine gfr_g2f_mixing_ratio
 
-  subroutine gfr_g2f_mixing_ratios(ie, gll_metdet, dp_g, dp_f, qdp_g, q_f)
+  subroutine gfr_g2f_mixing_ratios(gfr, ie, gll_metdet, dp_g, dp_f, qdp_g, q_f)
+    type (GllFvRemap_t), intent(in) :: gfr
     integer, intent(in) :: ie
     real(kind=real_kind), intent(in) :: gll_metdet(:,:), dp_g(:,:,:), dp_f(:,:,:), &
          qdp_g(:,:,:,:)
@@ -915,11 +939,11 @@ contains
 
     nf = gfr%nphys
     do q = 1, size(qdp_g,4)
-       call gfr_g2f_mixing_ratio(ie, gll_metdet, dp_g, dp_f, qdp_g(:,:,:,q), q_f(:,:,:,q))
+       call gfr_g2f_mixing_ratio(gfr, ie, gll_metdet, dp_g, dp_f, qdp_g(:,:,:,q), q_f(:,:,:,q))
     end do
   end subroutine gfr_g2f_mixing_ratios
 
-  subroutine gfr_f2g_scalar(ie, gll_metdet, f, g)
+  subroutine gfr_f2g_scalar(ie, gll_metdet, f, g) ! no gfr b/c public
     integer, intent(in) :: ie
     real(kind=real_kind), intent(in) :: gll_metdet(:,:), f(:,:,:)
     real(kind=real_kind), intent(out) :: g(:,:,:)
@@ -931,7 +955,8 @@ contains
     end do
   end subroutine gfr_f2g_scalar
 
-  subroutine gfr_f2g_scalar_dp(ie, gll_metdet, dp_f, dp_g, f, g)
+  subroutine gfr_f2g_scalar_dp(gfr, ie, gll_metdet, dp_f, dp_g, f, g)
+    type (GllFvRemap_t), intent(in) :: gfr
     integer, intent(in) :: ie
     real(kind=real_kind), intent(in) :: gll_metdet(:,:), dp_f(:,:,:), dp_g(:,:,:), f(:,:,:)
     real(kind=real_kind), intent(out) :: g(:,:,:)
@@ -943,7 +968,8 @@ contains
     g = g/dp_g
   end subroutine gfr_f2g_scalar_dp
 
-  subroutine gfr_f2g_vector(ie, elem, u_f, v_f, u_g, v_g)
+  subroutine gfr_f2g_vector(gfr, ie, elem, u_f, v_f, u_g, v_g)
+    type (GllFvRemap_t), intent(in) :: gfr
     integer, intent(in) :: ie
     type (element_t), intent(in) :: elem(:)
     real(kind=real_kind), intent(in) :: u_f(:,:,:), v_f(:,:,:)
@@ -959,7 +985,8 @@ contains
     do k = 1, nlev
        ! sphere -> FV ref
        do d = 1,2
-          wf(:nf,:nf,d) = gfr%Dinv_f(:nf,:nf,d,1,ie)*u_f(:nf,:nf,k) + &
+          wf(:nf,:nf,d) = &
+               gfr%Dinv_f(:nf,:nf,d,1,ie)*u_f(:nf,:nf,k) + &
                gfr%Dinv_f(:nf,:nf,d,2,ie)*v_f(:nf,:nf,k)
        end do
        do d = 1,2
@@ -974,7 +1001,8 @@ contains
     end do
   end subroutine gfr_f2g_vector
 
-  subroutine gfr_f2g_vector_dp(ie, elem, dp_f, dp_g, u_f, v_f, u_g, v_g)
+  subroutine gfr_f2g_vector_dp(gfr, ie, elem, dp_f, dp_g, u_f, v_f, u_g, v_g)
+    type (GllFvRemap_t), intent(in) :: gfr
     integer, intent(in) :: ie
     type (element_t), intent(in) :: elem(:)
     real(kind=real_kind), intent(in) :: dp_f(:,:,:), dp_g(:,:,:), u_f(:,:,:), v_f(:,:,:)
@@ -983,7 +1011,7 @@ contains
     integer :: nf
 
     nf = gfr%nphys
-    call gfr_f2g_vector(ie, elem, dp_f(:nf,:nf,:)*u_f(:nf,:nf,:), &
+    call gfr_f2g_vector(gfr, ie, elem, dp_f(:nf,:nf,:)*u_f(:nf,:nf,:), &
          dp_f(:nf,:nf,:)*v_f(:nf,:nf,:), u_g, v_g)
     u_g = u_g/dp_g
     v_g = v_g/dp_g
@@ -991,7 +1019,7 @@ contains
 
   subroutine gfr_f2g_mixing_ratios_he(hybrid, nets, nete, qmin, qmax)
     use viscosity_mod, only: neighbor_minmax
-    use prim_advection_base, only: edgeAdvQminmax !TODO rm kludge
+    use prim_advection_base, only: edgeAdvQminmax
 
     type (hybrid_t), intent(in) :: hybrid
     integer, intent(in) :: nets, nete
@@ -1010,9 +1038,6 @@ contains
     integer, intent(in) :: nets, nete
 
     integer :: ie, q, k
-
-    !kludge 2 HEs until i get edge_g alloc'ed with the right size
-    !TODO fix this kludge
 
     do ie = nets, nete
        do q = 1,qsize
@@ -1166,12 +1191,10 @@ contains
 
     sumc = sum(c)
     mass = sum(c*x)
-#if 0
-    ! In the case of an infeasible problem< prefer to conserve mass
+    ! In the case of an infeasible problem, prefer to conserve mass
     ! and violate a bound.
     if (mass < qmin*sumc) qmin = mass / sumc
     if (mass > qmax*sumc) qmax = mass / sumc
-#endif
 
     addmass = zero
 
@@ -1232,7 +1255,10 @@ contains
     end do
   end subroutine set_ps_Q
 
-  subroutine check_g2f_mixing_ratio(hybrid, ie, qi, elem, dp, dp_fv, q_g, q_f)
+  subroutine check_g2f_mixing_ratio(gfr, hybrid, ie, qi, elem, dp, dp_fv, q_g, q_f)
+    use kinds, only: iulog
+
+    type (GllFvRemap_t), intent(in) :: gfr
     type (hybrid_t), intent(in) :: hybrid
     integer, intent(in) :: ie, qi
     type (element_t), intent(in) :: elem(:)
@@ -1251,17 +1277,20 @@ contains
        mass_f = sum(gfr%w_ff(:nf,:nf)*gfr%fv_metdet(:,:,ie)*dp_fv(:nf,:nf,k)*q_f(:nf,:nf,k))
        mass_g = sum(elem(ie)%spheremp*dp(:,:,k)*q_g(:,:,k))
        if (qmin_f < qmin_g - 10*eps*den .or. qmax_f > qmax_g + 10*eps*den) then
-          print *, 'gfr> g2f mixing ratio limits:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
+          write(iulog,*) 'gfr> g2f mixing ratio limits:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
                qmin_g, qmin_f-qmin_g, qmax_f-qmax_g, qmax_g, mass_f, mass_g
        end if
        if (abs(mass_f - mass_g) > gfr%tolfac*20*eps*max(mass_f, mass_g)) then
-          print *, 'gfr> g2f mixing ratio mass:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
+          write(iulog,*) 'gfr> g2f mixing ratio mass:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
                qmin_g, qmax_g, mass_f, mass_g
        end if
     end do
   end subroutine check_g2f_mixing_ratio
 
-  subroutine check_f2g_mixing_ratio(hybrid, ie, qi, elem, qmin, qmax, dp, q0_g, q1_g)
+  subroutine check_f2g_mixing_ratio(gfr, hybrid, ie, qi, elem, qmin, qmax, dp, q0_g, q1_g)
+    use kinds, only: iulog
+
+    type (GllFvRemap_t), intent(in) :: gfr
     type (hybrid_t), intent(in) :: hybrid
     integer, intent(in) :: ie, qi
     type (element_t), intent(in) :: elem(:)
@@ -1278,14 +1307,14 @@ contains
        qmax_g = maxval(q1_g(:,:,k))
        den = gfr%tolfac*max(1e-10, maxval(abs(q0_g(:,:,k))))
        if (qmin_g < qmin_f - 50*eps*den .or. qmax_g > qmax_f + 50*eps*den) then
-          print *, 'gfr> f2g mixing ratio limits:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
+          write(iulog,*) 'gfr> f2g mixing ratio limits:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
                qmin_f, qmin_g-qmin_f, qmax_g-qmax_f, qmax_f, mass0, mass1
        end if
        mass0 = sum(elem(ie)%spheremp*dp(:,:,k)*q0_g(:,:,k))
        mass1 = sum(elem(ie)%spheremp*dp(:,:,k)*q1_g(:,:,k))
        den = sum(elem(ie)%spheremp*dp(:,:,k)*maxval(abs(q0_g(:,:,k))))
        if (abs(mass1 - mass0) > gfr%tolfac*20*eps*den) then
-          print *, 'gfr> f2g mixing ratio mass:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
+          write(iulog,*) 'gfr> f2g mixing ratio mass:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
                qmin_f, qmin_g, qmax_g, qmax_f, mass0, mass1
        end if
     end do
@@ -1293,6 +1322,8 @@ contains
   
   subroutine check_nonnegative(elem, nets, nete)
     ! Check gfr_g_make_nonnegative.
+
+    use kinds, only: iulog
 
     type (element_t), intent(inout) :: elem(:)
     integer, intent(in) :: nets, nete
@@ -1313,12 +1344,13 @@ contains
        mass1 = sum(elem(ie)%spheremp*wrk3(:,:,1))
        rd = (mass1 - mass0)/mass0
        if (rd /= rd .or. rd > 20*eps .or. any(wrk3(:,:,1) < zero)) then
-          print *, 'gfr> nonnegative', ie, rd, mass0, mass1, wrk3(:,:,1), 'ERROR'
+          write(iulog,*) 'gfr> nonnegative', ie, rd, mass0, mass1, wrk3(:,:,1), 'ERROR'
        end if
     end do
   end subroutine check_nonnegative
 
   subroutine check(par, dom_mt, gfr, elem, verbose)
+    use kinds, only: iulog
     use parallel_mod, only: parallel_t
     use dimensions_mod, only: nlev, qsize
     use domain_mod, only: domain1d_t
@@ -1353,15 +1385,15 @@ contains
     call gfr_hybrid_create(par, dom_mt, hybrid, nets, nete)
 
     if (hybrid%masterthread) then
-       print '(a,i3,a,i3)', 'gfr> npi', gfr%npi, ' nphys', nf
+       write(iulog,  '(a,i3,a,i3)'), 'gfr> npi', gfr%npi, ' nphys', nf
        if (verbose) then
-          print *, 'gfr> w_ff', nf, gfr%w_ff(:nf, :nf)
-          print *, 'gfr> w_gg', np, gfr%w_gg(:np, :np)
-          print *, 'gfr> w_sgsg', gfr%npi, gfr%w_sgsg(:gfr%npi, :gfr%npi)
-          print *, 'gfr> M_gf', np, nf, gfr%M_gf(:np, :np, :nf, :nf)
-          print *, 'gfr> M_sgf', gfr%npi, nf, gfr%M_sgf(:gfr%npi, :gfr%npi, :nf, :nf)
-          print *, 'gfr> interp', gfr%npi, np, gfr%interp(:gfr%npi, :gfr%npi, :np, :np)
-          print *, 'gfr> f2g_remapd', np, nf, gfr%f2g_remapd(:nf,:nf,:,:)
+          write(iulog,*) 'gfr> w_ff', nf, gfr%w_ff(:nf, :nf)
+          write(iulog,*) 'gfr> w_gg', np, gfr%w_gg(:np, :np)
+          write(iulog,*) 'gfr> w_sgsg', gfr%npi, gfr%w_sgsg(:gfr%npi, :gfr%npi)
+          write(iulog,*) 'gfr> M_gf', np, nf, gfr%M_gf(:np, :np, :nf, :nf)
+          write(iulog,*) 'gfr> M_sgf', gfr%npi, nf, gfr%M_sgf(:gfr%npi, :gfr%npi, :nf, :nf)
+          write(iulog,*) 'gfr> interp', gfr%npi, np, gfr%interp(:gfr%npi, :gfr%npi, :np, :np)
+          write(iulog,*) 'gfr> f2g_remapd', np, nf, gfr%f2g_remapd(:nf,:nf,:,:)
        end if
     end if
 
@@ -1371,7 +1403,19 @@ contains
        a = sum(elem(ie)%metdet * gfr%w_gg)
        b = sum(gfr%fv_metdet(:,:,ie) * gfr%w_ff(:nf, :nf))
        rd = abs(b - a)/abs(a)
-       if (rd /= rd .or. rd > 10*eps) print *, 'gfr> area', ie, a, b, rd
+       if (rd /= rd .or. rd > 10*eps) write(iulog,*) 'gfr> area', ie, a, b, rd
+
+       ! Check FV geometry.
+       f0(:nf,:nf) = gfr%D_f(:,:,1,1,ie)*gfr%D_f(:,:,2,2,ie) - &
+            gfr%D_f(:,:,1,2,ie)*gfr%D_f(:,:,2,1,ie)
+       rd = maxval(abs(f0(:nf,:nf)) - gfr%fv_metdet(:,:,ie))/ &
+            maxval(gfr%fv_metdet(:,:,ie))
+       if (rd > 10*eps) write(iulog,*) 'gfr> D', ie, rd
+       f0(:nf,:nf) = gfr%Dinv_f(:,:,1,1,ie)*gfr%Dinv_f(:,:,2,2,ie) - &
+            gfr%Dinv_f(:,:,1,2,ie)*gfr%Dinv_f(:,:,2,1,ie)
+       rd = maxval(abs(f0(:nf,:nf)) - one/gfr%fv_metdet(:,:,ie))/ &
+            maxval(one/gfr%fv_metdet(:,:,ie))
+       if (rd > 10*eps) write(iulog,*) 'gfr> Dinv', ie, rd
 
        ! Check that FV -> GLL -> FV recovers the original FV values exactly
        ! (with no DSS and no limiter).
@@ -1388,7 +1432,7 @@ contains
        a = sum(wrk(:nf,:nf)*abs(f1(:nf,:nf) - f0(:nf,:nf)))
        b = sum(wrk(:nf,:nf)*abs(f0(:nf,:nf)))
        rd = a/b
-       if (rd /= rd .or. rd > 10*eps) print *, 'gfr> recover', ie, a, b, rd, gfr%fv_metdet(:,:,ie)
+       if (rd /= rd .or. rd > 10*eps) write(iulog,*) 'gfr> recover', ie, a, b, rd, gfr%fv_metdet(:,:,ie)
     end do
     call check_nonnegative(elem, nets, nete)
 
@@ -1429,7 +1473,7 @@ contains
              call neighbor_minmax(hybrid, edgeAdvQminmax, nets, nete, qmins, qmaxs)
           endif
           ! 2c. Remap
-          do ie = nets, nete !TODO move to own routine
+          do ie = nets, nete
              wrk = elem(ie)%state%Q(:,:,1,1)
              call gfr_f2g_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,:,ie), &
                   Qdp_fv(:,:,ie), elem(ie)%state%Q(:,:,1,1))
@@ -1482,16 +1526,16 @@ contains
        qmin1 = ParallelMin(qmin1, hybrid)
        qmax1 = ParallelMax(qmax1, hybrid)
        if (hybrid%masterthread) then
-          print '(a,i3)', 'gfr> limiter', ilimit
+          write(iulog, '(a,i3)') 'gfr> limiter', ilimit
           rd = sqrt(global_shared_sum(1)/global_shared_sum(2))
-          print '(a,es12.4)', 'gfr> l2  ', rd
+          write(iulog, '(a,es12.4)') 'gfr> l2  ', rd
           rd = abs(global_shared_sum(4) - global_shared_sum(3))/global_shared_sum(3)
           msg = ''
           if (rd > 10*eps) msg = ' ERROR'
-          print '(a,es11.3,a8)', 'gfr> mass', rd, msg
+          write(iulog, '(a,es11.3,a8)') 'gfr> mass', rd, msg
           msg = ''
           if (limit .and. (qmin < qmin1 - 5*eps .or. qmax > qmax1 + 5*eps)) msg = ' ERROR'
-          print '(a,es11.3,es11.3,a8)', 'gfr> limit', min(zero, qmin - qmin1), &
+          write(iulog, '(a,es11.3,es11.3,a8)') 'gfr> limit', min(zero, qmin - qmin1), &
                max(zero, qmax - qmax1), msg
        end if
     end do
