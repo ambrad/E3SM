@@ -4,7 +4,6 @@
 
 !todo
 ! - test with HORIZ_OPENMP off
-! - topo roughness
 ! - ftype other than 2,4
 ! - np4-np2 instead of np4-pg1
 
@@ -166,6 +165,8 @@ contains
     use global_norms_mod, only: wrap_repro_sum
     use reduction_mod, only: ParallelMin, ParallelMax
     use physical_constants, only: g, p0, kappa
+    use edge_mod, only: edgevpack_nlyr, edgevunpack_nlyr, edge_g
+    use bndry_mod, only: bndry_exchangev
     use gllfvremap_mod
 
     type (hybrid_t), intent(in) :: hybrid
@@ -303,6 +304,15 @@ contains
     end do
     call gfr_dyn_to_fv_phys_topo(hybrid, elem, nets, nete, pg_data%zs)
     call gfr_fv_phys_to_dyn_topo(hybrid, elem, nets, nete, pg_data%zs)
+    ! Do the DSS w/o (r)spheremp, as in inidata.F90. gfr_fv_phys_to_dyn_topo has
+    ! prepped phis for this.
+    do ie = nets, nete
+       call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%phis, 1, 0, 1)
+    end do
+    call bndry_exchangeV(hybrid, edge_g)
+    do ie = nets, nete
+       call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%phis, 1, 0, 1)
+    end do
     ! Compare GLL phis1 against GLL phis0.
     do ie = nets,nete
        global_shared_buf(ie,1) = sum(elem(ie)%spheremp*(elem(ie)%state%phis - &

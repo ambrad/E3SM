@@ -364,17 +364,9 @@ contains
        end if
     end do
 
-    if (hybrid%par%dynproc) then
-       do ie = nets,nete
-          elem(ie)%state%phis = elem(ie)%state%phis*elem(ie)%spheremp
-          call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%phis, 1, 0, 1)
-       end do
-       call bndry_exchangeV(hybrid, edge_g)
-       do ie = nets,nete
-          call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%phis, 1, 0, 1)
-          elem(ie)%state%phis = elem(ie)%state%phis*elem(ie)%rspheremp
-       end do
-    end if
+    do ie = nets,nete
+       elem(ie)%state%phis = elem(ie)%state%phis*elem(ie)%spheremp*elem(ie)%rspheremp
+    end do
   end subroutine gfr_fv_phys_to_dyn_topo_hybrid
 
   subroutine gfr_hybrid_create(par, dom_mt, hybrid, nets, nete)
