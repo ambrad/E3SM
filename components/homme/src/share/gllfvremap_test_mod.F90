@@ -429,6 +429,58 @@ contains
     end do
   end subroutine run
 
+  subroutine study_topo(hybrid, elem, nf)
+    use gllfvremap_mod
+    use netcdf
+
+    type (hybrid_t), intent(in) :: hybrid
+    type (element_t), intent(inout) :: elem(:)
+    integer, intent(in) :: nf
+
+    integer :: s1, s2, ncid(2), i, var_id, ncol(2), ie
+    real(kind=real_kind), allocatable :: buf(:), phis_gll(:,:,:), phis_fv(:,:), &
+         phis_fv2dyn2fv(:,:), phis_dyn2fv(:,:)
+
+    if (hybrid%ithr > 0) return
+
+    s1 = nf90_open('USGS-gtopo30_ne30np4_16xdel2-PFC-consistentSGH.nc', NF90_NOWRITE, ncid(1))
+    s2 = nf90_open('USGS-gtopo30_ne30pg2_16xdel2-PFC-consistentSGH.c20190417.nc', NF90_NOWRITE, ncid(2))
+    if (s1 /= nf90_NoErr .or. s2 /= nf90_NoErr) then
+       print *, 'cannot open topo file'
+       return
+    end if
+
+    do i = 1,2
+       s1 = nf90_inq_dimid(ncid(i), 'ncol', var_id)
+       s1 = nf90_inquire_dimension(ncid(i), var_id, len=ncol(i))
+    end do
+    allocate(buf(ncol(1)), phis_gll(np,np,nelemd), phis_fv(nf*nf,nelemd), &
+         phis_fv2dyn2fv(nf*nf,nelemd), phis_dyn2fv(nf*nf,nelemd))
+
+    s1 = nf90_inq_varid(ncid(1), "PHIS", var_id)
+    s1 = nf90_get_var(ncid(1), var_id, buf)
+    do ie = 1,nelemd
+       i = np*np*(ie-1)
+       phis_gll(:,:,ie) = reshape(buf(i+1:i+np*np), (/np,np/))
+       elem(ie)%state%phis(:,:) = phis_gll(:,:,ie)
+    end do
+    call gfr_dyn_to_fv_phys_topo(hybrid, elem, 1, nelemd, phis_dyn2fv)
+
+    s1 = nf90_inq_varid(ncid(2), "PHIS", var_id)
+    s1 = nf90_get_var(ncid(2), var_id, buf)
+    do ie = 1,nelemd
+       i = nf*nf*(ie-1)
+       phis_fv(:,ie) = buf(i+1:i+nf*nf)
+    end do
+    call gfr_fv_phys_to_dyn_topo(hybrid, elem, 1, nelemd, phis_fv)
+    call gfr_dyn_to_fv_phys_topo(hybrid, elem, 1, nelemd, phis_fv2dyn2fv)
+
+    deallocate(buf, phis_gll, phis_fv, phis_fv2dyn2fv, phis_dyn2fv)
+    do i = 1,2
+       s1 = nf90_close(ncid(i))
+    end do
+  end subroutine study_topo
+
   subroutine gfr_check_api(hybrid, nets, nete, hvcoord, elem)
     use hybvcoord_mod, only: hvcoord_t
     use gllfvremap_mod
@@ -439,6 +491,16 @@ contains
     integer, intent(in) :: nets, nete
 
     integer :: nphys
+
+    if (hybrid%hthreads > 1) then
+       print *, 'topo study requires just 1 thread'
+       call exit(-1)
+    end if
+    nphys = 2
+    call gfr_init(hybrid%par, elem, nphys, check=.true.)
+    call init(nphys)
+    call study_topo(hybrid, elem, nphys)
+    return
 
     do nphys = 1, np
        ! This is meant to be called before threading starts.
