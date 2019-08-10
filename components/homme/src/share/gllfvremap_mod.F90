@@ -144,7 +144,8 @@ contains
     call gfr_init_fv_metdet(elem, gfr)
     call gfr_init_geometry(elem, gfr)
 
-    if (par%masterproc .and. nphys == 2) then
+    return
+    if (par%masterproc) then
        gll = gausslobatto(np)
        nf = nphys
        do gj = 1,np
@@ -153,10 +154,11 @@ contains
              print *,'mass> mass M_gf gi,gj',gi,gj,(a-gll%weights(gi)*gll%weights(gj))/a
           end do
        end do
+       call gll_cleanup(gll)
        do fj = 1,nf
           do fi = 1,nf
              a = sum(gfr%M_gf(:,:,fi,fj))
-             print *,'mass> mass M_gf fi,fj',fi,fj,(a-one)/one
+             print *,'mass> mass M_gf fi,fj',fi,fj,(a-(four/(nf*nf)))/a
           end do
        end do
        do gj = 1,np
@@ -165,10 +167,11 @@ contains
              print *,'mass> mass f2g_remapd gi,gj',gi,gj,(a-one)/one
           end do
        end do
+       gll = gausslobatto(gfr%npi)
        do fj = 1,nf
           do fi = 1,nf
-             a = sum(gfr%f2g_remapd(fi,fj,:,:))
-             print *,'mass> mass f2g_remapd fi,fj',fi,fj,(a-4.d0)/4.0d0
+             a = sum(gfr%f2g_remapd(fi,fj,:,:)*gfr%w_gg)
+             print *,'mass> mass f2g_remapd fi,fj',fi,fj,(a-four/(nf*nf))/a
           end do
        end do
        call gll_cleanup(gll)
@@ -757,8 +760,7 @@ contains
        end do
     end do
 
-    ! Scale so the sum over FV subcells gives the GLL weights to machine
-    ! precision.
+    ! Scale rows for numerics.
     do gj = 1,np
        do gi = 1,np
           gfr%f2g_remapd(:nf,:nf,gi,gj) = gfr%f2g_remapd(:nf,:nf,gi,gj)* &
@@ -766,13 +768,12 @@ contains
                sum(gfr%f2g_remapd(:nf,:nf,gi,gj)))
        end do
     end do
-    ! Scale so the sum over GLL nodes gives the FV subcell area to machine
-    ! precision.
+    ! Scale columns.
     do fj = 1,nf
        do fi = 1,nf
           gfr%f2g_remapd(fi,fj,:,:) = gfr%f2g_remapd(fi,fj,:,:)* &
                (four/ &
-               sum(gfr%f2g_remapd(fi,fj,:,:)))
+               (nf*nf*sum(gfr%f2g_remapd(fi,fj,:,:)*gfr%w_gg)))
        end do
     end do
   end subroutine gfr_init_f2g_remapd
