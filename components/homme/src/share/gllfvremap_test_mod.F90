@@ -439,6 +439,8 @@ contains
        end if
     end do
 
+    ! Expensive test to determine mass conservation quality over many
+    ! iterations.
     return
     if (nphys /= 2) return
     do ie = nets,nete

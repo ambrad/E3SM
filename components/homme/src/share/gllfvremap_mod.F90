@@ -103,10 +103,6 @@ contains
 
     real(real_kind) :: R(npsq,nphys_max*nphys_max), tau(npsq)
 
-    integer :: fi, fj, gi, gj, nf
-    real(kind=real_kind) :: a, b, c
-    type (quadrature_t) :: gll
-
     gfr%check = .false.
     if (present(check)) gfr%check = check
 
@@ -131,8 +127,8 @@ contains
     call gfr_init_w_gg(np, gfr%w_gg)
     call gfr_init_w_gg(gfr%npi, gfr%w_sgsg)
     call gfr_init_w_ff(nphys, gfr%w_ff)
-    call gfr_init_M_gf(np, nphys, gfr%M_gf)
-    call gfr_init_M_gf(gfr%npi, nphys, gfr%M_sgf)
+    call gfr_init_M_gf(np, nphys, gfr%M_gf, .true.)
+    call gfr_init_M_gf(gfr%npi, nphys, gfr%M_sgf, .false.)
     call gfr_init_R(gfr%npi, nphys, gfr%w_sgsg, gfr%M_sgf, R, tau)
     call gfr_init_interp_matrix(gfr%npi, gfr%interp)
     call gfr_init_f2g_remapd(gfr, R, tau)
@@ -143,39 +139,6 @@ contains
          gfr%phis(nphys*nphys,nelemd), gfr%spherep_f(nphys,nphys,nelemd))
     call gfr_init_fv_metdet(elem, gfr)
     call gfr_init_geometry(elem, gfr)
-
-    return
-    if (par%masterproc) then
-       gll = gausslobatto(np)
-       nf = nphys
-       do gj = 1,np
-          do gi = 1,np
-             a = sum(gfr%M_gf(gi,gj,:nf,:nf))
-             print *,'mass> mass M_gf gi,gj',gi,gj,(a-gll%weights(gi)*gll%weights(gj))/a
-          end do
-       end do
-       call gll_cleanup(gll)
-       do fj = 1,nf
-          do fi = 1,nf
-             a = sum(gfr%M_gf(:,:,fi,fj))
-             print *,'mass> mass M_gf fi,fj',fi,fj,(a-(four/(nf*nf)))/a
-          end do
-       end do
-       do gj = 1,np
-          do gi = 1,np
-             a = sum(gfr%f2g_remapd(:nf,:nf,gi,gj))
-             print *,'mass> mass f2g_remapd gi,gj',gi,gj,(a-one)/one
-          end do
-       end do
-       gll = gausslobatto(gfr%npi)
-       do fj = 1,nf
-          do fi = 1,nf
-             a = sum(gfr%f2g_remapd(fi,fj,:,:)*gfr%w_gg)
-             print *,'mass> mass f2g_remapd fi,fj',fi,fj,(a-four/(nf*nf))/a
-          end do
-       end do
-       call gll_cleanup(gll)
-    end if
   end subroutine gfr_init
 
   subroutine gfr_finish()
@@ -603,11 +566,12 @@ contains
     end do
   end subroutine eval_lagrange_bases
 
-  subroutine gfr_init_M_gf(np, nphys, M_gf)
+  subroutine gfr_init_M_gf(np, nphys, M_gf, scale)
     use quadrature_mod, only : gausslobatto, quadrature_t
 
     integer, intent(in) :: np, nphys
     real(kind=real_kind), intent(out) :: M_gf(:,:,:,:)
+    logical, intent(in) :: scale
 
     type (quadrature_t) :: gll
     integer :: gi, gj, fi, fj, qi, qj
@@ -648,15 +612,17 @@ contains
 
     M_gf = M_gf/real(nphys*nphys, real_kind)
 
-    ! Scale so the sum over FV subcells gives the GLL weights to machine
-    ! precision.
-    do gj = 1,np
-       do gi = 1,np
-          M_gf(gi,gj,:nphys,:nphys) = M_gf(gi,gj,:nphys,:nphys)* &
-               ((gll%weights(gi)*gll%weights(gj))/ &
-               sum(M_gf(gi,gj,:nphys,:nphys)))
+    if (scale) then
+       ! Scale so the sum over FV subcells gives the GLL weights to machine
+       ! precision.
+       do gj = 1,np
+          do gi = 1,np
+             M_gf(gi,gj,:nphys,:nphys) = M_gf(gi,gj,:nphys,:nphys)* &
+                  ((gll%weights(gi)*gll%weights(gj))/ &
+                  sum(M_gf(gi,gj,:nphys,:nphys)))
+          end do
        end do
-    end do
+    end if
 
     call gll_cleanup(gll)
   end subroutine gfr_init_M_gf
@@ -757,23 +723,6 @@ contains
           call gfr_f2g_remapd_op(gfr, R, tau, f, g)
           gfr%f2g_remapd(fi,fj,:,:) = g
           f(fi,fj) = zero
-       end do
-    end do
-
-    ! Scale rows for numerics.
-    do gj = 1,np
-       do gi = 1,np
-          gfr%f2g_remapd(:nf,:nf,gi,gj) = gfr%f2g_remapd(:nf,:nf,gi,gj)* &
-               (one/ &
-               sum(gfr%f2g_remapd(:nf,:nf,gi,gj)))
-       end do
-    end do
-    ! Scale columns.
-    do fj = 1,nf
-       do fi = 1,nf
-          gfr%f2g_remapd(fi,fj,:,:) = gfr%f2g_remapd(fi,fj,:,:)* &
-               (four/ &
-               (nf*nf*sum(gfr%f2g_remapd(fi,fj,:,:)*gfr%w_gg)))
        end do
     end do
   end subroutine gfr_init_f2g_remapd
