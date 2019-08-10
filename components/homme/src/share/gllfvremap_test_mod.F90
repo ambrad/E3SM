@@ -439,6 +439,7 @@ contains
        end if
     end do
 
+    !! Test 4.
     ! Expensive test to determine mass conservation quality over many
     ! iterations.
     return
