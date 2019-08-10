@@ -24,12 +24,12 @@ module gllfvremap_mod
   real(kind=real_kind), parameter :: &
        zero = 0.0_real_kind, half = 0.5_real_kind, &
        one = 1.0_real_kind, two = 2.0_real_kind, &
-       eps = epsilon(1.0_real_kind)
+       four = 4.0_real_kind, eps = epsilon(1.0_real_kind)
 
   ! Data type and functions for high-order, shape-preserving FV <-> GLL remap.
   type, public :: GllFvRemap_t
      integer :: nphys, npi
-     logical :: check
+     logical :: check, have_fv_topo_file_phis
      real(kind=real_kind) :: tolfac ! for checking
      real(kind=real_kind) :: &
           ! Node or cell weights
@@ -94,13 +94,14 @@ contains
     use kinds, only: iulog
     use dimensions_mod, only: nlev
     use parallel_mod, only: parallel_t, abortmp
+    use quadrature_mod, only : gausslobatto, quadrature_t
 
     type (parallel_t), intent(in) :: par
     type (element_t), intent(in) :: elem(:)
     integer, intent(in) :: nphys
     logical, intent(in), optional :: check
 
-    real(real_kind) :: R(npsq,nphys_max*nphys_max)
+    real(real_kind) :: R(npsq,nphys_max*nphys_max), tau(npsq)
 
     gfr%check = .false.
     if (present(check)) gfr%check = check
@@ -119,29 +120,31 @@ contains
        call abortmp('gllfvremap_mod: qsize must be >= 1')
     end if
 
+    gfr%have_fv_topo_file_phis = .false.
     gfr%nphys = nphys
     gfr%npi = max(2, nphys)
 
     call gfr_init_w_gg(np, gfr%w_gg)
     call gfr_init_w_gg(gfr%npi, gfr%w_sgsg)
     call gfr_init_w_ff(nphys, gfr%w_ff)
-    call gfr_init_M_gf(np, nphys, gfr%M_gf)
-    call gfr_init_M_gf(gfr%npi, nphys, gfr%M_sgf)
-    call gfr_init_R(gfr%npi, nphys, gfr%w_sgsg, gfr%M_sgf, R)
+    call gfr_init_M_gf(np, nphys, gfr%M_gf, .true.)
+    call gfr_init_M_gf(gfr%npi, nphys, gfr%M_sgf, .false.)
+    call gfr_init_R(gfr%npi, nphys, gfr%w_sgsg, gfr%M_sgf, R, tau)
     call gfr_init_interp_matrix(gfr%npi, gfr%interp)
-    call gfr_init_f2g_remapd(gfr, R)
+    call gfr_init_f2g_remapd(gfr, R, tau)
 
     allocate(gfr%fv_metdet(nphys,nphys,nelemd), &
          gfr%D_f(nphys,nphys,2,2,nelemd), gfr%Dinv_f(nphys,nphys,2,2,nelemd), &
          gfr%qmin(nlev,max(1,qsize),nelemd), gfr%qmax(nlev,max(1,qsize),nelemd), &
-         gfr%spherep_f(nphys,nphys,nelemd), gfr%phis(nphys*nphys,nelemd))
+         gfr%phis(nphys*nphys,nelemd), gfr%spherep_f(nphys,nphys,nelemd))
     call gfr_init_fv_metdet(elem, gfr)
     call gfr_init_geometry(elem, gfr)
   end subroutine gfr_init
 
   subroutine gfr_finish()
     if (.not. allocated(gfr%fv_metdet)) return
-    deallocate(gfr%fv_metdet, gfr%D_f, gfr%Dinv_f, gfr%qmin, gfr%qmax, gfr%spherep_f, gfr%phis)
+    deallocate(gfr%fv_metdet, gfr%D_f, gfr%Dinv_f, gfr%qmin, gfr%qmax, gfr%phis, &
+         gfr%spherep_f)
   end subroutine gfr_finish
 
   subroutine gfr_dyn_to_fv_phys_hybrid(hybrid, nt, hvcoord, elem, nets, nete, &
@@ -174,14 +177,17 @@ contains
             wr1(:,:,:1))
        ps(:ncol,ie) = reshape(wr1(:nf,:nf,1), (/ncol/))
 
-       wr2(:,:,1) = elem(ie)%state%phis(:,:)
-       call gfr_g2f_scalar(gfr, ie, elem(ie)%metdet, wr2(:,:,:1), wr1(:,:,:1))
-       qmin = minval(wr2(:,:,1))
-       qmax = maxval(wr2(:,:,1))
-       call limiter_clip_and_sum(nf, gfr%w_ff(:nf,:nf)*gfr%fv_metdet(:nf,:nf,ie), &
-            qmin, qmax, ones, wr1(:,:,1))
-       phis(:ncol,ie) = reshape(wr1(:nf,:nf,1), (/ncol/))
-       !phis(:ncol,ie) = gfr%phis(:ncol,ie)
+       if (gfr%have_fv_topo_file_phis) then
+          phis(:ncol,ie) = gfr%phis(:,ie)
+       else
+          wr2(:,:,1) = elem(ie)%state%phis(:,:)
+          call gfr_g2f_scalar(gfr, ie, elem(ie)%metdet, wr2(:,:,:1), wr1(:,:,:1))
+          qmin = minval(wr2(:,:,1))
+          qmax = maxval(wr2(:,:,1))
+          call limiter_clip_and_sum(nf, gfr%w_ff(:nf,:nf)*gfr%fv_metdet(:nf,:nf,ie), &
+               qmin, qmax, ones, wr1(:,:,1))
+          phis(:ncol,ie) = reshape(wr1(:nf,:nf,1), (/ncol/))
+       end if
 
        call calc_dp(hvcoord, elem(ie)%state%ps_v(:,:,nt), dp)
        call gfr_g2f_scalar(gfr, ie, elem(ie)%metdet, dp, dp_fv)
@@ -338,9 +344,10 @@ contains
     ones = one
     nf = gfr%nphys
     ncol = nf*nf
+    gfr%have_fv_topo_file_phis = .true.
 
     do ie = nets,nete
-       gfr%phis(:ncol,ie) = phis(:ncol,ie)
+       gfr%phis(:,ie) = phis(:ncol,ie)
        wr(:nf,:nf,1) = reshape(phis(:ncol,ie), (/nf,nf/))
        gfr%qmin(:,:,ie) = minval(wr(:nf,:nf,1))
        gfr%qmax(:,:,ie) = maxval(wr(:nf,:nf,1))
@@ -367,17 +374,9 @@ contains
        end if
     end do
 
-    if (hybrid%par%dynproc) then
-       do ie = nets,nete
-          elem(ie)%state%phis = elem(ie)%state%phis*elem(ie)%spheremp
-          call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%phis, 1, 0, 1)
-       end do
-       call bndry_exchangeV(hybrid, edge_g)
-       do ie = nets,nete
-          call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%phis, 1, 0, 1)
-          elem(ie)%state%phis = elem(ie)%state%phis*elem(ie)%rspheremp
-       end do
-    end if
+    do ie = nets,nete
+       elem(ie)%state%phis = elem(ie)%state%phis*elem(ie)%spheremp*elem(ie)%rspheremp
+    end do
   end subroutine gfr_fv_phys_to_dyn_topo_hybrid
 
   subroutine gfr_hybrid_create(par, dom_mt, hybrid, nets, nete)
@@ -567,11 +566,12 @@ contains
     end do
   end subroutine eval_lagrange_bases
 
-  subroutine gfr_init_M_gf(np, nphys, M_gf)
+  subroutine gfr_init_M_gf(np, nphys, M_gf, scale)
     use quadrature_mod, only : gausslobatto, quadrature_t
 
     integer, intent(in) :: np, nphys
     real(kind=real_kind), intent(out) :: M_gf(:,:,:,:)
+    logical, intent(in) :: scale
 
     type (quadrature_t) :: gll
     integer :: gi, gj, fi, fj, qi, qj
@@ -612,10 +612,22 @@ contains
 
     M_gf = M_gf/real(nphys*nphys, real_kind)
 
+    if (scale) then
+       ! Scale so the sum over FV subcells gives the GLL weights to machine
+       ! precision.
+       do gj = 1,np
+          do gi = 1,np
+             M_gf(gi,gj,:nphys,:nphys) = M_gf(gi,gj,:nphys,:nphys)* &
+                  ((gll%weights(gi)*gll%weights(gj))/ &
+                  sum(M_gf(gi,gj,:nphys,:nphys)))
+          end do
+       end do
+    end if
+
     call gll_cleanup(gll)
   end subroutine gfr_init_M_gf
 
-  subroutine gfr_init_R(np, nphys, w_gg, M_gf, R)
+  subroutine gfr_init_R(np, nphys, w_gg, M_gf, R, tau)
     ! We want to solve
     !     min_g 1/2 g'M_gg g - g' M_gf f
     !      st   M_gf' g = M_ff f,
@@ -630,29 +642,36 @@ contains
     ! R'R. In this module, we can take M_gg = diag(w_gg) and M_ff = diag(w_ff)
     ! with no loss of accuracy.
     !   If nphys = np, then the problem reduces to
-    !     M_gf' g = M_ff f,
-    ! but the same linear algebra can be used.
+    !     M_gf' g = M_ff f.
+    ! M_gf is symmetric. We could use the same computations as above
+    ! or, to gain a bit more accuracy, compute the simpler
+    !     M_gf = Q R
+    ! and later solve
+    !     R'Q' g = M_ff f.
+    !   In either case, all of this is one-time initialization; during
+    ! time stepping, just a matvec is computed.
     !
     !assume nphys <= np
 
     integer, intent(in) :: np, nphys
     real(kind=real_kind), intent(in) :: w_gg(:,:), M_gf(:,:,:,:)
-    real(kind=real_kind), intent(out) :: R(:,:)
+    real(kind=real_kind), intent(out) :: R(:,:), tau(:)
 
-    real(kind=real_kind) :: wrk1(np*np*nphys*nphys), wrk2(np*np*nphys*nphys)
+    real(kind=real_kind) :: wrk(np*np*nphys*nphys), v
     integer :: gi, gj, fi, fj, npsq, info
 
     do fj = 1,nphys
        do fi = 1,nphys
           do gi = 1,np
              do gj = 1,np
-                R(np*(gi-1) + gj, nphys*(fi-1) + fj) = &
-                     M_gf(gi,gj,fi,fj)/sqrt(w_gg(gi,gj))
+                v = M_gf(gi,gj,fi,fj)
+                if (nphys < np) v = v/sqrt(w_gg(gi,gj))
+                R(np*(gi-1) + gj, nphys*(fi-1) + fj) = v
              end do
           end do
        end do
     end do
-    call dgeqrf(np*np, nphys*nphys, R, size(R,1), wrk1, wrk2, np*np*nphys*nphys, info)
+    call dgeqrf(np*np, nphys*nphys, R, size(R,1), tau, wrk, np*np*nphys*nphys, info)
   end subroutine gfr_init_R
 
   subroutine gfr_init_interp_matrix(npsrc, interp)
@@ -684,39 +703,39 @@ contains
     call gll_cleanup(gllt)
   end subroutine gfr_init_interp_matrix
 
-  subroutine gfr_init_f2g_remapd(gfr, R)
+  subroutine gfr_init_f2g_remapd(gfr, R, tau)
     !assume nphys <= np
 
     type (GllFvRemap_t), intent(inout) :: gfr
-    real(kind=real_kind), intent(in) :: R(:,:)
+    real(kind=real_kind), intent(in) :: R(:,:), tau(:)
 
-    integer :: nf, fi, fj
+    integer :: nf, fi, fj, gi, gj
     real(kind=real_kind) :: f(np,np), g(np,np)
 
     ! Apply gfr_init_f2g_remapd_op to the Id matrix to get the remap operator's
     ! matrix representation.
+    gfr%f2g_remapd = zero
     f = zero
     nf = gfr%nphys
     do fi = 1,nf
        do fj = 1,nf
           f(fi,fj) = one
-          call gfr_f2g_remapd_op(gfr, R, f, g)
+          call gfr_f2g_remapd_op(gfr, R, tau, f, g)
           gfr%f2g_remapd(fi,fj,:,:) = g
           f(fi,fj) = zero
        end do
     end do
   end subroutine gfr_init_f2g_remapd
 
-  subroutine gfr_f2g_remapd_op(gfr, R, f, g)
+  subroutine gfr_f2g_remapd_op(gfr, R, tau, f, g)
     !assume nphys <= np
 
     type (GllFvRemap_t), intent(in) :: gfr
-    real(kind=real_kind), intent(in) :: R(:,:)
-    real(kind=real_kind), intent(in) :: f(:,:)
+    real(kind=real_kind), intent(in) :: R(:,:), tau(:), f(:,:)
     real(kind=real_kind), intent(out) :: g(:,:)
 
     integer :: nf, nf2, npi, np2, gi, gj, fi, fj, info
-    real(kind=real_kind) :: accum, wrk(gfr%nphys,gfr%nphys), x(np,np)
+    real(kind=real_kind) :: accum, wrk(gfr%nphys,gfr%nphys), x(np,np), wr(np*np)
 
     nf = gfr%nphys
     nf2 = nf*nf
@@ -725,27 +744,37 @@ contains
 
     ! Solve the constrained projection described in gfr_init_R:
     !     g = inv(M_sgsg) M_sgf inv(S) M_ff f
-    wrk(:nf,:nf) = gfr%w_ff(:nf,:nf)*f(:nf,:nf)
-    call dtrtrs('u', 't', 'n', nf2, 1, R, size(R,1), wrk, np2, info)
-    call dtrtrs('u', 'n', 'n', nf2, 1, R, size(R,1), wrk, np2, info)
-    g(:npi,:npi) = zero
-    do fj = 1,nf
-       do fi = 1,nf
-          do gj = 1,npi
-             do gi = 1,npi
-                g(gi,gj) = g(gi,gj) + gfr%M_sgf(gi,gj,fi,fj)*wrk(fi,fj)
+    wrk = gfr%w_ff(:nf,:nf)*f(:nf,:nf)
+    if (nf == npi) then
+       call dtrsm('l', 'u', 't', 'n', nf2, 1, one, R, size(R,1), wrk, nf2)
+       call dormqr('l', 'n', nf2, 1, nf2, R, size(R,1), tau, wrk, nf2, wr, np2, info)
+       g(:npi,:npi) =  wrk
+    else
+       call dtrtrs('u', 't', 'n', nf2, 1, R, size(R,1), wrk, nf2, info)
+       call dtrtrs('u', 'n', 'n', nf2, 1, R, size(R,1), wrk, nf2, info)
+       g(:npi,:npi) = zero
+       do fj = 1,nf
+          do fi = 1,nf
+             do gj = 1,npi
+                do gi = 1,npi
+                   g(gi,gj) = g(gi,gj) + gfr%M_sgf(gi,gj,fi,fj)*wrk(fi,fj)
+                end do
              end do
           end do
        end do
-    end do
+    end if
     if (npi < np) then
-       ! Finish the projection:
-       !     wrk = inv(M_sgsg) g
-       do gj = 1,npi
-          do gi = 1,npi
-             x(gi,gj) = g(gi,gj)/gfr%w_sgsg(gi,gj)
+       if (nf == npi) then
+          x(:nf,:nf) = g(:nf,:nf)
+       else
+          ! Finish the projection:
+          !     wrk = inv(M_sgsg) g
+          do gj = 1,npi
+             do gi = 1,npi
+                x(gi,gj) = g(gi,gj)/gfr%w_sgsg(gi,gj)
+             end do
           end do
-       end do 
+       end if
        ! Interpolate from npi to np; if npi = np, this is just the Id matrix.
        do fj = 1,np
           do fi = 1,np
@@ -758,7 +787,7 @@ contains
              g(fi,fj) = accum
           end do
        end do
-    else
+    elseif (nf < npi) then
        ! Finish the projection.
        do gj = 1,np
           do gi = 1,np
@@ -1434,7 +1463,8 @@ contains
        a = sum(wrk(:nf,:nf)*abs(f1(:nf,:nf) - f0(:nf,:nf)))
        b = sum(wrk(:nf,:nf)*abs(f0(:nf,:nf)))
        rd = a/b
-       if (rd /= rd .or. rd > 10*eps) write(iulog,*) 'gfr> recover', ie, a, b, rd, gfr%fv_metdet(:,:,ie)
+       if (rd /= rd .or. rd > 10*eps) &
+            write(iulog,*) 'gfr> recover', ie, a, b, rd, gfr%fv_metdet(:,:,ie)
     end do
     call check_nonnegative(elem, nets, nete)
 

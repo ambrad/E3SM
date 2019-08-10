@@ -3,8 +3,8 @@
 #endif
 
 !todo
+! - adjust FV cell center for v computation to match dyn_grid::fv_physgrid_init
 ! - test with HORIZ_OPENMP off
-! - topo roughness
 ! - ftype other than 2,4
 ! - np4-np2 instead of np4-pg1
 
@@ -166,6 +166,8 @@ contains
     use global_norms_mod, only: wrap_repro_sum
     use reduction_mod, only: ParallelMin, ParallelMax
     use physical_constants, only: g, p0, kappa
+    use edge_mod, only: edgevpack_nlyr, edgevunpack_nlyr, edge_g
+    use bndry_mod, only: bndry_exchangev
     use gllfvremap_mod
 
     type (hybrid_t), intent(in) :: hybrid
@@ -176,7 +178,7 @@ contains
     character(32) :: msg
 
     type (cartesian3D_t) :: p
-    real(kind=real_kind) :: wr(np,np,nlev), tend(np,np,nlev), f, a, b, rd, &
+    real(kind=real_kind) :: wr(np,np,nlev), tend(np,np,nlev), f, a, b, c, rd, &
          qmin1(qsize+3), qmax1(qsize+3), qmin2, qmax2, mass1, mass2, &
          wr1(np,np,nlev), wr2(np,np,nlev)
     integer :: nf, ncol, nt1, nt2, ie, i, j, k, d, q, qi, tl, col
@@ -303,6 +305,15 @@ contains
     end do
     call gfr_dyn_to_fv_phys_topo(hybrid, elem, nets, nete, pg_data%zs)
     call gfr_fv_phys_to_dyn_topo(hybrid, elem, nets, nete, pg_data%zs)
+    ! Do the DSS w/o (r)spheremp, as in inidata.F90. gfr_fv_phys_to_dyn_topo has
+    ! prepped phis for this.
+    do ie = nets, nete
+       call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%phis, 1, 0, 1)
+    end do
+    call bndry_exchangeV(hybrid, edge_g)
+    do ie = nets, nete
+       call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%phis, 1, 0, 1)
+    end do
     ! Compare GLL phis1 against GLL phis0.
     do ie = nets,nete
        global_shared_buf(ie,1) = sum(elem(ie)%spheremp*(elem(ie)%state%phis - &
@@ -426,6 +437,62 @@ contains
              end if
           end if
        end if
+    end do
+
+    !! Test 4.
+    ! Expensive test to determine mass conservation quality over many
+    ! iterations.
+    return
+    if (nphys /= 2) return
+    do ie = nets,nete
+       call set_gll_state(hvcoord, elem(ie), nt1, nt2)
+    end do
+    do tl = 1,100000
+       call gfr_dyn_to_fv_phys(hybrid, nt2, hvcoord, elem, nets, nete, &
+            pg_data%ps, pg_data%zs, pg_data%T, pg_data%uv, pg_data%omega_p, pg_data%q)
+       do ie = nets,nete
+          pg_data%q(:ncol,:,:,ie) = two*pg_data%q(:ncol,:,:,ie)
+       end do
+       call gfr_fv_phys_to_dyn(hybrid, nt2, hvcoord, elem, nets, nete, &
+            pg_data%T, pg_data%uv, pg_data%q)       
+       call gfr_f2g_dss(hybrid, elem, nets, nete)
+       do ie = nets,nete
+          do k = 1,nlev
+             wr(:,:,k) = elem(ie)%spheremp
+          end do
+          call get_temperature(elem(ie), wr1, hvcoord, nt1)
+          ! T
+          global_shared_buf(ie,2) = sum(wr(:,:,1)*elem(ie)%state%dp3d(:,:,1,nt1)*wr1(:,:,1))
+          global_shared_buf(ie,1) = sum(wr(:,:,1)*elem(ie)%state%dp3d(:,:,1,nt1)*elem(ie)%derived%FT(:,:,1))
+          ! theta
+          wr1 = wr1*(elem(ie)%state%dp3d(:,:,:,nt1)/p0)**kappa
+          global_shared_buf(ie,4) = sum(wr(:,:,1)*elem(ie)%state%dp3d(:,:,1,nt1)*wr1(:,:,1))
+          wr1 = elem(ie)%derived%FT
+          wr1 = wr1*(elem(ie)%state%dp3d(:,:,:,nt1)/p0)**kappa
+          global_shared_buf(ie,3) = sum(wr(:,:,1)*elem(ie)%state%dp3d(:,:,1,nt1)*wr1(:,:,1))
+          ! qv
+          q = 1
+          global_shared_buf(ie,5) = sum(wr(:,:,1)*elem(ie)%state%dp3d(:,:,1,nt1)* &
+               elem(ie)%derived%FQ(:,:,1,q))
+          global_shared_buf(ie,6) = sum(wr(:,:,1)*elem(ie)%state%dp3d(:,:,1,nt1)* &
+               two*elem(ie)%state%Q(:,:,1,q))
+       end do
+       call wrap_repro_sum(nvars=6, comm=hybrid%par%comm)
+       if (hybrid%masterthread .and. (tl < 50 .or. modulo(tl-1, 1000) == 0)) then
+          if (tl == 1) then
+             a = global_shared_sum(2)
+             b = global_shared_sum(4)
+             c = global_shared_sum(6)
+          end if
+          print '(a,i9,a,es12.4,es12.4,a,es12.4,es12.4,a,es12.4,es12.4)', 'gfrtemp>', tl, &
+               ' T', a, (global_shared_sum(1) - a)/a, &
+               ' th', b, (global_shared_sum(3) - b)/b, &
+               ' qv', b, (global_shared_sum(5) - c)/c
+       end if
+       do ie = nets,nete
+          elem(ie)%state%T(:,:,:,nt2) = elem(ie)%derived%FT
+          elem(ie)%state%Q = half*elem(ie)%derived%FQ
+       end do
     end do
   end subroutine run
 
