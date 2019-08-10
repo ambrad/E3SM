@@ -439,6 +439,7 @@ contains
        end if
     end do
 
+    return
     if (nphys /= 2) return
     do ie = nets,nete
        call set_gll_state(hvcoord, elem(ie), nt1, nt2)

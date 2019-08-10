@@ -24,7 +24,7 @@ module gllfvremap_mod
   real(kind=real_kind), parameter :: &
        zero = 0.0_real_kind, half = 0.5_real_kind, &
        one = 1.0_real_kind, two = 2.0_real_kind, &
-       eps = epsilon(1.0_real_kind)
+       four = 4.0_real_kind, eps = epsilon(1.0_real_kind)
 
   ! Data type and functions for high-order, shape-preserving FV <-> GLL remap.
   type, public :: GllFvRemap_t
@@ -94,13 +94,18 @@ contains
     use kinds, only: iulog
     use dimensions_mod, only: nlev
     use parallel_mod, only: parallel_t, abortmp
+    use quadrature_mod, only : gausslobatto, quadrature_t
 
     type (parallel_t), intent(in) :: par
     type (element_t), intent(in) :: elem(:)
     integer, intent(in) :: nphys
     logical, intent(in), optional :: check
 
-    real(real_kind) :: R(npsq,nphys_max*nphys_max)
+    real(kind=real_kind) :: R(npsq,nphys_max*nphys_max)
+
+    integer :: fi, fj, gi, gj, nf
+    real(kind=real_kind) :: a, b, c
+    type (quadrature_t) :: gll
 
     gfr%check = .false.
     if (present(check)) gfr%check = check
@@ -138,6 +143,36 @@ contains
          gfr%phis(nphys*nphys,nelemd), gfr%spherep_f(nphys,nphys,nelemd))
     call gfr_init_fv_metdet(elem, gfr)
     call gfr_init_geometry(elem, gfr)
+
+    if (par%masterproc .and. nphys == 2) then
+       gll = gausslobatto(np)
+       nf = nphys
+       do gj = 1,np
+          do gi = 1,np
+             a = sum(gfr%M_gf(gi,gj,:nf,:nf))
+             print *,'mass> mass M_gf gi,gj',gi,gj,(a-gll%weights(gi)*gll%weights(gj))/a
+          end do
+       end do
+       do fj = 1,nf
+          do fi = 1,nf
+             a = sum(gfr%M_gf(:,:,fi,fj))
+             print *,'mass> mass M_gf fi,fj',fi,fj,(a-one)/one
+          end do
+       end do
+       do gj = 1,np
+          do gi = 1,np
+             a = sum(gfr%f2g_remapd(:nf,:nf,gi,gj))
+             print *,'mass> mass f2g_remapd gi,gj',gi,gj,(a-one)/one
+          end do
+       end do
+       do fj = 1,nf
+          do fi = 1,nf
+             a = sum(gfr%f2g_remapd(fi,fj,:,:))
+             print *,'mass> mass f2g_remapd fi,fj',fi,fj,(a-4.d0)/4.0d0
+          end do
+       end do
+       call gll_cleanup(gll)
+    end if
   end subroutine gfr_init
 
   subroutine gfr_finish()
@@ -610,6 +645,16 @@ contains
 
     M_gf = M_gf/real(nphys*nphys, real_kind)
 
+    ! Scale so the sum over FV subcells gives the GLL weights to machine
+    ! precision.
+    do gj = 1,np
+       do gi = 1,np
+          M_gf(gi,gj,:nphys,:nphys) = M_gf(gi,gj,:nphys,:nphys)* &
+               ((gll%weights(gi)*gll%weights(gj))/ &
+               sum(M_gf(gi,gj,:nphys,:nphys)))
+       end do
+    end do
+
     call gll_cleanup(gll)
   end subroutine gfr_init_M_gf
 
@@ -688,11 +733,12 @@ contains
     type (GllFvRemap_t), intent(inout) :: gfr
     real(kind=real_kind), intent(in) :: R(:,:)
 
-    integer :: nf, fi, fj
+    integer :: nf, fi, fj, gi, gj
     real(kind=real_kind) :: f(np,np), g(np,np)
 
     ! Apply gfr_init_f2g_remapd_op to the Id matrix to get the remap operator's
     ! matrix representation.
+    gfr%f2g_remapd = zero
     f = zero
     nf = gfr%nphys
     do fi = 1,nf
@@ -703,6 +749,29 @@ contains
           f(fi,fj) = zero
        end do
     end do
+
+#if 1
+    ! Scale so the sum over GLL nodes gives the FV subcell area to machine
+    ! precision.
+    do fj = 1,nf
+       do fi = 1,nf
+          gfr%f2g_remapd(fi,fj,:,:) = gfr%f2g_remapd(fi,fj,:,:)* &
+               (four/ &
+               sum(gfr%f2g_remapd(fi,fj,:,:)))
+       end do
+    end do
+#endif
+#if 0
+    ! Scale so the sum over FV subcells gives the GLL weights to machine
+    ! precision.
+    do gj = 1,np
+       do gi = 1,np
+          gfr%f2g_remapd(:nf,:nf,gi,gj) = gfr%f2g_remapd(:nf,:nf,gi,gj)* &
+               (one/ &
+               sum(gfr%f2g_remapd(:nf,:nf,gi,gj)))
+       end do
+    end do
+#endif
   end subroutine gfr_init_f2g_remapd
 
   subroutine gfr_f2g_remapd_op(gfr, R, f, g)
