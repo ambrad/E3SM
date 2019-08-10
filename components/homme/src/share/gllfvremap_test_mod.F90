@@ -442,7 +442,7 @@ contains
     !! Test 4.
     ! Expensive test to determine mass conservation quality over many
     ! iterations.
-    return
+#if 0
     if (nphys /= 2) return
     do ie = nets,nete
        call set_gll_state(hvcoord, elem(ie), nt1, nt2)
@@ -494,6 +494,7 @@ contains
           elem(ie)%state%Q = half*elem(ie)%derived%FQ
        end do
     end do
+#endif
   end subroutine run
 
   subroutine gfr_check_api(hybrid, nets, nete, hvcoord, elem)
