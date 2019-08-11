@@ -344,7 +344,7 @@ contains
     ones = one
     nf = gfr%nphys
     ncol = nf*nf
-    gfr%have_fv_topo_file_phis = .true.
+    !gfr%have_fv_topo_file_phis = .true.
 
     do ie = nets,nete
        gfr%phis(:,ie) = phis(:ncol,ie)
