@@ -617,7 +617,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   real(rl), dimension(nlev)       :: u_c,v_c,p_c,qv_c,qc_c,qr_c,rho_c,z_c, th_c
   real(rl) :: max_w, max_precl, min_ps
   real(rl) :: lat, lon, dz_top(np,np),zi(np,np,nlevp),zi_c(nlevp), ps(np,np), &
-       wrk(np,np), rd, wrk3(np,np,nlev)
+       wrk(np,np), rd, wrk3(np,np,nlev), wrk4(np,np,nlev,2)
 
   integer :: nf, ncol
   real(rl), dimension(np,np,nlev) :: dp_fv, p_fv, u_fv, v_fv, T_fv, exner_kess_fv, &
@@ -755,7 +755,11 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      pg_data%T(:,:,ie) = reshape((T_fv(:nf,:nf,:) - T0(:nf,:nf,:))/dt, (/ncol,nlev/))
      pg_data%uv(:,1,:,ie) = reshape((u_fv(:nf,:nf,:) - u0(:nf,:nf,:))/dt, (/ncol,nlev/))
      pg_data%uv(:,2,:,ie) = reshape((v_fv(:nf,:nf,:) - v0(:nf,:nf,:))/dt, (/ncol,nlev/))
-     pg_data%q(:,:,:,ie) = reshape(Q_fv(:nf,:nf,:,:), (/ncol,nlev,qsize/))
+     ! ftype = 0, so q is Qdp tendency.
+     do i = 1,qsize
+        pg_data%q(:,:,i,ie) = reshape(dp_fv(:nf,:nf,:)*(Q_fv(:nf,:nf,:,i) - Q0_fv(:nf,:nf,:,i))/dt, &
+             (/ncol,nlev/))
+     end do
      
      ! Measure max w and max prect. w is not used in the physics, so
      ! just look at the GLL values.
@@ -774,17 +778,14 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
 
   call toy_init(rcd)
   do ie = nets,nete
-     call toy_rcd(elem(ie)%derived%FQ(:,:,:,4:5), rcd)
-     ! Compensate for the fact that in standalone tests, FQ is
-     ! density, while in E3SM coupled runs (and so the gfr interface
-     ! for E3SM coupling), FQ is mixing ratio.
      do k = 1,nlev
         dp(:,:,k) = (hvcoord%hyai(k+1) - hvcoord%hyai(k))*hvcoord%ps0 + &
              (hvcoord%hybi(k+1) - hvcoord%hybi(k))*elem(ie)%state%ps_v(:,:,nt)
      end do
-     do i = 1,qsize
-        elem(ie)%derived%FQ(:,:,:,i) = dp*(elem(ie)%derived%FQ(:,:,:,i) - elem(ie)%state%Q(:,:,:,i))/dt
+     do i = 1,2
+        wrk4(:,:,:,i) = elem(ie)%state%Q(:,:,:,i+3) + dt*elem(ie)%derived%FQ(:,:,:,i+3)/dp
      end do
+     call toy_rcd(wrk4, rcd)
   end do
   call toy_print(hybrid, tl%nstep, rcd)
 

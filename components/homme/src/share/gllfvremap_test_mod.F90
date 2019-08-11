@@ -119,7 +119,7 @@ contains
           s1%phis(i,j) = one + half*sin(p%x-half)*sin(half*p%y+2.5d0)*sin(2*p%z-2.5d0)
           do k = 1,nlev
              ! u, v have to be set carefully because they are
-             ! converted to contravarient velocity. Thus, at the
+             ! converted to contravariant velocity. Thus, at the
              ! poles, we need u, v to make sense to measure OOA
              ! correctly.
              wr(i,j,k,1) = sin(p%x)*sin(1.5*p%y)*cos(1.7*p%z)
@@ -500,6 +500,7 @@ contains
 
   subroutine gfr_check_api(hybrid, nets, nete, hvcoord, elem)
     use hybvcoord_mod, only: hvcoord_t
+    use control_mod, only: ftype
     use gllfvremap_mod
 
     type (hybrid_t), intent(in) :: hybrid
@@ -507,7 +508,11 @@ contains
     type (hvcoord_t) , intent(in) :: hvcoord
     integer, intent(in) :: nets, nete
 
-    integer :: nphys
+    integer :: nphys, ftype_in
+
+    ftype_in = ftype
+    if (hybrid%ithr == 0) ftype = 2
+    !$omp barrier
 
     do nphys = 1, np
        ! This is meant to be called before threading starts.
@@ -531,5 +536,8 @@ contains
        end if
        !$omp barrier
     end do
+
+    !$omp barrier
+    if (hybrid%ithr == 0) ftype = ftype_in
   end subroutine gfr_check_api
 end module gllfvremap_test_mod

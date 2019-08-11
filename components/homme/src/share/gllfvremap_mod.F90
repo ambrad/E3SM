@@ -109,7 +109,7 @@ contains
 
     gfr%tolfac = one
     if (par%masterproc) &
-         write(iulog,  '(a,i3,a,l2)') 'gfr> init nphys', nphys, ' check', gfr%check, ' ftype', ftype
+         write(iulog,  '(a,i3,a,l2,a,i2)') 'gfr> init nphys', nphys, ' check', gfr%check, ' ftype', ftype
 
     if (nphys > np) then
        ! The FV -> GLL map is defined only if nphys <= np. If we ever are
@@ -225,11 +225,9 @@ contains
   end subroutine gfr_dyn_to_fv_phys_hybrid
 
   subroutine gfr_fv_phys_to_dyn_hybrid(hybrid, nt, dt, hvcoord, elem, nets, nete, T, uv, q)
-    ! If ftype = 2, 3, 4, then q is the full mixing ratio state and dt
-    ! is not used; if it is not, then q is Qdp tendency, and dt is the
-    ! correct physics time step.
-    !   If ftype = 0, 2, 3, 4, then T, uv are tendencies; if ftype =
-    ! 1, they are the full state.
+    ! If ftype is in 1:4, then q is the full mixing ratio state and dt
+    ! is not used; if it is not, then q is Qdp tendency, and dt must
+    ! be the correct physics time step.
 
     use dimensions_mod, only: nlev
     use hybvcoord_mod, only: hvcoord_t
@@ -247,10 +245,11 @@ contains
     real(kind=real_kind), dimension(np,np,nlev) :: dp, dp_fv, wr1, wr2, p, p_fv
     real(kind=real_kind) :: qmin, qmax
     integer :: ie, nf, ncol, k, qsize, qi
+    logical :: q_adjustment
 
     nf = gfr%nphys
     ncol = nf*nf
-
+    q_adjustment = ftype >= 1 .and. ftype <= 4
     qsize = size(q,3)
 
     do ie = nets,nete
@@ -270,21 +269,41 @@ contains
        elem(ie)%derived%FT = elem(ie)%derived%FT/(p/p0)**kappa
 
        do qi = 1,qsize
-          ! FV Q_ten
-          !   GLL Q0 -> FV Q0
-          call gfr_g2f_mixing_ratio(gfr, ie, elem(ie)%metdet, dp, dp_fv, &
-               dp*elem(ie)%state%Q(:,:,:,qi), wr1)
-          !   FV Q_ten = FV Q1 - FV Q0
-          wr1(:nf,:nf,:) = reshape(q(:ncol,:,qi,ie), (/nf,nf,nlev/)) - wr1(:nf,:nf,:)
-          ! GLL Q_ten
-          call gfr_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wr1, wr2)
-          ! GLL Q1
-          elem(ie)%derived%FQ(:,:,:,qi) = elem(ie)%state%Q(:,:,:,qi) + wr2
-          ! Get limiter bounds.
-          do k = 1,nlev
-             gfr%qmin(k,qi,ie) = minval(q(:ncol,k,qi,ie))
-             gfr%qmax(k,qi,ie) = maxval(q(:ncol,k,qi,ie))
-          end do
+          if (q_adjustment) then
+             ! FV Q_ten
+             !   GLL Q0 -> FV Q0
+             call gfr_g2f_mixing_ratio(gfr, ie, elem(ie)%metdet, dp, dp_fv, &
+                  dp*elem(ie)%state%Q(:,:,:,qi), wr1)
+             !   FV Q_ten = FV Q1 - FV Q0
+             wr1(:nf,:nf,:) = reshape(q(:ncol,:,qi,ie), (/nf,nf,nlev/)) - wr1(:nf,:nf,:)
+             ! GLL Q_ten
+             call gfr_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wr1, wr2)
+             ! GLL Q1
+             elem(ie)%derived%FQ(:,:,:,qi) = elem(ie)%state%Q(:,:,:,qi) + wr2
+             ! Get limiter bounds.
+             do k = 1,nlev
+                gfr%qmin(k,qi,ie) = minval(q(:ncol,k,qi,ie))
+                gfr%qmax(k,qi,ie) = maxval(q(:ncol,k,qi,ie))
+             end do
+          else
+             ! FV Q_ten
+             wr1(:nf,:nf,:) = reshape(q(:ncol,:,qi,ie), (/nf,nf,nlev/))
+             wr1(:nf,:nf,:) = dt*wr1(:nf,:nf,:)/dp_fv(:nf,:nf,:)
+             ! GLL Q_ten
+             call gfr_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wr1, wr2)
+             ! GLL Q1
+             elem(ie)%derived%FQ(:,:,:,qi) = elem(ie)%state%Q(:,:,:,qi) + wr2
+             ! GLL Q0 -> FV Q0
+             call gfr_g2f_mixing_ratio(gfr, ie, elem(ie)%metdet, dp, dp_fv, &
+                  dp*elem(ie)%state%Q(:,:,:,qi), wr2)
+             ! FV Q1
+             wr2(:nf,:nf,:) = wr2(:nf,:nf,:) + wr1(:nf,:nf,:)
+             ! Get limiter bounds.
+             do k = 1,nlev
+                gfr%qmin(k,qi,ie) = minval(wr2(:nf,:nf,k))
+                gfr%qmax(k,qi,ie) = maxval(wr2(:nf,:nf,k))
+             end do
+          end if
        end do
     end do
 
@@ -309,6 +328,11 @@ contains
           if (gfr%check) then
              call check_f2g_mixing_ratio(gfr, hybrid, ie, qi, elem, gfr%qmin(:,qi,ie), &
                   gfr%qmax(:,qi,ie), dp, wr1, elem(ie)%derived%FQ(:,:,:,qi))
+          end if
+          if (.not. q_adjustment) then
+             ! Convert to a tendency.
+             elem(ie)%derived%FQ(:,:,:,qi) = &
+                  dp*(elem(ie)%derived%FQ(:,:,:,qi) - elem(ie)%state%Q(:,:,:,qi))/dt
           end if
        end do
     end do
