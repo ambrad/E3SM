@@ -477,6 +477,7 @@ CONTAINS
 
     if (par%dynproc) then
       if (fv_nphys > 0) then
+        call t_startf('fv_phys_to_dyn')
         if (se_fv_phys_remap_alg == 0) then
         ! Map FV physics state to dynamics grid
         call fv_phys_to_dyn(elem,T_tmp(1:nphys_sq,:,:),   \
@@ -486,6 +487,7 @@ CONTAINS
           call gfr_fv_phys_to_dyn(par, dom_mt, TimeLevel%n0, hvcoord, elem, T_tmp, &
                uv_tmp, q_tmp)
         end if
+        call t_stopf('fv_phys_to_dyn')
 
       else ! physics is on GLL nodes
 
