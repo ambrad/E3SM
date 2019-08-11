@@ -594,6 +594,7 @@ end subroutine toy_print
 subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl)
   use element_ops, only: get_field
   use gllfvremap_mod
+  use perf_mod, only: t_startf, t_stopf
 
   ! to DSS precl
   use edge_mod, only: edgevpack_nlyr, edgevunpack_nlyr, edge_g
@@ -640,8 +641,10 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   max_precl = -huge(rl)
   min_ps    = +huge(rl)
 
+  call t_startf('gfr_dyn_to_fv_phys')
   call gfr_dyn_to_fv_phys(hybrid, nt, hvcoord, elem, nets, nete, &
        pg_data%ps, pg_data%zs, pg_data%T, pg_data%uv, pg_data%omega_p, pg_data%q)
+  call t_stopf('gfr_dyn_to_fv_phys')
 
   do ie = nets,nete
      precl(:,:,ie) = -one
@@ -761,8 +764,10 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
      min_ps    = min( min_ps,    minval(elem(i)%state%ps_v(:,:,nt)) )
   enddo
 
-  call gfr_fv_phys_to_dyn(hybrid, nt, hvcoord, elem, nets, nete, &
+  call t_startf('gfr_fv_phys_to_dyn')
+  call gfr_fv_phys_to_dyn(hybrid, nt, dt, hvcoord, elem, nets, nete, &
        pg_data%T, pg_data%uv, pg_data%q)
+  call t_stopf('gfr_fv_phys_to_dyn')
   ! dp_coupling doesn't do the DSS; stepon does. Thus, this DCMIP test
   ! also needs to do its own DSS.
   call gfr_f2g_dss(hybrid, elem, nets, nete)

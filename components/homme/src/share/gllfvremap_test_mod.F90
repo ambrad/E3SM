@@ -4,6 +4,7 @@
 
 !todo
 ! - adjust FV cell center for v computation to match dyn_grid::fv_physgrid_init
+! - analyze and opt perf
 ! - test with HORIZ_OPENMP off
 ! - ftype other than 2,4
 ! - np4-np2 instead of np4-pg1
@@ -232,7 +233,7 @@ contains
     end if
 
     ! FV -> GLL.
-    call gfr_fv_phys_to_dyn(hybrid, nt2, hvcoord, elem, nets, nete, &
+    call gfr_fv_phys_to_dyn(hybrid, nt2, zero, hvcoord, elem, nets, nete, &
          pg_data%T, pg_data%uv, pg_data%q)
     call gfr_f2g_dss(hybrid, elem, nets, nete)
 
@@ -357,7 +358,7 @@ contains
           qmax1(q) = max(qmax1(q), maxval(pg_data%q(:ncol,1,q,ie)))
        end do
     end do
-    call gfr_fv_phys_to_dyn(hybrid, nt2, hvcoord, elem, nets, nete, &
+    call gfr_fv_phys_to_dyn(hybrid, nt2, zero, hvcoord, elem, nets, nete, &
          pg_data%T, pg_data%uv, pg_data%q)
     call gfr_f2g_dss(hybrid, elem, nets, nete)
     ! Don't apply forcings; rather, the forcing fields now have the
@@ -453,7 +454,7 @@ contains
        do ie = nets,nete
           pg_data%q(:ncol,:,:,ie) = two*pg_data%q(:ncol,:,:,ie)
        end do
-       call gfr_fv_phys_to_dyn(hybrid, nt2, hvcoord, elem, nets, nete, &
+       call gfr_fv_phys_to_dyn(hybrid, nt2, zero, hvcoord, elem, nets, nete, &
             pg_data%T, pg_data%uv, pg_data%q)       
        call gfr_f2g_dss(hybrid, elem, nets, nete)
        do ie = nets,nete

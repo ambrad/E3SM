@@ -95,6 +95,7 @@ contains
     use dimensions_mod, only: nlev
     use parallel_mod, only: parallel_t, abortmp
     use quadrature_mod, only : gausslobatto, quadrature_t
+    use control_mod, only: ftype
 
     type (parallel_t), intent(in) :: par
     type (element_t), intent(in) :: elem(:)
@@ -107,7 +108,8 @@ contains
     if (present(check)) gfr%check = check
 
     gfr%tolfac = one
-    if (par%masterproc) write(iulog,  '(a,i3,a,l2)') 'gfr> init nphys', nphys, ' check', gfr%check
+    if (par%masterproc) &
+         write(iulog,  '(a,i3,a,l2)') 'gfr> init nphys', nphys, ' check', gfr%check, ' ftype', ftype
 
     if (nphys > np) then
        ! The FV -> GLL map is defined only if nphys <= np. If we ever are
@@ -222,13 +224,21 @@ contains
     end do
   end subroutine gfr_dyn_to_fv_phys_hybrid
 
-  subroutine gfr_fv_phys_to_dyn_hybrid(hybrid, nt, hvcoord, elem, nets, nete, T, uv, q)
+  subroutine gfr_fv_phys_to_dyn_hybrid(hybrid, nt, dt, hvcoord, elem, nets, nete, T, uv, q)
+    ! If ftype = 2, 3, 4, then q is the full mixing ratio state and dt
+    ! is not used; if it is not, then q is Qdp tendency, and dt is the
+    ! correct physics time step.
+    !   If ftype = 0, 2, 3, 4, then T, uv are tendencies; if ftype =
+    ! 1, they are the full state.
+
     use dimensions_mod, only: nlev
     use hybvcoord_mod, only: hvcoord_t
     use physical_constants, only: p0, kappa
+    use control_mod, only: ftype
 
     type (hybrid_t), intent(in) :: hybrid
     integer, intent(in) :: nt
+    real(kind=real_kind), intent(in) :: dt
     type (hvcoord_t), intent(in) :: hvcoord
     type (element_t), intent(inout) :: elem(:)
     integer, intent(in), optional :: nets, nete
@@ -427,7 +437,7 @@ contains
 #endif
   end subroutine gfr_dyn_to_fv_phys_dom_mt
 
-  subroutine gfr_fv_phys_to_dyn_dom_mt(par, dom_mt, nt, hvcoord, elem, T, uv, q)
+  subroutine gfr_fv_phys_to_dyn_dom_mt(par, dom_mt, nt, dt, hvcoord, elem, T, uv, q)
     use parallel_mod, only: parallel_t
     use domain_mod, only: domain1d_t
     use hybvcoord_mod, only: hvcoord_t
@@ -436,6 +446,7 @@ contains
     type (parallel_t), intent(in) :: par
     type (domain1d_t), intent(in) :: dom_mt(:)
     integer, intent(in) :: nt
+    real(kind=real_kind), intent(in) :: dt
     type (hvcoord_t), intent(in) :: hvcoord
     type (element_t), intent(inout) :: elem(:)
     real(kind=real_kind), intent(inout) :: T(:,:,:), uv(:,:,:,:), q(:,:,:,:)
@@ -447,7 +458,7 @@ contains
     !$omp parallel num_threads(hthreads), default(shared), private(nets,nete,hybrid)
 #endif
     call gfr_hybrid_create(par, dom_mt, hybrid, nets, nete)
-    call gfr_fv_phys_to_dyn_hybrid(hybrid, nt, hvcoord, elem, nets, nete, T, uv, q)
+    call gfr_fv_phys_to_dyn_hybrid(hybrid, nt, dt, hvcoord, elem, nets, nete, T, uv, q)
 #ifdef HORIZ_OPENMP
     !$omp end parallel
 #endif
