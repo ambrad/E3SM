@@ -14,6 +14,7 @@ module gllfvremap_mod
   use dimensions_mod, only: np, npsq, qsize, nelemd
   use element_mod, only: element_t
   use coordinate_systems_mod, only: spherical_polar_t
+  use perf_mod, only: t_startf, t_stopf
 
   implicit none
 
@@ -41,8 +42,9 @@ module gllfvremap_mod
           M_gf(np,np,nphys_max,nphys_max), &  ! GLL np,  FV nphys
           ! Interpolate from GLL npi to GLL np
           interp(np,np,np,np), &
-          ! Remap FV nphys -> GLL np
-          f2g_remapd(nphys_max,nphys_max,np,np)
+          ! Remap FV nphys <-> GLL np
+          g2f_remapd(np,np,nphys_max*nphys_max), &
+          f2g_remapd(nphys_max*nphys_max,np,np)
      ! FV subcell areas; FV analogue of GLL elem(ie)%metdet arrays
      real(kind=real_kind), allocatable :: &
           fv_metdet(:,:,:), & ! (nphys,nphys,nelemd)
@@ -130,6 +132,7 @@ contains
     call gfr_init_w_gg(gfr%npi, gfr%w_sgsg)
     call gfr_init_w_ff(nphys, gfr%w_ff)
     call gfr_init_M_gf(np, nphys, gfr%M_gf, .true.)
+    gfr%g2f_remapd = reshape(gfr%M_gf(:,:,:nphys,:nphys), (/np,np,nphys*nphys/))
     call gfr_init_M_gf(gfr%npi, nphys, gfr%M_sgf, .false.)
     call gfr_init_R(gfr%npi, nphys, gfr%w_sgsg, gfr%M_sgf, R, tau)
     call gfr_init_interp_matrix(gfr%npi, gfr%interp)
@@ -756,7 +759,7 @@ contains
        do fj = 1,nf
           f(fi,fj) = one
           call gfr_f2g_remapd_op(gfr, R, tau, f, g)
-          gfr%f2g_remapd(fi,fj,:,:) = g
+          gfr%f2g_remapd(fi + (fj-1)*nf,:,:) = g
           f(fi,fj) = zero
        end do
     end do
@@ -1204,18 +1207,14 @@ contains
     real(kind=real_kind), intent(out) :: f(:,:)
 
     integer :: nf, gi, gj, fi, fj
-    real(kind=real_kind) :: accum
+    real(kind=real_kind) :: wrk(np,np)
 
     nf = gfr%nphys
+    wrk = g*gll_metdet
     do fj = 1,nf
        do fi = 1,nf
-          accum = zero
-          do gj = 1,np
-             do gi = 1,np
-                accum = accum + gfr%M_gf(gi,gj,fi,fj)*g(gi,gj)*gll_metdet(gi,gj)
-             end do
-          end do
-          f(fi,fj) = accum/(gfr%w_ff(fi,fj)*fv_metdet(fi,fj))
+          f(fi,fj) = sum(gfr%g2f_remapd(:,:,fi+(fj-1)*nf)*wrk)/ &
+               (gfr%w_ff(fi,fj)*fv_metdet(fi,fj))
        end do
     end do
   end subroutine gfr_g2f_remapd
@@ -1225,19 +1224,16 @@ contains
     real(kind=real_kind), intent(in) :: gll_metdet(:,:), fv_metdet(:,:), f(:,:)
     real(kind=real_kind), intent(out) :: g(:,:)
 
-    integer :: nf, gi, gj, fi, fj
-    real(kind=real_kind) :: accum
+    integer :: nf, nf2, gi, gj, fi, fj
+    real(kind=real_kind) :: wrk(np*np)
 
     nf = gfr%nphys
+    nf2 = nf*nf
+    wrk = reshape(f(:nf,:nf)*fv_metdet(:nf,:nf), (/nf2/))
     do gj = 1,np
        do gi = 1,np
-          accum = zero
-          do fj = 1,nf
-             do fi = 1,nf
-                accum = accum + gfr%f2g_remapd(fi,fj,gi,gj)*f(fi,fj)*fv_metdet(fi,fj)
-             end do
-          end do
-          g(gi,gj) = accum/gll_metdet(gi,gj)
+          g(gi,gj) = sum(gfr%f2g_remapd(:nf2,gi,gj)*wrk(:nf2))/ &
+               gll_metdet(gi,gj)
        end do
     end do
   end subroutine gfr_f2g_remapd
@@ -1459,7 +1455,7 @@ contains
           write(iulog,*) 'gfr> M_gf', np, nf, gfr%M_gf(:np, :np, :nf, :nf)
           write(iulog,*) 'gfr> M_sgf', gfr%npi, nf, gfr%M_sgf(:gfr%npi, :gfr%npi, :nf, :nf)
           write(iulog,*) 'gfr> interp', gfr%npi, np, gfr%interp(:gfr%npi, :gfr%npi, :np, :np)
-          write(iulog,*) 'gfr> f2g_remapd', np, nf, gfr%f2g_remapd(:nf,:nf,:,:)
+          write(iulog,*) 'gfr> f2g_remapd', np, nf, gfr%f2g_remapd(:nf*nf,:,:)
        end if
     end if
 
