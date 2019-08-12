@@ -366,17 +366,25 @@ contains
     ! original is Q.
     qmin1 = one; qmax1 = -one
     do ie = nets,nete
-       if (ftype /= 0) then
-          pg_data%q(:ncol,:,:,ie) = two*pg_data%q(:ncol,:,:,ie)
+       if (ftype == 0) then
+          do k = 1,nlev
+             wr(:nf,:nf,k) = (hvcoord%hyai(k+1) - hvcoord%hyai(k))*hvcoord%ps0 + &
+                  (hvcoord%hybi(k+1) - hvcoord%hybi(k))*reshape(pg_data%ps(:,ie), (/nf,nf/))
+          end do
        end if
+       pg_data%q(:ncol,:,:,ie) = two*pg_data%q(:ncol,:,:,ie)
        do q = 2,qsize
           qmin1(q) = min(qmin1(q), minval(elem(ie)%state%Q(:,:,1,q)))
           qmax1(q) = max(qmax1(q), maxval(elem(ie)%state%Q(:,:,1,q)))
           qmin1(q) = min(qmin1(q), minval(pg_data%q(:ncol,1,q,ie)))
           qmax1(q) = max(qmax1(q), maxval(pg_data%q(:ncol,1,q,ie)))
+          if (ftype == 0) then
+             pg_data%q(:ncol,:,q,ie) = &
+                  half*reshape(wr(:nf,:nf,:), (/ncol,nlev/))*pg_data%q(:ncol,:,q,ie)/dt
+          end if
        end do
     end do
-    call gfr_fv_phys_to_dyn(hybrid, nt2, zero, hvcoord, elem, nets, nete, &
+    call gfr_fv_phys_to_dyn(hybrid, nt2, dt, hvcoord, elem, nets, nete, &
          pg_data%T, pg_data%uv, pg_data%q)
     call gfr_f2g_dss(hybrid, elem, nets, nete)
     ! Don't apply forcings; rather, the forcing fields now have the
@@ -417,7 +425,8 @@ contains
              end if
           else
              if (ftype == 0) then
-                elem(ie)%derived%FQ(:,:,:,q) = dt*elem(ie)%derived%FQ(:,:,:,q)/ &
+                elem(ie)%derived%FQ(:,:,:,q) = elem(ie)%state%Q(:,:,:,q) + &
+                     dt*elem(ie)%derived%FQ(:,:,:,q)/ &
                      elem(ie)%state%dp3d(:,:,:,nt1)
              end if
              ! Extrema in level 1.
@@ -535,7 +544,7 @@ contains
     ftype_in = ftype
 
     do nphys = 1, np
-       do ftype_idx = 1,1
+       do ftype_idx = 1,2
           ! This is meant to be called before threading starts.
           if (hybrid%ithr == 0) then
              ftype = 2
