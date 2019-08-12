@@ -382,7 +382,9 @@ contains
     ones = one
     nf = gfr%nphys
     ncol = nf*nf
-    gfr%have_fv_topo_file_phis = .true.
+    ! For now, map GLL topo back to FV, as ne30pg2 runs otherwise show grid
+    ! imprint in the PHIS diagnostic. We may revise this choice later.
+    !gfr%have_fv_topo_file_phis = .true.
 
     do ie = nets,nete
        gfr%phis(:,ie) = phis(:ncol,ie)
