@@ -4,8 +4,9 @@
 
 !todo
 ! - adjust FV cell center for v computation to match dyn_grid::fv_physgrid_init
+! - analyze and opt perf
 ! - test with HORIZ_OPENMP off
-! - ftype other than 2,4
+! - ftype other than 2,4: unit tests
 ! - np4-np2 instead of np4-pg1
 
 module gllfvremap_test_mod
@@ -118,7 +119,7 @@ contains
           s1%phis(i,j) = one + half*sin(p%x-half)*sin(half*p%y+2.5d0)*sin(2*p%z-2.5d0)
           do k = 1,nlev
              ! u, v have to be set carefully because they are
-             ! converted to contravarient velocity. Thus, at the
+             ! converted to contravariant velocity. Thus, at the
              ! poles, we need u, v to make sense to measure OOA
              ! correctly.
              wr(i,j,k,1) = sin(p%x)*sin(1.5*p%y)*cos(1.7*p%z)
@@ -168,6 +169,7 @@ contains
     use physical_constants, only: g, p0, kappa
     use edge_mod, only: edgevpack_nlyr, edgevunpack_nlyr, edge_g
     use bndry_mod, only: bndry_exchangev
+    use control_mod, only: ftype
     use gllfvremap_mod
 
     type (hybrid_t), intent(in) :: hybrid
@@ -180,7 +182,7 @@ contains
     type (cartesian3D_t) :: p
     real(kind=real_kind) :: wr(np,np,nlev), tend(np,np,nlev), f, a, b, c, rd, &
          qmin1(qsize+3), qmax1(qsize+3), qmin2, qmax2, mass1, mass2, &
-         wr1(np,np,nlev), wr2(np,np,nlev)
+         wr1(np,np,nlev), wr2(np,np,nlev), dt
     integer :: nf, ncol, nt1, nt2, ie, i, j, k, d, q, qi, tl, col
     logical :: domass
 
@@ -188,6 +190,7 @@ contains
     ncol = nf*nf
     nt1 = 1
     nt2 = 2
+    dt = 0.42_real_kind
 
     !! Test 1.
     ! Test physgrid API.
@@ -213,15 +216,28 @@ contains
     ! Set FV tendencies.
     if (tendency) then
        do ie = nets,nete
+          if (ftype == 0) then
+             do k = 1,nlev
+                wr(:nf,:nf,k) = (hvcoord%hyai(k+1) - hvcoord%hyai(k))*hvcoord%ps0 + &
+                     (hvcoord%hybi(k+1) - hvcoord%hybi(k))*reshape(pg_data%ps(:,ie), (/nf,nf/))
+             end do
+          end if
           do j = 1,nf
              do i = 1,nf
                 col = nf*(j-1) + i
                 call gfr_f_get_cartesian3d(ie, i, j, p)
                 f = 0.25_real_kind*sin(3.2*p%x)*sin(4.2*p%y)*sin(2.3*p%z)
-                pg_data%uv(col,:,:,ie) = f
-                pg_data%T(col,:,ie) = f
+                pg_data%uv(col,:,:,ie) = f/dt
+                pg_data%T(col,:,ie) = f/dt
                 ! no moisture adjustment => no dp3d adjustment
-                pg_data%q(col,:,2:qsize,ie) = pg_data%q(col,:,2:qsize,ie) + f
+                if (ftype == 0) then
+                   pg_data%q(col,:,1,ie) = zero
+                   do q = 2,qsize
+                      pg_data%q(col,:,q,ie) = f*wr(i,j,:)/dt
+                   end do
+                else
+                   pg_data%q(col,:,2:qsize,ie) = pg_data%q(col,:,2:qsize,ie) + f
+                end if
              end do
           end do
        end do
@@ -229,18 +245,19 @@ contains
        ! Test that if tendencies are 0, then the original fields are unchanged.
        pg_data%T = zero
        pg_data%uv = zero
+       if (ftype == 0) pg_data%q = zero
     end if
 
     ! FV -> GLL.
-    call gfr_fv_phys_to_dyn(hybrid, nt2, hvcoord, elem, nets, nete, &
+    call gfr_fv_phys_to_dyn(hybrid, nt2, dt, hvcoord, elem, nets, nete, &
          pg_data%T, pg_data%uv, pg_data%q)
     call gfr_f2g_dss(hybrid, elem, nets, nete)
 
     ! Apply the tendencies.
     do ie = nets,nete
-       call applyCAMforcing_tracers(elem(ie), hvcoord, nt2, nt2, one, .true.)
+       call applyCAMforcing_tracers(elem(ie), hvcoord, nt2, nt2, dt, logical(ftype /= 0))
     end do
-    call applyCAMforcing_dynamics(elem, hvcoord, nt2, one, nets, nete)
+    call applyCAMforcing_dynamics(elem, hvcoord, nt2, dt, nets, nete)
 
     ! Test GLL state nt2 vs the original state nt1.
     if (hybrid%masterthread) write(iulog, '(a,l2)') 'gfrt> tendency', tendency
@@ -349,15 +366,25 @@ contains
     ! original is Q.
     qmin1 = one; qmax1 = -one
     do ie = nets,nete
+       if (ftype == 0) then
+          do k = 1,nlev
+             wr(:nf,:nf,k) = (hvcoord%hyai(k+1) - hvcoord%hyai(k))*hvcoord%ps0 + &
+                  (hvcoord%hybi(k+1) - hvcoord%hybi(k))*reshape(pg_data%ps(:,ie), (/nf,nf/))
+          end do
+       end if
        pg_data%q(:ncol,:,:,ie) = two*pg_data%q(:ncol,:,:,ie)
        do q = 2,qsize
           qmin1(q) = min(qmin1(q), minval(elem(ie)%state%Q(:,:,1,q)))
           qmax1(q) = max(qmax1(q), maxval(elem(ie)%state%Q(:,:,1,q)))
           qmin1(q) = min(qmin1(q), minval(pg_data%q(:ncol,1,q,ie)))
           qmax1(q) = max(qmax1(q), maxval(pg_data%q(:ncol,1,q,ie)))
+          if (ftype == 0) then
+             pg_data%q(:ncol,:,q,ie) = &
+                  half*reshape(wr(:nf,:nf,:), (/ncol,nlev/))*pg_data%q(:ncol,:,q,ie)/dt
+          end if
        end do
     end do
-    call gfr_fv_phys_to_dyn(hybrid, nt2, hvcoord, elem, nets, nete, &
+    call gfr_fv_phys_to_dyn(hybrid, nt2, dt, hvcoord, elem, nets, nete, &
          pg_data%T, pg_data%uv, pg_data%q)
     call gfr_f2g_dss(hybrid, elem, nets, nete)
     ! Don't apply forcings; rather, the forcing fields now have the
@@ -397,6 +424,11 @@ contains
                 global_shared_buf(ie,3) = sum(wr(:,:,1)*elem(ie)%state%dp3d(:,:,1,nt1)*wr1(:,:,1))
              end if
           else
+             if (ftype == 0) then
+                elem(ie)%derived%FQ(:,:,:,q) = elem(ie)%state%Q(:,:,:,q) + &
+                     dt*elem(ie)%derived%FQ(:,:,:,q)/ &
+                     elem(ie)%state%dp3d(:,:,:,nt1)
+             end if
              ! Extrema in level 1.
              qmin2 = min(qmin2, minval(elem(ie)%derived%FQ(:,:,1,q)))
              qmax2 = max(qmax2, maxval(elem(ie)%derived%FQ(:,:,1,q)))
@@ -442,8 +474,8 @@ contains
     !! Test 4.
     ! Expensive test to determine mass conservation quality over many
     ! iterations.
-    return
-    if (nphys /= 2) return
+#if 0
+    if (nphys /= 2 .or. ftype == 0) return
     do ie = nets,nete
        call set_gll_state(hvcoord, elem(ie), nt1, nt2)
     end do
@@ -453,7 +485,7 @@ contains
        do ie = nets,nete
           pg_data%q(:ncol,:,:,ie) = two*pg_data%q(:ncol,:,:,ie)
        end do
-       call gfr_fv_phys_to_dyn(hybrid, nt2, hvcoord, elem, nets, nete, &
+       call gfr_fv_phys_to_dyn(hybrid, nt2, zero, hvcoord, elem, nets, nete, &
             pg_data%T, pg_data%uv, pg_data%q)       
        call gfr_f2g_dss(hybrid, elem, nets, nete)
        do ie = nets,nete
@@ -494,10 +526,12 @@ contains
           elem(ie)%state%Q = half*elem(ie)%derived%FQ
        end do
     end do
+#endif
   end subroutine run
 
   subroutine gfr_check_api(hybrid, nets, nete, hvcoord, elem)
     use hybvcoord_mod, only: hvcoord_t
+    use control_mod, only: ftype
     use gllfvremap_mod
 
     type (hybrid_t), intent(in) :: hybrid
@@ -505,29 +539,38 @@ contains
     type (hvcoord_t) , intent(in) :: hvcoord
     integer, intent(in) :: nets, nete
 
-    integer :: nphys
+    integer :: nphys, ftype_in, ftype_idx
+
+    ftype_in = ftype
 
     do nphys = 1, np
-       ! This is meant to be called before threading starts.
-       if (hybrid%ithr == 0) then
-          ! check=.true. means that the remap routines to
-          ! element-level verification of properties and output
-          ! messages if a property fails.
-          call gfr_init(hybrid%par, elem, nphys, check=.true.)
-          call init(nphys)
-       end if
-       !$omp barrier
+       do ftype_idx = 1,2
+          ! This is meant to be called before threading starts.
+          if (hybrid%ithr == 0) then
+             ftype = 2
+             if (ftype_idx == 2) ftype = 0
+             ! check=.true. means that the remap routines to
+             ! element-level verification of properties and output
+             ! messages if a property fails.
+             call gfr_init(hybrid%par, elem, nphys, check=.true.)
+             call init(nphys)
+          end if
+          !$omp barrier
+          
+          call run(hybrid, hvcoord, elem, nets, nete, nphys, .false.)
+          call run(hybrid, hvcoord, elem, nets, nete, nphys, .true.)
 
-       call run(hybrid, hvcoord, elem, nets, nete, nphys, .false.)
-       call run(hybrid, hvcoord, elem, nets, nete, nphys, .true.)
-
-       ! This is meant to be called after threading ends.
-       !$omp barrier
-       if (hybrid%ithr == 0) then
-          call gfr_finish()
-          call finish()
-       end if
-       !$omp barrier
+          ! This is meant to be called after threading ends.
+          !$omp barrier
+          if (hybrid%ithr == 0) then
+             call gfr_finish()
+             call finish()
+          end if
+          !$omp barrier
+       end do
     end do
+
+    !$omp barrier
+    if (hybrid%ithr == 0) ftype = ftype_in
   end subroutine gfr_check_api
 end module gllfvremap_test_mod

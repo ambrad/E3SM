@@ -345,6 +345,7 @@ CONTAINS
     use control_mod,             only: ftype, se_fv_phys_remap_alg
     use dyn_comp,                only: dom_mt, hvcoord
     use gllfvremap_mod,          only: gfr_fv_phys_to_dyn
+    use time_manager,            only: get_step_size
     implicit none
     ! INPUT PARAMETERS:
     type(physics_state), intent(inout), dimension(begchunk:endchunk) :: phys_state
@@ -359,6 +360,7 @@ CONTAINS
     real (kind=real_kind), dimension(npsq,pver,nelemd)       :: T_tmp  ! temp array to hold T
     real (kind=real_kind), dimension(npsq,2,pver,nelemd)     :: uv_tmp ! temp array to hold u and v
     real (kind=real_kind), dimension(npsq,pver,pcnst,nelemd) :: q_tmp  ! temp to hold advected constituents
+    real (kind=real_kind)    :: dtime
     integer(kind=int_kind)   :: m, i, j, k                 ! loop iterators
     integer(kind=int_kind)   :: gi(2), gj(2)               ! index list used to simplify pg2 case
     integer(kind=int_kind)   :: di, dj
@@ -476,15 +478,18 @@ CONTAINS
 
     if (par%dynproc) then
       if (fv_nphys > 0) then
+        call t_startf('fv_phys_to_dyn')
         if (se_fv_phys_remap_alg == 0) then
         ! Map FV physics state to dynamics grid
         call fv_phys_to_dyn(elem,T_tmp(1:nphys_sq,:,:),   &
                                  uv_tmp(1:nphys_sq,:,:,:),&
                                  q_tmp(1:nphys_sq,:,:,:))
         else
-          call gfr_fv_phys_to_dyn(par, dom_mt, TimeLevel%n0, hvcoord, elem, T_tmp, &
+          dtime = get_step_size()
+          call gfr_fv_phys_to_dyn(par, dom_mt, TimeLevel%n0, dtime, hvcoord, elem, T_tmp, &
                uv_tmp, q_tmp)
         end if
+        call t_stopf('fv_phys_to_dyn')
 
       else ! physics is on GLL nodes
 
