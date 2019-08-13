@@ -104,6 +104,7 @@ contains
     logical, intent(in), optional :: check
 
     real(real_kind) :: R(npsq,nphys_max*nphys_max), tau(npsq)
+    integer :: nphys2
 
     gfr%check = .false.
     if (present(check)) gfr%check = check
@@ -126,21 +127,22 @@ contains
     gfr%have_fv_topo_file_phis = .false.
     gfr%nphys = nphys
     gfr%npi = max(2, nphys)
+    nphys2 = nphys*nphys
 
     call gfr_init_w_gg(np, gfr%w_gg)
     call gfr_init_w_gg(gfr%npi, gfr%w_sgsg)
     call gfr_init_w_ff(nphys, gfr%w_ff)
     call gfr_init_M_gf(np, nphys, gfr%M_gf, .true.)
-    gfr%g2f_remapd = reshape(gfr%M_gf(:,:,:nphys,:nphys), (/np,np,nphys*nphys/))
+    gfr%g2f_remapd(:,:,:nphys2) = reshape(gfr%M_gf(:,:,:nphys,:nphys), (/np,np,nphys2/))
     call gfr_init_M_gf(gfr%npi, nphys, gfr%M_sgf, .false.)
     call gfr_init_R(gfr%npi, nphys, gfr%w_sgsg, gfr%M_sgf, R, tau)
     call gfr_init_interp_matrix(gfr%npi, gfr%interp)
     call gfr_init_f2g_remapd(gfr, R, tau)
 
-    allocate(gfr%fv_metdet(nphys*nphys,nelemd), &
+    allocate(gfr%fv_metdet(nphys2,nelemd), &
          gfr%D_f(nphys,nphys,2,2,nelemd), gfr%Dinv_f(nphys,nphys,2,2,nelemd), &
          gfr%qmin(nlev,max(1,qsize),nelemd), gfr%qmax(nlev,max(1,qsize),nelemd), &
-         gfr%phis(nphys*nphys,nelemd), gfr%spherep_f(nphys,nphys,nelemd))
+         gfr%phis(nphys2,nelemd), gfr%spherep_f(nphys,nphys,nelemd))
     call gfr_init_fv_metdet(elem, gfr)
     call gfr_init_geometry(elem, gfr)
   end subroutine gfr_init
@@ -855,32 +857,88 @@ contains
     end do
   end subroutine gfr_init_fv_metdet
 
-  subroutine gfr_f_ref_coord(nphys, i, a)
+  subroutine gfr_f_ref_center(nphys, i, a)
     ! FV subcell center in ref [-1,1]^2 coord.
 
     integer, intent(in) :: nphys, i
     real(kind=real_kind), intent(out) :: a
 
     a = two*((real(i-1, real_kind) + half)/real(nphys, real_kind)) - one
-  end subroutine gfr_f_ref_coord
+  end subroutine gfr_f_ref_center
+
+  subroutine gfr_f_ref_edges(nphys, i_fv, a)
+    ! FV subcell edges in ref [-1,1]^2 coord.
+
+    integer, intent(in) :: nphys, i_fv
+    real(kind=real_kind), intent(out) :: a(2)
+
+    integer :: i
+
+    do i = 0,1
+       a(i+1) = two*(real(i_fv+i-1, real_kind)/real(nphys, real_kind)) - one
+    end do
+  end subroutine gfr_f_ref_edges
 
   subroutine gfr_init_geometry(elem, gfr)
+    use coordinate_systems_mod, only: cartesian3D_t, change_coordinates, sphere_tri_area
     use cube_mod, only: Dmap, ref2sphere
     use control_mod, only: cubed_sphere_map
 
     type (element_t), intent(in) :: elem(:)
     type (GllFvRemap_t), intent(inout) :: gfr
 
-    real(kind=real_kind) :: wrk(2,2), det, a, b
-    integer :: ie, nf, i, j, k
+    type (spherical_polar_t) :: p_sphere
+    type (cartesian3D_t) :: fv_corners_xyz(2,2)
+    real(kind=real_kind) :: wrk(2,2), det, a, b, ae(2), be(2), tmp, spherical_area
+    integer :: ie, nf, nf2, i, j, k, ai, bi
 
     nf = gfr%nphys
+    nf2 = nf*nf
+    
+    if (cubed_sphere_map == 2) then
+       ! Reset fv_metdet to match flux coupler's definition of FV
+       ! subcell area, which is spherical area of the FV subcell
+       ! spherical polygon.
+       do ie = 1,nelemd
+          do j = 1,nf
+             do i = 1,nf
+                k = i+(j-1)*nf
+
+                call gfr_f_ref_edges(nf, i, ae)
+                call gfr_f_ref_edges(nf, j, be)
+                do ai = 1,2
+                   do bi = 1,2
+                      p_sphere = ref2sphere(ae(ai), be(bi), elem(ie)%corners3D, cubed_sphere_map, &
+                           elem(ie)%corners, elem(ie)%facenum)
+                      fv_corners_xyz(ai,bi) = change_coordinates(p_sphere)
+                   end do
+                end do
+                call sphere_tri_area(fv_corners_xyz(1,1), fv_corners_xyz(2,1), fv_corners_xyz(2,2), &
+                     spherical_area)
+                call sphere_tri_area(fv_corners_xyz(1,1), fv_corners_xyz(2,2), fv_corners_xyz(1,2), &
+                     tmp)
+                spherical_area = spherical_area + tmp
+                gfr%fv_metdet(k,ie) = spherical_area/gfr%w_ff(k)
+             end do
+          end do
+       end do
+    end if
+
+    ! Make the spherical area of the element according to FV and GLL agree to
+    ! machine precision.
+    do ie = 1,nelemd
+       gfr%fv_metdet(:nf2,ie) = gfr%fv_metdet(:nf2,ie)* &
+            (sum(elem(ie)%spheremp)/sum(gfr%w_ff(:nf2)*gfr%fv_metdet(:nf2,ie)))
+    end do
 
     do ie = 1,nelemd
        do j = 1,nf
-          call gfr_f_ref_coord(nf, j, b)
+          call gfr_f_ref_center(nf, j, b)
           do i = 1,nf
-             call gfr_f_ref_coord(nf, i, a)
+             call gfr_f_ref_center(nf, i, a)
+
+             gfr%spherep_f(i,j,ie) = ref2sphere(a, b, elem(ie)%corners3D, cubed_sphere_map, &
+                  elem(ie)%corners, elem(ie)%facenum)
 
              call Dmap(wrk, a, b, elem(ie)%corners3D, cubed_sphere_map, elem(ie)%cartp, &
                   elem(ie)%facenum)
@@ -899,9 +957,6 @@ contains
              gfr%Dinv_f(i,j,1,2,ie) = -wrk(1,2)/det
              gfr%Dinv_f(i,j,2,1,ie) = -wrk(2,1)/det
              gfr%Dinv_f(i,j,2,2,ie) =  wrk(1,1)/det
-
-             gfr%spherep_f(i,j,ie) = ref2sphere(a, b, elem(ie)%corners3D, cubed_sphere_map, &
-                  elem(ie)%corners, elem(ie)%facenum)
           end do
        end do
     end do
@@ -1241,7 +1296,7 @@ end subroutine gfr_g2f_remapd
 
     nf = gfr%nphys
     nf2 = nf*nf
-    wrk = reshape(f(:nf,:nf), (/nf2/))*fv_metdet(:nf2)
+    wrk(:nf2) = reshape(f(:nf,:nf), (/nf2/))*fv_metdet(:nf2)
     do gj = 1,np
        do gi = 1,np
           g(gi,gj) = sum(gfr%f2g_remapd(:nf2,gi,gj)*wrk(:nf2))/ &
