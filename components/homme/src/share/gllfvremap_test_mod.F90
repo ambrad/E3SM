@@ -182,7 +182,7 @@ contains
     type (cartesian3D_t) :: p
     real(kind=real_kind) :: wr(np,np,nlev), tend(np,np,nlev), f, a, b, c, rd, &
          qmin1(qsize+3), qmax1(qsize+3), qmin2, qmax2, mass1, mass2, &
-         wr1(np,np,nlev), wr2(np,np,nlev), dt
+         wr1(np,np,nlev), wr2(np,np,nlev), dt, wr3(np*np)
     integer :: nf, ncol, nt1, nt2, ie, i, j, k, d, q, qi, tl, col
     logical :: domass
 
@@ -265,7 +265,7 @@ contains
     mass1 = zero; mass2 = zero
     qmin1 = one; qmax1 = -one
     qmin2 = one; qmax2 = -one
-    do q = 1, qsize+3
+    do q = 1, qsize+4
        do ie = nets,nete
           do k = 1,nlev
              wr(:,:,k) = elem(ie)%spheremp
@@ -287,11 +287,35 @@ contains
                      (elem(ie)%state%v(:,:,qi,:,nt1) + tend))**2)
                 global_shared_buf(ie,2) = &
                      sum(wr*(elem(ie)%state%v(:,:,qi,:,nt1) + tend)**2)
-             else
+             elseif (qi == 3) then
                 call get_temperature(elem(ie), wr1, hvcoord, nt1)
                 call get_temperature(elem(ie), wr2, hvcoord, nt2)
                 global_shared_buf(ie,1) = sum(wr*(wr2 - (wr1 + tend))**2)
-                global_shared_buf(ie,2) = sum(wr*(wr1 + tend)**2)                
+                global_shared_buf(ie,2) = sum(wr*(wr1 + tend)**2)
+             else
+                ! Test omega_p, phis, ps. These were remapped to FV
+                ! but don't get remapped to GLL. Make sure they all
+                ! were remapped: the following should hold to nearly
+                ! machine precision.
+                !  omega_p
+                wr1(:nf,:nf,:) = reshape(pg_data%omega_p(:,:,ie), (/nf,nf,nlev/))
+                call gfr_g2f_scalar(ie, elem(ie)%metdet, elem(ie)%derived%omega_p, wr2)
+                global_shared_buf(ie,1) = sum((wr1(:nf,:nf,:) - wr2(:nf,:nf,:))**2)
+                global_shared_buf(ie,2) = sum(wr2(:nf,:nf,:)**2)
+                !  phis
+                call gfr_dyn_to_fv_phys_topo_elem(elem, ie, wr3)
+                global_shared_buf(ie,1) = global_shared_buf(ie,1) + &
+                     sum((wr3(:ncol) - pg_data%zs(:,ie))**2)
+                global_shared_buf(ie,2) = global_shared_buf(ie,2) + &
+                     sum(pg_data%zs(:,ie)**2)
+                !  ps
+                wr(:,:,1) = elem(ie)%state%ps_v(:,:,nt1)
+                wr(:nf,:nf,2) = reshape(pg_data%ps(:,ie), (/nf,nf/))
+                call gfr_g2f_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,3:3))
+                global_shared_buf(ie,1) = global_shared_buf(ie,1) + &
+                     sum((wr(:nf,:nf,2) - wr(:nf,:nf,3))**2)
+                global_shared_buf(ie,2) = global_shared_buf(ie,2) + &
+                     sum(wr(:nf,:nf,2)**2)
              end if
           else
              global_shared_buf(ie,1) = &

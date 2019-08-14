@@ -102,7 +102,7 @@ CONTAINS
     use physics_buffer,   only: pbuf_add_field, dtype_r8
     use ppgrid,           only: pcols, pver
     use cam_abortutils,   only : endrun
-    use gllfvremap_mod,   only: gfr_init
+    use gllfvremap_mod,   only: gfr_init, gfr_reset_geometry
 
     ! PARAMETERS:
     type(file_desc_t),   intent(in)  :: fh       ! PIO file handle for initial or restart file
@@ -113,6 +113,7 @@ CONTAINS
     integer :: neltmp(3)
     integer :: npes_se
     integer :: npes_se_stride
+    integer :: ie
 
     !----------------------------------------------------------------------
 
@@ -162,10 +163,6 @@ CONTAINS
        neltmp(1) = nelemdmax
        neltmp(2) = nelem
        neltmp(3) = get_dyn_grid_parm('plon')
-
-       if (fv_nphys > 0 .and. se_fv_phys_remap_alg == 1) then
-          call gfr_init(par, elem, fv_nphys)
-       end if
     else
        nelemd = 0
        neltmp(1) = 0
@@ -214,6 +211,7 @@ CONTAINS
     ! Initialize FV physics grid variables
     if (fv_nphys > 0) then
       call fv_physgrid_init()
+      if (se_fv_phys_remap_alg == 1) call gfr_init(par, elem, fv_nphys)
     end if
 
     ! Define the CAM grids (this has to be after dycore spinup).
