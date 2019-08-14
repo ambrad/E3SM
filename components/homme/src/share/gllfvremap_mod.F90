@@ -72,7 +72,8 @@ module gllfvremap_mod
   ! For testing.
   public :: &
        gfr_test, &
-       gfr_f2g_scalar, gfr_f_get_latlon, gfr_f_get_cartesian3d, gfr_g_make_nonnegative
+       gfr_g2f_scalar, gfr_f2g_scalar, gfr_f_get_latlon, gfr_f_get_cartesian3d, &
+       gfr_g_make_nonnegative, gfr_dyn_to_fv_phys_topo_elem
 
   interface gfr_dyn_to_fv_phys
      module procedure gfr_dyn_to_fv_phys_hybrid
@@ -180,28 +181,22 @@ contains
     qsize = size(q,3)
     
     do ie = nets,nete
-       call gfr_g2f_scalar(gfr, ie, elem(ie)%metdet, elem(ie)%state%ps_v(:,:,nt:nt), &
+       call gfr_g2f_scalar(ie, elem(ie)%metdet, elem(ie)%state%ps_v(:,:,nt:nt), &
             wr1(:,:,:1))
        ps(:ncol,ie) = reshape(wr1(:nf,:nf,1), (/ncol/))
 
        if (gfr%have_fv_topo_file_phis) then
           phis(:ncol,ie) = gfr%phis(:,ie)
        else
-          wr2(:,:,1) = elem(ie)%state%phis(:,:)
-          call gfr_g2f_scalar(gfr, ie, elem(ie)%metdet, wr2(:,:,:1), wr1(:,:,:1))
-          qmin = minval(wr2(:,:,1))
-          qmax = maxval(wr2(:,:,1))
-          wr1(:nf,:nf,2) = reshape(gfr%w_ff(:nf2)*gfr%fv_metdet(:nf2,ie), (/nf,nf/))
-          call limiter_clip_and_sum(nf, wr1(:,:,2), qmin, qmax, ones, wr1(:,:,1))
-          phis(:ncol,ie) = reshape(wr1(:nf,:nf,1), (/ncol/))
+          call gfr_dyn_to_fv_phys_topo_elem(elem, ie, phis(:,ie))
        end if
 
        call calc_dp(hvcoord, elem(ie)%state%ps_v(:,:,nt), dp)
-       call gfr_g2f_scalar(gfr, ie, elem(ie)%metdet, dp, dp_fv)
+       call gfr_g2f_scalar(ie, elem(ie)%metdet, dp, dp_fv)
 
        call get_temperature(elem(ie), wr2, hvcoord, nt)
        call calc_p(hvcoord, elem(ie)%state%ps_v(:,:,nt), p)
-       call gfr_g2f_scalar(gfr, ie, elem(ie)%metdet, p, p_fv)
+       call gfr_g2f_scalar(ie, elem(ie)%metdet, p, p_fv)
        wr2 = wr2*(p/p0)**kappa
        call gfr_g2f_scalar_dp(gfr, ie, elem(ie)%metdet, dp, dp_fv, wr2, wr1)
        wr1(:nf,:nf,:) = wr1(:nf,:nf,:)/(p_fv(:nf,:nf,:)/p0)**kappa
@@ -213,7 +208,7 @@ contains
        uv(:ncol,1,:,ie) = reshape(wr1(:nf,:nf,:), (/ncol,nlev/))
        uv(:ncol,2,:,ie) = reshape(wr2(:nf,:nf,:), (/ncol,nlev/))
 
-       call gfr_g2f_scalar(gfr, ie, elem(ie)%metdet, elem(ie)%derived%omega_p, wr1)
+       call gfr_g2f_scalar(ie, elem(ie)%metdet, elem(ie)%derived%omega_p, wr1)
        omega_p(:ncol,:,ie) = reshape(wr1(:nf,:nf,:), (/ncol,nlev/))
 
        do qi = 1,qsize
@@ -258,7 +253,7 @@ contains
 
     do ie = nets,nete
        call calc_dp(hvcoord, elem(ie)%state%ps_v(:,:,nt), dp)
-       call gfr_g2f_scalar(gfr, ie, elem(ie)%metdet, dp, dp_fv)
+       call gfr_g2f_scalar(ie, elem(ie)%metdet, dp, dp_fv)
 
        wr1(:nf,:nf,:) = reshape(uv(:ncol,1,:,ie), (/nf,nf,nlev/))
        wr2(:nf,:nf,:) = reshape(uv(:ncol,2,:,ie), (/nf,nf,nlev/))
@@ -266,7 +261,7 @@ contains
             wr1, wr2, elem(ie)%derived%FM(:,:,1,:), elem(ie)%derived%FM(:,:,2,:))
 
        call calc_p(hvcoord, elem(ie)%state%ps_v(:,:,nt), p)
-       call gfr_g2f_scalar(gfr, ie, elem(ie)%metdet, p, p_fv)
+       call gfr_g2f_scalar(ie, elem(ie)%metdet, p, p_fv)
        wr1(:nf,:nf,:) = reshape(T(:ncol,:,ie), (/nf,nf,nlev/))
        wr1(:nf,:nf,:) = wr1(:nf,:nf,:)*(p_fv(:nf,:nf,:)/p0)**kappa
        call gfr_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wr1, elem(ie)%derived%FT)
@@ -348,24 +343,34 @@ contains
     integer, intent(in), optional :: nets, nete
     real(kind=real_kind), intent(out) :: phis(:,:)
 
+    integer :: ie
+
+    do ie = nets,nete
+       call gfr_dyn_to_fv_phys_topo_elem(elem, ie, phis(:,ie))
+    end do
+  end subroutine gfr_dyn_to_fv_phys_topo
+
+  subroutine gfr_dyn_to_fv_phys_topo_elem(elem, ie, phis)
+    type (element_t), intent(in) :: elem(:)
+    integer, intent(in), optional :: ie
+    real(kind=real_kind), intent(out) :: phis(:)
+
     real(kind=real_kind) :: wr(np,np,2), ones(np,np), qmin, qmax
-    integer :: ie, nf, nf2, ncol
+    integer :: nf, nf2, ncol
 
     ones = one
     nf = gfr%nphys
     nf2 = nf*nf
     ncol = nf*nf
 
-    do ie = nets,nete
-       wr(:,:,1) = elem(ie)%state%phis(:,:)
-       call gfr_g2f_scalar(gfr, ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
-       qmin = minval(elem(ie)%state%phis)
-       qmax = maxval(elem(ie)%state%phis)
-       wr(:nf,:nf,1) = reshape(gfr%w_ff(:nf2)*gfr%fv_metdet(:nf2,ie), (/nf,nf/))
-       call limiter_clip_and_sum(gfr%nphys, wr(:,:,1), qmin, qmax, ones, wr(:nf,:nf,2))
-       phis(:ncol,ie) = reshape(wr(:nf,:nf,2), (/ncol/))
-    end do
-  end subroutine gfr_dyn_to_fv_phys_topo
+    wr(:,:,1) = elem(ie)%state%phis(:,:)
+    call gfr_g2f_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
+    qmin = minval(elem(ie)%state%phis)
+    qmax = maxval(elem(ie)%state%phis)
+    wr(:nf,:nf,1) = reshape(gfr%w_ff(:nf2)*gfr%fv_metdet(:nf2,ie), (/nf,nf/))
+    call limiter_clip_and_sum(gfr%nphys, wr(:,:,1), qmin, qmax, ones, wr(:nf,:nf,2))
+    phis(:ncol) = reshape(wr(:nf,:nf,2), (/ncol/))
+  end subroutine gfr_dyn_to_fv_phys_topo_elem
 
   subroutine gfr_fv_phys_to_dyn_topo_hybrid(hybrid, elem, nets, nete, phis)
     use kinds, only: iulog
@@ -961,8 +966,7 @@ contains
     end do
   end subroutine gfr_init_geometry
 
-  subroutine gfr_g2f_scalar(gfr, ie, gll_metdet, g, f)
-    type (GllFvRemap_t), intent(in) :: gfr
+  subroutine gfr_g2f_scalar(ie, gll_metdet, g, f) ! no gfr b/c public for testing
     integer, intent(in) :: ie
     real(kind=real_kind), intent(in) :: gll_metdet(:,:), g(:,:,:)
     real(kind=real_kind), intent(out) :: f(:,:,:)
@@ -983,7 +987,7 @@ contains
     integer :: nf
 
     nf = gfr%nphys
-    call gfr_g2f_scalar(gfr, ie, gll_metdet, dp_g*g, f)
+    call gfr_g2f_scalar(ie, gll_metdet, dp_g*g, f)
     f = f(:nf,:nf,:)/dp_f(:nf,:nf,:)
   end subroutine gfr_g2f_scalar_dp
 
@@ -1075,7 +1079,7 @@ contains
     end do
   end subroutine gfr_g2f_mixing_ratios
 
-  subroutine gfr_f2g_scalar(ie, gll_metdet, f, g) ! no gfr b/c public
+  subroutine gfr_f2g_scalar(ie, gll_metdet, f, g) ! no gfr b/c public for testing
     integer, intent(in) :: ie
     real(kind=real_kind), intent(in) :: gll_metdet(:,:), f(:,:,:)
     real(kind=real_kind), intent(out) :: g(:,:,:)
