@@ -102,7 +102,7 @@ CONTAINS
     use physics_buffer,   only: pbuf_add_field, dtype_r8
     use ppgrid,           only: pcols, pver
     use cam_abortutils,   only : endrun
-    use gllfvremap_mod,   only: gfr_init, gfr_reset_geometry
+    use gllfvremap_mod,   only: gfr_init
 
     ! PARAMETERS:
     type(file_desc_t),   intent(in)  :: fh       ! PIO file handle for initial or restart file
