@@ -206,13 +206,13 @@ contains
 #endif
        T(:ncol,:,ie) = reshape(wr1(:nf,:nf,:), (/ncol,nlev/))
 
-       call gfr_g2f_vector_dp(gfr, ie, elem, dp, dp_fv, &
+       call gfr_g2f_vector(gfr, ie, elem, &
             elem(ie)%state%v(:,:,1,:,nt), elem(ie)%state%v(:,:,2,:,nt), &
             wr1, wr2)
        uv(:ncol,1,:,ie) = reshape(wr1(:nf,:nf,:), (/ncol,nlev/))
        uv(:ncol,2,:,ie) = reshape(wr2(:nf,:nf,:), (/ncol,nlev/))
 
-       call gfr_g2f_scalar_dp(gfr, ie, elem(ie)%metdet, dp, dp_fv, &
+       call gfr_g2f_scalar(gfr, ie, elem(ie)%metdet, &
             elem(ie)%derived%omega_p, wr1)
        omega_p(:ncol,:,ie) = reshape(wr1(:nf,:nf,:), (/ncol,nlev/))
 
@@ -262,7 +262,7 @@ contains
 
        wr1(:nf,:nf,:) = reshape(uv(:ncol,1,:,ie), (/nf,nf,nlev/))
        wr2(:nf,:nf,:) = reshape(uv(:ncol,2,:,ie), (/nf,nf,nlev/))
-       call gfr_f2g_vector_dp(gfr, ie, elem, dp_fv, dp, &
+       call gfr_f2g_vector_dp(gfr, ie, elem, &
             wr1, wr2, elem(ie)%derived%FM(:,:,1,:), elem(ie)%derived%FM(:,:,2,:))
 
 #if 0
