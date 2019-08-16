@@ -219,7 +219,7 @@ contains
        uv(:ncol,1,:,ie) = reshape(wr1(:nf,:nf,:), (/ncol,nlev/))
        uv(:ncol,2,:,ie) = reshape(wr2(:nf,:nf,:), (/ncol,nlev/))
 
-       call gfr_g2f_scalar(ie, elem(ie)%metdet, elem(ie)%derived%omega_p, wr1)
+       call gfr_g2f_scalar_dp(gfr, ie, elem(ie)%metdet, dp, dp_fv, elem(ie)%derived%omega_p, wr1)
        omega_p(:ncol,:,ie) = reshape(wr1(:nf,:nf,:), (/ncol,nlev/))
 
        do qi = 1,qsize
