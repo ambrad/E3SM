@@ -202,7 +202,7 @@ contains
        wr1(:nf,:nf,:) = wr1(:nf,:nf,:)/(p_fv(:nf,:nf,:)/p0)**kappa
        T(:ncol,:,ie) = reshape(wr1(:nf,:nf,:), (/ncol,nlev/))
 
-       call gfr_g2f_vector(gfr, ie, elem, &
+       call gfr_g2f_vector_dp(gfr, ie, elem, dp, dp_fv, &
             elem(ie)%state%v(:,:,1,:,nt), elem(ie)%state%v(:,:,2,:,nt), &
             wr1, wr2)
        uv(:ncol,1,:,ie) = reshape(wr1(:nf,:nf,:), (/ncol,nlev/))
@@ -257,7 +257,7 @@ contains
 
        wr1(:nf,:nf,:) = reshape(uv(:ncol,1,:,ie), (/nf,nf,nlev/))
        wr2(:nf,:nf,:) = reshape(uv(:ncol,2,:,ie), (/nf,nf,nlev/))
-       call gfr_f2g_vector(gfr, ie, elem, &
+       call gfr_f2g_vector_dp(gfr, ie, elem, dp_fv, dp, &
             wr1, wr2, elem(ie)%derived%FM(:,:,1,:), elem(ie)%derived%FM(:,:,2,:))
 
        call calc_p(hvcoord, elem(ie)%state%ps_v(:,:,nt), p)
@@ -898,7 +898,7 @@ contains
 
     nf = gfr%nphys
     nf2 = nf*nf
-    
+
     if (cubed_sphere_map == 2) then
        ! Reset fv_metdet to match flux coupler's definition of FV
        ! subcell area, which is spherical area of the FV subcell
@@ -907,7 +907,6 @@ contains
           do j = 1,nf
              do i = 1,nf
                 k = i+(j-1)*nf
-
                 call gfr_f_ref_edges(nf, i, ae)
                 call gfr_f_ref_edges(nf, j, be)
                 do ai = 1,2
