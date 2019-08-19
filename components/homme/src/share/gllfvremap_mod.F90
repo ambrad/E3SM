@@ -26,8 +26,16 @@ module gllfvremap_mod
        one = 1.0_real_kind, two = 2.0_real_kind, &
        four = 4.0_real_kind, eps = epsilon(1.0_real_kind)
 
-  ! Data type and functions for high-order, shape-preserving FV <-> GLL remap.
-  type, public :: GllFvRemap_t
+  ! Type for special case of pg1.
+  type, private :: Pg1SolverData_t
+     ! 1D index space of GLL nodes.
+     integer :: inner(np*np), outer(np*np), extra(np*np), ninner, nouter, nextra
+     real(kind=real_kind) :: Achol(np*np,np*np), B(np*np,np*np), c(np*np)
+  end type Pg1SolverData_t
+
+  ! Top-level data type and functions for high-order, shape-preserving FV <->
+  ! GLL remap.
+  type, private :: GllFvRemap_t
      integer :: nphys, npi
      logical :: check, have_fv_topo_file_phis
      real(kind=real_kind) :: tolfac ! for checking
@@ -55,6 +63,7 @@ module gllfvremap_mod
           phis(:,:)
      type (spherical_polar_t), allocatable :: &
           spherep_f(:,:,:) ! (nphys,nphys,nelemd)
+     type (Pg1SolverData_t) :: pg1sd(5)
   end type GllFvRemap_t
 
   type (GllFvRemap_t), private :: gfr
@@ -67,13 +76,13 @@ module gllfvremap_mod
        gfr_fv_phys_to_dyn, &
        gfr_dyn_to_fv_phys_topo, &
        gfr_fv_phys_to_dyn_topo, &
-       gfr_f2g_dss
+       gfr_pg1_reconstruct
 
   ! For testing.
   public :: &
        gfr_test, &
        gfr_g2f_scalar, gfr_f2g_scalar, gfr_f_get_latlon, gfr_f_get_cartesian3d, &
-       gfr_g_make_nonnegative, gfr_dyn_to_fv_phys_topo_elem
+       gfr_g_make_nonnegative, gfr_dyn_to_fv_phys_topo_elem, gfr_f2g_dss
 
   interface gfr_dyn_to_fv_phys
      module procedure gfr_dyn_to_fv_phys_hybrid
@@ -146,6 +155,11 @@ contains
          gfr%phis(nphys2,nelemd), gfr%spherep_f(nphys,nphys,nelemd))
     call gfr_init_fv_metdet(elem, gfr)
     call gfr_init_geometry(elem, gfr)
+
+    if (nphys == 1) then
+       call gfr_pg1_init(gfr)
+       if (par%masterproc) call gfr_pg1_init_check(gfr)
+    end if
   end subroutine gfr_init
 
   subroutine gfr_finish()
@@ -971,9 +985,10 @@ contains
     real(kind=real_kind), intent(in) :: gll_metdet(:,:), g(:,:,:)
     real(kind=real_kind), intent(out) :: f(:,:,:)
 
-    integer :: k
+    integer :: nlev, k
 
-    do k = 1, size(g,3)
+    nlev = size(g,3)
+    do k = 1, nlev
        call gfr_g2f_remapd(gfr, gll_metdet, gfr%fv_metdet(:,ie), g(:,:,k), f(:,:,k))
     end do
   end subroutine gfr_g2f_scalar
@@ -1482,6 +1497,186 @@ contains
        end if
     end do
   end subroutine check_nonnegative
+
+  subroutine gfr_pg1_init(gfr)
+    type (GllFvRemap_t), intent(inout) :: gfr
+
+    integer :: i,j,k
+    logical :: ilim, jlim, lim
+
+    if (gfr%nphys /= 1) return
+
+    do i = 1,5
+       gfr%pg1sd(i)%ninner = 0
+       gfr%pg1sd(i)%nouter = 0
+       gfr%pg1sd(i)%nextra = 0
+    end do
+
+    do j = 1,np
+       jlim = j == 1 .or. j == np
+       do i = 1,np
+          ilim = i == 1 .or. i == np
+          k = np*(j-1) + i
+          if (ilim .and. jlim) then
+             gfr%pg1sd(1)%nouter = gfr%pg1sd(1)%nouter + 1
+             gfr%pg1sd(1)%outer(gfr%pg1sd(1)%nouter) = k
+          else if (ilim .or. jlim) then
+             gfr%pg1sd(1)%nextra = gfr%pg1sd(1)%nextra + 1
+             gfr%pg1sd(1)%extra(gfr%pg1sd(1)%nextra) = k
+          else
+             gfr%pg1sd(1)%ninner = gfr%pg1sd(1)%ninner + 1
+             gfr%pg1sd(1)%inner(gfr%pg1sd(1)%ninner) = k
+          end if
+       end do
+    end do
+    call gfr_pg1_init_interior(gfr%pg1sd(1))
+    
+    do i = 2,5
+       do j = 1,np
+          lim = j == 1 .or. j == np
+          select case(i)
+          case(2); k = j
+          case(3); k = 11 + j
+          case(4); k = (j-1)*np + 1
+          case(5); k = (j-1)*np + 4
+          end select
+          if (lim) then
+             gfr%pg1sd(i)%nouter = gfr%pg1sd(i)%nouter + 1
+             gfr%pg1sd(i)%outer(gfr%pg1sd(i)%nouter) = k
+          else
+             gfr%pg1sd(i)%ninner = gfr%pg1sd(i)%ninner + 1
+             gfr%pg1sd(i)%inner(gfr%pg1sd(i)%ninner) = k
+          end if
+       end do
+       call gfr_pg1_init_edge(gfr%pg1sd(i))
+    end do
+  end subroutine gfr_pg1_init
+
+  subroutine gfr_pg1_init_check(gfr)
+    type (GllFvRemap_t), intent(inout) :: gfr
+
+    real(kind=real_kind) :: Mnpnp(np*np,np*np), M22(4,4), Mnp2(np*np,4)
+
+    call make_mass_matrix_2d(np, np, Mnpnp)
+    call make_mass_matrix_2d(2, 2, M22)
+    call make_mass_matrix_2d(np, 2, Mnp2)
+    print *,'Mnpnp',Mnpnp
+  end subroutine gfr_pg1_init_check
+
+  subroutine gfr_pg1_init_interior(s)
+    type (Pg1SolverData_t), intent(inout) :: s
+
+    real(kind=real_kind) :: Mnpnp(np*np,np*np), M22(4,4), Mnp2(np*np,4)
+
+    if (s%ninner /= (np-2)**2 .or. s%nouter /= 4 .or. s%nextra /= 4*(np-2)) then
+       print *,'gfr> ERROR interior', s%ninner, s%nouter, s%nextra
+    end if
+
+    call make_mass_matrix_2d(np, np, Mnpnp)
+    call make_mass_matrix_2d(2, 2, M22)
+    call make_mass_matrix_2d(np, 2, Mnp2)
+  end subroutine gfr_pg1_init_interior
+
+  subroutine gfr_pg1_init_edge(s)
+    type (Pg1SolverData_t), intent(inout) :: s
+
+    if (s%ninner /= (np-2) .or. s%nouter /= 2 .or. s%nextra /= 0) then
+       print *,'gfr> ERROR edge', s%ninner, s%nouter, s%nextra
+    end if
+  end subroutine gfr_pg1_init_edge
+
+  subroutine make_mass_matrix_2d(np1, np2, M)
+    use quadrature_mod, only : gausslobatto, quadrature_t
+
+    integer, intent(in) :: np1, np2
+    real(kind=real_kind), intent(out) :: M(:,:)
+
+    type (quadrature_t) :: gll1, gll2, quad
+    real(kind=real_kind) :: iv1(np1), jv1(np1), iv2(np2), jv2(np2), ir, jr
+    integer :: np1sq, np2sq, npq, i1, j1, k1, i2, j2, k2, iq, jq
+
+    np1sq = np1*np1
+    np2sq = np2*np2
+
+    gll1 = gausslobatto(np1)
+    gll2 = gausslobatto(np2)
+    npq = np1 + np2 - 2
+    quad = gausslobatto(npq)
+
+    M(:np1sq,:np2sq) = zero
+
+    do jq = 1,npq
+       jr = quad%points(jq)
+       call eval_lagrange_bases(gll1, np1, jr, jv1)
+       call eval_lagrange_bases(gll2, np2, jr, jv2)
+       do iq = 1,npq
+          ir = quad%points(iq)
+          call eval_lagrange_bases(gll1, np1, ir, iv1)
+          call eval_lagrange_bases(gll2, np2, ir, iv2)
+          do j2 = 1,np2
+             do i2 = 1,np2
+                k2 = (j2-1)*np2 + i2
+                do j1 = 1,np1
+                   do i1 = 1,np1
+                      k1 = (j1-1)*np1 + i1
+                      M(k1,k2) = M(k1,k2) + &
+                           quad%weights(iq)*quad%weights(jq)* &
+                           iv1(i1)*iv2(i2)*jv1(j1)*jv2(j2)
+                   end do
+                end do
+             end do
+          end do
+       end do
+    end do
+    
+    call gll_cleanup(quad)
+    call gll_cleanup(gll2)
+    call gll_cleanup(gll1)
+  end subroutine make_mass_matrix_2d
+
+  subroutine gfr_pg1_reconstruct(hybrid, nt, dt, elem, nets, nete)
+    type (hybrid_t), intent(in) :: hybrid
+    integer, intent(in) :: nt
+    real(kind=real_kind), intent(in) :: dt
+    type (element_t), intent(inout) :: elem(:)
+    integer, intent(in), optional :: nets, nete
+
+    if (gfr%nphys /= 1) return
+  end subroutine gfr_pg1_reconstruct
+
+  subroutine gfr_pg1_g_reconstruct_scalar(gfr, ie, gll_metdet, g)
+    type (GllFvRemap_t), intent(in) :: gfr
+    integer, intent(in) :: ie
+    real(kind=real_kind), intent(in) :: gll_metdet(:,:)
+    real(kind=real_kind), intent(inout) :: g(:,:,:)
+
+    integer :: nlev, k
+
+    nlev = size(g,3)
+    do k = 1, nlev
+       
+    end do
+  end subroutine gfr_pg1_g_reconstruct_scalar
+
+  subroutine gfr_pg1_g_reconstruct_mixing_ratio(gfr, ie, gll_metdet, dp, q)
+    type (GllFvRemap_t), intent(in) :: gfr
+    integer, intent(in) :: ie
+    real(kind=real_kind), intent(in) :: gll_metdet(:,:), dp(:,:,:)
+    real(kind=real_kind), intent(inout) :: q(:,:,:)
+
+    real(kind=real_kind) :: wr(np,np,2)
+    integer :: nlev, k
+
+    nlev = size(q,3)
+    do k = 1, nlev
+       wr(:,:,1) = dp(:,:,k)*q(:,:,k)
+       call gfr_pg1_g_reconstruct_scalar(gfr, ie, gll_metdet, wr(:,:,1:1))
+       ! Limit the inner values so that we don't need to do another DSS. This
+       ! problem is feasible because the original inner values were in bounds,
+       ! and the outer values have not changed.
+       
+    end do
+  end subroutine gfr_pg1_g_reconstruct_mixing_ratio
 
   subroutine check(par, dom_mt, gfr, elem, verbose)
     use kinds, only: iulog

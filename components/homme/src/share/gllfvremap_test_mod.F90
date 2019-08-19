@@ -252,6 +252,7 @@ contains
     call gfr_fv_phys_to_dyn(hybrid, nt2, dt, hvcoord, elem, nets, nete, &
          pg_data%T, pg_data%uv, pg_data%q)
     call gfr_f2g_dss(hybrid, elem, nets, nete)
+    call gfr_pg1_reconstruct(hybrid, nt2, dt, elem, nets, nete)
 
     ! Apply the tendencies.
     do ie = nets,nete
@@ -411,6 +412,7 @@ contains
     call gfr_fv_phys_to_dyn(hybrid, nt2, dt, hvcoord, elem, nets, nete, &
          pg_data%T, pg_data%uv, pg_data%q)
     call gfr_f2g_dss(hybrid, elem, nets, nete)
+    call gfr_pg1_reconstruct(hybrid, nt2, dt, elem, nets, nete)
     ! Don't apply forcings; rather, the forcing fields now have the
     ! remapped quantities we want to compare against the original.
     do q = 2, qsize+3
@@ -512,6 +514,7 @@ contains
        call gfr_fv_phys_to_dyn(hybrid, nt2, zero, hvcoord, elem, nets, nete, &
             pg_data%T, pg_data%uv, pg_data%q)       
        call gfr_f2g_dss(hybrid, elem, nets, nete)
+       call gfr_pg1_reconstruct(hybrid, nt, dt, elem, nets, nete)
        do ie = nets,nete
           do k = 1,nlev
              wr(:,:,k) = elem(ie)%spheremp
