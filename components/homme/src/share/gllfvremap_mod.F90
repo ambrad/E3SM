@@ -29,7 +29,7 @@ module gllfvremap_mod
   ! Type for special case of pg1.
   type, private :: Pg1SolverData_t
      ! 1D index space of GLL nodes.
-     integer :: inner(np*np), outer(np*np), outersortpi(np*np), ninner, nouter
+     integer :: inner(np*np), outer(np*np), ninner, nouter
      real(kind=real_kind) :: Achol(np*np,np*np), B(np*np,np*np), s(np*np), sts
   end type Pg1SolverData_t
 
@@ -1528,8 +1528,6 @@ contains
           end if
        end do
     end do
-    call calc_sort_perminv(gfr%pg1sd(1)%outer, gfr%pg1sd(1)%nouter, &
-         gfr%pg1sd(1)%outersortpi)
     call make_mass_matrix_2d(np, np, Mnpnp)
     call make_mass_matrix_2d(np, 2, Mnp2)
     call make_mass_matrix_2d(2, 2, M22)
@@ -1558,24 +1556,6 @@ contains
        call gfr_pg1_init_edge(gfr, Mnpnp, Mnp2, M22, gfr%pg1sd(i))
     end do
   end subroutine gfr_pg1_init
-
-  subroutine calc_sort_perminv(a, n, p)
-    use sort_mod, only: sortints
-
-    integer, intent(in) :: a(:), n
-    integer, intent(out) :: p(:)
-
-    integer :: w(2,n), i
-
-    w(1,:) = a(:n)
-    do i = 1,n
-       w(2,i) = i
-    end do
-    call sortints(w)
-    do i = 1,n
-       p(w(2,i)) = i
-    end do
-  end subroutine calc_sort_perminv
 
   subroutine gfr_pg1_init_check(gfr)
     use quadrature_mod, only : gausslobatto, quadrature_t
@@ -1615,9 +1595,9 @@ contains
     end do
 
     gll = gausslobatto(2)
-    y(1,1) = half
-    y(1,np) = 0.4_real_kind
-    y(np,np) = -0.1_real_kind
+    y(1,1) = zero
+    y(1,np) = one
+    y(np,np) = one
     y(np,1) = zero
     do j = 1,np
        call eval_lagrange_bases(gll, 2, real(gllnp%points(j), real_kind), vj)
@@ -1627,6 +1607,7 @@ contains
                y(np,1)*vi(2)*vj(1)
        end do
     end do
+    print *,'y',y
     
     ! Test that the edge solve recovers a line.
     do i = 2,5
@@ -1651,6 +1632,8 @@ contains
 
     a = sum(gfr%w_gg*y)
     wr1 = reshape(y, (/np*np/))
+    print *,'inner',gfr%pg1sd(1)%inner(:gfr%pg1sd(1)%ninner)
+    print *,'outer',gfr%pg1sd(1)%outer(:gfr%pg1sd(1)%nouter)
     print *,'gfr B> before',wr1(gfr%pg1sd(1)%inner(:gfr%pg1sd(1)%ninner))
     call gfr_pg1_solve(gfr, gfr%pg1sd(1), wr1)
     b = sum(gfr%w_gg*reshape(wr1, (/np,np/)))
@@ -1692,12 +1675,12 @@ contains
     end do
     do j = 1,s%nouter
        do i = 1,s%ninner
-          s%Achol(i, s%ninner + j) = -Mnp2(s%inner(i), s%outersortpi(j))
+          s%Achol(i, s%ninner + j) = -Mnp2(s%inner(i), j)
        end do
     end do
     do j = 1,s%nouter
        do i = 1,j
-          s%Achol(s%ninner + i, s%ninner + j) = M22(s%outersortpi(i), s%outersortpi(j))
+          s%Achol(s%ninner + i, s%ninner + j) = M22(i,j)
        end do
     end do
     if (.false. .and. s%ninner == 2) then
@@ -1721,7 +1704,7 @@ contains
     end do
     do j = 1,s%nouter
        do i = 1,s%nouter
-          s%B(j, s%ninner + i) = Mnp2(s%outer(i), s%outersortpi(j))
+          s%B(j, s%ninner + i) = Mnp2(s%outer(i), j)
        end do
     end do
 
@@ -1895,8 +1878,8 @@ contains
     integer, intent(in), optional :: npq_in
 
     type (quadrature_t) :: gll1, gll2, quad
-    real(kind=real_kind) :: iv1(np1), jv1(np1), iv2(np2), jv2(np2), ir, jr
-    integer :: np1sq, np2sq, npq, i1, j1, k1, i2, j2, k2, iq, jq
+    real(kind=real_kind) :: iv1(np1), iv2(np2), ir
+    integer :: np1sq, np2sq, npq, i1, i2, iq
 
     npq = (np1 + np2 + 2)/2
     if (present(npq_in)) npq = npq_in
