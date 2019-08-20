@@ -1667,7 +1667,7 @@ contains
     s%sts = sum(s%s(:n)*s%s(:n))
   end subroutine gfr_pg1_init_interior
 
-  subroutine gfr_pg2_solve(gfr, s, g)
+  subroutine gfr_pg1_solve(gfr, s, g)
     ! Assume in the following np = 2. Let
     !   A = [ M44(I,I), -M24(:,I)']
     !       [-M24(:,I),  M22      ]
@@ -1705,7 +1705,7 @@ contains
 
     ! Extract g(I).
     g(s%inner(:s%ninner)) = x(:s%ninner)
-  end subroutine gfr_pg2_solve
+  end subroutine gfr_pg1_solve
 
   subroutine gfr_pg1_init_edge(s)
     type (Pg1SolverData_t), intent(inout) :: s
