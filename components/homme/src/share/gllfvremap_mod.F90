@@ -29,7 +29,7 @@ module gllfvremap_mod
   ! Type for special case of pg1.
   type, private :: Pg1SolverData_t
      ! 1D index space of GLL nodes.
-     integer :: inner(np*np), outer(np*np), ninner, nouter
+     integer :: inner(np*np), outer(np*np), ninner, nouter, nnotinner
      real(kind=real_kind) :: Achol(np*np,np*np), B(np*np,np*np), s(np*np), sts
   end type Pg1SolverData_t
 
@@ -1512,6 +1512,7 @@ contains
        gfr%pg1sd(i)%outer = 0
        gfr%pg1sd(i)%ninner = 0
        gfr%pg1sd(i)%nouter = 0
+       gfr%pg1sd(i)%nnotinner = 0
     end do
 
     do j = 1,np
@@ -1525,6 +1526,18 @@ contains
           else if (.not. (ilim .or. jlim)) then
              gfr%pg1sd(1)%ninner = gfr%pg1sd(1)%ninner + 1
              gfr%pg1sd(1)%inner(gfr%pg1sd(1)%ninner) = k
+          end if
+       end do
+    end do
+    gfr%pg1sd(1)%nnotinner = gfr%pg1sd(1)%nouter
+    do j = 1,np
+       jlim = j == 1 .or. j == np
+       do i = 1,np
+          ilim = i == 1 .or. i == np
+          k = np*(j-1) + i
+          if ((ilim .or. jlim) .and. ilim .neqv. jlim) then
+             gfr%pg1sd(1)%nnotinner = gfr%pg1sd(1)%nnotinner + 1
+             gfr%pg1sd(1)%outer(gfr%pg1sd(1)%nnotinner) = k
           end if
        end do
     end do
@@ -1553,6 +1566,7 @@ contains
              gfr%pg1sd(i)%inner(gfr%pg1sd(i)%ninner) = k
           end if
        end do
+       gfr%pg1sd(i)%nnotinner = gfr%pg1sd(i)%nouter
        call gfr_pg1_init_edge(gfr, Mnpnp, Mnp2, M22, gfr%pg1sd(i))
     end do
   end subroutine gfr_pg1_init
@@ -1596,9 +1610,9 @@ contains
 
     gll = gausslobatto(2)
     y(1,1) = zero
-    y(1,np) = one
-    y(np,np) = one
-    y(np,1) = zero
+    y(1,np) = half
+    y(np,np) = -0.4_real_kind
+    y(np,1) = one
     do j = 1,np
        call eval_lagrange_bases(gll, 2, real(gllnp%points(j), real_kind), vj)
        do i = 1,np
@@ -1634,6 +1648,7 @@ contains
     wr1 = reshape(y, (/np*np/))
     print *,'inner',gfr%pg1sd(1)%inner(:gfr%pg1sd(1)%ninner)
     print *,'outer',gfr%pg1sd(1)%outer(:gfr%pg1sd(1)%nouter)
+    print *,'extra',gfr%pg1sd(1)%outer(gfr%pg1sd(1)%nouter+1:gfr%pg1sd(1)%nnotinner)
     print *,'gfr B> before',wr1(gfr%pg1sd(1)%inner(:gfr%pg1sd(1)%ninner))
     call gfr_pg1_solve(gfr, gfr%pg1sd(1), wr1)
     b = sum(gfr%w_gg*reshape(wr1, (/np,np/)))
@@ -1660,8 +1675,8 @@ contains
     real(kind=real_kind) :: wr(np*np)
     integer :: i, j, k, info, n
 
-    if (s%ninner /= (np-2)**2 .or. s%nouter /= 4) then
-       print *,'gfr> ERROR interior', s%ninner, s%nouter
+    if (s%ninner /= (np-2)**2 .or. s%nouter /= 4 .or. s%nnotinner /= 12) then
+       print *,'gfr> ERROR interior', s%ninner, s%nouter, s%nnotinner
     end if
 
     n = s%ninner + s%nouter
@@ -1683,28 +1698,18 @@ contains
           s%Achol(s%ninner + i, s%ninner + j) = M22(i,j)
        end do
     end do
-    if (.false. .and. s%ninner == 2) then
-       print *,'Mnpnp',Mnpnp(s%inner(1:2),s%inner(1:2))
-       do j = 1,4
-          do i = j+1,4
-             s%Achol(i,j) = s%Achol(j,i)
-          end do
-       end do
-       print *,'A', s%Achol(1:4,1:4)
-       call exit(-1)
-    end if
     call dpotrf('u', n, s%Achol, size(s%Achol,1), info)
     if (info /= 0) print *, 'gfr ERROR> dpotrf returned', info
 
     ! Assemble RHS matrix B'.
-    do j = 1,s%nouter
+    do j = 1,s%nnotinner
        do i = 1,s%ninner
           s%B(j,i) = -Mnpnp(s%inner(i), s%outer(j))
        end do
     end do
     do j = 1,s%nouter
-       do i = 1,s%nouter
-          s%B(j, s%ninner + i) = Mnp2(s%outer(i), j)
+       do i = 1,s%nnotinner
+          s%B(i, s%ninner + j) = Mnp2(s%outer(i), j)
        end do
     end do
 
@@ -1802,7 +1807,7 @@ contains
 
     ! Form RHS.
     do i = 1,n
-       x(i) = sum(s%B(:s%nouter,i)*g(s%outer(:s%nouter)))
+       x(i) = sum(s%B(:s%nnotinner,i)*g(s%outer(:s%nnotinner)))
     end do
     wr = reshape(gfr%w_gg, (/np2/))
     mass = sum(wr(s%inner(:s%ninner))*g(s%inner(:s%ninner)))
