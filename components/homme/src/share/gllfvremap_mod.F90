@@ -29,8 +29,9 @@ module gllfvremap_mod
   ! Type for special case of pg1.
   type, private :: Pg1SolverData_t
      ! 1D index space of GLL nodes.
-     integer :: inner(np*np), outer(np*np), extra(np*np), ninner, nouter, nextra
-     real(kind=real_kind) :: Achol(np*np,np*np), B(np*np,np*np), c(np*np)
+     integer :: inner(np*np), outer(np*np), outersortpi(np*np), extra(np*np), &
+          ninner, nouter, nextra
+     real(kind=real_kind) :: Achol(np*np,np*np), B(np*np,np*np), s(np*np), sts
   end type Pg1SolverData_t
 
   ! Top-level data type and functions for high-order, shape-preserving FV <->
@@ -1529,7 +1530,9 @@ contains
           end if
        end do
     end do
-    call gfr_pg1_init_interior(gfr%pg1sd(1))
+    call calc_sort_perminv(gfr%pg1sd(1)%outer, gfr%pg1sd(1)%nouter, &
+         gfr%pg1sd(1)%outersortpi)
+    call gfr_pg1_init_interior(gfr, gfr%pg1sd(1))
     
     do i = 2,5
        do j = 1,np
@@ -1548,9 +1551,29 @@ contains
              gfr%pg1sd(i)%inner(gfr%pg1sd(i)%ninner) = k
           end if
        end do
+       call calc_sort_perminv(gfr%pg1sd(i)%outer, gfr%pg1sd(i)%nouter, &
+            gfr%pg1sd(i)%outersortpi)
        call gfr_pg1_init_edge(gfr%pg1sd(i))
     end do
   end subroutine gfr_pg1_init
+
+  subroutine calc_sort_perminv(a, n, p)
+    use sort_mod, only: sortints
+
+    integer, intent(in) :: a(:), n
+    integer, intent(out) :: p(:)
+
+    integer :: w(2,n), i
+
+    w(1,:) = a(:n)
+    do i = 1,n
+       w(2,i) = i
+    end do
+    call sortints(w)
+    do i = 1,n
+       p(w(2,i)) = i
+    end do
+  end subroutine calc_sort_perminv
 
   subroutine gfr_pg1_init_check(gfr)
     use quadrature_mod, only : gausslobatto, quadrature_t
@@ -1582,23 +1605,26 @@ contains
     call gll_cleanup(gll)
   end subroutine gfr_pg1_init_check
 
-  subroutine gfr_pg1_init_interior(s)
+  subroutine gfr_pg1_init_interior(gfr, s)
     ! TODO DOCUMENT
 
+    type (GllFvRemap_t), intent(in) :: gfr
     type (Pg1SolverData_t), intent(inout) :: s
 
-    real(kind=real_kind) :: Mnpnp(np*np,np*np), M22(4,4), Mnp2(np*np,4)
-    integer :: i, j, info
+    real(kind=real_kind) :: Mnpnp(np*np,np*np), M22(4,4), Mnp2(np*np,4), wr(np*np)
+    integer :: i, j, k, info, n
 
     if (s%ninner /= (np-2)**2 .or. s%nouter /= 4 .or. s%nextra /= 4*(np-2)) then
        print *,'gfr> ERROR interior', s%ninner, s%nouter, s%nextra
     end if
 
+    n = s%ninner + s%nouter
+
     call make_mass_matrix_2d(np, np, Mnpnp)
     call make_mass_matrix_2d(np, 2, Mnp2)
     call make_mass_matrix_2d(2, 2, M22)
 
-    ! Form upper tri of A.
+    ! Assemble upper tri of A.
     s%Achol = zero
     do j = 1,s%ninner
        do i = 1,j
@@ -1607,17 +1633,79 @@ contains
     end do
     do j = 1,s%ninner
        do i = 1,4
-          s%Achol(i, s%ninner + j) = -Mnp2(s%inner(j),i)
+          s%Achol(i, s%ninner + j) = -Mnp2(s%inner(j), s%outersortpi(i))
        end do
     end do
     do j = 1,4
        do i = 1,j
-          s%Achol(s%ninner + i, s%ninner + j) = M22(i,j)
+          s%Achol(s%ninner + i, s%ninner + j) = M22(s%outersortpi(i), s%outersortpi(j))
        end do
     end do
-    call dpotrf('u', s%inner + s%outer, s%Achol, np*np, info)
+    call dpotrf('u', n, s%Achol, size(s%Achol,1), info)
     if (info /= 0) print *, 'gfr ERROR> dpotrf returned', info
+
+    ! Assemble RHS matrix B'.
+    do j = 1,s%nouter
+       do i = 1,s%ninner
+          s%B(j,i) = -Mnpnp(s%inner(i), s%outer(j))
+       end do
+    end do
+    do j = 1,4
+       do i = 1,s%nouter
+          s%B(j, s%ninner + i) = Mnp2(s%outer(i), s%outersortpi(j))
+       end do
+    end do
+
+    ! Constraint vector c is just w_gg(s%inner), so don't store it explicitly.
+    wr = reshape(gfr%w_gg(:np,:np), (/np*np/))
+    s%s = zero
+    s%s(:s%ninner) = wr(s%inner)
+
+    ! Form R's = c
+    call dtrtrs('u', 't', 'n', n, 1, s%Achol, size(s%Achol,1), s%s, np*np, info)
+    if (info /= 0) print *, 'gfr ERROR> dtrtrs returned', info
+    s%sts = sum(s%s(:n)*s%s(:n))
   end subroutine gfr_pg1_init_interior
+
+  subroutine gfr_pg2_solve(gfr, s, g)
+    ! Assume in the following np = 2. Let
+    !   A = [ M44(I,I), -M24(:,I)']
+    !       [-M24(:,I),  M22      ]
+    !   b = [-M44(O,I)'y(O)]
+    !       [ M24(:,O) y(O)]
+    !   c = w_gg(I).
+    ! Solve
+    !   [A  c] [x] = [b]
+    !   [c' 0] [y]   [d]
+    ! given A = R'R, R's = c.
+
+    type (GllFvRemap_t), intent(in) :: gfr
+    type (Pg1SolverData_t), intent(in) :: s
+    real(kind=real_kind), intent(inout) :: g(:)
+
+    real(kind=real_kind) :: x(np*np + 1), wr(np*np)
+    integer :: np2, i, n, info
+
+    np2 = np*np
+    n = s%ninner + s%nouter
+
+    ! Form RHS.
+    do i = 1, n
+       x(i) = sum(s%B(:s%nouter,i)*g(s%outer(:s%nouter)))
+    end do
+    wr = reshape(gfr%w_gg, (/np2/))
+    x(n+1) = sum(wr(s%inner)*g(s%inner))
+
+    ! Solve R'z = b.
+    call dtrtrs('u', 't', 'n', n, 1, s%Achol, size(s%Achol,1), x, np*np, info)
+    ! Assemble z + (d - s'z)/(s's) s.
+    x(:n) = x(:n) + ((x(n+1) - sum(s%s(:n)*x(:n)))/s%sts)*s%s
+    ! Solve R x = z + (d - s'z)/(s's) s.
+    call dtrtrs('u', 'n', 'n', n, s%Achol, size(s%Achol,1), x, np*np, info)
+
+    ! Extract g(I).
+    g(s%inner(:s%ninner)) = x(:s%ninner)
+  end subroutine gfr_pg2_solve
 
   subroutine gfr_pg1_init_edge(s)
     type (Pg1SolverData_t), intent(inout) :: s
