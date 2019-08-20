@@ -29,8 +29,7 @@ module gllfvremap_mod
   ! Type for special case of pg1.
   type, private :: Pg1SolverData_t
      ! 1D index space of GLL nodes.
-     integer :: inner(np*np), outer(np*np), outersortpi(np*np), extra(np*np), &
-          ninner, nouter, nextra
+     integer :: inner(np*np), outer(np*np), outersortpi(np*np), ninner, nouter
      real(kind=real_kind) :: Achol(np*np,np*np), B(np*np,np*np), s(np*np), sts
   end type Pg1SolverData_t
 
@@ -1502,15 +1501,17 @@ contains
   subroutine gfr_pg1_init(gfr)
     type (GllFvRemap_t), intent(inout) :: gfr
 
+    real(kind=real_kind) :: Mnpnp(np*np,np*np), M22(4,4), Mnp2(np*np,4), wr(np*np)
     integer :: i,j,k
     logical :: ilim, jlim, lim
 
     if (gfr%nphys /= 1) return
 
     do i = 1,5
+       gfr%pg1sd(i)%inner = 0
+       gfr%pg1sd(i)%outer = 0
        gfr%pg1sd(i)%ninner = 0
        gfr%pg1sd(i)%nouter = 0
-       gfr%pg1sd(i)%nextra = 0
     end do
 
     do j = 1,np
@@ -1521,10 +1522,7 @@ contains
           if (ilim .and. jlim) then
              gfr%pg1sd(1)%nouter = gfr%pg1sd(1)%nouter + 1
              gfr%pg1sd(1)%outer(gfr%pg1sd(1)%nouter) = k
-          else if (ilim .or. jlim) then
-             gfr%pg1sd(1)%nextra = gfr%pg1sd(1)%nextra + 1
-             gfr%pg1sd(1)%extra(gfr%pg1sd(1)%nextra) = k
-          else
+          else if (.not. (ilim .or. jlim)) then
              gfr%pg1sd(1)%ninner = gfr%pg1sd(1)%ninner + 1
              gfr%pg1sd(1)%inner(gfr%pg1sd(1)%ninner) = k
           end if
@@ -1532,14 +1530,20 @@ contains
     end do
     call calc_sort_perminv(gfr%pg1sd(1)%outer, gfr%pg1sd(1)%nouter, &
          gfr%pg1sd(1)%outersortpi)
-    call gfr_pg1_init_interior(gfr, gfr%pg1sd(1))
-    
+    call make_mass_matrix_2d(np, np, Mnpnp)
+    call make_mass_matrix_2d(np, 2, Mnp2)
+    call make_mass_matrix_2d(2, 2, M22)
+    call gfr_pg1_init_interior(gfr, Mnpnp, Mnp2, M22, gfr%pg1sd(1))
+
+    call make_mass_matrix_1d(np, np, Mnpnp)
+    call make_mass_matrix_1d(np, 2, Mnp2)
+    call make_mass_matrix_1d(2, 2, M22)
     do i = 2,5
        do j = 1,np
           lim = j == 1 .or. j == np
           select case(i)
           case(2); k = j
-          case(3); k = 11 + j
+          case(3); k = 12 + j
           case(4); k = (j-1)*np + 1
           case(5); k = (j-1)*np + 4
           end select
@@ -1551,9 +1555,7 @@ contains
              gfr%pg1sd(i)%inner(gfr%pg1sd(i)%ninner) = k
           end if
        end do
-       call calc_sort_perminv(gfr%pg1sd(i)%outer, gfr%pg1sd(i)%nouter, &
-            gfr%pg1sd(i)%outersortpi)
-       call gfr_pg1_init_edge(gfr%pg1sd(i))
+       call gfr_pg1_init_edge(gfr, Mnpnp, Mnp2, M22, gfr%pg1sd(i))
     end do
   end subroutine gfr_pg1_init
 
@@ -1580,49 +1582,106 @@ contains
 
     type (GllFvRemap_t), intent(inout) :: gfr
 
-    type (quadrature_t) :: gll
-    real(kind=real_kind) :: M1(np*np,np*np), M2(np*np,np*np), a, b, rd
+    type (quadrature_t) :: gll, gllnp
+    real(kind=real_kind) :: M1(np*np,np*np), M2(np*np,np*np), a, b, rd, y(np,np), &
+         vi(np), vj(np), wr1(np*np)
     integer :: i, j, k
 
-    call make_mass_matrix_2d(np, np, M1)
-
     ! Test that default quadrature order is sufficient.
+    call make_mass_matrix_2d(np, np, M1)
     call make_mass_matrix_2d(np, np, M2, 8)
-    rd = sum((M1 - M2)**2)/sum(M1**2)
+    rd = sqrt(sum((M1 - M2)**2)/sum(M1**2))
+    if (rd > 5*eps) print *, 'gfr ERROR M>', rd
+    call make_mass_matrix_2d(np, 2, M1)
+    call make_mass_matrix_2d(np, 2, M2, 8)
+    rd = sqrt(sum((M1(:,:4) - M2(:,:4))**2)/sum(M1(:,:4)**2))
+    if (rd > 5*eps) print *, 'gfr ERROR M>', rd
+    call make_mass_matrix_2d(2, 2, M1)
+    call make_mass_matrix_2d(2, 2, M2, 8)
+    rd = sqrt(sum((M1(:4,:4) - M2(:4,:4))**2)/sum(M1(:4,:4)**2))
     if (rd > 5*eps) print *, 'gfr ERROR M>', rd
 
     ! Test that rows sum to weights.
-    gll = gausslobatto(np)
+    call make_mass_matrix_2d(np, np, M1)
+    gllnp = gausslobatto(np)
     do j = 1,np
        do i = 1,np
           k = (j-1)*np + i
-          a = gll%weights(i)*gll%weights(j)
+          a = gllnp%weights(i)*gllnp%weights(j)
           b = sum(M1(k,:))
           rd = abs(a - b)/b
           if (rd > 5*eps) print *, 'gfr ERROR> sum:', a, b, rd
        end do
     end do
+
+    gll = gausslobatto(2)
+    y(1,1) = half
+    y(1,np) = 0.4_real_kind
+    y(np,np) = -0.1_real_kind
+    y(np,1) = zero
+    do j = 1,np
+       call eval_lagrange_bases(gll, 2, real(gllnp%points(j), real_kind), vj)
+       do i = 1,np
+          call eval_lagrange_bases(gll, 2, real(gllnp%points(i), real_kind), vi)
+          y(i,j) = y(1,1)*vi(1)*vj(1) + y(1,np)*vi(1)*vj(2) + y(np,np)*vi(2)*vj(2) + &
+               y(np,1)*vi(2)*vj(1)
+       end do
+    end do
+    
+    ! Test that the edge solve recovers a line.
+    do i = 2,5
+       wr1 = reshape(y, (/np*np/))
+       ! Perturb the inner points symmetrically so that a line is still the
+       ! desired solution.
+       a = 0.1
+       do j = 1,2
+          wr1(gfr%pg1sd(i)%inner(j)) = wr1(gfr%pg1sd(i)%inner(j)) + a
+          a = -a
+       end do
+       a = sum(gfr%w_gg*reshape(wr1, (/np,np/)))
+       call gfr_pg1_solve(gfr, gfr%pg1sd(i), wr1)
+       b = sum(gfr%w_gg*reshape(wr1, (/np,np/)))
+       rd = abs(a-b)/abs(a)
+       if (rd > 5*eps) print *, 'gfr ERROR> mass:', a, b, rd
+       a = sqrt(sum(gfr%w_gg*(reshape(wr1, (/np,np/)) - y)**2))
+       b = sqrt(sum(gfr%w_gg*y**2))
+       rd = a/b
+       if (rd > 5*eps) print *, 'gfr ERROR> 1d solve', i, a, b, rd
+    end do
+
+    a = sum(gfr%w_gg*y)
+    wr1 = reshape(y, (/np*np/))
+    print *,'gfr B> before',wr1(gfr%pg1sd(1)%inner(:gfr%pg1sd(1)%ninner))
+    call gfr_pg1_solve(gfr, gfr%pg1sd(1), wr1)
+    b = sum(gfr%w_gg*reshape(wr1, (/np,np/)))
+    rd = abs(a-b)/abs(a)
+    if (rd > 5*eps) print *, 'gfr ERROR> mass:', a, b, rd
+    print *,'gfr B> after',wr1(gfr%pg1sd(1)%inner(:gfr%pg1sd(1)%ninner))
+    a = sqrt(sum(gfr%w_gg*(reshape(wr1, (/np,np/)) - y)**2))
+    b = sqrt(sum(gfr%w_gg*y**2))
+    rd = a/b
+    print *,'gfr solve>', a, b, rd
     call gll_cleanup(gll)
+
+    call gll_cleanup(gllnp)
+    call exit(-1)
   end subroutine gfr_pg1_init_check
 
-  subroutine gfr_pg1_init_interior(gfr, s)
+  subroutine gfr_pg1_init_interior(gfr, Mnpnp, Mnp2, M22, s)
     ! TODO DOCUMENT
 
     type (GllFvRemap_t), intent(in) :: gfr
+    real(kind=real_kind), dimension(:,:), intent(in) :: Mnpnp, Mnp2, M22
     type (Pg1SolverData_t), intent(inout) :: s
 
-    real(kind=real_kind) :: Mnpnp(np*np,np*np), M22(4,4), Mnp2(np*np,4), wr(np*np)
+    real(kind=real_kind) :: wr(np*np)
     integer :: i, j, k, info, n
 
-    if (s%ninner /= (np-2)**2 .or. s%nouter /= 4 .or. s%nextra /= 4*(np-2)) then
-       print *,'gfr> ERROR interior', s%ninner, s%nouter, s%nextra
+    if (s%ninner /= (np-2)**2 .or. s%nouter /= 4) then
+       print *,'gfr> ERROR interior', s%ninner, s%nouter
     end if
 
     n = s%ninner + s%nouter
-
-    call make_mass_matrix_2d(np, np, Mnpnp)
-    call make_mass_matrix_2d(np, 2, Mnp2)
-    call make_mass_matrix_2d(2, 2, M22)
 
     ! Assemble upper tri of A.
     s%Achol = zero
@@ -1631,16 +1690,26 @@ contains
           s%Achol(i,j) = Mnpnp(s%inner(i), s%inner(j))
        end do
     end do
-    do j = 1,s%ninner
-       do i = 1,4
-          s%Achol(i, s%ninner + j) = -Mnp2(s%inner(j), s%outersortpi(i))
+    do j = 1,s%nouter
+       do i = 1,s%ninner
+          s%Achol(i, s%ninner + j) = -Mnp2(s%inner(i), s%outersortpi(j))
        end do
     end do
-    do j = 1,4
+    do j = 1,s%nouter
        do i = 1,j
           s%Achol(s%ninner + i, s%ninner + j) = M22(s%outersortpi(i), s%outersortpi(j))
        end do
     end do
+    if (.false. .and. s%ninner == 2) then
+       print *,'Mnpnp',Mnpnp(s%inner(1:2),s%inner(1:2))
+       do j = 1,4
+          do i = j+1,4
+             s%Achol(i,j) = s%Achol(j,i)
+          end do
+       end do
+       print *,'A', s%Achol(1:4,1:4)
+       call exit(-1)
+    end if
     call dpotrf('u', n, s%Achol, size(s%Achol,1), info)
     if (info /= 0) print *, 'gfr ERROR> dpotrf returned', info
 
@@ -1650,7 +1719,7 @@ contains
           s%B(j,i) = -Mnpnp(s%inner(i), s%outer(j))
        end do
     end do
-    do j = 1,4
+    do j = 1,s%nouter
        do i = 1,s%nouter
           s%B(j, s%ninner + i) = Mnp2(s%outer(i), s%outersortpi(j))
        end do
@@ -1659,13 +1728,72 @@ contains
     ! Constraint vector c is just w_gg(s%inner), so don't store it explicitly.
     wr = reshape(gfr%w_gg(:np,:np), (/np*np/))
     s%s = zero
-    s%s(:s%ninner) = wr(s%inner)
+    s%s(:s%ninner) = wr(s%inner(:s%ninner))
 
     ! Form R's = c
     call dtrtrs('u', 't', 'n', n, 1, s%Achol, size(s%Achol,1), s%s, np*np, info)
     if (info /= 0) print *, 'gfr ERROR> dtrtrs returned', info
     s%sts = sum(s%s(:n)*s%s(:n))
   end subroutine gfr_pg1_init_interior
+
+  subroutine gfr_pg1_init_edge(gfr, Mnpnp, Mnp2, M22, s)
+    type (GllFvRemap_t), intent(in) :: gfr
+    real(kind=real_kind), dimension(:,:), intent(in) :: Mnpnp, Mnp2, M22
+    type (Pg1SolverData_t), intent(inout) :: s
+
+    integer, parameter :: outermap(2) = (/1,np/)
+
+    real(kind=real_kind) :: wr(np*np)
+    integer :: i, j, k, info, n
+
+    if (s%ninner /= (np-2) .or. s%nouter /= 2) then
+       print *,'gfr> ERROR edge', s%ninner, s%nouter
+    end if
+
+    n = s%ninner + s%nouter
+
+    ! Assemble upper tri of A.
+    s%Achol = zero
+    do j = 1,s%ninner
+       do i = 1,j
+          s%Achol(i,j) = Mnpnp(i+1, j+1)
+       end do
+    end do
+    do j = 1,s%nouter
+       do i = 1,s%ninner
+          s%Achol(i, s%ninner + j) = -Mnp2(i+1, j)
+       end do
+    end do
+    do j = 1,s%nouter
+       do i = 1,j
+          s%Achol(s%ninner + i, s%ninner + j) = M22(i,j)
+       end do
+    end do
+    call dpotrf('u', n, s%Achol, size(s%Achol,1), info)
+    if (info /= 0) print *, 'gfr ERROR> dpotrf returned', info
+
+    ! Assemble RHS matrix B'.
+    do j = 1,s%nouter
+       do i = 1,s%ninner
+          s%B(j,i) = -Mnpnp(i+1, outermap(j))
+       end do
+    end do
+    do j = 1,s%nouter
+       do i = 1,s%nouter
+          s%B(j, s%ninner + i) = Mnp2(outermap(i), j)
+       end do
+    end do
+
+    ! Constraint vector c is just w_gg(s%inner), so don't store it explicitly.
+    wr = reshape(gfr%w_gg(:np,:np), (/np*np/))
+    s%s = zero
+    s%s(:s%ninner) = wr(s%inner(:s%ninner))
+
+    ! Form R's = c
+    call dtrtrs('u', 't', 'n', n, 1, s%Achol, size(s%Achol,1), s%s, np*np, info)
+    if (info /= 0) print *, 'gfr ERROR> dtrtrs returned', info
+    s%sts = sum(s%s(:n)*s%s(:n))
+  end subroutine gfr_pg1_init_edge
 
   subroutine gfr_pg1_solve(gfr, s, g)
     ! Assume in the following np = 2. Let
@@ -1683,37 +1811,29 @@ contains
     type (Pg1SolverData_t), intent(in) :: s
     real(kind=real_kind), intent(inout) :: g(:)
 
-    real(kind=real_kind) :: x(np*np + 1), wr(np*np)
+    real(kind=real_kind) :: x(np*np), mass, wr(np*np)
     integer :: np2, i, n, info
 
     np2 = np*np
     n = s%ninner + s%nouter
 
     ! Form RHS.
-    do i = 1, n
+    do i = 1,n
        x(i) = sum(s%B(:s%nouter,i)*g(s%outer(:s%nouter)))
     end do
     wr = reshape(gfr%w_gg, (/np2/))
-    x(n+1) = sum(wr(s%inner)*g(s%inner))
+    mass = sum(wr(s%inner(:s%ninner))*g(s%inner(:s%ninner)))
 
     ! Solve R'z = b.
     call dtrtrs('u', 't', 'n', n, 1, s%Achol, size(s%Achol,1), x, np*np, info)
     ! Assemble z + (d - s'z)/(s's) s.
-    x(:n) = x(:n) + ((x(n+1) - sum(s%s(:n)*x(:n)))/s%sts)*s%s
+    x(:n) = x(:n) + ((mass - sum(s%s(:n)*x(:n)))/s%sts)*s%s(:n)
     ! Solve R x = z + (d - s'z)/(s's) s.
-    call dtrtrs('u', 'n', 'n', n, s%Achol, size(s%Achol,1), x, np*np, info)
+    call dtrtrs('u', 'n', 'n', n, 1, s%Achol, size(s%Achol,1), x, np*np, info)
 
     ! Extract g(I).
     g(s%inner(:s%ninner)) = x(:s%ninner)
   end subroutine gfr_pg1_solve
-
-  subroutine gfr_pg1_init_edge(s)
-    type (Pg1SolverData_t), intent(inout) :: s
-
-    if (s%ninner /= (np-2) .or. s%nouter /= 2 .or. s%nextra /= 0) then
-       print *,'gfr> ERROR edge', s%ninner, s%nouter, s%nextra
-    end if
-  end subroutine gfr_pg1_init_edge
 
   subroutine make_mass_matrix_2d(np1, np2, M, npq_in)
     use quadrature_mod, only : gausslobatto, quadrature_t
@@ -1726,7 +1846,7 @@ contains
     real(kind=real_kind) :: iv1(np1), jv1(np1), iv2(np2), jv2(np2), ir, jr
     integer :: np1sq, np2sq, npq, i1, j1, k1, i2, j2, k2, iq, jq
 
-    npq = np1 + np2 - 2
+    npq = (np1 + np2 + 2)/2
     if (present(npq_in)) npq = npq_in
 
     np1sq = np1*np1
@@ -1766,6 +1886,45 @@ contains
     call gll_cleanup(gll2)
     call gll_cleanup(gll1)
   end subroutine make_mass_matrix_2d
+
+  subroutine make_mass_matrix_1d(np1, np2, M, npq_in)
+    use quadrature_mod, only : gausslobatto, quadrature_t
+
+    integer, intent(in) :: np1, np2
+    real(kind=real_kind), intent(out) :: M(:,:)
+    integer, intent(in), optional :: npq_in
+
+    type (quadrature_t) :: gll1, gll2, quad
+    real(kind=real_kind) :: iv1(np1), jv1(np1), iv2(np2), jv2(np2), ir, jr
+    integer :: np1sq, np2sq, npq, i1, j1, k1, i2, j2, k2, iq, jq
+
+    npq = (np1 + np2 + 2)/2
+    if (present(npq_in)) npq = npq_in
+
+    np1sq = np1*np1
+    np2sq = np2*np2
+
+    gll1 = gausslobatto(np1)
+    gll2 = gausslobatto(np2)
+    quad = gausslobatto(npq)
+
+    M(:np1sq,:np2sq) = zero
+
+    do iq = 1,npq
+       ir = quad%points(iq)
+       call eval_lagrange_bases(gll1, np1, ir, iv1)
+       call eval_lagrange_bases(gll2, np2, ir, iv2)
+       do i2 = 1,np2
+          do i1 = 1,np1
+             M(i1,i2) = M(i1,i2) + quad%weights(iq)*iv1(i1)*iv2(i2)
+          end do
+       end do
+    end do
+    
+    call gll_cleanup(quad)
+    call gll_cleanup(gll2)
+    call gll_cleanup(gll1)
+  end subroutine make_mass_matrix_1d
 
   subroutine gfr_pg1_reconstruct(hybrid, nt, dt, elem, nets, nete)
     type (hybrid_t), intent(in) :: hybrid
