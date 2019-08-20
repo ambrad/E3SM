@@ -1553,28 +1553,70 @@ contains
   end subroutine gfr_pg1_init
 
   subroutine gfr_pg1_init_check(gfr)
+    use quadrature_mod, only : gausslobatto, quadrature_t
+
     type (GllFvRemap_t), intent(inout) :: gfr
 
-    real(kind=real_kind) :: Mnpnp(np*np,np*np), M22(4,4), Mnp2(np*np,4)
+    type (quadrature_t) :: gll
+    real(kind=real_kind) :: M1(np*np,np*np), M2(np*np,np*np), a, b, rd
+    integer :: i, j, k
 
-    call make_mass_matrix_2d(np, np, Mnpnp)
-    call make_mass_matrix_2d(2, 2, M22)
-    call make_mass_matrix_2d(np, 2, Mnp2)
-    print *,'Mnpnp',Mnpnp
+    call make_mass_matrix_2d(np, np, M1)
+
+    ! Test that default quadrature order is sufficient.
+    call make_mass_matrix_2d(np, np, M2, 8)
+    rd = sum((M1 - M2)**2)/sum(M1**2)
+    if (rd > 5*eps) print *, 'gfr ERROR M>', rd
+
+    ! Test that rows sum to weights.
+    gll = gausslobatto(np)
+    do j = 1,np
+       do i = 1,np
+          k = (j-1)*np + i
+          a = gll%weights(i)*gll%weights(j)
+          b = sum(M1(k,:))
+          rd = abs(a - b)/b
+          if (rd > 5*eps) print *, 'gfr ERROR> sum:', a, b, rd
+       end do
+    end do
+    call gll_cleanup(gll)
   end subroutine gfr_pg1_init_check
 
   subroutine gfr_pg1_init_interior(s)
+    ! TODO DOCUMENT
+
     type (Pg1SolverData_t), intent(inout) :: s
 
     real(kind=real_kind) :: Mnpnp(np*np,np*np), M22(4,4), Mnp2(np*np,4)
+    integer :: i, j, info
 
     if (s%ninner /= (np-2)**2 .or. s%nouter /= 4 .or. s%nextra /= 4*(np-2)) then
        print *,'gfr> ERROR interior', s%ninner, s%nouter, s%nextra
     end if
 
     call make_mass_matrix_2d(np, np, Mnpnp)
-    call make_mass_matrix_2d(2, 2, M22)
     call make_mass_matrix_2d(np, 2, Mnp2)
+    call make_mass_matrix_2d(2, 2, M22)
+
+    ! Form upper tri of A.
+    s%Achol = zero
+    do j = 1,s%ninner
+       do i = 1,j
+          s%Achol(i,j) = Mnpnp(s%inner(i), s%inner(j))
+       end do
+    end do
+    do j = 1,s%ninner
+       do i = 1,4
+          s%Achol(i, s%ninner + j) = -Mnp2(s%inner(j),i)
+       end do
+    end do
+    do j = 1,4
+       do i = 1,j
+          s%Achol(s%ninner + i, s%ninner + j) = M22(i,j)
+       end do
+    end do
+    call dpotrf('u', s%inner + s%outer, s%Achol, np*np, info)
+    if (info /= 0) print *, 'gfr ERROR> dpotrf returned', info
   end subroutine gfr_pg1_init_interior
 
   subroutine gfr_pg1_init_edge(s)
@@ -1585,22 +1627,25 @@ contains
     end if
   end subroutine gfr_pg1_init_edge
 
-  subroutine make_mass_matrix_2d(np1, np2, M)
+  subroutine make_mass_matrix_2d(np1, np2, M, npq_in)
     use quadrature_mod, only : gausslobatto, quadrature_t
 
     integer, intent(in) :: np1, np2
     real(kind=real_kind), intent(out) :: M(:,:)
+    integer, intent(in), optional :: npq_in
 
     type (quadrature_t) :: gll1, gll2, quad
     real(kind=real_kind) :: iv1(np1), jv1(np1), iv2(np2), jv2(np2), ir, jr
     integer :: np1sq, np2sq, npq, i1, j1, k1, i2, j2, k2, iq, jq
+
+    npq = np1 + np2 - 2
+    if (present(npq_in)) npq = npq_in
 
     np1sq = np1*np1
     np2sq = np2*np2
 
     gll1 = gausslobatto(np1)
     gll2 = gausslobatto(np2)
-    npq = np1 + np2 - 2
     quad = gausslobatto(npq)
 
     M(:np1sq,:np2sq) = zero
