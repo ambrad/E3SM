@@ -1802,8 +1802,10 @@ contains
     !       [-M24(:,I),  M22      ]
     !   b = [-M44(O,I)'y(O) - M44(I,E) y(E)]
     !       [ M24(:,O) y(O) - M24(:,E) y(E)]
-    !   c = w_gg(I).
-    ! Solve
+    !   c = w_gg(I),
+    ! where Mmn is the mass matrix for m-GLL against n-GLL basis functions. This
+    ! problem is the linear equation resulting from the minimization problem
+    ! described in gfr_pg1_init_interior. Solve
     !   [A  c] [x] = [b   ]
     !   [c' 0] [y]   [mass]
     ! given A = R'R, R's = c.
