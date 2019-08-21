@@ -1621,7 +1621,6 @@ contains
                y(np,1)*vi(2)*vj(1)
        end do
     end do
-    print *,'y',y
     
     ! Test that the edge solve recovers a line.
     do i = 2,5
@@ -1644,21 +1643,22 @@ contains
        if (rd > 5*eps) print *, 'gfr ERROR> 1d solve', i, a, b, rd
     end do
 
-    a = sum(gfr%w_gg*y)
     wr1 = reshape(y, (/np*np/))
-    print *,'inner',gfr%pg1sd(1)%inner(:gfr%pg1sd(1)%ninner)
-    print *,'outer',gfr%pg1sd(1)%outer(:gfr%pg1sd(1)%nouter)
-    print *,'extra',gfr%pg1sd(1)%outer(gfr%pg1sd(1)%nouter+1:gfr%pg1sd(1)%nnotinner)
-    print *,'gfr B> before',wr1(gfr%pg1sd(1)%inner(:gfr%pg1sd(1)%ninner))
+    ! Perturb the inner points symmetrically.
+    a = -0.15_real_kind
+    do j = 1,4
+       wr1(gfr%pg1sd(i)%inner(j)) = wr1(gfr%pg1sd(i)%inner(j)) + a
+       a = a + 0.1_real_kind
+    end do
+    a = sum(gfr%w_gg*y)
     call gfr_pg1_solve(gfr, gfr%pg1sd(1), wr1)
     b = sum(gfr%w_gg*reshape(wr1, (/np,np/)))
     rd = abs(a-b)/abs(a)
     if (rd > 5*eps) print *, 'gfr ERROR> mass:', a, b, rd
-    print *,'gfr B> after',wr1(gfr%pg1sd(1)%inner(:gfr%pg1sd(1)%ninner))
     a = sqrt(sum(gfr%w_gg*(reshape(wr1, (/np,np/)) - y)**2))
     b = sqrt(sum(gfr%w_gg*y**2))
     rd = a/b
-    print *,'gfr solve>', a, b, rd
+    if (rd > 5*eps) print *,'gfr solve>', a, b, rd
     call gll_cleanup(gll)
 
     call gll_cleanup(gllnp)
