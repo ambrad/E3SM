@@ -837,17 +837,7 @@ contains
           end do
        end if
        ! Interpolate from npi to np; if npi = np, this is just the Id matrix.
-       do fj = 1,np
-          do fi = 1,np
-             accum = zero
-             do gj = 1,npi
-                do gi = 1,npi
-                   accum = accum + gfr%interp(gi,gj,fi,fj)*x(gi,gj)
-                end do
-             end do
-             g(fi,fj) = accum
-          end do
-       end do
+       call apply_interp(gfr%interp, np, npi, x, g)
     elseif (nf < npi) then
        ! Finish the projection.
        do gj = 1,np
@@ -857,6 +847,27 @@ contains
        end do
     end if
   end subroutine gfr_f2g_remapd_op
+
+  subroutine apply_interp(interp, np, npi, x, y)
+    real(kind=real_kind), intent(in) :: interp(:,:,:,:), x(:,:)
+    integer, intent(in) :: np, npi
+    real(kind=real_kind), intent(out) :: y(:,:)
+
+    integer :: gi, gj, fi, fj, info
+    real(kind=real_kind) :: accum
+
+    do fj = 1,np
+       do fi = 1,np
+          accum = zero
+          do gj = 1,npi
+             do gi = 1,npi
+                accum = accum + gfr%interp(gi,gj,fi,fj)*x(gi,gj)
+             end do
+          end do
+          y(fi,fj) = accum
+       end do
+    end do
+  end subroutine apply_interp
 
   subroutine gfr_init_fv_metdet(elem, gfr)
     type (element_t), intent(in) :: elem(:)
@@ -1838,7 +1849,7 @@ contains
     ! Extract g(I).
     g(s%inner(:s%ninner)) = x(:s%ninner)
   end subroutine gfr_pg1_solve
-#else
+#elif 0
   subroutine gfr_pg1_init_interior(gfr, Mnpnp, Mnp2, M22, s)
     ! Init data to solve
     !   min_{y(I)} 1/2 int_R (sum_i y(O(i)) bi(x;2) - 
@@ -1981,6 +1992,72 @@ contains
     ! Extract g(I).
     g(s%inner(:s%ninner)) = x(:s%ninner)
   end subroutine gfr_pg1_solve
+#else
+  subroutine gfr_pg1_init_interior(gfr, Mnpnp, Mnp2, M22, s)
+    type (GllFvRemap_t), intent(in) :: gfr
+    real(kind=real_kind), dimension(:,:), intent(in) :: Mnpnp, Mnp2, M22
+    type (Pg1SolverData_t), intent(inout) :: s
+
+    integer :: i, info, n
+
+    n = np*np
+
+    s%Achol = Mnpnp
+    call dpotrf('u', n, s%Achol, size(s%Achol,1), info)
+    if (info /= 0) print *, 'gfr ERROR> dpotrf returned', info
+
+    do i = 1,n
+       s%B(1:4,i) = Mnp2(i,:)
+    end do
+
+    ! Constraint vector c is just w_gg(s%inner), so don't store it explicitly.
+    s%s = reshape(gfr%w_gg(:np,:np), (/np*np/))
+
+    ! Form R's = c
+    call dtrtrs('u', 't', 'n', n, 1, s%Achol, size(s%Achol,1), s%s, np*np, info)
+    if (info /= 0) print *, 'gfr ERROR> dtrtrs returned', info
+    s%sts = sum(s%s*s%s)
+  end subroutine gfr_pg1_init_interior
+
+  subroutine gfr_pg1_init_edge(gfr, Mnpnp, Mnp2, M22, s)
+    ! Solve a similar problem to that in gfr_pg1_init_interior. On an edge,
+    ! modify the inner node values, subject to fixed outer node values, so that
+    ! the overall np-GLL field best matches a bilinear field.
+
+    type (GllFvRemap_t), intent(in) :: gfr
+    real(kind=real_kind), dimension(:,:), intent(in) :: Mnpnp, Mnp2, M22
+    type (Pg1SolverData_t), intent(inout) :: s
+
+    return
+  end subroutine gfr_pg1_init_edge
+
+  subroutine gfr_pg1_solve(gfr, s, g)
+    type (GllFvRemap_t), intent(in) :: gfr
+    type (Pg1SolverData_t), intent(in) :: s
+    real(kind=real_kind), intent(inout) :: g(:)
+
+    real(kind=real_kind) :: x(np*np), mass, wr(np*np)
+    integer :: np2, i, n, info
+
+    np2 = np*np
+    n = np2
+
+    ! Form RHS.
+    do i = 1,n
+       x(i) = sum(s%B(:,i)*g(s%outer(:s%nouter)))
+    end do
+    mass = sum(reshape(gfr%w_gg, (/np2/))*g)
+
+    ! Solve R'z = b.
+    call dtrtrs('u', 't', 'n', n, 1, s%Achol, size(s%Achol,1), x, np*np, info)
+    ! Assemble z + (d - s'z)/(s's) s.
+    x(:n) = x(:n) + ((mass - sum(s%s(:n)*x(:n)))/s%sts)*s%s(:n)
+    ! Solve R x = z + (d - s'z)/(s's) s.
+    call dtrtrs('u', 'n', 'n', n, 1, s%Achol, size(s%Achol,1), x, np*np, info)
+
+    ! Extract g(I).
+    g = x(:n)
+  end subroutine gfr_pg1_solve
 #endif
 
   subroutine make_mass_matrix_2d(np1, np2, M, npq_in)
@@ -2101,9 +2178,11 @@ contains
     nlev = size(g,3)
     do k = 1, nlev
        wr = reshape(g(:,:,k)*gll_metdet, (/np2/))
+#if 0
        do edgeidx = 2,5
           call gfr_pg1_solve(gfr, gfr%pg1sd(edgeidx), wr)
        end do
+#endif
        call gfr_pg1_solve(gfr, gfr%pg1sd(1), wr)
        g(:,:,k) = reshape(wr, (/np,np/))/gll_metdet
     end do
@@ -2156,7 +2235,7 @@ contains
 
     real(kind=real_kind) :: a, b, rd, x, y, f0(np,np), f1(np,np), g(np,np), &
          wrk(np,np), qmin, qmax, qmin1, qmax1, wr1(np,np,1)
-    integer :: nf, nf2, ie, i, j, iremap, info, ilimit
+    integer :: nf, nf2, ie, i, j, iremap, info, ilimit, it
     real(kind=real_kind), allocatable :: Qdp_fv(:,:,:), ps_v_fv(:,:,:), &
          qmins(:,:,:), qmaxs(:,:,:)
     logical :: limit
@@ -2238,9 +2317,9 @@ contains
           do ie = nets, nete
              call gfr_g2f_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,ie), &
                   elem(ie)%state%ps_v(:,:,1)*elem(ie)%state%Q(:,:,1,1), Qdp_fv(:,:,ie))
+             call gfr_g2f_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,ie), &
+                  elem(ie)%state%ps_v(:,:,1), ps_v_fv(:,:,ie))
              if (limit) then
-                call gfr_g2f_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,ie), &
-                     elem(ie)%state%ps_v(:,:,1), ps_v_fv(:,:,ie))
                 qmin = minval(elem(ie)%state%Q(:,:,1,1))
                 qmax = maxval(elem(ie)%state%Q(:,:,1,1))
                 wrk(:nf,:nf) = Qdp_fv(:nf,:nf,ie)/ps_v_fv(:nf,:nf,ie)
@@ -2250,51 +2329,77 @@ contains
              end if
           end do
           ! 2. FV -> GLL
-          if (limit) then
-             ! 2a. Get q bounds
+          if (nf == 1) then
              do ie = nets, nete
-                wrk(:nf,:nf) = Qdp_fv(:nf,:nf,ie)/ps_v_fv(:nf,:nf,ie)
-                qmins(:,:,ie) = minval(wrk(:nf,:nf))
-                qmaxs(:,:,ie) = maxval(wrk(:nf,:nf))
+                elem(ie)%state%Q(:,:,1,1) = Qdp_fv(1,1,ie)/ps_v_fv(1,1,ie)
              end do
-             ! 2b. Halo exchange q bounds.
-             call neighbor_minmax(hybrid, edgeAdvQminmax, nets, nete, qmins, qmaxs)
-          endif
-          ! 2c. Remap
-          do ie = nets, nete
-             wrk = elem(ie)%state%Q(:,:,1,1)
-             call gfr_f2g_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,ie), &
-                  Qdp_fv(:,:,ie), elem(ie)%state%Q(:,:,1,1))
-             elem(ie)%state%Q(:,:,1,1) = elem(ie)%state%Q(:,:,1,1)/elem(ie)%state%ps_v(:,:,1)
+          else
              if (limit) then
-                qmins(1,1,ie) = min(qmins(1,1,ie), minval(wrk))
-                qmaxs(1,1,ie) = max(qmaxs(1,1,ie), maxval(wrk))
-                call limiter_clip_and_sum(np, elem(ie)%spheremp, & ! same as w_gg*gll_metdet
-                     qmins(1,1,ie), qmaxs(1,1,ie), elem(ie)%state%ps_v(:,:,1), &
-                     elem(ie)%state%Q(:,:,1,1))
-             end if
-          end do
-          ! 3. DSS
-          do ie = nets, nete
-             elem(ie)%state%Q(:,:,1,1) = &
-                  elem(ie)%state%ps_v(:,:,1)*elem(ie)%state%Q(:,:,1,1)*elem(ie)%spheremp(:,:)
-             call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%Q(:,:,1,1), 1, 0, 1)
-          end do
-          call bndry_exchangeV(hybrid, edge_g)
-          do ie = nets, nete
-             call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%Q(:,:,1,1), 1, 0, 1)
-             elem(ie)%state%Q(:,:,1,1) = &
-                  (elem(ie)%state%Q(:,:,1,1)*elem(ie)%rspheremp(:,:))/elem(ie)%state%ps_v(:,:,1)
-          end do
-          ! 4. pg1 OOA boost.
-          if (gfr%nphys == 1) then
+                ! 2a. Get q bounds
+                do ie = nets, nete
+                   wrk(:nf,:nf) = Qdp_fv(:nf,:nf,ie)/ps_v_fv(:nf,:nf,ie)
+                   qmins(:,:,ie) = minval(wrk(:nf,:nf))
+                   qmaxs(:,:,ie) = maxval(wrk(:nf,:nf))
+                end do
+                ! 2b. Halo exchange q bounds.
+                call neighbor_minmax(hybrid, edgeAdvQminmax, nets, nete, qmins, qmaxs)
+             endif
+             ! 2c. Remap
              do ie = nets, nete
-                ! TODO mixing_ratio instead
-                wr1(:,:,1) = elem(ie)%state%ps_v(:,:,1)*elem(ie)%state%Q(:,:,1,1)
-                call gfr_pg1_g_reconstruct_scalar(gfr, ie, elem(ie)%metdet, wr1)
-                elem(ie)%state%Q(:,:,1,1) = wr1(:,:,1)/elem(ie)%state%ps_v(:,:,1)
+                wrk = elem(ie)%state%Q(:,:,1,1)
+                call gfr_f2g_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,ie), &
+                     Qdp_fv(:,:,ie), elem(ie)%state%Q(:,:,1,1))
+                elem(ie)%state%Q(:,:,1,1) = elem(ie)%state%Q(:,:,1,1)/elem(ie)%state%ps_v(:,:,1)
+                if (limit) then
+                   qmins(1,1,ie) = min(qmins(1,1,ie), minval(wrk))
+                   qmaxs(1,1,ie) = max(qmaxs(1,1,ie), maxval(wrk))
+                   call limiter_clip_and_sum(np, elem(ie)%spheremp, & ! same as w_gg*gll_metdet
+                        qmins(1,1,ie), qmaxs(1,1,ie), elem(ie)%state%ps_v(:,:,1), &
+                        elem(ie)%state%Q(:,:,1,1))
+                end if
              end do
           end if
+          do it = 1,2
+             ! 3. DSS
+             do ie = nets, nete
+                elem(ie)%state%Q(:,:,1,1) = &
+                     elem(ie)%state%ps_v(:,:,1)*elem(ie)%state%Q(:,:,1,1)*elem(ie)%spheremp(:,:)
+                call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%Q(:,:,1,1), 1, 0, 1)
+             end do
+             call bndry_exchangeV(hybrid, edge_g)
+             do ie = nets, nete
+                call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%Q(:,:,1,1), 1, 0, 1)
+                elem(ie)%state%Q(:,:,1,1) = &
+                     (elem(ie)%state%Q(:,:,1,1)*elem(ie)%rspheremp(:,:))/elem(ie)%state%ps_v(:,:,1)
+             end do
+             if (it == 2) exit
+             ! 4. pg1 OOA boost.
+             if (nf == 1) then
+                do ie = nets, nete
+                   qmins(1,1,ie) = minval(elem(ie)%state%Q(:,:,1,1))
+                   qmaxs(1,1,ie) = maxval(elem(ie)%state%Q(:,:,1,1))
+#if 1
+                   wr1(:,:,1) = elem(ie)%state%ps_v(:,:,1)*elem(ie)%state%Q(:,:,1,1)
+                   call gfr_pg1_g_reconstruct_scalar(gfr, ie, elem(ie)%metdet, wr1)
+                   elem(ie)%state%Q(:,:,1,1) = wr1(:,:,1)/elem(ie)%state%ps_v(:,:,1)
+#else
+                   elem(ie)%state%Q(:,:,1,1) = elem(ie)%state%Q(:,:,1,1)*elem(ie)%state%ps_v(:,:,1)
+                   wr1(1,1,1) = elem(ie)%state%Q(1,1,1,1)
+                   wr1(2,1,1) = elem(ie)%state%Q(np,1,1,1)
+                   wr1(1,2,1) = elem(ie)%state%Q(1,np,1,1)
+                   wr1(2,2,1) = elem(ie)%state%Q(np,np,1,1)
+                   call apply_interp(gfr%interp, np, gfr%npi, wr1(:,:,1), elem(ie)%state%Q(:,:,1,1))
+                   elem(ie)%state%Q(:,:,1,1) = elem(ie)%state%Q(:,:,1,1)/(elem(ie)%state%ps_v(:,:,1))
+#endif
+                   if (limit) then
+                      call limiter_clip_and_sum(np, elem(ie)%spheremp, &
+                           qmins(1,1,ie), qmaxs(1,1,ie), elem(ie)%state%ps_v(:,:,1), &
+                           elem(ie)%state%Q(:,:,1,1))
+                   end if
+                end do
+             end if
+             if (nf > 1 .or. .not. limit) exit
+          end do
        end do
        ! 5. Compute error.
        qmin = two
