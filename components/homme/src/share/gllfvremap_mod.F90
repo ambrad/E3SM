@@ -1666,9 +1666,10 @@ contains
     if (rd > 5*eps) print *,'gfr ERROR> solve:', a, b, rd
   end subroutine gfr_pg1_init_check
 
+#if 0
   subroutine gfr_pg1_init_interior(gfr, Mnpnp, Mnp2, M22, s)
     ! Init data to solve
-    !   min_{c, y(I)} 1/2 int_R (sum_i ci bi(x;2) - 
+    !   min_{v, y(I)} 1/2 int_R (sum_i vi bi(x;2) - 
     !                           (sum_{i in O} yi bi(x;np) +
     !                            sum_{i in I} yi bi(x;np) +
     !                            sum_{i in E} yi bi(x;np)))^2 dx
@@ -1837,6 +1838,150 @@ contains
     ! Extract g(I).
     g(s%inner(:s%ninner)) = x(:s%ninner)
   end subroutine gfr_pg1_solve
+#else
+  subroutine gfr_pg1_init_interior(gfr, Mnpnp, Mnp2, M22, s)
+    ! Init data to solve
+    !   min_{y(I)} 1/2 int_R (sum_i y(O(i)) bi(x;2) - 
+    !                         (sum_{i in O} yi bi(x;np) +
+    !                          sum_{i in I} yi bi(x;np) +
+    !                          sum_{i in E} yi bi(x;np)))^2 dx
+    !    st c(I)'y(I) = mass,
+    ! where I is inner, O is outer, and E is possibly empty extra index
+    ! sets. This problem modifies the inner node values to produce the best
+    ! match between the np-GLL field and a bilinear field.
+
+    type (GllFvRemap_t), intent(in) :: gfr
+    real(kind=real_kind), dimension(:,:), intent(in) :: Mnpnp, Mnp2, M22
+    type (Pg1SolverData_t), intent(inout) :: s
+
+    real(kind=real_kind) :: wr(np*np)
+    integer :: i, j, k, info, n
+
+    if (s%ninner /= (np-2)**2 .or. s%nouter /= 4 .or. s%nnotinner /= 12) then
+       print *,'gfr> ERROR interior', s%ninner, s%nouter, s%nnotinner
+    end if
+
+    n = s%ninner
+
+    ! Assemble upper tri of A.
+    s%Achol = zero
+    do j = 1,s%ninner
+       do i = 1,j
+          s%Achol(i,j) = Mnpnp(s%inner(i), s%inner(j))
+       end do
+    end do
+    call dpotrf('u', n, s%Achol, size(s%Achol,1), info)
+    if (info /= 0) print *, 'gfr ERROR> dpotrf returned', info
+
+    ! Assemble RHS matrix B'.
+    do j = 1,s%nnotinner
+       do i = 1,s%ninner
+          s%B(j,i) = -Mnpnp(s%inner(i), s%outer(j))
+       end do
+    end do
+    do j = 1,s%nouter
+       do i = 1,s%ninner
+          s%B(j,i) = s%B(j,i) + Mnp2(s%inner(i), j)
+       end do
+    end do
+
+    ! Constraint vector c is just w_gg(s%inner), so don't store it explicitly.
+    wr = reshape(gfr%w_gg(:np,:np), (/np*np/))
+    s%s = zero
+    s%s(:s%ninner) = wr(s%inner(:s%ninner))
+
+    ! Form R's = c
+    call dtrtrs('u', 't', 'n', n, 1, s%Achol, size(s%Achol,1), s%s, np*np, info)
+    if (info /= 0) print *, 'gfr ERROR> dtrtrs returned', info
+    s%sts = sum(s%s(:n)*s%s(:n))
+  end subroutine gfr_pg1_init_interior
+
+  subroutine gfr_pg1_init_edge(gfr, Mnpnp, Mnp2, M22, s)
+    ! Solve a similar problem to that in gfr_pg1_init_interior. On an edge,
+    ! modify the inner node values, subject to fixed outer node values, so that
+    ! the overall np-GLL field best matches a bilinear field.
+
+    type (GllFvRemap_t), intent(in) :: gfr
+    real(kind=real_kind), dimension(:,:), intent(in) :: Mnpnp, Mnp2, M22
+    type (Pg1SolverData_t), intent(inout) :: s
+
+    integer, parameter :: outermap(2) = (/1,np/)
+
+    real(kind=real_kind) :: wr(np*np)
+    integer :: i, j, k, info, n
+
+    if (s%ninner /= (np-2) .or. s%nouter /= 2) then
+       print *,'gfr> ERROR edge', s%ninner, s%nouter
+    end if
+
+    n = s%ninner
+
+    ! Assemble upper tri of A.
+    s%Achol = zero
+    do j = 1,s%ninner
+       do i = 1,j
+          s%Achol(i,j) = Mnpnp(i+1, j+1)
+       end do
+    end do
+    call dpotrf('u', n, s%Achol, size(s%Achol,1), info)
+    if (info /= 0) print *, 'gfr ERROR> dpotrf returned', info
+
+    ! Assemble RHS matrix B'.
+    do j = 1,s%nouter
+       do i = 1,s%ninner
+          s%B(j,i) = -Mnpnp(i+1, outermap(j))
+       end do
+    end do
+    do j = 1,s%nouter
+       do i = 1,s%ninner
+          s%B(j,i) = s%B(j,i) + Mnp2(i+1, j)
+       end do
+    end do
+
+    ! Constraint vector c is just w_gg(s%inner), so don't store it explicitly.
+    wr = reshape(gfr%w_gg(:np,:np), (/np*np/))
+    s%s = zero
+    s%s(:s%ninner) = wr(s%inner(:s%ninner))
+
+    ! Form R's = c
+    call dtrtrs('u', 't', 'n', n, 1, s%Achol, size(s%Achol,1), s%s, np*np, info)
+    if (info /= 0) print *, 'gfr ERROR> dtrtrs returned', info
+    s%sts = sum(s%s(:n)*s%s(:n))
+  end subroutine gfr_pg1_init_edge
+
+  subroutine gfr_pg1_solve(gfr, s, g)
+    ! Assume in the following np = 4. Solve
+    !     [M44(I,I) c] [y(I)] = [M24(:,I)'y(O) - M44(I,O) y(O) - M44(I,E) y(E)]
+    !     [c'       0] [u   ]   [mass                                         ]
+
+    type (GllFvRemap_t), intent(in) :: gfr
+    type (Pg1SolverData_t), intent(in) :: s
+    real(kind=real_kind), intent(inout) :: g(:)
+
+    real(kind=real_kind) :: x(np*np), mass, wr(np*np)
+    integer :: np2, i, n, info
+
+    np2 = np*np
+    n = s%ninner
+
+    ! Form RHS.
+    do i = 1,n
+       x(i) = sum(s%B(:s%nnotinner,i)*g(s%outer(:s%nnotinner)))
+    end do
+    wr = reshape(gfr%w_gg, (/np2/))
+    mass = sum(wr(s%inner(:s%ninner))*g(s%inner(:s%ninner)))
+
+    ! Solve R'z = b.
+    call dtrtrs('u', 't', 'n', n, 1, s%Achol, size(s%Achol,1), x, np*np, info)
+    ! Assemble z + (d - s'z)/(s's) s.
+    x(:n) = x(:n) + ((mass - sum(s%s(:n)*x(:n)))/s%sts)*s%s(:n)
+    ! Solve R x = z + (d - s'z)/(s's) s.
+    call dtrtrs('u', 'n', 'n', n, 1, s%Achol, size(s%Achol,1), x, np*np, info)
+
+    ! Extract g(I).
+    g(s%inner(:s%ninner)) = x(:s%ninner)
+  end subroutine gfr_pg1_solve
+#endif
 
   subroutine make_mass_matrix_2d(np1, np2, M, npq_in)
     ! Full mass matrix for a 2D element.
