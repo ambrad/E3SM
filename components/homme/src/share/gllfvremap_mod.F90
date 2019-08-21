@@ -1608,6 +1608,7 @@ contains
        end do
     end do
 
+    ! Make a bilinear field for testing.
     gll = gausslobatto(2)
     y(1,1) = zero
     y(1,np) = half
@@ -1621,9 +1622,12 @@ contains
                y(np,1)*vi(2)*vj(1)
        end do
     end do
+    call gll_cleanup(gll)
+    call gll_cleanup(gllnp)
     
-    ! Test that the edge solve recovers a line.
-    do i = 2,5
+    ! Test that the edge solve recovers the bilinear field's linear edge
+    ! function.
+    do i = 2,5 ! each of the 4 edges
        wr1 = reshape(y, (/np*np/))
        ! Perturb the inner points symmetrically so that a line is still the
        ! desired solution.
@@ -1636,18 +1640,19 @@ contains
        call gfr_pg1_solve(gfr, gfr%pg1sd(i), wr1)
        b = sum(gfr%w_gg*reshape(wr1, (/np,np/)))
        rd = abs(a-b)/abs(a)
-       if (rd > 5*eps) print *, 'gfr ERROR> mass:', a, b, rd
+       if (rd > 5*eps) print *, 'gfr ERROR> 1d mass:', a, b, rd
        a = sqrt(sum(gfr%w_gg*(reshape(wr1, (/np,np/)) - y)**2))
        b = sqrt(sum(gfr%w_gg*y**2))
        rd = a/b
-       if (rd > 5*eps) print *, 'gfr ERROR> 1d solve', i, a, b, rd
+       if (rd > 5*eps) print *, 'gfr ERROR> 1d solve:', i, a, b, rd
     end do
 
+    ! Test that the interior solve recovers the bilinear field.
     wr1 = reshape(y, (/np*np/))
     ! Perturb the inner points symmetrically.
     a = -0.15_real_kind
     do j = 1,4
-       wr1(gfr%pg1sd(i)%inner(j)) = wr1(gfr%pg1sd(i)%inner(j)) + a
+       wr1(gfr%pg1sd(1)%inner(j)) = wr1(gfr%pg1sd(1)%inner(j)) + a
        a = a + 0.1_real_kind
     end do
     a = sum(gfr%w_gg*y)
@@ -1658,15 +1663,19 @@ contains
     a = sqrt(sum(gfr%w_gg*(reshape(wr1, (/np,np/)) - y)**2))
     b = sqrt(sum(gfr%w_gg*y**2))
     rd = a/b
-    if (rd > 5*eps) print *,'gfr solve>', a, b, rd
-    call gll_cleanup(gll)
-
-    call gll_cleanup(gllnp)
-    call exit(-1)
+    if (rd > 5*eps) print *,'gfr ERROR> solve:', a, b, rd
   end subroutine gfr_pg1_init_check
 
   subroutine gfr_pg1_init_interior(gfr, Mnpnp, Mnp2, M22, s)
-    ! TODO DOCUMENT
+    ! Init data to solve
+    !   min_{c, y(I)} 1/2 int_R (sum_i ci bi(x;2) - 
+    !                           (sum_{i in O} yi bi(x;np) +
+    !                            sum_{i in I} yi bi(x;np) +
+    !                            sum_{i in E} yi bi(x;np)))^2 dx
+    !    st c(I)'y(I) = mass,
+    ! where I is inner, O is outer, and E is possibly empty extra index
+    ! sets. This problem modifies the inner node values to produce the best
+    ! match between the np-GLL field and a bilinear field.
 
     type (GllFvRemap_t), intent(in) :: gfr
     real(kind=real_kind), dimension(:,:), intent(in) :: Mnpnp, Mnp2, M22
@@ -1725,6 +1734,10 @@ contains
   end subroutine gfr_pg1_init_interior
 
   subroutine gfr_pg1_init_edge(gfr, Mnpnp, Mnp2, M22, s)
+    ! Solve a similar problem to that in gfr_pg1_init_interior. On an edge,
+    ! modify the inner node values, subject to fixed outer node values, so that
+    ! the overall np-GLL field best matches a bilinear field.
+
     type (GllFvRemap_t), intent(in) :: gfr
     real(kind=real_kind), dimension(:,:), intent(in) :: Mnpnp, Mnp2, M22
     type (Pg1SolverData_t), intent(inout) :: s
@@ -1784,15 +1797,15 @@ contains
   end subroutine gfr_pg1_init_edge
 
   subroutine gfr_pg1_solve(gfr, s, g)
-    ! Assume in the following np = 2. Let
+    ! Assume in the following np = 4. Let
     !   A = [ M44(I,I), -M24(:,I)']
     !       [-M24(:,I),  M22      ]
-    !   b = [-M44(O,I)'y(O)]
-    !       [ M24(:,O) y(O)]
+    !   b = [-M44(O,I)'y(O) - M44(I,E) y(E)]
+    !       [ M24(:,O) y(O) - M24(:,E) y(E)]
     !   c = w_gg(I).
     ! Solve
-    !   [A  c] [x] = [b]
-    !   [c' 0] [y]   [d]
+    !   [A  c] [x] = [b   ]
+    !   [c' 0] [y]   [mass]
     ! given A = R'R, R's = c.
 
     type (GllFvRemap_t), intent(in) :: gfr
@@ -1824,6 +1837,8 @@ contains
   end subroutine gfr_pg1_solve
 
   subroutine make_mass_matrix_2d(np1, np2, M, npq_in)
+    ! Full mass matrix for a 2D element.
+
     use quadrature_mod, only : gausslobatto, quadrature_t
 
     integer, intent(in) :: np1, np2
@@ -1876,6 +1891,8 @@ contains
   end subroutine make_mass_matrix_2d
 
   subroutine make_mass_matrix_1d(np1, np2, M, npq_in)
+    ! Full mass matrix for a 1D element.
+
     use quadrature_mod, only : gausslobatto, quadrature_t
 
     integer, intent(in) :: np1, np2
