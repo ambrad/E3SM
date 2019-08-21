@@ -1949,11 +1949,18 @@ contains
     real(kind=real_kind), intent(in) :: gll_metdet(:,:)
     real(kind=real_kind), intent(inout) :: g(:,:,:)
 
-    integer :: nlev, k
+    real(kind=real_kind) wr(np*np)
+    integer :: nlev, np2, k, edgeidx
 
+    np2 = np*np
     nlev = size(g,3)
     do k = 1, nlev
-       
+       wr = reshape(g(:,:,k)*gll_metdet, (/np2/))
+       do edgeidx = 2,5
+          call gfr_pg1_solve(gfr, gfr%pg1sd(edgeidx), wr)
+       end do
+       call gfr_pg1_solve(gfr, gfr%pg1sd(1), wr)
+       g(:,:,k) = reshape(wr, (/np,np/))/gll_metdet
     end do
   end subroutine gfr_pg1_g_reconstruct_scalar
 
@@ -1964,16 +1971,22 @@ contains
     real(kind=real_kind), intent(inout) :: q(:,:,:)
 
     real(kind=real_kind) :: wr(np,np,2)
-    integer :: nlev, k
+    integer :: nlev, k, edgeidx
 
     nlev = size(q,3)
     do k = 1, nlev
        wr(:,:,1) = dp(:,:,k)*q(:,:,k)
        call gfr_pg1_g_reconstruct_scalar(gfr, ie, gll_metdet, wr(:,:,1:1))
-       ! Limit the inner values so that we don't need to do another DSS. This
-       ! problem is feasible because the original inner values were in bounds,
-       ! and the outer values have not changed.
+       wr(:,:,1) = wr(:,:,1)/dp(:,:,k)
+       ! Limit each set of inner values separately so that we don't need to do
+       ! another DSS. Each problem is feasible because the original inner values
+       ! are in bounds, and the outer values do not change. In addition, the two
+       ! elements that share an edge will compute the same solution.
+       do edgeidx = 2,5
+          
+       end do
        
+       q(:,:,k) = wr(:,:,1)
     end do
   end subroutine gfr_pg1_g_reconstruct_mixing_ratio
 
@@ -1997,7 +2010,7 @@ contains
     logical, intent(in) :: verbose
 
     real(kind=real_kind) :: a, b, rd, x, y, f0(np,np), f1(np,np), g(np,np), &
-         wrk(np,np), qmin, qmax, qmin1, qmax1
+         wrk(np,np), qmin, qmax, qmin1, qmax1, wr1(np,np,1)
     integer :: nf, nf2, ie, i, j, iremap, info, ilimit
     real(kind=real_kind), allocatable :: Qdp_fv(:,:,:), ps_v_fv(:,:,:), &
          qmins(:,:,:), qmaxs(:,:,:)
@@ -2128,6 +2141,15 @@ contains
              elem(ie)%state%Q(:,:,1,1) = &
                   (elem(ie)%state%Q(:,:,1,1)*elem(ie)%rspheremp(:,:))/elem(ie)%state%ps_v(:,:,1)
           end do
+          ! 4. pg1 OOA boost.
+          if (gfr%nphys == 1) then
+             do ie = nets, nete
+                ! TODO mixing_ratio instead
+                wr1(:,:,1) = elem(ie)%state%ps_v(:,:,1)*elem(ie)%state%Q(:,:,1,1)
+                call gfr_pg1_g_reconstruct_scalar(gfr, ie, elem(ie)%metdet, wr1)
+                elem(ie)%state%Q(:,:,1,1) = wr1(:,:,1)/elem(ie)%state%ps_v(:,:,1)
+             end do
+          end if
        end do
        ! 5. Compute error.
        qmin = two
