@@ -333,11 +333,11 @@ contains
        end do
     end do
 
-    if (nf == 1) return
-
     ! Halo exchange limiter bounds.
     call gfr_f2g_mixing_ratios_he(hybrid, nets, nete, gfr%qmin(:,:,nets:nete), &
          gfr%qmax(:,:,nets:nete))
+
+    if (nf == 1) return
 
     do ie = nets,nete
        call calc_dp(hvcoord, elem(ie)%state%ps_v(:,:,nt), dp)
@@ -1683,6 +1683,7 @@ contains
                elem(ie)%state%Q(:,:,:,qi)
           if (gfr%check) wr1 = elem(ie)%derived%FQ(:,:,:,qi)
           do k = 1,nlev
+             ! Augment bounds with GLL Q0 bounds.
              gfr%qmin(k,qi,ie) = min(minval(elem(ie)%state%Q(:,:,k,qi)), gfr%qmin(k,qi,ie))
              gfr%qmax(k,qi,ie) = max(maxval(elem(ie)%state%Q(:,:,k,qi)), gfr%qmax(k,qi,ie))
              call limiter_clip_and_sum(np, gfr%w_gg*elem(ie)%metdet, gfr%qmin(k,qi,ie), &
@@ -1700,8 +1701,6 @@ contains
        end do
     end do
 
-    ! We avoided the limiter bounds HE earlier but must now do a
-    ! second DSS.
     call gfr_f2g_dss(hybrid, elem, nets, nete)
 
     ! TODO DON'T FORGET TO DO THIS FOR TOPO
