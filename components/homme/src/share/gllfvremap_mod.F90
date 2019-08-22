@@ -294,8 +294,9 @@ contains
                 ! GLL Q1
                 elem(ie)%derived%FQ(:,:,:,qi) = elem(ie)%state%Q(:,:,:,qi) + wr2
              else
+                ! GLL Q_ten
                 do k = 1,nlev
-                   elem(ie)%derived%FQ(:,:,k,qi) = elem(ie)%state%Q(:,:,k,qi) + wr1(1,1,k)
+                   elem(ie)%derived%FQ(:,:,k,qi) = wr1(1,1,k)
                 end do
              end if
              ! Get limiter bounds.
@@ -313,8 +314,9 @@ contains
                 ! GLL Q1
                 elem(ie)%derived%FQ(:,:,:,qi) = elem(ie)%state%Q(:,:,:,qi) + wr2
              else
+                ! GLL Q_ten
                 do k = 1,nlev
-                   elem(ie)%derived%FQ(:,:,k,qi) = elem(ie)%state%Q(:,:,k,qi) + wr1(1,1,k)
+                   elem(ie)%derived%FQ(:,:,k,qi) = wr1(1,1,k)
                 end do
              end if
              ! GLL Q0 -> FV Q0
@@ -1673,8 +1675,12 @@ contains
        call gfr_pg1_g_reconstruct_vector(gfr, ie, elem, elem(ie)%derived%FM)
 
        do qi = 1,qsize
+          ! Reconstruct Q_ten.
           call gfr_pg1_g_reconstruct_scalar_dp(gfr, ie, elem(ie)%metdet, dp, &
                elem(ie)%derived%FQ(:,:,:,qi))
+          ! GLL Q.
+          elem(ie)%derived%FQ(:,:,:,qi) = elem(ie)%derived%FQ(:,:,:,qi) + &
+               elem(ie)%state%Q(:,:,:,qi)
           if (gfr%check) wr1 = elem(ie)%derived%FQ(:,:,:,qi)
           do k = 1,nlev
              gfr%qmin(k,qi,ie) = min(minval(elem(ie)%state%Q(:,:,k,qi)), gfr%qmin(k,qi,ie))
