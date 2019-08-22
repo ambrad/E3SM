@@ -260,6 +260,10 @@ contains
     q_adjustment = ftype >= 1 .and. ftype <= 4
     qsize = size(q,3)
 
+    ! In the FV -> GLL direction, nphys = 1 for OOA > 1 is a special
+    ! case. Thus, nf == 1 and nf > 1 appears in several places in the
+    ! following.
+
     do ie = nets,nete
        call calc_dp(hvcoord, elem(ie)%state%ps_v(:,:,nt), dp)
        call gfr_g2f_scalar(ie, elem(ie)%metdet, dp, dp_fv)
@@ -284,36 +288,51 @@ contains
                   dp*elem(ie)%state%Q(:,:,:,qi), wr1)
              !   FV Q_ten = FV Q1 - FV Q0
              wr1(:nf,:nf,:) = reshape(q(:ncol,:,qi,ie), (/nf,nf,nlev/)) - wr1(:nf,:nf,:)
-             ! GLL Q_ten
-             call gfr_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wr1, wr2)
-             ! GLL Q1
-             elem(ie)%derived%FQ(:,:,:,qi) = elem(ie)%state%Q(:,:,:,qi) + wr2
-             ! Get limiter bounds.
-             do k = 1,nlev
-                gfr%qmin(k,qi,ie) = minval(q(:ncol,k,qi,ie))
-                gfr%qmax(k,qi,ie) = maxval(q(:ncol,k,qi,ie))
-             end do
+             if (nf > 1) then
+                ! GLL Q_ten
+                call gfr_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wr1, wr2)
+                ! GLL Q1
+                elem(ie)%derived%FQ(:,:,:,qi) = elem(ie)%state%Q(:,:,:,qi) + wr2
+                if (nf > 1) then
+                   ! Get limiter bounds.
+                   do k = 1,nlev
+                      gfr%qmin(k,qi,ie) = minval(q(:ncol,k,qi,ie))
+                      gfr%qmax(k,qi,ie) = maxval(q(:ncol,k,qi,ie))
+                   end do
+                end if
+             end if
           else
              ! FV Q_ten
              wr1(:nf,:nf,:) = reshape(q(:ncol,:,qi,ie), (/nf,nf,nlev/))
              wr1(:nf,:nf,:) = dt*wr1(:nf,:nf,:)/dp_fv(:nf,:nf,:)
-             ! GLL Q_ten
-             call gfr_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wr1, wr2)
-             ! GLL Q1
-             elem(ie)%derived%FQ(:,:,:,qi) = elem(ie)%state%Q(:,:,:,qi) + wr2
-             ! GLL Q0 -> FV Q0
-             call gfr_g2f_mixing_ratio(gfr, ie, elem(ie)%metdet, dp, dp_fv, &
-                  dp*elem(ie)%state%Q(:,:,:,qi), wr2)
-             ! FV Q1
-             wr2(:nf,:nf,:) = wr2(:nf,:nf,:) + wr1(:nf,:nf,:)
-             ! Get limiter bounds.
+             if (nf > 1) then
+                ! GLL Q_ten
+                call gfr_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wr1, wr2)
+                ! GLL Q1
+                elem(ie)%derived%FQ(:,:,:,qi) = elem(ie)%state%Q(:,:,:,qi) + wr2
+                ! GLL Q0 -> FV Q0
+                call gfr_g2f_mixing_ratio(gfr, ie, elem(ie)%metdet, dp, dp_fv, &
+                     dp*elem(ie)%state%Q(:,:,:,qi), wr2)
+                ! FV Q1
+                wr2(:nf,:nf,:) = wr2(:nf,:nf,:) + wr1(:nf,:nf,:)
+                ! Get limiter bounds.
+                do k = 1,nlev
+                   gfr%qmin(k,qi,ie) = minval(wr2(:nf,:nf,k))
+                   gfr%qmax(k,qi,ie) = maxval(wr2(:nf,:nf,k))
+                end do
+             end if
+          end if
+          if (nf == 1) then
+             ! In both cases of q_adjustment, wr1(1,1,:) contains the
+             ! FV Q tendency.
              do k = 1,nlev
-                gfr%qmin(k,qi,ie) = minval(wr2(:nf,:nf,k))
-                gfr%qmax(k,qi,ie) = maxval(wr2(:nf,:nf,k))
+                elem(ie)%derived%FQ(:,:,k,qi) = elem(ie)%state%Q(:,:,k,qi) + wr1(1,1,k)
              end do
           end if
        end do
     end do
+
+    if (nf == 1) return
 
     ! Halo exchange limiter bounds.
     call gfr_f2g_mixing_ratios_he(hybrid, nets, nete, gfr%qmin(:,:,nets:nete), &
@@ -1618,14 +1637,46 @@ contains
     call gll_cleanup(gll1)
   end subroutine make_mass_matrix_2d
 
-  subroutine gfr_pg1_reconstruct(hybrid, nt, dt, elem, nets, nete)
+  subroutine gfr_pg1_reconstruct(hybrid, nt, dt, hvcoord, elem, nets, nete)
+    use dimensions_mod, only: nlev, qsize
+    use hybvcoord_mod, only: hvcoord_t
+    use physical_constants, only: p0, kappa
+    use control_mod, only: ftype
+
     type (hybrid_t), intent(in) :: hybrid
     integer, intent(in) :: nt
     real(kind=real_kind), intent(in) :: dt
+    type (hvcoord_t), intent(in) :: hvcoord
     type (element_t), intent(inout) :: elem(:)
     integer, intent(in), optional :: nets, nete
 
+    real(kind=real_kind), dimension(np,np,nlev) :: dp, p, wr1
+    real(kind=real_kind) :: qmin, qmax
+    integer :: ie, nf, ncol, k, qi
+    logical :: q_adjustment
+
     if (gfr%nphys /= 1) return
+
+    nf = gfr%nphys
+    ncol = nf*nf
+    q_adjustment = ftype >= 1 .and. ftype <= 4
+
+    do ie = nets,nete
+       call calc_dp(hvcoord, elem(ie)%state%ps_v(:,:,nt), dp)
+
+       call calc_p(hvcoord, elem(ie)%state%ps_v(:,:,nt), p)
+       wr1 = (p/p0)**kappa
+       elem(ie)%derived%FT = elem(ie)%derived%FT*wr1
+       call gfr_pg1_g_reconstruct_scalar_dp(gfr, ie, elem(ie)%metdet, dp, &
+            elem(ie)%derived%FT)
+       elem(ie)%derived%FT = elem(ie)%derived%FT/wr1
+    end do
+
+    ! We avoided the limiter bounds HE earlier but must now do a
+    ! second DSS.
+    call gfr_f2g_dss(hybrid, elem, nets, nete)
+
+    ! TODO DON'T FORGET TO DO THIS FOR TOPO
   end subroutine gfr_pg1_reconstruct
 
   subroutine gfr_pg1_g_reconstruct_scalar(gfr, ie, gll_metdet, g)

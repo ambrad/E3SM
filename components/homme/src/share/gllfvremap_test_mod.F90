@@ -252,7 +252,7 @@ contains
     call gfr_fv_phys_to_dyn(hybrid, nt2, dt, hvcoord, elem, nets, nete, &
          pg_data%T, pg_data%uv, pg_data%q)
     call gfr_f2g_dss(hybrid, elem, nets, nete)
-    call gfr_pg1_reconstruct(hybrid, nt2, dt, elem, nets, nete)
+    call gfr_pg1_reconstruct(hybrid, nt2, dt, hvcoord, elem, nets, nete)
 
     ! Apply the tendencies.
     do ie = nets,nete
@@ -412,7 +412,7 @@ contains
     call gfr_fv_phys_to_dyn(hybrid, nt2, dt, hvcoord, elem, nets, nete, &
          pg_data%T, pg_data%uv, pg_data%q)
     call gfr_f2g_dss(hybrid, elem, nets, nete)
-    call gfr_pg1_reconstruct(hybrid, nt2, dt, elem, nets, nete)
+    call gfr_pg1_reconstruct(hybrid, nt2, dt, hvcoord, elem, nets, nete)
     ! Don't apply forcings; rather, the forcing fields now have the
     ! remapped quantities we want to compare against the original.
     do q = 2, qsize+3
@@ -483,15 +483,15 @@ contains
           b = max(abs(qmin1(q)), abs(qmax1(q)))
           if (q <= qsize .and. qmin2 < qmin1(q) - 5*eps*b .or. &
                qmax2 > qmax1(q) + 5*eps*b) then
-             write(iulog, '(a,i3,es12.4,es12.4,es12.4,es12.4)') 'gfrt> test3 q extrema', &
-                  q, qmin1(q), qmin2-qmin1(q), qmax2-qmax1(q), qmax1(q)
+             write(iulog, '(a,i3,es12.4,es12.4,es12.4,es12.4,a)') 'gfrt> test3 q extrema', &
+                  q, qmin1(q), qmin2-qmin1(q), qmax2-qmax1(q), qmax1(q), ' ERROR'
           end if
           if (domass) then
              a = global_shared_sum(3)
              b = global_shared_sum(4)
              if (abs(b - a) > 5*eps*abs(a)) then
-                write(iulog, '(a,i3,es12.4,es12.4,es12.4)') 'gfrt> test3 q mass', &
-                     q, a, b, abs(b - a)/abs(a)
+                write(iulog, '(a,i3,es12.4,es12.4,es12.4,a)') 'gfrt> test3 q mass', &
+                     q, a, b, abs(b - a)/abs(a), ' ERROR'
              end if
           end if
        end if
@@ -514,7 +514,7 @@ contains
        call gfr_fv_phys_to_dyn(hybrid, nt2, zero, hvcoord, elem, nets, nete, &
             pg_data%T, pg_data%uv, pg_data%q)       
        call gfr_f2g_dss(hybrid, elem, nets, nete)
-       call gfr_pg1_reconstruct(hybrid, nt, dt, elem, nets, nete)
+       call gfr_pg1_reconstruct(hybrid, nt, dt, hvcoord, elem, nets, nete)
        do ie = nets,nete
           do k = 1,nlev
              wr(:,:,k) = elem(ie)%spheremp
