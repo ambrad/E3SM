@@ -293,14 +293,16 @@ contains
                 call gfr_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wr1, wr2)
                 ! GLL Q1
                 elem(ie)%derived%FQ(:,:,:,qi) = elem(ie)%state%Q(:,:,:,qi) + wr2
-                if (nf > 1) then
-                   ! Get limiter bounds.
-                   do k = 1,nlev
-                      gfr%qmin(k,qi,ie) = minval(q(:ncol,k,qi,ie))
-                      gfr%qmax(k,qi,ie) = maxval(q(:ncol,k,qi,ie))
-                   end do
-                end if
+             else
+                do k = 1,nlev
+                   elem(ie)%derived%FQ(:,:,k,qi) = elem(ie)%state%Q(:,:,k,qi) + wr1(1,1,k)
+                end do
              end if
+             ! Get limiter bounds.
+             do k = 1,nlev
+                gfr%qmin(k,qi,ie) = minval(q(:ncol,k,qi,ie))
+                gfr%qmax(k,qi,ie) = maxval(q(:ncol,k,qi,ie))
+             end do
           else
              ! FV Q_ten
              wr1(:nf,:nf,:) = reshape(q(:ncol,:,qi,ie), (/nf,nf,nlev/))
@@ -310,23 +312,20 @@ contains
                 call gfr_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wr1, wr2)
                 ! GLL Q1
                 elem(ie)%derived%FQ(:,:,:,qi) = elem(ie)%state%Q(:,:,:,qi) + wr2
-                ! GLL Q0 -> FV Q0
-                call gfr_g2f_mixing_ratio(gfr, ie, elem(ie)%metdet, dp, dp_fv, &
-                     dp*elem(ie)%state%Q(:,:,:,qi), wr2)
-                ! FV Q1
-                wr2(:nf,:nf,:) = wr2(:nf,:nf,:) + wr1(:nf,:nf,:)
-                ! Get limiter bounds.
+             else
                 do k = 1,nlev
-                   gfr%qmin(k,qi,ie) = minval(wr2(:nf,:nf,k))
-                   gfr%qmax(k,qi,ie) = maxval(wr2(:nf,:nf,k))
+                   elem(ie)%derived%FQ(:,:,k,qi) = elem(ie)%state%Q(:,:,k,qi) + wr1(1,1,k)
                 end do
              end if
-          end if
-          if (nf == 1) then
-             ! In both cases of q_adjustment, wr1(1,1,:) contains the
-             ! FV Q tendency.
+             ! GLL Q0 -> FV Q0
+             call gfr_g2f_mixing_ratio(gfr, ie, elem(ie)%metdet, dp, dp_fv, &
+                  dp*elem(ie)%state%Q(:,:,:,qi), wr2)
+             ! FV Q1
+             wr2(:nf,:nf,:) = wr2(:nf,:nf,:) + wr1(:nf,:nf,:)
+             ! Get limiter bounds.
              do k = 1,nlev
-                elem(ie)%derived%FQ(:,:,k,qi) = elem(ie)%state%Q(:,:,k,qi) + wr1(1,1,k)
+                gfr%qmin(k,qi,ie) = minval(wr2(:nf,:nf,k))
+                gfr%qmax(k,qi,ie) = maxval(wr2(:nf,:nf,k))
              end do
           end if
        end do
@@ -1674,7 +1673,24 @@ contains
        call gfr_pg1_g_reconstruct_vector(gfr, ie, elem, elem(ie)%derived%FM)
 
        do qi = 1,qsize
-          
+          call gfr_pg1_g_reconstruct_scalar_dp(gfr, ie, elem(ie)%metdet, dp, &
+               elem(ie)%derived%FQ(:,:,:,qi))
+          if (gfr%check) wr1 = elem(ie)%derived%FQ(:,:,:,qi)
+          do k = 1,nlev
+             gfr%qmin(k,qi,ie) = min(minval(elem(ie)%state%Q(:,:,k,qi)), gfr%qmin(k,qi,ie))
+             gfr%qmax(k,qi,ie) = max(maxval(elem(ie)%state%Q(:,:,k,qi)), gfr%qmax(k,qi,ie))
+             call limiter_clip_and_sum(np, gfr%w_gg*elem(ie)%metdet, gfr%qmin(k,qi,ie), &
+                  gfr%qmax(k,qi,ie), dp(:,:,k), elem(ie)%derived%FQ(:,:,k,qi))
+          end do
+          if (gfr%check) then
+             call check_f2g_mixing_ratio(gfr, hybrid, ie, qi, elem, gfr%qmin(:,qi,ie), &
+                  gfr%qmax(:,qi,ie), dp, wr1, elem(ie)%derived%FQ(:,:,:,qi))
+          end if
+          if (.not. q_adjustment) then
+             ! Convert to a tendency.
+             elem(ie)%derived%FQ(:,:,:,qi) = &
+                  dp*(elem(ie)%derived%FQ(:,:,:,qi) - elem(ie)%state%Q(:,:,:,qi))/dt
+          end if
        end do
     end do
 
@@ -1714,24 +1730,6 @@ contains
     call gfr_pg1_g_reconstruct_scalar(gfr, ie, gll_metdet, g)
     g = g/dp
   end subroutine gfr_pg1_g_reconstruct_scalar_dp
-
-  subroutine gfr_pg1_g_reconstruct_mixing_ratio(gfr, ie, gll_metdet, dp, q)
-    type (GllFvRemap_t), intent(in) :: gfr
-    integer, intent(in) :: ie
-    real(kind=real_kind), intent(in) :: gll_metdet(:,:), dp(:,:,:)
-    real(kind=real_kind), intent(inout) :: q(:,:,:)
-
-    real(kind=real_kind) :: qmin, qmax
-    integer :: nlev, k, edgeidx
-
-    nlev = size(q,3)
-    do k = 1, nlev
-       qmin = minval(q(:,:,k))
-       qmax = maxval(q(:,:,k))
-       call gfr_pg1_g_reconstruct_scalar_dp(gfr, ie, gll_metdet, dp(:,:,k:k), q(:,:,k:k))
-       call limiter_clip_and_sum(np, gfr%w_gg*gll_metdet, qmin, qmax, dp(:,:,k), q(:,:,k))
-    end do
-  end subroutine gfr_pg1_g_reconstruct_mixing_ratio
 
   subroutine gfr_pg1_g_reconstruct_vector(gfr, ie, elem, v)
     type (GllFvRemap_t), intent(in) :: gfr
@@ -1921,8 +1919,10 @@ contains
              if (nf == 1) then
                 do ie = nets, nete
                    if (limit) then
-                      call gfr_pg1_g_reconstruct_mixing_ratio(gfr, ie, elem(ie)%metdet, &
-                           elem(ie)%state%ps_v(:,:,:1), elem(ie)%state%Q(:,:,:1,1))
+                      qmins(1,1,ie) = min(minval(elem(ie)%state%Q(:,:,1,1)), qmins(1,1,ie))
+                      qmaxs(1,1,ie) = max(maxval(elem(ie)%state%Q(:,:,1,1)), qmaxs(1,1,ie))
+                      call limiter_clip_and_sum(np, gfr%w_gg*elem(ie)%metdet, qmins(1,1,ie), &
+                           qmaxs(1,1,ie), elem(ie)%state%ps_v(:,:,1), elem(ie)%state%Q(:,:,1,1))
                    else
                       call gfr_pg1_g_reconstruct_scalar_dp(gfr, ie, elem(ie)%metdet, &
                            elem(ie)%state%ps_v(:,:,:1), elem(ie)%state%Q(:,:,:1,1))
