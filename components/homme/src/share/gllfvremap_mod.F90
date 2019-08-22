@@ -1670,6 +1670,12 @@ contains
        call gfr_pg1_g_reconstruct_scalar_dp(gfr, ie, elem(ie)%metdet, dp, &
             elem(ie)%derived%FT)
        elem(ie)%derived%FT = elem(ie)%derived%FT/wr1
+
+       call gfr_pg1_g_reconstruct_vector(gfr, ie, elem, elem(ie)%derived%FM)
+
+       do qi = 1,qsize
+          
+       end do
     end do
 
     ! We avoided the limiter bounds HE earlier but must now do a
@@ -1726,6 +1732,31 @@ contains
        call limiter_clip_and_sum(np, gfr%w_gg*gll_metdet, qmin, qmax, dp(:,:,k), q(:,:,k))
     end do
   end subroutine gfr_pg1_g_reconstruct_mixing_ratio
+
+  subroutine gfr_pg1_g_reconstruct_vector(gfr, ie, elem, v)
+    type (GllFvRemap_t), intent(in) :: gfr
+    integer, intent(in) :: ie
+    type (element_t), intent(in) :: elem(:)
+    real(kind=real_kind), intent(inout) :: v(:,:,:,:)
+
+    real(kind=real_kind) :: wr(np,np,2)
+    integer :: nlev, k, d
+
+    nlev = size(v,4)
+    do k = 1,nlev
+       ! sphere -> ref
+       do d = 1,2
+          wr(:,:,d) = elem(ie)%Dinv(:,:,d,1)*v(:,:,1,k) + elem(ie)%Dinv(:,:,d,2)*v(:,:,2,k)
+       end do
+       do d = 1,2
+          call gfr_pg1_g_reconstruct_scalar(gfr, ie, elem(ie)%metdet, wr(:,:,d:d))
+       end do
+       ! ref -> sphere
+       do d = 1,2
+          v(:,:,d,k) = elem(ie)%D(:,:,d,1)*wr(:,:,1) + elem(ie)%D(:,:,d,2)*wr(:,:,2)
+       end do
+    end do
+  end subroutine gfr_pg1_g_reconstruct_vector
 
   subroutine check(par, dom_mt, gfr, elem, verbose)
     use kinds, only: iulog
