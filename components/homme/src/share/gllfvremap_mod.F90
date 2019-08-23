@@ -28,7 +28,7 @@ module gllfvremap_mod
 
   ! Type for special case of pg1.
   type, private :: Pg1SolverData_t
-     real(kind=real_kind) :: Achol(np*np,np*np), B(np*np,np*np), s(np*np), sts
+     real(kind=real_kind) :: Achol(np*np,np*np), B(4,np*np), s(np*np), sts
   end type Pg1SolverData_t
 
   ! Top-level data type and functions for high-order, shape-preserving FV <->
@@ -1534,22 +1534,21 @@ contains
   subroutine gfr_pg1_init(gfr)
     type (GllFvRemap_t), intent(inout) :: gfr
 
-    real(kind=real_kind) :: Mnpnp(np*np,np*np), Mnp2(np*np,4), wr(np*np)
+    real(kind=real_kind) :: Mnp2(np*np,4), wr(np*np)
     integer :: i, j, k, info, n
 
     if (gfr%nphys /= 1) return
 
-    call make_mass_matrix_2d(np, np, Mnpnp)
+    call make_mass_matrix_2d(np, np, gfr%pg1sd%Achol)
     call make_mass_matrix_2d(np, 2, Mnp2)
 
     n = np*np
 
-    gfr%pg1sd%Achol = Mnpnp
     call dpotrf('u', n, gfr%pg1sd%Achol, size(gfr%pg1sd%Achol,1), info)
     if (info /= 0) print *, 'gfr ERROR> dpotrf returned', info
 
     do i = 1,n
-       gfr%pg1sd%B(1:4,i) = Mnp2(i,:)
+       gfr%pg1sd%B(:,i) = Mnp2(i,:)
     end do
 
     ! Constraint vector c is just w_gg(gfr%pg1sd%inner), so don't store it explicitly.
