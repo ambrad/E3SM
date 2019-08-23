@@ -81,7 +81,8 @@ module gllfvremap_mod
        gfr_fv_phys_to_dyn_topo, &
        ! If nphys == 1, reconstruct the field to boost the OOA. If
        ! nphys > 1, returns immediately.
-       gfr_pg1_reconstruct
+       gfr_pg1_reconstruct_topo, & ! call after the gfr_fv_phys_to_dyn_topo and the DSS
+       gfr_pg1_reconstruct ! call after gfr_fv_phys_to_dyn and the DSS
 
   ! For testing.
   public :: &
@@ -433,8 +434,12 @@ contains
        wr(:nf,:nf,1) = reshape(phis(:ncol,ie), (/nf,nf/))
        gfr%qmin(:,:,ie) = minval(wr(:nf,:nf,1))
        gfr%qmax(:,:,ie) = maxval(wr(:nf,:nf,1))
-       call gfr_f2g_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
-       elem(ie)%state%phis = wr(:,:,2)
+       if (nf > 1) then
+          call gfr_f2g_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
+          elem(ie)%state%phis = wr(:,:,2)
+       else
+          elem(ie)%state%phis = wr(1,1,1)
+       end if
     end do
 
     if (hybrid%par%dynproc) then
@@ -442,19 +447,22 @@ contains
             gfr%qmax(:,:,nets:nete))
     end if
 
-    do ie = nets,nete
-       if (gfr%check) wr(:,:,1) = elem(ie)%state%phis
-       call limiter_clip_and_sum(np, elem(ie)%spheremp, gfr%qmin(1,1,ie), &
-            gfr%qmax(1,1,ie), ones(:,:,1), elem(ie)%state%phis)
-       if (gfr%check) then
-          if (gfr%qmin(1,1,ie) < zero) then
-             write(iulog,*) 'gfr> topo min:', hybrid%par%rank, hybrid%ithr, ie, gfr%qmin(1,1,ie)
+    if (nf > 1) then
+       do ie = nets,nete
+          if (gfr%check) wr(:,:,1) = elem(ie)%state%phis
+          call limiter_clip_and_sum(np, elem(ie)%spheremp, gfr%qmin(1,1,ie), &
+               gfr%qmax(1,1,ie), ones(:,:,1), elem(ie)%state%phis)
+          if (gfr%check) then
+             if (gfr%qmin(1,1,ie) < zero) then
+                write(iulog,*) 'gfr> topo min:', hybrid%par%rank, hybrid%ithr, ie, &
+                     gfr%qmin(1,1,ie), 'ERROR'
+             end if
+             wr(:,:,2) = elem(ie)%state%phis
+             call check_f2g_mixing_ratio(gfr, hybrid, ie, 1, elem, gfr%qmin(:1,1,ie), &
+                  gfr%qmax(:1,1,ie), ones, wr(:,:,:1), wr(:,:,2:))
           end if
-          wr(:,:,2) = elem(ie)%state%phis
-          call check_f2g_mixing_ratio(gfr, hybrid, ie, 1, elem, gfr%qmin(:1,1,ie), &
-               gfr%qmax(:1,1,ie), ones, wr(:,:,:1), wr(:,:,2:))
-       end if
-    end do
+       end do
+    end if
 
     do ie = nets,nete
        elem(ie)%state%phis = elem(ie)%state%phis*elem(ie)%spheremp*elem(ie)%rspheremp
@@ -1452,11 +1460,11 @@ contains
        mass_g = sum(elem(ie)%spheremp*dp(:,:,k)*q_g(:,:,k))
        if (qmin_f < qmin_g - 10*eps*den .or. qmax_f > qmax_g + 10*eps*den) then
           write(iulog,*) 'gfr> g2f mixing ratio limits:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
-               qmin_g, qmin_f-qmin_g, qmax_f-qmax_g, qmax_g, mass_f, mass_g
+               qmin_g, qmin_f-qmin_g, qmax_f-qmax_g, qmax_g, mass_f, mass_g, 'ERROR'
        end if
        if (abs(mass_f - mass_g) > gfr%tolfac*20*eps*max(mass_f, mass_g)) then
           write(iulog,*) 'gfr> g2f mixing ratio mass:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
-               qmin_g, qmax_g, mass_f, mass_g
+               qmin_g, qmax_g, mass_f, mass_g, 'ERROR'
        end if
     end do
   end subroutine check_g2f_mixing_ratio
@@ -1482,14 +1490,14 @@ contains
        den = gfr%tolfac*max(1e-10, maxval(abs(q0_g(:,:,k))))
        if (qmin_g < qmin_f - 50*eps*den .or. qmax_g > qmax_f + 50*eps*den) then
           write(iulog,*) 'gfr> f2g mixing ratio limits:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
-               qmin_f, qmin_g-qmin_f, qmax_g-qmax_f, qmax_f, mass0, mass1
+               qmin_f, qmin_g-qmin_f, qmax_g-qmax_f, qmax_f, mass0, mass1, 'ERROR'
        end if
        mass0 = sum(elem(ie)%spheremp*dp(:,:,k)*q0_g(:,:,k))
        mass1 = sum(elem(ie)%spheremp*dp(:,:,k)*q1_g(:,:,k))
        den = sum(elem(ie)%spheremp*dp(:,:,k)*maxval(abs(q0_g(:,:,k))))
        if (abs(mass1 - mass0) > gfr%tolfac*20*eps*den) then
           write(iulog,*) 'gfr> f2g mixing ratio mass:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
-               qmin_f, qmin_g, qmax_g, qmax_f, mass0, mass1
+               qmin_f, qmin_g, qmax_g, qmax_f, mass0, mass1, 'ERROR'
        end if
     end do
   end subroutine check_f2g_mixing_ratio
@@ -1637,6 +1645,52 @@ contains
     call gll_cleanup(gll1)
   end subroutine make_mass_matrix_2d
 
+  subroutine gfr_pg1_reconstruct_topo(hybrid, elem, nets, nete)
+    use kinds, only: iulog
+    use edge_mod, only: edgevpack_nlyr, edgevunpack_nlyr, edge_g
+    use bndry_mod, only: bndry_exchangev
+
+    type (hybrid_t), intent(in) :: hybrid
+    type (element_t), intent(inout) :: elem(:)
+    integer, intent(in), optional :: nets, nete
+
+    real(kind=real_kind) :: wr(np,np,2), ones(np,np,1)
+    integer :: ie, nf, ncol
+
+    if (gfr%nphys /= 1) return
+
+    ones = one
+
+    do ie = nets,nete
+       wr(:,:,1) = elem(ie)%state%phis
+       call gfr_pg1_g_reconstruct_scalar(gfr, ie, elem(ie)%metdet, wr(:,:,:1))
+       elem(ie)%state%phis = wr(:,:,1)
+       call limiter_clip_and_sum(np, elem(ie)%spheremp, gfr%qmin(1,1,ie), &
+            gfr%qmax(1,1,ie), ones(:,:,1), elem(ie)%state%phis)
+       if (gfr%check) then
+          if (gfr%qmin(1,1,ie) < zero) then
+             write(iulog,*) 'gfr> topo min:', hybrid%par%rank, hybrid%ithr, ie, &
+                  gfr%qmin(1,1,ie), 'ERROR'
+          end if
+          wr(:,:,2) = elem(ie)%state%phis
+          call check_f2g_mixing_ratio(gfr, hybrid, ie, 1, elem, gfr%qmin(:1,1,ie), &
+               gfr%qmax(:1,1,ie), ones, wr(:,:,1:1), wr(:,:,2:2))
+       end if
+    end do
+
+    if (hybrid%par%dynproc) then
+       do ie = nets, nete
+          elem(ie)%state%phis = elem(ie)%state%phis*elem(ie)%spheremp(:,:)
+          call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%phis, 1, 0, 1)
+       end do
+       call bndry_exchangeV(hybrid, edge_g)
+       do ie = nets, nete
+          call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%phis, 1, 0, 1)
+          elem(ie)%state%phis = elem(ie)%state%phis*elem(ie)%rspheremp(:,:)
+       end do
+    end if
+  end subroutine gfr_pg1_reconstruct_topo
+
   subroutine gfr_pg1_reconstruct(hybrid, nt, dt, hvcoord, elem, nets, nete)
     use dimensions_mod, only: nlev, qsize
     use hybvcoord_mod, only: hvcoord_t
@@ -1652,13 +1706,11 @@ contains
 
     real(kind=real_kind), dimension(np,np,nlev) :: dp, p, wr1
     real(kind=real_kind) :: qmin, qmax
-    integer :: ie, nf, ncol, k, qi
+    integer :: ie, k, qi
     logical :: q_adjustment
 
     if (gfr%nphys /= 1) return
 
-    nf = gfr%nphys
-    ncol = nf*nf
     q_adjustment = ftype >= 1 .and. ftype <= 4
 
     do ie = nets,nete
@@ -1701,8 +1753,6 @@ contains
     end do
 
     call gfr_f2g_dss(hybrid, elem, nets, nete)
-
-    ! TODO DON'T FORGET TO DO THIS FOR TOPO
   end subroutine gfr_pg1_reconstruct
 
   subroutine gfr_pg1_g_reconstruct_scalar(gfr, ie, gll_metdet, g)

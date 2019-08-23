@@ -356,6 +356,7 @@ contains
     do ie = nets, nete
        call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%phis, 1, 0, 1)
     end do
+    call gfr_pg1_reconstruct_topo(hybrid, elem, nets, nete)
     ! Compare GLL phis1 against GLL phis0.
     do ie = nets,nete
        global_shared_buf(ie,1) = sum(elem(ie)%spheremp*(elem(ie)%state%phis - &
