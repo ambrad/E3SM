@@ -1876,30 +1876,33 @@ contains
              end if
           end do
           ! 2. FV -> GLL
+          if (limit) then
+             ! 2a. Get q bounds
+             do ie = nets, nete
+                wrk(:nf,:nf) = Qdp_fv(:nf,:nf,ie)/ps_v_fv(:nf,:nf,ie)
+                qmins(:,:,ie) = minval(wrk(:nf,:nf))
+                qmaxs(:,:,ie) = maxval(wrk(:nf,:nf))
+             end do
+             ! 2b. Halo exchange q bounds.
+             call neighbor_minmax(hybrid, edgeAdvQminmax, nets, nete, qmins, qmaxs)
+             ! 2c. Augment bounds with current values.
+             do ie = nets, nete
+                wrk = elem(ie)%state%Q(:,:,1,1)
+                qmins(1,1,ie) = min(qmins(1,1,ie), minval(wrk))
+                qmaxs(1,1,ie) = max(qmaxs(1,1,ie), maxval(wrk))                
+             end do
+          endif
+          ! 2d. Remap
           if (nf == 1) then
              do ie = nets, nete
                 elem(ie)%state%Q(:,:,1,1) = Qdp_fv(1,1,ie)/ps_v_fv(1,1,ie)
              end do
           else
-             if (limit) then
-                ! 2a. Get q bounds
-                do ie = nets, nete
-                   wrk(:nf,:nf) = Qdp_fv(:nf,:nf,ie)/ps_v_fv(:nf,:nf,ie)
-                   qmins(:,:,ie) = minval(wrk(:nf,:nf))
-                   qmaxs(:,:,ie) = maxval(wrk(:nf,:nf))
-                end do
-                ! 2b. Halo exchange q bounds.
-                call neighbor_minmax(hybrid, edgeAdvQminmax, nets, nete, qmins, qmaxs)
-             endif
-             ! 2c. Remap
              do ie = nets, nete
-                wrk = elem(ie)%state%Q(:,:,1,1)
                 call gfr_f2g_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,ie), &
                      Qdp_fv(:,:,ie), elem(ie)%state%Q(:,:,1,1))
                 elem(ie)%state%Q(:,:,1,1) = elem(ie)%state%Q(:,:,1,1)/elem(ie)%state%ps_v(:,:,1)
                 if (limit) then
-                   qmins(1,1,ie) = min(qmins(1,1,ie), minval(wrk))
-                   qmaxs(1,1,ie) = max(qmaxs(1,1,ie), maxval(wrk))
                    call limiter_clip_and_sum(np, elem(ie)%spheremp, & ! same as w_gg*gll_metdet
                         qmins(1,1,ie), qmaxs(1,1,ie), elem(ie)%state%ps_v(:,:,1), &
                         elem(ie)%state%Q(:,:,1,1))
@@ -1919,22 +1922,22 @@ contains
                 elem(ie)%state%Q(:,:,1,1) = &
                      (elem(ie)%state%Q(:,:,1,1)*elem(ie)%rspheremp(:,:))/elem(ie)%state%ps_v(:,:,1)
              end do
-             if (it == 2) exit
+             if (it == 2 .or. nf > 1) exit
              ! 4. pg1 OOA boost.
              if (nf == 1) then
                 do ie = nets, nete
                    if (limit) then
                       qmins(1,1,ie) = min(minval(elem(ie)%state%Q(:,:,1,1)), qmins(1,1,ie))
                       qmaxs(1,1,ie) = max(maxval(elem(ie)%state%Q(:,:,1,1)), qmaxs(1,1,ie))
+                   end if
+                   call gfr_pg1_g_reconstruct_scalar_dp(gfr, ie, elem(ie)%metdet, &
+                        elem(ie)%state%ps_v(:,:,:1), elem(ie)%state%Q(:,:,:1,1))
+                   if (limit) then
                       call limiter_clip_and_sum(np, gfr%w_gg*elem(ie)%metdet, qmins(1,1,ie), &
                            qmaxs(1,1,ie), elem(ie)%state%ps_v(:,:,1), elem(ie)%state%Q(:,:,1,1))
-                   else
-                      call gfr_pg1_g_reconstruct_scalar_dp(gfr, ie, elem(ie)%metdet, &
-                           elem(ie)%state%ps_v(:,:,:1), elem(ie)%state%Q(:,:,:1,1))
                    end if
                 end do
              end if
-             if (nf > 1) exit
           end do
        end do
        ! 5. Compute error.
