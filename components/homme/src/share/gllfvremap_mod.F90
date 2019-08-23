@@ -68,12 +68,19 @@ module gllfvremap_mod
 
   ! Main API.
   public :: &
+       ! Initialize this module.
        gfr_init, &
+       ! Clean up this module.
        gfr_finish, &
+       ! Remap GLL state to FV grid.
        gfr_dyn_to_fv_phys, &
+       ! Remap FV tendencies or state to GLL grid.
        gfr_fv_phys_to_dyn, &
+       ! Remap phis.
        gfr_dyn_to_fv_phys_topo, &
        gfr_fv_phys_to_dyn_topo, &
+       ! If nphys == 1, reconstruct the field to boost the OOA. If
+       ! nphys > 1, returns immediately.
        gfr_pg1_reconstruct
 
   ! For testing.
@@ -1215,50 +1222,42 @@ contains
     type (element_t), intent(inout) :: elem(:)
     integer, intent(in) :: nets, nete
 
-    integer :: ie, q, k
+    integer :: ie, q, k, npack
 
+    npack = (qsize + 3)*nlev
     do ie = nets, nete
        do q = 1,qsize
           do k = 1,nlev
              elem(ie)%derived%FQ(:,:,k,q) = elem(ie)%derived%FQ(:,:,k,q)*elem(ie)%spheremp(:,:)
           end do
        end do
+       call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%FQ, qsize*nlev, 0, npack)
        do q = 1,2
           do k = 1,nlev
              elem(ie)%derived%FM(:,:,q,k) = elem(ie)%derived%FM(:,:,q,k)*elem(ie)%spheremp(:,:)
           end do
        end do
+       call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%FM, 2*nlev, qsize*nlev, npack)
        do k = 1,nlev
           elem(ie)%derived%FT(:,:,k) = elem(ie)%derived%FT(:,:,k)*elem(ie)%spheremp(:,:)
        end do
-    end do
-    do ie = nets, nete
-       call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%FQ, qsize*nlev, 0, qsize*nlev)
+       call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%FT, nlev, (qsize+2)*nlev, npack)
     end do
     call bndry_exchangeV(hybrid, edge_g)
     do ie = nets, nete
-       call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%FQ, qsize*nlev, 0, qsize*nlev)
-    end do
-    do ie = nets, nete
-       call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%FM, 2*nlev, 0, 3*nlev)
-       call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%FT, nlev, 2*nlev, 3*nlev)
-    end do
-    call bndry_exchangeV(hybrid, edge_g)
-    do ie = nets, nete
-       call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%FM, 2*nlev, 0, 3*nlev)
-       call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%FT, nlev, 2*nlev, 3*nlev)
-    end do
-    do ie = nets, nete
+       call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%FQ, qsize*nlev, 0, npack)
        do q = 1,qsize
           do k = 1,nlev
              elem(ie)%derived%FQ(:,:,k,q) = elem(ie)%derived%FQ(:,:,k,q)*elem(ie)%rspheremp(:,:)
           end do
        end do
+       call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%FM, 2*nlev, qsize*nlev, npack)
        do q = 1,2
           do k = 1,nlev
              elem(ie)%derived%FM(:,:,q,k) = elem(ie)%derived%FM(:,:,q,k)*elem(ie)%rspheremp(:,:)
           end do
        end do
+       call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%FT, nlev, (qsize+2)*nlev, npack)
        do k = 1,nlev
           elem(ie)%derived%FT(:,:,k) = elem(ie)%derived%FT(:,:,k)*elem(ie)%rspheremp(:,:)
        end do
