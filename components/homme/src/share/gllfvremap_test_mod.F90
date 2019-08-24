@@ -375,7 +375,7 @@ contains
     ! Test FV fields that were not covered in the previous tests. This
     ! is done by copying them to look like tendencies.
     !   For pg4, u,v,T should have l2 errors that are eps because pg4
-    ! reconstructs the fields exactly, even with DSS.
+    ! reconstructions the fields exactly, even with DSS.
     !   For pg4, q should have l2 errors that converge at OOA >= 2. 2
     ! is the formal OOA b/c of the limiter. The limiter acts on the
     ! tendency, which in this case is exactly what is being examined.
@@ -413,9 +413,7 @@ contains
     call gfr_fv_phys_to_dyn(hybrid, nt2, dt, hvcoord, elem, nets, nete, &
          pg_data%T, pg_data%uv, pg_data%q)
     call gfr_f2g_dss(hybrid, elem, nets, nete)
-    do ie = 1,5
-       call gfr_pg1_reconstruct(hybrid, nt2, dt, hvcoord, elem, nets, nete, logical(ie > 1))
-    end do
+    call gfr_pg1_reconstruct(hybrid, nt2, dt, hvcoord, elem, nets, nete)
     ! Don't apply forcings; rather, the forcing fields now have the
     ! remapped quantities we want to compare against the original.
     do q = 2, qsize+3

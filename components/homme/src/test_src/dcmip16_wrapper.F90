@@ -775,9 +775,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   ! dp_coupling doesn't do the DSS; stepon does. Thus, this DCMIP test
   ! also needs to do its own DSS.
   call gfr_f2g_dss(hybrid, elem, nets, nete)
-  do k = 1,5
-     call gfr_pg1_reconstruct(hybrid, nt, dt, hvcoord, elem, nets, nete, logical(k > 1))
-  end do
+  call gfr_pg1_reconstruct(hybrid, nt, dt, hvcoord, elem, nets, nete)
 
   call toy_init(rcd)
   do ie = nets,nete
