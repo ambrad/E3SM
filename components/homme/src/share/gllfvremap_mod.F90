@@ -255,7 +255,7 @@ contains
     real(kind=real_kind), intent(in) :: dt
     type (hvcoord_t), intent(in) :: hvcoord
     type (element_t), intent(inout) :: elem(:)
-    integer, intent(in), optional :: nets, nete
+    integer, intent(in) :: nets, nete
     real(kind=real_kind), intent(in) :: T(:,:,:), uv(:,:,:,:), q(:,:,:,:)
 
     real(kind=real_kind), dimension(np,np,nlev) :: dp, dp_fv, wr1, wr2, p, p_fv
@@ -377,7 +377,7 @@ contains
   subroutine gfr_dyn_to_fv_phys_topo(hybrid, elem, nets, nete, phis)
     type (hybrid_t), intent(in) :: hybrid
     type (element_t), intent(in) :: elem(:)
-    integer, intent(in), optional :: nets, nete
+    integer, intent(in) :: nets, nete
     real(kind=real_kind), intent(out) :: phis(:,:)
 
     integer :: ie
@@ -389,7 +389,7 @@ contains
 
   subroutine gfr_dyn_to_fv_phys_topo_elem(elem, ie, phis)
     type (element_t), intent(in) :: elem(:)
-    integer, intent(in), optional :: ie
+    integer, intent(in) :: ie
     real(kind=real_kind), intent(out) :: phis(:)
 
     real(kind=real_kind) :: wr(np,np,2), ones(np,np), qmin, qmax
@@ -416,7 +416,7 @@ contains
 
     type (hybrid_t), intent(in) :: hybrid
     type (element_t), intent(inout) :: elem(:)
-    integer, intent(in), optional :: nets, nete
+    integer, intent(in) :: nets, nete
     real(kind=real_kind), intent(in) :: phis(:,:)
 
     real(kind=real_kind) :: wr(np,np,2), ones(np,np,1)
@@ -1651,7 +1651,7 @@ contains
 
     type (hybrid_t), intent(in) :: hybrid
     type (element_t), intent(inout) :: elem(:)
-    integer, intent(in), optional :: nets, nete
+    integer, intent(in) :: nets, nete
 
     real(kind=real_kind) :: wr(np,np,2), ones(np,np,1)
     integer :: ie, nf, ncol
@@ -1690,7 +1690,7 @@ contains
     end if
   end subroutine gfr_pg1_reconstruct_topo
 
-  subroutine gfr_pg1_reconstruct(hybrid, nt, dt, hvcoord, elem, nets, nete)
+  subroutine gfr_pg1_reconstruct(hybrid, nt, dt, hvcoord, elem, nets, nete, repeat_in)
     use dimensions_mod, only: nlev, qsize
     use hybvcoord_mod, only: hvcoord_t
     use physical_constants, only: p0, kappa
@@ -1701,14 +1701,18 @@ contains
     real(kind=real_kind), intent(in) :: dt
     type (hvcoord_t), intent(in) :: hvcoord
     type (element_t), intent(inout) :: elem(:)
-    integer, intent(in), optional :: nets, nete
+    integer, intent(in) :: nets, nete
+    logical, intent(in), optional :: repeat_in
 
     real(kind=real_kind), dimension(np,np,nlev) :: dp, p, wr1
     real(kind=real_kind) :: qmin, qmax
     integer :: ie, k, qi
-    logical :: q_adjustment
+    logical :: q_adjustment, repeat
 
     if (gfr%nphys /= 1) return
+
+    repeat = .false.
+    if (present(repeat_in)) repeat = repeat_in
 
     q_adjustment = ftype >= 1 .and. ftype <= 4
 
@@ -1725,6 +1729,13 @@ contains
        call gfr_pg1_g_reconstruct_vector(gfr, ie, elem, elem(ie)%derived%FM)
 
        do qi = 1,qsize
+          if (repeat) then
+             if (q_adjustment) then
+                elem(ie)%derived%FQ(:,:,:,qi) = elem(ie)%derived%FQ(:,:,:,qi) - elem(ie)%state%Q(:,:,:,qi)
+             else
+                elem(ie)%derived%FQ(:,:,:,qi) = dt*elem(ie)%derived%FQ(:,:,:,qi)/dp
+             end if
+          end if
           ! Reconstruct Q_ten.
           call gfr_pg1_g_reconstruct_scalar_dp(gfr, ie, elem(ie)%metdet, dp, &
                elem(ie)%derived%FQ(:,:,:,qi))
