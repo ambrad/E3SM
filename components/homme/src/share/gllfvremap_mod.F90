@@ -209,6 +209,8 @@ contains
 
   subroutine gfr_dyn_to_fv_phys_hybrid(hybrid, nt, hvcoord, elem, nets, nete, &
        ps, phis, T, uv, omega_p, q)
+    ! Remap ps, phis, T, uv, omega_p, q from GLL to FV grids.
+
     use dimensions_mod, only: nlev
     use hybvcoord_mod, only: hvcoord_t
     use element_ops, only: get_temperature
@@ -277,9 +279,10 @@ contains
   end subroutine gfr_dyn_to_fv_phys_hybrid
 
   subroutine gfr_fv_phys_to_dyn_hybrid(hybrid, nt, dt, hvcoord, elem, nets, nete, T, uv, q)
-    ! If ftype is in 1:4, then q is the full mixing ratio state and dt
-    ! is not used; if it is not, then q is Qdp tendency, and dt must
-    ! be the correct physics time step.
+    ! Remap T, uv, q states or tendencies from FV to GLL grids.
+    !   If ftype is in 1:4, then q is the full mixing ratio state and
+    ! dt is not used; if it is not, then q is Qdp tendency, and dt
+    ! must be the correct physics time step.
 
     use dimensions_mod, only: nlev
     use hybvcoord_mod, only: hvcoord_t
@@ -411,6 +414,10 @@ contains
   end subroutine gfr_fv_phys_to_dyn_hybrid
 
   subroutine gfr_dyn_to_fv_phys_topo(hybrid, elem, nets, nete, phis)
+    ! If needed, remap topography data defined on the GLL grid to the
+    ! FV grid. The intended EAM configuration is to use topography
+    ! data on the FV grid, so this routine is unlikely to be used.
+
     type (hybrid_t), intent(in) :: hybrid
     type (element_t), intent(in) :: elem(:)
     integer, intent(in) :: nets, nete
@@ -424,6 +431,9 @@ contains
   end subroutine gfr_dyn_to_fv_phys_topo
 
   subroutine gfr_fv_phys_to_dyn_topo_hybrid(hybrid, elem, nets, nete, phis)
+    ! Remap FV topography data to the GLL grid. Prevent new
+    ! extrema. Conserve the integral of height.
+
     use kinds, only: iulog
     use edge_mod, only: edgeVpack_nlyr, edgeVunpack_nlyr, edge_g
     use bndry_mod, only: bndry_exchangeV
@@ -485,6 +495,8 @@ contains
 
   subroutine gfr_dyn_to_fv_phys_dom_mt(par, dom_mt, nt, hvcoord, elem, &
        ps, phis, T, uv, omega_p, q)
+    ! Wrapper to the hybrid-threading main routine.
+    
     use parallel_mod, only: parallel_t
     use domain_mod, only: domain1d_t
     use hybvcoord_mod, only: hvcoord_t
@@ -513,6 +525,8 @@ contains
   end subroutine gfr_dyn_to_fv_phys_dom_mt
 
   subroutine gfr_fv_phys_to_dyn_dom_mt(par, dom_mt, nt, dt, hvcoord, elem, T, uv, q)
+    ! Wrapper to the hybrid-threading main routine.
+
     use parallel_mod, only: parallel_t
     use domain_mod, only: domain1d_t
     use hybvcoord_mod, only: hvcoord_t
@@ -540,6 +554,8 @@ contains
   end subroutine gfr_fv_phys_to_dyn_dom_mt
 
   subroutine gfr_fv_phys_to_dyn_topo_dom_mt(par, dom_mt, elem, phis)
+    ! Wrapper to the hybrid-threading main routine.
+
     use parallel_mod, only: parallel_t
     use domain_mod, only: domain1d_t
     use thread_mod, only: hthreads
@@ -566,6 +582,8 @@ contains
   ! Internal initialization routines.
 
   subroutine gfr_init_w_gg(np, w_gg)
+    ! Init GLL w(i)*w(j) values on the reference element.
+
     use quadrature_mod, only : gausslobatto, quadrature_t
     
     integer, intent(in) :: np
@@ -586,6 +604,8 @@ contains
   end subroutine gfr_init_w_gg
 
   subroutine gfr_init_w_ff(nphys, w_ff)
+    ! Init FV w(i)*w(j) values on the reference element.
+    
     integer, intent(in) :: nphys
     real(kind=real_kind), intent(out) :: w_ff(:)
 
@@ -601,6 +621,8 @@ contains
   end subroutine gll_cleanup
 
   subroutine calc_dp(hvcoord, ps, dp)
+    ! Compute hydrostatic dp using ps.
+
     use hybvcoord_mod, only: hvcoord_t
     use dimensions_mod, only: nlev
 
@@ -617,6 +639,8 @@ contains
   end subroutine calc_dp
 
   subroutine calc_p(hvcoord, ps, p)
+    ! Compute hydrostatic p using ps.
+
     use hybvcoord_mod, only: hvcoord_t
     use dimensions_mod, only: nlev
 
@@ -632,8 +656,9 @@ contains
   end subroutine calc_p
 
   subroutine eval_lagrange_bases(gll, np, x, y)
-    ! Evaluate the GLL basis functions at x in [-1,1], writing the values to
-    ! y(1:np).
+    ! Evaluate the GLL basis functions at x in [-1,1], writing the
+    ! values to y(1:np). This implements the Lagrange interpolant.
+
     use quadrature_mod, only : quadrature_t
     
     type (quadrature_t), intent(in) :: gll
@@ -656,6 +681,9 @@ contains
   end subroutine eval_lagrange_bases
 
   subroutine gfr_init_M_gf(np, nphys, M_gf, scale)
+    ! Compute the mixed mass matrix with range the FV subcells and
+    ! domain the GLL nodes.
+
     use quadrature_mod, only : gausslobatto, quadrature_t
 
     integer, intent(in) :: np, nphys
@@ -764,6 +792,9 @@ contains
   end subroutine gfr_init_R
 
   subroutine gfr_init_interp_matrix(npsrc, interp)
+    ! Compute the matrix that interpolates from the npi-GLL nodes to
+    ! the np-GLL nodes.
+
     use quadrature_mod, only : gausslobatto, quadrature_t
 
     integer, intent(in) :: npsrc
@@ -793,6 +824,9 @@ contains
   end subroutine gfr_init_interp_matrix
 
   subroutine gfr_init_f2g_remapd(gfr, R, tau)
+    ! Apply gfr_init_f2g_remapd_op to the Id matrix to get the remap operator's
+    ! matrix representation.
+
     !assume nphys <= np
 
     type (GllFvRemap_t), intent(inout) :: gfr
@@ -801,8 +835,6 @@ contains
     integer :: nf, fi, fj, gi, gj
     real(kind=real_kind) :: f(np,np), g(np,np)
 
-    ! Apply gfr_init_f2g_remapd_op to the Id matrix to get the remap operator's
-    ! matrix representation.
     gfr%f2g_remapd = zero
     f = zero
     nf = gfr%nphys
@@ -817,6 +849,9 @@ contains
   end subroutine gfr_init_f2g_remapd
 
   subroutine gfr_f2g_remapd_op(gfr, R, tau, f, g)
+    ! This operator implements the linear operator that solves the
+    ! problem described in gfr_init_R.
+
     !assume nphys <= np
 
     type (GllFvRemap_t), intent(in) :: gfr
@@ -877,6 +912,9 @@ contains
   end subroutine gfr_f2g_remapd_op
 
   subroutine gfr_init_fv_metdet(elem, gfr)
+    ! Compute the reference-element-to-sphere Jacobian (metdet) for FV
+    ! subcells consistent with those for GLL nodes.
+
     type (element_t), intent(in) :: elem(:)
     type (GllFvRemap_t), intent(inout) :: gfr
 
@@ -916,6 +954,8 @@ contains
   end subroutine gfr_f_ref_edges
 
   subroutine gfr_init_geometry(elem, gfr)
+    ! Compute various geometric quantities, described below.
+
     use coordinate_systems_mod, only: cartesian3D_t, change_coordinates, sphere_tri_area
     use cube_mod, only: Dmap, ref2sphere
     use control_mod, only: cubed_sphere_map
@@ -967,6 +1007,8 @@ contains
             (sum(elem(ie)%spheremp)/sum(gfr%w_ff(:nf2)*gfr%fv_metdet(:nf2,ie)))
     end do
 
+    ! Jacobian matrices to map a vector between reference element and
+    ! sphere.
     do ie = 1,nelemd
        do j = 1,nf
           call gfr_f_ref_center(nf, j, b)
@@ -1004,6 +1046,9 @@ contains
   ! GLL -> FV (g2f)
 
   subroutine gfr_g2f_remapd(gfr, gll_metdet, fv_metdet, g, f)
+    ! Core remap operator. Conservative remap on the reference
+    ! element.
+
     type (GllFvRemap_t), intent(in) :: gfr
     real(kind=real_kind), intent(in) :: gll_metdet(:,:), fv_metdet(:), g(:,:)
     real(kind=real_kind), intent(out) :: f(:,:)
@@ -1024,6 +1069,8 @@ contains
   end subroutine gfr_g2f_remapd
 
   subroutine gfr_g2f_scalar(ie, gll_metdet, g, f) ! no gfr b/c public for testing
+    ! Wrapper to remapd, where g and f are densities.
+
     integer, intent(in) :: ie
     real(kind=real_kind), intent(in) :: gll_metdet(:,:), g(:,:,:)
     real(kind=real_kind), intent(out) :: f(:,:,:)
@@ -1037,6 +1084,8 @@ contains
   end subroutine gfr_g2f_scalar
 
   subroutine gfr_g2f_scalar_dp(gfr, ie, gll_metdet, dp_g, dp_f, g, f)
+    ! Wrapper to remapd, where g and f are mixing ratios.
+
     type (GllFvRemap_t), intent(in) :: gfr
     integer, intent(in) :: ie
     real(kind=real_kind), intent(in) :: gll_metdet(:,:), dp_g(:,:,:), dp_f(:,:,:), g(:,:,:)
@@ -1050,6 +1099,9 @@ contains
   end subroutine gfr_g2f_scalar_dp
 
   subroutine gfr_g2f_vector(gfr, ie, elem, u_g, v_g, u_f, v_f)
+    ! Remap a vector on the sphere by doing the actual remap on the
+    ! reference element, thus avoiding steep gradients at the poles.
+
     type (GllFvRemap_t), intent(in) :: gfr
     integer, intent(in) :: ie
     type (element_t), intent(in) :: elem(:)
@@ -1099,6 +1151,8 @@ contains
   end subroutine gfr_g2f_vector_dp
 
   subroutine gfr_g2f_mixing_ratio(gfr, ie, gll_metdet, dp_g, dp_f, qdp_g, q_f)
+    ! Remap a mixing ratio conservatively and preventing new extrema.
+
     type (GllFvRemap_t), intent(in) :: gfr
     integer, intent(in) :: ie
     real(kind=real_kind), intent(in) :: gll_metdet(:,:), dp_g(:,:,:), dp_f(:,:,:), &
@@ -1215,6 +1269,8 @@ contains
   end subroutine gfr_f2g_vector_dp
 
   subroutine gfr_f2g_mixing_ratios_he(hybrid, nets, nete, qmin, qmax)
+    ! Exchange qmin/qmax among element neighbors.
+
     use viscosity_mod, only: neighbor_minmax
     use prim_advection_base, only: edgeAdvQminmax
 
@@ -1226,6 +1282,8 @@ contains
   end subroutine gfr_f2g_mixing_ratios_he
 
   subroutine gfr_f2g_dss(hybrid, elem, nets, nete)
+    ! DSS FQ, FM, FT.
+
     use dimensions_mod, only: nlev, qsize
     use edge_mod, only: edgevpack_nlyr, edgevunpack_nlyr, edge_g
     use bndry_mod, only: bndry_exchangev
