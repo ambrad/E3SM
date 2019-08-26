@@ -261,4 +261,18 @@ end subroutine
     enddo
   end subroutine
 
+  subroutine print_test_results(elem, tl, hvcoord, par)
+    use parallel_mod, only: parallel_t
+    use dcmip12_wrapper, only: dcmip2012_print_test1_results
+
+    type(element_t), intent(in) :: elem(:)
+    type(timelevel_t), intent(in) :: tl
+    type(hvcoord_t), intent(in) :: hvcoord
+    type(parallel_t), intent(in) :: par
+
+    select case(test_case)
+       case('dcmip2012_test1_1'); call dcmip2012_print_test1_results(elem ,tl, hvcoord, par)
+    end select
+  end subroutine print_test_results
+
 end module

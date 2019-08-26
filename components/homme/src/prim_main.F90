@@ -27,6 +27,9 @@ program prim_main
   use arkode_mod,       only: calc_nonlinear_stats, finalize_nonlinear_stats
 #endif
   use compose_test_mod, only: compose_test
+#ifndef CAM
+  use test_mod,         only: print_test_results
+#endif
 
 #ifdef PIO_INTERP
   use interp_movie_mod, only : interp_movie_output, interp_movie_finish, interp_movie_init
@@ -234,6 +237,10 @@ program prim_main
      call interp_movie_output(elem, tl, par, 0d0,hvcoord=hvcoord)
 #else
      call prim_movie_output(elem, tl, hvcoord, par)
+#endif
+
+#ifndef CAM
+     call print_test_results(elem, tl, hvcoord, par)
 #endif
 
      ! ============================================================
