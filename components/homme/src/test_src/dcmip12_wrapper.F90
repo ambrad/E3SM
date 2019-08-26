@@ -713,13 +713,29 @@ end subroutine
 subroutine dcmip2012_print_test1_results(elem, tl, hvcoord, par)
   use time_mod, only: timelevel_t
   use parallel_mod, only: parallel_t
+  use dimensions_mod, only: nelemd, nlev, qsize
+  use parallel_mod, only: global_shared_buf, global_shared_sum
+  use global_norms_mod, only: wrap_repro_sum
 
   type(element_t), intent(in) :: elem(:)
   type(timelevel_t), intent(in) :: tl
   type(hvcoord_t), intent(in) :: hvcoord
   type(parallel_t), intent(in) :: par
 
-  
+  real(rl) :: q(np,np,4)
+  integer :: ie, nt, k, iq
+
+  nt = tl%n0
+#if 0
+  global_shared_buf(2*qsize) = 0._rl
+  do ie = 1,nelemd
+      global_shared_buf(ie,2*iq-1) = global_shared_buf(ie,2*iq-1) + &
+           sum(elem(ie)%spheremp*elem(ie)%dp3d(:,:,k,nt)* &
+           (elem(ie)%state%Q(:,:,k,iq) - q(:,:,iq))**2)
+      global_shared_buf(ie,2*iq) = global_shared_buf(ie,2*iq) + &
+           sum(elem(ie)%spheremp*elem(ie)%dp3d(:,:,k,nt)*q(:,:,iq)**2)
+  end do
+#endif
 end subroutine dcmip2012_print_test1_results
 
 end module dcmip12_wrapper
