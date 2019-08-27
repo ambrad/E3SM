@@ -59,62 +59,6 @@ contains
 
     end subroutine prim_advance_init1
 
-#ifndef CAM
-  !_____________________________________________________________________
-  subroutine set_prescribed_wind(elem,deriv,hybrid,hv,dt,tl,nets,nete,eta_ave_w)
-
-    use test_mod,  only: set_test_prescribed_wind
-
-    type (element_t),      intent(inout), target  :: elem(:)
-    type (derivative_t),   intent(in)             :: deriv
-    type (hvcoord_t),      intent(inout)          :: hv
-    type (hybrid_t),       intent(in)             :: hybrid
-    real (kind=real_kind), intent(in)             :: dt
-    type (TimeLevel_t)   , intent(in)             :: tl
-    integer              , intent(in)             :: nets
-    integer              , intent(in)             :: nete
-    real (kind=real_kind), intent(in)             :: eta_ave_w
-
-    real (kind=real_kind) :: dp(np,np)! pressure thickness, vflux
-    real(kind=real_kind)  :: time
-    real(kind=real_kind)  :: eta_dot_dpdn(np,np,nlevp)
-
-    integer :: ie,k,n0,np1
-
-    time  = tl%nstep*dt
-    n0    = tl%n0
-    np1   = tl%np1
-
-    call set_test_prescribed_wind(elem,deriv,hybrid,hv,dt,tl,nets,nete)
-    ! accumulate velocities and fluxes over timesteps
-    ! test code only dont bother to openmp thread                                                    
-    do ie = nets,nete
-       eta_dot_dpdn(:,:,:)=elem(ie)%derived%eta_dot_dpdn_prescribed(:,:,:)
-       ! accumulate mean fluxes for advection                                                        
-       if (rsplit==0) then
-          elem(ie)%derived%eta_dot_dpdn(:,:,:) = &
-               elem(ie)%derived%eta_dot_dpdn(:,:,:) + eta_dot_dpdn(:,:,:)*eta_ave_w
-       else
-          ! lagrangian case.  mean vertical velocity = 0                                             
-          elem(ie)%derived%eta_dot_dpdn(:,:,:) = 0
-          ! update position of floating levels
-          do k=1,nlev
-             elem(ie)%state%dp3d(:,:,k,np1) = elem(ie)%state%dp3d(:,:,k,n0)  &
-                  + dt*(eta_dot_dpdn(:,:,k+1) - eta_dot_dpdn(:,:,k))
-          enddo
-       end if
-       ! accumulate U*dp 
-       do k=1,nlev
-          elem(ie)%derived%vn0(:,:,1,k)=elem(ie)%derived%vn0(:,:,1,k)+&
-               eta_ave_w*elem(ie)%state%v(:,:,1,k,n0)*elem(ie)%state%dp3d(:,:,k,tl%n0)
-          elem(ie)%derived%vn0(:,:,2,k)=elem(ie)%derived%vn0(:,:,2,k)+&
-               eta_ave_w*elem(ie)%state%v(:,:,2,k,n0)*elem(ie)%state%dp3d(:,:,k,tl%n0)
-       enddo
-
-    enddo
-  end subroutine
-#endif     
-
   !_____________________________________________________________________
   subroutine prim_advance_exp(elem, deriv, hvcoord, hybrid,dt, tl,  nets, nete, compute_diagnostics)
 
@@ -123,6 +67,9 @@ contains
     use edgetype_mod,   only: EdgeBuffer_t
     use reduction_mod,  only: reductionbuffer_ordered_1d_t
     use time_mod,       only: timelevel_qdp
+#ifndef CAM
+    use test_mod,       only: set_prescribed_wind
+#endif
 
 #ifdef TRILINOS
     use prim_derived_type_mod ,only : derived_type, initialize
