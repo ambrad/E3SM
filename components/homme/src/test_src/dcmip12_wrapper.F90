@@ -722,20 +722,52 @@ subroutine dcmip2012_print_test1_results(elem, tl, hvcoord, par)
   type(hvcoord_t), intent(in) :: hvcoord
   type(parallel_t), intent(in) :: par
 
-  real(rl) :: q(np,np,4)
-  integer :: ie, nt, k, iq
+  integer,  parameter :: zcoords = 0
+  real(rl), parameter ::       &
+       T0      = 300.d0,       &               ! temperature (K)
+       ztop    = 12000.d0,     &               ! model top (m)
+       H       = Rd * T0 / g                   ! scale height
+
+  real(rl) :: q(np,np,4), lon, lat, z, p, phis, u, v, w, T, phis_ps, ps, rho, time, &
+       a, b, rd
+  integer :: ie, nt, k, iq, i, j
 
   nt = tl%n0
-#if 0
-  global_shared_buf(2*qsize) = 0._rl
+
+  ! Set time to 0 to get the initial conditions.
+  time = 0._rl
+
   do ie = 1,nelemd
-      global_shared_buf(ie,2*iq-1) = global_shared_buf(ie,2*iq-1) + &
-           sum(elem(ie)%spheremp*elem(ie)%dp3d(:,:,k,nt)* &
-           (elem(ie)%state%Q(:,:,k,iq) - q(:,:,iq))**2)
-      global_shared_buf(ie,2*iq) = global_shared_buf(ie,2*iq) + &
-           sum(elem(ie)%spheremp*elem(ie)%dp3d(:,:,k,nt)*q(:,:,iq)**2)
+     global_shared_buf(ie,:2*qsize) = 0._rl
+     do k = 1,nlev
+        z = H * log(1.0d0/hvcoord%etam(k))
+        p = p0 * hvcoord%etam(k)
+        do j = 1,np
+           do i = 1,np
+              lon = elem(ie)%spherep(i,j)%lon
+              lat = elem(ie)%spherep(i,j)%lat
+              call test1_advection_deformation(time,lon,lat,p,z,zcoords,u,v,w,T,phis,ps,rho, &
+                   q(i,j,1),q(i,j,2),q(i,j,3),q(i,j,4))                
+           end do
+        end do
+        do iq = 1,qsize
+           global_shared_buf(ie,2*iq-1) = global_shared_buf(ie,2*iq-1) + &
+                sum(elem(ie)%spheremp*elem(ie)%state%dp3d(:,:,k,nt)* &
+                (elem(ie)%state%Q(:,:,k,iq) - q(:,:,iq))**2)
+           global_shared_buf(ie,2*iq) = global_shared_buf(ie,2*iq) + &
+                sum(elem(ie)%spheremp*elem(ie)%state%dp3d(:,:,k,nt)*q(:,:,iq)**2)
+        end do
+     end do
   end do
-#endif
+  call wrap_repro_sum(nvars=2*qsize, comm=par%comm)
+  if (par%masterproc) then
+     do iq = 1,qsize
+        a = global_shared_sum(2*iq-1)
+        b = global_shared_sum(2*iq)
+        rd = sqrt(a/b)
+        print '(a,i2,es11.3)', 'amb> Q', iq, rd
+     end do
+  end if
 end subroutine dcmip2012_print_test1_results
 
 end module dcmip12_wrapper
