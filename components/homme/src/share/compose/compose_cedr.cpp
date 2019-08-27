@@ -5202,7 +5202,7 @@ struct CDR {
       case 20: return qlt_super_level;
       case 3:  return caas;
       case 30: return caas_super_level;
-      case 42: return caas_super_level; // actually none
+      case 1:  return caas_super_level; // actually none
       default: cedr_throw_if(true,  "cdr_alg " << cdr_alg << " is invalid.");
       }
     }

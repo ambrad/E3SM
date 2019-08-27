@@ -215,11 +215,9 @@ contains
        call t_stopf('CEDR_local')
     else
        do ie = nets, nete
-          do k = 1, nlev
-             do q = 1, qsize
-                elem(ie)%state%Qdp(:,:,k,q,np1_qdp) = elem(ie)%state%Q(:,:,k,q) * &
-                     elem(ie)%state%dp3d(:,:,k,tl%np1)
-             enddo
+          do q = 1, qsize
+             elem(ie)%state%Qdp(:,:,:,q,np1_qdp) = elem(ie)%state%Q(:,:,:,q) * &
+                  elem(ie)%state%dp3d(:,:,:,tl%np1)
           enddo
        end do
     end if
