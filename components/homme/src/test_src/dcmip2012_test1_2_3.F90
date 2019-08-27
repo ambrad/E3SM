@@ -137,6 +137,7 @@ IMPLICIT NONE
   real(8) :: s, bs                                                      ! Shape function, and parameter
   real(8) :: lonp                                                       ! Translational longitude, depends on time
   real(8) :: ud                                                         ! Divergent part of u
+  real(8) :: x,y,zeta
 
   !---------------------------------------------------------------------
   !    HEIGHT AND PRESSURE
@@ -170,6 +171,7 @@ IMPLICIT NONE
 	! zonal velocity
 	ud = (omega0*a)/(bs*ptop) * cos(lonp) * (cos(lat)**2.0) * cos(2.0*pi*time/tau) * &
 		( - exp( (p-p0)/(bs*ptop)) + exp( (ptop-p)/(bs*ptop))  )
+!ud=0
 
 	u = k0*sin(lonp)*sin(lonp)*sin(2.d0*lat)*cos(pi*time/tau) + u0*cos(lat) + ud
 
@@ -180,6 +182,7 @@ IMPLICIT NONE
 	! omega = -(g*p)/(Rd*T0)*w
 
   w = -((Rd*T0)/(g*p))*omega0*sin(lonp)*cos(lat)*cos(2.0*pi*time/tau)*s
+!w=0
 
   !-----------------------------------------------------------------------
   !    TEMPERATURE IS CONSTANT 300 K
@@ -218,11 +221,19 @@ IMPLICIT NONE
 
   ! great circle distance without 'a'
 	r  = ACOS (sin_tmp + cos_tmp*cos(lon-lambda0)) 
-	r2  = ACOS (sin_tmp2 + cos_tmp2*cos(lon-lambda1)) 
+	r2 = ACOS (sin_tmp2 + cos_tmp2*cos(lon-lambda1)) 
 	d1 = min( 1.d0, (r/RR)**2 + ((height-z0)/ZZ)**2 )
 	d2 = min( 1.d0, (r2/RR)**2 + ((height-z0)/ZZ)**2 )
 	
 	q1 = 0.5d0 * (1.d0 + cos(pi*d1)) + 0.5d0 * (1.d0 + cos(pi*d2))
+
+#if 1
+  ! super smooth tracer field
+  x = cos(lat)*cos(lon)
+  y = cos(lat)*sin(lon)
+  zeta = sin(lat)
+  q1 = 2 + sin(0.5d0*pi*x)*sin(0.7d0*pi*y)*sin(0.5d0*pi*zeta)
+#endif
 
 	! tracer 2 - correlated cosine bells
 	q2 = 0.9d0 - 0.8d0*q1**2
