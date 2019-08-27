@@ -239,10 +239,6 @@ program prim_main
      call prim_movie_output(elem, tl, hvcoord, par)
 #endif
 
-#ifndef CAM
-     call print_test_results(elem, tl, hvcoord, par)
-#endif
-
      ! ============================================================
      ! Write restart files if required 
      ! ============================================================
@@ -251,6 +247,10 @@ program prim_main
      endif
   end do !end of while tl%nstep < nEndStep
   call t_stopf('prim_main_loop')
+
+#ifndef CAM
+  call print_test_results(elem, tl, hvcoord, par)
+#endif
 
   if(par%masterproc) print *,"Finished main timestepping loop",tl%nstep
   call prim_finalize()

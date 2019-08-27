@@ -121,7 +121,7 @@ subroutine set_test_prescribed_wind(elem, deriv, hybrid, hvcoord, dt, tl, nets, 
   integer :: n0,np1, ie
   real(rl):: time
 
-  time = tl%nstep*dt
+  time = (tl%nstep+1)*dt
   n0   = tl%n0
   np1  = tl%np1
 

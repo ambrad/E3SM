@@ -752,10 +752,9 @@ subroutine dcmip2012_print_test1_results(elem, tl, hvcoord, par)
         end do
         do iq = 1,qsize
            global_shared_buf(ie,2*iq-1) = global_shared_buf(ie,2*iq-1) + &
-                sum(elem(ie)%spheremp*elem(ie)%state%dp3d(:,:,k,nt)* &
-                (elem(ie)%state%Q(:,:,k,iq) - q(:,:,iq))**2)
+                sum(elem(ie)%spheremp*(elem(ie)%state%Q(:,:,k,iq) - q(:,:,iq))**2)
            global_shared_buf(ie,2*iq) = global_shared_buf(ie,2*iq) + &
-                sum(elem(ie)%spheremp*elem(ie)%state%dp3d(:,:,k,nt)*q(:,:,iq)**2)
+                sum(elem(ie)%spheremp*q(:,:,iq)**2)
         end do
      end do
   end do
