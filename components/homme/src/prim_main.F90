@@ -250,6 +250,7 @@ program prim_main
 
 #ifndef CAM
   call print_test_results(elem, tl, hvcoord, par)
+  if (par%masterproc) print *,'amb> tfinal',tl%nstep,tl%nstep*tstep
 #endif
 
   if(par%masterproc) print *,"Finished main timestepping loop",tl%nstep
