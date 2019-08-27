@@ -232,7 +232,7 @@ ud=0
   x = cos(lat)*cos(lon)
   y = cos(lat)*sin(lon)
   zeta = sin(lat)
-  q1 = 0.3*(2 + sin(0.5d0*pi*x)*sin(0.7d0*pi*y)*sin(0.5d0*pi*zeta))
+  q1 = 0.3*(1.1 + sin(0.5d0*pi*x)*sin(0.7d0*pi*y)*sin(0.5d0*pi*zeta)*sin(z/H))
 #endif
 
 	! tracer 2 - correlated cosine bells
