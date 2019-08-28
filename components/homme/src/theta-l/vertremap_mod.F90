@@ -87,9 +87,9 @@ contains
                 elem(ie)%derived%eta_dot_dpdn(:,:,k))
         else
            dp_star(:,:,k) = elem(ie)%state%dp3d(:,:,k,np1)
-           ! This is actually delta eta_dot_dpdn, as in the rsplit==0
-           ! expression, accumulated over the tracer time step.
-           elem(ie)%derived%eta_dot_dpdn_prescribed(:,:,k) = elem(ie)%derived%eta_dot_dpdn_prescribed(:,:,k) + &
+           ! This is delta eta_dot_dpdn, as in the rsplit==0 expression,
+           ! accumulated over the tracer time step.
+           elem(ie)%derived%delta_eta_dot_dpdn(:,:,k) = elem(ie)%derived%delta_eta_dot_dpdn(:,:,k) + &
                 (dp_star(:,:,k) - dp(:,:,k))
         endif
      enddo
@@ -103,11 +103,11 @@ contains
               print *,'eta_dot_dpdn = ',elem(ie)%derived%eta_dot_dpdn(i,j,k+1),elem(ie)%derived%eta_dot_dpdn(i,j,k)
               print *,'eta_dot_dpdn_prescribed = ',elem(ie)%derived%eta_dot_dpdn_prescribed(i,j,k+1),elem(ie)%derived%eta_dot_dpdn_prescribed(i,j,k)
               print *,"column location lat,lon (radians):",elem(ie)%spherep(i,j)%lat,elem(ie)%spherep(i,j)%lon
+              call abortmp('negative layer thickness.  timestep or remap time too large')
            endif
         enddo
         enddo
         enddo
-        call abortmp('negative layer thickness.  timestep or remap time too large')
      endif
 
      if (rsplit>0) then

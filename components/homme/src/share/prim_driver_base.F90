@@ -1771,28 +1771,16 @@ contains
     ! homme.
     call compute_test_forcing(elem,hybrid,hvcoord,tl%n0,n0_qdp,dt_remap,nets,nete,tl)
 #endif
-
+    
     call applyCAMforcing_remap(elem,hvcoord,tl%n0,n0_qdp,dt_remap,nets,nete)
 
     if (compute_diagnostics) then
        ! E(1) Energy after CAM forcing
-       call t_startf("prim_energy_halftimes")
+       call t_startf("prim_diag")
        call prim_energy_halftimes(elem,hvcoord,tl,1,.true.,nets,nete)
-       call t_stopf("prim_energy_halftimes")
-       ! qmass and variance, using Q(n0),Qdp(n0)
-       call t_startf("prim_diag_scalars")
        call prim_diag_scalars(elem,hvcoord,tl,1,.true.,nets,nete)
-       call t_stopf("prim_diag_scalars")
+       call t_stopf("prim_diag")
     endif
-
-    ! initialize dp3d from ps
-    do ie=nets,nete
-       do k=1,nlev
-          elem(ie)%state%dp3d(:,:,k,tl%n0)=&
-               ( hvcoord%hyai(k+1) - hvcoord%hyai(k) )*hvcoord%ps0 + &
-               ( hvcoord%hybi(k+1) - hvcoord%hybi(k) )*elem(ie)%state%ps_v(:,:,tl%n0)
-       enddo
-    enddo
 
     do r=1,1
        if (r > 1) call TimeLevel_update(tl,"leapfrog")
@@ -1803,7 +1791,6 @@ contains
 
     call TimeLevel_Qdp( tl, qsplit, n0_qdp, np1_qdp)
 
-    call t_startf("prim_run_subcyle_diags")
     do ie=nets,nete
        do k=1,nlev
           do q=1,qsize
@@ -1811,7 +1798,6 @@ contains
           enddo          
        enddo
     enddo
-    call t_stopf("prim_run_subcyle_diags")
 
     ! now we have:
     !   u(nm1)   dynamics at  t+dt_remap - 2*dt
@@ -1820,13 +1806,10 @@ contains
     !
     !   Q(1)   Q at t+dt_remap
     if (compute_diagnostics) then
-       call t_startf("prim_diag_scalars")
-       call prim_diag_scalars(elem,hvcoord,tl,2,.false.,nets,nete)
-       call t_stopf("prim_diag_scalars")
-
-       call t_startf("prim_energy_halftimes")
-       call prim_energy_halftimes(elem,hvcoord,tl,2,.false.,nets,nete)
-       call t_stopf("prim_energy_halftimes")
+      call t_startf("prim_diag")
+      call prim_diag_scalars(elem,hvcoord,tl,2,.false.,nets,nete)
+      call prim_energy_halftimes(elem,hvcoord,tl,2,.false.,nets,nete)
+      call t_stopf("prim_diag")
     endif
 
     call TimeLevel_update(tl,"leapfrog")
@@ -1880,7 +1863,7 @@ contains
 
     do ie=nets,nete
        elem(ie)%derived%eta_dot_dpdn=0     ! mean vertical mass flux
-       elem(ie)%derived%eta_dot_dpdn_prescribed=0     ! delta eta_dot_dpdn
+       elem(ie)%derived%delta_eta_dot_dpdn=0     ! delta eta_dot_dpdn
        elem(ie)%derived%vn0=0              ! mean horizontal mass flux
        elem(ie)%derived%omega_p=0
        if (nu_p>0) then
@@ -1900,14 +1883,6 @@ contains
             logical(compute_diagnostics .and. n == 1))
        if (rsplit > 0 .and. modulo(n, rsplit) == 0) then
           call vertical_remap(hybrid,elem,hvcoord,dt_remap,tl%np1,-1,nets,nete)
-          ! initialize dp3d from ps
-          do ie=nets,nete
-             do k=1,nlev
-                elem(ie)%state%dp3d(:,:,k,tl%np1)=&
-                     ( hvcoord%hyai(k+1) - hvcoord%hyai(k) )*hvcoord%ps0 + &
-                     ( hvcoord%hybi(k+1) - hvcoord%hybi(k) )*elem(ie)%state%ps_v(:,:,tl%np1)
-             enddo
-          enddo
        end if
        ! defer final timelevel update until after Q update.
     enddo
@@ -1933,8 +1908,7 @@ contains
     else
        do ie = nets, nete
           dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
-          ! This is actually delta eta_dot_dpdn.
-          dp_star = dp + elem(ie)%derived%eta_dot_dpdn_prescribed(:,:,1:nlev)
+          dp_star = dp + elem(ie)%derived%delta_eta_dot_dpdn(:,:,1:nlev)
           if (minval(dp_star) < 0) then
              print *,'amb> ALARUM dp_star -ve,rank,ie',hybrid%par%rank,ie
              do j = 1,np

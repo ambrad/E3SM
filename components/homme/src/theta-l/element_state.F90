@@ -80,6 +80,8 @@ module element_state
     real (kind=real_kind) :: FQps(np,np)                   ! forcing of FQ on ps_v
 
     real (kind=real_kind) :: gradphis(np,np,2)   ! grad phi at the surface, computed once in model initialization
+
+    real (kind=real_kind) :: delta_eta_dot_dpdn(np,np,nlev)
   end type derived_state_t
   
 

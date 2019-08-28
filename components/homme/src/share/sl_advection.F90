@@ -170,7 +170,7 @@ contains
           else
              dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
              ! This is accumulated dt*(delta eta_dot_dpdn).
-             elem(ie)%derived%divdp = dp + elem(ie)%derived%eta_dot_dpdn_prescribed(:,:,1:nlev)
+             elem(ie)%derived%divdp = dp + elem(ie)%derived%delta_eta_dot_dpdn(:,:,1:nlev)
           end if
           call remap1_nofilter(elem(ie)%derived%vn0,np,1,dp,elem(ie)%derived%divdp)
        end do
