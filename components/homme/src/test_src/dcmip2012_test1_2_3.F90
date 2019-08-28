@@ -53,26 +53,9 @@ MODULE dcmip2012_test1_2_3
   !=======================================================================
 
   ! Use physical constants consistent with HOMME
-  !use physical_constants, only: a=>rearth_std, Rd => Rgas, g, cp, pi=>dd_pi, p0
+  use physical_constants, only: a=>rearth0, Rd => Rgas, g, cp, pi=>dd_pi, p0
 
   IMPLICIT NONE
-
-!-----------------------------------------------------------------------
-!     Physical Parameters
-!-----------------------------------------------------------------------
-
-	real(8), parameter ::	a	= 6371220.0d0,	&	! Earth's Radius (m)
-				Rd 	= 287.0d0,	&	! Ideal gas const dry air (J kg^-1 K^1)
-				g	= 9.80616d0,	&	! Gravity (m s^2)
-				cp	= 1004.5d0,	&	! Specific heat capacity (J kg^-1 K^1)
-				pi	= 4.d0*atan(1.d0)       ! pi
-
-!-----------------------------------------------------------------------
-!     Additional constants
-!-----------------------------------------------------------------------
-
-	real(8), parameter ::	p0	= 100000.d0		! reference pressure (Pa)
-
 
 CONTAINS
 
