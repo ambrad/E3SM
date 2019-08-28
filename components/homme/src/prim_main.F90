@@ -5,6 +5,7 @@
 program prim_main
 #ifdef _PRIM
   use prim_driver_mod, only : prim_init1, prim_init2, prim_finalize, prim_run_subcycle
+  use prim_driver_base, only : prim_run_subcycle_amb
   use hybvcoord_mod, only : hvcoord_t, hvcoord_init
 #endif
 
@@ -15,7 +16,7 @@ program prim_main
                               omp_get_num_threads, omp_get_max_threads
   use time_mod,         only: tstep, nendstep, timelevel_t, TimeLevel_init, nstep=>nextOutputStep
   use dimensions_mod,   only: nelemd, qsize
-  use control_mod,      only: restartfreq, vfile_mid, vfile_int, runtype
+  use control_mod,      only: restartfreq, vfile_mid, vfile_int, runtype, amb_experiment
   use domain_mod,       only: domain1d_t
   use element_mod,      only: element_t
   use common_io_mod,    only: output_dir, infilenames
@@ -214,6 +215,7 @@ program prim_main
   if(par%masterproc) print *,"Entering main timestepping loop"
   call t_startf('prim_main_loop')
   do while(tl%nstep < nEndStep)
+     if (par%masterproc) print *,'amb> tl%nstep,nstep',tl%nstep,nstep
 #if (defined HORIZ_OPENMP)
      !$OMP PARALLEL NUM_THREADS(hthreads), DEFAULT(SHARED), PRIVATE(ithr,nets,nete,hybrid)
      call omp_set_num_threads(vthreads)
@@ -226,7 +228,12 @@ program prim_main
      nstep = nextoutputstep(tl)
      do while(tl%nstep<nstep)
         call t_startf('prim_run')
-        call prim_run_subcycle(elem, hybrid,nets,nete, tstep, .false., tl, hvcoord,1)
+        amb_experiment = 1
+        if (amb_experiment == 0) then
+           call prim_run_subcycle(elem, hybrid,nets,nete, tstep, .false., tl, hvcoord,1)
+        else
+           call prim_run_subcycle_amb(elem, hybrid,nets,nete, tstep, .false., tl, hvcoord,1)
+        end if
         call t_stopf('prim_run')
      end do
 #if (defined HORIZ_OPENMP)
@@ -243,7 +250,11 @@ program prim_main
      ! Write restart files if required 
      ! ============================================================
      if(restartfreq > 0) then
-         if (MODULO(tl%nstep,restartfreq) ==0) call WriteRestart(elem,ithr,1,nelemd,tl)
+        if (par%masterproc) print *,'amb> restartfreq,tl%nstep',restartfreq,tl%nstep
+         if (MODULO(tl%nstep,restartfreq) ==0) then
+            if (par%masterproc) print *,'amb> calling WriteRestart'
+            call WriteRestart(elem,ithr,1,nelemd,tl)
+         end if
      endif
   end do !end of while tl%nstep < nEndStep
   call t_stopf('prim_main_loop')
