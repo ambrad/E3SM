@@ -1882,7 +1882,10 @@ contains
        call prim_advance_exp(elem, deriv1, hvcoord,hybrid, dt, tl, nets, nete, &
             logical(compute_diagnostics .and. n == 1))
        if (rsplit > 0 .and. modulo(n, rsplit) == 0) then
+!#define MIMIC
+#ifndef MIMIC
           call vertical_remap(hybrid,elem,hvcoord,dt_remap,tl%np1,-1,nets,nete)
+#endif
        end if
        ! defer final timelevel update until after Q update.
     enddo
@@ -1903,6 +1906,10 @@ contains
     call t_stopf("prim_step_advec")
 
     call TimeLevel_Qdp( tl, qsplit, n0_qdp, np1_qdp)
+#ifdef MIMIC
+    call vertical_remap(hybrid,elem,hvcoord,dt_remap,tl%np1,np1_qdp,nets,nete)
+    return
+#endif
     if (rsplit == 0) then
        call vertical_remap(hybrid,elem,hvcoord,dt_remap,tl%np1,np1_qdp,nets,nete)
     else
