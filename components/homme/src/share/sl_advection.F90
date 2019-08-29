@@ -133,7 +133,7 @@ contains
     integer               :: num_neighbors, scalar_q_bounds, info
     logical :: slmm, cisl, qos, sl_test
 
-    real(kind=real_kind) :: dp(np,np,nlev)!, dp_star(np,np,nlev)
+    real(kind=real_kind) :: dp(np,np,nlev), wr(np,np,nlev,2)
 
 #ifdef HOMME_ENABLE_COMPOSE
     call t_barrierf('Prim_Advec_Tracers_remap_ALE', hybrid%par%comm)
@@ -172,8 +172,11 @@ contains
              ! This is accumulated dt*(delta eta_dot_dpdn).
              elem(ie)%derived%divdp = dp + elem(ie)%derived%delta_eta_dot_dpdn(:,:,1:nlev)
           end if
-          call remap1_nofilter(elem(ie)%derived%vn0(:,:,1,:),np,1,dp,elem(ie)%derived%divdp)
-          call remap1_nofilter(elem(ie)%derived%vn0(:,:,2,:),np,1,dp,elem(ie)%derived%divdp)
+          wr(:,:,:,1) = elem(ie)%derived%vn0(:,:,1,:)*dp
+          wr(:,:,:,2) = elem(ie)%derived%vn0(:,:,2,:)*dp
+          call remap1_nofilter(wr,np,2,dp,elem(ie)%derived%divdp)
+          elem(ie)%derived%vn0(:,:,1,:) = wr(:,:,:,1)/elem(ie)%derived%divdp
+          elem(ie)%derived%vn0(:,:,2,:) = wr(:,:,:,2)/elem(ie)%derived%divdp
        end do
     end if
 
