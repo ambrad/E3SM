@@ -154,9 +154,9 @@ IMPLICIT NONE
 	s = 1.0 + exp( (ptop-p0)/(bs*ptop) ) - exp( (p-p0)/(bs*ptop)) - exp( (ptop-p)/(bs*ptop))
 
 	! zonal velocity
-	ud = (omega0*a)/(bs*ptop) * cos(lonp) * (cos(lat)**2.0) * cos(2.0*pi*time/tau) * &
+	ud = (omega0*a)/(bs*ptop) * cos(lonp) * (cos(lat)**2.0) * cos(pi*time/tau) * &
 		( - exp( (p-p0)/(bs*ptop)) + exp( (ptop-p)/(bs*ptop))  )
-ud=0
+!ud=0
 
 	u = k0*sin(lonpos)*sin(lonpos)*sin(2.d0*lat)*cos(pi*time/tau) + u0*cos(lat) + ud
 
@@ -166,7 +166,7 @@ ud=0
 	! vertical velocity - can be changed to vertical pressure velocity by
 	! omega = -(g*p)/(Rd*T0)*w
 
-  w = -((Rd*T0)/(g*p))*omega0*sin(lonpos)*cos(lat)*cos(2.0*pi*time/tau)*s
+  w = -((Rd*T0)/(g*p))*omega0*sin(lonpos)*cos(lat)*cos(pi*time/tau)*s
 !w=0
 
   !-----------------------------------------------------------------------
