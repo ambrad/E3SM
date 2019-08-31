@@ -26,18 +26,13 @@ use parallel_mod,         only: abortmp
 ! model specific routines - must be provided by each model:
 use element_ops,          only: set_state, set_state_i, copy_state, tests_finalize, set_forcing_rayleigh_friction
 
+use physical_constants, only: a=>rearth0, Rd => Rgas, g, cp, pi=>dd_pi, p0
 
 implicit none
 
 ! physical constants used by dcmip2012 test 3.1
 real(rl), parameter ::              &
-  g       = 9.80616,                & ! grav const
-  a       = 6371229.0,              & ! earth radius in meters
-  Rd      = 287.0,                  & ! dry gas const
-  cp      = 1004.5,                 & ! heat capacity const pressure
-  kappa   = Rd/cp,                  &
-  pi      = 3.141592654,            &
-  p0      = 100000.0                  ! reference pressure
+  kappa   = Rd/cp
 
 real(rl), dimension(:,:,:,:), allocatable :: u0, v0                     ! storage for dcmip2-x sponge layer
 real(rl):: zi(nlevp), zm(nlev)                                          ! z coordinates

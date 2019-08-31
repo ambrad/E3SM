@@ -1852,7 +1852,9 @@ contains
 
     real (kind=real_kind), dimension(np,np,nlev)  :: dp,dp_star
 
-    if (rsplit > 0 .and. modulo(qsplit, rsplit) /= 0) call abortmp('amb> rsplit must divide qsplit.')
+    if (rsplit > 0) then
+       if (modulo(qsplit, rsplit) /= 0) call abortmp('amb> rsplit must divide qsplit.')
+    end if
 
     dt_q = dt*qsplit
     if (rsplit == 0) then
@@ -1881,20 +1883,16 @@ contains
        if (n > 1) call TimeLevel_update(tl,"leapfrog")
        call prim_advance_exp(elem, deriv1, hvcoord,hybrid, dt, tl, nets, nete, &
             logical(compute_diagnostics .and. n == 1))
-       if (rsplit > 0 .and. modulo(n, rsplit) == 0) then
+       if (rsplit > 0) then
+          if (modulo(n, rsplit) == 0) then
 !#define MIMIC
 #ifndef MIMIC
-          call vertical_remap(hybrid,elem,hvcoord,dt_remap,tl%np1,-1,nets,nete)
+             call vertical_remap(hybrid,elem,hvcoord,dt_remap,tl%np1,-1,nets,nete)
 #endif
+          end if
        end if
        ! defer final timelevel update until after Q update.
     enddo
-    if (rsplit == 0) then
-       do ie = nets,nete
-          elem(ie)%state%ps_v(:,:,tl%np1) = hvcoord%hyai(1)*hvcoord%ps0 + &
-               sum(elem(ie)%state%dp3d(:,:,:,tl%np1),3)
-       end do
-    end if
     call t_stopf("prim_step_dyn")
 
     call t_startf("prim_step_advec")

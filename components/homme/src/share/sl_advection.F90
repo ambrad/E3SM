@@ -147,28 +147,28 @@ contains
        elem(ie)%derived%vn0 = elem(ie)%state%v(:,:,:,:,tl%np1) ! actually v at np1
     end do
     if (amb_experiment == 1) then
-       do ie=nets,nete
-          do k=1,nlev
-             elem(ie)%derived%eta_dot_dpdn(:,:,k) = elem(ie)%spheremp(:,:)*elem(ie)%derived%eta_dot_dpdn(:,:,k)
+       if (rsplit == 0) then
+          do ie=nets,nete
+             do k=1,nlev
+                elem(ie)%derived%eta_dot_dpdn(:,:,k) = elem(ie)%spheremp(:,:)*elem(ie)%derived%eta_dot_dpdn(:,:,k)
+             enddo
+             call edgeVpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%eta_dot_dpdn(:,:,1:nlev),nlev,0,nlev)
           enddo
-          call edgeVpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%eta_dot_dpdn(:,:,1:nlev),nlev,0,nlev)
-       enddo
-       call bndry_exchangeV(hybrid,edge_g)
+          call bndry_exchangeV(hybrid,edge_g)
+          do ie=nets,nete
+             call edgeVunpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%eta_dot_dpdn(:,:,1:nlev),nlev,0,nlev)
+             do k=1,nlev
+                elem(ie)%derived%eta_dot_dpdn(:,:,k)=elem(ie)%derived%eta_dot_dpdn(:,:,k)*elem(ie)%rspheremp(:,:)
+             enddo
+          end do
+       end if
        do ie=nets,nete
-          call edgeVunpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%eta_dot_dpdn(:,:,1:nlev),nlev,0,nlev)
-          do k=1,nlev
-             elem(ie)%derived%eta_dot_dpdn(:,:,k)=elem(ie)%derived%eta_dot_dpdn(:,:,k)*elem(ie)%rspheremp(:,:)
-          enddo
+          dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
           ! use divdp for dp_star
           if (rsplit == 0) then
-             do k=1,nlev
-                dp(:,:,k) = ( hvcoord%hyai(k+1) - hvcoord%hyai(k) )*hvcoord%ps0 + &
-                     ( hvcoord%hybi(k+1) - hvcoord%hybi(k) )*elem(ie)%state%ps_v(:,:,tl%np1)
-                elem(ie)%derived%divdp(:,:,k) = dp(:,:,k) + dt*(elem(ie)%derived%eta_dot_dpdn(:,:,k+1) -&
-                     elem(ie)%derived%eta_dot_dpdn(:,:,k))
-             enddo
+             elem(ie)%derived%divdp = dp + dt*(elem(ie)%derived%eta_dot_dpdn(:,:,2:nlev+1) - &
+                  elem(ie)%derived%eta_dot_dpdn(:,:,1:nlev))
           else
-             dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
              ! This is accumulated dt*(delta eta_dot_dpdn).
              elem(ie)%derived%divdp = dp + elem(ie)%derived%delta_eta_dot_dpdn(:,:,1:nlev)
           end if
