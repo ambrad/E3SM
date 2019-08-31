@@ -16,7 +16,7 @@ program prim_main
                               omp_get_num_threads, omp_get_max_threads
   use time_mod,         only: tstep, nendstep, timelevel_t, TimeLevel_init, nstep=>nextOutputStep
   use dimensions_mod,   only: nelemd, qsize
-  use control_mod,      only: restartfreq, vfile_mid, vfile_int, runtype, amb_experiment
+  use control_mod,      only: restartfreq, vfile_mid, vfile_int, runtype, amb_experiment, transport_alg
   use domain_mod,       only: domain1d_t
   use element_mod,      only: element_t
   use common_io_mod,    only: output_dir, infilenames
@@ -228,7 +228,8 @@ program prim_main
      nstep = nextoutputstep(tl)
      do while(tl%nstep<nstep)
         call t_startf('prim_run')
-        amb_experiment = 1
+        amb_experiment = 0
+        if (transport_alg > 0) amb_experiment = 1
         if (amb_experiment == 0) then
            call prim_run_subcycle(elem, hybrid,nets,nete, tstep, .false., tl, hvcoord,1)
         else

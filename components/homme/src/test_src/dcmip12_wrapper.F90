@@ -705,7 +705,7 @@ subroutine set_tracers(q,nq, dp,i,j,k,lat,lon,elem)
 
 end subroutine
 
-subroutine dcmip2012_print_test1_results(elem, tl, hvcoord, par)
+subroutine dcmip2012_print_test1_results(elem, tl, hvcoord, par, subnum)
   use time_mod, only: timelevel_t
   use parallel_mod, only: parallel_t
   use dimensions_mod, only: nelemd, nlev, qsize
@@ -716,6 +716,7 @@ subroutine dcmip2012_print_test1_results(elem, tl, hvcoord, par)
   type(timelevel_t), intent(in) :: tl
   type(hvcoord_t), intent(in) :: hvcoord
   type(parallel_t), intent(in) :: par
+  integer, intent(in) :: subnum
 
   integer,  parameter :: zcoords = 0
   real(rl), parameter ::       &
@@ -741,8 +742,16 @@ subroutine dcmip2012_print_test1_results(elem, tl, hvcoord, par)
            do i = 1,np
               lon = elem(ie)%spherep(i,j)%lon
               lat = elem(ie)%spherep(i,j)%lat
-              call test1_advection_deformation(time,lon,lat,p,z,zcoords,u,v,w,T,phis,ps,rho, &
-                   q(i,j,1),q(i,j,2),q(i,j,3),q(i,j,4))                
+              select case(subnum)
+              case (1)
+                 call test1_advection_deformation( &
+                      time,lon,lat,p,z,zcoords,u,v,w,T,phis,ps,rho, &
+                      q(i,j,1),q(i,j,2),q(i,j,3),q(i,j,4))
+              case (2)
+                 call test1_advection_hadley( &
+                      time,lon,lat,p,z,zcoords,u,v,w,T,phis,ps,rho, &
+                      q(i,j,1),q(i,j,2))
+              end select
            end do
         end do
         do iq = 1,qsize

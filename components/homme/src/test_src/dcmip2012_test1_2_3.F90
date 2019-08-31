@@ -118,7 +118,7 @@ IMPLICIT NONE
   real(8) :: sin_tmp, cos_tmp, sin_tmp2, cos_tmp2                       ! Calculate great circle distances
   real(8) :: d1, d2, r, r2, d3, d4                                      ! For tracer calculations
   real(8) :: s, bs                                                      ! Shape function, and parameter
-  real(8) :: lonp                                                       ! Translational longitude, depends on time
+  real(8) :: lonp, lonpos, os                                           ! Translational longitude, depends on time
   real(8) :: ud                                                         ! Divergent part of u
   real(8) :: x,y,zeta
 
@@ -146,6 +146,8 @@ IMPLICIT NONE
 
 	! translational longitude
 	lonp = lon - 2.d0*pi*time/tau
+   os = 0d0 !2.d0*pi*0.01*(p - ptop)/(p0 - ptop)
+  lonpos = lonp + os
 
 	! shape function
 	bs = 0.2
@@ -156,15 +158,15 @@ IMPLICIT NONE
 		( - exp( (p-p0)/(bs*ptop)) + exp( (ptop-p)/(bs*ptop))  )
 ud=0
 
-	u = k0*sin(lonp)*sin(lonp)*sin(2.d0*lat)*cos(pi*time/tau) + u0*cos(lat) + ud
+	u = k0*sin(lonpos)*sin(lonpos)*sin(2.d0*lat)*cos(pi*time/tau) + u0*cos(lat) + ud
 
 	! meridional velocity
-	v = k0*sin(2.d0*lonp)*cos(lat)*cos(pi*time/tau)
+	v = k0*sin(2.d0*lonpos)*cos(lat)*cos(pi*time/tau)
 
 	! vertical velocity - can be changed to vertical pressure velocity by
 	! omega = -(g*p)/(Rd*T0)*w
 
-  w = -((Rd*T0)/(g*p))*omega0*sin(lonp)*cos(lat)*cos(2.0*pi*time/tau)*s
+  w = -((Rd*T0)/(g*p))*omega0*sin(lonpos)*cos(lat)*cos(2.0*pi*time/tau)*s
 !w=0
 
   !-----------------------------------------------------------------------
@@ -312,6 +314,7 @@ IMPLICIT NONE
                             
   real(8) :: rho0                 ! reference density at z=0 m
   real(8) :: height               ! Model level heights
+  real(8) :: x,y,zeta
 
 !-----------------------------------------------------------------------
 !    HEIGHT AND PRESSURE
@@ -375,7 +378,15 @@ IMPLICIT NONE
 !     initialize Q, set to zero 
 !-----------------------------------------------------------------------
 
+#if 1
+  ! super smooth tracer field
+  x = cos(lat)*cos(lon)
+  y = cos(lat)*sin(lon)
+  zeta = sin(lat)
+  q = 0.3*(1.1 + sin(0.5d0*pi*zeta)*sin(z/H))
+#else
 	q = 0.d0
+#endif
 
 !-----------------------------------------------------------------------
 !     initialize tracers

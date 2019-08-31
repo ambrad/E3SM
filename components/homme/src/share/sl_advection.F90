@@ -114,6 +114,7 @@ contains
     use control_mod,            only : dcmip16_mu_q, rsplit
     use prim_advection_base,    only : advance_physical_vis
     use vertremap_base,         only : remap1_nofilter
+    use reduction_mod, only: ParallelMax
 
     implicit none
     type (element_t)     , intent(inout) :: elem(:)
@@ -133,7 +134,7 @@ contains
     integer               :: num_neighbors, scalar_q_bounds, info
     logical :: slmm, cisl, qos, sl_test
 
-    real(kind=real_kind) :: dp(np,np,nlev), wr(np,np,nlev,2)
+    real(kind=real_kind) :: dp(np,np,nlev), wr(np,np,nlev,2), tmp
 
 #ifdef HOMME_ENABLE_COMPOSE
     call t_barrierf('Prim_Advec_Tracers_remap_ALE', hybrid%par%comm)
@@ -162,23 +163,30 @@ contains
              enddo
           end do
        end if
+       tmp = 0
        do ie=nets,nete
           dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
           ! use divdp for dp_star
           if (rsplit == 0) then
              elem(ie)%derived%divdp = dp + dt*(elem(ie)%derived%eta_dot_dpdn(:,:,2:nlev+1) - &
                   elem(ie)%derived%eta_dot_dpdn(:,:,1:nlev))
+             tmp = max(tmp,maxval(sum(abs(dt*(elem(ie)%derived%eta_dot_dpdn(:,:,2:nlev+1) - &
+                  elem(ie)%derived%eta_dot_dpdn(:,:,1:nlev))),3)/sum(dp,3)))
           else
              ! This is accumulated dt*(delta eta_dot_dpdn).
              elem(ie)%derived%divdp = dp + elem(ie)%derived%delta_eta_dot_dpdn(:,:,1:nlev)
           end if
+#if 1
           wr(:,:,:,1) = elem(ie)%derived%vn0(:,:,1,:)*dp
           wr(:,:,:,2) = elem(ie)%derived%vn0(:,:,2,:)*dp
           call remap1_nofilter(wr,np,2,dp,elem(ie)%derived%divdp)
           elem(ie)%derived%vn0(:,:,1,:) = wr(:,:,:,1)/elem(ie)%derived%divdp
           elem(ie)%derived%vn0(:,:,2,:) = wr(:,:,:,2)/elem(ie)%derived%divdp
+#endif
        end do
     end if
+    !tmp = ParallelMax(tmp, hybrid)
+    !if (hybrid%masterthread) print *,'amb>',tmp
 
     ! compute displacements for departure grid store in elem%derived%vstar
     call ALE_RKdss (elem, nets, nete, hybrid, deriv, dt, tl)

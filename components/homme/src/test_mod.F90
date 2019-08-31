@@ -241,6 +241,7 @@ end subroutine
        if (rsplit==0) then
           elem(ie)%derived%eta_dot_dpdn(:,:,:) = &
                elem(ie)%derived%eta_dot_dpdn(:,:,:) + eta_dot_dpdn(:,:,:)*eta_ave_w
+               !eta_dot_dpdn(:,:,:)
        else
           ! lagrangian case.  mean vertical velocity = 0
           elem(ie)%derived%eta_dot_dpdn(:,:,:) = 0
@@ -271,7 +272,8 @@ end subroutine
     type(parallel_t), intent(in) :: par
 
     select case(test_case)
-       case('dcmip2012_test1_1'); call dcmip2012_print_test1_results(elem ,tl, hvcoord, par)
+       case('dcmip2012_test1_1'); call dcmip2012_print_test1_results(elem ,tl, hvcoord, par, 1)
+       case('dcmip2012_test1_2'); call dcmip2012_print_test1_results(elem ,tl, hvcoord, par, 2)
     end select
   end subroutine print_test_results
 
