@@ -302,8 +302,8 @@ IMPLICIT NONE
     !u0      = 40.d0,            &	! Zonal velocity magnitude (m/s)
     !u0 = 0d0, &
     u0 = (2*pi*a)/tau, &  ! once around in a day
-    !w0      = 0.15d0,           &	! Vertical velocity magnitude (m/s)
-    w0 = 0.05d0, &
+    w0      = 0.15d0,           &	! Vertical velocity magnitude (m/s)
+    !w0 = 0.05d0, &
     T0      = 300.d0,           &	! temperature (K)
     H       = Rd * T0 / g,      &	! scale height
     !K       = 5.d0,             &	! number of Hadley-like cells
@@ -403,7 +403,7 @@ IMPLICIT NONE
   x = cos(lat)*cos(lon)
   y = cos(lat)*sin(lon)
   zeta = sin(lat)
-  q = (1.1 + sin(0.2d0*pi*x)*sin(0.3d0*pi*y)*sin(0.1d0*pi*zeta))!*exp(-15.0d0*(z/ztop)*(z/ztop))
+  q = (1.1 + sin(0.2d0*pi*x)*sin(0.3d0*pi*y)*sin(0.1d0*pi*zeta))*exp(-15.0d0*(z/ztop)*(z/ztop))
 #else
 	q = 0.d0
 #endif
