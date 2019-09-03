@@ -299,12 +299,15 @@ IMPLICIT NONE
 
 	real(8), parameter :: &
     tau     = 1.d0 * 86400.d0,	&	! period of motion 1 day (in s)
-    u0      = 40.d0,            &	! Zonal velocity magnitude (m/s)
-    w0      = 0.15d0,           &	! Vertical velocity magnitude (m/s)
+    !u0      = 40.d0,            &	! Zonal velocity magnitude (m/s)
+    !u0 = 0d0, &
+    u0 = (2*pi*a)/tau, &  ! once around in a day
+    !w0      = 0.15d0,           &	! Vertical velocity magnitude (m/s)
+    w0 = 0.05d0, &
     T0      = 300.d0,           &	! temperature (K)
     H       = Rd * T0 / g,      &	! scale height
     !K       = 5.d0,             &	! number of Hadley-like cells
-    K       = 2.d0, &
+    K       = 3.d0, &
     z1      = 2000.d0,          &	! position of lower tracer bound (m)
     z2      = 5000.d0,          &	! position of upper tracer bound (m)
     z0      = 0.5d0*(z1+z2),    &	! midpoint (m)
@@ -312,7 +315,7 @@ IMPLICIT NONE
                             
   real(8) :: rho0                 ! reference density at z=0 m
   real(8) :: height               ! Model level heights
-  real(8) :: x,y,zeta, f, f_lat
+  real(8) :: x,y,zeta, f, f_lat, w1,w2
 
 !-----------------------------------------------------------------------
 !    HEIGHT AND PRESSURE
@@ -371,8 +374,10 @@ IMPLICIT NONE
  f = cos(lat)**2
  f_lat = -2.0d0*cos(lat)*sin(lat)
 # elif 1
- f = exp(-10.0d0*lat*lat)
- f_lat = -20.0d0*lat*f
+ w1 = 10.0d0
+ w2 = exp(-w1*lat*lat)
+ f = w2*cos(lat)
+ f_lat = -2.0d0*w1*lat*f - w2*sin(lat)
 # endif
 
  v = -(rho0/rho) * (a*w0*pi)/(K*ztop)*f*cos(lat)*sin(K*lat)*cos(pi*height/ztop)*cos(pi*time/tau)
@@ -398,7 +403,7 @@ IMPLICIT NONE
   x = cos(lat)*cos(lon)
   y = cos(lat)*sin(lon)
   zeta = sin(lat)
-  q = 0.3*(1.1 + sin(0.5d0*pi*zeta)*sin(z/H))
+  q = (1.1 + sin(0.2d0*pi*x)*sin(0.3d0*pi*y)*sin(0.1d0*pi*zeta))!*exp(-15.0d0*(z/ztop)*(z/ztop))
 #else
 	q = 0.d0
 #endif
@@ -411,11 +416,11 @@ IMPLICIT NONE
 
 	if (height .lt. z2 .and. height .gt. z1) then
 	
-		q1 = 0.5d0 * (1.d0 + cos( 2.d0*pi*(height-z0)/(z2-z1) ) )
+		q1 = 1.d0!0.5d0 * (1.d0 + cos( 2.d0*pi*(height-z0)/(z2-z1) ) )
 
 	else
 
-		q1 = 0.d0
+		q1 = 1.d0!0.d0
 
 	endif
 
