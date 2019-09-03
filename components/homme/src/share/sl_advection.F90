@@ -147,6 +147,8 @@ contains
     do ie=nets,nete
        elem(ie)%derived%vn0 = elem(ie)%state%v(:,:,:,:,tl%np1) ! actually v at np1
     end do
+!#define OFF
+#ifndef OFF
     if (amb_experiment == 1) then
        if (rsplit == 0) then
           do ie=nets,nete
@@ -187,6 +189,7 @@ contains
     end if
     !tmp = ParallelMax(tmp, hybrid)
     !if (hybrid%masterthread) print *,'amb>',tmp
+#endif
 
     ! compute displacements for departure grid store in elem%derived%vstar
     call ALE_RKdss (elem, nets, nete, hybrid, deriv, dt, tl)
@@ -249,11 +252,15 @@ contains
        do ie = nets, nete
           call cedr_sl_set_spheremp(ie, elem(ie)%spheremp)
           call cedr_sl_set_Qdp(ie, elem(ie)%state%Qdp, n0_qdp, np1_qdp)
+#ifdef OFF
+          call cedr_sl_set_dp3d(ie, elem(ie)%state%dp3d, tl%np1)
+#else
           if (amb_experiment == 0) then
              call cedr_sl_set_dp3d(ie, elem(ie)%state%dp3d, tl%np1)
           else
              call cedr_sl_set_dp(ie, elem(ie)%derived%divdp) ! dp_star
           end if
+#endif
           call cedr_sl_set_Q(ie, elem(ie)%state%Q)
        end do
        call cedr_sl_set_pointers_end()
