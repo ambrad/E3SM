@@ -107,7 +107,7 @@ subroutine set_test_initial_conditions(elem, deriv, hybrid, hvcoord, tl, nets, n
 end subroutine
 
 !_______________________________________________________________________
-subroutine set_test_prescribed_wind(elem, deriv, hybrid, hvcoord, dt, tl, nets, nete)
+subroutine set_test_prescribed_wind(elem, deriv, hybrid, hvcoord, dt, tl, time, nets, nete)
 
   implicit none
   type(element_t),    intent(inout), target :: elem(:)                  ! element array
@@ -116,12 +116,11 @@ subroutine set_test_prescribed_wind(elem, deriv, hybrid, hvcoord, dt, tl, nets, 
   type(hvcoord_t),    intent(inout)         :: hvcoord                  ! hybrid vertical coordinates
   real(rl),           intent(in)            :: dt                       ! fixed timestep size
   type(timelevel_t),  intent(in)            :: tl                       ! time level structure
+  real(real_kind), intent(in) :: time
   integer,            intent(in)            :: nets,nete                ! start, end element index
 
   integer :: n0,np1, ie
-  real(rl):: time
 
-  time = (tl%nstep+1)*dt
   n0   = tl%n0
   np1  = tl%np1
 
@@ -223,19 +222,25 @@ end subroutine
     real (kind=real_kind), intent(in)             :: eta_ave_w
 
     real (kind=real_kind) :: dp(np,np)! pressure thickness, vflux
-    real(kind=real_kind)  :: time
-    real(kind=real_kind)  :: eta_dot_dpdn(np,np,nlevp)
+    real(kind=real_kind)  :: eta_dot_dpdn(np,np,nlevp) !, tmp(np,np,nlevp,nets:nete)
 
     integer :: ie,k,n0,np1
 
-    time  = tl%nstep*dt
     n0    = tl%n0
     np1   = tl%np1
 
-    call set_test_prescribed_wind(elem,deriv,hybrid,hv,dt,tl,nets,nete)
+#if 0
+    do ie = nets,nete
+       call set_test_prescribed_wind(elem,deriv,hybrid,hv,dt,tl,(tl%nstep+0.5d0)*dt,nets,nete)
+       tmp(:,:,:,ie) = elem(ie)%derived%eta_dot_dpdn_prescribed(:,:,:)
+    end do
+#endif
+
+    call set_test_prescribed_wind(elem,deriv,hybrid,hv,dt,tl,(tl%nstep+1)*dt,nets,nete)
     ! accumulate velocities and fluxes over timesteps
     ! test code only dont bother to openmp thread
     do ie = nets,nete
+       !eta_dot_dpdn(:,:,:)=tmp(:,:,:,ie)
        eta_dot_dpdn(:,:,:)=elem(ie)%derived%eta_dot_dpdn_prescribed(:,:,:)
        ! accumulate mean fluxes for advection
        if (rsplit==0) then
@@ -258,7 +263,6 @@ end subroutine
           elem(ie)%derived%vn0(:,:,2,k)=elem(ie)%derived%vn0(:,:,2,k)+&
                eta_ave_w*elem(ie)%state%v(:,:,2,k,n0)*elem(ie)%state%dp3d(:,:,k,tl%n0)
        enddo
-
     enddo
   end subroutine
 

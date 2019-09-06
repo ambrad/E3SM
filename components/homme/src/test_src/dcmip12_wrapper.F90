@@ -98,13 +98,13 @@ subroutine dcmip2012_test1_1(elem,hybrid,hvcoord,nets,nete,time,n0,n1)
       call set_state_i(u,v,w,T,ps,phis,p,zi(k),g, i,j,k,elem(ie),n0,n1)
 
       ! get vertical derivative of p at point i,j,k
-      dp_dn = ddn_hyai(k)*p0 + ddn_hybi(k)*ps
+      dp_dn = ddn_hyai(k)*p0 + ddn_hybi(k)*ps  ! dp_dn = p_eta = in this case p0
 
       ! get vertical eta velocity at point i,j,k
-      eta_dot = -g*rho*w/p0
+      eta_dot = -g*rho*w/p0 ! = omega/dp_dn
 
       ! store vertical mass flux
-      elem(ie)%derived%eta_dot_dpdn_prescribed(i,j,k) = eta_dot * dp_dn
+      elem(ie)%derived%eta_dot_dpdn_prescribed(i,j,k) = eta_dot * dp_dn ! = omega
 
   enddo; enddo; enddo; enddo
 
