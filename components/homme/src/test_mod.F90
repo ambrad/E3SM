@@ -210,6 +210,7 @@ end subroutine
 
   !_____________________________________________________________________
   subroutine set_prescribed_wind(elem,deriv,hybrid,hv,dt,tl,nets,nete,eta_ave_w)
+    use control_mod, only: amb_experiment
 
     type (element_t),      intent(inout), target  :: elem(:)
     type (derivative_t),   intent(in)             :: deriv
@@ -244,9 +245,12 @@ end subroutine
        eta_dot_dpdn(:,:,:)=elem(ie)%derived%eta_dot_dpdn_prescribed(:,:,:)
        ! accumulate mean fluxes for advection
        if (rsplit==0) then
-          elem(ie)%derived%eta_dot_dpdn(:,:,:) = &
-               elem(ie)%derived%eta_dot_dpdn(:,:,:) + eta_dot_dpdn(:,:,:)*eta_ave_w
-               !eta_dot_dpdn(:,:,:)
+          if (amb_experiment == 1) then
+             elem(ie)%derived%eta_dot_dpdn = eta_dot_dpdn
+          else
+             elem(ie)%derived%eta_dot_dpdn(:,:,:) = &
+                  elem(ie)%derived%eta_dot_dpdn(:,:,:) + eta_dot_dpdn(:,:,:)*eta_ave_w
+          end if
        else
           ! lagrangian case.  mean vertical velocity = 0
           elem(ie)%derived%eta_dot_dpdn(:,:,:) = 0

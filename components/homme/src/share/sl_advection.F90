@@ -134,7 +134,7 @@ contains
     integer               :: num_neighbors, scalar_q_bounds, info
     logical :: slmm, cisl, qos, sl_test
 
-    real(kind=real_kind) :: dp(np,np,nlev), wr(np,np,nlev,2), tmp
+    real(kind=real_kind) :: dp(np,np,nlev), wr(np,np,nlev,2), tmp, pmid0(np,np,nlev), pmid1(np,np,nlev)
 
 #ifdef HOMME_ENABLE_COMPOSE
     call t_barrierf('Prim_Advec_Tracers_remap_ALE', hybrid%par%comm)
@@ -170,10 +170,9 @@ contains
           dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
           ! use divdp for dp_star
           if (rsplit == 0) then
-             elem(ie)%derived%divdp = dp + dt*(elem(ie)%derived%eta_dot_dpdn(:,:,2:nlev+1) - &
-                  elem(ie)%derived%eta_dot_dpdn(:,:,1:nlev))
-             tmp = max(tmp,maxval(sum(abs(dt*(elem(ie)%derived%eta_dot_dpdn(:,:,2:nlev+1) - &
-                  elem(ie)%derived%eta_dot_dpdn(:,:,1:nlev))),3)/sum(dp,3)))
+             call reconstruct_dp(hvcoord, dt, elem(ie)%derived%eta_dot_dpdn_star, &
+                  elem(ie)%derived%eta_dot_dpdn, elem(ie)%state%dp3d(:,:,:,tl%n0), &
+                  elem(ie)%state%dp3d(:,:,:,tl%np1), elem(ie)%derived%divdp)
           else
              ! This is accumulated dt*(delta eta_dot_dpdn).
              elem(ie)%derived%divdp = dp + elem(ie)%derived%delta_eta_dot_dpdn(:,:,1:nlev)
@@ -184,11 +183,24 @@ contains
           call remap1_nofilter(wr,np,2,dp,elem(ie)%derived%divdp)
           elem(ie)%derived%vn0(:,:,1,:) = wr(:,:,:,1)/elem(ie)%derived%divdp
           elem(ie)%derived%vn0(:,:,2,:) = wr(:,:,:,2)/elem(ie)%derived%divdp
+#elif 0
+          wr(:,:,:,1) = elem(ie)%derived%vn0(:,:,1,:)
+          wr(:,:,:,2) = elem(ie)%derived%vn0(:,:,2,:)
+          pmid0(:,:,1) = 0.5d0*dp(:,:,1)
+          pmid1(:,:,1) = 0.5d0*elem(ie)%derived%divdp(:,:,1)
+          do k = 2,nlev
+             pmid0(:,:,k) = pmid0(:,:,k-1) + 0.5d0*(dp(:,:,k-1) + dp(:,:,k))
+             pmid1(:,:,k) = pmid1(:,:,k-1) + 0.5d0*(elem(ie)%derived%divdp(:,:,k-1) + elem(ie)%derived%divdp(:,:,k))
+          end do
+          do j = 1,np
+             do i = 1,np
+                call linterp(nlev,pmid0(i,j,:),wr(i,j,:,1),pmid1(i,j,:),elem(ie)%derived%vn0(i,j,1,:))
+                call linterp(nlev,pmid0(i,j,:),wr(i,j,:,2),pmid1(i,j,:),elem(ie)%derived%vn0(i,j,2,:))
+             end do
+          end do
 #endif
        end do
     end if
-    !tmp = ParallelMax(tmp, hybrid)
-    !if (hybrid%masterthread) print *,'amb>',tmp
 #endif
 
     ! compute displacements for departure grid store in elem%derived%vstar
@@ -805,5 +817,70 @@ contains
 #endif
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   end subroutine biharmonic_wk_scalar
+
+  subroutine linterp(n, x, y, xi, yi)
+    integer, intent(in) :: n
+    real(kind=real_kind), intent(in) :: x(:), y(:), xi(:)
+    real(kind=real_kind), intent(out) :: yi(:)
+
+    real(kind=real_kind) :: alpha
+    integer :: j, ji
+
+    j = 1
+    ji = 1
+    do while (ji <= n)
+       if (j < n-1 .and. xi(ji) > x(j+1)) then
+          j = j + 1
+       else
+          alpha = (xi(ji) - x(j))/(x(j+1) - x(j))
+          yi(ji) = (1 - alpha)*y(j) + alpha*y(j+1)
+          ji = ji + 1
+       end if
+    end do
+  end subroutine linterp
+  
+  subroutine reconstruct_dp(hvcoord, dt, eta_dot_dpdn_0, eta_dot_dpdn_1, dp0, dp1, dpr)
+    type (hvcoord_t), intent(in) :: hvcoord
+    real(kind=real_kind), intent(in) :: dt, eta_dot_dpdn_0(np,np,nlevp), dp0(np,np,nlev), dp1(np,np,nlev)
+    real(kind=real_kind), intent(inout) :: eta_dot_dpdn_1(np,np,nlevp)
+    real(kind=real_kind), intent(out) :: dpr(np,np,nlev)
+
+    real(kind=real_kind), parameter :: half = 0.5d0
+
+    real(kind=real_kind) :: p0(np,np,nlevp), p1(np,np,nlevp), pr(np,np,nlevp), &
+         ph0(np,np,nlevp), eta_dot_dpdn_h0(np,np,nlevp), eta_dot_dpdn_h(np,np,nlevp)
+    integer :: k, nit, i, j
+
+#if 0
+    dpr = dp1 + dt*(eta_dot_dpdn_1(:,:,2:) - eta_dot_dpdn_1(:,:,1:nlev))
+#else
+
+    p0(:,:,1) = 0
+    p1(:,:,1) = 0
+    do k = 2,nlevp
+       p0(:,:,k) = p0(:,:,k-1) + dp0(:,:,k-1)
+       p1(:,:,k) = p1(:,:,k-1) + dp1(:,:,k-1)
+    end do
+
+    ph0 = half*(p0 + p1)
+    eta_dot_dpdn_h0 = half*(eta_dot_dpdn_0 + eta_dot_dpdn_1)
+    eta_dot_dpdn_h = eta_dot_dpdn_h0
+    nit = 3
+    do k = 1,nit
+       pr = p0 + half*dt*eta_dot_dpdn_h
+       do j = 1,np
+          do i = 1,np
+             call linterp(nlevp, ph0(i,j,:), eta_dot_dpdn_h0(i,j,:), pr(i,j,:), eta_dot_dpdn_h(i,j,:))
+          end do
+       end do
+    end do
+    pr = p0 + dt*eta_dot_dpdn_h
+    eta_dot_dpdn_1 = eta_dot_dpdn_h
+    
+    dpr = dp1 + dt*(eta_dot_dpdn_1(:,:,2:nlevp) - eta_dot_dpdn_1(:,:,1:nlev))
+    !dpr = pr(:,:,2:nlevp) - pr(:,:,1:nlev)
+
+#endif
+  end subroutine reconstruct_dp
 
 end module sl_advection

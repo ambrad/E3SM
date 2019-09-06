@@ -1864,7 +1864,6 @@ contains
     end if
 
     do ie=nets,nete
-       elem(ie)%derived%eta_dot_dpdn=0     ! mean vertical mass flux
        elem(ie)%derived%delta_eta_dot_dpdn=0     ! delta eta_dot_dpdn
        elem(ie)%derived%vn0=0              ! mean horizontal mass flux
        elem(ie)%derived%omega_p=0
@@ -1874,8 +1873,10 @@ contains
        endif
        if (transport_alg > 0) then
           elem(ie)%derived%vstar=elem(ie)%state%v(:,:,:,:,tl%n0)
+          elem(ie)%derived%eta_dot_dpdn_star=elem(ie)%derived%eta_dot_dpdn
        end if
        elem(ie)%derived%dp(:,:,:)=elem(ie)%state%dp3d(:,:,:,tl%n0)
+       elem(ie)%derived%eta_dot_dpdn=0     ! mean vertical mass flux
     enddo
 
     call t_startf("prim_step_dyn")
