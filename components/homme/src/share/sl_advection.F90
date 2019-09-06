@@ -177,7 +177,7 @@ contains
              ! This is accumulated dt*(delta eta_dot_dpdn).
              elem(ie)%derived%divdp = dp + elem(ie)%derived%delta_eta_dot_dpdn(:,:,1:nlev)
           end if
-#if 1
+#if 0
           wr(:,:,:,1) = elem(ie)%derived%vn0(:,:,1,:)*dp
           wr(:,:,:,2) = elem(ie)%derived%vn0(:,:,2,:)*dp
           call remap1_nofilter(wr,np,2,dp,elem(ie)%derived%divdp)
@@ -851,7 +851,7 @@ contains
          ph0(np,np,nlevp), eta_dot_dpdn_h0(np,np,nlevp), eta_dot_dpdn_h(np,np,nlevp)
     integer :: k, nit, i, j
 
-#if 0
+#if 1
     dpr = dp1 + dt*(eta_dot_dpdn_1(:,:,2:) - eta_dot_dpdn_1(:,:,1:nlev))
 #else
 

@@ -102,8 +102,8 @@ IMPLICIT NONE
     tau     = 12.d0 * 86400.d0,   &	! period of motion 12 days
     u0      = (2.d0*pi*a)/tau,    &	! 2 pi a / 12 days
     k0      = (10.d0*a)/tau,      &	! velocity magnitude
-    !omega0	= (23000.d0*pi)/tau,	&	! velocity magnitude
-    omega0	= 20000.d0/tau,	&
+    omega0	= (23000.d0*pi)/tau,	&	! velocity magnitude
+    !omega0	= 20000.d0/tau,	&
     T0      = 300.d0,             &	! temperature
     H       = Rd * T0 / g,        &	! scale height
     RR      = 1.d0/2.d0,          &	! horizontal half width divided by 'a'
@@ -149,7 +149,7 @@ IMPLICIT NONE
 	lonp = lon - 2.d0*pi*time/tau
 
 	! shape function
-	bs = 0.2
+	bs = 1.2
 	s = 1.0 + exp( (ptop-p0)/(bs*ptop) ) - exp( (p-p0)/(bs*ptop)) - exp( (ptop-p)/(bs*ptop))
 
 	! zonal velocity
