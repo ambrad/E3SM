@@ -145,18 +145,17 @@ IMPLICIT NONE
   !    IN THE DYNAMICAL CORE
   !---------------------------------------------------------------------
 
-	! translational longitude
-	lonp = lon - 2.d0*pi*time/tau
-
 	! shape function
 	bs = 1.2d0
-	s = 1.0 + exp( (ptop-p0)/(bs*ptop) ) - exp( (p-p0)/(bs*ptop)) - exp( (ptop-p)/(bs*ptop))
-  s_p = ( - exp( (p-p0)/(bs*ptop)) + exp( (ptop-p)/(bs*ptop))  )/(bs*ptop)
+	s = 1.0 + exp((ptop-p0)/(bs*ptop)) - exp((p-p0)/(bs*ptop)) - exp((ptop-p)/(bs*ptop))
+  s_p = (-exp((p-p0)/(bs*ptop)) + exp((ptop-p)/(bs*ptop)))/(bs*ptop)
+
+	! translational longitude
+	lonp = lon - 2.d0*pi*time/tau
 
 	! zonal velocity
 	ud = (omega0*a) * cos(lonp) * (cos(lat)**2.0) * cos(pi*time/tau) * s_p
 		
-
 	u = k0*sin(lonp)*sin(lonp)*sin(2.d0*lat)*cos(pi*time/tau) + u0*cos(lat) + ud
 
 	! meridional velocity
@@ -213,7 +212,7 @@ IMPLICIT NONE
   x = cos(lat)*cos(lon)
   y = cos(lat)*sin(lon)
   zeta = sin(lat)
-  q1 = 0.3*(1.1 + sin(0.5d0*pi*x)*sin(0.7d0*pi*y)*sin(0.5d0*pi*zeta)*sin(z/ztop))
+  q1 = 0.3*(1.1 + sin(0.5d0*pi*x)*sin(0.7d0*pi*y)*sin(0.5d0*pi*zeta)*sin(pi*z/ztop))
 #else
 	q1 = 0.5d0 * (1.d0 + cos(pi*d1)) + 0.5d0 * (1.d0 + cos(pi*d2))
 #endif
