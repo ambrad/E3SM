@@ -102,8 +102,7 @@ IMPLICIT NONE
     tau     = 12.d0 * 86400.d0,   &	! period of motion 12 days
     u0      = (2.d0*pi*a)/tau,    &	! 2 pi a / 12 days
     k0      = (10.d0*a)/tau,      &	! velocity magnitude
-    omega0	= (23000.d0*pi)/tau,	&	! velocity magnitude
-    !omega0	= 20000.d0/tau,	&
+    omega0	= (2*23000.d0*pi)/tau,	&	! velocity magnitude
     T0      = 300.d0,             &	! temperature
     H       = Rd * T0 / g,        &	! scale height
     RR      = 1.d0/2.d0,          &	! horizontal half width divided by 'a'
@@ -112,13 +111,14 @@ IMPLICIT NONE
     lambda0 = 5.d0*pi/6.d0,       &	! center point in longitudes
     lambda1 = 7.d0*pi/6.d0,       &	! center point in longitudes
     phi0    = 0.d0,               &	! center point in latitudes
-    phi1    = 0.d0
+    phi1    = 0.d0, &
+    ztop = 12000.d0
                             
   real(8) :: height                                                     ! The height of the model levels
   real(8) :: ptop                                                       ! model top in p
   real(8) :: sin_tmp, cos_tmp, sin_tmp2, cos_tmp2                       ! Calculate great circle distances
   real(8) :: d1, d2, r, r2, d3, d4                                      ! For tracer calculations
-  real(8) :: s, bs                                                      ! Shape function, and parameter
+  real(8) :: s, bs, s_p                                                 ! Shape function, and parameter
   real(8) :: lonp                                                       ! Translational longitude, depends on time
   real(8) :: ud                                                         ! Divergent part of u
   real(8) :: x,y,zeta,tmp
@@ -138,7 +138,7 @@ IMPLICIT NONE
 	endif
 
 	! model top in p
-	ptop = p0*exp(-12000.d0/H)
+	ptop = p0*exp(-ztop/H)
 
   !---------------------------------------------------------------------
   !    THE VELOCITIES ARE TIME DEPENDENT AND THEREFORE MUST BE UPDATED
@@ -149,12 +149,13 @@ IMPLICIT NONE
 	lonp = lon - 2.d0*pi*time/tau
 
 	! shape function
-	bs = 1.2
+	bs = 1.2d0
 	s = 1.0 + exp( (ptop-p0)/(bs*ptop) ) - exp( (p-p0)/(bs*ptop)) - exp( (ptop-p)/(bs*ptop))
+  s_p = ( - exp( (p-p0)/(bs*ptop)) + exp( (ptop-p)/(bs*ptop))  )/(bs*ptop)
 
 	! zonal velocity
-	ud = (omega0*a)/(bs*ptop) * cos(lonp) * (cos(lat)**2.0) * cos(pi*time/tau) * &
-		( - exp( (p-p0)/(bs*ptop)) + exp( (ptop-p)/(bs*ptop))  )
+	ud = (omega0*a) * cos(lonp) * (cos(lat)**2.0) * cos(pi*time/tau) * s_p
+		
 
 	u = k0*sin(lonp)*sin(lonp)*sin(2.d0*lat)*cos(pi*time/tau) + u0*cos(lat) + ud
 
@@ -206,15 +207,15 @@ IMPLICIT NONE
 	r2 = ACOS (sin_tmp2 + cos_tmp2*cos(lon-lambda1)) 
 	d1 = min( 1.d0, (r/RR)**2 + ((height-z0)/ZZ)**2 )
 	d2 = min( 1.d0, (r2/RR)**2 + ((height-z0)/ZZ)**2 )
-	
-	q1 = 0.5d0 * (1.d0 + cos(pi*d1)) + 0.5d0 * (1.d0 + cos(pi*d2))
 
 #if 1
   ! super smooth tracer field
   x = cos(lat)*cos(lon)
   y = cos(lat)*sin(lon)
   zeta = sin(lat)
-  q1 = 0.3*(1.1 + sin(0.5d0*pi*x)*sin(0.7d0*pi*y)*sin(0.5d0*pi*zeta)*sin(z/H))
+  q1 = 0.3*(1.1 + sin(0.5d0*pi*x)*sin(0.7d0*pi*y)*sin(0.5d0*pi*zeta)*sin(z/ztop))
+#else
+	q1 = 0.5d0 * (1.d0 + cos(pi*d1)) + 0.5d0 * (1.d0 + cos(pi*d2))
 #endif
 
 	! tracer 2 - correlated cosine bells
@@ -300,10 +301,8 @@ IMPLICIT NONE
 	real(8), parameter :: &
     tau     = 1.d0 * 86400.d0,	&	! period of motion 1 day (in s)
     !u0      = 40.d0,            &	! Zonal velocity magnitude (m/s)
-    !u0 = 0d0, &
     u0 = (2*pi*a)/tau, &  ! once around in a day
     w0      = 0.15d0,           &	! Vertical velocity magnitude (m/s)
-    !w0 = 0.05d0, &
     T0      = 300.d0,           &	! temperature (K)
     H       = Rd * T0 / g,      &	! scale height
     !K       = 5.d0,             &	! number of Hadley-like cells
@@ -315,7 +314,7 @@ IMPLICIT NONE
                             
   real(8) :: rho0                 ! reference density at z=0 m
   real(8) :: height               ! Model level heights
-  real(8) :: x,y,zeta, f, f_lat, w1,w2
+  real(8) :: x,y,zeta, f, f_lat, w1,w2, g, g_p, bs, ptop
 
 !-----------------------------------------------------------------------
 !    HEIGHT AND PRESSURE
@@ -370,21 +369,25 @@ IMPLICIT NONE
 #if 1
  ! Include a factor f to taper w toward poles. Derivative is to make
  ! the continuity equation still hold.
-# if 0
- f = cos(lat)**2
- f_lat = -2.0d0*cos(lat)*sin(lat)
-# elif 1
  w1 = 10.0d0
  w2 = exp(-w1*lat*lat)
  f = w2*cos(lat)
  f_lat = -2.0d0*w1*lat*f - w2*sin(lat)
+# if 0
+ g = sin(pi*height/ztop)
+ g_p = (pi/ztop)*cos(pi*height/ztop)
+# else
+ bs = 1.2
+ ptop = p0*exp(-ztop/H)
+ g = 1.0 + exp((ptop-p0)/(bs*ptop)) - exp((p-p0)/(bs*ptop)) - exp((ptop-p)/(bs*ptop))
+ g_p = (-exp((p-p0)/(bs*ptop)) + exp((ptop-p)/(bs*ptop)))/(bs*ptop)
 # endif
 
- v = -(rho0/rho) * (a*w0*pi)/(K*ztop)*f*cos(lat)*sin(K*lat)*cos(pi*height/ztop)*cos(pi*time/tau)
+ v = -(rho0/rho) * (a*w0)/(K)*f*cos(lat)*sin(K*lat)*cos(pi*time/tau)*g_p
 
  w = (rho0/rho) *(w0/K)*(-2.d0*sin(K*lat)*sin(lat)*f + K*cos(lat)*cos(K*lat)*f + &
       cos(lat)*sin(K*lat)*f_lat) &
-      *sin(pi*height/ztop)*cos(pi*time/tau)
+      *g*cos(pi*time/tau)
 #else
 	! Meridional Velocity
 	v = -(rho0/rho) * (a*w0*pi)/(K*ztop) *cos(lat)*sin(K*lat)*cos(pi*height/ztop)*cos(pi*time/tau)
