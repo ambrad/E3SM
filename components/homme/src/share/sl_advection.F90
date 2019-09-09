@@ -882,9 +882,16 @@ contains
          ph0(np,np,nlevp), eta_dot_dpdn_h0(np,np,nlevp), eta_dot_dpdn_h(np,np,nlevp), tmp(np,np,nlevp)
     integer :: k, nit, i, j
 
-#if 1
+#if 0
     dpr = dp1 + dt*(eta_dot_dpdn_1(:,:,2:) - eta_dot_dpdn_1(:,:,1:nlev))
 #else
+
+    ! requires prim_driver_base:
+    !   if (tl%nstep == 0 .or. rsplit > 0) &
+    !        elem(ie)%derived%eta_dot_dpdn_star=elem(ie)%derived%eta_dot_dpdn
+    ! test_mod:
+    !   if (.true. .and. amb_experiment == 1) then
+    !        elem(ie)%derived%eta_dot_dpdn = eta_dot_dpdn  ! for reconstruct_dp complicated branch
 
     p0(:,:,1) = 0
     p1(:,:,1) = 0

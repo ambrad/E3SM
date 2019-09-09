@@ -1873,7 +1873,7 @@ contains
        endif
        if (transport_alg > 0) then
           elem(ie)%derived%vstar=elem(ie)%state%v(:,:,:,:,tl%n0)
-          !if (tl%nstep == 0 .or. rsplit > 0) &
+          if (tl%nstep == 0 .or. rsplit > 0) &
                elem(ie)%derived%eta_dot_dpdn_star=elem(ie)%derived%eta_dot_dpdn
        end if
        elem(ie)%derived%dp(:,:,:)=elem(ie)%state%dp3d(:,:,:,tl%n0)
