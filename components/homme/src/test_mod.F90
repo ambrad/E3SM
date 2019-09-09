@@ -246,7 +246,7 @@ end subroutine
        ! accumulate mean fluxes for advection
        if (rsplit==0) then
           if (.false. .and. amb_experiment == 1) then
-             elem(ie)%derived%eta_dot_dpdn = eta_dot_dpdn
+             elem(ie)%derived%eta_dot_dpdn = eta_dot_dpdn  ! for reconstruct_dp complicated branch
           else
              elem(ie)%derived%eta_dot_dpdn(:,:,:) = &
                   elem(ie)%derived%eta_dot_dpdn(:,:,:) + eta_dot_dpdn(:,:,:)*eta_ave_w

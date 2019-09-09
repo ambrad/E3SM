@@ -865,7 +865,7 @@ contains
     ph0 = half*(p0 + p1)
     eta_dot_dpdn_h0 = half*(eta_dot_dpdn_0 + eta_dot_dpdn_1)
     eta_dot_dpdn_h = eta_dot_dpdn_h0
-    nit = 3
+    nit = 1
     do k = 1,nit
        pr = p0 + half*dt*eta_dot_dpdn_h
        do j = 1,np

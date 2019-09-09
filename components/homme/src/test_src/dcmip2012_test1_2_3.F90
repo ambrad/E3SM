@@ -212,7 +212,7 @@ IMPLICIT NONE
   x = cos(lat)*cos(lon)
   y = cos(lat)*sin(lon)
   zeta = sin(lat)
-  q1 = 0.3*(1.1 + sin(0.5d0*pi*x)*sin(0.7d0*pi*y)*sin(0.5d0*pi*zeta)*sin(pi*z/ztop))
+  q1 = 0.3*(1.1 + sin(0.25d0*pi*x)*sin(0.3d0*pi*y)*sin(0.25d0*pi*zeta)*sin(pi*z/ztop))
 #else
 	q1 = 0.5d0 * (1.d0 + cos(pi*d1)) + 0.5d0 * (1.d0 + cos(pi*d2))
 #endif
