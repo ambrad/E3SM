@@ -134,7 +134,7 @@ contains
     integer               :: num_neighbors, scalar_q_bounds, info
     logical :: slmm, cisl, qos, sl_test
 
-    real(kind=real_kind) :: dp(np,np,nlev), wr(np,np,nlev,2), tmp, pmid0(np,np,nlev), pmid1(np,np,nlev)
+    real(kind=real_kind) :: dp(np,np,nlev), wr(np,np,nlev,2), pmid0(np,np,nlev), pmid1(np,np,nlev), tmp(np,np,nlevp)
 
 #ifdef HOMME_ENABLE_COMPOSE
     call t_barrierf('Prim_Advec_Tracers_remap_ALE', hybrid%par%comm)
@@ -170,20 +170,22 @@ contains
           dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
           ! use divdp for dp_star
           if (rsplit == 0) then
+             !tmp = elem(ie)%derived%eta_dot_dpdn
              call reconstruct_dp(hvcoord, dt, elem(ie)%derived%eta_dot_dpdn_star, &
                   elem(ie)%derived%eta_dot_dpdn, elem(ie)%state%dp3d(:,:,:,tl%n0), &
                   elem(ie)%state%dp3d(:,:,:,tl%np1), elem(ie)%derived%divdp)
+             !elem(ie)%derived%eta_dot_dpdn_star = tmp
           else
              ! This is accumulated dt*(delta eta_dot_dpdn).
              elem(ie)%derived%divdp = dp + elem(ie)%derived%delta_eta_dot_dpdn(:,:,1:nlev)
           end if
-#if 1
+#if 0
           wr(:,:,:,1) = elem(ie)%derived%vn0(:,:,1,:)*dp
           wr(:,:,:,2) = elem(ie)%derived%vn0(:,:,2,:)*dp
           call remap1_nofilter(wr,np,2,dp,elem(ie)%derived%divdp)
           elem(ie)%derived%vn0(:,:,1,:) = wr(:,:,:,1)/elem(ie)%derived%divdp
           elem(ie)%derived%vn0(:,:,2,:) = wr(:,:,:,2)/elem(ie)%derived%divdp
-#elif 0
+#elif 1
           wr(:,:,:,1) = elem(ie)%derived%vn0(:,:,1,:)
           wr(:,:,:,2) = elem(ie)%derived%vn0(:,:,2,:)
           pmid0(:,:,1) = 0.5d0*dp(:,:,1)
@@ -194,8 +196,8 @@ contains
           end do
           do j = 1,np
              do i = 1,np
-                call linterp(nlev,pmid0(i,j,:),wr(i,j,:,1),pmid1(i,j,:),elem(ie)%derived%vn0(i,j,1,:))
-                call linterp(nlev,pmid0(i,j,:),wr(i,j,:,2),pmid1(i,j,:),elem(ie)%derived%vn0(i,j,2,:))
+                call interp(nlev,pmid0(i,j,:),wr(i,j,:,1),pmid1(i,j,:),elem(ie)%derived%vn0(i,j,1,:))
+                call interp(nlev,pmid0(i,j,:),wr(i,j,:,2),pmid1(i,j,:),elem(ie)%derived%vn0(i,j,2,:))
              end do
           end do
 #endif
@@ -818,7 +820,26 @@ contains
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   end subroutine biharmonic_wk_scalar
 
-  subroutine linterp(n, x, y, xi, yi)
+  subroutine eval_lagrange_poly(n, xs, ys, xi, y)
+    integer, intent(in) :: n
+    real(kind=real_kind), intent(in) :: xs(:), ys(:), xi
+    real(kind=real_kind), intent(out) :: y
+
+    integer :: i, j
+    real(kind=real_kind) :: f
+
+    y = 0
+    do i = 1,n
+       f = 1
+       do j = 1,n
+          if (i == j) cycle
+          f = f*((xi - xs(j))/(xs(i) - xs(j)))
+       end do
+       y = y + ys(i)*f
+    end do
+  end subroutine eval_lagrange_poly
+
+  subroutine interp(n, x, y, xi, yi)
     integer, intent(in) :: n
     real(kind=real_kind), intent(in) :: x(:), y(:), xi(:)
     real(kind=real_kind), intent(out) :: yi(:)
@@ -832,12 +853,22 @@ contains
        if (j < n-1 .and. xi(ji) > x(j+1)) then
           j = j + 1
        else
+#if 0
           alpha = (xi(ji) - x(j))/(x(j+1) - x(j))
           yi(ji) = (1 - alpha)*y(j) + alpha*y(j+1)
+#else
+          if (j == 1) then
+             call eval_lagrange_poly(3, x(j:j+2), y(j:j+2), xi(ji), yi(ji))
+          elseif (j == n-1) then
+             call eval_lagrange_poly(3, x(j-1:j+1), y(j-1:j+1), xi(ji), yi(ji))
+          else
+             call eval_lagrange_poly(4, x(j-1:j+2), y(j-1:j+2), xi(ji), yi(ji))
+          end if
+#endif
           ji = ji + 1
        end if
     end do
-  end subroutine linterp
+  end subroutine interp
   
   subroutine reconstruct_dp(hvcoord, dt, eta_dot_dpdn_0, eta_dot_dpdn_1, dp0, dp1, dpr)
     type (hvcoord_t), intent(in) :: hvcoord
@@ -845,10 +876,10 @@ contains
     real(kind=real_kind), intent(inout) :: eta_dot_dpdn_1(np,np,nlevp)
     real(kind=real_kind), intent(out) :: dpr(np,np,nlev)
 
-    real(kind=real_kind), parameter :: half = 0.5d0
+    real(kind=real_kind), parameter :: wt = 0.5d0
 
     real(kind=real_kind) :: p0(np,np,nlevp), p1(np,np,nlevp), pr(np,np,nlevp), &
-         ph0(np,np,nlevp), eta_dot_dpdn_h0(np,np,nlevp), eta_dot_dpdn_h(np,np,nlevp)
+         ph0(np,np,nlevp), eta_dot_dpdn_h0(np,np,nlevp), eta_dot_dpdn_h(np,np,nlevp), tmp(np,np,nlevp)
     integer :: k, nit, i, j
 
 #if 1
@@ -862,17 +893,19 @@ contains
        p1(:,:,k) = p1(:,:,k-1) + dp1(:,:,k-1)
     end do
 
-    ph0 = half*(p0 + p1)
-    eta_dot_dpdn_h0 = half*(eta_dot_dpdn_0 + eta_dot_dpdn_1)
+    ph0 = (1-wt)*p0 + wt*p1
+    eta_dot_dpdn_h0 = (1-wt)*eta_dot_dpdn_0 + wt*eta_dot_dpdn_1
     eta_dot_dpdn_h = eta_dot_dpdn_h0
-    nit = 1
+    nit = 0
     do k = 1,nit
-       pr = p0 + half*dt*eta_dot_dpdn_h
+       pr = p0 + wt*dt*eta_dot_dpdn_h
+       !tmp = eta_dot_dpdn_h
        do j = 1,np
           do i = 1,np
-             call linterp(nlevp, ph0(i,j,:), eta_dot_dpdn_h0(i,j,:), pr(i,j,:), eta_dot_dpdn_h(i,j,:))
+             call interp(nlevp, ph0(i,j,:), eta_dot_dpdn_h0(i,j,:), pr(i,j,:), eta_dot_dpdn_h(i,j,:))
           end do
        end do
+       !print *,k,sum((eta_dot_dpdn_h - tmp)**2)
     end do
     pr = p0 + dt*eta_dot_dpdn_h
     eta_dot_dpdn_1 = eta_dot_dpdn_h
