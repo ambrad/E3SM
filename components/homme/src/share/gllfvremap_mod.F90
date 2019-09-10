@@ -511,10 +511,18 @@ contains
        dp = elem(ie)%state%dp3d(:,:,:,nt)
        call gfr_g2f_scalar(ie, elem(ie)%metdet, dp, dp_fv)
 
-       wr1(:nf,:nf,:) = reshape(uv(:ncol,1,:,ie), (/nf,nf,nlev/))
-       wr2(:nf,:nf,:) = reshape(uv(:ncol,2,:,ie), (/nf,nf,nlev/))
+       ! FV uv0
+       call gfr_g2f_vector(gfr, ie, elem, &
+            elem(ie)%state%v(:,:,1,:,nt), elem(ie)%state%v(:,:,2,:,nt), &
+            wr1, wr2)
+       ! FV uv1
+       wr1(:nf,:nf,:) = wr1(:nf,:nf,:) + dt*reshape(uv(:ncol,1,:,ie), (/nf,nf,nlev/))
+       wr2(:nf,:nf,:) = wr2(:nf,:nf,:) + dt*reshape(uv(:ncol,2,:,ie), (/nf,nf,nlev/))
+       ! GLL uv1
        call gfr_f2g_vector(gfr, ie, elem, &
             wr1, wr2, elem(ie)%derived%FM(:,:,1,:), elem(ie)%derived%FM(:,:,2,:))
+       ! GLL uv_ten
+       elem(ie)%derived%FM = (elem(ie)%derived%FM - elem(ie)%state%v(:,:,:,:,nt))/dt
 
        call get_field(elem(ie), 'p', p, hvcoord, nt, -1)
        call gfr_g2f_scalar(ie, elem(ie)%metdet, p, p_fv)
