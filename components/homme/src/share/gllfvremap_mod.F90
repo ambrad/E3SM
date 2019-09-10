@@ -428,11 +428,32 @@ contains
        end do
     end do
 
+    call gfr_fv_phys_to_dyn_hybrid_limit_Q(hybrid, nt, dt, elem, nets, nete)
+  end subroutine gfr_fv_phys_to_dyn_hybrid
+
+  subroutine gfr_fv_phys_to_dyn_hybrid_limit_Q(hybrid, nt, dt, elem, nets, nete)
+    ! Limit Q after remapping it from FV.
+
+    use dimensions_mod, only: nlev, qsize
+    use control_mod, only: ftype
+
+    type (hybrid_t), intent(in) :: hybrid
+    integer, intent(in) :: nt
+    real(kind=real_kind), intent(in) :: dt
+    type (element_t), intent(inout) :: elem(:)
+    integer, intent(in) :: nets, nete
+
+    real(kind=real_kind), dimension(np,np,nlev) :: dp, wr1
+    integer :: ie, k, qi
+    logical :: q_adjustment
+
+    q_adjustment = ftype >= 1 .and. ftype <= 4
+
     ! Halo exchange limiter bounds.
     call gfr_f2g_mixing_ratios_he(hybrid, nets, nete, gfr%qmin(:,:,nets:nete), &
          gfr%qmax(:,:,nets:nete))
 
-    if (nf == 1 .and. gfr%boost_pg1) return
+    if (gfr%nphys == 1 .and. gfr%boost_pg1) return
 
     do ie = nets,nete
        dp = elem(ie)%state%dp3d(:,:,:,nt)
@@ -459,7 +480,7 @@ contains
           end if
        end do
     end do
-  end subroutine gfr_fv_phys_to_dyn_hybrid
+  end subroutine gfr_fv_phys_to_dyn_hybrid_limit_Q
 
   subroutine gfr_fv_phys_to_dyn_remap_state_hybrid(hybrid, nt, dt, hvcoord, elem, nets, nete, T, uv, q)
     use element_ops, only: get_field
@@ -535,35 +556,7 @@ contains
        end do
     end do
 
-    ! Halo exchange limiter bounds.
-    call gfr_f2g_mixing_ratios_he(hybrid, nets, nete, gfr%qmin(:,:,nets:nete), &
-         gfr%qmax(:,:,nets:nete))
-
-    do ie = nets,nete
-       dp = elem(ie)%state%dp3d(:,:,:,nt)
-       do qi = 1,qsize
-          ! Limit GLL Q1.
-          if (gfr%check) wr1 = elem(ie)%derived%FQ(:,:,:,qi)
-          do k = 1,nlev
-             ! Augment bounds with GLL Q0 bounds. This assures that if
-             ! the tendency is 0, GLL Q1 = GLL Q0.
-             gfr%qmin(k,qi,ie) = min(minval(elem(ie)%state%Q(:,:,k,qi)), gfr%qmin(k,qi,ie))
-             gfr%qmax(k,qi,ie) = max(maxval(elem(ie)%state%Q(:,:,k,qi)), gfr%qmax(k,qi,ie))
-             ! Final GLL Q1, except for DSS, which is not done in this routine.
-             call limiter_clip_and_sum(np, elem(ie)%spheremp, gfr%qmin(k,qi,ie), &
-                  gfr%qmax(k,qi,ie), dp(:,:,k), elem(ie)%derived%FQ(:,:,k,qi))
-          end do
-          if (gfr%check) then
-             call check_f2g_mixing_ratio(gfr, hybrid, ie, qi, elem, gfr%qmin(:,qi,ie), &
-                  gfr%qmax(:,qi,ie), dp, wr1, elem(ie)%derived%FQ(:,:,:,qi))
-          end if
-          if (.not. q_adjustment) then
-             ! Convert to a tendency.
-             elem(ie)%derived%FQ(:,:,:,qi) = &
-                  dp*(elem(ie)%derived%FQ(:,:,:,qi) - elem(ie)%state%Q(:,:,:,qi))/dt
-          end if
-       end do
-    end do
+    call gfr_fv_phys_to_dyn_hybrid_limit_Q(hybrid, nt, dt, elem, nets, nete)
   end subroutine gfr_fv_phys_to_dyn_remap_state_hybrid
 
   subroutine gfr_dyn_to_fv_phys_topo(hybrid, elem, nets, nete, phis)
