@@ -206,6 +206,12 @@ contains
     if (qsize == 0) then
        call abortmp('gllfvremap_mod: qsize must be >= 1')
     end if
+    if (nphys == 1 .and. gfr%fv2gll_remap_state) then
+       ! When remapping full physics state, np=1 would be far too
+       ! coarse. No reason to complicate the code by supporting it.
+       call abortmp('gllfvremap_mod: The combination nphys = 1 and fv2gll_remap_state = true &
+            is not supported.')
+    end if
 
     gfr%have_fv_topo_file_phis = .false.
     gfr%nphys = nphys
@@ -498,23 +504,11 @@ contains
 
        do qi = 1,qsize
           if (q_adjustment) then
-             ! FV Q_ten
-             !   GLL Q0 -> FV Q0
-             call gfr_g2f_mixing_ratio(gfr, ie, elem(ie)%metdet, dp, dp_fv, &
-                  dp*elem(ie)%state%Q(:,:,:,qi), wr1)
-             !   FV Q_ten = FV Q1 - FV Q0
-             wr1(:nf,:nf,:) = reshape(q(:ncol,:,qi,ie), (/nf,nf,nlev/)) - wr1(:nf,:nf,:)
-             if (nf > 1 .or. .not. gfr%boost_pg1) then
-                ! GLL Q_ten
-                call gfr_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wr1, wr2)
-                ! GLL Q1
-                elem(ie)%derived%FQ(:,:,:,qi) = elem(ie)%state%Q(:,:,:,qi) + wr2
-             else
-                ! GLL Q_ten
-                do k = 1,nlev
-                   elem(ie)%derived%FQ(:,:,k,qi) = wr1(1,1,k)
-                end do
-             end if
+             ! FV Q1
+             wr1(:nf,:nf,:) = reshape(q(:ncol,:,qi,ie), (/nf,nf,nlev/))
+             ! GLL Q1
+             call gfr_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wr1, &
+                  elem(ie)%derived%FQ(:,:,:,qi))
              ! Get limiter bounds.
              do k = 1,nlev
                 gfr%qmin(k,qi,ie) = minval(q(:ncol,k,qi,ie))
@@ -524,22 +518,14 @@ contains
              ! FV Q_ten
              wr1(:nf,:nf,:) = reshape(q(:ncol,:,qi,ie), (/nf,nf,nlev/))
              wr1(:nf,:nf,:) = dt*wr1(:nf,:nf,:)/dp_fv(:nf,:nf,:)
-             if (nf > 1 .or. .not. gfr%boost_pg1) then
-                ! GLL Q_ten
-                call gfr_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wr1, wr2)
-                ! GLL Q1
-                elem(ie)%derived%FQ(:,:,:,qi) = elem(ie)%state%Q(:,:,:,qi) + wr2
-             else
-                ! GLL Q_ten
-                do k = 1,nlev
-                   elem(ie)%derived%FQ(:,:,k,qi) = wr1(1,1,k)
-                end do
-             end if
              ! GLL Q0 -> FV Q0
              call gfr_g2f_mixing_ratio(gfr, ie, elem(ie)%metdet, dp, dp_fv, &
                   dp*elem(ie)%state%Q(:,:,:,qi), wr2)
              ! FV Q1
              wr2(:nf,:nf,:) = wr2(:nf,:nf,:) + wr1(:nf,:nf,:)
+             ! GLL Q1
+             call gfr_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wr2, &
+                  elem(ie)%derived%FQ(:,:,:,qi))
              ! Get limiter bounds.
              do k = 1,nlev
                 gfr%qmin(k,qi,ie) = minval(wr2(:nf,:nf,k))
@@ -552,8 +538,6 @@ contains
     ! Halo exchange limiter bounds.
     call gfr_f2g_mixing_ratios_he(hybrid, nets, nete, gfr%qmin(:,:,nets:nete), &
          gfr%qmax(:,:,nets:nete))
-
-    if (nf == 1 .and. gfr%boost_pg1) return
 
     do ie = nets,nete
        dp = elem(ie)%state%dp3d(:,:,:,nt)

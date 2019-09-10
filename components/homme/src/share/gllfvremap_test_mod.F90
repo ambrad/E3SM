@@ -520,10 +520,11 @@ contains
 
     ftype_in = ftype
 
-    do nphys = 1, np
+    do nphys = 1,np
        do ftype_idx = 1,2
           do fv2gll_remap_state_idx = 1,2
              fv2gll_remap_state = fv2gll_remap_state_idx == 2
+             if (fv2gll_remap_state .and. nphys == 1) cycle
              do boost_idx = 1,2
                 if (nphys > 1 .and. boost_idx > 1) exit
                 boost_pg1 = boost_idx == 2
@@ -541,7 +542,15 @@ contains
                 end if
                 !$omp barrier
 
-                call run(hybrid, hvcoord, elem, nets, nete, nphys, .false.)
+                if (.not. fv2gll_remap_state) then
+                   ! Remapping the full physics state does not
+                   ! preserve the dynamics state in the 0-tendency
+                   ! case; that is why the default fv2gll_remap_state
+                   ! value is false. But there may be a reason to do
+                   ! it. In any case, disable the 0-tendency test when
+                   ! the option is true.
+                   call run(hybrid, hvcoord, elem, nets, nete, nphys, .false.)
+                end if
                 call run(hybrid, hvcoord, elem, nets, nete, nphys, .true.)
 
                 ! This is meant to be called after threading ends.
