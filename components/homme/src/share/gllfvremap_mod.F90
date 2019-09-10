@@ -483,7 +483,7 @@ contains
   end subroutine gfr_fv_phys_to_dyn_hybrid_limit_Q
 
   subroutine gfr_fv_phys_to_dyn_remap_state_hybrid(hybrid, nt, dt, hvcoord, elem, nets, nete, T, uv, q)
-    use element_ops, only: get_field
+    use element_ops, only: get_temperature, get_field
     use dimensions_mod, only: nlev
     use hybvcoord_mod, only: hvcoord_t
     use physical_constants, only: p0, kappa
@@ -526,10 +526,20 @@ contains
 
        call get_field(elem(ie), 'p', p, hvcoord, nt, -1)
        call gfr_g2f_scalar(ie, elem(ie)%metdet, p, p_fv)
-       wr1(:nf,:nf,:) = reshape(T(:ncol,:,ie), (/nf,nf,nlev/))
+       ! GLL T0
+       call get_temperature(elem(ie), wr2, hvcoord, nt)
+       ! FV theta0
+       call gfr_g2f_scalar_dp(gfr, ie, elem(ie)%metdet, dp, dp_fv, wr2*(p/p0)**kappa, wr1)
+       ! FV T0
+       wr1(:nf,:nf,:) = wr1(:nf,:nf,:)/(p_fv(:nf,:nf,:)/p0)**kappa
+       ! FV T1
+       wr1(:nf,:nf,:) = wr1(:nf,:nf,:) + dt*reshape(T(:ncol,:,ie), (/nf,nf,nlev/))
+       ! FV theta1
        wr1(:nf,:nf,:) = wr1(:nf,:nf,:)*(p_fv(:nf,:nf,:)/p0)**kappa
+       ! GLL theta1
        call gfr_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wr1, elem(ie)%derived%FT)
-       elem(ie)%derived%FT = elem(ie)%derived%FT/(p/p0)**kappa
+       ! GLL T_ten
+       elem(ie)%derived%FT = (elem(ie)%derived%FT/(p/p0)**kappa - wr2)/dt
 
        do qi = 1,qsize
           if (q_adjustment) then
