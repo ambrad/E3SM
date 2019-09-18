@@ -522,7 +522,8 @@ contains
        call gfr_f2g_vector(gfr, ie, elem, &
             wr1, wr2, elem(ie)%derived%FM(:,:,1,:), elem(ie)%derived%FM(:,:,2,:))
        ! GLL uv_ten
-       elem(ie)%derived%FM = (elem(ie)%derived%FM - elem(ie)%state%v(:,:,:,:,nt))/dt
+       elem(ie)%derived%FM(:,:,1:2,:) = &
+            (elem(ie)%derived%FM(:,:,1:2,:) - elem(ie)%state%v(:,:,:,:,nt))/dt
 
        call get_field(elem(ie), 'p', p, hvcoord, nt, -1)
        call gfr_g2f_scalar(ie, elem(ie)%metdet, p, p_fv)
