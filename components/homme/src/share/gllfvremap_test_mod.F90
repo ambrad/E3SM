@@ -493,7 +493,7 @@ contains
           if (domass) then
              a = global_shared_sum(3)
              b = global_shared_sum(4)
-             if (abs(b - a) > 5*eps*abs(a)) then
+             if (abs(b - a) > 10*eps*abs(a)) then
                 write(iulog, '(a,i3,es12.4,es12.4,es12.4,a)') 'gfrt> test3 q mass', &
                      q, a, b, abs(b - a)/abs(a), ' ERROR'
              end if
