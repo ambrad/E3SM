@@ -154,6 +154,7 @@ end subroutine
 
 subroutine dcmip2016_test1_pg(elem,hybrid,hvcoord,nets,nete,nphys)
   use gllfvremap_mod, only: gfr_init
+  use control_mod, only: se_fv_phys_remap_alg
 
   type(element_t),    intent(inout), target :: elem(:)                  ! element array
   type(hybrid_t),     intent(in)            :: hybrid                   ! hybrid parallel structure
@@ -162,11 +163,13 @@ subroutine dcmip2016_test1_pg(elem,hybrid,hvcoord,nets,nete,nphys)
   integer,            intent(in)            :: nphys                    ! pgN, N parameter, for physgrid
 
   integer :: ncol
+  logical :: fv2gll_remap_state
 
   if (hybrid%ithr == 0) then
      ncol = nphys*nphys
      pg_data%nphys = nphys
-     call gfr_init(hybrid%par, elem, nphys, boost_pg1=.true.)
+     fv2gll_remap_state = se_fv_phys_remap_alg == 2
+     call gfr_init(hybrid%par, elem, nphys, boost_pg1=.true., fv2gll_remap_state=fv2gll_remap_state)
      allocate(pg_data%ps(ncol,nelemd), pg_data%zs(ncol,nelemd), pg_data%T(ncol,nlev,nelemd), &
           pg_data%omega_p(ncol,nlev,nelemd), pg_data%uv(ncol,2,nlev,nelemd), &
           pg_data%q(ncol,nlev,qsize,nelemd))
