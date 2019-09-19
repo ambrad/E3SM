@@ -5154,15 +5154,18 @@ make_my_tree_part (const qlt::oned::Mesh& m, const Int cs, const Int ce,
   qlt::tree::Node::Ptr n = std::make_shared<qlt::tree::Node>();
   n->parent = parent;
   if (cn == 1) {
-    n->nkids = 0;
     n->rank = m.rank(cs);
+    //if (n->rank != m.parallel()->rank()) return nullptr;
+    n->nkids = 0;
     n->cellidx = cs;
     return n;
   }
-  n->nkids = 2;
-  n->kids[0] = make_my_tree_part(m, cs, cs + cn0, n.get());
-  n->kids[1] = make_my_tree_part(m, cs + cn0, ce, n.get());
-  return n;
+  n->nkids = 0;
+  n->kids[n->nkids] = make_my_tree_part(m, cs, cs + cn0, n.get());
+  if (n->kids[n->nkids]) ++n->nkids;
+  n->kids[n->nkids] = make_my_tree_part(m, cs + cn0, ce, n.get());
+  if (n->kids[n->nkids]) ++n->nkids;
+  return n->nkids ? n : nullptr;
 }
 
 qlt::tree::Node::Ptr
@@ -5260,6 +5263,7 @@ struct CDR {
       tree = use_sgi ? make_tree_sgi(p, ncell, gid_data, rank_data, nsublev) :
         make_tree_non_sgi(p, ncell, gid_data, rank_data, nsublev);
       cdr = std::make_shared<QLTT>(p, ncell*nsublev, tree);
+      tree = nullptr;
     } else if (Alg::is_caas(alg)) {
       const auto caas = std::make_shared<CAAST>(
         p, nlclcell*nsublev, std::make_shared<ReproSumReducer>(fcomm));
@@ -5793,6 +5797,7 @@ cedr_init_impl (const homme::Int fcomm, const homme::Int cdr_alg, const bool use
 
 extern "C" void cedr_unittest (const homme::Int fcomm, homme::Int* nerrp) {
   cedr_assert(g_cdr);
+  cedr_assert(g_cdr->tree);
   auto p = cedr::mpi::make_parallel(MPI_Comm_f2c(fcomm));
   if (homme::CDR::Alg::is_qlt(g_cdr->alg))
     *nerrp = cedr::qlt::test::test_qlt(p, g_cdr->tree,
