@@ -1,5 +1,8 @@
 // Uncomment this to look for MPI-related memory leaks.
-//#define COMPOSE_DEBUG_MPI
+#define COMPOSE_DEBUG_MPI
+#ifdef NDEBUG
+# undef NDEBUG
+#endif
 
 //>> cedr_kokkos.hpp
 // COMPOSE version 1.0: Copyright 2018 NTESS. This software is released under
@@ -607,7 +610,7 @@ struct Node {
   const Node* parent; // (Can't be a shared_ptr: would be a circular dependency.)
   Int rank;           // Owning rank.
   Long cellidx;       // If a leaf, the cell to which this node corresponds.
-  Int nkids;          // 0 at leaf, 1 or 2 otherwise.
+  Int nkids;          // 0 at leaf, 1, or 2 otherwise.
   Node::Ptr kids[2];
   Int reserved;       // For internal use.
   Node () : parent(nullptr), rank(-1), cellidx(-1), nkids(0), reserved(-1) {}
@@ -2407,8 +2410,8 @@ Int init_tree (const Int& my_rank, const tree::Node::Ptr& node, Int& id) {
     cedr_assert(node.get() == node->kids[i]->parent);
     depth = std::max(depth, init_tree(my_rank, node->kids[i], id));
   }
-  if (node->nkids) {
-    node->rank = node->kids[0]->rank;
+  if (node->nkids || node->nkids == -1) {
+    if (node->rank < 0) node->rank = node->kids[0]->rank;
     node->cellidx = id++;
   } else {
     cedr_throw_if(node->rank == my_rank && (node->cellidx < 0 || node->cellidx >= id),
@@ -5147,25 +5150,43 @@ void add_sub_levels (const Int my_rank, const qlt::tree::Node::Ptr& node,
   }
 }
 
+// This impl carefully follows the requirements that
+// cedr::qlt::impl::init_tree, level_schedule_and_collect
+// establish. init_tree has to be modified to have the condition in
+// the line
+//   if (node->rank < 0) node->rank = node->kids[0]->rank
+// since here we're assigning the ranks ourselves and the second
+// condition in the line
+//   if (node->nkids || node->nkids == -1)
+// so it can handle per-rank pruned trees.
 qlt::tree::Node::Ptr
 make_my_tree_part (const qlt::oned::Mesh& m, const Int cs, const Int ce,
                    const qlt::tree::Node* parent) {
   const Int cn = ce - cs, cn0 = cn/2;
   qlt::tree::Node::Ptr n = std::make_shared<qlt::tree::Node>();
   n->parent = parent;
+  n->rank = m.rank(cs);
   if (cn == 1) {
-    n->rank = m.rank(cs);
-    //if (n->rank != m.parallel()->rank()) return nullptr;
     n->nkids = 0;
     n->cellidx = cs;
     return n;
   }
-  n->nkids = 0;
-  n->kids[n->nkids] = make_my_tree_part(m, cs, cs + cn0, n.get());
-  if (n->kids[n->nkids]) ++n->nkids;
-  n->kids[n->nkids] = make_my_tree_part(m, cs + cn0, ce, n.get());
-  if (n->kids[n->nkids]) ++n->nkids;
-  return n->nkids ? n : nullptr;
+  const auto k1 = make_my_tree_part(m, cs, cs + cn0, n.get());
+  const auto k2 = make_my_tree_part(m, cs + cn0, ce, n.get());
+  const auto my_rank = m.parallel()->rank();
+  if (n->rank == my_rank) {
+    // Need to know both kids for comm.
+    n->nkids = 2;
+    n->kids[0] = k1;
+    n->kids[1] = k2;
+  } else {
+    // Prune parts of the tree irrelevant to my rank.
+    n->nkids = 0;
+    if (k1->nkids || k1->rank == my_rank) n->kids[n->nkids++] = k1;
+    if (k2->nkids || k2->rank == my_rank) n->kids[n->nkids++] = k2;
+    if (n->nkids == 0) n->nkids = -1; // Signal a non-leaf node with 0 kids.
+  }
+  return n;
 }
 
 qlt::tree::Node::Ptr
