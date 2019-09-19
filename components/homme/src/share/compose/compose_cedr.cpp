@@ -5148,10 +5148,34 @@ void add_sub_levels (const Int my_rank, const qlt::tree::Node::Ptr& node,
 }
 
 qlt::tree::Node::Ptr
+make_my_tree_part (const qlt::oned::Mesh& m, const Int cs, const Int ce,
+                   const qlt::tree::Node* parent) {
+  const Int cn = ce - cs, cn0 = cn/2;
+  qlt::tree::Node::Ptr n = std::make_shared<qlt::tree::Node>();
+  n->parent = parent;
+  if (cn == 1) {
+    n->nkids = 0;
+    n->rank = m.rank(cs);
+    n->cellidx = cs;
+    return n;
+  }
+  n->nkids = 2;
+  n->kids[0] = make_my_tree_part(m, cs, cs + cn0, n.get());
+  n->kids[1] = make_my_tree_part(m, cs + cn0, ce, n.get());
+  return n;
+}
+
+qlt::tree::Node::Ptr
+make_my_tree_part (const cedr::mpi::Parallel::Ptr& p, const Int& ncells) {
+  qlt::oned::Mesh m(ncells, p);
+  return make_my_tree_part(m, 0, m.ncell(), nullptr);
+}
+
+qlt::tree::Node::Ptr
 make_tree_sgi (const cedr::mpi::Parallel::Ptr& p, const Int nelem,
                const Int* owned_ids, const Int* rank2sfc, const Int nsublev) {
   // Partition 0:nelem-1, the space-filling curve space.
-  auto tree = qlt::tree::make_tree_over_1d_mesh(p, nelem);
+  auto tree = make_my_tree_part(p, nelem);
   // Renumber so that node->cellidx records the global element number, and
   // associate the correct rank with the element.
   const auto my_rank = p->rank();
