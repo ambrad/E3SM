@@ -1486,7 +1486,8 @@ void gll_np4_subgrid_exp_eval (const Real& x, Real y[4]) {
 
 // Is v inside, including on, the quad ic?
 inline bool is_inside (const siqk::sh::Mesh<siqk::ko::HostSpace>& m,
-                       const Real* v, const Real& atol, const Int& ic) {
+                       const Real* v, const Real& atol, const Int& ic,
+                       const bool print = false) {
   using slmm::slice;
   const auto cell = slice(m.e, ic);
   const auto celln = slice(m.en, ic);
@@ -1494,13 +1495,15 @@ inline bool is_inside (const siqk::sh::Mesh<siqk::ko::HostSpace>& m,
   assert(szslice(m.e) == ne);
   assert(szslice(m.en) == ne);
   bool inside = true;
-  for (Int ie = 0; ie < ne; ++ie)
-    if (siqk::SphereGeometry::dot_c_amb(slice(m.nml, celln[ie]),
-                                        v, slice(m.p, cell[ie]))
-        < -atol) {
+  for (Int ie = 0; ie < ne; ++ie) {
+    const auto val = siqk::SphereGeometry::dot_c_amb(slice(m.nml, celln[ie]),
+                                                     v, slice(m.p, cell[ie]));
+    if (print) pr(puf(ie) pu(val) pu(atol));
+    if (val < -atol) {
       inside = false;
       break;
     }
+  }
   return inside;
 }
 
@@ -1512,11 +1515,12 @@ inline bool is_inside (const siqk::sh::Mesh<siqk::ko::HostSpace>& m,
 // calc_sphere_to_ref has to be specialized on cubed_sphere_map.
 int get_src_cell (const siqk::sh::Mesh<siqk::ko::HostSpace>& m, // Local mesh.
                   const Real* v, // 3D Cartesian point.
-                  const Int my_ic = -1) { // Target cell in the local mesh.
+                  const Int my_ic = -1, const bool print = false) { // Target cell in the local mesh.
   using slmm::len;
   const Int nc = len(m.e);
   Real atol = 0;
   for (Int trial = 0; trial < 3; ++trial) {
+    if (print) pr(puf(my_ic) pu(trial));
     if (trial > 0) {
       if (trial == 1) {
         using slmm::slice;
@@ -1545,7 +1549,8 @@ int get_src_cell (const siqk::sh::Mesh<siqk::ko::HostSpace>& m, // Local mesh.
     if (my_ic != -1 && is_inside(m, v, atol, my_ic)) return my_ic;
     for (Int ic = 0; ic < nc; ++ic) {
       if (ic == my_ic) continue;
-      if (is_inside(m, v, atol, ic)) return ic;
+      if (print) pr(puf(ic) pu(atol));
+      if (is_inside(m, v, atol, ic, print)) return ic;
     }
   }
   return -1;
@@ -1833,9 +1838,10 @@ void init_nearest_point_data (const nearest_point::Mesh& m,
 }
 
 int get_nearest_point (const nearest_point::Mesh& m, const MeshNearestPointData& d,
-                       Real* v, const Int my_ic) {
+                       Real* v, const Int my_ic, const bool print = false) {
   nearest_point::calc(m, d, v);
-  return get_src_cell(m, v, my_ic);
+  if (print) printf("nearest point %22.15e %22.15e %22.15e\n", v[0], v[1], v[2]);
+  return get_src_cell(m, v, my_ic, print);
 }
 
 Int unittest (const nearest_point::Mesh& m, const Int tgt_elem) {
@@ -3418,12 +3424,15 @@ void analyze_dep_points (CslMpi& cm, const Int& nets, const Int& nete,
     for (Int lev = 0; lev < cm.nlev; ++lev)
       for (Int k = 0; k < cm.np2; ++k) {
         Int sci = slmm::get_src_cell(mesh, &dep_points(0,k,lev,tci), tgt_idx);
-        pr(puf(tci) pu(lev) pu(k) pu(sci));
         if (sci == -1 && cm.advecter->nearest_point_permitted(lev)) {
           sci = slmm::get_nearest_point(
             mesh, cm.advecter->nearest_point_data(tci),
             &dep_points(0,k,lev,tci), tgt_idx);
-          pr(puf(tci) pu(lev) pu(k) pu(sci));
+          if (tci == 53 && lev == 1 && k == 3) {
+            sci = slmm::get_nearest_point(
+              mesh, cm.advecter->nearest_point_data(tci),
+              &dep_points(0,k,lev,tci), tgt_idx, true);
+          }
         }
         if (sci == -1) {
           std::stringstream ss;
