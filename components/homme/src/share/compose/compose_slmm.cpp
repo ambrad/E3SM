@@ -2595,6 +2595,8 @@ struct CslMpi {
   ListOfLists<omp_lock_t> ri_lidi_locks;
 #endif
 
+  // temporary work space
+  std::vector<Int> nlid_per_rank, sendsz, recvsz;
   Array<Real**> rwork;
 
   CslMpi (const mpi::Parallel::Ptr& ip, const slmm::Advecter::ConstPtr& advecter,
@@ -3197,8 +3199,7 @@ void set_idx2_maps (CslMpi& cm, const Rank2Gids& rank2rmtgids,
 // use essentially the same amount of memory, but not more. We could use less if
 // we were willing to realloc space at each SL time step.
 void size_mpi_buffers (CslMpi& cm, const Rank2Gids& rank2rmtgids,
-                       const Rank2Gids& rank2owngids,
-                       std::vector<Int>& sendsz, std::vector<Int>& recvsz) {
+                       const Rank2Gids& rank2owngids) {
   const auto myrank = cm.p->rank();
   // sizeof real, int, single int (b/c of alignment)
   const Int sor = sizeof(Real), soi = sizeof(Int), sosi = sor;
@@ -3221,29 +3222,38 @@ void size_mpi_buffers (CslMpi& cm, const Rank2Gids& rank2rmtgids,
 
   slmm_assert(cm.ranks.back() == myrank);
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
-  std::vector<Int> nlid_per_rank(nrmtrank);
-  sendsz.resize(nrmtrank);
-  recvsz.resize(nrmtrank);
+  cm.nlid_per_rank.resize(nrmtrank);
+  cm.sendsz.resize(nrmtrank);
+  cm.recvsz.resize(nrmtrank);
   for (Int ri = 0; ri < nrmtrank; ++ri) {
     const auto& rmtgids = rank2rmtgids.at(cm.ranks(ri));
     const auto& owngids = rank2owngids.at(cm.ranks(ri));
-    nlid_per_rank[ri] = rmtgids.size();
-    sendsz[ri] = bytes2real(std::max(xbufcnt(rmtgids, owngids),
-                                     qbufcnt(owngids, rmtgids)));
-    recvsz[ri] = bytes2real(std::max(xbufcnt(owngids, rmtgids),
-                                     qbufcnt(rmtgids, owngids)));
+    cm.nlid_per_rank[ri] = rmtgids.size();
+    cm.sendsz[ri] = bytes2real(std::max(xbufcnt(rmtgids, owngids),
+                                        qbufcnt(owngids, rmtgids)));
+    cm.recvsz[ri] = bytes2real(std::max(xbufcnt(owngids, rmtgids),
+                                        qbufcnt(rmtgids, owngids)));
   }
+}
+
+void alloc_mpi_buffers (CslMpi& cm, Real* sendbuf = nullptr, Real* recvbuf = nullptr) {
+  const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
   cm.nx_in_rank.reset_capacity(nrmtrank, true);
-  cm.nx_in_lid.init(nrmtrank, nlid_per_rank.data());
-  cm.bla.init(nrmtrank, nlid_per_rank.data(), cm.nlev);
+  cm.nx_in_lid.init(nrmtrank, cm.nlid_per_rank.data());
+  cm.bla.init(nrmtrank, cm.nlid_per_rank.data(), cm.nlev);
+  cm.sendbuf.init(nrmtrank, cm.sendsz.data());
+  cm.recvbuf.init(nrmtrank, cm.recvsz.data());
+  cm.nlid_per_rank.clear();
+  cm.sendsz.clear();
+  cm.recvsz.clear();
 #ifdef HORIZ_OPENMP
-  cm.ri_lidi_locks.init(nrmtrank, nlid_per_rank.data());
+  cm.ri_lidi_locks.init(nrmtrank, cm.nlid_per_rank.data());
   for (Int ri = 0; ri < nrmtrank; ++ri) {
     auto&& locks = cm.ri_lidi_locks(ri);
     for (auto& lock: locks)
       omp_init_lock(&lock);
   }
-#endif
+#endif  
 }
 
 // At simulation initialization, set up a bunch of stuff to make the work at
@@ -3257,11 +3267,7 @@ void setup_comm_pattern (CslMpi& cm, const Int* nbr_id_rank, const Int* nirptr) 
     comm_lid_on_rank(cm, rank2rmtgids, rank2owngids, gid2rmt_owning_lid);
     set_idx2_maps(cm, rank2rmtgids, gid2rmt_owning_lid);
   }
-  std::vector<Int> sendsz, recvsz;
-  size_mpi_buffers(cm, rank2rmtgids, rank2owngids, sendsz, recvsz);
-  const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
-  cm.sendbuf.init(nrmtrank, sendsz.data());
-  cm.recvbuf.init(nrmtrank, recvsz.data());
+  size_mpi_buffers(cm, rank2rmtgids, rank2owngids);
 }
 
 // mylid_with_comm(rankidx) is a list of element LIDs that have relations with
@@ -3880,6 +3886,20 @@ void slmm_init_impl (
                                   2 /* halo */);
 }
 
+void compose_query_bufsz (homme::Int* sendsz, homme::Int* recvsz) {
+  slmm_assert(g_csl_mpi);
+  homme::Int s = 0, r = 0;
+  for (const auto e : g_csl_mpi->sendsz) s += e;
+  for (const auto e : g_csl_mpi->recvsz) r += e;
+  *sendsz = s;
+  *recvsz = r;
+}
+
+void compose_set_bufs (homme::Real* sendbuf, homme::Real* recvbuf) {
+  slmm_assert(g_csl_mpi);
+  homme::cslmpi::alloc_mpi_buffers(*g_csl_mpi, sendbuf, recvbuf);
+}
+
 void slmm_get_mpi_pattern (homme::Int* sl_mpi) {
   *sl_mpi = g_csl_mpi ? 1 : 0;
 }
@@ -3918,6 +3938,7 @@ void slmm_csl (
   homme::Real* minq, homme::Real* maxq, homme::Int* info)
 {
   slmm_assert(g_csl_mpi);
+  slmm_assert(g_csl_mpi->sendsz.empty()); // alloc_mpi_buffers was called
   *info = 0;
   try {
     homme::cslmpi::step<4>(*g_csl_mpi, nets - 1, nete - 1,
