@@ -2407,7 +2407,7 @@ struct ListOfLists {
 
   ListOfLists () {}
   ListOfLists (const Int nlist, const Int* nlist_per_list) { init(nlist, nlist_per_list); }
-  void init (const Int nlist, const Int* nlist_per_list) {
+  void init (const Int nlist, const Int* nlist_per_list, T* buf = nullptr) {
     slmm_assert(nlist >= 0); 
     ptr_.resize(nlist+1);
     ptr_[0] = 0;
@@ -2415,7 +2415,12 @@ struct ListOfLists {
       slmm_assert(nlist_per_list[i] >= 0);
       ptr_[i+1] = ptr_[i] + nlist_per_list[i];
     }
-    d_.resize(ptr_.back());
+    if (buf) {
+      d_ = buf;
+    } else {
+      v_.resize(ptr_.back());
+      d_ = v_.data();
+    }
   }
 
   Int n () const { return static_cast<Int>(ptr_.size()) - 1; }
@@ -2440,10 +2445,11 @@ struct ListOfLists {
 
 private:
   friend class BufferLayoutArray;
-  std::vector<T> d_;
+  std::vector<T> v_;
   std::vector<Int> ptr_;
-  T* data () { return d_.data(); }
-  const T* data () const { return d_.data(); }
+  T* d_;
+  T* data () { return d_; }
+  const T* data () const { return d_; }
 };
 
 struct LayoutTriple {
@@ -3241,8 +3247,8 @@ void alloc_mpi_buffers (CslMpi& cm, Real* sendbuf = nullptr, Real* recvbuf = nul
   cm.nx_in_rank.reset_capacity(nrmtrank, true);
   cm.nx_in_lid.init(nrmtrank, cm.nlid_per_rank.data());
   cm.bla.init(nrmtrank, cm.nlid_per_rank.data(), cm.nlev);
-  cm.sendbuf.init(nrmtrank, cm.sendsz.data());
-  cm.recvbuf.init(nrmtrank, cm.recvsz.data());
+  cm.sendbuf.init(nrmtrank, cm.sendsz.data(), sendbuf);
+  cm.recvbuf.init(nrmtrank, cm.recvsz.data(), recvbuf);
   cm.nlid_per_rank.clear();
   cm.sendsz.clear();
   cm.recvsz.clear();
@@ -3895,9 +3901,9 @@ void compose_query_bufsz (homme::Int* sendsz, homme::Int* recvsz) {
   *recvsz = r;
 }
 
-void compose_set_bufs (homme::Real* sendbuf, homme::Real* recvbuf) {
+void compose_set_bufs (homme::Real** sendbuf, homme::Real** recvbuf) {
   slmm_assert(g_csl_mpi);
-  homme::cslmpi::alloc_mpi_buffers(*g_csl_mpi, sendbuf, recvbuf);
+  homme::cslmpi::alloc_mpi_buffers(*g_csl_mpi, *sendbuf, *recvbuf);
 }
 
 void slmm_get_mpi_pattern (homme::Int* sl_mpi) {

@@ -631,7 +631,7 @@ contains
   end subroutine prim_init1_cleanup
 
   subroutine prim_init1_buffers (elem,par)
-    use control_mod,        only : integration
+    use control_mod,        only : integration, transport_alg
     use edge_mod,           only : initedgebuffer, edge_g
     use parallel_mod,       only : parallel_t
     use prim_advance_mod,   only : prim_advance_init1
@@ -659,20 +659,22 @@ contains
     edgesz = max((qsize+3)*nlev+2,6*nlev+1)
 
 #ifdef HOMME_ENABLE_COMPOSE
-    ! slmm_init_impl has already run, called from compose_init. Now
-    ! find out how much memory SLMM wants.
-    call compose_query_bufsz(sendsz, recvsz)
-    ! from initEdgeBuffer nbuf calc
-    n = 4*(np+max_corner_elem)*nelemd
-    n = (max(sendsz, recvsz) + n - 1)/n
-    print *,'n,edgesz',n,edgesz
-    edgesz = max(edgesz, n)
+    if (transport_alg > 0) then
+       ! slmm_init_impl has already run, called from compose_init. Now
+       ! find out how much memory SLMM wants.
+       call compose_query_bufsz(sendsz, recvsz)
+       ! from initEdgeBuffer nbuf calc
+       n = 4*(np+max_corner_elem)*nelemd
+       n = (max(sendsz, recvsz) + n - 1)/n
+       print *,'n,edgesz',n,edgesz
+       edgesz = max(edgesz, n)
+    end if
 #endif
 
     call initEdgeBuffer(par,edge_g,elem,edgesz)
 
 #ifdef HOMME_ENABLE_COMPOSE
-    call compose_set_bufs(edge_g%buf, edge_g%receive)
+    if (transport_alg > 0) call compose_set_bufs(edge_g%buf, edge_g%receive)
 #endif
 
     call prim_advance_init1(par,elem,integration)
