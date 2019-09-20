@@ -1840,8 +1840,9 @@ void init_nearest_point_data (const nearest_point::Mesh& m,
 int get_nearest_point (const nearest_point::Mesh& m, const MeshNearestPointData& d,
                        Real* v, const Int my_ic, const bool print = false) {
   nearest_point::calc(m, d, v);
-  if (print) printf("nearest point %22.15e %22.15e %22.15e\n", v[0], v[1], v[2]);
-  return get_src_cell(m, v, my_ic, print);
+  const auto sci = get_src_cell(m, v, my_ic, print);
+  if (print) printf("%d nearest point %22.15e %22.15e %22.15e\n", sci, v[0], v[1], v[2]);
+  return sci;
 }
 
 Int unittest (const nearest_point::Mesh& m, const Int tgt_elem) {
