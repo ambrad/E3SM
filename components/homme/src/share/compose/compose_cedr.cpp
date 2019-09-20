@@ -610,7 +610,7 @@ struct Node {
   const Node* parent; // (Can't be a shared_ptr: would be a circular dependency.)
   Int rank;           // Owning rank.
   Long cellidx;       // If a leaf, the cell to which this node corresponds.
-  Int nkids;          // 0 at leaf, 1, or 2 otherwise.
+  Int nkids;          // 0 at leaf, 1 or 2 otherwise.
   Node::Ptr kids[2];
   Int reserved;       // For internal use.
   Node () : parent(nullptr), rank(-1), cellidx(-1), nkids(0), reserved(-1) {}
@@ -2410,7 +2410,7 @@ Int init_tree (const Int& my_rank, const tree::Node::Ptr& node, Int& id) {
     cedr_assert(node.get() == node->kids[i]->parent);
     depth = std::max(depth, init_tree(my_rank, node->kids[i], id));
   }
-  if (node->nkids || node->nkids == -1) {
+  if (node->nkids) {
     if (node->rank < 0) node->rank = node->kids[0]->rank;
     node->cellidx = id++;
   } else {
@@ -5088,17 +5088,17 @@ Int rank2sfc_search (const Int* rank2sfc, const Int& nrank, const Int& sfc) {
   return lo;
 }
 
+// OK I SEE. the rank reassignment implies our initial pruning is wrong.
+
 // Change leaf node->cellidx from index into space-filling curve to global cell
 // index. owned_ids is in SFC index order for this rank.
 void renumber (const Int nrank, const Int nelem, const Int my_rank, const Int* owned_ids,
                const Int* rank2sfc, const qlt::tree::Node::Ptr& node) {
-  if (node->nkids)
+  if (node->nkids) {
     for (Int k = 0; k < node->nkids; ++k)
       renumber(nrank, nelem, my_rank, owned_ids, rank2sfc, node->kids[k]);
-  else {
+  } else {
     const Int sfc = node->cellidx;
-    node->rank = rank2sfc_search(rank2sfc, nrank, sfc);
-    cedr_assert(node->rank >= 0 && node->rank < nrank);
     node->cellidx = node->rank == my_rank ? owned_ids[sfc - rank2sfc[my_rank]] : -1;
     cedr_assert((node->rank != my_rank && node->cellidx == -1) ||
                 (node->rank == my_rank && node->cellidx >= 0 && node->cellidx < nelem));
@@ -5107,10 +5107,10 @@ void renumber (const Int nrank, const Int nelem, const Int my_rank, const Int* o
 
 void renumber (const Int* sc2gci, const Int* sc2rank,
                const qlt::tree::Node::Ptr& node) {
-  if (node->nkids)
+  if (node->nkids) {
     for (Int k = 0; k < node->nkids; ++k)
       renumber(sc2gci, sc2rank, node->kids[k]);
-  else {
+  } else {
     const Int ci = node->cellidx;
     node->cellidx = sc2gci[ci];
     node->rank = sc2rank[ci];
@@ -5155,24 +5155,23 @@ void add_sub_levels (const Int my_rank, const qlt::tree::Node::Ptr& node,
 // establish. init_tree has to be modified to have the condition in
 // the line
 //   if (node->rank < 0) node->rank = node->kids[0]->rank
-// since here we're assigning the ranks ourselves and the second
-// condition in the line
-//   if (node->nkids || node->nkids == -1)
-// so it can handle per-rank pruned trees.
+// since here we're assigning the ranks ourselves.
 qlt::tree::Node::Ptr
 make_my_tree_part (const qlt::oned::Mesh& m, const Int cs, const Int ce,
-                   const qlt::tree::Node* parent) {
+                   const qlt::tree::Node* parent,
+                   const Int& nrank, const Int* rank2sfc) {
   const Int cn = ce - cs, cn0 = cn/2;
   qlt::tree::Node::Ptr n = std::make_shared<qlt::tree::Node>();
   n->parent = parent;
-  n->rank = m.rank(cs);
+  n->cellidx = cs;
+  n->rank = rank2sfc_search(rank2sfc, nrank, cs);
+  cedr_assert(n->rank >= 0 && n->rank < nrank);
   if (cn == 1) {
     n->nkids = 0;
-    n->cellidx = cs;
     return n;
   }
-  const auto k1 = make_my_tree_part(m, cs, cs + cn0, n.get());
-  const auto k2 = make_my_tree_part(m, cs + cn0, ce, n.get());
+  const auto k1 = make_my_tree_part(m, cs, cs + cn0, n.get(), nrank, rank2sfc);
+  const auto k2 = make_my_tree_part(m, cs + cn0, ce, n.get(), nrank, rank2sfc);
   const auto my_rank = m.parallel()->rank();
   if (n->rank == my_rank) {
     // Need to know both kids for comm.
@@ -5182,24 +5181,28 @@ make_my_tree_part (const qlt::oned::Mesh& m, const Int cs, const Int ce,
   } else {
     // Prune parts of the tree irrelevant to my rank.
     n->nkids = 0;
-    if (k1->nkids || k1->rank == my_rank) n->kids[n->nkids++] = k1;
-    if (k2->nkids || k2->rank == my_rank) n->kids[n->nkids++] = k2;
-    if (n->nkids == 0) n->nkids = -1; // Signal a non-leaf node with 0 kids.
+    if (k1->nkids > 0 || k1->rank == my_rank) n->kids[n->nkids++] = k1;
+    if (k2->nkids > 0 || k2->rank == my_rank) n->kids[n->nkids++] = k2;
+    if (n->nkids == 0) {
+      // Signal a non-leaf node with 0 kids to init_tree.
+      n->nkids = -1;
+    }
   }
   return n;
 }
 
 qlt::tree::Node::Ptr
-make_my_tree_part (const cedr::mpi::Parallel::Ptr& p, const Int& ncells) {
+make_my_tree_part (const cedr::mpi::Parallel::Ptr& p, const Int& ncells,
+                   const Int& nrank, const Int* rank2sfc) {
   qlt::oned::Mesh m(ncells, p);
-  return make_my_tree_part(m, 0, m.ncell(), nullptr);
+  return make_my_tree_part(m, 0, m.ncell(), nullptr, nrank, rank2sfc);
 }
 
 qlt::tree::Node::Ptr
 make_tree_sgi (const cedr::mpi::Parallel::Ptr& p, const Int nelem,
                const Int* owned_ids, const Int* rank2sfc, const Int nsublev) {
   // Partition 0:nelem-1, the space-filling curve space.
-  auto tree = make_my_tree_part(p, nelem);
+  auto tree = make_my_tree_part(p, nelem, p->size(), rank2sfc);
   // Renumber so that node->cellidx records the global element number, and
   // associate the correct rank with the element.
   const auto my_rank = p->rank();
