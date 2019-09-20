@@ -3196,8 +3196,9 @@ void set_idx2_maps (CslMpi& cm, const Rank2Gids& rank2rmtgids,
 // has a 1-halo patch of bulk data. For a 1-halo, allocations in this routine
 // use essentially the same amount of memory, but not more. We could use less if
 // we were willing to realloc space at each SL time step.
-void alloc_mpi_buffers (CslMpi& cm, const Rank2Gids& rank2rmtgids,
-                        const Rank2Gids& rank2owngids) {
+void size_mpi_buffers (CslMpi& cm, const Rank2Gids& rank2rmtgids,
+                       const Rank2Gids& rank2owngids,
+                       std::vector<Int>& sendsz, std::vector<Int>& recvsz) {
   const auto myrank = cm.p->rank();
   // sizeof real, int, single int (b/c of alignment)
   const Int sor = sizeof(Real), soi = sizeof(Int), sosi = sor;
@@ -3220,7 +3221,9 @@ void alloc_mpi_buffers (CslMpi& cm, const Rank2Gids& rank2rmtgids,
 
   slmm_assert(cm.ranks.back() == myrank);
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
-  std::vector<Int> nlid_per_rank(nrmtrank), sendsz(nrmtrank), recvsz(nrmtrank);
+  std::vector<Int> nlid_per_rank(nrmtrank);
+  sendsz.resize(nrmtrank);
+  recvsz.resize(nrmtrank);
   for (Int ri = 0; ri < nrmtrank; ++ri) {
     const auto& rmtgids = rank2rmtgids.at(cm.ranks(ri));
     const auto& owngids = rank2owngids.at(cm.ranks(ri));
@@ -3233,8 +3236,6 @@ void alloc_mpi_buffers (CslMpi& cm, const Rank2Gids& rank2rmtgids,
   cm.nx_in_rank.reset_capacity(nrmtrank, true);
   cm.nx_in_lid.init(nrmtrank, nlid_per_rank.data());
   cm.bla.init(nrmtrank, nlid_per_rank.data(), cm.nlev);
-  cm.sendbuf.init(nrmtrank, sendsz.data());
-  cm.recvbuf.init(nrmtrank, recvsz.data());
 #ifdef HORIZ_OPENMP
   cm.ri_lidi_locks.init(nrmtrank, nlid_per_rank.data());
   for (Int ri = 0; ri < nrmtrank; ++ri) {
@@ -3256,7 +3257,11 @@ void setup_comm_pattern (CslMpi& cm, const Int* nbr_id_rank, const Int* nirptr) 
     comm_lid_on_rank(cm, rank2rmtgids, rank2owngids, gid2rmt_owning_lid);
     set_idx2_maps(cm, rank2rmtgids, gid2rmt_owning_lid);
   }
-  alloc_mpi_buffers(cm, rank2rmtgids, rank2owngids);
+  std::vector<Int> sendsz, recvsz;
+  size_mpi_buffers(cm, rank2rmtgids, rank2owngids, sendsz, recvsz);
+  const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
+  cm.sendbuf.init(nrmtrank, sendsz.data());
+  cm.recvbuf.init(nrmtrank, recvsz.data());
 }
 
 // mylid_with_comm(rankidx) is a list of element LIDs that have relations with
