@@ -1864,7 +1864,7 @@ contains
     end if
 
     do ie=nets,nete
-       elem(ie)%derived%delta_eta_dot_dpdn=0     ! delta eta_dot_dpdn
+       elem(ie)%derived%delta_eta_dot_dpdn=0
        elem(ie)%derived%vn0=0              ! mean horizontal mass flux
        elem(ie)%derived%omega_p=0
        if (nu_p>0) then
@@ -1873,8 +1873,6 @@ contains
        endif
        if (transport_alg > 0) then
           elem(ie)%derived%vstar=elem(ie)%state%v(:,:,:,:,tl%n0)
-          if (tl%nstep == 0 .or. rsplit > 0) &
-               elem(ie)%derived%eta_dot_dpdn_star=elem(ie)%derived%eta_dot_dpdn
        end if
        elem(ie)%derived%dp(:,:,:)=elem(ie)%state%dp3d(:,:,:,tl%n0)
        elem(ie)%derived%eta_dot_dpdn=0     ! mean vertical mass flux
@@ -1887,10 +1885,7 @@ contains
             logical(compute_diagnostics .and. n == 1))
        if (rsplit > 0) then
           if (modulo(n, rsplit) == 0) then
-!#define MIMIC
-#ifndef MIMIC
              call vertical_remap(hybrid,elem,hvcoord,dt_remap,tl%np1,-1,nets,nete)
-#endif
           end if
        end if
        ! defer final timelevel update until after Q update.
@@ -1906,10 +1901,6 @@ contains
     call t_stopf("prim_step_advec")
 
     call TimeLevel_Qdp( tl, qsplit, n0_qdp, np1_qdp)
-#ifdef MIMIC
-    call vertical_remap(hybrid,elem,hvcoord,dt_remap,tl%np1,np1_qdp,nets,nete)
-    return
-#endif
     if (rsplit == 0) then
        call vertical_remap(hybrid,elem,hvcoord,dt_remap,tl%np1,np1_qdp,nets,nete)
     else

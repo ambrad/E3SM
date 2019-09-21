@@ -147,8 +147,6 @@ contains
     do ie=nets,nete
        elem(ie)%derived%vn0 = elem(ie)%state%v(:,:,:,:,tl%np1) ! actually v at np1
     end do
-!#define OFF
-#ifndef OFF
     if (amb_experiment == 1) then
        if (rsplit == 0) then
           do ie=nets,nete
@@ -170,11 +168,12 @@ contains
           dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
           ! use divdp for dp_star
           if (rsplit == 0) then
-             !tmp = elem(ie)%derived%eta_dot_dpdn
-             call reconstruct_dp(hvcoord, dt, elem(ie)%derived%eta_dot_dpdn_star, &
-                  elem(ie)%derived%eta_dot_dpdn, elem(ie)%state%dp3d(:,:,:,tl%n0), &
-                  elem(ie)%state%dp3d(:,:,:,tl%np1), elem(ie)%derived%divdp)
-             !elem(ie)%derived%eta_dot_dpdn_star = tmp
+#if 0
+             call reconstruct_eta_dot_dpdn(hvcoord, dt, elem(ie)%state%dp3d(:,:,:,tl%n0), &
+                  elem(ie)%state%dp3d(:,:,:,tl%np1), elem(ie)%derived%eta_dot_dpdn)
+#endif
+             elem(ie)%derived%divdp = elem(ie)%state%dp3d(:,:,:,tl%np1) + &
+                  dt*(elem(ie)%derived%eta_dot_dpdn(:,:,2:) - elem(ie)%derived%eta_dot_dpdn(:,:,1:nlev))
           else
              ! This is accumulated dt*(delta eta_dot_dpdn).
              elem(ie)%derived%divdp = dp + elem(ie)%derived%delta_eta_dot_dpdn(:,:,1:nlev)
@@ -203,7 +202,6 @@ contains
 #endif
        end do
     end if
-#endif
 
     ! compute displacements for departure grid store in elem%derived%vstar
     call ALE_RKdss (elem, nets, nete, hybrid, deriv, dt, tl)
@@ -266,15 +264,11 @@ contains
        do ie = nets, nete
           call cedr_sl_set_spheremp(ie, elem(ie)%spheremp)
           call cedr_sl_set_Qdp(ie, elem(ie)%state%Qdp, n0_qdp, np1_qdp)
-#ifdef OFF
-          call cedr_sl_set_dp3d(ie, elem(ie)%state%dp3d, tl%np1)
-#else
           if (amb_experiment == 0) then
              call cedr_sl_set_dp3d(ie, elem(ie)%state%dp3d, tl%np1)
           else
              call cedr_sl_set_dp(ie, elem(ie)%derived%divdp) ! dp_star
           end if
-#endif
           call cedr_sl_set_Q(ie, elem(ie)%state%Q)
        end do
        call cedr_sl_set_pointers_end()
@@ -870,28 +864,14 @@ contains
     end do
   end subroutine interp
   
-  subroutine reconstruct_dp(hvcoord, dt, eta_dot_dpdn_0, eta_dot_dpdn_1, dp0, dp1, dpr)
+  subroutine reconstruct_eta_dot_dpdn(hvcoord, dt, dp0, dp1, eta_dot_dpdn)
     type (hvcoord_t), intent(in) :: hvcoord
-    real(kind=real_kind), intent(in) :: dt, eta_dot_dpdn_0(np,np,nlevp), dp0(np,np,nlev), dp1(np,np,nlev)
-    real(kind=real_kind), intent(inout) :: eta_dot_dpdn_1(np,np,nlevp)
-    real(kind=real_kind), intent(out) :: dpr(np,np,nlev)
-
-    real(kind=real_kind), parameter :: wt = 0.5d0
+    real(kind=real_kind), intent(in) :: dt, dp0(np,np,nlev), dp1(np,np,nlev)
+    real(kind=real_kind), intent(inout) :: eta_dot_dpdn(np,np,nlevp)
 
     real(kind=real_kind) :: p0(np,np,nlevp), p1(np,np,nlevp), pr(np,np,nlevp), &
          ph0(np,np,nlevp), eta_dot_dpdn_h0(np,np,nlevp), eta_dot_dpdn_h(np,np,nlevp), tmp(np,np,nlevp)
     integer :: k, nit, i, j
-
-#if 0
-    dpr = dp1 + dt*(eta_dot_dpdn_1(:,:,2:) - eta_dot_dpdn_1(:,:,1:nlev))
-#else
-
-    ! requires prim_driver_base:
-    !   if (tl%nstep == 0 .or. rsplit > 0) &
-    !        elem(ie)%derived%eta_dot_dpdn_star=elem(ie)%derived%eta_dot_dpdn
-    ! test_mod:
-    !   if (.true. .and. amb_experiment == 1) then
-    !        elem(ie)%derived%eta_dot_dpdn = eta_dot_dpdn  ! for reconstruct_dp complicated branch
 
     p0(:,:,1) = 0
     p1(:,:,1) = 0
@@ -900,12 +880,12 @@ contains
        p1(:,:,k) = p1(:,:,k-1) + dp1(:,:,k-1)
     end do
 
-    ph0 = (1-wt)*p0 + wt*p1
-    eta_dot_dpdn_h0 = (1-wt)*eta_dot_dpdn_0 + wt*eta_dot_dpdn_1
+    ph0 = 0.5d0*(p0 + p1)
+    eta_dot_dpdn_h0 = eta_dot_dpdn
     eta_dot_dpdn_h = eta_dot_dpdn_h0
     nit = 0
     do k = 1,nit
-       pr = p0 + wt*dt*eta_dot_dpdn_h
+       pr = p0 + 0.5d0*dt*eta_dot_dpdn_h
        !tmp = eta_dot_dpdn_h
        do j = 1,np
           do i = 1,np
@@ -914,13 +894,7 @@ contains
        end do
        !print *,k,sum((eta_dot_dpdn_h - tmp)**2)
     end do
-    pr = p0 + dt*eta_dot_dpdn_h
-    eta_dot_dpdn_1 = eta_dot_dpdn_h
-    
-    dpr = dp1 + dt*(eta_dot_dpdn_1(:,:,2:nlevp) - eta_dot_dpdn_1(:,:,1:nlev))
-    !dpr = pr(:,:,2:nlevp) - pr(:,:,1:nlev)
-
-#endif
-  end subroutine reconstruct_dp
+    eta_dot_dpdn = eta_dot_dpdn_h
+  end subroutine reconstruct_eta_dot_dpdn
 
 end module sl_advection
