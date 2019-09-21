@@ -175,7 +175,6 @@ contains
              elem(ie)%derived%divdp = elem(ie)%state%dp3d(:,:,:,tl%np1) + &
                   dt*(elem(ie)%derived%eta_dot_dpdn(:,:,2:) - elem(ie)%derived%eta_dot_dpdn(:,:,1:nlev))
           else
-             ! This is accumulated dt*(delta eta_dot_dpdn).
              elem(ie)%derived%divdp = dp + elem(ie)%derived%delta_eta_dot_dpdn(:,:,1:nlev)
           end if
           wr(:,:,:,1) = elem(ie)%derived%vn0(:,:,1,:)*dp
@@ -866,7 +865,7 @@ contains
     ph0 = 0.5d0*(p0 + p1)
     eta_dot_dpdn_h0 = eta_dot_dpdn
     eta_dot_dpdn_h = eta_dot_dpdn_h0
-    nit = 0
+    nit = 1
     do k = 1,nit
        pr = p0 + 0.5d0*dt*eta_dot_dpdn_h
        !tmp = eta_dot_dpdn_h
