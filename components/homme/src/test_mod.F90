@@ -251,22 +251,19 @@ end subroutine
     ! test code only dont bother to openmp thread
     do ie = nets,nete
        ! accumulate mean fluxes for advection
-       if (rsplit==0) then
-          do ie = nets,nete
-             ! Accumulate second part of the midpoint.
-             elem(ie)%derived%eta_dot_dpdn = elem(ie)%derived%eta_dot_dpdn + &
-                  half*elem(ie)%derived%eta_dot_dpdn_prescribed*eta_ave_w
-          end do
+       if (rsplit == 0) then
+          ! Accumulate second part of the midpoint.
+          elem(ie)%derived%eta_dot_dpdn = elem(ie)%derived%eta_dot_dpdn + &
+               half*elem(ie)%derived%eta_dot_dpdn_prescribed*eta_ave_w
        else
           ! Calculate value at time midpoint.
           eta_dot_dpdn = half*(elem(ie)%derived%eta_dot_dpdn + elem(ie)%derived%eta_dot_dpdn_prescribed)
+          !eta_dot_dpdn = elem(ie)%derived%eta_dot_dpdn_prescribed
           ! lagrangian case.  mean vertical velocity = 0
           elem(ie)%derived%eta_dot_dpdn(:,:,:) = 0
           ! update position of floating levels
-          do k=1,nlev
-             elem(ie)%state%dp3d(:,:,k,np1) = elem(ie)%state%dp3d(:,:,k,n0)  &
-                  + dt*(eta_dot_dpdn(:,:,k+1) - eta_dot_dpdn(:,:,k))
-          enddo
+          elem(ie)%state%dp3d(:,:,:,np1) = elem(ie)%state%dp3d(:,:,:,n0) + &
+               dt*(eta_dot_dpdn(:,:,2:) - eta_dot_dpdn(:,:,1:nlev))
        end if
        ! accumulate U*dp
        do k=1,nlev

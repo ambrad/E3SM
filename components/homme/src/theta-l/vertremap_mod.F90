@@ -101,7 +101,6 @@ contains
               print *,'index ie,i,j,k = ',ie,i,j,k
               print *,'dp,dp_star = ',dp(i,j,k),dp_star(i,j,k)
               print *,'eta_dot_dpdn = ',elem(ie)%derived%eta_dot_dpdn(i,j,k+1),elem(ie)%derived%eta_dot_dpdn(i,j,k)
-              print *,'eta_dot_dpdn_prescribed = ',elem(ie)%derived%eta_dot_dpdn_prescribed(i,j,k+1),elem(ie)%derived%eta_dot_dpdn_prescribed(i,j,k)
               print *,"column location lat,lon (radians):",elem(ie)%spherep(i,j)%lat,elem(ie)%spherep(i,j)%lon
               call abortmp('negative layer thickness.  timestep or remap time too large')
            endif
