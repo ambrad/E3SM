@@ -225,7 +225,7 @@ end subroutine
     real (kind=real_kind), parameter :: half = 0.5d0
 
     real (kind=real_kind) :: dp(np,np)! pressure thickness, vflux
-    real (kind=real_kind) :: eta_dot_dpdn(np,np,nlevp)
+    real (kind=real_kind) :: eta_dot_dpdn(np,np,nlevp), wr(np,np,nlev,2), dp0(np,np,nlev)
 
     integer :: ie,k,n0,np1
 
@@ -258,7 +258,6 @@ end subroutine
        else
           ! Calculate value at time midpoint.
           eta_dot_dpdn = half*(elem(ie)%derived%eta_dot_dpdn + elem(ie)%derived%eta_dot_dpdn_prescribed)
-          !eta_dot_dpdn = elem(ie)%derived%eta_dot_dpdn_prescribed
           ! lagrangian case.  mean vertical velocity = 0
           elem(ie)%derived%eta_dot_dpdn(:,:,:) = 0
           ! update position of floating levels

@@ -1824,7 +1824,7 @@ contains
   end subroutine prim_run_subcycle_amb
 
   subroutine prim_step_amb(elem, hybrid,nets,nete, dt, tl, hvcoord, compute_diagnostics)
-    use control_mod,        only: statefreq, integration, ftype, qsplit, nu_p, rsplit
+    use control_mod,        only: statefreq, integration, ftype, qsplit, nu_p, rsplit, prescribed_wind
     use control_mod,        only: transport_alg
     use hybvcoord_mod,      only : hvcoord_t
     use parallel_mod,       only: abortmp
@@ -1885,7 +1885,22 @@ contains
             logical(compute_diagnostics .and. n == 1))
        if (rsplit > 0) then
           if (modulo(n, rsplit) == 0) then
-             call vertical_remap(hybrid,elem,hvcoord,dt_remap,tl%np1,-1,nets,nete)
+             if (prescribed_wind == 1) then
+                ! Prescribed winds are evaluated on reference levels,
+                ! not floating levels, so don't remap, just update
+                ! dp3d.
+                do ie = nets,nete
+                   elem(ie)%state%ps_v(:,:,tl%np1) = hvcoord%hyai(1)*hvcoord%ps0 + &
+                        sum(elem(ie)%state%dp3d(:,:,:,tl%np1),3)
+                   do k=1,nlev
+                      dp(:,:,k) = ( hvcoord%hyai(k+1) - hvcoord%hyai(k) )*hvcoord%ps0 + &
+                           ( hvcoord%hybi(k+1) - hvcoord%hybi(k) )*elem(ie)%state%ps_v(:,:,tl%np1)
+                   end do
+                   elem(ie)%state%dp3d(:,:,:,tl%np1)=dp
+                end do
+             else
+                call vertical_remap(hybrid,elem,hvcoord,dt_remap,tl%np1,-1,nets,nete)
+             end if
           end if
        end if
        ! defer final timelevel update until after Q update.
