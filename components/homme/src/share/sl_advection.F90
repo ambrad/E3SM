@@ -148,6 +148,7 @@ contains
        elem(ie)%derived%vn0 = elem(ie)%state%v(:,:,:,:,tl%np1) ! actually v at np1
     end do
     if (amb_experiment == 1) then
+#if 0
        if (rsplit == 0) then
           do ie=nets,nete
              do k=1,nlev
@@ -163,6 +164,7 @@ contains
              enddo
           end do
        end if
+#endif
        tmp = 0
        do ie=nets,nete
           dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
@@ -172,14 +174,14 @@ contains
              call reconstruct_eta_dot_dpdn(hvcoord, dt, elem(ie)%state%dp3d(:,:,:,tl%n0), &
                   elem(ie)%state%dp3d(:,:,:,tl%np1), elem(ie)%derived%eta_dot_dpdn)
 #endif
-             elem(ie)%derived%divdp = elem(ie)%state%dp3d(:,:,:,tl%np1) + &
+             elem(ie)%derived%divdp = dp + &
                   dt*(elem(ie)%derived%eta_dot_dpdn(:,:,2:) - elem(ie)%derived%eta_dot_dpdn(:,:,1:nlev))
           else
-             elem(ie)%derived%divdp = dp + elem(ie)%derived%delta_eta_dot_dpdn(:,:,1:nlev)
+             elem(ie)%derived%divdp = dp + elem(ie)%derived%delta_eta_dot_dpdn
           end if
           wr(:,:,:,1) = elem(ie)%derived%vn0(:,:,1,:)*dp
           wr(:,:,:,2) = elem(ie)%derived%vn0(:,:,2,:)*dp
-          call remap1_nofilter(wr,np,2,dp,elem(ie)%derived%divdp)
+          call remap1(wr,np,2,dp,elem(ie)%derived%divdp)
           elem(ie)%derived%vn0(:,:,1,:) = wr(:,:,:,1)/elem(ie)%derived%divdp
           elem(ie)%derived%vn0(:,:,2,:) = wr(:,:,:,2)/elem(ie)%derived%divdp
        end do

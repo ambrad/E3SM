@@ -232,13 +232,13 @@ end subroutine
     n0    = tl%n0
     np1   = tl%np1
 
-    ! To get second order in the vertical direction, we need to get
-    ! eta_dot_dpdn at the time midpoint.
+    ! To get second order in the vertical direction, we need to
+    ! approximate eta_dot_dpdn at the time midpoint.
     if (rsplit == 0) then
        ! Accumulate first part of the midpoint.
        do ie = nets,nete
-          elem(ie)%derived%eta_dot_dpdn = &
-               elem(ie)%derived%eta_dot_dpdn + half*elem(ie)%derived%eta_dot_dpdn_prescribed*eta_ave_w
+          elem(ie)%derived%eta_dot_dpdn = elem(ie)%derived%eta_dot_dpdn + &
+               half*elem(ie)%derived%eta_dot_dpdn_prescribed*eta_ave_w
        end do
     else
        ! Save previous prescribed value.
@@ -254,8 +254,8 @@ end subroutine
        if (rsplit==0) then
           do ie = nets,nete
              ! Accumulate second part of the midpoint.
-             elem(ie)%derived%eta_dot_dpdn = &
-                  elem(ie)%derived%eta_dot_dpdn + half*elem(ie)%derived%eta_dot_dpdn_prescribed*eta_ave_w
+             elem(ie)%derived%eta_dot_dpdn = elem(ie)%derived%eta_dot_dpdn + &
+                  half*elem(ie)%derived%eta_dot_dpdn_prescribed*eta_ave_w
           end do
        else
           ! Calculate value at time midpoint.

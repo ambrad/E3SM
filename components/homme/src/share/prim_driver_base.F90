@@ -1906,7 +1906,7 @@ contains
     else
        do ie = nets, nete
           dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
-          dp_star = dp + elem(ie)%derived%delta_eta_dot_dpdn(:,:,1:nlev)
+          dp_star = dp + elem(ie)%derived%delta_eta_dot_dpdn
           if (minval(dp_star) < 0) then
              print *,'amb> ALARUM dp_star -ve,rank,ie',hybrid%par%rank,ie
              do j = 1,np
@@ -1923,6 +1923,3 @@ contains
   end subroutine prim_step_amb
     
 end module prim_driver_base
-
-
-
