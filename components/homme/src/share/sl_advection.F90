@@ -178,28 +178,11 @@ contains
              ! This is accumulated dt*(delta eta_dot_dpdn).
              elem(ie)%derived%divdp = dp + elem(ie)%derived%delta_eta_dot_dpdn(:,:,1:nlev)
           end if
-#if 0
           wr(:,:,:,1) = elem(ie)%derived%vn0(:,:,1,:)*dp
           wr(:,:,:,2) = elem(ie)%derived%vn0(:,:,2,:)*dp
           call remap1_nofilter(wr,np,2,dp,elem(ie)%derived%divdp)
           elem(ie)%derived%vn0(:,:,1,:) = wr(:,:,:,1)/elem(ie)%derived%divdp
           elem(ie)%derived%vn0(:,:,2,:) = wr(:,:,:,2)/elem(ie)%derived%divdp
-#elif 1
-          wr(:,:,:,1) = elem(ie)%derived%vn0(:,:,1,:)
-          wr(:,:,:,2) = elem(ie)%derived%vn0(:,:,2,:)
-          pmid0(:,:,1) = 0.5d0*dp(:,:,1)
-          pmid1(:,:,1) = 0.5d0*elem(ie)%derived%divdp(:,:,1)
-          do k = 2,nlev
-             pmid0(:,:,k) = pmid0(:,:,k-1) + 0.5d0*(dp(:,:,k-1) + dp(:,:,k))
-             pmid1(:,:,k) = pmid1(:,:,k-1) + 0.5d0*(elem(ie)%derived%divdp(:,:,k-1) + elem(ie)%derived%divdp(:,:,k))
-          end do
-          do j = 1,np
-             do i = 1,np
-                call interp(nlev,pmid0(i,j,:),wr(i,j,:,1),pmid1(i,j,:),elem(ie)%derived%vn0(i,j,1,:))
-                call interp(nlev,pmid0(i,j,:),wr(i,j,:,2),pmid1(i,j,:),elem(ie)%derived%vn0(i,j,2,:))
-             end do
-          end do
-#endif
        end do
     end if
 
