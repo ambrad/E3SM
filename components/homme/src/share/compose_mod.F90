@@ -293,9 +293,7 @@ contains
     integer :: ssz, rsz
 
     call slmm_query_bufsz(sendsz, recvsz)
-    print *,'slmm wants',sendsz,recvsz
     call cedr_query_bufsz(ssz, rsz)
-    print *,'cedr wants',ssz,rsz
     sendsz = max(sendsz, ssz)
     recvsz = max(recvsz, rsz)
   end subroutine compose_query_bufsz
