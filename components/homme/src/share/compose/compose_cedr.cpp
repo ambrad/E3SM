@@ -1,5 +1,8 @@
 // Uncomment this to look for MPI-related memory leaks.
-//#define COMPOSE_DEBUG_MPI
+#define COMPOSE_DEBUG_MPI
+
+#pragma message "undef NDEBUG"
+#undef NDEBUG
 
 //>> cedr_kokkos.hpp
 // COMPOSE version 1.0: Copyright 2018 NTESS. This software is released under
@@ -5450,6 +5453,14 @@ struct CDR {
       cdr->declare_tracer(PT::shapepreserve |
                           (need_conservation ? PT::conserve : 0), 0);
     cdr->end_tracer_declarations();
+  }
+
+  void get_buffers_sizes (size_t& s1, size_t &s2) {
+    cdr->get_buffers_sizes(s1, s2);
+  }
+
+  void set_buffers (Real* b1, Real* b2) {
+    cdr->set_buffers(b1, b2);
     cdr->finish_setup();
   }
 
@@ -5589,7 +5600,8 @@ void run (CDR& cdr, const Data& d, const Real* q_min_r, const Real* q_max_r,
           const Int k = k0 + sbli;
           if (k >= nlev) {
             cdr.cdr->set_Qm(lci, ti, 0, 0, 0, 0);
-            break;
+            if (ti == 0) cdr.cdr->set_rhom(lci, 0, 1);
+            continue;
           }
           Real Qm = 0, Qm_min = 0, Qm_max = 0, Qm_prev = 0, rhom = 0, volume = 0;
           for (Int j = 0; j < np; ++j) {
@@ -5964,6 +5976,18 @@ cedr_init_impl (const homme::Int fcomm, const homme::Int cdr_alg, const bool use
   const auto p = cedr::mpi::make_parallel(MPI_Comm_f2c(fcomm));
   g_cdr = std::make_shared<homme::CDR>(
     cdr_alg, gbl_ncell, lcl_ncell, nlev, use_sgi, *gid_data, *rank_data, p, fcomm);
+}
+
+extern "C" void cedr_query_bufsz (homme::Int* sendsz, homme::Int* recvsz) {
+  cedr_assert(g_cdr);
+  size_t s1, s2;
+  g_cdr->get_buffers_sizes(s1, s2);
+  *sendsz = static_cast<homme::Int>(s1);
+  *recvsz = static_cast<homme::Int>(s2);
+}
+
+extern "C" void cedr_set_bufs (homme::Real** sendbuf, homme::Real** recvbuf) {
+  g_cdr->set_buffers(*sendbuf, *recvbuf);
 }
 
 extern "C" void cedr_unittest (const homme::Int fcomm, homme::Int* nerrp) {

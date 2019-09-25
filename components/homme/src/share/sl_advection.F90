@@ -165,6 +165,11 @@ contains
             elem(ie)%derived%dp, elem(ie)%state%Q, &
             elem(ie)%desc%actual_neigh_edges + 1)
     end do
+#if (defined HORIZ_OPENMP)
+    ! Since we are sharing send and recv buffers (through edge_g), we need to
+    ! put a barrier here to make sure the barriers are free.
+    !$omp barrier
+#endif
     call slmm_csl(nets, nete, dep_points_all, minq, maxq, info)
     if (info /= 0) then
        call write_velocity_data(elem, nets, nete, hybrid, deriv, dt, tl)
@@ -183,6 +188,10 @@ contains
              enddo
           enddo
        end do
+#if (defined HORIZ_OPENMP)
+       ! b/c of sharing edge_g
+       !$omp barrier
+#endif
        call advance_hypervis_scalar(elem, hvcoord, hybrid, deriv, tl%np1, np1_qdp, nets, nete, dt, n)
        do ie = nets, nete
           do q = 1, n
@@ -197,6 +206,8 @@ contains
     ! CEDR works with either classical SL or IR.
     if (semi_lagrange_cdr_alg > 1) then
        scalar_q_bounds = 0
+       !edge_g%buf = 0
+       !edge_g%receive = 0
        call cedr_sl_set_pointers_begin(nets, nete)
        do ie = nets, nete
           call cedr_sl_set_spheremp(ie, elem(ie)%spheremp)
@@ -206,11 +217,19 @@ contains
        end do
        call cedr_sl_set_pointers_end()
        call t_startf('CEDR')
+#if (defined HORIZ_OPENMP)
+       ! b/c of sharing edge_g
+       !$omp barrier
+#endif
        call cedr_sl_run(minq, maxq, nets, nete)
        if (barrier) call perf_barrier(hybrid)
        call t_stopf('CEDR')
        call t_startf('CEDR_local')
        call cedr_sl_run_local(minq, maxq, nets, nete, scalar_q_bounds, limiter_option)
+#if (defined HORIZ_OPENMP)
+    ! b/c of sharing edge_g
+    !$omp barrier
+#endif
        if (barrier) call perf_barrier(hybrid)
        call t_stopf('CEDR_local')
     else
