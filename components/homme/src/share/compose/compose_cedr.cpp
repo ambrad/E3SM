@@ -5597,7 +5597,7 @@ void run (CDR& cdr, const Data& d, const Real* q_min_r, const Real* q_max_r,
           const Int k = k0 + sbli;
           if (k >= nlev) {
             cdr.cdr->set_Qm(lci, ti, 0, 0, 0, 0);
-            if (ti == 0) cdr.cdr->set_rhom(lci, 0, 1);
+            if (ti == 0) cdr.cdr->set_rhom(lci, 0, 0);
             continue;
           }
           Real Qm = 0, Qm_min = 0, Qm_max = 0, Qm_prev = 0, rhom = 0, volume = 0;
