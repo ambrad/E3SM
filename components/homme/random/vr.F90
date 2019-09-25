@@ -554,16 +554,17 @@ contains
                 ao(k) = ao(k) / dpo(k)        !Divide out the old grid spacing because we want the tracer mixing ratio, not mass.
              enddo
              !Fill in ghost values. Ignored if vert_remap_q_alg == 2
-             do k = 1 , gs
-                if (vert_remap_q_alg == 3) then
-                   ao(1   -k) = ao(1)
-                   ao(nlev+k) = ao(nlev)
-                elseif (vert_remap_q_alg == 2 .or. vert_remap_q_alg == 1) then   !Ignored if vert_remap_q_alg == 2
-                   ao(1   -k) = ao(       k)
-                   ao(nlev+k) = ao(nlev+1-k)
-                endif
-             enddo
-             if (vert_remap_q_alg == 10) then
+             if (vert_remap_q_alg >= 1 .and. vert_remap_q_alg <= 3) then
+                do k = 1 , gs
+                   if (vert_remap_q_alg == 3) then
+                      ao(1   -k) = ao(1)
+                      ao(nlev+k) = ao(nlev)
+                   elseif (vert_remap_q_alg == 2 .or. vert_remap_q_alg == 1) then   !Ignored if vert_remap_q_alg == 2
+                      ao(1   -k) = ao(       k)
+                      ao(nlev+k) = ao(nlev+1-k)
+                   endif
+                enddo
+             elseif (vert_remap_q_alg == 10) then
                 call linextrap(dpo(2), dpo(1), dpo(0), dpo(-1), ao(2), ao(1), ao(0), ao(-1))
                 call linextrap(dpo(nlev-1), dpo(nlev), dpo(nlev+1), dpo(nlev+2), &
                      ao(nlev-1), ao(nlev), ao(nlev+1), ao(nlev+2))
