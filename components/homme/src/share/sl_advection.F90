@@ -165,12 +165,13 @@ contains
             elem(ie)%derived%dp, elem(ie)%state%Q, &
             elem(ie)%desc%actual_neigh_edges + 1)
     end do
-#if (defined HORIZ_OPENMP)
-    ! Since we are sharing send and recv buffers (through edge_g), we need to
-    ! put a barrier here to make sure the barriers are free.
-    !$omp barrier
-#endif
+    ! edge_g buffers are shared by SLMM, CEDR, other places in HOMME, and
+    ! dp_coupling in EAM. Thus, we must take care to protected threaded
+    ! access. In the following, "No barrier needed" comments justify why a
+    ! barrier isn't needed.
+    ! No barrier needed: ale_rkdss has a horiz thread barrier at the end.
     call slmm_csl(nets, nete, dep_points_all, minq, maxq, info)
+    ! No barrier needed: slmm_csl has a horiz thread barrier at the end.
     if (info /= 0) then
        call write_velocity_data(elem, nets, nete, hybrid, deriv, dt, tl)
        call abortmp('slmm_csl returned -1; see output above for more information.')
@@ -188,11 +189,8 @@ contains
              enddo
           enddo
        end do
-#if (defined HORIZ_OPENMP)
-       ! b/c of sharing edge_g
-       !$omp barrier
-#endif
        call advance_hypervis_scalar(elem, hvcoord, hybrid, deriv, tl%np1, np1_qdp, nets, nete, dt, n)
+       ! No barrier needed: advance_hypervis_scalar has a horiz thread barrier at the end.
        do ie = nets, nete
           do q = 1, n
              do k = 1, nlev
@@ -206,8 +204,6 @@ contains
     ! CEDR works with either classical SL or IR.
     if (semi_lagrange_cdr_alg > 1) then
        scalar_q_bounds = 0
-       !edge_g%buf = 0
-       !edge_g%receive = 0
        call cedr_sl_set_pointers_begin(nets, nete)
        do ie = nets, nete
           call cedr_sl_set_spheremp(ie, elem(ie)%spheremp)
@@ -217,19 +213,13 @@ contains
        end do
        call cedr_sl_set_pointers_end()
        call t_startf('CEDR')
-#if (defined HORIZ_OPENMP)
-       ! b/c of sharing edge_g
-       !$omp barrier
-#endif
+       ! No barrier needed: A barrier was already called.
        call cedr_sl_run(minq, maxq, nets, nete)
+       ! No barrier needed: run_cdr has a horiz thread barrier at the end.
        if (barrier) call perf_barrier(hybrid)
        call t_stopf('CEDR')
        call t_startf('CEDR_local')
        call cedr_sl_run_local(minq, maxq, nets, nete, scalar_q_bounds, limiter_option)
-#if (defined HORIZ_OPENMP)
-    ! b/c of sharing edge_g
-    !$omp barrier
-#endif
        if (barrier) call perf_barrier(hybrid)
        call t_stopf('CEDR_local')
     else
@@ -353,6 +343,10 @@ contains
           elem(ie)%derived%vstar(:,:,2,k) = elem(ie)%derived%vstar(:,:,2,k)*elem(ie)%rspheremp(:,:)
        end do
     end do
+
+#if (defined HORIZ_OPENMP)
+    !$omp barrier
+#endif
   end subroutine ALE_RKdss
 
   subroutine write_velocity_data(elem, nets, nete, hy, deriv, dt, tl)

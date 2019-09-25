@@ -672,7 +672,6 @@ contains
        ! from initEdgeBuffer nbuf calc
        den = 4*(np+max_corner_elem)*nelemd
        n = (max(sendsz, recvsz) + den - 1)/den
-       print *,'sendsz,recvsz,n,edgesz,den*edgesz',sendsz,recvsz,n,edgesz,den*edgesz
        edgesz = max(edgesz, n)
     end if
 #endif

@@ -1,10 +1,7 @@
 #include <mpi.h>
 
 // Uncomment this to look for MPI-related memory leaks.
-#define COMPOSE_DEBUG_MPI
-
-#pragma message "undef NDEBUG"
-#undef NDEBUG
+//#define COMPOSE_DEBUG_MPI
 
 //> begin SIQK
 // To make this initial integration less messy, inline SIQK in this translation
