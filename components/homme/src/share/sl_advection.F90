@@ -220,6 +220,8 @@ contains
        call t_stopf('CEDR')
        call t_startf('CEDR_local')
        call cedr_sl_run_local(minq, maxq, nets, nete, scalar_q_bounds, limiter_option)
+       ! Barrier needed to protect edge_g buffers use in CEDR.
+       !$omp barrier
        if (barrier) call perf_barrier(hybrid)
        call t_stopf('CEDR_local')
     else
