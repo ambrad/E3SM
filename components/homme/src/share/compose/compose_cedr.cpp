@@ -4979,8 +4979,8 @@ namespace compose {
 template <typename ES>
 struct QLT : public cedr::qlt::QLT<ES> {
   QLT (const cedr::mpi::Parallel::Ptr& p, const cedr::Int& ncells,
-       const cedr::qlt::tree::Node::Ptr& tree)
-    : cedr::qlt::QLT<ES>(p, ncells, tree)
+       const cedr::qlt::tree::Node::Ptr& tree, const cedr::CDR::Options& options)
+    : cedr::qlt::QLT<ES>(p, ncells, tree, options)
   {}
 
   void run () override {
@@ -5498,7 +5498,9 @@ struct CDR {
     if (Alg::is_qlt(alg)) {
       tree = use_sgi ? make_tree_sgi(p, ncell, gid_data, rank_data, nsublev) :
         make_tree_non_sgi(p, ncell, gid_data, rank_data, nsublev);
-      cdr = std::make_shared<QLTT>(p, ncell*nsublev, tree);
+      cedr::CDR::Options options;
+      options.prefer_numerical_mass_conservation_to_numerical_bounds = true;
+      cdr = std::make_shared<QLTT>(p, ncell*nsublev, tree, options);
       tree = nullptr;
     } else if (Alg::is_caas(alg)) {
       const auto caas = std::make_shared<CAAST>(
