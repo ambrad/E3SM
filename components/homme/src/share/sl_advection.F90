@@ -34,7 +34,8 @@ module sl_advection
   logical, parameter :: barrier = .false.
 
   type, public :: FloatingLevelTracker_t
-     real(kind=real_kind), allocatable :: eta_dot_dpdn_mean(:,:,:,:), diff_accum(:,:,:,:)
+     integer :: step
+     real(kind=real_kind), allocatable :: eta_dot_dpdn_accum(:,:,:,:), diff_accum(:,:,:,:)
   end type FloatingLevelTracker_t
 
   public :: flt_init, flt_finish, flt_start_new_interval, flt_update, flt_reconstruct
@@ -143,7 +144,7 @@ contains
     integer               :: num_neighbors, scalar_q_bounds, info
     logical :: slmm, cisl, qos, sl_test
 
-    real(kind=real_kind) :: dp(np,np,nlev), wr(np,np,nlev,2), pmid0(np,np,nlev), pmid1(np,np,nlev), tmp(np,np,nlevp)
+    real(kind=real_kind) :: dp(np,np,nlev), wr(np,np,nlev,2)
 
 #ifdef HOMME_ENABLE_COMPOSE
     call t_barrierf('Prim_Advec_Tracers_remap_ALE', hybrid%par%comm)
@@ -157,7 +158,7 @@ contains
        elem(ie)%derived%vn0 = elem(ie)%state%v(:,:,:,:,tl%np1) ! actually v at np1
     end do
     if (amb_experiment == 1) then
-       tmp = 0
+       call flt_reconstruct(elem, nets, nete, dt)
        do ie=nets,nete
           dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
           ! use divdp for dp_star
@@ -862,11 +863,11 @@ contains
   subroutine flt_init()
     use dimensions_mod, only: nelemd
 
-    allocate(flt%eta_dot_dpdn_mean(np,np,nlevp,nelemd), flt%diff_accum(np,np,nlevp,nelemd))
+    allocate(flt%eta_dot_dpdn_accum(np,np,nlevp,nelemd), flt%diff_accum(np,np,nlevp,nelemd))
   end subroutine flt_init
 
   subroutine flt_finish()
-    deallocate(flt%eta_dot_dpdn_mean, flt%diff_accum)
+    deallocate(flt%eta_dot_dpdn_accum, flt%diff_accum)
   end subroutine flt_finish
 
   subroutine flt_start_new_interval(elem, nets, nete, tl)
@@ -874,6 +875,9 @@ contains
     type (TimeLevel_t), intent(in) :: tl
     integer, intent(in) :: nets, nete
 
+    flt%eta_dot_dpdn_accum = 0
+    flt%diff_accum = 0
+    flt%step = 0
   end subroutine flt_start_new_interval
 
   subroutine flt_update(elem, nets, nete, tl, dt)
@@ -884,29 +888,33 @@ contains
     real(kind=real_kind), intent(in) :: dt
     integer, intent(in) :: nets, nete
 
-    real(kind=real_kind), dimension(np,np,nlevp) :: eta_dot_dpdn, p0ref, p1ref, p0r, p1m0, p1m0i
+    real(kind=real_kind), dimension(np,np,nlevp) :: eta_dot_dpdn, p0ref, p1ref, p0r, p1m0
     integer :: ie, i, j
     
+    flt%step = flt%step + 1
+
     do ie = nets,nete
        if (rsplit == 0) then
           ! eta_dot_dpdn from just-finished dyn step
-          eta_dot_dpdn = qsplit*(elem(ie)%derived%eta_dot_dpdn - flt%eta_dot_dpdn_mean(:,:,:,ie))
-          flt%eta_dot_dpdn_mean(:,:,:,ie) = elem(ie)%derived%eta_dot_dpdn
+          eta_dot_dpdn = qsplit*(elem(ie)%derived%eta_dot_dpdn - flt%eta_dot_dpdn_accum(:,:,:,ie))
+          flt%eta_dot_dpdn_accum(:,:,:,ie) = elem(ie)%derived%eta_dot_dpdn
 
           ! p0ref on ref levels
           call calc_p(elem(ie)%state%dp3d(:,:,:,tl%n0), elem(ie)%state%ps_v(:,:,tl%n0), p0ref)
           ! reconstructed floating p at time 0
           p0r = p0ref + flt%diff_accum(:,:,:,ie)
           ! p1 on ref levels
-          call calc_p(elem(ie)%state%dp3d(:,:,:,tl%np1), elem(ie)%state%ps_v(:,:,tl%np1), p1m0)
+          call calc_p(elem(ie)%state%dp3d(:,:,:,tl%np1), elem(ie)%state%ps_v(:,:,tl%np1), p1ref)
           ! floating p at time 1 - p0
-          p1m0 = p1m0 + dt*eta_dot_dpdn - p0ref
+          p1m0 = p1ref + dt*eta_dot_dpdn - p0ref
 
           do j = 1,np
              do i = 1,np
                 call interp(nlevp, p0ref(i,j,:), p1m0(i,j,:), p0r(i,j,:), flt%diff_accum(i,j,:,ie))
              end do
           end do
+
+          flt%diff_accum(:,:,:,ie) = p0r + flt%diff_accum(:,:,:,ie) - p1ref
        else
        end if
     end do
@@ -925,6 +933,20 @@ contains
     end do
   end subroutine calc_p
 
-  subroutine flt_reconstruct
+  subroutine flt_reconstruct(elem, nets, nete, dt)
+    use control_mod, only: qsplit, rsplit
+
+    type (element_t), intent(inout) :: elem(:)
+    integer, intent(in) :: nets, nete
+    real(kind=real_kind), intent(in) :: dt
+
+    integer :: ie
+
+    do ie = nets,nete
+       if (rsplit == 0) then
+          elem(ie)%derived%eta_dot_dpdn = flt%diff_accum(:,:,:,ie)/dt
+       else
+       end if
+    end do
   end subroutine flt_reconstruct
 end module sl_advection

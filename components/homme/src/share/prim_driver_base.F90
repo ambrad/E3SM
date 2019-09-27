@@ -1874,10 +1874,10 @@ contains
        endif
        if (transport_alg > 0) then
           elem(ie)%derived%vstar=elem(ie)%state%v(:,:,:,:,tl%n0)
+          call flt_start_new_interval(elem, nets, nete, tl)
        end if
        elem(ie)%derived%dp(:,:,:)=elem(ie)%state%dp3d(:,:,:,tl%n0)
        elem(ie)%derived%eta_dot_dpdn=0     ! mean vertical mass flux
-       call flt_start_new_interval(elem, nets, nete, tl)
     enddo
 
     call t_startf("prim_step_dyn")
