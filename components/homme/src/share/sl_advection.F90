@@ -34,7 +34,7 @@ module sl_advection
   logical, parameter :: barrier = .false.
 
   type, public :: FloatingLevelTracker_t
-     
+     real(kind=real_kind), allocatable :: eta_dot_dpdn_mean(:,:,:,:), diff_accum(:,:,:,:)
   end type FloatingLevelTracker_t
 
   public :: flt_init, flt_finish, flt_start_new_interval, flt_update, flt_reconstruct
@@ -860,23 +860,71 @@ contains
   end subroutine reconstruct_eta_dot_dpdn
 
   subroutine flt_init()
+    use dimensions_mod, only: nelemd
+
+    allocate(flt%eta_dot_dpdn_mean(np,np,nlevp,nelemd), flt%diff_accum(np,np,nlevp,nelemd))
   end subroutine flt_init
 
   subroutine flt_finish()
+    deallocate(flt%eta_dot_dpdn_mean, flt%diff_accum)
   end subroutine flt_finish
 
-  subroutine flt_start_new_interval(elem, tl)
-    type (element_t), intent(inout), target :: elem(:)
+  subroutine flt_start_new_interval(elem, nets, nete, tl)
+    type (element_t), intent(inout) :: elem(:)
     type (TimeLevel_t), intent(in) :: tl
+    integer, intent(in) :: nets, nete
+
   end subroutine flt_start_new_interval
 
-  subroutine flt_update(elem, tl, dt, rsplit)
-    type (element_t), intent(inout), target :: elem(:)
+  subroutine flt_update(elem, nets, nete, tl, dt)
+    use control_mod, only: qsplit, rsplit
+
+    type (element_t), intent(inout) :: elem(:)
     type (TimeLevel_t), intent(in) :: tl
     real(kind=real_kind), intent(in) :: dt
-    integer, intent(in) :: rsplit
+    integer, intent(in) :: nets, nete
+
+    real(kind=real_kind), dimension(np,np,nlevp) :: eta_dot_dpdn, p0ref, p1ref, p0r, p1m0, p1m0i
+    integer :: ie, i, j
+    
+    do ie = nets,nete
+       if (rsplit == 0) then
+          ! eta_dot_dpdn from just-finished dyn step
+          eta_dot_dpdn = qsplit*(elem(ie)%derived%eta_dot_dpdn - flt%eta_dot_dpdn_mean(:,:,:,ie))
+          flt%eta_dot_dpdn_mean(:,:,:,ie) = elem(ie)%derived%eta_dot_dpdn
+
+          ! p0ref on ref levels
+          call calc_p(elem(ie)%state%dp3d(:,:,:,tl%n0), elem(ie)%state%ps_v(:,:,tl%n0), p0ref)
+          ! reconstructed floating p at time 0
+          p0r = p0ref + flt%diff_accum(:,:,:,ie)
+          ! p1 on ref levels
+          call calc_p(elem(ie)%state%dp3d(:,:,:,tl%np1), elem(ie)%state%ps_v(:,:,tl%np1), p1m0)
+          ! floating p at time 1 - p0
+          p1m0 = p1m0 + dt*eta_dot_dpdn - p0ref
+
+          do j = 1,np
+             do i = 1,np
+                call interp(nlevp, p0ref(i,j,:), p1m0(i,j,:), p0r(i,j,:), flt%diff_accum(i,j,:,ie))
+             end do
+          end do
+       else
+       end if
+    end do
   end subroutine flt_update
 
-  subroutine flt_reconstruct()
+  subroutine calc_p(dp, ps, p)
+    real(kind=real_kind), intent(in) :: dp(np,np,nlev)
+    real(kind=real_kind), intent(in) :: ps(np,np)
+    real(kind=real_kind), intent(out) :: p(np,np,nlevp)
+
+    integer :: k
+
+    p(:,:,1) = ps
+    do k = 1,nlev
+       p(:,:,k+1) = p(:,:,k) + dp(:,:,k)
+    end do
+  end subroutine calc_p
+
+  subroutine flt_reconstruct
   end subroutine flt_reconstruct
 end module sl_advection
