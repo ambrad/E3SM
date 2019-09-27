@@ -33,6 +33,14 @@ module sl_advection
 
   logical, parameter :: barrier = .false.
 
+  type, public :: FloatingLevelTracker_t
+     
+  end type FloatingLevelTracker_t
+
+  public :: flt_init, flt_finish, flt_start_new_interval, flt_update, flt_reconstruct
+
+  type (FloatingLevelTracker_t), private :: flt
+
 contains
 
   !=================================================================================================!
@@ -98,6 +106,7 @@ contains
           need_conservation = 1
           call cedr_sl_init(np, nlev, qsize, qsize_d, timelevels, need_conservation)
        end if
+       call flt_init()
     endif
     call t_stopf('sl_init1')
 #endif
@@ -153,9 +162,6 @@ contains
           dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
           ! use divdp for dp_star
           if (rsplit == 0) then
-             call reconstruct_eta_dot_dpdn(hvcoord, dt, &
-                  elem(ie)%state%dp3d(:,:,:,tl%n0), elem(ie)%state%dp3d(:,:,:,tl%np1), &
-                  elem(ie)%derived%eta_dot_dpdn)
              elem(ie)%derived%divdp = dp + &
                   dt*(elem(ie)%derived%eta_dot_dpdn(:,:,2:) - elem(ie)%derived%eta_dot_dpdn(:,:,1:nlev))
           else
@@ -835,8 +841,7 @@ contains
     real(kind=real_kind), intent(in) :: dt, dp0(np,np,nlev), dp1(np,np,nlev)
     real(kind=real_kind), intent(inout) :: eta_dot_dpdn(np,np,nlevp)
 
-    real(kind=real_kind) :: p0(np,np,nlevp), p1(np,np,nlevp), pr(np,np,nlevp), &
-         ph0(np,np,nlevp), eta_dot_dpdn_h0(np,np,nlevp), eta_dot_dpdn_h(np,np,nlevp), tmp(np,np,nlevp)
+    real(kind=real_kind), dimension(np,np,nlevp) :: p0, p1, pr, tmp
     integer :: k, nit, i, j
 
     p0(:,:,1) = 0
@@ -845,22 +850,33 @@ contains
        p0(:,:,k) = p0(:,:,k-1) + dp0(:,:,k-1)
        p1(:,:,k) = p1(:,:,k-1) + dp1(:,:,k-1)
     end do
-
-    ph0 = 0.5d0*(p0 + p1)
-    eta_dot_dpdn_h0 = eta_dot_dpdn
-    eta_dot_dpdn_h = eta_dot_dpdn_h0
-    nit = 0
-    do k = 1,nit
-       pr = p0 + 0.5d0*dt*eta_dot_dpdn_h
-       !tmp = eta_dot_dpdn_h
-       do j = 1,np
-          do i = 1,np
-             call interp(nlevp, ph0(i,j,:), eta_dot_dpdn_h0(i,j,:), pr(i,j,:), eta_dot_dpdn_h(i,j,:))
-          end do
+    pr = p0 + dt*eta_dot_dpdn
+    do j = 1,np
+       do i = 1,np
+          call interp(nlevp, p0(i,j,:), eta_dot_dpdn(i,j,:), pr(i,j,:), tmp(i,j,:))
        end do
-       !print *,k,sum((eta_dot_dpdn_h - tmp)**2)
     end do
-    eta_dot_dpdn = eta_dot_dpdn_h
+    eta_dot_dpdn = tmp
   end subroutine reconstruct_eta_dot_dpdn
 
+  subroutine flt_init()
+  end subroutine flt_init
+
+  subroutine flt_finish()
+  end subroutine flt_finish
+
+  subroutine flt_start_new_interval(elem, tl)
+    type (element_t), intent(inout), target :: elem(:)
+    type (TimeLevel_t), intent(in) :: tl
+  end subroutine flt_start_new_interval
+
+  subroutine flt_update(elem, tl, dt, rsplit)
+    type (element_t), intent(inout), target :: elem(:)
+    type (TimeLevel_t), intent(in) :: tl
+    real(kind=real_kind), intent(in) :: dt
+    integer, intent(in) :: rsplit
+  end subroutine flt_update
+
+  subroutine flt_reconstruct()
+  end subroutine flt_reconstruct
 end module sl_advection

@@ -1835,6 +1835,7 @@ contains
     use prim_state_mod,     only: prim_printstate, prim_diag_scalars, prim_energy_halftimes
     use vertremap_mod,      only: vertical_remap
     use vertremap_base,     only: remap1
+    use sl_advection,       only: flt_start_new_interval, flt_update
 
     type(element_t),      intent(inout) :: elem(:)
     type(hybrid_t),       intent(in)    :: hybrid   ! distributed parallel structure (shared)
@@ -1876,6 +1877,7 @@ contains
        end if
        elem(ie)%derived%dp(:,:,:)=elem(ie)%state%dp3d(:,:,:,tl%n0)
        elem(ie)%derived%eta_dot_dpdn=0     ! mean vertical mass flux
+       call flt_start_new_interval(elem, tl)
     enddo
 
     call t_startf("prim_step_dyn")
@@ -1883,7 +1885,9 @@ contains
        if (n > 1) call TimeLevel_update(tl,"leapfrog")
        call prim_advance_exp(elem, deriv1, hvcoord,hybrid, dt, tl, nets, nete, &
             logical(compute_diagnostics .and. n == 1))
-       if (rsplit > 0) then
+       if (rsplit == 0) then
+          call flt_update(elem, tl, dt, rsplit)
+       else
           if (modulo(n, rsplit) == 0) then
              if (prescribed_wind == 1) then
                 ! Prescribed winds are evaluated on reference levels,
@@ -1899,6 +1903,7 @@ contains
                    elem(ie)%state%dp3d(:,:,:,tl%np1)=dp
                 end do
              else
+                call flt_update(elem, tl, dt_remap, rsplit)
                 call vertical_remap(hybrid,elem,hvcoord,dt_remap,tl%np1,-1,nets,nete)
              end if
           end if
