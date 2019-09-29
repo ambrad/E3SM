@@ -820,14 +820,14 @@ contains
        if (j < n-1 .and. xi(ji) > x(j+1)) then
           j = j + 1
        else
-#if 0
+#if 1
           alpha = (xi(ji) - x(j))/(x(j+1) - x(j))
           yi(ji) = (1 - alpha)*y(j) + alpha*y(j+1)
 #else
           if (j == 1) then
-             call eval_lagrange_poly(3, x(j:j+2), y(j:j+2), xi(ji), yi(ji))
+             call eval_lagrange_poly(4, x(j:j+3), y(j:j+3), xi(ji), yi(ji))
           elseif (j == n-1) then
-             call eval_lagrange_poly(3, x(j-1:j+1), y(j-1:j+1), xi(ji), yi(ji))
+             call eval_lagrange_poly(4, x(j-2:j+1), y(j-2:j+1), xi(ji), yi(ji))
           else
              call eval_lagrange_poly(4, x(j-1:j+2), y(j-1:j+2), xi(ji), yi(ji))
           end if
@@ -836,29 +836,6 @@ contains
        end if
     end do
   end subroutine interp
-  
-  subroutine reconstruct_eta_dot_dpdn(hvcoord, dt, dp0, dp1, eta_dot_dpdn)
-    type (hvcoord_t), intent(in) :: hvcoord
-    real(kind=real_kind), intent(in) :: dt, dp0(np,np,nlev), dp1(np,np,nlev)
-    real(kind=real_kind), intent(inout) :: eta_dot_dpdn(np,np,nlevp)
-
-    real(kind=real_kind), dimension(np,np,nlevp) :: p0, p1, pr, tmp
-    integer :: k, nit, i, j
-
-    p0(:,:,1) = 0
-    p1(:,:,1) = 0
-    do k = 2,nlevp
-       p0(:,:,k) = p0(:,:,k-1) + dp0(:,:,k-1)
-       p1(:,:,k) = p1(:,:,k-1) + dp1(:,:,k-1)
-    end do
-    pr = p0 + dt*eta_dot_dpdn
-    do j = 1,np
-       do i = 1,np
-          call interp(nlevp, p0(i,j,:), eta_dot_dpdn(i,j,:), pr(i,j,:), tmp(i,j,:))
-       end do
-    end do
-    eta_dot_dpdn = tmp
-  end subroutine reconstruct_eta_dot_dpdn
 
   subroutine flt_init()
     use dimensions_mod, only: nelemd
@@ -888,8 +865,10 @@ contains
     real(kind=real_kind), intent(in) :: dt
     integer, intent(in) :: nets, nete
 
-    real(kind=real_kind), dimension(np,np,nlevp) :: eta_dot_dpdn, p0ref, p1ref, p0r, p1m0
-    integer :: ie, i, j
+    real(kind=real_kind), parameter :: half = 0.5d0
+
+    real(kind=real_kind), dimension(np,np,nlevp) :: eta_dot_dpdn, p0ref, p1ref, p0r, p1r, p1m0, tmp
+    integer :: ie, i, j, it
     
     flt%step = flt%step + 1
 
@@ -899,14 +878,23 @@ contains
           eta_dot_dpdn = qsplit*(elem(ie)%derived%eta_dot_dpdn - flt%eta_dot_dpdn_accum(:,:,:,ie))
           flt%eta_dot_dpdn_accum(:,:,:,ie) = elem(ie)%derived%eta_dot_dpdn
 
-          ! p0ref on ref levels
           call calc_p(elem(ie)%state%dp3d(:,:,:,tl%n0), elem(ie)%state%ps_v(:,:,tl%n0), p0ref)
-          ! reconstructed floating p at time 0
           p0r = p0ref + flt%diff_accum(:,:,:,ie)
-          ! p1 on ref levels
+
           call calc_p(elem(ie)%state%dp3d(:,:,:,tl%np1), elem(ie)%state%ps_v(:,:,tl%np1), p1ref)
-          ! floating p at time 1 - p0
-          p1m0 = p1ref + dt*eta_dot_dpdn - p0ref
+
+          do it = 1,0
+             p1r = p0ref + half*dt*eta_dot_dpdn
+             do j = 1,np
+                do i = 1,np
+                   call interp(nlevp, p1ref(i,j,:), eta_dot_dpdn(i,j,:), p1r(i,j,:), tmp(i,j,:))
+                end do
+             end do
+             eta_dot_dpdn = tmp
+          end do
+          p1r = p0ref + dt*eta_dot_dpdn
+
+          p1m0 = p1r - p0ref
 
           do j = 1,np
              do i = 1,np
@@ -927,9 +915,9 @@ contains
 
     integer :: k
 
-    p(:,:,1) = ps
-    do k = 1,nlev
-       p(:,:,k+1) = p(:,:,k) + dp(:,:,k)
+    p(:,:,nlevp) = ps
+    do k = nlev,1,-1
+       p(:,:,k) = p(:,:,k+1) - dp(:,:,k)
     end do
   end subroutine calc_p
 

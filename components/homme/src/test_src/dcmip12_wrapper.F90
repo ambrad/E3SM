@@ -43,6 +43,7 @@ contains
 
 !_____________________________________________________________________
 subroutine dcmip2012_test1_1(elem,hybrid,hvcoord,nets,nete,time,n0,n1)
+  use control_mod, only: ftype
 
   ! 3d deformational flow
 
@@ -65,6 +66,8 @@ subroutine dcmip2012_test1_1(elem,hybrid,hvcoord,nets,nete,time,n0,n1)
   integer :: i,j,k,ie                                                   ! loop indices
   real(rl):: lon,lat                                                    ! pointwise coordiantes
   real(rl):: p,z,phis,u,v,w,T,phis_ps,ps,rho,q(4),dp,eta_dot,dp_dn       ! pointwise field values
+
+  ftype = -1 ! otherwise applyCAMforcing_remap overwrites things erroneously, e.g., ps_v
 
   ! set analytic vertical coordinates at t=0
   if(.not. initialized) then
@@ -112,6 +115,7 @@ end subroutine
 
 !_____________________________________________________________________
 subroutine dcmip2012_test1_2(elem,hybrid,hvcoord,nets,nete,time,n0,n1)
+  use control_mod, only: ftype
 
   !  Hadley-like Meridional Circulation
 
@@ -134,6 +138,8 @@ subroutine dcmip2012_test1_2(elem,hybrid,hvcoord,nets,nete,time,n0,n1)
   integer :: i,j,k,ie                                                   ! loop indices
   real(rl):: lon,lat                                                    ! pointwise coordiantes
   real(rl):: p,z,phis,u,v,w,T,phis_ps,ps,rho,q(2),dp,eta_dot,dp_dn       ! pointwise field values
+
+  ftype = -1 ! otherwise applyCAMforcing_remap overwrites things erroneously, e.g., ps_v
 
   ! set analytic vertical coordinates at t=0
   if(.not. initialized) then
