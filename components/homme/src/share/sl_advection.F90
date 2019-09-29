@@ -883,15 +883,16 @@ contains
 
           call calc_p(elem(ie)%state%dp3d(:,:,:,tl%np1), elem(ie)%state%ps_v(:,:,tl%np1), p1ref)
 
-          do it = 1,0
-             p1r = p0ref + half*dt*eta_dot_dpdn
+          tmp = eta_dot_dpdn
+          do it = 1,2
+             p1r = p0ref + half*dt*tmp
              do j = 1,np
                 do i = 1,np
                    call interp(nlevp, p1ref(i,j,:), eta_dot_dpdn(i,j,:), p1r(i,j,:), tmp(i,j,:))
                 end do
              end do
-             eta_dot_dpdn = tmp
           end do
+          eta_dot_dpdn = tmp
           p1r = p0ref + dt*eta_dot_dpdn
 
           p1m0 = p1r - p0ref
