@@ -621,26 +621,27 @@ subroutine set_hybrid_coefficients(hv, hybrid, eta_t, c)
   real(rl),           intent(in)    :: eta_t    ! top eta level
   real(rl),           intent(in)    :: c        ! exponent
 
-  real(rl)  :: eta_c, tmp
+  real(rl)  :: eta_c, tmp, Bc
   integer   :: k
 
   ! place cutoff halfway between bottom and top eta coordiantes
-  eta_c = hv%etai(nlev/2)
+  !eta_c = hv%etai(nlev/2)
 
   ! place cutoff at model top
   eta_c = eta_t
 
   do k=1,nlevp
     ! get values of hybrid coefficients
-    tmp        = max( (hv%etai(k)-eta_c)/(1.0-eta_c), 0.0_rl)
+     Bc = 1.0/(1.0 - eta_c)
+    tmp        = max( (hv%etai(k)-eta_c)*Bc, 0.0_rl)
     hv%hybi(k) = tmp**c
     hv%hyai(k) = hv%etai(k) - hv%hybi(k)
     if(hybrid%par%masterproc) write(*,'(i4,a,f18.15,a,f18.15,a,f18.15)') &
          k,': etai=',hv%etai(k),' Ai=',hv%hyai(k),' Bi=',hv%hybi(k);
 
     ! get derivatives of hybrid coefficients
-    ddn_hybi(k) = c*tmp**(c-1)
-    if(hv%etai(k)>eta_c) ddn_hybi(k)=0.0d0
+    ddn_hybi(k) = Bc*c*tmp**(c-1)
+    !if(hv%etai(k)>eta_c) ddn_hybi(k)=0.0d0
     ddn_hyai(k) = 1.0d0 - ddn_hybi(k)
   enddo
 

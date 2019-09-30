@@ -867,43 +867,37 @@ contains
 
     real(kind=real_kind), parameter :: half = 0.5d0
 
-    real(kind=real_kind), dimension(np,np,nlevp) :: eta_dot_dpdn, p0ref, p1ref, p0r, p1r, p1m0, tmp
+    real(kind=real_kind), dimension(np,np,nlevp) :: p0ref, p1ref, p0r, p1r, pt0r, pt1r
     integer :: ie, i, j, it
     
     flt%step = flt%step + 1
 
     do ie = nets,nete
        if (rsplit == 0) then
-          ! eta_dot_dpdn from just-finished dyn step
-          eta_dot_dpdn = qsplit*(elem(ie)%derived%eta_dot_dpdn - flt%eta_dot_dpdn_accum(:,:,:,ie))
-          flt%eta_dot_dpdn_accum(:,:,:,ie) = elem(ie)%derived%eta_dot_dpdn
-
           call calc_p(elem(ie)%state%dp3d(:,:,:,tl%n0), elem(ie)%state%ps_v(:,:,tl%n0), p0ref)
           p0r = p0ref + flt%diff_accum(:,:,:,ie)
 
           call calc_p(elem(ie)%state%dp3d(:,:,:,tl%np1), elem(ie)%state%ps_v(:,:,tl%np1), p1ref)
 
-          tmp = eta_dot_dpdn
-          do it = 1,2
-             p1r = p0ref + half*dt*tmp
-             do j = 1,np
-                do i = 1,np
-                   call interp(nlevp, p1ref(i,j,:), eta_dot_dpdn(i,j,:), p1r(i,j,:), tmp(i,j,:))
-                end do
-             end do
-          end do
-          eta_dot_dpdn = tmp
-          p1r = p0ref + dt*eta_dot_dpdn
-
-          p1m0 = p1r - p0ref
-
           do j = 1,np
              do i = 1,np
-                call interp(nlevp, p0ref(i,j,:), p1m0(i,j,:), p0r(i,j,:), flt%diff_accum(i,j,:,ie))
+                call interp(nlevp, p0ref(i,j,:), elem(ie)%derived%eta_dot_dpdn_store(i,j,:,1), &
+                     p0r(i,j,:), pt0r(i,j,:))
              end do
           end do
+          
+          p1r = p1ref
+          do it = 1,2
+             do j = 1,np
+                do i = 1,np
+                   call interp(nlevp, p1ref(i,j,:), elem(ie)%derived%eta_dot_dpdn_store(i,j,:,2), &
+                        p1r(i,j,:), pt1r(i,j,:))
+                end do
+             end do
+             p1r = p0r + dt*half*(pt0r + pt1r)
+          end do
 
-          flt%diff_accum(:,:,:,ie) = p0r + flt%diff_accum(:,:,:,ie) - p1ref
+          flt%diff_accum(:,:,:,ie) = p1r - p1ref
        else
        end if
     end do
