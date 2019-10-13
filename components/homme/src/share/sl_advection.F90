@@ -158,7 +158,7 @@ contains
        elem(ie)%derived%vn0 = elem(ie)%state%v(:,:,:,:,tl%np1) ! actually v at np1
     end do
     if (amb_experiment == 1) then
-       call flt_reconstruct(elem, nets, nete, dt)
+       !call flt_reconstruct(elem, nets, nete, dt)
        do ie=nets,nete
           dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
           ! use divdp for dp_star
