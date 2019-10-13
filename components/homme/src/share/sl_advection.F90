@@ -822,6 +822,10 @@ contains
        else
 #if 1
           alpha = (xi(ji) - x(j))/(x(j+1) - x(j))
+          if (alpha < -1e-3 .or. alpha > 1 + 1e-3) then
+             print *,'amb> alpha',j,ji,x(j),x(j+1),x(ji),alpha
+             call abortmp('whoops')
+          end if
           yi(ji) = (1 - alpha)*y(j) + alpha*y(j+1)
 #else
           if (j == 1) then
@@ -887,7 +891,7 @@ contains
           end do
           
           p1r = p1ref
-          do it = 1,2
+          do it = 1,1
              do j = 1,np
                 do i = 1,np
                    call interp(nlevp, p1ref(i,j,:), elem(ie)%derived%eta_dot_dpdn_store(i,j,:,2), &
@@ -898,6 +902,10 @@ contains
           end do
 
           flt%diff_accum(:,:,:,ie) = p1r - p1ref
+
+          ! End points are always 0.
+          flt%diff_accum(:,:,1,ie) = 0
+          flt%diff_accum(:,:,nlevp,ie) = 0
        else
        end if
     end do

@@ -632,7 +632,7 @@ subroutine set_hybrid_coefficients(hv, hybrid, eta_t, c)
 
   do k=1,nlevp
     ! get values of hybrid coefficients
-     Bc = 1.0/(1.0 - eta_c)
+    Bc = 1.0/(1.0 - eta_c)
     tmp        = max( (hv%etai(k)-eta_c)*Bc, 0.0_rl)
     hv%hybi(k) = tmp**c
     hv%hyai(k) = hv%etai(k) - hv%hybi(k)
@@ -733,9 +733,7 @@ subroutine dcmip2012_print_test1_results(elem, tl, hvcoord, par, subnum)
 
   real(rl) :: q(np,np,4), lon, lat, z, p, phis, u, v, w, T, phis_ps, ps, rho, time, &
        a, b, rd
-  integer :: ie, nt, k, iq, i, j
-
-  nt = tl%n0
+  integer :: ie, k, iq, i, j
 
   ! Set time to 0 to get the initial conditions.
   time = 0._rl
