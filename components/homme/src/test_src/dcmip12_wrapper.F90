@@ -72,7 +72,7 @@ subroutine dcmip2012_test1_1(elem,hybrid,hvcoord,nets,nete,time,n0,n1)
   ! set analytic vertical coordinates at t=0
   if(.not. initialized) then
     if (hybrid%masterthread) write(iulog,*) 'initializing dcmip2012 test 1-1: 3d deformational flow'
-    call get_evenly_spaced_z(zi,zm, 0.0_rl,ztop)                        ! get evenly spaced z levels
+    call get_unevenly_spaced_z(zi,zm, 0.0_rl,ztop,H)                        ! get evenly spaced z levels
     hvcoord%etai  = exp(-zi/H)                                          ! set eta levels from z
     call set_hybrid_coefficients(hvcoord,hybrid, hvcoord%etai(1),1.0_rl)! set hybrid A and B from eta levels
     call set_layer_locations(hvcoord, .true., hybrid%masterthread)
@@ -604,13 +604,27 @@ subroutine get_evenly_spaced_z(zi,zm, zb,zt)
   real(rl), intent(in)    :: zb,zt      ! top and bottom coordinates
   real(rl), intent(inout) :: zi(nlevp)  ! z at interfaces
   real(rl), intent(inout) :: zm(nlev)   ! z at midpoints
+
   integer :: k
 
   forall(k=1:nlevp) zi(k) = zt-(k-1)*(zt-zb)/(nlevp-1)
   zm = 0.5_rl*( zi(2:nlevp) + zi(1:nlev) )
-
 end subroutine
 
+subroutine get_unevenly_spaced_z(zi,zm, zb,zt,H)
+  real(rl), intent(in)    :: zb,zt,H    ! top and bottom coordinates
+  real(rl), intent(inout) :: zi(nlevp)  ! z at interfaces
+  real(rl), intent(inout) :: zm(nlev)   ! z at midpoints
+  integer :: k
+  real(rl) :: etab, etat, deta
+
+  etab = 1.0d0
+  etat = exp(-zt/H)
+  deta = (etab - etat)/nlev
+  do k = 1, nlevp
+     zi(k) = H*log(1.0d0/(etat + (k-1)*deta))
+  end do
+end subroutine get_unevenly_spaced_z
 !_____________________________________________________________________
 subroutine set_hybrid_coefficients(hv, hybrid, eta_t, c)
 

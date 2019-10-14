@@ -854,10 +854,12 @@ contains
        else
 #if 0
           alpha = (xi(ji) - x(j))/(x(j+1) - x(j))
+# if 0
           if (alpha < -1e-3 .or. alpha > 1 + 1e-3) then
              print *,'amb> alpha',j,ji,x(j),x(j+1),x(ji),alpha
              call abortmp('whoops')
           end if
+# endif
           yi(ji) = (1 - alpha)*y(j) + alpha*y(j+1)
 #else
           if (j == 1) then
