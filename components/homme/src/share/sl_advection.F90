@@ -39,7 +39,7 @@ module sl_advection
   type, public :: FloatingLevelTracker_t
      integer :: step
      real(kind=real_kind), allocatable :: eta_dot_dpdn_accum(:,:,:,:), diff_accum(:,:,:,:)
-     real(real_kind) :: dp, max_da
+     real(real_kind) :: dp, max_da, min_dpf
   end type FloatingLevelTracker_t
 
   public :: flt_init, flt_finish, flt_start_new_interval, flt_update, flt_reconstruct
@@ -881,6 +881,7 @@ contains
 
     allocate(flt%eta_dot_dpdn_accum(np,np,nlevp,nelemd), flt%diff_accum(np,np,nlevp,nelemd))
     flt%max_da = zero
+    flt%min_dpf = 100000.d0
   end subroutine flt_init
 
   subroutine flt_finish()
@@ -991,22 +992,30 @@ contains
 
   subroutine flt_reconstruct(hybrid, elem, nets, nete, dt)
     use control_mod, only: qsplit, rsplit
-    use reduction_mod, only: ParallelMax
+    use reduction_mod, only: ParallelMin, ParallelMax
 
     type (hybrid_t), intent(in) :: hybrid
     type (element_t), intent(inout) :: elem(:)
     integer, intent(in) :: nets, nete
     real(kind=real_kind), intent(in) :: dt
 
-    real(real_kind) :: max_da
+    real(real_kind) :: max_da, min_dpf
     integer :: ie, k
 
+#if 1
     max_da = maxval(abs(flt%diff_accum))
     max_da = ParallelMax(max_da, hybrid)
     if (hybrid%masterthread .and. max_da > flt%max_da) then
        flt%max_da = max_da
-       print '(a,es12.4,es12.4,es12.4)','amb>',flt%dp,flt%max_da,flt%max_da/flt%dp
+       print '(a,es12.4,es12.4,es12.4)','amb> max_da ',flt%dp,flt%max_da,flt%max_da/flt%dp
     end if
+    min_dpf = flt%dp + minval(flt%diff_accum(:,:,2:,:) - flt%diff_accum(:,:,1:nlev,:))
+    min_dpf = ParallelMin(min_dpf, hybrid)
+    if (hybrid%masterthread .and. min_dpf < flt%min_dpf) then
+       flt%min_dpf = min_dpf
+       print '(a,es12.4,es12.4,es12.4)','amb> min_dpf',flt%dp,flt%min_dpf,flt%min_dpf/flt%dp
+    end if
+#endif
 
     do ie = nets,nete
        if (rsplit == 0) then
