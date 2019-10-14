@@ -911,7 +911,7 @@ contains
     type (derivative_t) :: deriv
     real(kind=real_kind), dimension(np,np,nlevp) :: p0ref, p1ref, p0r, p1r, pt0r, pt1r, &
          ptp0
-    real(kind=real_kind) :: pth, grad(np,np,2,nlevp), v1h, v2h
+    real(kind=real_kind) :: pth, grad(np,np,2,nlevp), v1h, v2h, a, b, xs(3)
     integer :: ie, i, j, k, it, ks, ke, k1
     
     flt%step = flt%step + 1
@@ -943,19 +943,32 @@ contains
           end do
 
           do k = 1,nlevp
-             if (k == 1 .or. k == nlevp) then
-                k1 = k
-             else
-                k1 = k+1
-             end if
              do j = 1,np
                 do i = 1,np
+                   k1 = k+1
+                   if (k == 1) then
+                      xs(1) = half*(p0ref(i,j,2) + p0ref(i,j,3))
+                      xs(2) = half*(p0ref(i,j,1) + p0ref(i,j,2))
+                      xs(3) = p0ref(i,j,1) - half*(p0ref(i,j,2) - p0ref(i,j,1))
+                      a = (xs(3) - xs(1))/(xs(2) - xs(1))
+                      b = one - a
+                   else if (k == nlevp) then
+                      k1 = k-1
+                      xs(1) = half*(p0ref(i,j,nlevp-2) + p0ref(i,j,nlevp-1))
+                      xs(2) = half*(p0ref(i,j,nlevp-1) + p0ref(i,j,nlevp))
+                      xs(3) = p0ref(i,j,nlevp) + half*(p0ref(i,j,nlevp) - p0ref(i,j,nlevp-1))
+                      a = (xs(3) - xs(1))/(xs(2) - xs(1))
+                      b = one - a
+                   else
+                      a = half
+                      b = half
+                   end if
                    pth = half*(elem(ie)%derived%eta_dot_dpdn_store(i,j,k,1) + &
                                elem(ie)%derived%eta_dot_dpdn_store(i,j,k,2))
-                   v1h = half*half*(elem(ie)%state%v(i,j,1,k,tl%n0 ) + elem(ie)%state%v(i,j,1,k1,tl%n0 ) + &
-                                    elem(ie)%state%v(i,j,1,k,tl%np1) + elem(ie)%state%v(i,j,1,k1,tl%np1))
-                   v2h = half*half*(elem(ie)%state%v(i,j,2,k,tl%n0 ) + elem(ie)%state%v(i,j,2,k1,tl%n0 ) + &
-                                    elem(ie)%state%v(i,j,2,k,tl%np1) + elem(ie)%state%v(i,j,2,k1,tl%np1))
+                   v1h = half*(a*elem(ie)%state%v(i,j,1,k,tl%n0 ) + b*elem(ie)%state%v(i,j,1,k1,tl%n0 ) + &
+                               a*elem(ie)%state%v(i,j,1,k,tl%np1) + b*elem(ie)%state%v(i,j,1,k1,tl%np1))
+                   v2h = half*(a*elem(ie)%state%v(i,j,2,k,tl%n0 ) + b*elem(ie)%state%v(i,j,2,k1,tl%n0 ) + &
+                               a*elem(ie)%state%v(i,j,2,k,tl%np1) + b*elem(ie)%state%v(i,j,2,k1,tl%np1))
                    p0r(i,j,k) = p1ref(i,j,k) - dt*(pth - half*dt*( &
                         ptp0(i,j,k)*pth + grad(i,j,k,1)*v1h + grad(i,j,k,2)*v2h))
                 end do
@@ -1002,7 +1015,7 @@ contains
     real(real_kind) :: max_da, min_dpf
     integer :: ie, k
 
-#if 1
+#if 0
     max_da = maxval(abs(flt%diff_accum))
     max_da = ParallelMax(max_da, hybrid)
     if (hybrid%masterthread .and. max_da > flt%max_da) then
