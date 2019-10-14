@@ -146,7 +146,7 @@ IMPLICIT NONE
   !---------------------------------------------------------------------
 
 	! shape function
-	bs = 1.2d0
+	bs = 0.6d0!1.2d0
 	s = 1.0 + exp((ptop-p0)/(bs*ptop)) - exp((p-p0)/(bs*ptop)) - exp((ptop-p)/(bs*ptop))
   s_p = (-exp((p-p0)/(bs*ptop)) + exp((ptop-p)/(bs*ptop)))/(bs*ptop)
 

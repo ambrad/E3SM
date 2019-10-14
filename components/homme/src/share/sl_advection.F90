@@ -39,6 +39,7 @@ module sl_advection
   type, public :: FloatingLevelTracker_t
      integer :: step
      real(kind=real_kind), allocatable :: eta_dot_dpdn_accum(:,:,:,:), diff_accum(:,:,:,:)
+     real(real_kind) :: dp, max_da
   end type FloatingLevelTracker_t
 
   public :: flt_init, flt_finish, flt_start_new_interval, flt_update, flt_reconstruct
@@ -879,6 +880,7 @@ contains
     use dimensions_mod, only: nelemd
 
     allocate(flt%eta_dot_dpdn_accum(np,np,nlevp,nelemd), flt%diff_accum(np,np,nlevp,nelemd))
+    flt%max_da = zero
   end subroutine flt_init
 
   subroutine flt_finish()
@@ -917,10 +919,8 @@ contains
     do ie = nets,nete
        if (rsplit == 0) then
           call calc_p(elem(ie)%state%dp3d(:,:,:,tl%n0 ), elem(ie)%state%ps_v(:,:,tl%n0 ), p0ref)
+          flt%dp = p0ref(1,1,2) - p0ref(1,1,1)
           call calc_p(elem(ie)%state%dp3d(:,:,:,tl%np1), elem(ie)%state%ps_v(:,:,tl%np1), p1ref)
-
-          if (hybrid%masterthread .and. ie == 1 .and. tl%nstep == 1) then
-          end if
 
           do k = 1,nlevp
              grad(:,:,:,k) = gradient_sphere(elem(ie)%derived%eta_dot_dpdn_store(:,:,k,1), &
@@ -991,13 +991,22 @@ contains
 
   subroutine flt_reconstruct(hybrid, elem, nets, nete, dt)
     use control_mod, only: qsplit, rsplit
+    use reduction_mod, only: ParallelMax
 
     type (hybrid_t), intent(in) :: hybrid
     type (element_t), intent(inout) :: elem(:)
     integer, intent(in) :: nets, nete
     real(kind=real_kind), intent(in) :: dt
 
+    real(real_kind) :: max_da
     integer :: ie, k
+
+    max_da = maxval(abs(flt%diff_accum))
+    max_da = ParallelMax(max_da, hybrid)
+    if (hybrid%masterthread .and. max_da > flt%max_da) then
+       flt%max_da = max_da
+       print '(a,es12.4,es12.4,es12.4)','amb>',flt%dp,flt%max_da,flt%max_da/flt%dp
+    end if
 
     do ie = nets,nete
        if (rsplit == 0) then
