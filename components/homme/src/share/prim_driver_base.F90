@@ -1886,7 +1886,7 @@ contains
        call prim_advance_exp(elem, deriv1, hvcoord,hybrid, dt, tl, nets, nete, &
             logical(compute_diagnostics .and. n == 1))
        if (rsplit == 0) then
-          call flt_update(elem, nets, nete, tl, dt)
+          call flt_update(hybrid, elem, nets, nete, tl, dt)
        else
           if (modulo(n, rsplit) == 0) then
              if (prescribed_wind == 1) then
@@ -1903,7 +1903,7 @@ contains
                    elem(ie)%state%dp3d(:,:,:,tl%np1)=dp
                 end do
              else
-                call flt_update(elem, nets, nete, tl, dt_remap)
+                call flt_update(hybrid, elem, nets, nete, tl, dt_remap)
                 call vertical_remap(hybrid,elem,hvcoord,dt_remap,tl%np1,-1,nets,nete)
              end if
           end if

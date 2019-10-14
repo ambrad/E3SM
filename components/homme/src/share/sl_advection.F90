@@ -895,10 +895,11 @@ contains
     flt%step = 0
   end subroutine flt_start_new_interval
 
-  subroutine flt_update(elem, nets, nete, tl, dt)
+  subroutine flt_update(hybrid, elem, nets, nete, tl, dt)
     use control_mod, only: qsplit, rsplit
     use derivative_mod, only: derivative_t, gradient_sphere, get_deriv
 
+    type (hybrid_t), intent(in) :: hybrid
     type (element_t), intent(inout) :: elem(:)
     type (TimeLevel_t), intent(in) :: tl
     real(kind=real_kind), intent(in) :: dt
@@ -918,7 +919,12 @@ contains
           call calc_p(elem(ie)%state%dp3d(:,:,:,tl%n0 ), elem(ie)%state%ps_v(:,:,tl%n0 ), p0ref)
           call calc_p(elem(ie)%state%dp3d(:,:,:,tl%np1), elem(ie)%state%ps_v(:,:,tl%np1), p1ref)
 
+          if (hybrid%masterthread .and. ie == 1 .and. tl%nstep == 1) then
+          end if
+
           do k = 1,nlevp
+             grad(:,:,:,k) = gradient_sphere(elem(ie)%derived%eta_dot_dpdn_store(:,:,k,1), &
+                  deriv, elem(ie)%Dinv)
              if (k == 1) then
                 ks = 1; ke = 3
              elseif (k == nlevp) then
@@ -931,7 +937,6 @@ contains
                    call eval_lagrange_poly_derivative(ke-ks+1, p0ref(i,j,ks:ke), &
                         elem(ie)%derived%eta_dot_dpdn_store(i,j,ks:ke,1), &
                         p0ref(i,j,k), ptp0(i,j,k))
-                   grad(:,:,:,k) = gradient_sphere(elem(ie)%derived%eta_dot_dpdn_store(:,:,k,1), deriv, elem(ie)%Dinv)
                 end do
              end do
           end do
@@ -946,12 +951,12 @@ contains
                 do i = 1,np
                    pth = half*(elem(ie)%derived%eta_dot_dpdn_store(i,j,k,1) + &
                                elem(ie)%derived%eta_dot_dpdn_store(i,j,k,2))
-                   v1h = half*half*(elem(ie)%state%v(i,j,1,k,tl%n0) + elem(ie)%state%v(i,j,1,k1,tl%n0) + &
-                        elem(ie)%state%v(i,j,1,k,tl%np1) + elem(ie)%state%v(i,j,1,k1,tl%np1))
-                   v2h = half*half*(elem(ie)%state%v(i,j,2,k,tl%n0) + elem(ie)%state%v(i,j,2,k1,tl%n0) + &
-                        elem(ie)%state%v(i,j,2,k,tl%np1) + elem(ie)%state%v(i,j,2,k1,tl%np1))
+                   v1h = half*half*(elem(ie)%state%v(i,j,1,k,tl%n0 ) + elem(ie)%state%v(i,j,1,k1,tl%n0 ) + &
+                                    elem(ie)%state%v(i,j,1,k,tl%np1) + elem(ie)%state%v(i,j,1,k1,tl%np1))
+                   v2h = half*half*(elem(ie)%state%v(i,j,2,k,tl%n0 ) + elem(ie)%state%v(i,j,2,k1,tl%n0 ) + &
+                                    elem(ie)%state%v(i,j,2,k,tl%np1) + elem(ie)%state%v(i,j,2,k1,tl%np1))
                    p0r(i,j,k) = p1ref(i,j,k) - dt*(pth - half*dt*( &
-                        ptp0(i,j,k)*pth + (grad(i,j,k,1)*v1h + grad(i,j,k,2)*v2h)))
+                        ptp0(i,j,k)*pth + grad(i,j,k,1)*v1h + grad(i,j,k,2)*v2h))
                 end do
              end do
           end do
