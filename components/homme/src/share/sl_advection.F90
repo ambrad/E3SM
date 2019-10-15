@@ -912,10 +912,37 @@ contains
     real(kind=real_kind), dimension(np,np,nlevp) :: p0ref, p1ref, p0r, p1r, pt0r, pt1r, &
          ptp0
     real(kind=real_kind) :: pth, grad(np,np,2,nlevp), v1h, v2h, a, b, xs(3)
-    integer :: ie, i, j, k, it, ks, ke, k1
+    integer :: ie, i, j, k, it, ks, ke, k1, k2
     
     flt%step = flt%step + 1
     call get_deriv(deriv)
+
+!#define DSSGRAD
+#ifdef DSSGRAD
+    do ie = nets,nete
+       do k = 1,nlevp
+          grad(:,:,:,k) = gradient_sphere(elem(ie)%derived%eta_dot_dpdn_store(:,:,k,1), &
+               deriv, elem(ie)%Dinv)
+          do i = 1,2
+             grad(:,:,i,k) = grad(:,:,i,k)*elem(ie)%spheremp!*elem(ie)%rspheremp
+          end do
+       end do
+       call edgeVpack_nlyr(edge_g, elem(ie)%desc, grad, 2*nlevp, 0, 2*nlevp)
+    end do
+    call bndry_exchangeV(hybrid, edge_g)
+# if 0
+    do ie = nets,nete
+       call edgeVunpack_nlyr(edge_g, elem(ie)%desc, grad, 2*nlevp, 0, 2*nlevp)
+       do k = 1,nlevp
+          do i = 1,2
+             grad(:,:,i,k) = grad(:,:,i,k)*elem(ie)%spheremp*elem(ie)%rspheremp
+          end do
+       end do       
+       call edgeVpack_nlyr(edge_g, elem(ie)%desc, grad, 2*nlevp, 0, 2*nlevp)
+    end do
+    call bndry_exchangeV(hybrid, edge_g)
+# endif
+#endif
 
     do ie = nets,nete
        if (rsplit == 0) then
@@ -923,9 +950,18 @@ contains
           flt%dp = p0ref(1,1,2) - p0ref(1,1,1)
           call calc_p(elem(ie)%state%dp3d(:,:,:,tl%np1), elem(ie)%state%ps_v(:,:,tl%np1), p1ref)
 
+#ifdef DSSGRAD
+          call edgeVunpack_nlyr(edge_g, elem(ie)%desc, grad, 2*nlevp, 0, 2*nlevp)
+#endif
           do k = 1,nlevp
+#ifndef DSSGRAD
              grad(:,:,:,k) = gradient_sphere(elem(ie)%derived%eta_dot_dpdn_store(:,:,k,1), &
                   deriv, elem(ie)%Dinv)
+#elif 1
+             do i = 1,2
+                grad(:,:,i,k) = grad(:,:,i,k)*elem(ie)%rspheremp
+             end do
+#endif
              if (k == 1) then
                 ks = 1; ke = 3
              elseif (k == nlevp) then
@@ -945,17 +981,21 @@ contains
           do k = 1,nlevp
              do j = 1,np
                 do i = 1,np
-                   k1 = k+1
+                   k1 = k-1
+                   k2 = k
                    if (k == 1) then
-                      xs(1) = half*(p0ref(i,j,2) + p0ref(i,j,3))
-                      xs(2) = half*(p0ref(i,j,1) + p0ref(i,j,2))
+                      k1 = k
+                      k2 = k+1
+                      xs(1) = half*(p0ref(i,j,k2) + p0ref(i,j,3))
+                      xs(2) = half*(p0ref(i,j,k1) + p0ref(i,j,k2))
                       xs(3) = p0ref(i,j,1) - half*(p0ref(i,j,2) - p0ref(i,j,1))
                       a = (xs(3) - xs(1))/(xs(2) - xs(1))
                       b = one - a
                    else if (k == nlevp) then
                       k1 = k-1
-                      xs(1) = half*(p0ref(i,j,nlevp-2) + p0ref(i,j,nlevp-1))
-                      xs(2) = half*(p0ref(i,j,nlevp-1) + p0ref(i,j,nlevp))
+                      k2 = k-2
+                      xs(1) = half*(p0ref(i,j,k2) + p0ref(i,j,k1))
+                      xs(2) = half*(p0ref(i,j,k1) + p0ref(i,j,nlevp))
                       xs(3) = p0ref(i,j,nlevp) + half*(p0ref(i,j,nlevp) - p0ref(i,j,nlevp-1))
                       a = (xs(3) - xs(1))/(xs(2) - xs(1))
                       b = one - a
@@ -965,10 +1005,10 @@ contains
                    end if
                    pth = half*(elem(ie)%derived%eta_dot_dpdn_store(i,j,k,1) + &
                                elem(ie)%derived%eta_dot_dpdn_store(i,j,k,2))
-                   v1h = half*(a*elem(ie)%state%v(i,j,1,k,tl%n0 ) + b*elem(ie)%state%v(i,j,1,k1,tl%n0 ) + &
-                               a*elem(ie)%state%v(i,j,1,k,tl%np1) + b*elem(ie)%state%v(i,j,1,k1,tl%np1))
-                   v2h = half*(a*elem(ie)%state%v(i,j,2,k,tl%n0 ) + b*elem(ie)%state%v(i,j,2,k1,tl%n0 ) + &
-                               a*elem(ie)%state%v(i,j,2,k,tl%np1) + b*elem(ie)%state%v(i,j,2,k1,tl%np1))
+                   v1h = half*(a*elem(ie)%state%v(i,j,1,k1,tl%n0 ) + b*elem(ie)%state%v(i,j,1,k2,tl%n0 ) + &
+                               a*elem(ie)%state%v(i,j,1,k1,tl%np1) + b*elem(ie)%state%v(i,j,1,k2,tl%np1))
+                   v2h = half*(a*elem(ie)%state%v(i,j,2,k1,tl%n0 ) + b*elem(ie)%state%v(i,j,2,k2,tl%n0 ) + &
+                               a*elem(ie)%state%v(i,j,2,k1,tl%np1) + b*elem(ie)%state%v(i,j,2,k2,tl%np1))
                    p0r(i,j,k) = p1ref(i,j,k) - dt*(pth - half*dt*( &
                         ptp0(i,j,k)*pth + grad(i,j,1,k)*v1h + grad(i,j,2,k)*v2h))
 #if 0
@@ -1038,6 +1078,16 @@ contains
        flt%min_dpf = min_dpf
        print '(a,es12.4,es12.4,es12.4)','amb> min_dpf',flt%dp,flt%min_dpf,flt%min_dpf/flt%dp
     end if
+#endif
+
+#ifdef DSSGRAD
+    do ie = nets,nete
+       if (rsplit == 0) then
+          elem(ie)%derived%eta_dot_dpdn = flt%diff_accum(:,:,:,ie)/dt
+       else
+       end if
+    end do
+    return
 #endif
 
     do ie = nets,nete
