@@ -146,7 +146,7 @@ IMPLICIT NONE
   !---------------------------------------------------------------------
 
 	! shape function
-	bs = 0.6d0!1.2d0
+	bs = 0.8d0!1.2d0
 	s = 1.0 + exp((ptop-p0)/(bs*ptop)) - exp((p-p0)/(bs*ptop)) - exp((ptop-p)/(bs*ptop))
   s_p = (-exp((p-p0)/(bs*ptop)) + exp((ptop-p)/(bs*ptop)))/(bs*ptop)
 
@@ -212,7 +212,7 @@ IMPLICIT NONE
   x = cos(lat)*cos(lon)
   y = cos(lat)*sin(lon)
   zeta = sin(lat)
-  q1 = 0.3*(1.1 + sin(0.25d0*pi*x)*sin(0.3d0*pi*y)*sin(0.25d0*pi*zeta)*sin(pi*(p-ptop)/(p0-ptop)))
+  q1 = 0.3*(1.1 + sin(0.25d0*pi*x)*sin(0.3d0*pi*y)*sin(0.25d0*pi*zeta)*sin(pi*(p-ptop)/(p0-ptop)))!*sin(pi*z/ztop))
 #else
 	q1 = 0.5d0 * (1.d0 + cos(pi*d1)) + 0.5d0 * (1.d0 + cos(pi*d2))
 #endif

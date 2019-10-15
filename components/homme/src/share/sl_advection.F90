@@ -917,6 +917,10 @@ contains
     flt%step = flt%step + 1
     call get_deriv(deriv)
 
+    ! - can this be combined with ale_rkdss, at least at the s/w, ie mpi, level?
+    ! - go back to even dz, uneven dp
+    ! - how much does the 2nd-order correction change the levels? make a max_da-like diagnostic
+
     do ie = nets,nete
        if (rsplit == 0) then
           call calc_p(elem(ie)%state%dp3d(:,:,:,tl%n0 ), elem(ie)%state%ps_v(:,:,tl%n0 ), p0ref)
