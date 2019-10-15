@@ -917,51 +917,15 @@ contains
     flt%step = flt%step + 1
     call get_deriv(deriv)
 
-!#define DSSGRAD
-#ifdef DSSGRAD
-    do ie = nets,nete
-       do k = 1,nlevp
-          grad(:,:,:,k) = gradient_sphere(elem(ie)%derived%eta_dot_dpdn_store(:,:,k,1), &
-               deriv, elem(ie)%Dinv)
-          do i = 1,2
-             grad(:,:,i,k) = grad(:,:,i,k)*elem(ie)%spheremp!*elem(ie)%rspheremp
-          end do
-       end do
-       call edgeVpack_nlyr(edge_g, elem(ie)%desc, grad, 2*nlevp, 0, 2*nlevp)
-    end do
-    call bndry_exchangeV(hybrid, edge_g)
-# if 0
-    do ie = nets,nete
-       call edgeVunpack_nlyr(edge_g, elem(ie)%desc, grad, 2*nlevp, 0, 2*nlevp)
-       do k = 1,nlevp
-          do i = 1,2
-             grad(:,:,i,k) = grad(:,:,i,k)*elem(ie)%spheremp*elem(ie)%rspheremp
-          end do
-       end do       
-       call edgeVpack_nlyr(edge_g, elem(ie)%desc, grad, 2*nlevp, 0, 2*nlevp)
-    end do
-    call bndry_exchangeV(hybrid, edge_g)
-# endif
-#endif
-
     do ie = nets,nete
        if (rsplit == 0) then
           call calc_p(elem(ie)%state%dp3d(:,:,:,tl%n0 ), elem(ie)%state%ps_v(:,:,tl%n0 ), p0ref)
           flt%dp = p0ref(1,1,2) - p0ref(1,1,1)
           call calc_p(elem(ie)%state%dp3d(:,:,:,tl%np1), elem(ie)%state%ps_v(:,:,tl%np1), p1ref)
 
-#ifdef DSSGRAD
-          call edgeVunpack_nlyr(edge_g, elem(ie)%desc, grad, 2*nlevp, 0, 2*nlevp)
-#endif
           do k = 1,nlevp
-#ifndef DSSGRAD
              grad(:,:,:,k) = gradient_sphere(elem(ie)%derived%eta_dot_dpdn_store(:,:,k,1), &
                   deriv, elem(ie)%Dinv)
-#elif 1
-             do i = 1,2
-                grad(:,:,i,k) = grad(:,:,i,k)*elem(ie)%rspheremp
-             end do
-#endif
              if (k == 1) then
                 ks = 1; ke = 3
              elseif (k == nlevp) then
@@ -983,6 +947,13 @@ contains
                 do i = 1,np
                    k1 = k-1
                    k2 = k
+#if 0
+                   ! Constant extrapolation to the interface on the boundary.
+                   a = half; b = half
+                   if (k == 1) k1 = k
+                   if (k == nlevp) k2 = k-1
+#else
+                   ! Linear extrapolation to the interface on the boundary.
                    if (k == 1) then
                       k1 = k
                       k2 = k+1
@@ -1003,6 +974,7 @@ contains
                       a = half
                       b = half
                    end if
+#endif
                    pth = half*(elem(ie)%derived%eta_dot_dpdn_store(i,j,k,1) + &
                                elem(ie)%derived%eta_dot_dpdn_store(i,j,k,2))
                    v1h = half*(a*elem(ie)%state%v(i,j,1,k1,tl%n0 ) + b*elem(ie)%state%v(i,j,1,k2,tl%n0 ) + &
@@ -1078,16 +1050,6 @@ contains
        flt%min_dpf = min_dpf
        print '(a,es12.4,es12.4,es12.4)','amb> min_dpf',flt%dp,flt%min_dpf,flt%min_dpf/flt%dp
     end if
-#endif
-
-#ifdef DSSGRAD
-    do ie = nets,nete
-       if (rsplit == 0) then
-          elem(ie)%derived%eta_dot_dpdn = flt%diff_accum(:,:,:,ie)/dt
-       else
-       end if
-    end do
-    return
 #endif
 
     do ie = nets,nete
