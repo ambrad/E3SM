@@ -162,6 +162,7 @@ contains
        elem(ie)%derived%vn0 = elem(ie)%state%v(:,:,:,:,tl%np1) ! actually v at np1
     end do
     if (amb_experiment == 1) then
+!#define TOGETHER
        call flt_reconstruct(hybrid, elem, nets, nete, dt)
        do ie=nets,nete
           dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
@@ -182,6 +183,18 @@ contains
 
     ! compute displacements for departure grid store in elem%derived%vstar
     call ALE_RKdss (elem, nets, nete, hybrid, deriv, dt, tl)
+
+#ifdef TOGETHER
+    if (amb_experiment == 1) then
+       do ie=nets,nete
+          if (rsplit == 0) then
+             elem(ie)%derived%divdp = dp + &
+                  dt*(elem(ie)%derived%eta_dot_dpdn(:,:,2:) - elem(ie)%derived%eta_dot_dpdn(:,:,1:nlev))
+          else
+          end if
+       end do
+    end if
+#endif
 
     if (barrier) call perf_barrier(hybrid)
     call t_startf('SLMM_v2x')
@@ -324,7 +337,7 @@ contains
 
     integer                                          :: ie, k
     real (kind=real_kind), dimension(np,np,2)        :: vtmp
-    integer :: np1
+    integer :: np1, nlyr
 
     np1 = tl%np1
 
@@ -350,6 +363,12 @@ contains
     !
     !    !------------------------------------------------------------------------------------
 
+#ifdef TOGETHER
+    nlyr = 2*nlev
+#else
+    nlyr = 2*nlev + nlevp
+#endif
+
     do ie=nets,nete
        ! vstarn0 = U(x,t)
        ! vstar   = U(x,t+1)
@@ -363,10 +382,16 @@ contains
                !(elem(ie)%state%v(:,:,:,k,np1) + elem(ie)%derived%vstar(:,:,:,k))/2 - dt*vtmp(:,:,:)/2
                (elem(ie)%derived%vn0(:,:,:,k) + elem(ie)%derived%vstar(:,:,:,k))/2 - dt*vtmp(:,:,:)/2
 
-          elem(ie)%derived%vstar(:,:,1,k) = elem(ie)%derived%vstar(:,:,1,k)*elem(ie)%spheremp(:,:)
-          elem(ie)%derived%vstar(:,:,2,k) = elem(ie)%derived%vstar(:,:,2,k)*elem(ie)%spheremp(:,:)
+          elem(ie)%derived%vstar(:,:,1,k) = elem(ie)%derived%vstar(:,:,1,k)*elem(ie)%spheremp*elem(ie)%rspheremp
+          elem(ie)%derived%vstar(:,:,2,k) = elem(ie)%derived%vstar(:,:,2,k)*elem(ie)%spheremp*elem(ie)%rspheremp
        enddo
-       call edgeVpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%vstar,2*nlev,0,2*nlev)
+       call edgeVpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%vstar,2*nlev,0,nlyr)
+#ifdef TOGETHER
+       do k = 1,nlevp
+          elem(ie)%derived%eta_dot_dpdn(:,:,k) = elem(ie)%derived%eta_dot_dpdn(:,:,k)*elem(ie)%spheremp*elem(ie)%rspheremp
+       end do
+       call edgeVpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%eta_dot_dpdn,nlevp,2*nlyr,nlyr)
+#endif
     enddo
 
     call t_startf('ALE_RKdss_bexchV')
@@ -374,11 +399,10 @@ contains
     call t_stopf('ALE_RKdss_bexchV')
 
     do ie=nets,nete
-       call edgeVunpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%vstar,2*nlev,0,2*nlev)
-       do k=1, nlev
-          elem(ie)%derived%vstar(:,:,1,k) = elem(ie)%derived%vstar(:,:,1,k)*elem(ie)%rspheremp(:,:)
-          elem(ie)%derived%vstar(:,:,2,k) = elem(ie)%derived%vstar(:,:,2,k)*elem(ie)%rspheremp(:,:)
-       end do
+       call edgeVunpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%vstar,2*nlev,0,nlyr)
+#ifdef TOGETHER
+       call edgeVunpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%eta_dot_dpdn,nlevp,2*nlev,nlyr)
+#endif
     end do
   end subroutine ALE_RKdss
 
@@ -1054,6 +1078,16 @@ contains
        flt%min_dpf = min_dpf
        print '(a,es12.4,es12.4,es12.4)','amb> min_dpf',flt%dp,flt%min_dpf,flt%min_dpf/flt%dp
     end if
+#endif
+
+#ifdef TOGETHER
+    do ie = nets,nete
+       if (rsplit == 0) then
+          elem(ie)%derived%eta_dot_dpdn = flt%diff_accum(:,:,:,ie)/dt
+       else
+       end if
+    end do
+    return
 #endif
 
     do ie = nets,nete
