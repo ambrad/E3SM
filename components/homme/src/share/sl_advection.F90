@@ -853,11 +853,11 @@ contains
        if (j < n-1 .and. xi(ji) > x(j+1)) then
           j = j + 1
        else
-#if 0
+#if 1
           alpha = (xi(ji) - x(j))/(x(j+1) - x(j))
-# if 0
+# if 1
           if (alpha < -1e-3 .or. alpha > 1 + 1e-3) then
-             print *,'amb> alpha',j,ji,x(j),x(j+1),x(ji),alpha
+             print *,'amb> alpha',j,ji,x(j),x(j+1),xi(ji),alpha
              call abortmp('whoops')
           end if
 # endif
@@ -970,7 +970,15 @@ contains
                    v2h = half*(a*elem(ie)%state%v(i,j,2,k,tl%n0 ) + b*elem(ie)%state%v(i,j,2,k1,tl%n0 ) + &
                                a*elem(ie)%state%v(i,j,2,k,tl%np1) + b*elem(ie)%state%v(i,j,2,k1,tl%np1))
                    p0r(i,j,k) = p1ref(i,j,k) - dt*(pth - half*dt*( &
-                        ptp0(i,j,k)*pth + grad(i,j,k,1)*v1h + grad(i,j,k,2)*v2h))
+                        ptp0(i,j,k)*pth + grad(i,j,1,k)*v1h + grad(i,j,2,k)*v2h))
+                   if (k == 1 .and. p0r(i,j,1) < p0ref(i,j,1) - 1e-2) then
+                      print *,'amb>',p0r(i,j,1),p0ref(i,j,1), '|', &
+                           pth, v1h, v2h, '|', &
+                           ptp0(i,j,k), grad(i,j,1,k), grad(i,j,2,k), '|', &
+                           dt*dt*half*ptp0(i,j,k)*pth, dt*dt*half*grad(i,j,1,k)*v1h, dt*dt*half*grad(i,j,2,k)*v2h, '|', &
+                           dt
+                      call abortmp('whoops')
+                   end if
                 end do
              end do
           end do
