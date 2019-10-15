@@ -162,7 +162,6 @@ contains
        elem(ie)%derived%vn0 = elem(ie)%state%v(:,:,:,:,tl%np1) ! actually v at np1
     end do
     if (amb_experiment == 1) then
-#define TOGETHER
        call flt_reconstruct(hybrid, elem, nets, nete, dt)
        do ie=nets,nete
           dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
@@ -184,7 +183,6 @@ contains
     ! compute displacements for departure grid store in elem%derived%vstar
     call ALE_RKdss (elem, nets, nete, hybrid, deriv, dt, tl)
 
-#ifdef TOGETHER
     if (amb_experiment == 1) then
        do ie=nets,nete
           if (rsplit == 0) then
@@ -194,7 +192,6 @@ contains
           end if
        end do
     end if
-#endif
 
     if (barrier) call perf_barrier(hybrid)
     call t_startf('SLMM_v2x')
@@ -323,7 +320,8 @@ contains
     use kinds,           only : real_kind
     use hybrid_mod,      only : hybrid_t
     use element_mod,     only : element_t
-    use dimensions_mod,   only : np, nlev
+    use dimensions_mod,  only : np, nlev
+    use control_mod,     only : amb_experiment
 
     implicit none
 
@@ -363,11 +361,8 @@ contains
     !
     !    !------------------------------------------------------------------------------------
 
-#ifndef TOGETHER
     nlyr = 2*nlev
-#else
-    nlyr = 2*nlev + nlevp
-#endif
+    if (amb_experiment == 1) nlyr = nlyr + nlevp
 
     do ie=nets,nete
        ! vstarn0 = U(x,t)
@@ -386,12 +381,12 @@ contains
           elem(ie)%derived%vstar(:,:,2,k) = elem(ie)%derived%vstar(:,:,2,k)*elem(ie)%spheremp*elem(ie)%rspheremp
        enddo
        call edgeVpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%vstar,2*nlev,0,nlyr)
-#ifdef TOGETHER
-       do k = 1,nlevp
-          elem(ie)%derived%eta_dot_dpdn(:,:,k) = elem(ie)%derived%eta_dot_dpdn(:,:,k)*elem(ie)%spheremp*elem(ie)%rspheremp
-       end do
-       call edgeVpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%eta_dot_dpdn,nlevp,2*nlev,nlyr)
-#endif
+       if (amb_experiment == 1) then
+          do k = 1,nlevp
+             elem(ie)%derived%eta_dot_dpdn(:,:,k) = elem(ie)%derived%eta_dot_dpdn(:,:,k)*elem(ie)%spheremp*elem(ie)%rspheremp
+          end do
+          call edgeVpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%eta_dot_dpdn,nlevp,2*nlev,nlyr)
+       end if
     enddo
 
     call t_startf('ALE_RKdss_bexchV')
@@ -400,9 +395,9 @@ contains
 
     do ie=nets,nete
        call edgeVunpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%vstar,2*nlev,0,nlyr)
-#ifdef TOGETHER
-       call edgeVunpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%eta_dot_dpdn,nlevp,2*nlev,nlyr)
-#endif
+       if (amb_experiment == 1) then
+          call edgeVunpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%eta_dot_dpdn,nlevp,2*nlev,nlyr)
+       end if
     end do
   end subroutine ALE_RKdss
 
@@ -1080,29 +1075,11 @@ contains
     end if
 #endif
 
-#ifdef TOGETHER
     do ie = nets,nete
        if (rsplit == 0) then
           elem(ie)%derived%eta_dot_dpdn = flt%diff_accum(:,:,:,ie)/dt
        else
        end if
-    end do
-    return
-#endif
-
-    do ie = nets,nete
-       if (rsplit == 0) then
-          elem(ie)%derived%eta_dot_dpdn = flt%diff_accum(:,:,:,ie)/dt
-       else
-       end if
-       do k = 1,nlevp
-          elem(ie)%derived%eta_dot_dpdn(:,:,k) = elem(ie)%derived%eta_dot_dpdn(:,:,k)*elem(ie)%spheremp*elem(ie)%rspheremp
-       end do
-       call edgeVpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%eta_dot_dpdn,nlevp,0,nlevp)
-    end do
-    call bndry_exchangeV(hybrid, edge_g)
-    do ie = nets,nete
-       call edgeVunpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%eta_dot_dpdn,nlevp,0,nlevp)
     end do
   end subroutine flt_reconstruct
 end module sl_advection
