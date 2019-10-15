@@ -855,7 +855,7 @@ contains
        else
 #if 1
           alpha = (xi(ji) - x(j))/(x(j+1) - x(j))
-# if 1
+# if 0
           if (alpha < -1e-3 .or. alpha > 1 + 1e-3) then
              print *,'amb> alpha',j,ji,x(j),x(j+1),xi(ji),alpha
              call abortmp('whoops')
@@ -971,6 +971,7 @@ contains
                                a*elem(ie)%state%v(i,j,2,k,tl%np1) + b*elem(ie)%state%v(i,j,2,k1,tl%np1))
                    p0r(i,j,k) = p1ref(i,j,k) - dt*(pth - half*dt*( &
                         ptp0(i,j,k)*pth + grad(i,j,1,k)*v1h + grad(i,j,2,k)*v2h))
+#if 0
                    if (k == 1 .and. p0r(i,j,1) < p0ref(i,j,1) - 1e-2) then
                       print *,'amb>',p0r(i,j,1),p0ref(i,j,1), '|', &
                            pth, v1h, v2h, '|', &
@@ -979,6 +980,7 @@ contains
                            dt
                       call abortmp('whoops')
                    end if
+#endif
                 end do
              end do
           end do
