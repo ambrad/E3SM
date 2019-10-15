@@ -162,7 +162,7 @@ contains
        elem(ie)%derived%vn0 = elem(ie)%state%v(:,:,:,:,tl%np1) ! actually v at np1
     end do
     if (amb_experiment == 1) then
-!#define TOGETHER
+#define TOGETHER
        call flt_reconstruct(hybrid, elem, nets, nete, dt)
        do ie=nets,nete
           dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
@@ -363,7 +363,7 @@ contains
     !
     !    !------------------------------------------------------------------------------------
 
-#ifdef TOGETHER
+#ifndef TOGETHER
     nlyr = 2*nlev
 #else
     nlyr = 2*nlev + nlevp
@@ -390,7 +390,7 @@ contains
        do k = 1,nlevp
           elem(ie)%derived%eta_dot_dpdn(:,:,k) = elem(ie)%derived%eta_dot_dpdn(:,:,k)*elem(ie)%spheremp*elem(ie)%rspheremp
        end do
-       call edgeVpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%eta_dot_dpdn,nlevp,2*nlyr,nlyr)
+       call edgeVpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%eta_dot_dpdn,nlevp,2*nlev,nlyr)
 #endif
     enddo
 
