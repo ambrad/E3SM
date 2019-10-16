@@ -1108,7 +1108,7 @@ contains
 
     real(kind=real_kind), dimension(np,np,nlevp) :: p0ref, p1ref, p0r, p1r, pt0r, pt1r, ptp0
     real(kind=real_kind) :: pth, grad(np,np,2,nlevp), v1h, v2h, a, b, xs(3), vtmp(np,np,2), &
-         vtp0(np,np,2), vh(np,np,2), etath(np,np)
+         vtp0(np,np,2), vh(np,np,2), etath(np,np), tmp(nlev)
     integer :: ie, i, j, k, it, ks, ke, k1, k2, nlyr, d
 
     nlyr = 2*nlev + nlevp
@@ -1132,23 +1132,29 @@ contains
              do j = 1,np
                 do i = 1,np
                    call eval_lagrange_poly_derivative(ke-ks+1, &
-                        half*(p0ref(i,j,ks:ke) + p0ref(i,j,ks+1:ke+1)), &
+                        half*(p0ref(i,j,ks  :ke  ) + &
+                              p0ref(i,j,ks+1:ke+1)), &
                         elem(ie)%derived%vstar(i,j,d,ks:ke), &
-                        half*(p0ref(i,j,k) + p0ref(i,j,k+1)), &
+                        half*(p0ref(i,j,k  ) + &
+                              p0ref(i,j,k+1)), &
                         vtp0(i,j,d))
                 end do
              end do
           end do
 
-          vtmp = ugradv_sphere(elem(ie)%derived%vn0(:,:,:,k), elem(ie)%derived%vstar(:,:,:,k), deriv, elem(ie))
-          vh = half*(elem(ie)%derived%vstar(:,:,:,k) + elem(ie)%derived%vn0(:,:,:,k))
-          etath = half*(elem(ie)%derived%eta_dot_dpdn_store(:,:,k,2) + elem(ie)%derived%eta_dot_dpdn_store(:,:,k+1,2))
+          vtmp = ugradv_sphere( &
+               elem(ie)%derived%vn0  (:,:,:,k), &
+               elem(ie)%derived%vstar(:,:,:,k), &
+               deriv, elem(ie))
+          vh = half*(elem(ie)%derived%vstar(:,:,:,k) + &
+                     elem(ie)%derived%vn0  (:,:,:,k))
+          etath = half*(elem(ie)%derived%eta_dot_dpdn_store(:,:,k  ,2) + &
+                        elem(ie)%derived%eta_dot_dpdn_store(:,:,k+1,2))
           do d = 1,2
-             elem(ie)%derived%vstar(:,:,d,k) = vh(:,:,d) - half*dt*(vtmp(:,:,d) + etath*vtp0(:,:,d))
-             elem(ie)%derived%vstar(:,:,d,k) = elem(ie)%derived%vstar(:,:,d,k)*elem(ie)%spheremp*elem(ie)%rspheremp
+             elem(ie)%derived%vstar(:,:,d,k) = &
+                  vh(:,:,d) - half*dt*(vtmp(:,:,d) + etath*vtp0(:,:,d))
           end do
        end do
-       call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%vstar, 2*nlev, 0, nlyr)
 
        do k = 1,nlevp
           grad(:,:,:,k) = gradient_sphere(elem(ie)%derived%eta_dot_dpdn_store(:,:,k,1), deriv, elem(ie)%Dinv)
@@ -1189,9 +1195,16 @@ contains
              end do
           end do
        end do
+
        do j = 1,np
           do i = 1,np
              call interp(nlevp, p0r(i,j,:), p1ref(i,j,:), p0ref(i,j,:), p1r(i,j,:))
+             do d = 1,2
+                tmp = elem(ie)%derived%vstar(i,j,d,:)
+                call interp(nlev, &
+                     half*(p0r  (i,j,:nlev) + p0r  (i,j,2:)), tmp, &
+                     half*(p0ref(i,j,:nlev) + p0ref(i,j,2:)), elem(ie)%derived%vstar(i,j,d,:))
+             end do
           end do
        end do
 
@@ -1203,6 +1216,12 @@ contains
 
        elem(ie)%derived%eta_dot_dpdn = flt%diff_accum(:,:,:,ie)/dt
 
+       do k = 1,nlev
+          do d = 1,2
+             elem(ie)%derived%vstar(:,:,d,k) = elem(ie)%derived%vstar(:,:,d,k)*elem(ie)%spheremp*elem(ie)%rspheremp
+          end do
+       end do
+       call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%vstar, 2*nlev, 0, nlyr)
        do k = 1,nlevp
           elem(ie)%derived%eta_dot_dpdn(:,:,k) = elem(ie)%derived%eta_dot_dpdn(:,:,k)*elem(ie)%spheremp*elem(ie)%rspheremp
        end do
