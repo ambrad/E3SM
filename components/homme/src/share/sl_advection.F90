@@ -1131,22 +1131,22 @@ contains
           do d = 1,2
              do j = 1,np
                 do i = 1,np
-                   call eval_lagrange_poly_derivative(ke-ks+1, half*(p0ref(i,j,ks:ke) + p0ref(i,j,ks+1:ke+1)), &
+                   call eval_lagrange_poly_derivative(ke-ks+1, &
+                        half*(p0ref(i,j,ks:ke) + p0ref(i,j,ks+1:ke+1)), &
                         elem(ie)%derived%vstar(i,j,d,ks:ke), &
-                        half*(p0ref(i,j,k) + p0ref(i,j,k+1)), vtp0(i,j,d))
+                        half*(p0ref(i,j,k) + p0ref(i,j,k+1)), &
+                        vtp0(i,j,d))
                 end do
              end do
           end do
 
           vtmp = ugradv_sphere(elem(ie)%derived%vn0(:,:,:,k), elem(ie)%derived%vstar(:,:,:,k), deriv, elem(ie))
-          vh = half*(elem(ie)%derived%vn0(:,:,:,k) + elem(ie)%derived%vstar(:,:,:,k))
+          vh = half*(elem(ie)%derived%vstar(:,:,:,k) + elem(ie)%derived%vn0(:,:,:,k))
           etath = half*(elem(ie)%derived%eta_dot_dpdn_store(:,:,k,2) + elem(ie)%derived%eta_dot_dpdn_store(:,:,k+1,2))
           do d = 1,2
              elem(ie)%derived%vstar(:,:,d,k) = vh(:,:,d) - half*dt*(vtmp(:,:,d) + etath*vtp0(:,:,d))
+             elem(ie)%derived%vstar(:,:,d,k) = elem(ie)%derived%vstar(:,:,d,k)*elem(ie)%spheremp*elem(ie)%rspheremp
           end do
-          
-          elem(ie)%derived%vstar(:,:,1,k) = elem(ie)%derived%vstar(:,:,1,k)*elem(ie)%spheremp*elem(ie)%rspheremp
-          elem(ie)%derived%vstar(:,:,2,k) = elem(ie)%derived%vstar(:,:,2,k)*elem(ie)%spheremp*elem(ie)%rspheremp
        end do
        call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%vstar, 2*nlev, 0, nlyr)
 
@@ -1201,6 +1201,8 @@ contains
        flt%diff_accum(:,:,1,ie) = 0
        flt%diff_accum(:,:,nlevp,ie) = 0
 
+       elem(ie)%derived%eta_dot_dpdn = flt%diff_accum(:,:,:,ie)/dt
+
        do k = 1,nlevp
           elem(ie)%derived%eta_dot_dpdn(:,:,k) = elem(ie)%derived%eta_dot_dpdn(:,:,k)*elem(ie)%spheremp*elem(ie)%rspheremp
        end do
@@ -1215,7 +1217,5 @@ contains
        call edgeVunpack_nlyr(edge_g,elem(ie)%desc, elem(ie)%derived%vstar, 2*nlev, 0, nlyr)
        call edgeVunpack_nlyr(edge_g,elem(ie)%desc, elem(ie)%derived%eta_dot_dpdn, nlevp, 2*nlev, nlyr)
     end do
-
-    call flt_reconstruct(hybrid, elem, nets, nete, dt)
   end subroutine flt_compute
 end module sl_advection
