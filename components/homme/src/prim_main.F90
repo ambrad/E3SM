@@ -57,6 +57,7 @@ program prim_main
   
   character (len=20) :: numproc_char
   character (len=20) :: numtrac_char
+  character (len=255) :: amb_experiment_str
   
   logical :: dir_e ! boolean existence of directory where output netcdf goes
   
@@ -229,7 +230,11 @@ program prim_main
      do while(tl%nstep<nstep)
         call t_startf('prim_run')
         amb_experiment = 0
-        if (transport_alg > 0) amb_experiment = 1
+        if (transport_alg > 0) then
+           amb_experiment = 1
+           call get_environment_variable("AMB_EXPERIMENT", amb_experiment_str, status=ithr)
+           if (ithr /= 1) read(amb_experiment_str, *, iostat=ithr) amb_experiment
+        end if
         if (amb_experiment == 0) then
            call prim_run_subcycle(elem, hybrid,nets,nete, tstep, .false., tl, hvcoord,1)
         else

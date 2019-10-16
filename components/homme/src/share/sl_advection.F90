@@ -159,7 +159,7 @@ contains
     do ie=nets,nete
        elem(ie)%derived%vn0 = elem(ie)%state%v(:,:,:,:,tl%np1) ! actually v at np1
     end do
-    if (amb_experiment == 1) then
+    if (amb_experiment > 0) then
        call flt_reconstruct(hybrid, elem, nets, nete, tl, dt, deriv)
        do ie = nets,nete
           dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
@@ -170,6 +170,7 @@ contains
           else
              elem(ie)%derived%divdp = dp + elem(ie)%derived%delta_eta_dot_dpdn
           end if
+          if (amb_experiment > 2) cycle
           wr(:,:,:,1) = elem(ie)%derived%vn0(:,:,1,:)*dp
           wr(:,:,:,2) = elem(ie)%derived%vn0(:,:,2,:)*dp
           call remap1(wr,np,2,dp,elem(ie)%derived%divdp)
@@ -181,7 +182,7 @@ contains
     ! compute displacements for departure grid store in elem%derived%vstar
     call ALE_RKdss (elem, nets, nete, hybrid, deriv, dt, tl)
 
-    if (amb_experiment == 1) then
+    if (amb_experiment > 0) then
        do ie = nets,nete
           dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
           if (rsplit == 0) then
@@ -361,7 +362,7 @@ contains
     !    !------------------------------------------------------------------------------------
 
     nlyr = 2*nlev
-    if (amb_experiment == 1) nlyr = nlyr + nlevp
+    if (amb_experiment > 0) nlyr = nlyr + nlevp
 
     do ie=nets,nete
        ! vstarn0 = U(x,t)
@@ -380,7 +381,7 @@ contains
           elem(ie)%derived%vstar(:,:,2,k) = elem(ie)%derived%vstar(:,:,2,k)*elem(ie)%spheremp*elem(ie)%rspheremp
        enddo
        call edgeVpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%vstar,2*nlev,0,nlyr)
-       if (amb_experiment == 1) then
+       if (amb_experiment > 0) then
           do k = 1,nlevp
              elem(ie)%derived%eta_dot_dpdn(:,:,k) = elem(ie)%derived%eta_dot_dpdn(:,:,k)*elem(ie)%spheremp*elem(ie)%rspheremp
           end do
@@ -394,7 +395,7 @@ contains
 
     do ie=nets,nete
        call edgeVunpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%vstar,2*nlev,0,nlyr)
-       if (amb_experiment == 1) then
+       if (amb_experiment > 0) then
           call edgeVunpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%eta_dot_dpdn,nlevp,2*nlev,nlyr)
        end if
     end do
@@ -911,7 +912,7 @@ contains
   end subroutine flt_start_new_interval
 
   subroutine flt_reconstruct(hybrid, elem, nets, nete, tl, dt, deriv)
-    use control_mod, only: qsplit, rsplit
+    use control_mod, only: qsplit, rsplit, amb_experiment
     use derivative_mod, only: derivative_t, gradient_sphere, get_deriv
 
     type (hybrid_t), intent(in) :: hybrid
@@ -1018,7 +1019,8 @@ contains
           diff_accum(:,:,1) = 0
           diff_accum(:,:,nlevp) = 0
 
-          elem(ie)%derived%eta_dot_dpdn = diff_accum(:,:,:)/dt
+          if (amb_experiment == 1) &
+               elem(ie)%derived%eta_dot_dpdn = diff_accum(:,:,:)/dt
        else
        end if
     end do
