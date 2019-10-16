@@ -37,12 +37,10 @@ module sl_advection
   logical, parameter :: barrier = .false.
 
   type, public :: FloatingLevelTracker_t
-     integer :: step
-     real(kind=real_kind), allocatable :: eta_dot_dpdn_accum(:,:,:,:), diff_accum(:,:,:,:)
      real(real_kind) :: dp, max_da, min_dpf
   end type FloatingLevelTracker_t
 
-  public :: flt_init, flt_finish, flt_start_new_interval, flt_update, flt_reconstruct
+  public :: flt_init, flt_finish, flt_start_new_interval, flt_reconstruct
 
   type (FloatingLevelTracker_t), private :: flt
 
@@ -162,7 +160,7 @@ contains
        elem(ie)%derived%vn0 = elem(ie)%state%v(:,:,:,:,tl%np1) ! actually v at np1
     end do
     if (amb_experiment == 1) then
-       call flt_reconstruct(hybrid, elem, nets, nete, dt)
+       call flt_reconstruct(hybrid, elem, nets, nete, tl, dt, deriv)
        do ie = nets,nete
           dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
           ! use divdp for dp_star
@@ -899,26 +897,20 @@ contains
   subroutine flt_init()
     use dimensions_mod, only: nelemd
 
-    allocate(flt%eta_dot_dpdn_accum(np,np,nlevp,nelemd), flt%diff_accum(np,np,nlevp,nelemd))
     flt%max_da = zero
     flt%min_dpf = 100000.d0
   end subroutine flt_init
 
   subroutine flt_finish()
-    deallocate(flt%eta_dot_dpdn_accum, flt%diff_accum)
   end subroutine flt_finish
 
   subroutine flt_start_new_interval(elem, nets, nete, tl)
     type (element_t), intent(inout) :: elem(:)
     type (TimeLevel_t), intent(in) :: tl
     integer, intent(in) :: nets, nete
-
-    flt%eta_dot_dpdn_accum = 0
-    flt%diff_accum = 0
-    flt%step = 0
   end subroutine flt_start_new_interval
 
-  subroutine flt_update(hybrid, elem, nets, nete, tl, dt)
+  subroutine flt_reconstruct(hybrid, elem, nets, nete, tl, dt, deriv)
     use control_mod, only: qsplit, rsplit
     use derivative_mod, only: derivative_t, gradient_sphere, get_deriv
 
@@ -927,14 +919,11 @@ contains
     type (TimeLevel_t), intent(in) :: tl
     real(kind=real_kind), intent(in) :: dt
     integer, intent(in) :: nets, nete
+    type (derivative_t), intent(in) :: deriv
 
-    type (derivative_t) :: deriv
-    real(kind=real_kind), dimension(np,np,nlevp) :: p0ref, p1ref, p0r, p1r, pt0r, pt1r, ptp0
-    real(kind=real_kind) :: pth, grad(np,np,2,nlevp), v1h, v2h, a, b, xs(3)
+    real(real_kind), dimension(np,np,nlevp) :: p0ref, p1ref, p0r, p1r, pt0r, pt1r, ptp0, diff_accum
+    real(real_kind) :: pth, grad(np,np,2,nlevp), v1h, v2h, a, b, xs(3)
     integer :: ie, i, j, k, it, ks, ke, k1, k2
-
-    flt%step = flt%step + 1
-    call get_deriv(deriv)
 
     ! - go back to even dz, uneven dp
     ! - how much does the 2nd-order correction change the levels? make a max_da-like diagnostic
@@ -1024,15 +1013,16 @@ contains
              end do
           end do
 
-          flt%diff_accum(:,:,:,ie) = p1r - p1ref
-
+          diff_accum = p1r - p1ref
           ! End points are always 0.
-          flt%diff_accum(:,:,1,ie) = 0
-          flt%diff_accum(:,:,nlevp,ie) = 0
+          diff_accum(:,:,1) = 0
+          diff_accum(:,:,nlevp) = 0
+
+          elem(ie)%derived%eta_dot_dpdn = diff_accum(:,:,:)/dt
        else
        end if
     end do
-  end subroutine flt_update
+  end subroutine flt_reconstruct
 
   subroutine calc_p(dp, ps, p)
     real(kind=real_kind), intent(in) :: dp(np,np,nlev)
@@ -1046,39 +1036,4 @@ contains
        p(:,:,k) = p(:,:,k+1) - dp(:,:,k)
     end do
   end subroutine calc_p
-
-  subroutine flt_reconstruct(hybrid, elem, nets, nete, dt)
-    use control_mod, only: qsplit, rsplit
-    use reduction_mod, only: ParallelMin, ParallelMax
-
-    type (hybrid_t), intent(in) :: hybrid
-    type (element_t), intent(inout) :: elem(:)
-    integer, intent(in) :: nets, nete
-    real(kind=real_kind), intent(in) :: dt
-
-    real(real_kind) :: max_da, min_dpf
-    integer :: ie, k
-
-#if 0
-    max_da = maxval(abs(flt%diff_accum))
-    max_da = ParallelMax(max_da, hybrid)
-    if (hybrid%masterthread .and. max_da > flt%max_da) then
-       flt%max_da = max_da
-       print '(a,es12.4,es12.4,es12.4)','amb> max_da ',flt%dp,flt%max_da,flt%max_da/flt%dp
-    end if
-    min_dpf = flt%dp + minval(flt%diff_accum(:,:,2:,:) - flt%diff_accum(:,:,1:nlev,:))
-    min_dpf = ParallelMin(min_dpf, hybrid)
-    if (hybrid%masterthread .and. min_dpf < flt%min_dpf) then
-       flt%min_dpf = min_dpf
-       print '(a,es12.4,es12.4,es12.4)','amb> min_dpf',flt%dp,flt%min_dpf,flt%min_dpf/flt%dp
-    end if
-#endif
-
-    do ie = nets,nete
-       if (rsplit == 0) then
-          elem(ie)%derived%eta_dot_dpdn = flt%diff_accum(:,:,:,ie)/dt
-       else
-       end if
-    end do
-  end subroutine flt_reconstruct
 end module sl_advection
