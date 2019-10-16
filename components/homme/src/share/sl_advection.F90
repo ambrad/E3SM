@@ -161,9 +161,17 @@ contains
     do ie=nets,nete
        elem(ie)%derived%vn0 = elem(ie)%state%v(:,:,:,:,tl%np1) ! actually v at np1
     end do
+#define TOGETHER
+#ifdef TOGETHER
+    if (amb_experiment == 1) then
+       call flt_compute(elem, nets, nete, hybrid, deriv, dt, tl)
+    else
+       call ALE_RKdss(elem, nets, nete, hybrid, deriv, dt, tl)
+    end if
+#else
     if (amb_experiment == 1) then
        call flt_reconstruct(hybrid, elem, nets, nete, dt)
-       do ie=nets,nete
+       do ie = nets,nete
           dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
           ! use divdp for dp_star
           if (rsplit == 0) then
@@ -182,9 +190,11 @@ contains
 
     ! compute displacements for departure grid store in elem%derived%vstar
     call ALE_RKdss (elem, nets, nete, hybrid, deriv, dt, tl)
+#endif
 
     if (amb_experiment == 1) then
-       do ie=nets,nete
+       do ie = nets,nete
+          dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
           if (rsplit == 0) then
              elem(ie)%derived%divdp = dp + &
                   dt*(elem(ie)%derived%eta_dot_dpdn(:,:,2:) - elem(ie)%derived%eta_dot_dpdn(:,:,1:nlev))
@@ -928,10 +938,13 @@ contains
     integer, intent(in) :: nets, nete
 
     type (derivative_t) :: deriv
-    real(kind=real_kind), dimension(np,np,nlevp) :: p0ref, p1ref, p0r, p1r, pt0r, pt1r, &
-         ptp0
+    real(kind=real_kind), dimension(np,np,nlevp) :: p0ref, p1ref, p0r, p1r, pt0r, pt1r, ptp0
     real(kind=real_kind) :: pth, grad(np,np,2,nlevp), v1h, v2h, a, b, xs(3)
     integer :: ie, i, j, k, it, ks, ke, k1, k2
+
+#ifdef TOGETHER
+    return
+#endif
     
     flt%step = flt%step + 1
     call get_deriv(deriv)
@@ -1082,4 +1095,127 @@ contains
        end if
     end do
   end subroutine flt_reconstruct
+
+  subroutine flt_compute(elem, nets, nete, hybrid, deriv, dt, tl)
+    use derivative_mod, only: derivative_t, ugradv_sphere
+
+    type (element_t), intent(inout) :: elem(:)
+    integer, intent(in) :: nets, nete
+    type (hybrid_t), intent(in) :: hybrid
+    type (derivative_t), intent(in) :: deriv
+    real(kind=real_kind), intent(in) :: dt
+    type (TimeLevel_t), intent(in) :: tl
+
+    real(kind=real_kind), dimension(np,np,nlevp) :: p0ref, p1ref, p0r, p1r, pt0r, pt1r, ptp0
+    real(kind=real_kind) :: pth, grad(np,np,2,nlevp), v1h, v2h, a, b, xs(3), vtmp(np,np,2), &
+         vtp0(np,np,2), vh(np,np,2), etath(np,np)
+    integer :: ie, i, j, k, it, ks, ke, k1, k2, nlyr, d
+
+    nlyr = 2*nlev + nlevp
+
+    do ie = nets,nete
+       call calc_p(elem(ie)%state%dp3d(:,:,:,tl%n0 ), elem(ie)%state%ps_v(:,:,tl%n0 ), p0ref)
+       call calc_p(elem(ie)%state%dp3d(:,:,:,tl%np1), elem(ie)%state%ps_v(:,:,tl%np1), p1ref)
+
+       do k = 1,nlev
+          if (k == 1) then
+             ks = 1
+             ke = 2
+          else if (k == nlev) then
+             ks = nlev-1
+             ke = nlev
+          else
+             ks = k-1
+             ke = k+1
+          end if
+          do d = 1,2
+             do j = 1,np
+                do i = 1,np
+                   call eval_lagrange_poly_derivative(ke-ks+1, half*(p0ref(i,j,ks:ke) + p0ref(i,j,ks+1:ke+1)), &
+                        elem(ie)%derived%vstar(i,j,d,ks:ke), &
+                        half*(p0ref(i,j,k) + p0ref(i,j,k+1)), vtp0(i,j,d))
+                end do
+             end do
+          end do
+
+          vtmp = ugradv_sphere(elem(ie)%derived%vn0(:,:,:,k), elem(ie)%derived%vstar(:,:,:,k), deriv, elem(ie))
+          vh = half*(elem(ie)%derived%vn0(:,:,:,k) + elem(ie)%derived%vstar(:,:,:,k))
+          etath = half*(elem(ie)%derived%eta_dot_dpdn_store(:,:,k,2) + elem(ie)%derived%eta_dot_dpdn_store(:,:,k+1,2))
+          do d = 1,2
+             elem(ie)%derived%vstar(:,:,d,k) = vh(:,:,d) - half*dt*(vtmp(:,:,d) + etath*vtp0(:,:,d))
+          end do
+          
+          elem(ie)%derived%vstar(:,:,1,k) = elem(ie)%derived%vstar(:,:,1,k)*elem(ie)%spheremp*elem(ie)%rspheremp
+          elem(ie)%derived%vstar(:,:,2,k) = elem(ie)%derived%vstar(:,:,2,k)*elem(ie)%spheremp*elem(ie)%rspheremp
+       end do
+       call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%vstar, 2*nlev, 0, nlyr)
+
+       do k = 1,nlevp
+          grad(:,:,:,k) = gradient_sphere(elem(ie)%derived%eta_dot_dpdn_store(:,:,k,1), deriv, elem(ie)%Dinv)
+          if (k == 1) then
+             ks = 1; ke = 3
+          elseif (k == nlevp) then
+             ks = nlevp-2; ke = nlevp
+          else
+             ks = k-1; ke = k+1
+          end if
+          do j = 1,np
+             do i = 1,np
+                call eval_lagrange_poly_derivative(ke-ks+1, p0ref(i,j,ks:ke), &
+                     elem(ie)%derived%eta_dot_dpdn_store(i,j,ks:ke,1), &
+                     p0ref(i,j,k), ptp0(i,j,k))
+             end do
+          end do
+       end do
+
+       do k = 1,nlevp
+          do j = 1,np
+             do i = 1,np
+                k1 = k-1
+                k2 = k
+                ! Constant extrapolation to the interface on the boundary.
+                a = half; b = half
+                if (k == 1) k1 = k
+                if (k == nlevp) k2 = k-1
+
+                pth = half*(elem(ie)%derived%eta_dot_dpdn_store(i,j,k,1) + &
+                            elem(ie)%derived%eta_dot_dpdn_store(i,j,k,2))
+                v1h = half*(a*elem(ie)%state%v(i,j,1,k1,tl%n0 ) + b*elem(ie)%state%v(i,j,1,k2,tl%n0 ) + &
+                            a*elem(ie)%state%v(i,j,1,k1,tl%np1) + b*elem(ie)%state%v(i,j,1,k2,tl%np1))
+                v2h = half*(a*elem(ie)%state%v(i,j,2,k1,tl%n0 ) + b*elem(ie)%state%v(i,j,2,k2,tl%n0 ) + &
+                            a*elem(ie)%state%v(i,j,2,k1,tl%np1) + b*elem(ie)%state%v(i,j,2,k2,tl%np1))
+                p0r(i,j,k) = p1ref(i,j,k) - dt*(pth - half*dt*( &
+                     ptp0(i,j,k)*pth + grad(i,j,1,k)*v1h + grad(i,j,2,k)*v2h))
+             end do
+          end do
+       end do
+       do j = 1,np
+          do i = 1,np
+             call interp(nlevp, p0r(i,j,:), p1ref(i,j,:), p0ref(i,j,:), p1r(i,j,:))
+          end do
+       end do
+
+       flt%diff_accum(:,:,:,ie) = p1r - p1ref
+
+       ! End points are always 0.
+       flt%diff_accum(:,:,1,ie) = 0
+       flt%diff_accum(:,:,nlevp,ie) = 0
+
+       do k = 1,nlevp
+          elem(ie)%derived%eta_dot_dpdn(:,:,k) = elem(ie)%derived%eta_dot_dpdn(:,:,k)*elem(ie)%spheremp*elem(ie)%rspheremp
+       end do
+       call edgeVpack_nlyr(edge_g, elem(ie)%desc,elem(ie)%derived%eta_dot_dpdn, nlevp, 2*nlev, nlyr)
+    enddo
+
+    call t_startf('ALE_RKdss_bexchV')
+    call bndry_exchangeV(hybrid, edge_g)
+    call t_stopf('ALE_RKdss_bexchV')
+
+    do ie = nets,nete
+       call edgeVunpack_nlyr(edge_g,elem(ie)%desc, elem(ie)%derived%vstar, 2*nlev, 0, nlyr)
+       call edgeVunpack_nlyr(edge_g,elem(ie)%desc, elem(ie)%derived%eta_dot_dpdn, nlevp, 2*nlev, nlyr)
+    end do
+
+    call flt_reconstruct(hybrid, elem, nets, nete, dt)
+  end subroutine flt_compute
 end module sl_advection
