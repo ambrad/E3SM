@@ -26,7 +26,7 @@ module sl_advection
   private
 
   real(real_kind), parameter :: zero = 0.0_real_kind, half = 0.5_real_kind, one = 1.0_real_kind, &
-       two = 2.0_real_kind, pi = 3.141592653589793_real_kind
+       two = 2.0_real_kind, pi = 3.141592653589793_real_kind, eps = epsilon(1.0_real_kind)
 
   type (ghostBuffer3D_t)   :: ghostbuf_tr
   integer :: sl_mpi
@@ -160,7 +160,7 @@ contains
        elem(ie)%derived%vn0 = elem(ie)%state%v(:,:,:,:,tl%np1) ! actually v at np1
     end do
     if (amb_experiment > 0) then
-       call flt_reconstruct(hybrid, elem, nets, nete, tl, dt, deriv)
+       call flt_reconstruct(hybrid, elem, nets, nete, hvcoord, tl, dt, deriv)
        do ie = nets,nete
           dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
           ! use divdp for dp_star
@@ -911,20 +911,28 @@ contains
     integer, intent(in) :: nets, nete
   end subroutine flt_start_new_interval
 
-  subroutine flt_reconstruct(hybrid, elem, nets, nete, tl, dt, deriv)
+  subroutine flt_reconstruct(hybrid, elem, nets, nete, hvcoord, tl, dt, deriv)
     use control_mod, only: qsplit, rsplit, amb_experiment
     use derivative_mod, only: derivative_t, gradient_sphere, get_deriv
 
     type (hybrid_t), intent(in) :: hybrid
     type (element_t), intent(inout) :: elem(:)
+    integer, intent(in) :: nets, nete
+    type (hvcoord_t), intent(in) :: hvcoord
     type (TimeLevel_t), intent(in) :: tl
     real(kind=real_kind), intent(in) :: dt
-    integer, intent(in) :: nets, nete
     type (derivative_t), intent(in) :: deriv
 
     real(real_kind), dimension(np,np,nlevp) :: p0ref, p1ref, p0r, p1r, pt0r, pt1r, ptp0, diff_accum
     real(real_kind) :: pth, grad(np,np,2,nlevp), v1h, v2h, a, b, xs(3)
     integer :: ie, i, j, k, it, ks, ke, k1, k2
+
+    if (abs(hvcoord%hybi(1)) > 10*eps .or. hvcoord%hyai(nlevp) > 10*eps) then
+       if (hybrid%masterthread) &
+            print *, 'flt_reconstruct: bi(1)', hvcoord%hybi(1), 'ai(nlevp)', &
+            hvcoord%hyai(nlevp)
+       call abortmp('hvcoord has unexpected non-0 entries at the bottom and/or top')
+    end if
 
     ! - go back to even dz, uneven dp
     ! - how much does the 2nd-order correction change the levels? make a max_da-like diagnostic
