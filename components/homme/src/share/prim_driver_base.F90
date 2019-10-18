@@ -1922,13 +1922,15 @@ contains
     else
        do ie = nets, nete
           dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
-          !dp_star = dp + elem(ie)%derived%delta_eta_dot_dpdn
+          dp_star = dp + dt_q*(elem(ie)%derived%eta_dot_dpdn(:,:,2:    ) - &
+                               elem(ie)%derived%eta_dot_dpdn(:,:,1:nlev))
           if (minval(dp_star) < 0) then
              print *,'amb> ALARUM dp_star -ve,rank,ie',hybrid%par%rank,ie
              do j = 1,np
                 do i = 1,np
                    if (minval(dp_star(i,j,:)) < 0) then
                       print *,'amb>',i,j,dp_star(i,j,:)
+                      call abortmp('-ve dp_star')
                    end if
                 end do
              end do

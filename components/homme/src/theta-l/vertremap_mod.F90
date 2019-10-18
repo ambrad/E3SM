@@ -87,10 +87,6 @@ contains
                 elem(ie)%derived%eta_dot_dpdn(:,:,k))
         else
            dp_star(:,:,k) = elem(ie)%state%dp3d(:,:,k,np1)
-           ! This is delta eta_dot_dpdn, as in the rsplit==0 expression,
-           ! accumulated over the tracer time step.
-           !elem(ie)%derived%delta_eta_dot_dpdn(:,:,k) = elem(ie)%derived%delta_eta_dot_dpdn(:,:,k) + &
-           !     (dp_star(:,:,k) - dp(:,:,k))
         endif
      enddo
      if (minval(dp_star)<0) then

@@ -158,12 +158,8 @@ contains
        do ie = nets,nete
           dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
           ! use divdp for dp_star
-          if (rsplit == 0) then
-             elem(ie)%derived%divdp = dp + &
-                  dt*(elem(ie)%derived%eta_dot_dpdn(:,:,2:) - elem(ie)%derived%eta_dot_dpdn(:,:,1:nlev))
-          else
-             !elem(ie)%derived%divdp = dp + elem(ie)%derived%delta_eta_dot_dpdn
-          end if
+          elem(ie)%derived%divdp = dp + &
+               dt*(elem(ie)%derived%eta_dot_dpdn(:,:,2:) - elem(ie)%derived%eta_dot_dpdn(:,:,1:nlev))
           if (amb_experiment > 2) cycle
           wr(:,:,:,1) = elem(ie)%derived%vn0(:,:,1,:)*dp
           wr(:,:,:,2) = elem(ie)%derived%vn0(:,:,2,:)*dp
