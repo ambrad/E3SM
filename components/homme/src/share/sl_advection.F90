@@ -907,8 +907,8 @@ contains
     real(kind=real_kind), intent(in) :: dt
     type (derivative_t), intent(in) :: deriv
 
-    real(real_kind), dimension(np,np,nlevp) :: p0ref, p1ref, p0r, p1r, pt0r, pt1r, ptp0, diff_accum
-    real(real_kind) :: pth, grad(np,np,2), v1h, v2h
+    real(real_kind), dimension(np,np,nlevp) :: p0ref, p1ref, p0r, p1r
+    real(real_kind) :: ptp0(np,np), grad(np,np,2), pth, v1h, v2h
     integer :: ie, i, j, k, it, ks, ke, k1, k2
 
     if (abs(hvcoord%hybi(1)) > 10*eps .or. hvcoord%hyai(nlevp) > 10*eps) then
@@ -933,12 +933,11 @@ contains
              end if
              call eval_lagrange_poly_derivative(ke-ks+1, p0ref(:,:,ks:ke), &
                   elem(ie)%derived%eta_dot_dpdn_store(:,:,ks:ke,1), &
-                  p0ref(:,:,k), ptp0(:,:,k))
-          end do
+                  p0ref(:,:,k), ptp0)
 
-          do k = 1,nlevp
              grad = gradient_sphere(elem(ie)%derived%eta_dot_dpdn_store(:,:,k,1), &
                   deriv, elem(ie)%Dinv)
+
              do j = 1,np
                 do i = 1,np
                    k1 = k-1
@@ -956,7 +955,7 @@ contains
                    pth = half*(elem(ie)%derived%eta_dot_dpdn_store(i,j,k,1) + &
                                elem(ie)%derived%eta_dot_dpdn_store(i,j,k,2))
                    p0r(i,j,k) = p1ref(i,j,k) - &
-                        dt*(pth - half*dt*(ptp0(i,j,k)*pth + grad(i,j,1)*v1h + grad(i,j,2)*v2h))
+                        dt*(pth - half*dt*(ptp0(i,j)*pth + grad(i,j,1)*v1h + grad(i,j,2)*v2h))
                 end do
              end do
           end do
@@ -966,12 +965,12 @@ contains
              end do
           end do
 
-          diff_accum = p1r - p1ref
-          ! End points are always 0.
-          diff_accum(:,:,1) = 0
-          diff_accum(:,:,nlevp) = 0
-
-          if (amb_experiment == 1) elem(ie)%derived%eta_dot_dpdn = diff_accum(:,:,:)/dt
+          if (amb_experiment == 1) then
+             elem(ie)%derived%eta_dot_dpdn = (p1r - p1ref)/dt
+             ! End points are always 0.
+             elem(ie)%derived%eta_dot_dpdn(:,:,1) = zero
+             elem(ie)%derived%eta_dot_dpdn(:,:,nlevp) = zero
+          end if
        else
        end if
     end do
