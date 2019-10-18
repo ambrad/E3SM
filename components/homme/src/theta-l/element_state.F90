@@ -81,7 +81,6 @@ module element_state
 
     real (kind=real_kind) :: gradphis(np,np,2)   ! grad phi at the surface, computed once in model initialization
 
-    real (kind=real_kind) :: delta_eta_dot_dpdn(np,np,nlev), eta_dot_dpdn_store(np,np,nlevp,2)
   end type derived_state_t
   
 

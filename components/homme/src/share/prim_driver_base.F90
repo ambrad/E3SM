@@ -1865,7 +1865,6 @@ contains
     end if
 
     do ie=nets,nete
-       elem(ie)%derived%delta_eta_dot_dpdn=0
        elem(ie)%derived%vn0=0              ! mean horizontal mass flux
        elem(ie)%derived%omega_p=0
        if (nu_p>0) then
@@ -1923,7 +1922,7 @@ contains
     else
        do ie = nets, nete
           dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
-          dp_star = dp + elem(ie)%derived%delta_eta_dot_dpdn
+          !dp_star = dp + elem(ie)%derived%delta_eta_dot_dpdn
           if (minval(dp_star) < 0) then
              print *,'amb> ALARUM dp_star -ve,rank,ie',hybrid%par%rank,ie
              do j = 1,np

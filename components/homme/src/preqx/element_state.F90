@@ -60,7 +60,6 @@ module element_state
     real (kind=real_kind) :: FT(np,np,nlev)                           ! temperature forcing
     real (kind=real_kind) :: FQps(np,np)                              ! forcing of FQ on ps_v
 
-    real (kind=real_kind) :: delta_eta_dot_dpdn(np,np,nlev)
   end type derived_state_t
   
 

@@ -162,7 +162,7 @@ contains
              elem(ie)%derived%divdp = dp + &
                   dt*(elem(ie)%derived%eta_dot_dpdn(:,:,2:) - elem(ie)%derived%eta_dot_dpdn(:,:,1:nlev))
           else
-             elem(ie)%derived%divdp = dp + elem(ie)%derived%delta_eta_dot_dpdn
+             !elem(ie)%derived%divdp = dp + elem(ie)%derived%delta_eta_dot_dpdn
           end if
           if (amb_experiment > 2) cycle
           wr(:,:,:,1) = elem(ie)%derived%vn0(:,:,1,:)*dp
@@ -849,7 +849,21 @@ contains
        ! n0 only. At the end, in each term of the expression (p1r -
        ! pref), there is a missing B(eta) dps/dt term, and these
        ! missing terms cancel in the subtraction.
-
+       !
+       ! The departure point algorithm is as follows. Let 0, h, 1
+       ! suffixes denote start, middle and end of the time step. A
+       ! Taylor series expansion of v at the midpoint in space and
+       ! time gives
+       !   v(ph,th) a= v(p1,th) + gradv(p1,th) (ph - p1)
+       ! Approximate
+       !   ph - p1 a= -v(p1,th) dt/2
+       ! Then
+       !   (p1 - p0)/dt a= v(ph,th)
+       !                 = v(p1,th) + gradv(p1,th) (ph - p1)
+       !                a= v(p1,th) - dt/2 gradv(p1,th) v(p1,th)
+       !   => p0 = p1 - dt (v(p1,th) - dt/2 gradv(p1,th) v(p1,th))
+       ! where the final line gives the departure point at time 0.
+       
        call calc_p(elem(ie)%state%dp3d(:,:,:,tl%n0), elem(ie)%state%ps_v(:,:,tl%n0), pref)
 
        p0r(:,:,1) = pref(:,:,1)
@@ -858,7 +872,7 @@ contains
        do k = 2, nlev
           ! Gradient of eta_dot_dpdn = p_eta deta/dt at initial
           ! time w.r.t. horizontal sphere coords.
-          grad = gradient_sphere(elem(ie)%derived%eta_dot_dpdn_store(:,:,k,1), &
+          grad = gradient_sphere(elem(ie)%derived%eta_dot_dpdn(:,:,k), &
                deriv, elem(ie)%Dinv)
 
           ! Gradient of eta_dot_dpdn = p_eta deta/dt at initial
@@ -866,7 +880,7 @@ contains
           k1 = k-1
           k2 = k+1
           call eval_lagrange_poly_derivative(k2-k1+1, pref(:,:,k1:k2), &
-               elem(ie)%derived%eta_dot_dpdn_store(:,:,k1:k2,1), &
+               elem(ie)%derived%eta_dot_dpdn(:,:,k1:k2), &
                pref(:,:,k), ptp0)
 
           ! Horizontal velocity at time midpoint.
@@ -878,8 +892,7 @@ contains
                         elem(ie)%state%v(:,:,2,k1,tl%np1) + elem(ie)%state%v(:,:,2,k2,tl%np1))
 
           ! Vertical eta_dot_dpdn at time midpoint.
-          pth = half*(elem(ie)%derived%eta_dot_dpdn_store(:,:,k,1) + &
-                      elem(ie)%derived%eta_dot_dpdn_store(:,:,k,2))
+          pth = elem(ie)%derived%eta_dot_dpdn(:,:,k)
 
           ! Reconstruct departure level coordinate at intial time.
           p0r(:,:,k) = pref(:,:,k) - &

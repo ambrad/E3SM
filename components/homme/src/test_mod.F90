@@ -234,9 +234,6 @@ end subroutine
 
     ! To get second order in the vertical direction, we need to
     ! approximate eta_dot_dpdn at the time midpoint.
-    do ie = nets,nete
-       elem(ie)%derived%eta_dot_dpdn_store(:,:,:,1) = elem(ie)%derived%eta_dot_dpdn_prescribed
-    end do
     if (rsplit == 0) then
        ! Accumulate first part of the midpoint.
        do ie = nets,nete
@@ -250,9 +247,6 @@ end subroutine
        end do
     end if
     call set_test_prescribed_wind(elem,deriv,hybrid,hv,dt,tl,(tl%nstep+1)*dt,nets,nete)
-    do ie = nets,nete
-       elem(ie)%derived%eta_dot_dpdn_store(:,:,:,2) = elem(ie)%derived%eta_dot_dpdn_prescribed
-    end do
     ! accumulate velocities and fluxes over timesteps
     ! test code only dont bother to openmp thread
     do ie = nets,nete
