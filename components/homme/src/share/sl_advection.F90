@@ -834,10 +834,10 @@ contains
        call abortmp('hvcoord has unexpected non-0 entries at the bottom and/or top')
     end if
 
-    if (rsplit /= 0) then
-       ! Reconstruct an approximation to the midpoint eta_dot_dpdn on
-       ! Eulerian levels.
-       do ie = nets,nete
+    do ie = nets,nete
+       if (rsplit /= 0) then
+          ! Reconstruct an approximation to the midpoint eta_dot_dpdn on
+          ! Eulerian levels.
           elem(ie)%derived%eta_dot_dpdn(:,:,1) = zero
           do k = 1,nlev
              do d = 1,2
@@ -852,10 +852,8 @@ contains
           do k = 2,nlev
              elem(ie)%derived%eta_dot_dpdn(:,:,k) = dps - elem(ie)%derived%eta_dot_dpdn(:,:,k)
           end do
-       end do
-    end if
+       end if
 
-    do ie = nets,nete
        ! Recall
        !   p(eta,ps) = A(eta) p0 + B(eta) ps
        !   => dp/dt = p_eta deta/dt + p_ps dps/dt
