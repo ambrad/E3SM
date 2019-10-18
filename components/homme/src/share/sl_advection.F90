@@ -25,8 +25,9 @@ module sl_advection
 
   private
 
-  real(real_kind), parameter :: zero = 0.0_real_kind, half = 0.5_real_kind, one = 1.0_real_kind, &
-       two = 2.0_real_kind, pi = 3.141592653589793_real_kind, eps = epsilon(1.0_real_kind)
+  real(real_kind), parameter :: zero = 0.0_real_kind, fourth = 0.25_real_kind, &
+       half = 0.5_real_kind, one = 1.0_real_kind, two = 2.0_real_kind, &
+       pi = 3.141592653589793_real_kind, eps = epsilon(1.0_real_kind)
 
   type (ghostBuffer3D_t)   :: ghostbuf_tr
   integer :: sl_mpi
@@ -924,7 +925,7 @@ contains
     type (derivative_t), intent(in) :: deriv
 
     real(real_kind), dimension(np,np,nlevp) :: p0ref, p1ref, p0r, p1r, pt0r, pt1r, ptp0, diff_accum
-    real(real_kind) :: pth, grad(np,np,2,nlevp), v1h, v2h, a, b, xs(3)
+    real(real_kind) :: pth, grad(np,np,2,nlevp), v1h, v2h
     integer :: ie, i, j, k, it, ks, ke, k1, k2
 
     if (abs(hvcoord%hybi(1)) > 10*eps .or. hvcoord%hyai(nlevp) > 10*eps) then
@@ -967,52 +968,20 @@ contains
                 do i = 1,np
                    k1 = k-1
                    k2 = k
-#if 0
-                   ! Constant extrapolation to the interface on the boundary.
-                   a = half; b = half
-                   if (k == 1) k1 = k
-                   if (k == nlevp) k2 = k-1
-#else
-                   ! Linear extrapolation to the interface on the boundary.
-                   if (k == 1) then
-                      k1 = k
-                      k2 = k+1
-                      xs(1) = half*(p0ref(i,j,k2) + p0ref(i,j,3))
-                      xs(2) = half*(p0ref(i,j,k1) + p0ref(i,j,k2))
-                      xs(3) = p0ref(i,j,1) - half*(p0ref(i,j,2) - p0ref(i,j,1))
-                      a = (xs(3) - xs(1))/(xs(2) - xs(1))
-                      b = one - a
-                   else if (k == nlevp) then
-                      k1 = k-1
-                      k2 = k-2
-                      xs(1) = half*(p0ref(i,j,k2) + p0ref(i,j,k1))
-                      xs(2) = half*(p0ref(i,j,k1) + p0ref(i,j,nlevp))
-                      xs(3) = p0ref(i,j,nlevp) + half*(p0ref(i,j,nlevp) - p0ref(i,j,nlevp-1))
-                      a = (xs(3) - xs(1))/(xs(2) - xs(1))
-                      b = one - a
+                   if (k == 1 .or. k == nlevp) then
+                      ! grad is 0 on the boundary layers, so we don't need v{1,2}h.
+                      v1h = zero
+                      v2h = zero
                    else
-                      a = half
-                      b = half
+                      v1h = fourth*(elem(ie)%state%v(i,j,1,k1,tl%n0 ) + elem(ie)%state%v(i,j,1,k2,tl%n0 ) + &
+                                    elem(ie)%state%v(i,j,1,k1,tl%np1) + elem(ie)%state%v(i,j,1,k2,tl%np1))
+                      v2h = fourth*(elem(ie)%state%v(i,j,2,k1,tl%n0 ) + elem(ie)%state%v(i,j,2,k2,tl%n0 ) + &
+                                    elem(ie)%state%v(i,j,2,k1,tl%np1) + elem(ie)%state%v(i,j,2,k2,tl%np1))
                    end if
-#endif
                    pth = half*(elem(ie)%derived%eta_dot_dpdn_store(i,j,k,1) + &
                                elem(ie)%derived%eta_dot_dpdn_store(i,j,k,2))
-                   v1h = half*(a*elem(ie)%state%v(i,j,1,k1,tl%n0 ) + b*elem(ie)%state%v(i,j,1,k2,tl%n0 ) + &
-                               a*elem(ie)%state%v(i,j,1,k1,tl%np1) + b*elem(ie)%state%v(i,j,1,k2,tl%np1))
-                   v2h = half*(a*elem(ie)%state%v(i,j,2,k1,tl%n0 ) + b*elem(ie)%state%v(i,j,2,k2,tl%n0 ) + &
-                               a*elem(ie)%state%v(i,j,2,k1,tl%np1) + b*elem(ie)%state%v(i,j,2,k2,tl%np1))
-                   p0r(i,j,k) = p1ref(i,j,k) - dt*(pth - half*dt*( &
-                        ptp0(i,j,k)*pth + grad(i,j,1,k)*v1h + grad(i,j,2,k)*v2h))
-#if 0
-                   if (k == 1 .and. p0r(i,j,1) < p0ref(i,j,1) - 1e-2) then
-                      print *,'amb>',p0r(i,j,1),p0ref(i,j,1), '|', &
-                           pth, v1h, v2h, '|', &
-                           ptp0(i,j,k), grad(i,j,1,k), grad(i,j,2,k), '|', &
-                           dt*dt*half*ptp0(i,j,k)*pth, dt*dt*half*grad(i,j,1,k)*v1h, dt*dt*half*grad(i,j,2,k)*v2h, '|', &
-                           dt
-                      call abortmp('whoops')
-                   end if
-#endif
+                   p0r(i,j,k) = p1ref(i,j,k) - &
+                        dt*(pth - half*dt*(ptp0(i,j,k)*pth + grad(i,j,1,k)*v1h + grad(i,j,2,k)*v2h))
                 end do
              end do
           end do
