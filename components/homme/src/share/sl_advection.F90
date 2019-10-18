@@ -824,7 +824,7 @@ contains
 
     real(real_kind), dimension(np,np,nlevp) :: pref, p0r, p1r
     real(real_kind), dimension(np,np) :: dps, ptp0, pth, v1h, v2h
-    real(real_kind) :: grad(np,np,2)
+    real(real_kind), dimension(np,np,2) :: grad, vdp
     integer :: ie, i, j, k, k1, k2
 
     if (abs(hvcoord%hybi(1)) > 10*eps .or. hvcoord%hyai(nlevp) > 10*eps) then
@@ -833,11 +833,21 @@ contains
             hvcoord%hyai(nlevp)
        call abortmp('hvcoord has unexpected non-0 entries at the bottom and/or top')
     end if
-
+#if 0
     if (rsplit /= 0) then
-       call abortmp('need to impl rsplit > 0 case')
+       do ie = nets,nete
+          elem(ie)%derived%eta_dot_dpdn(:,:,1) = zero
+          do k = 1,nlev
+             do d = 1,2
+                vdp(:,:,d) = half*(elem(ie)%derived%vstar(:,:,d,k)*elem(ie)%derived%dp(:,:,k) +
+                                   elem(ie)%derived%vn0  (:,:,d,k)*elem(ie)%state%dp3d(:,:,k,tl%np1) +
+             end do
+             divdp = divergence_sphere(vdp, deriv, elem(ie))
+             elem(ie)%derived%eta_dot_dpdn(:,:,k+1) = elem(ie)%derived%eta_dot_dpdn(:,:,k) + divdp
+          end do
+       end do
     end if
-
+#endif
     do ie = nets,nete
        ! Recall
        !   p(eta,ps) = A(eta) p0 + B(eta) ps
@@ -861,10 +871,10 @@ contains
        !   (p1 - p0)/dt a= v(ph,th)
        !                 = v(p1,th) + gradv(p1,th) (ph - p1)
        !                a= v(p1,th) - dt/2 gradv(p1,th) v(p1,th)
-       !   => p0 = p1 - dt (v(p1,th) - dt/2 gradv(p1,th) v(p1,th))
+       !   => p0 := p1 - dt (v(p1,th) - dt/2 gradv(p1,th) v(p1,th))
        ! where the final line gives the departure point at time 0.
        
-       call calc_p(elem(ie)%state%dp3d(:,:,:,tl%n0), elem(ie)%state%ps_v(:,:,tl%n0), pref)
+       call calc_p(hvcoord, elem(ie)%derived%dp, pref)
 
        p0r(:,:,1) = pref(:,:,1)
        p0r(:,:,nlevp) = pref(:,:,nlevp)
@@ -966,16 +976,16 @@ contains
     end do
   end subroutine interp
 
-  subroutine calc_p(dp, ps, p)
-    real(kind=real_kind), intent(in) :: dp(np,np,nlev)
-    real(kind=real_kind), intent(in) :: ps(np,np)
-    real(kind=real_kind), intent(out) :: p(np,np,nlevp)
+  subroutine calc_p(hvcoord, dp, p)
+    type (hvcoord_t), intent(in) :: hvcoord
+    real(real_kind), intent(in) :: dp(np,np,nlev)
+    real(real_kind), intent(out) :: p(np,np,nlevp)
 
     integer :: k
 
-    p(:,:,nlevp) = ps
-    do k = nlev,1,-1
-       p(:,:,k) = p(:,:,k+1) - dp(:,:,k)
+    p(:,:,1) = hvcoord%hyai(1)*hvcoord%ps0
+    do k = 1,nlev
+       p(:,:,k+1) = p(:,:,k) + dp(:,:,k)
     end do
   end subroutine calc_p
 end module sl_advection
