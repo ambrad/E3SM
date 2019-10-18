@@ -823,9 +823,9 @@ contains
     type (derivative_t), intent(in) :: deriv
 
     real(real_kind), dimension(np,np,nlevp) :: pref, p0r, p1r
-    real(real_kind), dimension(np,np) :: dps, ptp0, pth, v1h, v2h
+    real(real_kind), dimension(np,np) :: dps, ptp0, pth, v1h, v2h, divdp
     real(real_kind), dimension(np,np,2) :: grad, vdp
-    integer :: ie, i, j, k, k1, k2
+    integer :: ie, i, j, k, k1, k2, d
 
     if (abs(hvcoord%hybi(1)) > 10*eps .or. hvcoord%hyai(nlevp) > 10*eps) then
        if (hybrid%masterthread) &
@@ -833,21 +833,28 @@ contains
             hvcoord%hyai(nlevp)
        call abortmp('hvcoord has unexpected non-0 entries at the bottom and/or top')
     end if
-#if 0
+
     if (rsplit /= 0) then
+       ! Reconstruct an approximation to the midpoint eta_dot_dpdn on
+       ! Eulerian levels.
        do ie = nets,nete
           elem(ie)%derived%eta_dot_dpdn(:,:,1) = zero
           do k = 1,nlev
              do d = 1,2
-                vdp(:,:,d) = half*(elem(ie)%derived%vstar(:,:,d,k)*elem(ie)%derived%dp(:,:,k) +
-                                   elem(ie)%derived%vn0  (:,:,d,k)*elem(ie)%state%dp3d(:,:,k,tl%np1) +
+                vdp(:,:,d) = half*(elem(ie)%derived%vstar(:,:,d,k)*elem(ie)%derived%dp(:,:,k       ) + &
+                                   elem(ie)%derived%vn0  (:,:,d,k)*elem(ie)%state%dp3d(:,:,k,tl%np1))
              end do
              divdp = divergence_sphere(vdp, deriv, elem(ie))
              elem(ie)%derived%eta_dot_dpdn(:,:,k+1) = elem(ie)%derived%eta_dot_dpdn(:,:,k) + divdp
           end do
+          dps = elem(ie)%derived%eta_dot_dpdn(:,:,nlevp)
+          elem(ie)%derived%eta_dot_dpdn(:,:,nlevp) = zero
+          do k = 2,nlev
+             elem(ie)%derived%eta_dot_dpdn(:,:,k) = dps - elem(ie)%derived%eta_dot_dpdn(:,:,k)
+          end do
        end do
     end if
-#endif
+
     do ie = nets,nete
        ! Recall
        !   p(eta,ps) = A(eta) p0 + B(eta) ps
