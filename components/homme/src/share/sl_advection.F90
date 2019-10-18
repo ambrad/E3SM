@@ -37,13 +37,7 @@ module sl_advection
 
   logical, parameter :: barrier = .false.
 
-  type, public :: FloatingLevelTracker_t
-     real(real_kind) :: dp, max_da, min_dpf
-  end type FloatingLevelTracker_t
-
-  public :: flt_init, flt_finish, flt_start_new_interval, flt_reconstruct
-
-  type (FloatingLevelTracker_t), private :: flt
+  public :: flt_start_new_interval
 
 contains
 
@@ -110,7 +104,6 @@ contains
           need_conservation = 1
           call cedr_sl_init(np, nlev, qsize, qsize_d, timelevels, need_conservation)
        end if
-       call flt_init()
     endif
     call t_stopf('sl_init1')
 #endif
@@ -832,11 +825,11 @@ contains
 
   subroutine eval_lagrange_poly_derivative(n, xs, ys, xi, yp)
     integer, intent(in) :: n
-    real(real_kind), intent(in) :: xs(:), ys(:), xi
-    real(real_kind), intent(out) :: yp
+    real(real_kind), intent(in) :: xs(np,np,n), ys(np,np,n), xi(np,np)
+    real(real_kind), intent(out) :: yp(np,np)
 
     integer :: i, j, k
-    real(real_kind) :: f, g, num
+    real(real_kind) :: f(np,np), g(np,np), num(np,np)
 
     yp = zero
     do i = 1,n
@@ -849,13 +842,13 @@ contains
              if (k == j) then
                 num = one
              else
-                num = xi - xs(k)
+                num = xi - xs(:,:,k)
              end if
-             g = g*(num/(xs(i) - xs(k)))
+             g = g*(num/(xs(:,:,i) - xs(:,:,k)))
           end do
           f = f + g
        end do
-       yp = yp + ys(i)*f
+       yp = yp + ys(:,:,i)*f
     end do
   end subroutine eval_lagrange_poly_derivative
 
@@ -896,16 +889,6 @@ contains
     end do
   end subroutine interp
 
-  subroutine flt_init()
-    use dimensions_mod, only: nelemd
-
-    flt%max_da = zero
-    flt%min_dpf = 100000.d0
-  end subroutine flt_init
-
-  subroutine flt_finish()
-  end subroutine flt_finish
-
   subroutine flt_start_new_interval(elem, nets, nete, tl)
     type (element_t), intent(inout) :: elem(:)
     type (TimeLevel_t), intent(in) :: tl
@@ -925,7 +908,7 @@ contains
     type (derivative_t), intent(in) :: deriv
 
     real(real_kind), dimension(np,np,nlevp) :: p0ref, p1ref, p0r, p1r, pt0r, pt1r, ptp0, diff_accum
-    real(real_kind) :: pth, grad(np,np,2,nlevp), v1h, v2h
+    real(real_kind) :: pth, grad(np,np,2), v1h, v2h
     integer :: ie, i, j, k, it, ks, ke, k1, k2
 
     if (abs(hvcoord%hybi(1)) > 10*eps .or. hvcoord%hyai(nlevp) > 10*eps) then
@@ -935,18 +918,12 @@ contains
        call abortmp('hvcoord has unexpected non-0 entries at the bottom and/or top')
     end if
 
-    ! - go back to even dz, uneven dp
-    ! - how much does the 2nd-order correction change the levels? make a max_da-like diagnostic
-
     do ie = nets,nete
        if (rsplit == 0) then
           call calc_p(elem(ie)%state%dp3d(:,:,:,tl%n0 ), elem(ie)%state%ps_v(:,:,tl%n0 ), p0ref)
-          flt%dp = p0ref(1,1,2) - p0ref(1,1,1)
           call calc_p(elem(ie)%state%dp3d(:,:,:,tl%np1), elem(ie)%state%ps_v(:,:,tl%np1), p1ref)
 
           do k = 1,nlevp
-             grad(:,:,:,k) = gradient_sphere(elem(ie)%derived%eta_dot_dpdn_store(:,:,k,1), &
-                  deriv, elem(ie)%Dinv)
              if (k == 1) then
                 ks = 1; ke = 3
              elseif (k == nlevp) then
@@ -954,16 +931,14 @@ contains
              else
                 ks = k-1; ke = k+1
              end if
-             do j = 1,np
-                do i = 1,np
-                   call eval_lagrange_poly_derivative(ke-ks+1, p0ref(i,j,ks:ke), &
-                        elem(ie)%derived%eta_dot_dpdn_store(i,j,ks:ke,1), &
-                        p0ref(i,j,k), ptp0(i,j,k))
-                end do
-             end do
+             call eval_lagrange_poly_derivative(ke-ks+1, p0ref(:,:,ks:ke), &
+                  elem(ie)%derived%eta_dot_dpdn_store(:,:,ks:ke,1), &
+                  p0ref(:,:,k), ptp0(:,:,k))
           end do
 
           do k = 1,nlevp
+             grad = gradient_sphere(elem(ie)%derived%eta_dot_dpdn_store(:,:,k,1), &
+                  deriv, elem(ie)%Dinv)
              do j = 1,np
                 do i = 1,np
                    k1 = k-1
@@ -981,7 +956,7 @@ contains
                    pth = half*(elem(ie)%derived%eta_dot_dpdn_store(i,j,k,1) + &
                                elem(ie)%derived%eta_dot_dpdn_store(i,j,k,2))
                    p0r(i,j,k) = p1ref(i,j,k) - &
-                        dt*(pth - half*dt*(ptp0(i,j,k)*pth + grad(i,j,1,k)*v1h + grad(i,j,2,k)*v2h))
+                        dt*(pth - half*dt*(ptp0(i,j,k)*pth + grad(i,j,1)*v1h + grad(i,j,2)*v2h))
                 end do
              end do
           end do
@@ -996,8 +971,7 @@ contains
           diff_accum(:,:,1) = 0
           diff_accum(:,:,nlevp) = 0
 
-          if (amb_experiment == 1) &
-               elem(ie)%derived%eta_dot_dpdn = diff_accum(:,:,:)/dt
+          if (amb_experiment == 1) elem(ie)%derived%eta_dot_dpdn = diff_accum(:,:,:)/dt
        else
        end if
     end do
