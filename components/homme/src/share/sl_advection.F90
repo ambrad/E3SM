@@ -908,7 +908,7 @@ contains
     type (derivative_t), intent(in) :: deriv
 
     real(real_kind), dimension(np,np,nlevp) :: p0ref, p1ref, p0r, p1r
-    real(real_kind) :: ptp0(np,np), grad(np,np,2), pth, v1h, v2h
+    real(real_kind) :: ptp0(np,np), grad(np,np,2), pth(np,np), v1h(np,np), v2h(np,np)
     integer :: ie, i, j, k, it, ks, ke, k1, k2
 
     if (abs(hvcoord%hybi(1)) > 10*eps .or. hvcoord%hyai(nlevp) > 10*eps) then
@@ -938,26 +938,22 @@ contains
              grad = gradient_sphere(elem(ie)%derived%eta_dot_dpdn_store(:,:,k,1), &
                   deriv, elem(ie)%Dinv)
 
-             do j = 1,np
-                do i = 1,np
-                   k1 = k-1
-                   k2 = k
-                   if (k == 1 .or. k == nlevp) then
-                      ! grad is 0 on the boundary layers, so we don't need v{1,2}h.
-                      v1h = zero
-                      v2h = zero
-                   else
-                      v1h = fourth*(elem(ie)%state%v(i,j,1,k1,tl%n0 ) + elem(ie)%state%v(i,j,1,k2,tl%n0 ) + &
-                                    elem(ie)%state%v(i,j,1,k1,tl%np1) + elem(ie)%state%v(i,j,1,k2,tl%np1))
-                      v2h = fourth*(elem(ie)%state%v(i,j,2,k1,tl%n0 ) + elem(ie)%state%v(i,j,2,k2,tl%n0 ) + &
-                                    elem(ie)%state%v(i,j,2,k1,tl%np1) + elem(ie)%state%v(i,j,2,k2,tl%np1))
-                   end if
-                   pth = half*(elem(ie)%derived%eta_dot_dpdn_store(i,j,k,1) + &
-                               elem(ie)%derived%eta_dot_dpdn_store(i,j,k,2))
-                   p0r(i,j,k) = p1ref(i,j,k) - &
-                        dt*(pth - half*dt*(ptp0(i,j)*pth + grad(i,j,1)*v1h + grad(i,j,2)*v2h))
-                end do
-             end do
+             k1 = k-1
+             k2 = k
+             if (k == 1 .or. k == nlevp) then
+                ! grad is 0 on the boundary layers, so we don't need v{1,2}h.
+                v1h = zero
+                v2h = zero
+             else
+                v1h = fourth*(elem(ie)%state%v(:,:,1,k1,tl%n0 ) + elem(ie)%state%v(:,:,1,k2,tl%n0 ) + &
+                              elem(ie)%state%v(:,:,1,k1,tl%np1) + elem(ie)%state%v(:,:,1,k2,tl%np1))
+                v2h = fourth*(elem(ie)%state%v(:,:,2,k1,tl%n0 ) + elem(ie)%state%v(:,:,2,k2,tl%n0 ) + &
+                              elem(ie)%state%v(:,:,2,k1,tl%np1) + elem(ie)%state%v(:,:,2,k2,tl%np1))
+             end if
+             pth = half*(elem(ie)%derived%eta_dot_dpdn_store(:,:,k,1) + &
+                         elem(ie)%derived%eta_dot_dpdn_store(:,:,k,2))
+             p0r(:,:,k) = p1ref(:,:,k) - &
+                  dt*(pth - half*dt*(ptp0*pth + grad(:,:,1)*v1h + grad(:,:,2)*v2h))
           end do
           do j = 1,np
              do i = 1,np
