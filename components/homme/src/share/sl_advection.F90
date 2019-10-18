@@ -37,8 +37,6 @@ module sl_advection
 
   logical, parameter :: barrier = .false.
 
-  public :: flt_start_new_interval
-
 contains
 
   !=================================================================================================!
@@ -799,12 +797,6 @@ contains
 #endif
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   end subroutine biharmonic_wk_scalar
-
-  subroutine flt_start_new_interval(elem, nets, nete, tl)
-    type (element_t), intent(inout) :: elem(:)
-    type (TimeLevel_t), intent(in) :: tl
-    integer, intent(in) :: nets, nete
-  end subroutine flt_start_new_interval
 
   subroutine flt_reconstruct(hybrid, elem, nets, nete, hvcoord, tl, dt, deriv)
     use control_mod, only: qsplit, rsplit, amb_experiment

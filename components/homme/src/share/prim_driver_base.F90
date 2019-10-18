@@ -1835,7 +1835,6 @@ contains
     use prim_state_mod,     only: prim_printstate, prim_diag_scalars, prim_energy_halftimes
     use vertremap_mod,      only: vertical_remap
     use vertremap_base,     only: remap1
-    use sl_advection,       only: flt_start_new_interval
 
     type(element_t),      intent(inout) :: elem(:)
     type(hybrid_t),       intent(in)    :: hybrid   ! distributed parallel structure (shared)
@@ -1873,7 +1872,6 @@ contains
        endif
        if (transport_alg > 0) then
           elem(ie)%derived%vstar=elem(ie)%state%v(:,:,:,:,tl%n0)
-          call flt_start_new_interval(elem, nets, nete, tl)
        end if
        elem(ie)%derived%dp(:,:,:)=elem(ie)%state%dp3d(:,:,:,tl%n0)
        elem(ie)%derived%eta_dot_dpdn=0     ! mean vertical mass flux
