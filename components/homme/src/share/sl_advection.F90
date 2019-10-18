@@ -804,91 +804,6 @@ contains
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   end subroutine biharmonic_wk_scalar
 
-  subroutine eval_lagrange_poly(n, xs, ys, xi, y)
-    integer, intent(in) :: n
-    real(kind=real_kind), intent(in) :: xs(:), ys(:), xi
-    real(kind=real_kind), intent(out) :: y
-
-    integer :: i, j
-    real(kind=real_kind) :: f
-
-    y = 0
-    do i = 1,n
-       f = 1
-       do j = 1,n
-          if (i == j) cycle
-          f = f*((xi - xs(j))/(xs(i) - xs(j)))
-       end do
-       y = y + ys(i)*f
-    end do
-  end subroutine eval_lagrange_poly
-
-  subroutine eval_lagrange_poly_derivative(n, xs, ys, xi, yp)
-    integer, intent(in) :: n
-    real(real_kind), intent(in) :: xs(np,np,n), ys(np,np,n), xi(np,np)
-    real(real_kind), intent(out) :: yp(np,np)
-
-    integer :: i, j, k
-    real(real_kind) :: f(np,np), g(np,np), num(np,np)
-
-    yp = zero
-    do i = 1,n
-       f = zero
-       do j = 1,n
-          if (j == i) cycle
-          g = one
-          do k = 1,n
-             if (k == i) cycle
-             if (k == j) then
-                num = one
-             else
-                num = xi - xs(:,:,k)
-             end if
-             g = g*(num/(xs(:,:,i) - xs(:,:,k)))
-          end do
-          f = f + g
-       end do
-       yp = yp + ys(:,:,i)*f
-    end do
-  end subroutine eval_lagrange_poly_derivative
-
-  subroutine interp(n, x, y, xi, yi)
-    integer, intent(in) :: n
-    real(kind=real_kind), intent(in) :: x(:), y(:), xi(:)
-    real(kind=real_kind), intent(out) :: yi(:)
-
-    real(kind=real_kind) :: alpha
-    integer :: j, ji
-
-    j = 1
-    ji = 1
-    do while (ji <= n)
-       if (j < n-1 .and. xi(ji) > x(j+1)) then
-          j = j + 1
-       else
-#if 1
-          alpha = (xi(ji) - x(j))/(x(j+1) - x(j))
-# if 0
-          if (alpha < -1e-3 .or. alpha > 1 + 1e-3) then
-             print *,'amb> alpha',j,ji,x(j),x(j+1),xi(ji),alpha
-             call abortmp('whoops')
-          end if
-# endif
-          yi(ji) = (1 - alpha)*y(j) + alpha*y(j+1)
-#else
-          if (j == 1) then
-             call eval_lagrange_poly(4, x(j:j+3), y(j:j+3), xi(ji), yi(ji))
-          elseif (j == n-1) then
-             call eval_lagrange_poly(4, x(j-2:j+1), y(j-2:j+1), xi(ji), yi(ji))
-          else
-             call eval_lagrange_poly(4, x(j-1:j+2), y(j-1:j+2), xi(ji), yi(ji))
-          end if
-#endif
-          ji = ji + 1
-       end if
-    end do
-  end subroutine interp
-
   subroutine flt_start_new_interval(elem, nets, nete, tl)
     type (element_t), intent(inout) :: elem(:)
     type (TimeLevel_t), intent(in) :: tl
@@ -971,6 +886,56 @@ contains
        end if
     end do
   end subroutine flt_reconstruct
+
+  subroutine eval_lagrange_poly_derivative(n, xs, ys, xi, yp)
+    integer, intent(in) :: n
+    real(real_kind), intent(in) :: xs(np,np,n), ys(np,np,n), xi(np,np)
+    real(real_kind), intent(out) :: yp(np,np)
+
+    integer :: i, j, k
+    real(real_kind) :: f(np,np), g(np,np), num(np,np)
+
+    yp = zero
+    do i = 1,n
+       f = zero
+       do j = 1,n
+          if (j == i) cycle
+          g = one
+          do k = 1,n
+             if (k == i) cycle
+             if (k == j) then
+                num = one
+             else
+                num = xi - xs(:,:,k)
+             end if
+             g = g*(num/(xs(:,:,i) - xs(:,:,k)))
+          end do
+          f = f + g
+       end do
+       yp = yp + ys(:,:,i)*f
+    end do
+  end subroutine eval_lagrange_poly_derivative
+
+  subroutine interp(n, x, y, xi, yi)
+    integer, intent(in) :: n
+    real(kind=real_kind), intent(in) :: x(:), y(:), xi(:)
+    real(kind=real_kind), intent(out) :: yi(:)
+
+    real(kind=real_kind) :: alpha
+    integer :: j, ji
+
+    j = 1
+    ji = 1
+    do while (ji <= n)
+       if (j < n-1 .and. xi(ji) > x(j+1)) then
+          j = j + 1
+       else
+          alpha = (xi(ji) - x(j))/(x(j+1) - x(j))
+          yi(ji) = (1 - alpha)*y(j) + alpha*y(j+1)
+          ji = ji + 1
+       end if
+    end do
+  end subroutine interp
 
   subroutine calc_p(dp, ps, p)
     real(kind=real_kind), intent(in) :: dp(np,np,nlev)
