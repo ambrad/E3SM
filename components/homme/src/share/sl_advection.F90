@@ -838,38 +838,33 @@ contains
           call calc_p(elem(ie)%state%dp3d(:,:,:,tl%n0 ), elem(ie)%state%ps_v(:,:,tl%n0 ), p0ref)
           call calc_p(elem(ie)%state%dp3d(:,:,:,tl%np1), elem(ie)%state%ps_v(:,:,tl%np1), p1ref)
 
-          do k = 1,nlevp
-             if (k == 1) then
-                ks = 1; ke = 3
-             elseif (k == nlevp) then
-                ks = nlevp-2; ke = nlevp
-             else
-                ks = k-1; ke = k+1
-             end if
-             call eval_lagrange_poly_derivative(ke-ks+1, p0ref(:,:,ks:ke), &
-                  elem(ie)%derived%eta_dot_dpdn_store(:,:,ks:ke,1), &
-                  p0ref(:,:,k), ptp0)
+          p0r(:,:,1) = p1ref(:,:,1)
+          p0r(:,:,nlevp) = p1ref(:,:,nlevp)
 
+          do k = 2, nlev
              grad = gradient_sphere(elem(ie)%derived%eta_dot_dpdn_store(:,:,k,1), &
                   deriv, elem(ie)%Dinv)
 
              k1 = k-1
+             k2 = k+1
+             call eval_lagrange_poly_derivative(k2-k1+1, p0ref(:,:,k1:k2), &
+                  elem(ie)%derived%eta_dot_dpdn_store(:,:,k1:k2,1), &
+                  p0ref(:,:,k), ptp0)
+
+             k1 = k-1
              k2 = k
-             if (k == 1 .or. k == nlevp) then
-                ! grad is 0 on the boundary layers, so we don't need v{1,2}h.
-                v1h = zero
-                v2h = zero
-             else
-                v1h = fourth*(elem(ie)%state%v(:,:,1,k1,tl%n0 ) + elem(ie)%state%v(:,:,1,k2,tl%n0 ) + &
-                              elem(ie)%state%v(:,:,1,k1,tl%np1) + elem(ie)%state%v(:,:,1,k2,tl%np1))
-                v2h = fourth*(elem(ie)%state%v(:,:,2,k1,tl%n0 ) + elem(ie)%state%v(:,:,2,k2,tl%n0 ) + &
-                              elem(ie)%state%v(:,:,2,k1,tl%np1) + elem(ie)%state%v(:,:,2,k2,tl%np1))
-             end if
+             v1h = fourth*(elem(ie)%state%v(:,:,1,k1,tl%n0 ) + elem(ie)%state%v(:,:,1,k2,tl%n0 ) + &
+                           elem(ie)%state%v(:,:,1,k1,tl%np1) + elem(ie)%state%v(:,:,1,k2,tl%np1))
+             v2h = fourth*(elem(ie)%state%v(:,:,2,k1,tl%n0 ) + elem(ie)%state%v(:,:,2,k2,tl%n0 ) + &
+                           elem(ie)%state%v(:,:,2,k1,tl%np1) + elem(ie)%state%v(:,:,2,k2,tl%np1))
+
              pth = half*(elem(ie)%derived%eta_dot_dpdn_store(:,:,k,1) + &
                          elem(ie)%derived%eta_dot_dpdn_store(:,:,k,2))
+
              p0r(:,:,k) = p1ref(:,:,k) - &
                   dt*(pth - half*dt*(ptp0*pth + grad(:,:,1)*v1h + grad(:,:,2)*v2h))
           end do
+
           do j = 1,np
              do i = 1,np
                 call interp(nlevp, p0r(i,j,:), p1ref(i,j,:), p0ref(i,j,:), p1r(i,j,:))
