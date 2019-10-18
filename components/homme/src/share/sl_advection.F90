@@ -822,9 +822,10 @@ contains
     real(kind=real_kind), intent(in) :: dt
     type (derivative_t), intent(in) :: deriv
 
-    real(real_kind), dimension(np,np,nlevp) :: p0ref, p1ref, p0r, p1r
-    real(real_kind) :: ptp0(np,np), grad(np,np,2), pth(np,np), v1h(np,np), v2h(np,np)
-    integer :: ie, i, j, k, it, ks, ke, k1, k2
+    real(real_kind), dimension(np,np,nlevp) :: pref, p0r, p1r
+    real(real_kind), dimension(np,np) :: dps, ptp0, pth, v1h, v2h
+    real(real_kind) :: grad(np,np,2)
+    integer :: ie, i, j, k, k1, k2
 
     if (abs(hvcoord%hybi(1)) > 10*eps .or. hvcoord%hyai(nlevp) > 10*eps) then
        if (hybrid%masterthread) &
@@ -834,12 +835,22 @@ contains
     end if
 
     do ie = nets,nete
-       if (rsplit == 0) then
-          call calc_p(elem(ie)%state%dp3d(:,:,:,tl%n0 ), elem(ie)%state%ps_v(:,:,tl%n0 ), p0ref)
-          call calc_p(elem(ie)%state%dp3d(:,:,:,tl%np1), elem(ie)%state%ps_v(:,:,tl%np1), p1ref)
+       if (rsplit == 0) then          
+          ! Recall
+          !   p(eta,ps) = A(eta) p0 + B(eta) ps
+          !   => dp/dt = p_eta deta/dt + p_ps dps/dt
+          !            = (A_eta p0 + B_eta ps) deta/dt + B(eta) dps/dt
+          ! In what follows, we consistently drop the surface pressure
+          ! time derivative term, B(eta) dps/dt. In particular, pref
+          ! is used for both n0 and np1, even though it's computed for
+          ! n0 only. At the end, in each term of the expression (p1r -
+          ! pref), there is a missing B(eta) dps/dt term, and these
+          ! missing terms cancel in the subtraction.
 
-          p0r(:,:,1) = p1ref(:,:,1)
-          p0r(:,:,nlevp) = p1ref(:,:,nlevp)
+          call calc_p(elem(ie)%state%dp3d(:,:,:,tl%n0), elem(ie)%state%ps_v(:,:,tl%n0), pref)
+
+          p0r(:,:,1) = pref(:,:,1)
+          p0r(:,:,nlevp) = pref(:,:,nlevp)
 
           do k = 2, nlev
              ! Gradient of eta_dot_dpdn = p_eta deta/dt at initial
@@ -851,9 +862,9 @@ contains
              ! time w.r.t. p at initial time.
              k1 = k-1
              k2 = k+1
-             call eval_lagrange_poly_derivative(k2-k1+1, p0ref(:,:,k1:k2), &
+             call eval_lagrange_poly_derivative(k2-k1+1, pref(:,:,k1:k2), &
                   elem(ie)%derived%eta_dot_dpdn_store(:,:,k1:k2,1), &
-                  p0ref(:,:,k), ptp0)
+                  pref(:,:,k), ptp0)
 
              ! Horizontal velocity at time midpoint.
              k1 = k-1
@@ -867,21 +878,21 @@ contains
              pth = half*(elem(ie)%derived%eta_dot_dpdn_store(:,:,k,1) + &
                          elem(ie)%derived%eta_dot_dpdn_store(:,:,k,2))
 
-             ! Reconstructed departure level coordinate at intial time.
-             p0r(:,:,k) = p1ref(:,:,k) - &
+             ! Reconstruct departure level coordinate at intial time.
+             p0r(:,:,k) = pref(:,:,k) - &
                   dt*(pth - half*dt*(ptp0*pth + grad(:,:,1)*v1h + grad(:,:,2)*v2h))
           end do
 
           ! Interpolate Lagrangian level in p coord to final time.
           do j = 1,np
              do i = 1,np
-                call interp(nlevp, p0r(i,j,:), p1ref(i,j,:), p0ref(i,j,:), p1r(i,j,:))
+                call interp(nlevp, p0r(i,j,:), pref(i,j,:), pref(i,j,:), p1r(i,j,:))
              end do
           end do
 
           ! Reconstruct eta_dot_dpdn over the time interval.
           if (amb_experiment == 1) then
-             elem(ie)%derived%eta_dot_dpdn = (p1r - p1ref)/dt
+             elem(ie)%derived%eta_dot_dpdn = (p1r - pref)/dt
              ! End points are always 0.
              elem(ie)%derived%eta_dot_dpdn(:,:,1) = zero
              elem(ie)%derived%eta_dot_dpdn(:,:,nlevp) = zero
