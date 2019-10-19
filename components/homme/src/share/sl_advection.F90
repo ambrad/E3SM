@@ -152,6 +152,7 @@ contains
        elem(ie)%derived%vn0 = elem(ie)%state%v(:,:,:,:,tl%np1) ! actually v at np1
     end do
     if (amb_experiment > 0) then
+       call t_startf('SLMM_reconstruct')
        call flt_reconstruct(hybrid, elem, nets, nete, hvcoord, tl, dt, deriv)
        do ie = nets,nete
           dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
@@ -165,6 +166,7 @@ contains
           elem(ie)%derived%vn0(:,:,1,:) = wr(:,:,:,1)/elem(ie)%derived%divdp
           elem(ie)%derived%vn0(:,:,2,:) = wr(:,:,:,2)/elem(ie)%derived%divdp
        end do
+       call t_stopf('SLMM_reconstruct')
     end if
 
     ! compute displacements for departure grid store in elem%derived%vstar
