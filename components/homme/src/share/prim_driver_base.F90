@@ -1934,6 +1934,9 @@ contains
              end do
           end if
           call remap1(elem(ie)%state%Qdp(:,:,:,:,np1_qdp),np,qsize,dp_star,dp)
+          do q = 1,qsize
+             elem(ie)%state%Q(:,:,:,q) = elem(ie)%state%Qdp(:,:,:,q,np1_qdp)/dp
+          enddo
        end do
     end if
   end subroutine prim_step_amb
