@@ -800,7 +800,7 @@ contains
 !
 ! if we ever need to read something other than PHIS, this routine should
 ! be replaced with a more general routine to read any field
-  subroutine pio_read_phis(elem, par)
+  subroutine pio_read_phis(elem, par, varname)
     use element_mod, only : element_t
     use parallel_mod, only : parallel_t, syncmp
 #ifndef HOMME_WITHOUT_PIOLIBRARY
@@ -814,6 +814,7 @@ contains
 #endif
     type(element_t), intent(inout) :: elem(:)
     type(parallel_t),intent(in) :: par
+    character(*), intent(in), optional :: varname
 #ifndef HOMME_WITHOUT_PIOLIBRARY
     ! local
     character(len=varname_len), dimension(1) :: varnames
@@ -830,6 +831,7 @@ contains
     ncnt_in = sum(elem(1:nelemd)%idxp%numUniquePts)
 
     varnames(1)="PHIS"
+    if (present(varname)) varnames(1) = trim(varname)
     call infile_initialize(elem, par,infilenames(1), varnames, infile)
 
 

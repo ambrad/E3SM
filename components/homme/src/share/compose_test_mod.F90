@@ -80,6 +80,7 @@ contains
     use hybvcoord_mod, only: hvcoord_t
     use time_mod, only: nEndStep
     use control_mod, only: transport_alg
+    use gllfvremap_test_mod
 
     type (parallel_t), intent(in) :: par
     type (domain1d_t), pointer, intent(in) :: dom_mt(:)
@@ -100,6 +101,9 @@ contains
     call derivinit(deriv)
 
     if (par%masterproc) print *, '~*~ Comprehensively test COMPOSE ~*~'
+
+    call gfr_analyze_topo(par, elem)
+    return
 
     ! 1. Unit tests.
     call compose_unittest()

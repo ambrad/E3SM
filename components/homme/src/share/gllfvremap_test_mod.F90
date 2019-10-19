@@ -33,7 +33,7 @@ module gllfvremap_test_mod
 
   type (PhysgridData_t), private :: pg_data
 
-  public :: gfr_check_api
+  public :: gfr_check_api, gfr_analyze_topo
 
 contains
   
@@ -555,4 +555,45 @@ contains
     !$omp barrier
     if (hybrid%ithr == 0) ftype = ftype_in
   end subroutine gfr_check_api
+
+  subroutine topo_read_var(par, elem, varname, arr)
+    use interpolate_driver_mod, only: pio_read_phis
+    use parallel_mod, only: parallel_t
+
+    type (parallel_t), intent(in) :: par
+    type (element_t), intent(inout) :: elem(:)
+    character(*), intent(in) :: varname
+    real(real_kind), intent(out) :: arr(np,np,nelemd)
+
+    integer :: ie
+
+    call pio_read_phis(elem, par, varname)
+    do ie = 1,nelemd
+       arr(:,:,ie) = elem(ie)%state%phis
+    end do
+  end subroutine topo_read_var
+
+  subroutine gfr_analyze_topo(par, elem)
+    use common_io_mod, only : infilenames
+    use parallel_mod, only: parallel_t
+
+    type (parallel_t), intent(in) :: par
+    type (element_t), intent(inout) :: elem(:)
+
+    character(len=100), parameter :: topofn = &
+         "/ascldap/users/ambradl/climate/physgrid/USGS-gtopo30_ne30np4_16xdel2-PFC-consistentSGH.nc"
+
+    real(real_kind), allocatable :: arr(:,:,:)
+
+    allocate(arr(np,np,nelemd))
+
+    infilenames(1) = topofn
+    call topo_read_var(par, elem, 'SGH', arr)
+    call topo_read_var(par, elem, 'SGH30', arr)
+    call topo_read_var(par, elem, 'LANDFRAC', arr)
+    call topo_read_var(par, elem, 'LANDM_COSLAT', arr)
+    call topo_read_var(par, elem, 'PHIS', arr)
+
+    deallocate(arr)
+  end subroutine gfr_analyze_topo
 end module gllfvremap_test_mod
