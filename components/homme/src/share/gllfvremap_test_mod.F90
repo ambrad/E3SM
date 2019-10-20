@@ -564,7 +564,7 @@ contains
     type (parallel_t), intent(in) :: par
     type (element_t), intent(inout) :: elem(:)
     character(*), intent(in) :: varname
-    real(real_kind), intent(out) :: arrgll(np,np,nelemd), arrpg(np*np,nelemd)
+    real(real_kind), intent(out) :: arrgll(:,:,:), arrpg(:,:)
     integer, intent(in) :: unit, nphys
 
     integer :: ie
@@ -596,7 +596,7 @@ contains
 
     nphys = 2
     call gfr_init(par, elem, nphys, check=.true.)
-    allocate(arrgll(np,np,nelemd), arrpg(np*np,nelemd))
+    allocate(arrgll(np,np,nelemd), arrpg(nphys*nphys,nelemd))
     infilenames(1) = topofn
     unit = 42
     open(unit, file='topo.dat')

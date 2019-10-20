@@ -474,9 +474,42 @@ contains
     logical, intent(in) :: square
     real(kind=real_kind), intent(in) :: g(gsz)
     real(kind=real_kind), intent(out) :: p(psz)
-    
-  end subroutine gfr_dyn_to_fv_phys_topo_data
 
+    integer :: ie, ncol
+
+    ncol = gfr%nphys*gfr%nphys
+    do ie = nets,nete
+       call gfr_dyn_to_fv_phys_topo_data_elem(ie, elem, square, &
+            g(npsq*(ie-nets)+1 : npsq*(ie-nets+1)), &
+            p(ncol*(ie-nets)+1 : ncol*(ie-nets+1)))
+    end do
+  end subroutine gfr_dyn_to_fv_phys_topo_data
+  
+  subroutine gfr_dyn_to_fv_phys_topo_data_elem(ie, elem, square, g, p)
+    integer, intent(in) :: ie
+    type (element_t), intent(in) :: elem(:)
+    logical, intent(in) :: square
+    real(kind=real_kind), intent(in) :: g(:)
+    real(kind=real_kind), intent(out) :: p(:)
+
+    real(kind=real_kind) :: wr(np,np,2), ones(np,np), qmin, qmax
+    integer :: nf, ncol
+
+    ones = one
+    nf = gfr%nphys
+    ncol = nf*nf
+
+    wr(:,:,1) = reshape(g(:npsq), (/np,np/))
+    if (square) wr(:,:,1) = wr(:,:,1)**2
+    call gfr_g2f_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
+    qmin = minval(g(:npsq))
+    qmax = maxval(g(:npsq))
+    wr(:nf,:nf,1) = reshape(gfr%w_ff(:ncol)*gfr%fv_metdet(:ncol,ie), (/nf,nf/))
+    call limiter_clip_and_sum(gfr%nphys, wr(:,:,1), qmin, qmax, ones, wr(:nf,:nf,2))
+    if (square) wr(:,:,2) = sqrt(wr(:,:,2))
+    p(:ncol) = reshape(wr(:nf,:nf,2), (/ncol/))
+  end subroutine gfr_dyn_to_fv_phys_topo_data_elem
+  
   subroutine gfr_fv_phys_to_dyn_topo_hybrid(hybrid, elem, nets, nete, phis)
     ! Remap FV topography data to the GLL grid. Prevent new
     ! extrema. Conserve the integral of height.
@@ -1778,18 +1811,17 @@ contains
     real(kind=real_kind), intent(out) :: phis(:)
 
     real(kind=real_kind) :: wr(np,np,2), ones(np,np), qmin, qmax
-    integer :: nf, nf2, ncol
+    integer :: nf, ncol
 
     ones = one
     nf = gfr%nphys
-    nf2 = nf*nf
     ncol = nf*nf
 
     wr(:,:,1) = elem(ie)%state%phis(:,:)
     call gfr_g2f_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
     qmin = minval(elem(ie)%state%phis)
     qmax = maxval(elem(ie)%state%phis)
-    wr(:nf,:nf,1) = reshape(gfr%w_ff(:nf2)*gfr%fv_metdet(:nf2,ie), (/nf,nf/))
+    wr(:nf,:nf,1) = reshape(gfr%w_ff(:ncol)*gfr%fv_metdet(:ncol,ie), (/nf,nf/))
     call limiter_clip_and_sum(gfr%nphys, wr(:,:,1), qmin, qmax, ones, wr(:nf,:nf,2))
     phis(:ncol) = reshape(wr(:nf,:nf,2), (/ncol/))
   end subroutine gfr_dyn_to_fv_phys_topo_elem
