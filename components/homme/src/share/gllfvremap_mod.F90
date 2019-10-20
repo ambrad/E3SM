@@ -58,6 +58,7 @@ module gllfvremap_mod
        ! Remap phis.
        gfr_dyn_to_fv_phys_topo, &
        gfr_fv_phys_to_dyn_topo, &
+       gfr_dyn_to_fv_phys_topo_data, &
        ! If nphys == 1, reconstruct the field to boost the OOA. If
        ! nphys > 1, returns immediately.
        gfr_pg1_reconstruct_topo, & ! call after the gfr_fv_phys_to_dyn_topo and the DSS
@@ -466,6 +467,15 @@ contains
        call gfr_dyn_to_fv_phys_topo_elem(elem, ie, phis(:,ie))
     end do
   end subroutine gfr_dyn_to_fv_phys_topo_hybrid
+
+  subroutine gfr_dyn_to_fv_phys_topo_data(elem, nets, nete, square, g, gsz, p, psz)
+    type (element_t), intent(in) :: elem(:)
+    integer, intent(in) :: nets, nete, gsz, psz
+    logical, intent(in) :: square
+    real(kind=real_kind), intent(in) :: g(gsz)
+    real(kind=real_kind), intent(out) :: p(psz)
+    
+  end subroutine gfr_dyn_to_fv_phys_topo_data
 
   subroutine gfr_fv_phys_to_dyn_topo_hybrid(hybrid, elem, nets, nete, phis)
     ! Remap FV topography data to the GLL grid. Prevent new
