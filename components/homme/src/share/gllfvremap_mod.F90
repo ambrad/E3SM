@@ -491,36 +491,6 @@ contains
 
     ncol = gfr%nphys*gfr%nphys
 
-    if (.false. .and. augment_in) then
-       allocate(phis_gll(np,np,nelemd), phis_pg(gfr%nphys*gfr%nphys,nelemd))
-       hybrid = hybrid_create(par, 0, 1)
-       do ie = nets,nete
-          phis_gll(:,:,ie) = elem(ie)%state%phis
-       end do
-       
-       call gfr_dyn_to_fv_phys_topo_hybrid(hybrid, elem, 1, nelemd, phis_pg)
-       call gfr_fv_phys_to_dyn_topo_hybrid(hybrid, elem, nets, nete, phis_pg)
-       do ie = nets, nete
-          call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%phis, 1, 0, 1)
-       end do
-       call bndry_exchangeV(hybrid, edge_g)
-       do ie = nets, nete
-          call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%phis, 1, 0, 1)
-       end do
-
-       do ie = nets,nete
-          call gfr_augment(ie, elem, (elem(ie)%state%phis - phis_gll(:,:,ie))**2, &
-               g(npsq*(ie-nets)+1 : npsq*(ie-nets+1)), &
-               p(ncol*(ie-nets)+1 : ncol*(ie-nets+1)))
-       end do
-
-       do ie = nets,nete
-          elem(ie)%state%phis = phis_gll(:,:,ie)
-       end do       
-       deallocate(phis_gll, phis_pg)
-       return
-    end if
-
     do ie = nets,nete
        call gfr_dyn_to_fv_phys_topo_data_elem(ie, elem, square, augment_in, &
             g(npsq*(ie-nets)+1 : npsq*(ie-nets+1)), &
@@ -528,107 +498,64 @@ contains
     end do
   end subroutine gfr_dyn_to_fv_phys_topo_data
 
-  subroutine gfr_augment(ie, elem, var, g, p)
+  subroutine gfr_dyn_to_fv_phys_topo_data_elem(ie, elem, square, augment_variance, g, p)
     use physical_constants, only: grav => g
 
     integer, intent(in) :: ie
     type (element_t), intent(in) :: elem(:)
-    real(kind=real_kind), intent(in) :: var(np,np), g(:)
-    real(kind=real_kind), intent(out) :: p(:)
-
-    real(kind=real_kind) :: spheremp(np,np), wr(np,np,3), ones(np,np), qmin, qmax, phispg(npsq), tmp(2,2)
-    integer :: nf, ncol
-
-    ones = one
-    nf = gfr%nphys
-    ncol = nf*nf
-
-    wr(:,:,2) = reshape(g(:npsq)**2, (/np,np/))
-
-    wr(:,:,1) = wr(:,:,2) + var/grav**2
-    call gfr_g2f_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
-
-    qmin = minval(wr(:,:,1))
-    qmax = maxval(wr(:,:,1))
-
-    wr(:nf,:nf,1) = reshape(gfr%w_ff(:ncol)*gfr%fv_metdet(:ncol,ie), (/nf,nf/))
-    call limiter_clip_and_sum(nf, wr(:,:,1), qmin, qmax, ones, wr(:,:,2))
-
-    wr(:nf,:nf,2) = sqrt(wr(:nf,:nf,2))
-    p(:ncol) = reshape(wr(:nf,:nf,2), (/ncol/))
-  end subroutine gfr_augment
-
-  subroutine gfr_dyn_to_fv_phys_topo_data_elem(ie, elem, square, augment, g, p)
-    use physical_constants, only: grav => g
-
-    integer, intent(in) :: ie
-    type (element_t), intent(in) :: elem(:)
-    logical, intent(in) :: square, augment
+    logical, intent(in) :: square, augment_variance
     real(kind=real_kind), intent(in) :: g(:)
     real(kind=real_kind), intent(out) :: p(:)
 
-    real(kind=real_kind) :: spheremp(np,np), wr(np,np,3), ones(np,np), qmin, qmax, phispg(npsq), tmp(2,2)
+    real(kind=real_kind) :: wr(np,np,3), ones(np,np), qmin, qmax, phispg(npsq)
     integer :: nf, ncol, i, j, k
 
     ones = one
     nf = gfr%nphys
     ncol = nf*nf
 
-    if (augment) then
-#if 1
+    if (augment_variance) then
+       ! Compute an estimated amount of additional variance due to remapping
+       ! from GLL to FV bases.
        call gfr_dyn_to_fv_phys_topo_elem(elem, ie, phispg)
        do j = 1,nf
           do i = 1,nf
+             ! Integrate (phis_gll - phis_fv)^2 over FV subcell (i,j). Do this
+             ! using gfr_g2f_scalar; thus, only one entry out of nf^2 are used.
              k = nf*(j-1) + i
              wr(:,:,2) = ((elem(ie)%state%phis - phispg(k))/grav)**2
              call gfr_g2f_scalar(ie, elem(ie)%metdet, wr(:,:,2:2), wr(:,:,1:1))
+             ! Use just entry (i,j).
              wr(i,j,3) = max(zero, wr(i,j,1))
           end do
        end do
 
-       wr(:,:,1) = reshape(g(:npsq), (/np,np/))
-       wr(:,:,1) = wr(:,:,1)**2
+       ! Original SGH. augment_variance implies we need to square and sqrt
+       ! quantities.
+       wr(:,:,1) = reshape(g(:npsq)**2, (/np,np/))
+       call gfr_g2f_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
+
        qmin = minval(wr(:,:,1))
        qmax = maxval(wr(:,:,1))
-       call gfr_g2f_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
        wr(:nf,:nf,1) = reshape(gfr%w_ff(:ncol)*gfr%fv_metdet(:ncol,ie), (/nf,nf/))
        call limiter_clip_and_sum(nf, wr(:,:,1), qmin, qmax, ones, wr(:,:,2))
 
+       ! Combine the two sources of variance.
        wr(:nf,:nf,2) = sqrt(wr(:nf,:nf,2) + wr(:nf,:nf,3))
-       p(:ncol) = reshape(wr(:nf,:nf,2), (/ncol/))       
-#else
-       tmp(1,1) = elem(ie)%state%phis(1,1)
-       tmp(1,2) = elem(ie)%state%phis(1,np)
-       tmp(2,1) = elem(ie)%state%phis(np,1)
-       tmp(2,2) = elem(ie)%state%phis(np,np)
-       if (gfr%npi /= 2) print *,'npi is not 2'
-       call apply_interp(gfr%interp, np, 2, tmp, wr(:,:,3))
-       wr(:,:,1) = ((wr(:,:,3) - elem(ie)%state%phis)/grav)**2
-
-       wr(:,:,2) = reshape(g(:npsq)**2, (/np,np/))
-
-       wr(:,:,1) = wr(:,:,2) + wr(:,:,1)
-       call gfr_g2f_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
-
-       qmin = minval(wr(:,:,1))
-       qmax = maxval(wr(:,:,1))
-
-       call limiter_clip_and_sum(nf, spheremp, qmin, qmax, ones, wr(:,:,2))
-
-       wr(:nf,:nf,2) = sqrt(wr(:nf,:nf,2))
-       p(:ncol) = reshape(wr(:nf,:nf,2), (/ncol/))
-#endif
     else
        wr(:,:,1) = reshape(g(:npsq), (/np,np/))
        if (square) wr(:,:,1) = wr(:,:,1)**2
+
+       call gfr_g2f_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
+
        qmin = minval(wr(:,:,1))
        qmax = maxval(wr(:,:,1))
-       call gfr_g2f_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
        wr(:nf,:nf,1) = reshape(gfr%w_ff(:ncol)*gfr%fv_metdet(:ncol,ie), (/nf,nf/))
        call limiter_clip_and_sum(nf, wr(:,:,1), qmin, qmax, ones, wr(:,:,2))
+
        if (square) wr(:nf,:nf,2) = sqrt(wr(:nf,:nf,2))
-       p(:ncol) = reshape(wr(:nf,:nf,2), (/ncol/))
     end if
+    p(:ncol) = reshape(wr(:nf,:nf,2), (/ncol/))
   end subroutine gfr_dyn_to_fv_phys_topo_data_elem
   
   subroutine gfr_fv_phys_to_dyn_topo_hybrid(hybrid, elem, nets, nete, phis)
