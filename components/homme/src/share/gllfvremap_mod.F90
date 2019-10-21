@@ -498,7 +498,7 @@ contains
     real(kind=real_kind), intent(in) :: g(:)
     real(kind=real_kind), intent(out) :: p(:)
 
-    real(kind=real_kind) :: spheremp(np,np), wr(np,np,3), ones(np,np), qmin, qmax, phispg(npsq)
+    real(kind=real_kind) :: spheremp(np,np), wr(np,np,3), ones(np,np), qmin, qmax, phispg(npsq), tmp(2,2)
     integer :: nf, ncol
 
     ones = one
@@ -506,18 +506,29 @@ contains
     ncol = nf*nf
 
     if (augment) then
-       call gfr_dyn_to_fv_phys_topo_elem(elem, ie, phispg)
-       wr(:nf,:nf,3) = reshape(phispg(:ncol), (/nf,nf/))
-       call gfr_f2g_scalar(ie, elem(ie)%metdet, wr(:,:,3:3), wr(:,:,1:1))
-       wr(:,:,1) = (wr(:,:,1) - elem(ie)%state%phis)**2
+       tmp(1,1) = elem(ie)%state%phis(1,1)
+       tmp(1,2) = elem(ie)%state%phis(1,np)
+       tmp(2,1) = elem(ie)%state%phis(np,1)
+       tmp(2,2) = elem(ie)%state%phis(np,np)
+       if (gfr%npi /= 2) print *,'npi is not 2'
+       call apply_interp(gfr%interp, np, 2, tmp, wr(:,:,3))
+       wr(:,:,1) = (wr(:,:,3) - elem(ie)%state%phis)**2
+       if (maxval(sqrt(wr(:,:,1))) > 8000) then
+          print *,'phis',elem(ie)%state%phis
+          print *,'interp',wr(:,:,3)
+       end if
 
-       wr(:,:,2) = reshape(g(:npsq), (/np,np/))
-       wr(:,:,1) = wr(:,:,2)**2 + wr(:,:,1)
+       wr(:,:,2) = reshape(g(:npsq)**2, (/np,np/))
+
+       wr(:,:,1) = wr(:,:,2) + wr(:,:,1)
+       call gfr_g2f_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
+
        qmin = minval(wr(:,:,1))
        qmax = maxval(wr(:,:,1))
-       call gfr_g2f_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
+
        wr(:nf,:nf,1) = reshape(gfr%w_ff(:ncol)*gfr%fv_metdet(:ncol,ie), (/nf,nf/))
-       call limiter_clip_and_sum(nf, wr(:,:,1), qmin, qmax, ones, wr(:nf,:nf,2))
+       call limiter_clip_and_sum(nf, wr(:,:,1), qmin, qmax, ones, wr(:,:,2))
+
        wr(:nf,:nf,2) = sqrt(wr(:nf,:nf,2))
        p(:ncol) = reshape(wr(:nf,:nf,2), (/ncol/))
     else
@@ -527,7 +538,7 @@ contains
        qmax = maxval(wr(:,:,1))
        call gfr_g2f_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
        wr(:nf,:nf,1) = reshape(gfr%w_ff(:ncol)*gfr%fv_metdet(:ncol,ie), (/nf,nf/))
-       call limiter_clip_and_sum(nf, wr(:,:,1), qmin, qmax, ones, wr(:nf,:nf,2))
+       call limiter_clip_and_sum(nf, wr(:,:,1), qmin, qmax, ones, wr(:,:,2))
        if (square) wr(:nf,:nf,2) = sqrt(wr(:nf,:nf,2))
        p(:ncol) = reshape(wr(:nf,:nf,2), (/ncol/))
     end if
