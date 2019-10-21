@@ -469,7 +469,7 @@ contains
   end subroutine gfr_dyn_to_fv_phys_topo_hybrid
 
   subroutine gfr_dyn_to_fv_phys_topo_data(elem, nets, nete, g, gsz, p, psz, square)
-    use parallel_mod, only: abortmp
+    use kinds, only: iulog
 
     type (element_t), intent(in) :: elem(:)
     integer, intent(in) :: nets, nete, gsz, psz
@@ -477,6 +477,7 @@ contains
     real(kind=real_kind), intent(out) :: p(psz)
     logical, intent(in), optional :: square
 
+    real(kind=real_kind) :: tmp(npsq,2), integral(2), rd
     integer :: ie, ncol
     logical :: augment_in
 
@@ -485,6 +486,17 @@ contains
        call gfr_dyn_to_fv_phys_topo_data_elem(ie, elem, square, &
             g(npsq*(ie-nets)+1 : npsq*(ie-nets+1)), &
             p(ncol*(ie-nets)+1 : ncol*(ie-nets+1)))
+       if (gfr%check) then
+          tmp = zero
+          tmp(:,1) = g(npsq*(ie-nets)+1 : npsq*(ie-nets+1))
+          tmp(:ncol,2) = p(ncol*(ie-nets)+1 : ncol*(ie-nets+1))
+          if (square) tmp = tmp**2
+          integral(1) = sum(reshape(elem(ie)%spheremp, (/npsq/))*tmp(:,1))
+          integral(2) = sum(gfr%w_ff(:ncol)*gfr%fv_metdet(:,ie)*tmp(:ncol,2))
+          rd = abs(integral(1) - integral(2))/integral(1)
+          if (rd > 10*eps) &
+               write(iulog,*) 'gfr_dyn_to_fv_phys_topo_data: integrals disagree:', rd
+       end if
     end do
   end subroutine gfr_dyn_to_fv_phys_topo_data
   
