@@ -490,6 +490,12 @@ contains
           tmp = zero
           tmp(:,1) = g(npsq*(ie-nets)+1 : npsq*(ie-nets+1))
           tmp(:ncol,2) = p(ncol*(ie-nets)+1 : ncol*(ie-nets+1))
+          if ( minval(tmp(:ncol,2)) < minval(tmp(:,1)) .or. &
+               maxval(tmp(:ncol,2)) > maxval(tmp(:,1))) then
+             write(iulog,*) 'gfr_dyn_to_fv_phys_topo_data: outside limits', &
+                  minval(tmp(:ncol,1)), minval(tmp(:ncol,2)), &
+                  maxval(tmp(:ncol,1)), maxval(tmp(:ncol,2))
+          end if
           if (square) tmp = tmp**2
           integral(1) = sum(reshape(elem(ie)%spheremp, (/npsq/))*tmp(:,1))
           integral(2) = sum(gfr%w_ff(:ncol)*gfr%fv_metdet(:,ie)*tmp(:ncol,2))
