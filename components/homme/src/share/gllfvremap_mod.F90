@@ -529,6 +529,8 @@ contains
   end subroutine gfr_dyn_to_fv_phys_topo_data
 
   subroutine gfr_augment(ie, elem, var, g, p)
+    use physical_constants, only: grav => g
+
     integer, intent(in) :: ie
     type (element_t), intent(in) :: elem(:)
     real(kind=real_kind), intent(in) :: var(np,np), g(:)
@@ -543,7 +545,7 @@ contains
 
     wr(:,:,2) = reshape(g(:npsq)**2, (/np,np/))
 
-    wr(:,:,1) = wr(:,:,2) + var
+    wr(:,:,1) = wr(:,:,2) + var/grav**2
     call gfr_g2f_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
 
     qmin = minval(wr(:,:,1))
