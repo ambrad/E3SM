@@ -526,8 +526,8 @@ contains
     qmax = maxval(wr(:,:,1))
     call gfr_g2f_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
     wr(:nf,:nf,1) = reshape(gfr%w_ff(:ncol)*gfr%fv_metdet(:ncol,ie), (/nf,nf/))
-    call limiter_clip_and_sum(nf, wr(:,:,1), qmin, qmax, ones, wr(:nf,:nf,2))
-    if (square) wr(:,:,2) = sqrt(wr(:,:,2))
+    call limiter_clip_and_sum(nf, wr(:,:,1), qmin, qmax, ones, wr(:,:,2))
+    if (square) wr(:nf,:nf,2) = sqrt(wr(:nf,:nf,2))
     p(:ncol) = reshape(wr(:nf,:nf,2), (/ncol/))
   end subroutine gfr_dyn_to_fv_phys_topo_data_elem
   
