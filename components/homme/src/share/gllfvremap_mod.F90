@@ -468,14 +468,14 @@ contains
     end do
   end subroutine gfr_dyn_to_fv_phys_topo_hybrid
 
-  subroutine gfr_dyn_to_fv_phys_topo_data(elem, nets, nete, g, gsz, p, psz, augment)
+  subroutine gfr_dyn_to_fv_phys_topo_data(elem, nets, nete, g, gsz, p, psz, square, augment)
     use parallel_mod, only: abortmp
 
     type (element_t), intent(in) :: elem(:)
     integer, intent(in) :: nets, nete, gsz, psz
     real(kind=real_kind), intent(in) :: g(gsz)
     real(kind=real_kind), intent(out) :: p(psz)
-    logical, intent(in), optional :: augment
+    logical, intent(in), optional :: square, augment
 
     integer :: ie, ncol
     logical :: augment_in
@@ -485,16 +485,16 @@ contains
 
     ncol = gfr%nphys*gfr%nphys
     do ie = nets,nete
-       call gfr_dyn_to_fv_phys_topo_data_elem(ie, elem, augment_in, &
+       call gfr_dyn_to_fv_phys_topo_data_elem(ie, elem, square, augment_in, &
             g(npsq*(ie-nets)+1 : npsq*(ie-nets+1)), &
             p(ncol*(ie-nets)+1 : ncol*(ie-nets+1)))
     end do
   end subroutine gfr_dyn_to_fv_phys_topo_data
   
-  subroutine gfr_dyn_to_fv_phys_topo_data_elem(ie, elem, augment, g, p)
+  subroutine gfr_dyn_to_fv_phys_topo_data_elem(ie, elem, square, augment, g, p)
     integer, intent(in) :: ie
     type (element_t), intent(in) :: elem(:)
-    logical, intent(in) :: augment
+    logical, intent(in) :: square, augment
     real(kind=real_kind), intent(in) :: g(:)
     real(kind=real_kind), intent(out) :: p(:)
 
@@ -505,29 +505,32 @@ contains
     nf = gfr%nphys
     ncol = nf*nf
 
-    wr(:,:,1) = reshape(g(:npsq), (/np,np/))
-    call gfr_g2f_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
-
-    spheremp(:nf,:nf) = reshape(gfr%w_ff(:ncol)*gfr%fv_metdet(:ncol,ie), (/nf,nf/))
-    qmin = minval(g(:npsq))
-    qmax = maxval(g(:npsq))
-    call limiter_clip_and_sum(gfr%nphys, spheremp, qmin, qmax, ones, wr(:nf,:nf,2))
-
     if (augment) then
        call gfr_dyn_to_fv_phys_topo_elem(elem, ie, phispg)
        wr(:nf,:nf,3) = reshape(phispg(:ncol), (/nf,nf/))
        call gfr_f2g_scalar(ie, elem(ie)%metdet, wr(:,:,3:3), wr(:,:,1:1))
-
        wr(:,:,1) = (wr(:,:,1) - elem(ie)%state%phis)**2
-       call gfr_g2f_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,3:3))
+
+       wr(:,:,2) = reshape(g(:npsq), (/np,np/))
+       wr(:,:,1) = wr(:,:,2)**2 + wr(:,:,1)
        qmin = minval(wr(:,:,1))
        qmax = maxval(wr(:,:,1))
-       call limiter_clip_and_sum(gfr%nphys, spheremp, qmin, qmax, ones, wr(:nf,:nf,3))
-
-       wr(:nf,:nf,2) = sqrt(wr(:nf,:nf,2)**2 + wr(:nf,:nf,3))
+       call gfr_g2f_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
+       wr(:nf,:nf,1) = reshape(gfr%w_ff(:ncol)*gfr%fv_metdet(:ncol,ie), (/nf,nf/))
+       call limiter_clip_and_sum(nf, wr(:,:,1), qmin, qmax, ones, wr(:nf,:nf,2))
+       wr(:nf,:nf,2) = sqrt(wr(:nf,:nf,2))
+       p(:ncol) = reshape(wr(:nf,:nf,2), (/ncol/))
+    else
+       wr(:,:,1) = reshape(g(:npsq), (/np,np/))
+       if (square) wr(:,:,1) = wr(:,:,1)**2
+       qmin = minval(wr(:,:,1))
+       qmax = maxval(wr(:,:,1))
+       call gfr_g2f_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
+       wr(:nf,:nf,1) = reshape(gfr%w_ff(:ncol)*gfr%fv_metdet(:ncol,ie), (/nf,nf/))
+       call limiter_clip_and_sum(nf, wr(:,:,1), qmin, qmax, ones, wr(:nf,:nf,2))
+       if (square) wr(:nf,:nf,2) = sqrt(wr(:nf,:nf,2))
+       p(:ncol) = reshape(wr(:nf,:nf,2), (/ncol/))
     end if
-
-    p(:ncol) = reshape(wr(:nf,:nf,2), (/ncol/))
   end subroutine gfr_dyn_to_fv_phys_topo_data_elem
   
   subroutine gfr_fv_phys_to_dyn_topo_hybrid(hybrid, elem, nets, nete, phis)

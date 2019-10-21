@@ -568,13 +568,15 @@ contains
     integer, intent(in) :: unit, nphys
 
     integer :: ie
+    logical :: square
 
     call pio_read_phis(elem, par, varname)
     do ie = 1,nelemd
        arrgll(:,:,ie) = elem(ie)%state%phis
     end do
+    square = varname(1:3) == 'SGH'
     call gfr_dyn_to_fv_phys_topo_data(elem, 1, nelemd, &
-         arrgll, size(arrgll), arrpg, size(arrpg))
+         arrgll, size(arrgll), arrpg, size(arrpg), square)
     if (unit > 0) write(unit, '(es11.4)') arrpg(:nphys*nphys,:)
   end subroutine topo_read_var
 
@@ -589,7 +591,7 @@ contains
     integer, intent(in) :: unit, nphys
 
     call gfr_dyn_to_fv_phys_topo_data(elem, 1, nelemd, &
-         sghgll, size(sghgll), sghpg, size(sghpg), augment=.true.)
+         sghgll, size(sghgll), sghpg, size(sghpg), .true., augment=.true.)
     write(unit, '(es11.4)') sghpg(:nphys*nphys,:)
   end subroutine topo_augment_sgh
 
