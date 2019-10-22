@@ -281,7 +281,7 @@ contains
        if (gfr%have_fv_topo_file_phis) then
           phis(:ncol,ie) = gfr%phis(:,ie)
        else
-          call gfr_dyn_to_fv_phys_topo_elem(elem, ie, phis(:,ie))
+          call gfr_g2f_scalar_and_limit(gfr, ie, elem(ie)%metdet, elem(ie)%state%phis, phis(:,ie))
        end if
 
        dp = elem(ie)%state%dp3d(:,:,:,nt)
@@ -464,7 +464,7 @@ contains
     integer :: ie
 
     do ie = nets,nete
-       call gfr_dyn_to_fv_phys_topo_elem(elem, ie, phis(:,ie))
+       call gfr_g2f_scalar_and_limit(gfr, ie, elem(ie)%metdet, elem(ie)%state%phis, phis(:,ie))
     end do
   end subroutine gfr_dyn_to_fv_phys_topo_hybrid
 
@@ -525,7 +525,7 @@ contains
     if (augment_variance) then
        ! Compute an estimated amount of additional variance due to remapping
        ! from GLL to FV bases.
-       call gfr_dyn_to_fv_phys_topo_elem(elem, ie, phispg)
+       call gfr_g2f_scalar_and_limit(gfr, ie, elem(ie)%metdet, elem(ie)%state%phis, phispg)
        do j = 1,nf
           do i = 1,nf
              ! Integrate (phis_gll - phis_fv)^2 over FV subcell (i,j). Do this
@@ -1325,6 +1325,30 @@ contains
     end do
   end subroutine gfr_g2f_mixing_ratios
 
+  subroutine gfr_g2f_scalar_and_limit(gfr, ie, gll_metdet, g, f)
+    ! After remap, limit using extremal values from g.
+
+    type (GllFvRemap_t), intent(in) :: gfr
+    integer, intent(in) :: ie
+    real(kind=real_kind), intent(in) :: gll_metdet(:,:), g(:,:)
+    real(kind=real_kind), intent(out) :: f(:)
+
+    real(kind=real_kind) :: wr(np,np,2), ones(np,np), qmin, qmax
+    integer :: nf, ncol
+
+    ones = one
+    nf = gfr%nphys
+    ncol = nf*nf
+
+    wr(:np,:np,1) = g
+    call gfr_g2f_scalar(ie, gll_metdet, wr(:,:,1:1), wr(:,:,2:2))
+    qmin = minval(g(:np,:np))
+    qmax = maxval(g(:np,:np))
+    wr(:nf,:nf,1) = reshape(gfr%w_ff(:ncol)*gfr%fv_metdet(:ncol,ie), (/nf,nf/))
+    call limiter_clip_and_sum(gfr%nphys, wr(:,:,1), qmin, qmax, ones, wr(:nf,:nf,2))
+    f(:ncol) = reshape(wr(:nf,:nf,2), (/ncol/))
+  end subroutine gfr_g2f_scalar_and_limit
+
   ! FV -> GLL (f2g)
 
   subroutine gfr_f2g_scalar(ie, gll_metdet, f, g) ! no gfr b/c public for testing
@@ -1866,20 +1890,7 @@ contains
     integer, intent(in) :: ie
     real(kind=real_kind), intent(out) :: phis(:)
 
-    real(kind=real_kind) :: wr(np,np,2), ones(np,np), qmin, qmax
-    integer :: nf, ncol
-
-    ones = one
-    nf = gfr%nphys
-    ncol = nf*nf
-
-    wr(:,:,1) = elem(ie)%state%phis(:,:)
-    call gfr_g2f_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
-    qmin = minval(elem(ie)%state%phis)
-    qmax = maxval(elem(ie)%state%phis)
-    wr(:nf,:nf,1) = reshape(gfr%w_ff(:ncol)*gfr%fv_metdet(:ncol,ie), (/nf,nf/))
-    call limiter_clip_and_sum(gfr%nphys, wr(:,:,1), qmin, qmax, ones, wr(:nf,:nf,2))
-    phis(:ncol) = reshape(wr(:nf,:nf,2), (/ncol/))
+    call gfr_g2f_scalar_and_limit(gfr, ie, elem(ie)%metdet, elem(ie)%state%phis, phis)
   end subroutine gfr_dyn_to_fv_phys_topo_elem
 
   subroutine gfr_hybrid_create(par, dom_mt, hybrid, nets, nete)
