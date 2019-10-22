@@ -469,10 +469,16 @@ contains
   end subroutine gfr_dyn_to_fv_phys_topo_hybrid
 
   subroutine gfr_dyn_to_fv_phys_topo_data(par, elem, nets, nete, g, gsz, p, psz, square, augment)
+    ! Remap SGH, SGH30, phis, landm_coslat, landfrac from GLL to FV grids. For
+    ! SGH* fields, square should be true. Then variance is remapped and so
+    ! conserved. For SGH, but not SGH30, set augment to true to add the variance
+    ! increases due to the additional smoothness of remapping from GLL to
+    ! (first-order) FV bases. SGH30 does not require additional variance to be
+    ! added since it's the variance due to truncation of wave numbers at a
+    ! separation length scale; this is independent of grid.
+
     use parallel_mod, only: parallel_t, abortmp
     use hybrid_mod, only: hybrid_create
-    use edge_mod, only: edgeVpack_nlyr, edgeVunpack_nlyr, edge_g
-    use bndry_mod, only: bndry_exchangeV
 
     type (parallel_t), intent(in) :: par
     type (element_t), intent(inout) :: elem(:)
@@ -499,6 +505,8 @@ contains
   end subroutine gfr_dyn_to_fv_phys_topo_data
 
   subroutine gfr_dyn_to_fv_phys_topo_data_elem(ie, elem, square, augment_variance, g, p)
+    ! Element-level impl of gfr_dyn_to_fv_phys_topo_data.
+
     use physical_constants, only: grav => g
 
     integer, intent(in) :: ie
