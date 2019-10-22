@@ -541,29 +541,17 @@ contains
        ! Original SGH. augment_variance implies we need to square and sqrt
        ! quantities.
        wr(:,:,1) = reshape(g(:npsq)**2, (/np,np/))
-       call gfr_g2f_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
-
-       qmin = minval(wr(:,:,1))
-       qmax = maxval(wr(:,:,1))
-       wr(:nf,:nf,1) = reshape(gfr%w_ff(:ncol)*gfr%fv_metdet(:ncol,ie), (/nf,nf/))
-       call limiter_clip_and_sum(nf, wr(:,:,1), qmin, qmax, ones, wr(:,:,2))
+       call gfr_g2f_scalar_and_limit(gfr, ie, elem(ie)%metdet, wr(:,:,1), p(:ncol))
 
        ! Combine the two sources of variance.
-       wr(:nf,:nf,2) = sqrt(wr(:nf,:nf,2) + wr(:nf,:nf,3))
+       wr(:nf,:nf,2) = sqrt(reshape(p(:ncol), (/nf,nf/)) + wr(:nf,:nf,3))
+       p(:ncol) = reshape(wr(:nf,:nf,2), (/ncol/))
     else
        wr(:,:,1) = reshape(g(:npsq), (/np,np/))
        if (square) wr(:,:,1) = wr(:,:,1)**2
-
-       call gfr_g2f_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
-
-       qmin = minval(wr(:,:,1))
-       qmax = maxval(wr(:,:,1))
-       wr(:nf,:nf,1) = reshape(gfr%w_ff(:ncol)*gfr%fv_metdet(:ncol,ie), (/nf,nf/))
-       call limiter_clip_and_sum(nf, wr(:,:,1), qmin, qmax, ones, wr(:,:,2))
-
-       if (square) wr(:nf,:nf,2) = sqrt(wr(:nf,:nf,2))
+       call gfr_g2f_scalar_and_limit(gfr, ie, elem(ie)%metdet, wr(:,:,1), p(:ncol))
+       if (square) p(:ncol) = sqrt(p(:ncol))
     end if
-    p(:ncol) = reshape(wr(:nf,:nf,2), (/ncol/))
   end subroutine gfr_dyn_to_fv_phys_topo_data_elem
   
   subroutine gfr_fv_phys_to_dyn_topo_hybrid(hybrid, elem, nets, nete, phis)
