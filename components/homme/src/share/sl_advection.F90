@@ -802,7 +802,7 @@ contains
 
   subroutine flt_reconstruct(hybrid, elem, nets, nete, hvcoord, tl, dt, deriv)
     use control_mod, only: qsplit, rsplit, amb_experiment
-    use derivative_mod, only: derivative_t, gradient_sphere, get_deriv
+    use derivative_mod, only: derivative_t, gradient_sphere
 
     type (hybrid_t), intent(in) :: hybrid
     type (element_t), intent(inout) :: elem(:)
@@ -983,4 +983,36 @@ contains
        p(:,:,k+1) = p(:,:,k) + dp(:,:,k)
     end do
   end subroutine calc_p
+
+  subroutine timestep_make_parameters_consistent(rsplit, qsplit, dt_remap_factor, dt_tracer_factor)
+    use parallel_mod, only: abortmp
+
+    integer, intent(inout) :: rsplit, qsplit, dt_remap_factor, dt_tracer_factor
+
+    logical :: split_specified, factor_specified, split_is_master
+
+    split_specified = rsplit >= 0 .and. qsplit >= 1
+    factor_specified = dt_remap_factor >= 0 .and. dt_tracer_factor >= 1
+
+    if (split_specified .and. factor_specified) then
+       call abortmp('rsplit,qsplit and dt_remap_factor,dt_tracer_factor &
+            & are both specified; only one is permitted.')
+    end if
+    if (.not. split_specified .and. .not. factor_specified) then
+       call abortmp('Neither rsplit,qsplit nor dt_remap_factor,dt_tracer_factor &
+            & are specified; one must be.')
+    end if
+
+    if (split_is_master) then
+       dt_remap_factor = rsplit*qsplit
+       dt_tracer_factor = qsplit
+    else
+       qsplit = dt_tracer_factor
+       ! This is the only inconsistent setting. But I want to keep
+       ! this here b/c almost all uses of rsplit is simply for whether
+       ! it's == 0, and I don't want to touch all those lines in this
+       ! PR.
+       rsplit = dt_remap_factor
+    end if
+  end subroutine timestep_make_parameters_consistent
 end module sl_advection
