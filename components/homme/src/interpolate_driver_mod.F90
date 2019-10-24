@@ -951,7 +951,8 @@ contains
 #endif
   end subroutine pio_read_gll_topo_file
 
-  subroutine pio_write_physgrid_topo_file(filename, elem, par, gll_fields, pg_fields, fieldnames, nphys)
+  subroutine pio_write_physgrid_topo_file(infilename, outfilenameprefix, elem, par, &
+       gll_fields, pg_fields, fieldnames, nphys)
     ! gll_fields and fieldnames are as output from pio_read_gll_topo_file.
 
     use element_mod, only : element_t
@@ -970,9 +971,9 @@ contains
     use control_mod, only: max_string_len
 #endif
 
-    integer, parameter :: ndim = 2, nvar = 6
+    integer, parameter :: nvar = 6
 
-    character(len=*), intent(in) :: filename
+    character(len=*), intent(in) :: infilename, outfilenameprefix
     type(element_t), intent(in) :: elem(:)
     type(parallel_t), intent(in) :: par
     real(kind=real_kind), intent(in) :: &
@@ -982,6 +983,8 @@ contains
     integer, intent(in) :: nphys
 
 #ifndef HOMME_WITHOUT_PIOLIBRARY
+    integer, parameter :: ndim = 2
+
     character(len=varname_len) :: dimnames(ndim), varnames(nvar)
     character(len=max_string_len) :: output_dir_save, output_prefix_save
     integer :: dimsizes(ndim), vardims(1,nvar), vartypes(nvar), i
@@ -997,7 +1000,8 @@ contains
     output_start_time(1) = 0
     output_end_time(1) = 1
 
-    call nf_output_init_begin(ncdf, par%masterproc, par%nprocs, par%rank, par%comm, filename, 0)
+    call nf_output_init_begin(ncdf, par%masterproc, par%nprocs, par%rank, par%comm, &
+         outfilenameprefix, 0)
 
     dimnames(1) = 'ncol'
     dimsizes(1) = nelem*npsq

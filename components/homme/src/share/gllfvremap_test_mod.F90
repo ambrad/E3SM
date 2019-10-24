@@ -567,7 +567,7 @@ contains
 
     character(*), parameter :: &
          intopofn = '/ascldap/users/ambradl/climate/physgrid/USGS-gtopo30_ne30np4_16xdel2-PFC-consistentSGH.nc', &
-         outtopofn = '/ascldap/users/ambradl/climate/physgrid/USGS-gtopo30_ne30np4pg2_16xdel2-PFC-consistentSGH_converted'
+         outtopoprefix = '/ascldap/users/ambradl/climate/physgrid/USGS-gtopo30_ne30np4pg2_16xdel2-PFC-consistentSGH_converted'
 
     real(real_kind), allocatable :: gll_fields(:,:,:,:), pg_fields(:,:,:)
     integer :: unit, nphys, vari, phisidx, ie
@@ -607,7 +607,8 @@ contains
     close(unit)
 #endif
 
-    call pio_write_physgrid_topo_file(outtopofn, elem, par, gll_fields, pg_fields, fieldnames, nphys)
+    call pio_write_physgrid_topo_file(intopofn, outtopoprefix, elem, par, &
+         gll_fields, pg_fields, fieldnames, nphys)
 
     deallocate(gll_fields, pg_fields)
   end subroutine gfr_convert_topo
