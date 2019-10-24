@@ -33,7 +33,7 @@ module gllfvremap_test_mod
 
   type (PhysgridData_t), private :: pg_data
 
-  public :: gfr_check_api, gfr_analyze_topo
+  public :: gfr_check_api, gfr_convert_topo
 
 contains
   
@@ -556,17 +556,18 @@ contains
     if (hybrid%ithr == 0) ftype = ftype_in
   end subroutine gfr_check_api
 
-  subroutine gfr_analyze_topo(par, elem)
+  subroutine gfr_convert_topo(par, elem)
     use common_io_mod, only : infilenames, varname_len
     use parallel_mod, only: parallel_t
     use gllfvremap_mod, only: gfr_init, gfr_finish, gfr_dyn_to_fv_phys_topo_data
-    use interpolate_driver_mod, only: pio_read_gll_topo_file
+    use interpolate_driver_mod, only: pio_read_gll_topo_file, pio_write_physgrid_topo_file
 
     type (parallel_t), intent(in) :: par
     type (element_t), intent(inout) :: elem(:)
 
-    character(*), parameter :: topofn = &
-         '/ascldap/users/ambradl/climate/physgrid/USGS-gtopo30_ne30np4_16xdel2-PFC-consistentSGH.nc'
+    character(*), parameter :: &
+         intopofn = '/ascldap/users/ambradl/climate/physgrid/USGS-gtopo30_ne30np4_16xdel2-PFC-consistentSGH.nc', &
+         outtopofn = '/ascldap/users/ambradl/climate/physgrid/USGS-gtopo30_ne30np4pg2_16xdel2-PFC-consistentSGH_converted.nc'
 
     real(real_kind), allocatable :: gll_fields(:,:,:,:), pg_fields(:,:,:)
     integer :: unit, nphys, vari, phisidx, ie
@@ -578,7 +579,7 @@ contains
 
     allocate(gll_fields(np,np,nelemd,5), pg_fields(nphys*nphys,nelemd,5))
 
-    call pio_read_gll_topo_file(topofn, elem, par, gll_fields, fieldnames)
+    call pio_read_gll_topo_file(intopofn, elem, par, gll_fields, fieldnames)
 
     do vari = 1,size(fieldnames)
        if (trim(fieldnames(vari)) == 'PHIS') then
@@ -598,13 +599,16 @@ contains
     end do
 
     call gfr_finish()
-    deallocate(gll_fields)
 
+#if 1
     unit = 42
     open(unit, file='topo.dat')
     write(unit, '(es11.4)') pg_fields
     close(unit)
-    
-    deallocate(pg_fields)
-  end subroutine gfr_analyze_topo
+#endif
+
+    call pio_write_physgrid_topo_file(outtopofn, elem, par, gll_fields, pg_fields, fieldnames, nphys)
+
+    deallocate(gll_fields, pg_fields)
+  end subroutine gfr_convert_topo
 end module gllfvremap_test_mod

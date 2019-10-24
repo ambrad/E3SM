@@ -102,7 +102,7 @@ contains
 
     if (par%masterproc) print *, '~*~ Comprehensively test COMPOSE ~*~'
 
-    call gfr_analyze_topo(par, elem)
+    call gfr_convert_topo(par, elem)
     return
 
     ! 1. Unit tests.

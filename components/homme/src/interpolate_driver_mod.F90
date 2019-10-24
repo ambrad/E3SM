@@ -32,7 +32,9 @@ module interpolate_driver_mod
   private
 !#include "pnetcdf.inc"
 #endif
-  public :: interpolate_driver, pio_read_phis, pio_read_gll_topo_file
+  public :: interpolate_driver, pio_read_phis, &
+       pio_read_gll_topo_file, pio_write_physgrid_topo_file
+
 #ifndef HOMME_WITHOUT_PIOLIBRARY
   integer :: nlat, nlon
 
@@ -901,19 +903,11 @@ contains
 
     integer :: ii,ie,ilev,iv,ierr,offset,vari,ncnt_in,nlyr
 
-#if 0
     fieldnames(1) = 'PHIS'
     fieldnames(2) = 'SGH'
     fieldnames(3) = 'SGH30'
     fieldnames(4) = 'LANDM_COSLAT'
     fieldnames(5) = 'LANDFRAC'
-#else
-    fieldnames(4) = 'PHIS'
-    fieldnames(5) = 'SGH'
-    fieldnames(1) = 'SGH30'
-    fieldnames(3) = 'LANDM_COSLAT'
-    fieldnames(2) = 'LANDFRAC'
-#endif
 
     ilev = 1
     nlyr = ilev*size(fieldnames)
@@ -956,6 +950,30 @@ contains
     call free_infile(infile)
 #endif
   end subroutine pio_read_gll_topo_file
+
+  subroutine pio_write_physgrid_topo_file(filename, elem, par, gll_fields, pg_fields, fieldnames, nphys)
+    ! gll_fields and fieldnames are as output from pio_read_gll_topo_file.
+
+    use element_mod, only : element_t
+    use parallel_mod, only : parallel_t, syncmp
+#ifndef HOMME_WITHOUT_PIOLIBRARY
+    use dof_mod, only : putuniquepoints
+    use kinds, only : real_kind
+    use edge_mod, only : edgevpack, edgevunpack, initedgebuffer, freeedgebuffer
+    use edgetype_mod, only : edgebuffer_t
+    use dimensions_mod, only : nelemd, nlev, np, npsq
+    use bndry_mod, only : bndry_exchangeV
+    use common_io_mod, only : varname_len
+#endif
+
+    character(len=*), intent(in) :: filename
+    type(element_t), intent(in) :: elem(:)
+    type(parallel_t), intent(in) :: par
+    real(kind=real_kind), intent(in) :: gll_fields(np,np,nelemd,5), pg_fields(nphys*nphys,nelemd,5)
+    character(len=varname_len), intent(in) :: fieldnames(5)
+    integer, intent(in) :: nphys
+
+  end subroutine pio_write_physgrid_topo_file
 
 !
 ! Create the pio decomps for the output file.
