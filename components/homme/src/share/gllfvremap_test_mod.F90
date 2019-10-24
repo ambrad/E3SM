@@ -567,7 +567,7 @@ contains
 
     character(*), parameter :: &
          intopofn = '/ascldap/users/ambradl/climate/physgrid/USGS-gtopo30_ne30np4_16xdel2-PFC-consistentSGH.nc', &
-         outtopofn = '/ascldap/users/ambradl/climate/physgrid/USGS-gtopo30_ne30np4pg2_16xdel2-PFC-consistentSGH_converted.nc'
+         outtopofn = '/ascldap/users/ambradl/climate/physgrid/USGS-gtopo30_ne30np4pg2_16xdel2-PFC-consistentSGH_converted'
 
     real(real_kind), allocatable :: gll_fields(:,:,:,:), pg_fields(:,:,:)
     integer :: unit, nphys, vari, phisidx, ie

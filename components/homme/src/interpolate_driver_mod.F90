@@ -961,18 +961,65 @@ contains
     use kinds, only : real_kind
     use edge_mod, only : edgevpack, edgevunpack, initedgebuffer, freeedgebuffer
     use edgetype_mod, only : edgebuffer_t
-    use dimensions_mod, only : nelemd, nlev, np, npsq
+    use dimensions_mod, only : nelemd, nlev, np, npsq, nelem
     use bndry_mod, only : bndry_exchangeV
-    use common_io_mod, only : varname_len
+    use common_io_mod, only : varname_len, output_frequency, output_start_time, &
+         output_end_time, output_dir, output_prefix
+    use pio_io_mod, only : nf_output_init_begin, nf_output_init_complete, &
+         nf_output_register_dims, nf_output_register_variables
+    use control_mod, only: max_string_len
 #endif
+
+    integer, parameter :: ndim = 2, nvar = 6
 
     character(len=*), intent(in) :: filename
     type(element_t), intent(in) :: elem(:)
     type(parallel_t), intent(in) :: par
-    real(kind=real_kind), intent(in) :: gll_fields(np,np,nelemd,5), pg_fields(nphys*nphys,nelemd,5)
-    character(len=varname_len), intent(in) :: fieldnames(5)
+    real(kind=real_kind), intent(in) :: &
+         gll_fields(np, np,      nelemd, nvar-1), &
+         pg_fields (nphys*nphys, nelemd, nvar-1)
+    character(len=varname_len), intent(in) :: fieldnames(nvar-1)
     integer, intent(in) :: nphys
 
+#ifndef HOMME_WITHOUT_PIOLIBRARY
+    character(len=varname_len) :: dimnames(ndim), varnames(nvar)
+    character(len=max_string_len) :: output_dir_save, output_prefix_save
+    integer :: dimsizes(ndim), vardims(1,nvar), vartypes(nvar), i
+    logical :: varreqs(nvar)
+
+    output_dir_save = output_dir
+    output_prefix_save = output_prefix
+
+    output_prefix = ''
+    output_dir = ''
+    output_frequency(2:max_output_streams) = 0
+    output_frequency(1) = 1
+    output_start_time(1) = 0
+    output_end_time(1) = 1
+
+    call nf_output_init_begin(ncdf, par%masterproc, par%nprocs, par%rank, par%comm, filename, 0)
+
+    dimnames(1) = 'ncol'
+    dimsizes(1) = nelem*npsq
+    dimnames(2) = 'ncol_d'
+    dimsizes(2) = nelem*nphys*nphys
+    call nf_output_register_dims(ncdf, ndim, dimnames, dimsizes)
+
+    do i = 1,nvar-1
+       varnames(i) = fieldnames(i)
+       vardims(1,i) = 1
+    end do
+    varnames(nvar) = 'PHIS_d'
+    vardims(1,nvar) = 2
+    varreqs = .true.
+    vartypes = pio_double
+    call nf_output_register_variables(ncdf, nvar, varnames, vardims, vartypes, varreqs)
+
+    call nf_output_init_complete(ncdf)
+
+    output_prefix = output_prefix_save
+    output_dir = output_dir_save
+#endif
   end subroutine pio_write_physgrid_topo_file
 
 !
