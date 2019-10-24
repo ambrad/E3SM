@@ -984,35 +984,48 @@ contains
     end do
   end subroutine calc_p
 
-  subroutine timestep_make_parameters_consistent(rsplit, qsplit, dt_remap_factor, dt_tracer_factor)
-    use parallel_mod, only: abortmp
+  subroutine timestep_make_parameters_consistent(par, rsplit, qsplit, dt_remap_factor, dt_tracer_factor)
+    use parallel_mod, only: abortmp, parallel_t
+    use kinds, only: iulog
 
+    type (parallel_t), intent(in) :: par
     integer, intent(inout) :: rsplit, qsplit, dt_remap_factor, dt_tracer_factor
 
+    integer :: qsplit_prev, rsplit_prev
     logical :: split_specified, factor_specified, split_is_master
 
     split_specified = rsplit >= 0 .and. qsplit >= 1
     factor_specified = dt_remap_factor >= 0 .and. dt_tracer_factor >= 1
 
-    if (split_specified .and. factor_specified) then
-       call abortmp('rsplit,qsplit and dt_remap_factor,dt_tracer_factor &
-            & are both specified; only one is permitted.')
-    end if
     if (.not. split_specified .and. .not. factor_specified) then
        call abortmp('Neither rsplit,qsplit nor dt_remap_factor,dt_tracer_factor &
             & are specified; one must be.')
     end if
 
+    ! To support namelists with defaulted qsplit, rsplit values, we
+    ! permit (split_specified .and. factor_specified). In this case,
+    ! factor_specified means factor values are used.
+
+    split_is_master = .not. factor_specified
+
     if (split_is_master) then
        dt_remap_factor = rsplit*qsplit
        dt_tracer_factor = qsplit
     else
+       qsplit_prev = qsplit
+       rsplit_prev = rsplit
        qsplit = dt_tracer_factor
        ! This is the only inconsistent setting. But I want to keep
        ! this here b/c almost all uses of rsplit is simply for whether
        ! it's == 0, and I don't want to touch all those lines in this
        ! PR.
        rsplit = dt_remap_factor
+       if (split_specified .and. (qsplit /= qsplit_prev .or. rsplit /= rsplit_prev) .and. &
+            par%masterproc) then
+          write(iulog,'(a,i2,a,i2,a,i2,a,i2,a)') &
+               'dt_remap_factor and dt_tracer_factor were specified, changing qsplit from ', &
+               qsplit_prev, ' to ', qsplit, ' and rsplit from ', rsplit_prev, ' to ', rsplit, '.'
+       end if
     end if
   end subroutine timestep_make_parameters_consistent
 end module sl_advection
