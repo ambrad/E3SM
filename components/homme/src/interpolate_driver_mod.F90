@@ -32,7 +32,7 @@ module interpolate_driver_mod
   private
 !#include "pnetcdf.inc"
 #endif
-  public :: interpolate_driver, pio_read_phis
+  public :: interpolate_driver, pio_read_phis, pio_read_gll_topo_file
 #ifndef HOMME_WITHOUT_PIOLIBRARY
   integer :: nlat, nlon
 
@@ -869,6 +869,94 @@ contains
     call free_infile(infile)
 #endif
   end subroutine pio_read_phis
+  
+  subroutine pio_read_gll_topo_file(filename, elem, par, fields, fieldnames)
+    ! fields(:np,:np,:nelemd,i) is field i in the list
+    !     PHIS, SGH, SGH30, LANDM_COSLAT, LANDFRAC
+
+    use element_mod, only : element_t
+    use parallel_mod, only : parallel_t, syncmp
+#ifndef HOMME_WITHOUT_PIOLIBRARY
+    use dof_mod, only : putuniquepoints
+    use kinds, only : real_kind
+    use edge_mod, only : edgevpack, edgevunpack, initedgebuffer, freeedgebuffer
+    use edgetype_mod, only : edgebuffer_t
+    use dimensions_mod, only : nelemd, nlev, np, npsq
+    use bndry_mod, only : bndry_exchangeV
+    use common_io_mod, only : varname_len
+#endif
+
+    character(len=*), intent(in) :: filename
+    type(element_t), intent(inout) :: elem(:)
+    type(parallel_t),intent(in) :: par
+    real(kind=real_kind), intent(out), dimension(np,np,nelemd,5) :: fields
+    character(len=varname_len), intent(out) :: fieldnames(5)
+
+#ifndef HOMME_WITHOUT_PIOLIBRARY
+    type(file_t) :: infile
+    type(edgeBuffer_t) :: edge    
+    real(kind=real_kind), allocatable :: farray(:)
+    real(kind=real_kind) :: ftmp(npsq)
+    real(kind=real_kind), pointer :: arr3(:,:,:)
+
+    integer :: ii,ie,ilev,iv,ierr,offset,vari,ncnt_in,nlyr
+
+#if 0
+    fieldnames(1) = 'PHIS'
+    fieldnames(2) = 'SGH'
+    fieldnames(3) = 'SGH30'
+    fieldnames(4) = 'LANDM_COSLAT'
+    fieldnames(5) = 'LANDFRAC'
+#else
+    fieldnames(4) = 'PHIS'
+    fieldnames(5) = 'SGH'
+    fieldnames(1) = 'SGH30'
+    fieldnames(3) = 'LANDM_COSLAT'
+    fieldnames(2) = 'LANDFRAC'
+#endif
+
+    ilev = 1
+    nlyr = ilev*size(fieldnames)
+
+    call initedgebuffer(par, edge, elem, nlyr)
+    ncnt_in = sum(elem(1:nelemd)%idxp%numUniquePts)
+
+    call infile_initialize(elem, par, trim(filename), fieldnames, infile)
+
+    allocate(farray(ncnt_in))
+    do vari = 1,nlyr
+       farray = 1.0e-37
+       call pio_read_darray(infile%FileID, infile%vars%vardesc(vari), iodesc2d, farray, ierr)
+
+       offset = 0
+       do ie = 1,nelemd
+          do ii = 1,elem(ie)%idxP%NumUniquePts
+             iv = offset + ii
+             ftmp(ii) = farray(iv)
+          end do
+          offset = offset+elem(ie)%idxP%NumUniquePts
+          fields(:,:,ie,vari) = 0
+          call putUniquePoints(elem(ie)%idxP, ftmp(:elem(ie)%idxP%NumUniquePts), fields(:,:,ie,vari))
+          call edgevpack(edge, fields(:,:,ie,vari), 1, vari-1, ie)
+       end do
+    end do
+
+    call bndry_exchangeV(par, edge)
+
+    do ie = 1,nelemd
+       do vari = 1,nlyr
+          call edgeVunpack(edge, fields(:,:,ie,vari), 1, vari-1, ie)
+       end do
+    end do
+
+    deallocate(farray)
+    call freeedgebuffer(edge)
+
+    call pio_closefile(infile%fileid)
+    call free_infile(infile)
+#endif
+  end subroutine pio_read_gll_topo_file
+
 !
 ! Create the pio decomps for the output file.
 !

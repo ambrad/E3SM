@@ -556,75 +556,55 @@ contains
     if (hybrid%ithr == 0) ftype = ftype_in
   end subroutine gfr_check_api
 
-  subroutine topo_read_var(par, elem, varname, nphys, arrgll, arrpg, unit)
-    use interpolate_driver_mod, only: pio_read_phis
-    use parallel_mod, only: parallel_t
-    use gllfvremap_mod, only: gfr_dyn_to_fv_phys_topo_data
-
-    type (parallel_t), intent(in) :: par
-    type (element_t), intent(inout) :: elem(:)
-    character(*), intent(in) :: varname
-    real(real_kind), intent(out) :: arrgll(:,:,:), arrpg(:,:)
-    integer, intent(in) :: unit, nphys
-
-    integer :: ie
-    logical :: square
-
-    call pio_read_phis(elem, par, varname)
-    do ie = 1,nelemd
-       arrgll(:,:,ie) = elem(ie)%state%phis
-    end do
-    square = varname(1:3) == 'SGH'
-    call gfr_dyn_to_fv_phys_topo_data(par, elem, 1, nelemd, &
-         arrgll, size(arrgll), arrpg, size(arrpg), square)
-    if (unit > 0) write(unit, '(es11.4)') arrpg(:nphys*nphys,:)
-  end subroutine topo_read_var
-
-  subroutine topo_augment_sgh(par, elem, nphys, sghgll, sghpg, unit)
-    use parallel_mod, only: parallel_t
-    use gllfvremap_mod, only: gfr_dyn_to_fv_phys_topo_data
-
-    type (parallel_t), intent(in) :: par
-    type (element_t), intent(inout) :: elem(:)
-    real(real_kind), intent(in) :: sghgll(:,:,:)
-    real(real_kind), intent(out) :: sghpg(:,:)
-    integer, intent(in) :: unit, nphys
-
-    call gfr_dyn_to_fv_phys_topo_data(par, elem, 1, nelemd, &
-         sghgll, size(sghgll), sghpg, size(sghpg), .true., augment=.true.)
-    write(unit, '(es11.4)') sghpg(:nphys*nphys,:)
-  end subroutine topo_augment_sgh
-
   subroutine gfr_analyze_topo(par, elem)
-    use common_io_mod, only : infilenames
+    use common_io_mod, only : infilenames, varname_len
     use parallel_mod, only: parallel_t
-    use gllfvremap_mod, only: gfr_init, gfr_finish
+    use gllfvremap_mod, only: gfr_init, gfr_finish, gfr_dyn_to_fv_phys_topo_data
+    use interpolate_driver_mod, only: pio_read_gll_topo_file
 
     type (parallel_t), intent(in) :: par
     type (element_t), intent(inout) :: elem(:)
 
     character(*), parameter :: topofn = &
-         "/ascldap/users/ambradl/climate/physgrid/USGS-gtopo30_ne30np4_16xdel2-PFC-consistentSGH.nc"
+         '/ascldap/users/ambradl/climate/physgrid/USGS-gtopo30_ne30np4_16xdel2-PFC-consistentSGH.nc'
 
-    real(real_kind), allocatable :: arrgll(:,:,:), arrpg(:,:), sghgll(:,:,:), sghpg(:,:)
-    integer :: unit, nphys
+    real(real_kind), allocatable :: gll_fields(:,:,:,:), pg_fields(:,:,:)
+    integer :: unit, nphys, vari, phisidx, ie
+    logical :: square, augment
+    character(len=varname_len) :: fieldnames(5)
 
     nphys = 2
     call gfr_init(par, elem, nphys, check=.true.)
-    allocate(arrgll(np,np,nelemd), arrpg(nphys*nphys,nelemd), &
-         sghgll(np,np,nelemd), sghpg(nphys*nphys,nelemd))
-    infilenames(1) = topofn
+
+    allocate(gll_fields(np,np,nelemd,5), pg_fields(nphys*nphys,nelemd,5))
+
+    call pio_read_gll_topo_file(topofn, elem, par, gll_fields, fieldnames)
+
+    do vari = 1,size(fieldnames)
+       if (trim(fieldnames(vari)) == 'PHIS') then
+          do ie = 1,nelemd
+             elem(ie)%state%phis = gll_fields(:,:,ie,vari)
+          end do
+          exit
+       end if
+    end do
+
+    do vari = 1,size(fieldnames)
+       square = fieldnames(vari)(1:3) == 'SGH'
+       augment = trim(fieldnames(vari)) == 'SGH'
+       call gfr_dyn_to_fv_phys_topo_data(par, elem, 1, nelemd, &
+            gll_fields(:,:,:,vari), np*np*nelemd, pg_fields(:,:,vari), nphys*nphys*nelemd, &
+            square, augment)
+    end do
+
+    call gfr_finish()
+    deallocate(gll_fields)
+
     unit = 42
     open(unit, file='topo.dat')
-    call topo_read_var(par, elem, 'SGH30', nphys, arrgll, arrpg, unit)
-    call topo_read_var(par, elem, 'LANDFRAC', nphys, arrgll, arrpg, unit)
-    call topo_read_var(par, elem, 'LANDM_COSLAT', nphys, arrgll, arrpg, unit)
-    call topo_read_var(par, elem, 'SGH', nphys, sghgll, sghpg, -1)
-    call topo_read_var(par, elem, 'PHIS', nphys, arrgll, arrpg, unit)
-    call topo_augment_sgh(par, elem, nphys, sghgll, sghpg, unit)
+    write(unit, '(es11.4)') pg_fields
     close(unit)
     
-    call gfr_finish()
-    deallocate(arrgll, arrpg, sghgll, sghpg)
+    deallocate(pg_fields)
   end subroutine gfr_analyze_topo
 end module gllfvremap_test_mod
