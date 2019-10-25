@@ -987,6 +987,7 @@ contains
   function timestep_make_parameters_consistent(par, rsplit, qsplit, &
        dt_remap_factor, dt_tracer_factor, tstep, dtime, nsplit, nstep_factor, &
        abort, silent) result(status)
+
     ! Current and future development require a more flexibility in
     ! specifying time steps. This routine analyzes the settings and
     ! either sets unset ones consistently or provides an error message
@@ -1171,6 +1172,8 @@ contains
   end function timestep_make_parameters_consistent
 
   subroutine test_timestep_make_parameters_consistent(par, nerr)
+    ! Test timestep_make_parameters_consistent.
+
     use parallel_mod, only: parallel_t
     use kinds, only: iulog
 
@@ -1236,7 +1239,8 @@ contains
          nerr = nerr + 1
 
     !! Test error and warning conditions.
-    s = .false.
+    ! Silence messages in this unit test since we're forcing them.
+    s = .true.
 
     qs = -1; rs = 0; drf = -1; dtf = -1
     tstep = -1; ns = 2
@@ -1258,17 +1262,28 @@ contains
     i = timestep_make_parameters_consistent(par,rs,qs,drf,dtf,tstep,dtime,ns,nstep_fac,a,s)
     if (i == 0) nerr = nerr + 1
 
+    qs = -1; rs = 0; drf = 1; dtf = 4
+    tstep = -1; dtime = 700; ns = -1
+    i = timestep_make_parameters_consistent(par,rs,qs,drf,dtf,tstep,dtime,ns,nstep_fac,a,s)
+    if (i == 0) nerr = nerr + 1
+
+    qs = -1; rs = 0; drf = 1; dtf = 4
+    tstep = -1; dtime = -1; ns = 2
+    i = timestep_make_parameters_consistent(par,rs,qs,drf,dtf,tstep,dtime,ns,nstep_fac,a,s)
+    if (i == 0) nerr = nerr + 1
+
     !! Test warning conditions.
     qs = 4; rs = 0; drf = 3; dtf = 6
-    tstep = -1; ns = 2
+    tstep = -1; dtime = 1800_real_kind; ns = 2
     i = timestep_make_parameters_consistent(par,rs,qs,drf,dtf,tstep,dtime,ns,nstep_fac,a,s)
     if (i /= 0 .or. qs /= dtf .or. rs /= 1) nerr = nerr + 1
 
     qs = 4; rs = 0; drf = 12; dtf = 6
-    tstep = -1; ns = 2
+    tstep = -1; dtime = 1800_real_kind; ns = 2
     i = timestep_make_parameters_consistent(par,rs,qs,drf,dtf,tstep,dtime,ns,nstep_fac,a,s)
     if (i /= 0 .or. qs /= dtf .or. rs /= 2) nerr = nerr + 1
 
-    if (par%masterproc .and. nerr > 0) write(iulog,'(a,i2)') 'TIMESTEP nerr', nerr
+    if (par%masterproc .and. nerr > 0) &
+         write(iulog,'(a,i2)') 'test_timestep_make_parameters_consistent nerr', nerr
   end subroutine test_timestep_make_parameters_consistent
 end module sl_advection
