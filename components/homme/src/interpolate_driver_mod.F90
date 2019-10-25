@@ -967,7 +967,7 @@ contains
     use common_io_mod, only : varname_len, output_frequency, output_start_time, &
          output_end_time, output_dir, output_prefix
     use pio_io_mod, only : nf_output_init_begin, nf_output_init_complete, &
-         nf_output_register_dims, nf_output_register_variables
+         nf_output_register_dims, nf_output_register_variables, nf_init_decomp
     use control_mod, only: max_string_len
 #endif
 
@@ -987,7 +987,9 @@ contains
 
     character(len=varname_len) :: dimnames(ndim), varnames(nvar)
     character(len=max_string_len) :: output_dir_save, output_prefix_save
-    integer :: dimsizes(ndim), vardims(1,nvar), vartypes(nvar), i
+    integer :: nf2, i, j, dimsizes(ndim), vardims(1,nvar), vartypes(nvar), itmp(1)
+    integer, pointer :: dof(:)
+    integer(kind=nfsizekind) :: unused(1)
     logical :: varreqs(nvar)
 
     output_dir_save = output_dir
@@ -1000,14 +1002,33 @@ contains
     output_start_time(1) = 0
     output_end_time(1) = 1
 
+    nf2 = nphys*nphys
+
     call nf_output_init_begin(ncdf, par%masterproc, par%nprocs, par%rank, par%comm, &
          outfilenameprefix, 0)
 
     dimnames(1) = 'ncol'
-    dimsizes(1) = nelem*npsq
+    dimsizes(1) = nelem*nf2
     dimnames(2) = 'ncol_d'
-    dimsizes(2) = nelem*nphys*nphys
+    ! Euler's formula applied to the GLL grid:
+    !   v - e + f = 2 => v = e - f + 2 = 2 f - f + 2 = (np-1)^2 nelem + 2
+    dimsizes(2) = (np-1)**2*nelem + 2
     call nf_output_register_dims(ncdf, ndim, dimnames, dimsizes)
+
+    ! physgrid decomp
+    allocate(dof(nelemd*nf2))
+    do i = 1,nelemd
+       do j = 1,nf2
+          dof(nf2*(i-1) + j) = nf2*(elem(i)%globalid-1) + j
+       end do
+    end do
+    call nf_init_decomp(ncdf, (/1/), dof, &
+         itmp, unused, unused) ! these args are unused
+    deallocate(dof)
+    ! GLL decomp
+    call getcompdof(dof, elem, 1)
+    call nf_init_decomp(ncdf, (/2/), dof, itmp, unused, unused)
+    deallocate(dof)
 
     do i = 1,nvar-1
        varnames(i) = fieldnames(i)
@@ -1020,6 +1041,10 @@ contains
     call nf_output_register_variables(ncdf, nvar, varnames, vardims, vartypes, varreqs)
 
     call nf_output_init_complete(ncdf)
+
+    do i = 1,nvar-1
+       !call pio_put_var()
+    end do
 
     output_prefix = output_prefix_save
     output_dir = output_dir_save

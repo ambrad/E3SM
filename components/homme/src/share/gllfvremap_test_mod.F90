@@ -600,7 +600,7 @@ contains
 
     call gfr_finish()
 
-#if 1
+#if 0
     unit = 42
     open(unit, file='topo.dat')
     write(unit, '(es11.4)') pg_fields
