@@ -986,7 +986,7 @@ contains
 
   function timestep_make_parameters_consistent(par, rsplit, qsplit, &
        dt_remap_factor, dt_tracer_factor, tstep, dtime, nsplit, nstep_factor, &
-       abort) result(status)
+       abort, silent) result(status)
     ! Current and future development require a more flexibility in
     ! specifying time steps. This routine analyzes the settings and
     ! either sets unset ones consistently or provides an error message
@@ -1017,7 +1017,7 @@ contains
     real(kind=real_kind), intent(inout) :: &
          ! Physics-dynamics coupling time step.
          dtime
-    logical, intent(in), optional :: abort
+    logical, intent(in), optional :: abort, silent
     integer :: status
 
     real(kind=real_kind), parameter :: &
@@ -1027,7 +1027,7 @@ contains
 
     real(kind=real_kind) :: nsplit_real, tmp
     integer :: qsplit_prev, rsplit_prev, dt_max_factor
-    logical :: abort_in, split_specified, factor_specified, split_is_master
+    logical :: abort_in, silent_in, split_specified, factor_specified, split_is_master
 
     ! todo
     ! - move to control_mod
@@ -1038,11 +1038,14 @@ contains
     abort_in = .true.
     if (present(abort)) abort_in = abort
 
+    silent_in = .false.
+    if (present(silent)) silent_in = silent
+
     split_specified = rsplit >= 0 .and. qsplit >= 1
     factor_specified = dt_remap_factor >= 0 .and. dt_tracer_factor >= 1
 
     if (.not. split_specified .and. .not. factor_specified) then
-       if (par%masterproc) then
+       if (par%masterproc .and. .not. silent_in) then
           write(iulog,*) 'Neither rsplit,qsplit nor dt_remap_factor,dt_tracer_factor &
                &are specified; one set must be.'
        end if
@@ -1065,7 +1068,7 @@ contains
        if (dt_remap_factor > 0) then
            if (.not. (modulo(dt_remap_factor, dt_tracer_factor) == 0 .or. &
                       modulo(dt_tracer_factor, dt_remap_factor) == 0)) then
-              if (par%masterproc) then
+              if (par%masterproc .and. .not. silent_in) then
                  write(iulog,*) 'dt_remap_factor and dt_tracer_factor were specified, &
                       &but neither divides the other.'
               end if
@@ -1094,7 +1097,7 @@ contains
           end if
        end if
        if (split_specified .and. (qsplit /= qsplit_prev .or. rsplit /= rsplit_prev) .and. &
-            par%masterproc) then
+            par%masterproc .and. .not. silent_in) then
           write(iulog,'(a,i2,a,i2,a,i2,a,i2,a)') &
                'dt_remap_factor and dt_tracer_factor were specified, changing qsplit from ', &
                qsplit_prev, ' to ', qsplit, ' and rsplit from ', rsplit_prev, ' to ', rsplit, '.'
@@ -1111,7 +1114,7 @@ contains
           tmp = dtime/real(nstep_factor, real_kind)
           if (tstep > zero) then
              if (abs(tstep - tmp) > divisible_tol*tmp) then
-                if (par%masterproc) then
+                if (par%masterproc .and. .not. silent_in) then
                    write(iulog,'(a,a,es11.4,a,i2,a,es11.4,a,i2)') &
                         'dtime, nsplit, tstep were all >0 on input, but they disagree: ', &
                         'dtime ', dtime, ' nsplit ', nsplit, ' tstep ', tstep, ' nstep_factor ', nstep_factor
@@ -1122,11 +1125,11 @@ contains
           end if
           tstep = tmp
        elseif (tstep > zero) then
-          nsplit_real = dtime/(nstep_factor*tstep)
+          nsplit_real = dtime/(dt_max_factor*tstep)
           nsplit = idnint(nsplit_real)
           nstep_factor = dt_max_factor*nsplit
           if (abs(nsplit_real - nsplit) > divisible_tol*nsplit_real) then
-             if (par%masterproc) then
+             if (par%masterproc .and. .not. silent_in) then
                 write(iulog,'(a,es11.4,a,es11.4,a,es11.4,a)') &
                      'nsplit was computed as ', nsplit_real, ' based on dtime ', dtime, &
                      ' and tstep ', tstep, ', which is outside the divisibility tolerance. Set &
@@ -1136,7 +1139,7 @@ contains
              return
           end if
        else
-          if (par%masterproc) then
+          if (par%masterproc .and. .not. silent_in) then
              write(iulog,*) 'If dtime is set to >0, then either nsplit or tstep must be >0.'
           end if
           if (abort_in) call abortmp('timestep_make_parameters_consistent: input error')
@@ -1148,7 +1151,7 @@ contains
              dtime = tstep*nstep_factor
           else
 #ifdef CAM
-             if (par%masterproc) then
+             if (par%masterproc .and. .not. silent_in) then
                 write(iulog,*) 'If dtime is set to <=0 and tstep >0, then nsplit must be >0.'
              end if
              if (abort_in) call abortmp('timestep_make_parameters_consistent: input error')
@@ -1156,7 +1159,7 @@ contains
 #endif
           end if
        else
-          if (par%masterproc) then
+          if (par%masterproc .and. .not. silent_in) then
              write(iulog,*) 'If dtime is set to <=0, then tstep must be >0.'
           end if
           if (abort_in) call abortmp('timestep_make_parameters_consistent: input error')
@@ -1169,6 +1172,7 @@ contains
 
   subroutine test_timestep_make_parameters_consistent(par, nerr)
     use parallel_mod, only: parallel_t
+    use kinds, only: iulog
 
     type (parallel_t), intent(in) :: par
     integer, intent(out) :: nerr
@@ -1177,7 +1181,7 @@ contains
 
     real(real_kind) :: tstep, dtime
     integer :: i, rs, qs, drf, dtf, ns, nstep_fac
-    logical :: a
+    logical :: a, s
 
     a = .false.
     nerr = 0
@@ -1216,6 +1220,13 @@ contains
          abs(tstep - dtime/(qs*rs*ns)) > tol) &
          nerr = nerr + 1
 
+    qs = -1; rs = -1; drf = 12; dtf = 6
+    tstep = 300_real_kind; dtime = 7200_real_kind; ns = -1
+    i = timestep_make_parameters_consistent(par,rs,qs,drf,dtf,tstep,dtime,ns,nstep_fac,a)
+    if (i /= 0 .or. rs /= 2 .or. qs /= 6 .or. nstep_fac /= qs*rs*ns .or. ns /= 2 .or. &
+         abs(tstep - dtime/(qs*rs*ns)) > tol) &
+         nerr = nerr + 1
+
     !! Test new interface with new time step flexibility.
     qs = -1; rs = -1; drf = 2; dtf = 6
     dtime = -1; ns = 3
@@ -1224,6 +1235,40 @@ contains
          abs(tstep - dtime/(dtf*ns)) > tol) &
          nerr = nerr + 1
 
-    print *, 'TIMESTEP nerr', nerr
+    !! Test error and warning conditions.
+    s = .false.
+
+    qs = -1; rs = 0; drf = -1; dtf = -1
+    tstep = -1; ns = 2
+    i = timestep_make_parameters_consistent(par,rs,qs,drf,dtf,tstep,dtime,ns,nstep_fac,a,s)
+    if (i == 0) nerr = nerr + 1
+
+    qs = -1; rs = 0; drf = 3; dtf = 4
+    tstep = -1; ns = 2
+    i = timestep_make_parameters_consistent(par,rs,qs,drf,dtf,tstep,dtime,ns,nstep_fac,a,s)
+    if (i == 0) nerr = nerr + 1
+
+    qs = -1; rs = 0; drf = 1; dtf = 4
+    tstep = 300; dtime = 700; ns = 1
+    i = timestep_make_parameters_consistent(par,rs,qs,drf,dtf,tstep,dtime,ns,nstep_fac,a,s)
+    if (i == 0) nerr = nerr + 1
+
+    qs = -1; rs = 0; drf = 1; dtf = 4
+    tstep = 300; dtime = 700; ns = -1
+    i = timestep_make_parameters_consistent(par,rs,qs,drf,dtf,tstep,dtime,ns,nstep_fac,a,s)
+    if (i == 0) nerr = nerr + 1
+
+    !! Test warning conditions.
+    qs = 4; rs = 0; drf = 3; dtf = 6
+    tstep = -1; ns = 2
+    i = timestep_make_parameters_consistent(par,rs,qs,drf,dtf,tstep,dtime,ns,nstep_fac,a,s)
+    if (i /= 0 .or. qs /= dtf .or. rs /= 1) nerr = nerr + 1
+
+    qs = 4; rs = 0; drf = 12; dtf = 6
+    tstep = -1; ns = 2
+    i = timestep_make_parameters_consistent(par,rs,qs,drf,dtf,tstep,dtime,ns,nstep_fac,a,s)
+    if (i /= 0 .or. qs /= dtf .or. rs /= 2) nerr = nerr + 1
+
+    if (par%masterproc .and. nerr > 0) write(iulog,'(a,i2)') 'TIMESTEP nerr', nerr
   end subroutine test_timestep_make_parameters_consistent
 end module sl_advection
