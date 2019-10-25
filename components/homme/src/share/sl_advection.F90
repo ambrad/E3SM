@@ -984,23 +984,73 @@ contains
     end do
   end subroutine calc_p
 
-  subroutine timestep_make_parameters_consistent(par, rsplit, qsplit, dt_remap_factor, dt_tracer_factor)
+  function timestep_make_parameters_consistent(par, rsplit, qsplit, &
+       dt_remap_factor, dt_tracer_factor, tstep, dtime, nsplit, nstep_factor, &
+       abort) result(status)
+    ! Current and future development require a more flexibility in
+    ! specifying time steps. This routine analyzes the settings and
+    ! either sets unset ones consistently or provides an error message
+    ! and aborts.
+    !   A return value of 0 means success; <0 means there was an
+    ! error. In the case of error, a message is written to iulog.
+    !   If you want a value to be computed, set it to <0 on input.
+
     use parallel_mod, only: abortmp, parallel_t
     use kinds, only: iulog
 
     type (parallel_t), intent(in) :: par
-    integer, intent(inout) :: rsplit, qsplit, dt_remap_factor, dt_tracer_factor
+    integer, intent(inout) :: &
+         ! Old method of specifying subcycles, in which the vertical
+         ! remap time step is restricted to be at least as large as
+         ! the tracer time step.
+         rsplit, qsplit, &
+         ! New method, which permits either time step to be the
+         ! larger, subject to that one must divide the other.
+         dt_remap_factor, dt_tracer_factor, &
+         nsplit
+    integer, intent(out) :: &
+         ! On output, dtime/tstep.
+         nstep_factor
+    real(kind=real_kind), intent(inout) :: &
+         ! Dynamics time step.
+         tstep
+    real(kind=real_kind), intent(inout) :: &
+         ! Physics-dynamics coupling time step.
+         dtime
+    logical, intent(in), optional :: abort
+    integer :: status
 
-    integer :: qsplit_prev, rsplit_prev
-    logical :: split_specified, factor_specified, split_is_master
+    real(kind=real_kind), parameter :: &
+         zero = 0.0_real_kind, &
+         eps = epsilon(1.0_real_kind), &
+         divisible_tol = 1e3*eps
+
+    real(kind=real_kind) :: nsplit_real, tmp
+    integer :: qsplit_prev, rsplit_prev, dt_max_factor
+    logical :: abort_in, split_specified, factor_specified, split_is_master
+
+    ! todo
+    ! - move to control_mod
+    ! - use at dyn_comp.F90:199
+
+    status = -1 ! error value for early returns on error
+
+    abort_in = .true.
+    if (present(abort)) abort_in = abort
 
     split_specified = rsplit >= 0 .and. qsplit >= 1
     factor_specified = dt_remap_factor >= 0 .and. dt_tracer_factor >= 1
 
     if (.not. split_specified .and. .not. factor_specified) then
-       call abortmp('Neither rsplit,qsplit nor dt_remap_factor,dt_tracer_factor &
-            & are specified; one must be.')
+       if (par%masterproc) then
+          write(iulog,*) 'Neither rsplit,qsplit nor dt_remap_factor,dt_tracer_factor &
+               & are specified; one must be.'
+       end if
+       if (abort_in) call abortmp('timestep_make_parameters_consistent: input error')
+       return
     end if
+
+    !! Process rsplit, qsplit, dt_remap_factor, dt_tracer_factor.
 
     ! To support namelists with defaulted qsplit, rsplit values, we
     ! permit (split_specified .and. factor_specified). In this case,
@@ -1012,6 +1062,15 @@ contains
        dt_remap_factor = rsplit*qsplit
        dt_tracer_factor = qsplit
     else
+       if (.not. (modulo(dt_remap_factor, dt_tracer_factor) == 0 .or. &
+                  modulo(dt_tracer_factor, dt_remap_factor) == 0)) then
+          if (par%masterproc) then
+             write(iulog,*) 'dt_remap_factor and dt_tracer_factor were specified, &
+                  &but neither divides the other.'
+          end if
+          if (abort_in) call abortmp('timestep_make_parameters_consistent: divisibility error')
+          return
+       end if
        qsplit_prev = qsplit
        rsplit_prev = rsplit
        qsplit = dt_tracer_factor
@@ -1027,5 +1086,84 @@ contains
                qsplit_prev, ' to ', qsplit, ' and rsplit from ', rsplit_prev, ' to ', rsplit, '.'
        end if
     end if
-  end subroutine timestep_make_parameters_consistent
+    dt_max_factor = max(dt_remap_factor, dt_tracer_factor)
+    nstep_factor = dt_max_factor*nsplit
+
+    !! Process dtime, tstep, nsplit.
+
+    ! Every 'if' has an 'else', so every case is covered.
+    if (dtime > zero) then
+       if (nsplit > zero) then
+          tmp = dtime/real(nstep_factor, real_kind)
+          if (tstep > zero) then
+             if (abs(tstep - tmp) > divisible_tol*tmp) then
+                if (par%masterproc) then
+                   write(iulog,'(a,a,es11.4,a,i2,a,es11.4,a,i2)') &
+                        'dtime, nsplit, tstep were all >0 on input, but they disagree: ', &
+                        'dtime ', dtime, ' nsplit ', nsplit, ' tstep ', tstep, ' nstep_factor ', nstep_factor
+                end if
+                if (abort_in) call abortmp('timestep_make_parameters_consistent: divisibility error')
+                return
+             end if
+          end if
+       elseif (tstep > zero) then
+          nsplit_real = dtime/(nstep_factor*tstep)
+          nsplit = idnint(nsplit_real)
+          if (abs(nsplit_real - nsplit) > divisible_tol*nsplit_real) then
+             if (par%masterproc) then
+                write(iulog,'(a,es11.4,a,es11.4,a,es11.4,a)') &
+                     'nsplit was computed as ', nsplit_real, ' based on dtime ', dtime, &
+                     ' and tstep ', tstep, ', which is outside the divisibility tolerance. Set &
+                     &tstep so that it divides dtime.'
+             end if
+             if (abort_in) call abortmp('timestep_make_parameters_consistent: divisibility error')
+             return
+          end if
+       else
+          if (par%masterproc) then
+             write(iulog,*) 'If dtime is set to >0, then either nsplit or tstep must be >0.'
+          end if
+          if (abort_in) call abortmp('timestep_make_parameters_consistent: input error')
+          return
+       end if
+    else
+       if (tstep > zero) then
+          if (nsplit > 0) then
+             dtime = tstep*nstep_factor*nsplit
+          else
+#ifdef CAM
+             if (par%masterproc) then
+                write(iulog,*) 'If dtime is set to <=0 and tstep >0, then nsplit must be >0.'
+             end if
+             if (abort_in) call abortmp('timestep_make_parameters_consistent: input error')
+             return
+#endif
+          end if
+       else
+          if (par%masterproc) then
+             write(iulog,*) 'If dtime is set to <=0, then tstep must be >0.'
+          end if
+          if (abort_in) call abortmp('timestep_make_parameters_consistent: input error')
+          return          
+       end if
+    end if
+
+    status = 0 ! success value
+  end function timestep_make_parameters_consistent
+
+  subroutine test_timestep_make_parameters_consistent(par, nerr)
+    use parallel_mod, only: parallel_t
+
+    type (parallel_t), intent(in) :: par
+    integer, intent(out) :: nerr
+
+    real(real_kind) :: tstep, dtime
+    integer :: i, rs, qs, drf, dtf, ns, nstep_fac
+    logical :: a
+
+    a = .false.
+    nerr = 0
+
+    i = timestep_make_parameters_consistent(par,rs,qs,drf,dtf,tstep,dtime,ns,nstep_fac,a)
+  end subroutine test_timestep_make_parameters_consistent
 end module sl_advection
