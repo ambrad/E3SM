@@ -87,6 +87,7 @@ contains
 
     character(len=max_fieldname_len) :: ncol_name
     character(len=max_fieldname_len) :: grid_name
+    logical :: read_pg_grid
     integer :: rndm_seed_sz
     integer, allocatable :: rndm_seed(:)
     real(r8) :: pertval
@@ -451,20 +452,18 @@ contains
           end do
     end do
 
+    read_pg_grid = .false.
     if ( (ideal_phys .or. aqua_planet)) then
        tmp(:,1,:) = 0._r8
     else    
       fieldname = 'PHIS'
       tmp(:,1,:) = 0.0_r8
-      if (fv_nphys > 0) then
+      read_pg_grid = fv_nphys > 0 .and. se_fv_phys_remap_alg == 0
+      if (read_pg_grid) then
          ! Copy phis field to GLL grid
          call infld(fieldname, ncid_topo, 'ncol', 1, nphys_sq, &
               1, nelemd, phys_tmp, found, gridname='physgrid_d')
-         if (se_fv_phys_remap_alg == 0) then
-            call fv_phys_to_dyn_topo(elem,phys_tmp)
-         else
-            call gfr_fv_phys_to_dyn_topo(par, dom_mt, elem, phys_tmp)
-         end if
+         call fv_phys_to_dyn_topo(elem,phys_tmp)
       else
          call infld(fieldname, ncid_topo, ncol_name,      &
             1, npsq, 1, nelemd, tmp(:,1,:), found, gridname=grid_name)
@@ -474,7 +473,7 @@ contains
       end if
     end if
 
-    if (fv_nphys == 0) then
+    if (.not. read_pg_grid) then
       do ie=1,nelemd
          elem(ie)%state%phis=0.0_r8
          indx = 1
@@ -486,7 +485,7 @@ contains
             end do
          end do
       end do
-    end if ! fv_nphys == 0
+    end if ! not read_pg_grid
     
     if (single_column) then
       iop_update_surface = .false.
