@@ -767,7 +767,7 @@ contains
     integer :: qbeg, qend
     logical :: abort=.false.
 
-    if (vert_remap_q_alg == 1 .or. vert_remap_q_alg == 2) then
+    if (vert_remap_q_alg == 1 .or. vert_remap_q_alg == 2 .or. vert_remap_q_alg == 10) then
        !call t_startf('remap_Q_ppm')
        !if ( present(hybrid) ) then
        !  !$OMP PARALLEL NUM_THREADS(tracer_num_threads), DEFAULT(SHARED), PRIVATE(hybridnew,qbeg,qend)
@@ -1034,10 +1034,16 @@ contains
                 ao(k) = ao(k) / dpo(k)        !Divide out the old grid spacing because we want the tracer mixing ratio, not mass.
              enddo
              !Fill in ghost values. Ignored if vert_remap_q_alg == 2
-             do k = 1 , gs
-                ao(1   -k) = ao(       k)
-                ao(nlev+k) = ao(nlev+1-k)
-             enddo
+             if (vert_remap_q_alg == 10) then
+                call linextrap(dpo(2), dpo(1), dpo(0), dpo(-1), ao(2), ao(1), ao(0), ao(-1))
+                call linextrap(dpo(nlev-1), dpo(nlev), dpo(nlev+1), dpo(nlev+2), &
+                     ao(nlev-1), ao(nlev), ao(nlev+1), ao(nlev+2))
+             else
+                do k = 1 , gs
+                   ao(1   -k) = ao(       k)
+                   ao(nlev+k) = ao(nlev+1-k)
+                enddo
+             end if
              !Compute monotonic and conservative PPM reconstruction over every cell
              coefs(:,:) = pl_compute_ppm( ao , ppmdx,nlev,vert_remap_q_alg )
              !Compute tracer values on the new grid by integrating from the old cell bottom to the new
@@ -1074,6 +1080,9 @@ contains
     if (vert_remap_q_alg == 2) then
        indB = 2
        indE = nlev-1
+    elseif (vert_remap_q_alg == 10) then
+       indB = 0
+       indE = nlev+1
     else
        indB = 2
        indE = nlev+1
@@ -1088,6 +1097,9 @@ contains
     if (vert_remap_q_alg == 2) then
        indB = 2
        indE = nlev-2
+    elseif (vert_remap_q_alg == 10) then
+       indB = 0
+       indE = nlev
     else
        indB = 2
        indE = nlev
@@ -1127,6 +1139,9 @@ contains
     if (vert_remap_q_alg == 2) then
        indB = 2
        indE = nlev-1
+    elseif (vert_remap_q_alg == 10) then
+       indB = 0
+       indE = nlev+1
     else
        indB = 2
        indE = nlev+1
@@ -1141,6 +1156,9 @@ contains
     if (vert_remap_q_alg == 2) then
        indB = 2
        indE = nlev-2
+    elseif (vert_remap_q_alg == 10) then
+       indB = 0
+       indE = nlev
     else
        indB = 2
        indE = nlev
@@ -1155,6 +1173,9 @@ contains
     if (vert_remap_q_alg == 2) then
        indB = 3
        indE = nlev-2
+    elseif (vert_remap_q_alg == 10) then
+       indB = 1
+       indE = nlev
     else
        indB = 3
        indE = nlev
@@ -1177,7 +1198,7 @@ contains
     !If we're not using a mirrored boundary condition, then make the two cells bordering the top and bottom
     !material boundaries piecewise constant. Zeroing out the first and second moments, and setting the zeroth
     !moment to the cell mean is sufficient to maintain conservation.
-
+    if (vert_remap_q_alg == 10) return
     do k=1,2
        coefs(0,k)   = a(k)  !always reduce to PCoM in sponge layers
        coefs(1:2,k) = 0._r8 !always reduce to PCoM in sponge layers
@@ -1257,7 +1278,7 @@ contains
              else
                 if (alg == -1) then
                    call pl_remap1_nofilter(Qdp, 1, 1, nlev, alg, dp1, dp2)
-                elseif (alg > 0 .and. alg < 3) then
+                elseif (alg > 0 .and. alg < 3 .or. alg == 10) then
                    call pl_remap1(Qdp, 1, 1, 1, 1, nlev, alg, dp1, dp2)
                 else
                    print *,'not impled'
