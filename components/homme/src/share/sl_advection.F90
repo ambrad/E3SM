@@ -33,7 +33,7 @@ module sl_advection
   integer :: sl_mpi
   type (cartesian3D_t), allocatable :: dep_points_all(:,:,:,:) ! (np,np,nlev,nelemd)
 
-  public :: Prim_Advec_Tracers_remap_ALE, sl_init1
+  public :: Prim_Advec_Tracers_remap_ALE, sl_init1, test_timestep_make_parameters_consistent
 
   logical, parameter :: barrier = .false.
 
@@ -1023,7 +1023,7 @@ contains
     real(kind=real_kind), parameter :: &
          zero = 0.0_real_kind, &
          eps = epsilon(1.0_real_kind), &
-         divisible_tol = 1e3*eps
+         divisible_tol = 1e3_real_kind*eps
 
     real(kind=real_kind) :: nsplit_real, tmp
     integer :: qsplit_prev, rsplit_prev, dt_max_factor
@@ -1044,7 +1044,7 @@ contains
     if (.not. split_specified .and. .not. factor_specified) then
        if (par%masterproc) then
           write(iulog,*) 'Neither rsplit,qsplit nor dt_remap_factor,dt_tracer_factor &
-               & are specified; one must be.'
+               &are specified; one set must be.'
        end if
        if (abort_in) call abortmp('timestep_make_parameters_consistent: input error')
        return
@@ -1087,11 +1087,11 @@ contains
        end if
     end if
     dt_max_factor = max(dt_remap_factor, dt_tracer_factor)
-    nstep_factor = dt_max_factor*nsplit
 
     !! Process dtime, tstep, nsplit.
 
     ! Every 'if' has an 'else', so every case is covered.
+    if (nsplit > 0) nstep_factor = dt_max_factor*nsplit
     if (dtime > zero) then
        if (nsplit > zero) then
           tmp = dtime/real(nstep_factor, real_kind)
@@ -1106,9 +1106,11 @@ contains
                 return
              end if
           end if
+          tstep = tmp
        elseif (tstep > zero) then
           nsplit_real = dtime/(nstep_factor*tstep)
           nsplit = idnint(nsplit_real)
+          nstep_factor = dt_max_factor*nsplit
           if (abs(nsplit_real - nsplit) > divisible_tol*nsplit_real) then
              if (par%masterproc) then
                 write(iulog,'(a,es11.4,a,es11.4,a,es11.4,a)') &
@@ -1157,6 +1159,8 @@ contains
     type (parallel_t), intent(in) :: par
     integer, intent(out) :: nerr
 
+    real(real_kind), parameter :: tol = 1e3_real_kind*eps
+
     real(real_kind) :: tstep, dtime
     integer :: i, rs, qs, drf, dtf, ns, nstep_fac
     logical :: a
@@ -1164,6 +1168,23 @@ contains
     a = .false.
     nerr = 0
 
+    ! Test backwards compatibility.
+    dtime = 1800_real_kind
+
+    qs = 3; rs = 0; drf = -1; dtf = -1
+    tstep = -1; ns = 2
     i = timestep_make_parameters_consistent(par,rs,qs,drf,dtf,tstep,dtime,ns,nstep_fac,a)
+    if (i /= 0 .or. drf /= 0 .or. dtf /= qs .or. nstep_fac /= qs*ns .or. &
+         abs(tstep - dtime/(ns*qs)) > tol) &
+         nerr = nerr + 1
+
+    qs = 3; rs = 2; drf = -1; dtf = -1
+    tstep = -1; ns = 3
+    i = timestep_make_parameters_consistent(par,rs,qs,drf,dtf,tstep,dtime,ns,nstep_fac,a)
+    if (i /= 0 .or. drf /= qs*rs .or. dtf /= qs .or. nstep_fac /= qs*rs*ns .or. &
+         abs(tstep - dtime/(qs*rs*ns)) > tol) &
+         nerr = nerr + 1
+
+    print *, 'TIMESTEP nerr', nerr
   end subroutine test_timestep_make_parameters_consistent
 end module sl_advection
