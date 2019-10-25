@@ -958,7 +958,7 @@ contains
     use element_mod, only : element_t
     use parallel_mod, only : parallel_t, syncmp
 #ifndef HOMME_WITHOUT_PIOLIBRARY
-    use dof_mod, only : putuniquepoints
+    use dof_mod, only : UniquePoints, putUniquePoints
     use kinds, only : real_kind
     use edge_mod, only : edgevpack, edgevunpack, initedgebuffer, freeedgebuffer
     use edgetype_mod, only : edgebuffer_t
@@ -967,7 +967,8 @@ contains
     use common_io_mod, only : varname_len, output_frequency, output_start_time, &
          output_end_time, output_dir, output_prefix
     use pio_io_mod, only : nf_output_init_begin, nf_output_init_complete, &
-         nf_output_register_dims, nf_output_register_variables, nf_init_decomp
+         nf_output_register_dims, nf_output_register_variables, nf_init_decomp, &
+         nf_put_var_pio
     use control_mod, only: max_string_len
 #endif
 
@@ -987,10 +988,11 @@ contains
 
     character(len=varname_len) :: dimnames(ndim), varnames(nvar)
     character(len=max_string_len) :: output_dir_save, output_prefix_save
-    integer :: nf2, i, j, dimsizes(ndim), vardims(1,nvar), vartypes(nvar), itmp(1)
+    integer :: nf2, i, j, k, dimsizes(ndim), vardims(1,nvar), vartypes(nvar), itmp(1)
     integer, pointer :: dof(:)
     integer(kind=nfsizekind) :: unused(1)
     logical :: varreqs(nvar)
+    real(kind=real_kind), allocatable :: gll_unique(:)
 
     output_dir_save = output_dir
     output_prefix_save = output_prefix
@@ -1007,6 +1009,7 @@ contains
     call nf_output_init_begin(ncdf, par%masterproc, par%nprocs, par%rank, par%comm, &
          outfilenameprefix, 0)
 
+    ! dimensions
     dimnames(1) = 'ncol'
     dimsizes(1) = nelem*nf2
     dimnames(2) = 'ncol_d'
@@ -1030,6 +1033,7 @@ contains
     call nf_init_decomp(ncdf, (/2/), dof, itmp, unused, unused)
     deallocate(dof)
 
+    ! variables
     do i = 1,nvar-1
        varnames(i) = fieldnames(i)
        vardims(1,i) = 1
@@ -1042,9 +1046,22 @@ contains
 
     call nf_output_init_complete(ncdf)
 
+    ! Write physgrid fields.
     do i = 1,nvar-1
-       !call pio_put_var()
+       call nf_put_var_pio(ncdf(1), reshape(pg_fields(:,:,i), (/nf2*nelemd/)), &
+            unused, unused, ncdf(1)%varlist(i))
     end do
+
+    ! Write GLL field PHIS_d.
+    allocate(gll_unique(sum(elem%idxp%NumUniquePts)))
+    k = 1
+    do i = 1,nelemd
+       call UniquePoints(elem(i)%idxP, gll_fields(:,:,i,1), &
+            gll_unique(k : k + elem(i)%idxp%NumUniquePts - 1))
+       k = k + elem(i)%idxp%NumUniquePts
+    end do
+    call nf_put_var_pio(ncdf(1), gll_unique, unused, unused, ncdf(1)%varlist(nvar))
+    deallocate(gll_unique)
 
     output_prefix = output_prefix_save
     output_dir = output_dir_save
