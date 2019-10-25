@@ -1165,7 +1165,7 @@ contains
   !
     use control_mod,        only: statefreq, integration, ftype, qsplit, nu_p, rsplit
     use control_mod,        only: transport_alg
-    use hybvcoord_mod,      only : hvcoord_t
+    use hybvcoord_mod,      only: hvcoord_t
     use parallel_mod,       only: abortmp
     use prim_advance_mod,   only: prim_advance_exp, applycamforcing_dynamics
     use prim_advection_mod, only: prim_advec_tracers_remap
@@ -1188,25 +1188,9 @@ contains
     logical :: compute_diagnostics
 
     dt_q = dt*qsplit
- 
-    ! ===============
-    ! initialize mean flux accumulation variables and save some variables at n0
-    ! for use by advection
-    ! ===============
-    do ie=nets,nete
-      elem(ie)%derived%eta_dot_dpdn=0     ! mean vertical mass flux
-      elem(ie)%derived%vn0=0              ! mean horizontal mass flux
-      elem(ie)%derived%omega_p=0
-      if (nu_p>0) then
-         elem(ie)%derived%dpdiss_ave=0
-         elem(ie)%derived%dpdiss_biharmonic=0
-      endif
-      if (transport_alg > 0) then
-        elem(ie)%derived%vstar=elem(ie)%state%v(:,:,:,:,tl%n0)
-      end if
-      elem(ie)%derived%dp(:,:,:)=elem(ie)%state%dp3d(:,:,:,tl%n0)
-    enddo
 
+    call set_tracer_transport_derived_values(elem, nets, nete, tl)
+ 
     ! ===============
     ! Dynamical Step
     ! for ftype==4, also apply dynamics tendencies from forcing
@@ -1261,6 +1245,34 @@ contains
 
   end subroutine prim_step
 
+  subroutine set_tracer_transport_derived_values(elem, nets, nete, tl)
+    use control_mod,        only: nu_p, transport_alg
+    use time_mod,           only: TimeLevel_t
+
+    type(element_t),      intent(inout) :: elem(:)
+    integer,              intent(in)    :: nets, nete
+    type(TimeLevel_t),    intent(inout) :: tl
+
+    integer :: ie
+
+    ! ===============
+    ! initialize mean flux accumulation variables and save some variables at n0
+    ! for use by advection
+    ! ===============
+    do ie=nets,nete
+       elem(ie)%derived%eta_dot_dpdn=0     ! mean vertical mass flux
+       elem(ie)%derived%vn0=0              ! mean horizontal mass flux
+       elem(ie)%derived%omega_p=0
+       if (nu_p > 0) then
+          elem(ie)%derived%dpdiss_ave=0
+          elem(ie)%derived%dpdiss_biharmonic=0
+       endif
+       if (transport_alg > 0) then
+          elem(ie)%derived%vstar=elem(ie)%state%v(:,:,:,:,tl%n0)
+       end if
+       elem(ie)%derived%dp(:,:,:)=elem(ie)%state%dp3d(:,:,:,tl%n0)
+    enddo
+  end subroutine set_tracer_transport_derived_values
 
 !---------------------------------------------------------------------------
 !
