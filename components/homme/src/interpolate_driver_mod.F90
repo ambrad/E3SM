@@ -984,6 +984,13 @@ contains
     integer, intent(in) :: nphys
 
 #ifndef HOMME_WITHOUT_PIOLIBRARY
+    ! todo
+    ! - lat, lon from gfr_f_get_latlon
+    ! - var attributes, ideally copied from infilename
+    ! - global attributes, ideally copied from infilename
+    ! - break up routine into useful subroutines
+    ! - maybe rm the '1' from the filename
+
     integer, parameter :: ndim = 2
 
     character(len=varname_len) :: dimnames(ndim), varnames(nvar)
