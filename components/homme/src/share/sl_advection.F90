@@ -1062,7 +1062,8 @@ contains
        dt_remap_factor = rsplit*qsplit
        dt_tracer_factor = qsplit
     else
-       if (.not. (modulo(dt_remap_factor, dt_tracer_factor) == 0 .or. &
+       if (dt_remap_factor > 0 .and. &
+           .not. (modulo(dt_remap_factor, dt_tracer_factor) == 0 .or. &
                   modulo(dt_tracer_factor, dt_remap_factor) == 0)) then
           if (par%masterproc) then
              write(iulog,*) 'dt_remap_factor and dt_tracer_factor were specified, &
@@ -1079,6 +1080,7 @@ contains
        ! it's == 0, and I don't want to touch all those lines in this
        ! PR.
        rsplit = dt_remap_factor
+       if (dt_tracer_factor /= 0) rsplit = rsplit/dt_tracer_factor
        if (split_specified .and. (qsplit /= qsplit_prev .or. rsplit /= rsplit_prev) .and. &
             par%masterproc) then
           write(iulog,'(a,i2,a,i2,a,i2,a,i2,a)') &
@@ -1131,7 +1133,7 @@ contains
     else
        if (tstep > zero) then
           if (nsplit > 0) then
-             dtime = tstep*nstep_factor*nsplit
+             dtime = tstep*nstep_factor
           else
 #ifdef CAM
              if (par%masterproc) then
@@ -1168,7 +1170,7 @@ contains
     a = .false.
     nerr = 0
 
-    ! Test backwards compatibility.
+    !! Test backwards compatibility.
     dtime = 1800_real_kind
 
     qs = 3; rs = 0; drf = -1; dtf = -1
@@ -1182,6 +1184,23 @@ contains
     tstep = -1; ns = 3
     i = timestep_make_parameters_consistent(par,rs,qs,drf,dtf,tstep,dtime,ns,nstep_fac,a)
     if (i /= 0 .or. drf /= qs*rs .or. dtf /= qs .or. nstep_fac /= qs*rs*ns .or. &
+         abs(tstep - dtime/(qs*rs*ns)) > tol) &
+         nerr = nerr + 1
+
+    !! Test new interface.
+    tstep = 300_real_kind
+
+    qs = -1; rs = -1; drf = 0; dtf = 6
+    dtime = -1; ns = 2
+    i = timestep_make_parameters_consistent(par,rs,qs,drf,dtf,tstep,dtime,ns,nstep_fac,a)
+    if (i /= 0 .or. rs /= drf .or. qs /= dtf .or. nstep_fac /= dtf*ns .or. &
+         abs(tstep - dtime/(ns*qs)) > tol) &
+         nerr = nerr + 1
+
+    qs = -1; rs = -1; drf = 12; dtf = 6
+    dtime = -1; ns = 3
+    i = timestep_make_parameters_consistent(par,rs,qs,drf,dtf,tstep,dtime,ns,nstep_fac,a)
+    if (i /= 0 .or. rs /= 2 .or. qs /= 6 .or. nstep_fac /= qs*rs*ns .or. &
          abs(tstep - dtime/(qs*rs*ns)) > tol) &
          nerr = nerr + 1
 
