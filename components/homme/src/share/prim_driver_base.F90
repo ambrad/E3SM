@@ -1003,12 +1003,14 @@ contains
     independent_time_steps = dt_remap_factor > 0 .and. dt_remap_factor < dt_tracer_factor
 
     ! compute timesteps for tracer transport and vertical remap
-    dt_q      = dt*qsplit
-    dt_remap  = dt_q
-    nstep_end = tl%nstep + qsplit
-    if (rsplit>0) then
-       dt_remap  = dt_q*rsplit   ! rsplit=0 means use eulerian code, not vert. lagrange
-       nstep_end = tl%nstep + qsplit*rsplit  ! nstep at end of this routine
+    dt_q = dt*dt_tracer_factor
+    if (dt_remap_factor == 0) then
+       dt_remap  = dt_q
+       nstep_end = tl%nstep + dt_tracer_factor
+    else
+       ! dt_remap_factor = 0 means use eulerian code, not vert. lagrange
+       dt_remap  = dt*dt_remap_factor
+       nstep_end = tl%nstep + max(dt_remap_factor, dt_tracer_factor) ! nstep at end of this routine
     endif
 
     ! activate diagnostics periodically for display to stdout and on first 2 timesteps
@@ -1021,7 +1023,7 @@ contains
     ! compute scalar diagnostics if currently active
     if (compute_diagnostics) call run_diagnostics(elem,hvcoord,tl,3,.true.,nets,nete)
 
-    call TimeLevel_Qdp(tl, qsplit, n0_qdp, np1_qdp)
+    call TimeLevel_Qdp(tl, dt_tracer_factor, n0_qdp, np1_qdp)
 #ifndef CAM
     ! compute HOMME test case forcing
     ! by calling it here, it mimics eam forcings computations in standalone
@@ -1066,7 +1068,7 @@ contains
 
       ! defer final timelevel update until after remap and diagnostics
       !compute timelevels for tracers (no longer the same as dynamics)
-      call TimeLevel_Qdp( tl, qsplit, n0_qdp, np1_qdp)
+      call TimeLevel_Qdp( tl, dt_tracer_factor, n0_qdp, np1_qdp)
 
 #if (USE_OPENACC)
       call t_startf("copy_qdp_h2d")
@@ -1079,7 +1081,7 @@ contains
       !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
       !  apply vertical remap
       !  always for tracers
-      !  if rsplit>0:  also remap dynamics back to reference levels.
+      !  if dt_remap_factor>0:  also remap dynamics back to reference levels.
       !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
       if (single_column) then
         nets_in=1
@@ -1143,7 +1145,7 @@ contains
   !       tl%n0    time t + dt_q
   !
   !
-    use control_mod,        only: statefreq, integration, ftype, qsplit, nu_p, rsplit
+    use control_mod,        only: statefreq, integration, ftype, nu_p, dt_tracer_factor, dt_remap_factor
     use control_mod,        only: transport_alg
     use hybvcoord_mod,      only: hvcoord_t
     use parallel_mod,       only: abortmp
@@ -1167,7 +1169,7 @@ contains
     real (kind=real_kind) :: dp_np1(np,np)
     logical :: compute_diagnostics
 
-    dt_q = dt*qsplit
+    dt_q = dt*dt_tracer_factor
 
     call set_tracer_transport_derived_values(elem, nets, nete, tl)
  
@@ -1184,7 +1186,7 @@ contains
     endif
        
     call prim_advance_exp(elem,deriv1,hvcoord,hybrid,dt,tl,nets,nete,compute_diagnostics)
-    do n=2,qsplit
+    do n=2,dt_tracer_factor
        call TimeLevel_update(tl,"leapfrog")
        if (ftype==4) call ApplyCAMforcing_dynamics(elem,hvcoord,tl%n0,dt,nets,nete)
        call prim_advance_exp(elem, deriv1, hvcoord,hybrid, dt, tl, nets, nete, .false.)
@@ -1197,9 +1199,9 @@ contains
     !    derived%vstar           =  velocity at start of tracer timestep
     !    derived%vn0             =  mean horiz. flux:   U*dp
     !    state%dp3d(:,:,:,np1)   = dp3d
-    ! rsplit=0
+    ! dt_remap_factor=0
     !        state%v(:,:,:,np1)      = velocity on reference levels
-    ! rsplit>0
+    ! dt_remap_factor>0
     !        state%v(:,:,:,np1)      = velocity on lagrangian levels 
     !        
     ! Tracer Advection.  
@@ -1207,7 +1209,7 @@ contains
     !        derived%eta_dot_dpdn    =  mean vertical velocity (used for remap below)
     !        derived%omega           =
     ! Tracers are always vertically lagrangian.  
-    ! For rsplit=0: 
+    ! For dt_remap_factor=0: 
     !   if tracer scheme needs v on lagrangian levels it has to vertically interpolate
 
     call t_startf("prim_step_advec")
@@ -1346,7 +1348,7 @@ contains
   !    remap                    remap back to ref levels.  ps_v now valid
   !    write restart files      ps_v ok for restart
   !
-  use control_mod,        only : use_moisture,rsplit
+  use control_mod,        only : use_moisture, dt_remap_factor
   use hybvcoord_mod,      only : hvcoord_t
 #ifdef MODEL_THETA_L
   use control_mod,        only : theta_hydrostatic_mode
@@ -1379,7 +1381,7 @@ contains
 #endif
 
 #ifdef MODEL_THETA_L
-  if (rsplit==0) then
+  if (dt_remap_factor==0) then
      adjust_ps=.true.   ! stay on reference levels for Eulerian case
   else
      adjust_ps=.true.   ! Lagrangian case can support adjusting dp3d or ps
@@ -1552,7 +1554,7 @@ contains
   !       tl%n0    time t + dt_q
   !
   !
-    use control_mod,        only: statefreq, integration, ftype, qsplit, nu_p, rsplit
+    use control_mod,        only: statefreq, integration, ftype, nu_p, dt_tracer_factor, dt_remap_factor
     use control_mod,        only: transport_alg
     use hybvcoord_mod,      only : hvcoord_t
     use parallel_mod,       only: abortmp
@@ -1573,7 +1575,7 @@ contains
     real (kind=real_kind)                          :: maxcflx, maxcfly
     real (kind=real_kind) :: dp_np1(np,np)
 
-    dt_q = dt*qsplit
+    dt_q = dt*dt_tracer_factor
  
     ! ===============
     ! initialize mean flux accumulation variables and save some variables at n0
@@ -1596,16 +1598,16 @@ contains
     ! Dynamical Step
     ! ===============
     
-    call TimeLevel_Qdp(tl, qsplit, qn0)  ! compute current Qdp() timelevel 
+    call TimeLevel_Qdp(tl, dt_tracer_factor, qn0)  ! compute current Qdp() timelevel 
     call set_prescribed_scm(elem,dt,tl)
     
-    do n=2,qsplit
+    do n=2,dt_tracer_factor
  
       call TimeLevel_update(tl,"leapfrog")
       if (ftype==4) call ApplyCAMforcing_dynamics(elem,hvcoord,tl%n0,dt,nets,nete)       
 
       ! get timelevel for accessing tracer mass Qdp() to compute virtual temperature      
-      call TimeLevel_Qdp(tl, qsplit, qn0)  ! compute current Qdp() timelevel      
+      call TimeLevel_Qdp(tl, dt_tracer_factor, qn0)  ! compute current Qdp() timelevel      
       
       ! call the single column forcing
       call set_prescribed_scm(elem,dt,tl)
@@ -1680,7 +1682,7 @@ contains
 
     use dimensions_mod, only: qsize
     use time_mod, only: timelevel_qdp
-    use control_mod, only: qsplit  
+    use control_mod, only: dt_tracer_factor  
     use time_mod,       only: timelevel_t
 
     type (element_t),      intent(inout), target  :: elem(:) 
@@ -1695,7 +1697,7 @@ contains
     n0    = tl%n0
     np1   = tl%np1
 
-    call TimeLevel_Qdp(tl, qsplit, n0_qdp, np1_qdp)
+    call TimeLevel_Qdp(tl, dt_tracer_factor, n0_qdp, np1_qdp)
     
     do k=1,nlev
       eta_dot_dpdn(:,:,k)=elem(1)%derived%omega_p(1,1,k)   
