@@ -31,6 +31,8 @@ implicit none
 
 public :: set_prescribed_wind
 
+logical, private :: midpoint_eta_dot_dpdn = .false.
+
 
 contains
 
@@ -88,7 +90,9 @@ subroutine set_test_initial_conditions(elem, deriv, hybrid, hvcoord, tl, nets, n
       case('asp_tracer');         call asp_tracer       (elem,hybrid,hvcoord,nets,nete)
       case('baroclinic');         call binst_init_state (elem,hybrid, nets, nete, hvcoord)
       case('dcmip2012_test1_1');  call dcmip2012_test1_1(elem,hybrid,hvcoord,nets,nete,0.0d0,1,timelevels)
-      case('dcmip2012_test1_1_conv'); call dcmip2012_test1_1_conv(elem,hybrid,hvcoord,nets,nete,0.0d0,1,timelevels)
+      case('dcmip2012_test1_1_conv')
+         midpoint_eta_dot_dpdn = .true.
+         call dcmip2012_test1_1_conv(elem,hybrid,hvcoord,nets,nete,0.0d0,1,timelevels)
       case('dcmip2012_test1_2');  call dcmip2012_test1_2(elem,hybrid,hvcoord,nets,nete,0.0d0,1,timelevels)
       case('dcmip2012_test1_3');  call dcmip2012_test1_3(elem,hybrid,hvcoord,nets,nete,0.0d0,1,timelevels,deriv)
       case('dcmip2012_test2_0');  call dcmip2012_test2_0(elem,hybrid,hvcoord,nets,nete)
@@ -235,6 +239,8 @@ end subroutine
     integer              , intent(in)             :: nete
     real (kind=real_kind), intent(in)             :: eta_ave_w
 
+    real (kind=real_kind), parameter :: half = 0.5d0
+
     real (kind=real_kind) :: dp(np,np)! pressure thickness, vflux
     real(kind=real_kind)  :: eta_dot_dpdn(np,np,nlevp)
 
@@ -243,16 +249,45 @@ end subroutine
     n0    = tl%n0
     np1   = tl%np1
 
+    if (midpoint_eta_dot_dpdn) then
+       ! To get second order in the vertical direction, we need to
+       ! approximate eta_dot_dpdn at the time midpoint.
+       if (dt_remap_factor == 0) then
+          ! Accumulate first part of the midpoint.
+          do ie = nets,nete
+             elem(ie)%derived%eta_dot_dpdn = elem(ie)%derived%eta_dot_dpdn + &
+                  half*elem(ie)%derived%eta_dot_dpdn_prescribed*eta_ave_w
+          end do
+       else
+          ! Save previous prescribed value.
+          do ie = nets,nete
+             elem(ie)%derived%eta_dot_dpdn = elem(ie)%derived%eta_dot_dpdn_prescribed
+          end do
+       end if
+    end if
     call set_test_prescribed_wind(elem,deriv,hybrid,hv,dt,tl,nets,nete)
     ! accumulate velocities and fluxes over timesteps
     ! test code only dont bother to openmp thread
     do ie = nets,nete
        eta_dot_dpdn(:,:,:)=elem(ie)%derived%eta_dot_dpdn_prescribed(:,:,:)
        ! accumulate mean fluxes for advection
-       if (dt_remap_factor==0) then
-          elem(ie)%derived%eta_dot_dpdn(:,:,:) = &
-               elem(ie)%derived%eta_dot_dpdn(:,:,:) + eta_dot_dpdn(:,:,:)*eta_ave_w
+       if (midpoint_eta_dot_dpdn) then
+          if (dt_remap_factor == 0) then
+             ! Accumulate second part of the midpoint.
+             elem(ie)%derived%eta_dot_dpdn = elem(ie)%derived%eta_dot_dpdn + &
+                  half*elem(ie)%derived%eta_dot_dpdn_prescribed*eta_ave_w
+          else
+             ! Calculate value at time midpoint.
+             eta_dot_dpdn = half*(elem(ie)%derived%eta_dot_dpdn + &
+                  elem(ie)%derived%eta_dot_dpdn_prescribed)
+          end if
        else
+          if (dt_remap_factor == 0) then
+             elem(ie)%derived%eta_dot_dpdn(:,:,:) = &
+                  elem(ie)%derived%eta_dot_dpdn(:,:,:) + eta_dot_dpdn(:,:,:)*eta_ave_w
+          end if
+       end if
+       if (dt_remap_factor /= 0) then
           ! lagrangian case.  mean vertical velocity = 0
           elem(ie)%derived%eta_dot_dpdn(:,:,:) = 0
           ! update position of floating levels
