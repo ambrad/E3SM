@@ -1250,7 +1250,11 @@ contains
     logical :: compute_diagnostics_it
 
     dt_q = dt*dt_tracer_factor
-    dt_remap = dt*dt_remap_factor
+    if (dt_remap_factor == 0) then
+       dt_remap = dt_q
+    else
+       dt_remap = dt*dt_remap_factor
+    end if
 
     call set_tracer_transport_derived_values(elem, nets, nete, tl)
 
@@ -1308,6 +1312,7 @@ contains
        ! dt_remap_factor = 0 means vertical_remap will not remap
        ! dynamics variables.
        call TimeLevel_Qdp(tl, dt_tracer_factor, n0_qdp, np1_qdp)
+       if (compute_diagnostics) call run_diagnostics(elem,hvcoord,tl,4,.false.,nets,nete)
        call vertical_remap(hybrid,elem,hvcoord,dt_remap,tl%np1,np1_qdp,nets,nete)
     else
        call sl_vertically_remap_tracers(hybrid, elem, nets, nete, tl, dt_q)
