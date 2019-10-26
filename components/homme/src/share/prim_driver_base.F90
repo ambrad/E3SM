@@ -1225,7 +1225,7 @@ contains
   end subroutine prim_step
 
   subroutine prim_step_flexible(hybrid, elem, nets, nete, dt, tl, hvcoord, compute_diagnostics)
-    use control_mod,        only: ftype, nu_p, dt_tracer_factor, dt_remap_factor, prescribed_wind
+    use control_mod,        only: ftype, nu_p, dt_tracer_factor, dt_remap_factor, prescribed_wind, transport_alg
     use hybvcoord_mod,      only: hvcoord_t
     use parallel_mod,       only: abortmp
     use prim_advance_mod,   only: prim_advance_exp, applycamforcing_dynamics
@@ -1233,8 +1233,8 @@ contains
     use reduction_mod,      only: parallelmax
     use time_mod,           only: TimeLevel_t, timelevel_update, timelevel_qdp
     use prim_state_mod,     only: prim_printstate
-    use vertremap_base,     only: remap1
     use vertremap_mod,      only: vertical_remap
+    use sl_advection,       only: sl_vertically_remap_tracers
 
     type(element_t),      intent(inout) :: elem(:)
     type(hybrid_t),       intent(in)    :: hybrid   ! distributed parallel structure (shared)
@@ -1245,12 +1245,9 @@ contains
     type(TimeLevel_t),    intent(inout) :: tl
     logical,              intent(in)    :: compute_diagnostics
 
-    real(kind=real_kind) :: st, st1, dt_q, dt_remap
-    integer :: ie, t, q,k,i,j,n,n0_qdp,np1_qdp
-    real (kind=real_kind) :: maxcflx, maxcfly
-    real (kind=real_kind) :: dp_np1(np,np)
-
-    real (kind=real_kind), dimension(np,np,nlev)  :: dp,dp_star
+    real(kind=real_kind) :: dt_q, dt_remap, dp(np,np,qsize)
+    integer :: ie, q, k, n, n0_qdp, np1_qdp
+    logical :: compute_diagnostics_it
 
     dt_q = dt*dt_tracer_factor
     dt_remap = dt*dt_remap_factor
@@ -1259,11 +1256,24 @@ contains
 
     call t_startf("prim_step_dyn")
     do n = 1,dt_tracer_factor
+       compute_diagnostics_it = logical(compute_diagnostics .and. n == 1)
+
        if (n > 1) call TimeLevel_update(tl, "leapfrog")
+
+       if (ftype == 4) then
+          ! also apply dynamics tendencies from forcing; energy
+          ! diagnostics will be incorrect
+          call ApplyCAMforcing_dynamics(elem,hvcoord,tl%n0,dt,nets,nete)
+          if (compute_diagnostics_it) call run_diagnostics(elem,hvcoord,tl,1,.true.,nets,nete)
+       end if
+
        call prim_advance_exp(elem, deriv1, hvcoord,hybrid, dt, tl, nets, nete, &
-            logical(compute_diagnostics .and. n == 1))
+            compute_diagnostics_it)
+
        if (dt_remap_factor /= 0) then
           if (modulo(n, dt_remap_factor) == 0) then
+             if (compute_diagnostics) call run_diagnostics(elem,hvcoord,tl,4,.false.,nets,nete)
+
              if (prescribed_wind == 1) then
                 ! Prescribed winds are evaluated on reference levels,
                 ! not floating levels, so don't remap, just update dp3d.
@@ -1277,6 +1287,8 @@ contains
                    elem(ie)%state%dp3d(:,:,:,tl%np1) = dp
                 end do
              else
+                ! Set np1_qdp to -1 to remap dynamics variables but
+                ! not tracers.
                 call vertical_remap(hybrid, elem, hvcoord, dt_remap, tl%np1, -1, nets, nete)
              end if
           end if
@@ -1285,38 +1297,20 @@ contains
     enddo
     call t_stopf("prim_step_dyn")
 
-    call t_startf("prim_step_advec")
     if (qsize > 0) then
        call t_startf("PAT_remap")
        call Prim_Advec_Tracers_remap(elem,deriv1,hvcoord,hybrid,dt_q,tl,nets,nete)
        call t_stopf("PAT_remap")
     end if
-    call t_stopf("prim_step_advec")
 
-    call TimeLevel_Qdp( tl, dt_tracer_factor, n0_qdp, np1_qdp)
+    ! Remap tracers.
     if (dt_remap_factor == 0) then
+       ! dt_remap_factor = 0 means vertical_remap will not remap
+       ! dynamics variables.
+       call TimeLevel_Qdp(tl, dt_tracer_factor, n0_qdp, np1_qdp)
        call vertical_remap(hybrid,elem,hvcoord,dt_remap,tl%np1,np1_qdp,nets,nete)
     else
-       do ie = nets, nete
-          dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
-          dp_star = dp + dt_q*(elem(ie)%derived%eta_dot_dpdn(:,:,2:    ) - &
-                               elem(ie)%derived%eta_dot_dpdn(:,:,1:nlev))
-          if (minval(dp_star) < 0) then
-             print *,'amb> ALARUM dp_star -ve,rank,ie',hybrid%par%rank,ie
-             do j = 1,np
-                do i = 1,np
-                   if (minval(dp_star(i,j,:)) < 0) then
-                      print *,'amb>',i,j,dp_star(i,j,:)
-                      call abortmp('-ve dp_star')
-                   end if
-                end do
-             end do
-          end if
-          call remap1(elem(ie)%state%Qdp(:,:,:,:,np1_qdp),np,qsize,dp_star,dp)
-          do q = 1,qsize
-             elem(ie)%state%Q(:,:,:,q) = elem(ie)%state%Qdp(:,:,:,q,np1_qdp)/dp
-          enddo
-       end do
+       call sl_vertically_remap_tracers(hybrid, elem, nets, nete, tl, dt_q)
     end if
   end subroutine prim_step_flexible
 

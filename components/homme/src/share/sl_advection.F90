@@ -33,7 +33,7 @@ module sl_advection
   integer :: sl_mpi
   type (cartesian3D_t), allocatable :: dep_points_all(:,:,:,:) ! (np,np,nlev,nelemd)
 
-  public :: Prim_Advec_Tracers_remap_ALE, sl_init1
+  public :: Prim_Advec_Tracers_remap_ALE, sl_init1, sl_vertically_remap_tracers
 
   logical, parameter :: barrier = .false.
 
@@ -800,6 +800,11 @@ contains
   end subroutine biharmonic_wk_scalar
 
   subroutine flt_reconstruct(hybrid, elem, nets, nete, hvcoord, tl, dt, deriv)
+    ! Reconstruct the vertically Lagrangian levels, thus permitting
+    ! the dynamics vertical remap time step to be shorter than the
+    ! tracer time step. This routine provides the reconstruction via
+    ! updated derived%eta_dot_dpdn.
+
     use control_mod, only: dt_remap_factor
     use derivative_mod, only: derivative_t, gradient_sphere
 
@@ -980,5 +985,55 @@ contains
        p(:,:,k+1) = p(:,:,k) + dp(:,:,k)
     end do
   end subroutine calc_p
+
+  subroutine sl_vertically_remap_tracers(hybrid, elem, nets, nete, tl, dt_q)
+    ! Remap the tracers after a tracer time step, in the case that the
+    ! vertical remap time step for dynamics is shorter than the tracer
+    ! time step.
+
+    use control_mod, only: dt_tracer_factor
+    use vertremap_base, only: remap1
+    use parallel_mod, only: abortmp
+    use kinds, only: iulog
+
+    type (hybrid_t), intent(in) :: hybrid
+    type (element_t), intent(inout) :: elem(:)
+    integer, intent(in) :: nets, nete
+    real(kind=real_kind), intent(in) :: dt_q
+    type (TimeLevel_t), intent(in) :: tl
+
+    real(kind=real_kind) :: dp_star(np,np,qsize)
+    integer :: ie, i, j, q, n0_qdp, np1_qdp
+
+    call TimeLevel_Qdp(tl, dt_tracer_factor, n0_qdp, np1_qdp)
+
+    do ie = nets, nete
+       ! The level-reconstruction algorithm set eta_dot_dpdn;
+       ! otherwise, these would be 0 when dynamics uses floating
+       ! levels.
+       dp_star = elem(ie)%state%dp3d(:,:,:,tl%np1) + &
+                 dt_q*(elem(ie)%derived%eta_dot_dpdn(:,:,2:    ) - &
+                       elem(ie)%derived%eta_dot_dpdn(:,:,1:nlev))
+       if (minval(dp_star) < 0) then
+          write(iulog,*) 'sl_vertically_remap_tracers> dp_star -ve: rank, ie', hybrid%par%rank, ie
+          do j = 1,np
+             do i = 1,np
+                if (minval(dp_star(i,j,:)) < 0) then
+                   write(iulog,*), 'i,j,dp_star(i,j,:)', i, j, dp_star(i,j,:)
+                   call abortmp('sl_vertically_remap_tracers> -ve dp_star')
+                end if
+             end do
+          end do
+       end if
+       ! vertical_remap has side effects we must avoid. So call remap1
+       ! directly.
+       call remap1(elem(ie)%state%Qdp(:,:,:,:,np1_qdp), np, qsize, dp_star, &
+            elem(ie)%state%dp3d(:,:,:,tl%np1))
+       do q = 1,qsize
+          elem(ie)%state%Q(:,:,:,q) = elem(ie)%state%Qdp(:,:,:,q,np1_qdp)/ &
+                                      elem(ie)%state%dp3d(:,:,:,tl%np1)
+       enddo
+    end do
+  end subroutine sl_vertically_remap_tracers
 
 end module sl_advection
