@@ -4,7 +4,7 @@
 
 module test_mod
 
-use control_mod,    only: test_case, sub_case, rsplit, runtype
+use control_mod,    only: test_case, sub_case, dt_remap_factor, runtype
 use dimensions_mod, only: np, nlev, nlevp, qsize
 use derivative_mod, only: derivative_t, gradient_sphere
 use element_mod,    only: element_t
@@ -21,7 +21,7 @@ use asp_tests,            only: asp_tracer, asp_baroclinic, asp_rossby, asp_moun
 use baroclinic_inst_mod,  only: binst_init_state, jw_baroclinic
 use dcmip12_wrapper,      only: dcmip2012_test1_1, dcmip2012_test1_2, dcmip2012_test1_3,&
                                 dcmip2012_test2_0, dcmip2012_test2_x, dcmip2012_test3,  &
-                                dcmip2012_test4_init, mtest_init
+                                dcmip2012_test4_init, mtest_init, dcmip2012_test1_1_conv
 use dcmip16_wrapper,      only: dcmip2016_test1, dcmip2016_test2, dcmip2016_test3, &
                                 dcmip2016_test1_forcing, dcmip2016_test2_forcing, dcmip2016_test3_forcing, &
                                 dcmip2016_test1_pg, dcmip2016_test1_pg_forcing, dcmip2016_init
@@ -56,6 +56,7 @@ subroutine set_test_initial_conditions(elem, deriv, hybrid, hvcoord, tl, nets, n
     case('asp_tracer');
     case('baroclinic');
     case('dcmip2012_test1_1');
+    case('dcmip2012_test1_1_conv');
     case('dcmip2012_test1_2');
     case('dcmip2012_test1_3');
     case('dcmip2012_test2_0');
@@ -87,6 +88,7 @@ subroutine set_test_initial_conditions(elem, deriv, hybrid, hvcoord, tl, nets, n
       case('asp_tracer');         call asp_tracer       (elem,hybrid,hvcoord,nets,nete)
       case('baroclinic');         call binst_init_state (elem,hybrid, nets, nete, hvcoord)
       case('dcmip2012_test1_1');  call dcmip2012_test1_1(elem,hybrid,hvcoord,nets,nete,0.0d0,1,timelevels)
+      case('dcmip2012_test1_1_conv'); call dcmip2012_test1_1_conv(elem,hybrid,hvcoord,nets,nete,0.0d0,1,timelevels)
       case('dcmip2012_test1_2');  call dcmip2012_test1_2(elem,hybrid,hvcoord,nets,nete,0.0d0,1,timelevels)
       case('dcmip2012_test1_3');  call dcmip2012_test1_3(elem,hybrid,hvcoord,nets,nete,0.0d0,1,timelevels,deriv)
       case('dcmip2012_test2_0');  call dcmip2012_test2_0(elem,hybrid,hvcoord,nets,nete)
@@ -127,7 +129,9 @@ subroutine set_test_prescribed_wind(elem, deriv, hybrid, hvcoord, dt, tl, nets, 
   integer :: n0,np1, ie
   real(rl):: time
 
-  time = tl%nstep*dt
+  ! Use nstep+1 to get wind at end of time step, consistent with what
+  ! time integration produces in a non-test simulation.
+  time = (tl%nstep+1)*dt
   n0   = tl%n0
   np1  = tl%np1
 
@@ -139,6 +143,7 @@ subroutine set_test_prescribed_wind(elem, deriv, hybrid, hvcoord, dt, tl, nets, 
   ! set prescribed quantities at timelevel np1 
   select case(test_case)
     case('dcmip2012_test1_1'); call dcmip2012_test1_1(elem,hybrid,hvcoord,nets,nete,time,np1,np1)
+    case('dcmip2012_test1_1_conv'); call dcmip2012_test1_1_conv(elem,hybrid,hvcoord,nets,nete,time,np1,np1)
     case('dcmip2012_test1_2'); call dcmip2012_test1_2(elem,hybrid,hvcoord,nets,nete,time,np1,np1)
     case('dcmip2012_test1_3'); call dcmip2012_test1_3(elem,hybrid,hvcoord,nets,nete,time,np1,np1,deriv)
   endselect
@@ -231,12 +236,10 @@ end subroutine
     real (kind=real_kind), intent(in)             :: eta_ave_w
 
     real (kind=real_kind) :: dp(np,np)! pressure thickness, vflux
-    real(kind=real_kind)  :: time
     real(kind=real_kind)  :: eta_dot_dpdn(np,np,nlevp)
 
     integer :: ie,k,n0,np1
 
-    time  = tl%nstep*dt
     n0    = tl%n0
     np1   = tl%np1
 
@@ -246,7 +249,7 @@ end subroutine
     do ie = nets,nete
        eta_dot_dpdn(:,:,:)=elem(ie)%derived%eta_dot_dpdn_prescribed(:,:,:)
        ! accumulate mean fluxes for advection
-       if (rsplit==0) then
+       if (dt_remap_factor==0) then
           elem(ie)%derived%eta_dot_dpdn(:,:,:) = &
                elem(ie)%derived%eta_dot_dpdn(:,:,:) + eta_dot_dpdn(:,:,:)*eta_ave_w
        else
@@ -268,5 +271,19 @@ end subroutine
 
     enddo
   end subroutine
+
+  subroutine print_test_results(elem, tl, hvcoord, par)
+    use parallel_mod, only: parallel_t
+    use dcmip12_wrapper, only: dcmip2012_print_test1_conv_results
+
+    type(element_t), intent(in) :: elem(:)
+    type(timelevel_t), intent(in) :: tl
+    type(hvcoord_t), intent(in) :: hvcoord
+    type(parallel_t), intent(in) :: par
+
+    select case(test_case)
+       case('dcmip2012_test1_1_conv'); call dcmip2012_print_test1_conv_results(elem, tl, hvcoord, par, 1)
+    end select
+  end subroutine print_test_results
 
 end module
