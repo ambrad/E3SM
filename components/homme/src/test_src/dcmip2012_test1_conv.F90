@@ -81,7 +81,7 @@ SUBROUTINE test1_conv_advection_deformation (time,lon,lat,p,z,zcoords,u,v,w,t,ph
   !---------------------------------------------------------------------
 
 	! shape function
-	bs = 0.8d0!1.2d0
+	bs = 1.0d0
 	s = 1.0 + exp((ptop-p0)/(bs*ptop)) - exp((p-p0)/(bs*ptop)) - exp((ptop-p)/(bs*ptop))
   s_p = (-exp((p-p0)/(bs*ptop)) + exp((ptop-p)/(bs*ptop)))/(bs*ptop)
 
