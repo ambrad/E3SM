@@ -1002,7 +1002,7 @@ contains
     real(kind=real_kind), intent(in) :: dt_q
     type (TimeLevel_t), intent(in) :: tl
 
-    real(kind=real_kind) :: dp_star(np,np,qsize)
+    real(kind=real_kind) :: dp_star(np,np,nlev)
     integer :: ie, i, j, q, n0_qdp, np1_qdp
 
     call TimeLevel_Qdp(tl, dt_tracer_factor, n0_qdp, np1_qdp)

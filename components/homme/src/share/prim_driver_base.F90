@@ -981,6 +981,7 @@ contains
 #if USE_OPENACC
     use openacc_utils_mod,  only: copy_qdp_h2d, copy_qdp_d2h
 #endif
+    use control_mod, only: amb_experiment
 
     implicit none
 
@@ -1001,6 +1002,7 @@ contains
     logical :: compute_diagnostics, independent_time_steps
 
     independent_time_steps = dt_remap_factor > 0 .and. dt_remap_factor < dt_tracer_factor
+    if (amb_experiment > 0) independent_time_steps = .true.
 
     ! compute timesteps for tracer transport and vertical remap
     dt_q = dt*dt_tracer_factor
@@ -1245,7 +1247,7 @@ contains
     type(TimeLevel_t),    intent(inout) :: tl
     logical,              intent(in)    :: compute_diagnostics
 
-    real(kind=real_kind) :: dt_q, dt_remap, dp(np,np,qsize)
+    real(kind=real_kind) :: dt_q, dt_remap, dp(np,np,nlev)
     integer :: ie, q, k, n, n0_qdp, np1_qdp
     logical :: compute_diagnostics_it
 
