@@ -136,7 +136,7 @@ contains
     integer :: i,j,k,l,n,q,ie,n0_qdp,np1_qdp
     integer :: num_neighbors, scalar_q_bounds, info
     logical :: slmm, cisl, qos, sl_test, independent_time_steps
-    real(kind=real_kind) :: dp(np,np,nlev), wr(np,np,nlev,2)
+    real(kind=real_kind) :: wr(np,np,nlev,2)
 
 #ifdef HOMME_ENABLE_COMPOSE
     call t_barrierf('Prim_Advec_Tracers_remap_ALE', hybrid%par%comm)
@@ -158,13 +158,12 @@ contains
        call t_startf('SLMM_reconstruct')
        call reconstruct_eta_dot_dpdn(hybrid, elem, nets, nete, hvcoord, tl, dt, deriv)
        do ie = nets,nete
-          dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
           ! use divdp for dp_star
-          elem(ie)%derived%divdp = dp + &
+          elem(ie)%derived%divdp = elem(ie)%state%dp3d(:,:,:,tl%np1) + &
                dt*(elem(ie)%derived%eta_dot_dpdn(:,:,2:) - elem(ie)%derived%eta_dot_dpdn(:,:,1:nlev))
-          wr(:,:,:,1) = elem(ie)%derived%vn0(:,:,1,:)*dp
-          wr(:,:,:,2) = elem(ie)%derived%vn0(:,:,2,:)*dp
-          call remap1(wr,np,2,dp,elem(ie)%derived%divdp)
+          wr(:,:,:,1) = elem(ie)%derived%vn0(:,:,1,:)*elem(ie)%state%dp3d(:,:,:,tl%np1)
+          wr(:,:,:,2) = elem(ie)%derived%vn0(:,:,2,:)*elem(ie)%state%dp3d(:,:,:,tl%np1)
+          call remap1(wr, np, 2, elem(ie)%state%dp3d(:,:,:,tl%np1), elem(ie)%derived%divdp)
           elem(ie)%derived%vn0(:,:,1,:) = wr(:,:,:,1)/elem(ie)%derived%divdp
           elem(ie)%derived%vn0(:,:,2,:) = wr(:,:,:,2)/elem(ie)%derived%divdp
        end do
@@ -175,12 +174,8 @@ contains
 
     if (independent_time_steps) then
        do ie = nets,nete
-          dp = elem(ie)%state%dp3d(:,:,:,tl%np1)
-          if (dt_remap_factor == 0) then
-             elem(ie)%derived%divdp = dp + &
-                  dt*(elem(ie)%derived%eta_dot_dpdn(:,:,2:) - elem(ie)%derived%eta_dot_dpdn(:,:,1:nlev))
-          else
-          end if
+          elem(ie)%derived%divdp = elem(ie)%state%dp3d(:,:,:,tl%np1) + &
+               dt*(elem(ie)%derived%eta_dot_dpdn(:,:,2:) - elem(ie)%derived%eta_dot_dpdn(:,:,1:nlev))
        end do
     end if
 
@@ -223,21 +218,27 @@ contains
     if (semi_lagrange_hv_q > 0 .and. nu_q > 0) then
        n = semi_lagrange_hv_q
        do ie = nets, nete
+          if (independent_time_steps) then
+             wr(:,:,:,1) = elem(ie)%derived%divdp
+          else
+             wr(:,:,:,1) = elem(ie)%state%dp3d(:,:,:,tl%np1)
+          end if
           do q = 1, n
-             do k = 1, nlev
-                elem(ie)%state%Qdp(:,:,k,q,np1_qdp) = elem(ie)%state%Q(:,:,k,q) * &
-                     elem(ie)%state%dp3d(:,:,k,tl%np1)
-             enddo
+             elem(ie)%state%Qdp(:,:,:,q,np1_qdp) = elem(ie)%state%Q(:,:,:,q) * &
+                  elem(ie)%state%dp3d(:,:,:,tl%np1)
           enddo
        end do
        call advance_hypervis_scalar(elem, hvcoord, hybrid, deriv, tl%np1, np1_qdp, nets, nete, dt, n)
        ! No barrier needed: advance_hypervis_scalar has a horiz thread barrier at the end.
        do ie = nets, nete
+          if (independent_time_steps) then
+             wr(:,:,:,1) = elem(ie)%derived%divdp
+          else
+             wr(:,:,:,1) = elem(ie)%state%dp3d(:,:,:,tl%np1)
+          end if
           do q = 1, n
-             do k = 1, nlev
-                elem(ie)%state%Q(:,:,k,q) = elem(ie)%state%Qdp(:,:,k,q,np1_qdp) / &
-                     elem(ie)%state%dp3d(:,:,k,tl%np1)
-             enddo
+             elem(ie)%state%Q(:,:,:,q) = elem(ie)%state%Qdp(:,:,:,q,np1_qdp) / &
+                  elem(ie)%state%dp3d(:,:,:,tl%np1)
           enddo
        end do
     end if
