@@ -996,9 +996,12 @@ contains
     real(kind=real_kind), allocatable :: gll_unique(:)
     type(file_t) :: infile
 
+    ! Save global output-file state.
     output_dir_save = output_dir
     output_prefix_save = output_prefix
 
+    ! We get a spurious '1' at the end of the output filename, but other than
+    ! that, we get exactly what we want.
     output_prefix = ''
     output_dir = ''
     output_frequency(2:max_output_streams) = 0
@@ -1050,18 +1053,20 @@ contains
     vartypes = pio_double
     call nf_output_register_variables(ncdf, nvar, varnames, vardims, vartypes, varreqs)
 
-    ! Copy variable and global attributes.
+    ! Copy variable and global attributes from the GLL source topography file.
     call infile_initialize(elem, par, trim(infilename), varnames(1:nvar-1), infile)
     call copy_attributes(infile, ncdf(1))
-    ! Copy PHIS atts to PHIS_d.
+    ! Copy PHIS attributes to PHIS_d.
     k = infile%vars%vardesc(1)%varid ! PHIS id
-    j = pio_inq_varnatts(infile%fileid, k, n) ! n attributes
+    j = pio_inq_varnatts(infile%fileid, k, n) ! n atts
     do i = 1,n
-       j = pio_inq_attname(infile%fileid, k, i, name) ! attribute name
+       j = pio_inq_attname(infile%fileid, k, i, name) ! att name
        j = pio_copy_att(infile%fileid, k, name, ncdf(1)%fileid, nvar) ! PHIS_d has id nvar
     end do
     call pio_closefile(infile%fileid)
     call free_infile(infile)
+    j = pio_put_att(ncdf(1)%fileid, pio_global, 'history', &
+         'Converted from '// trim(infilename) // ' by HOMME pio_write_physgrid_topo_file')
     
     call nf_output_init_complete(ncdf)
 
@@ -1088,6 +1093,7 @@ contains
 
     call pio_closefile(ncdf(1)%fileid)
 
+    ! Restore global output-file state.
     output_prefix = output_prefix_save
     output_dir = output_dir_save
 #endif
