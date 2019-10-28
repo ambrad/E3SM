@@ -985,18 +985,11 @@ contains
     integer, intent(in) :: nphys
 
 #ifndef HOMME_WITHOUT_PIOLIBRARY
-    ! todo
-    ! - lat, lon from gfr_f_get_latlon
-    ! - var attributes, ideally copied from infilename
-    ! - global attributes, ideally copied from infilename
-    ! - break up routine into useful subroutines
-    ! - maybe rm the '1' from the filename
-
     integer, parameter :: ndim = 2
 
-    character(len=varname_len) :: dimnames(ndim), varnames(nvar)
+    character(len=varname_len) :: dimnames(ndim), varnames(nvar), name
     character(len=max_string_len) :: output_dir_save, output_prefix_save
-    integer :: nf2, ie, i, j, k, dimsizes(ndim), vardims(1,nvar), vartypes(nvar), itmp(1)
+    integer :: nf2, ie, i, j, k, n, dimsizes(ndim), vardims(1,nvar), vartypes(nvar), itmp(1)
     integer, pointer :: dof(:)
     integer(kind=nfsizekind) :: unused(1)
     logical :: varreqs(nvar)
@@ -1060,9 +1053,16 @@ contains
     ! Copy variable and global attributes.
     call infile_initialize(elem, par, trim(infilename), varnames(1:nvar-1), infile)
     call copy_attributes(infile, ncdf(1))
+    ! Copy PHIS atts to PHIS_d.
+    k = infile%vars%vardesc(1)%varid ! PHIS id
+    j = pio_inq_varnatts(infile%fileid, k, n) ! n attributes
+    do i = 1,n
+       j = pio_inq_attname(infile%fileid, k, i, name) ! attribute name
+       j = pio_copy_att(infile%fileid, k, name, ncdf(1)%fileid, nvar) ! PHIS_d has id nvar
+    end do
     call pio_closefile(infile%fileid)
     call free_infile(infile)
-
+    
     call nf_output_init_complete(ncdf)
 
     ! Write physgrid topo fields.
