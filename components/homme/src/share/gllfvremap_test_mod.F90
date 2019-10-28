@@ -559,7 +559,7 @@ contains
   subroutine gfr_convert_topo(par, elem)
     use common_io_mod, only : infilenames, varname_len
     use parallel_mod, only: parallel_t
-    use gllfvremap_mod, only: gfr_init, gfr_finish, gfr_dyn_to_fv_phys_topo_data
+    use gllfvremap_mod, only: gfr_init, gfr_finish, gfr_dyn_to_fv_phys_topo_data, gfr_f_get_latlon
     use interpolate_driver_mod, only: pio_read_gll_topo_file, pio_write_physgrid_topo_file
 
     type (parallel_t), intent(in) :: par
@@ -569,15 +569,16 @@ contains
          intopofn = '/ascldap/users/ambradl/climate/physgrid/USGS-gtopo30_ne30np4_16xdel2-PFC-consistentSGH.nc', &
          outtopoprefix = '/ascldap/users/ambradl/climate/physgrid/USGS-gtopo30_ne30np4pg2_16xdel2-PFC-consistentSGH_converted'
 
-    real(real_kind), allocatable :: gll_fields(:,:,:,:), pg_fields(:,:,:)
-    integer :: unit, nphys, vari, phisidx, ie
+    real(real_kind), allocatable :: gll_fields(:,:,:,:), pg_fields(:,:,:), latlon(:,:,:)
+    integer :: unit, nphys, nf2, vari, phisidx, ie, i, j, k
     logical :: square, augment
     character(len=varname_len) :: fieldnames(5)
 
     nphys = 2
+    nf2 = nphys*nphys
     call gfr_init(par, elem, nphys, check=.true.)
 
-    allocate(gll_fields(np,np,nelemd,5), pg_fields(nphys*nphys,nelemd,5))
+    allocate(gll_fields(np,np,nelemd,5), pg_fields(nf2,nelemd,5), latlon(nf2,nelemd,2))
 
     call pio_read_gll_topo_file(intopofn, elem, par, gll_fields, fieldnames)
 
@@ -594,8 +595,17 @@ contains
        square = fieldnames(vari)(1:3) == 'SGH'
        augment = trim(fieldnames(vari)) == 'SGH'
        call gfr_dyn_to_fv_phys_topo_data(par, elem, 1, nelemd, &
-            gll_fields(:,:,:,vari), np*np*nelemd, pg_fields(:,:,vari), nphys*nphys*nelemd, &
+            gll_fields(:,:,:,vari), np*np*nelemd, pg_fields(:,:,vari), nf2*nelemd, &
             square, augment)
+    end do
+
+    do ie = 1,nelemd
+       do j = 1,nphys
+          do i = 1,nphys
+             k = nphys*(j-1) + i
+             call gfr_f_get_latlon(ie, i, j, latlon(k,ie,1), latlon(k,ie,2))
+          end do
+       end do
     end do
 
     call gfr_finish()
@@ -608,8 +618,8 @@ contains
 #endif
 
     call pio_write_physgrid_topo_file(intopofn, outtopoprefix, elem, par, &
-         gll_fields, pg_fields, fieldnames, nphys)
+         gll_fields, pg_fields, latlon, fieldnames, nphys)
 
-    deallocate(gll_fields, pg_fields)
+    deallocate(gll_fields, pg_fields, latlon)
   end subroutine gfr_convert_topo
 end module gllfvremap_test_mod

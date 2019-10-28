@@ -952,7 +952,7 @@ contains
   end subroutine pio_read_gll_topo_file
 
   subroutine pio_write_physgrid_topo_file(infilename, outfilenameprefix, elem, par, &
-       gll_fields, pg_fields, fieldnames, nphys)
+       gll_fields, pg_fields, latlon, fieldnames, nphys)
     ! gll_fields and fieldnames are as output from pio_read_gll_topo_file.
 
     use element_mod, only : element_t
@@ -972,15 +972,16 @@ contains
     use control_mod, only: max_string_len
 #endif
 
-    integer, parameter :: nvar = 6
+    integer, parameter :: nvar = 8, nvar_old = 5
 
     character(len=*), intent(in) :: infilename, outfilenameprefix
     type(element_t), intent(in) :: elem(:)
     type(parallel_t), intent(in) :: par
     real(kind=real_kind), intent(in) :: &
          gll_fields(np, np,      nelemd, nvar-1), &
-         pg_fields (nphys*nphys, nelemd, nvar-1)
-    character(len=varname_len), intent(in) :: fieldnames(nvar-1)
+         pg_fields (nphys*nphys, nelemd, nvar-1), &
+         latlon    (nphys*nphys, nelemd, 2) ! (:,:,1) is lat, (:,:,2) is lon
+    character(len=varname_len), intent(in) :: fieldnames(nvar_old)
     integer, intent(in) :: nphys
 
 #ifndef HOMME_WITHOUT_PIOLIBRARY
@@ -995,7 +996,7 @@ contains
 
     character(len=varname_len) :: dimnames(ndim), varnames(nvar)
     character(len=max_string_len) :: output_dir_save, output_prefix_save
-    integer :: nf2, i, j, k, dimsizes(ndim), vardims(1,nvar), vartypes(nvar), itmp(1)
+    integer :: nf2, ie, i, j, k, dimsizes(ndim), vardims(1,nvar), vartypes(nvar), itmp(1)
     integer, pointer :: dof(:)
     integer(kind=nfsizekind) :: unused(1)
     logical :: varreqs(nvar)
@@ -1027,9 +1028,9 @@ contains
 
     ! physgrid decomp
     allocate(dof(nelemd*nf2))
-    do i = 1,nelemd
+    do ie = 1,nelemd
        do j = 1,nf2
-          dof(nf2*(i-1) + j) = nf2*(elem(i)%globalid-1) + j
+          dof(nf2*(ie-1) + j) = nf2*(elem(ie)%globalid-1) + j
        end do
     end do
     call nf_init_decomp(ncdf, (/1/), dof, &
@@ -1041,10 +1042,14 @@ contains
     deallocate(dof)
 
     ! variables
-    do i = 1,nvar-1
+    do i = 1,nvar_old
        varnames(i) = fieldnames(i)
        vardims(1,i) = 1
     end do
+    varnames(nvar_old+1) = 'lat'
+    vardims(1,nvar_old+1) = 1
+    varnames(nvar_old+2) = 'lon'
+    vardims(1,nvar_old+2) = 1
     varnames(nvar) = 'PHIS_d'
     vardims(1,nvar) = 2
     varreqs = .true.
@@ -1053,12 +1058,16 @@ contains
 
     call nf_output_init_complete(ncdf)
 
-    ! Write physgrid fields.
-    do i = 1,nvar-1
+    ! Write physgrid topo fields.
+    do i = 1,nvar_old
        call nf_put_var_pio(ncdf(1), reshape(pg_fields(:,:,i), (/nf2*nelemd/)), &
             unused, unused, ncdf(1)%varlist(i))
     end do
-
+    ! Write lat-lon.
+    do i = nvar_old+1,nvar-1
+       call nf_put_var_pio(ncdf(1), reshape(latlon(:,:,i-nvar_old), (/nf2*nelemd/)), &
+            unused, unused, ncdf(1)%varlist(i))
+    end do
     ! Write GLL field PHIS_d.
     allocate(gll_unique(sum(elem%idxp%NumUniquePts)))
     k = 1
