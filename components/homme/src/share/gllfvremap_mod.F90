@@ -2035,7 +2035,7 @@ contains
 
   ! ----------------------------------------------------------------------
   ! Everything below is for internal unit testing of this module. For
-  ! integration-level testing, see gllfvremap_test_mod and
+  ! integration-level testing, see gllfvremap_util_mod and
   ! dcmip2016_test1_pg_forcing.
 
   subroutine set_ps_Q(elem, nets, nete, timeidx, qidx, nlev)

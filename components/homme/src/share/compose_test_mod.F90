@@ -80,7 +80,7 @@ contains
     use hybvcoord_mod, only: hvcoord_t
     use time_mod, only: nEndStep
     use control_mod, only: transport_alg
-    use gllfvremap_test_mod
+    use gllfvremap_util_mod, only: gfr_convert_topo
 
     type (parallel_t), intent(in) :: par
     type (domain1d_t), pointer, intent(in) :: dom_mt(:)
@@ -90,6 +90,10 @@ contains
     type (hybrid_t) :: hybrid
     type (derivative_t) :: deriv
     integer :: ithr, nets, nete
+
+    character(*), parameter :: &
+         intopofn = '/ascldap/users/ambradl/climate/physgrid/USGS-gtopo30_ne30np4_16xdel2-PFC-consistentSGH.nc', &
+         outtopoprefix = '/ascldap/users/ambradl/climate/physgrid/USGS-gtopo30_ne30np4pg2_16xdel2-PFC-consistentSGH_converted'
 
 #ifdef HOMME_ENABLE_COMPOSE
     if (transport_alg == 19) then
@@ -102,7 +106,7 @@ contains
 
     if (par%masterproc) print *, '~*~ Comprehensively test COMPOSE ~*~'
 
-    call gfr_convert_topo(par, elem)
+    call gfr_convert_topo(par, elem, 2, intopofn, outtopoprefix)
     return
 
     ! 1. Unit tests.
@@ -175,7 +179,7 @@ contains
     use perf_mod
     use sl_advection
     use gllfvremap_mod
-    use gllfvremap_test_mod
+    use gllfvremap_util_mod
 
     type (hybrid_t), intent(in) :: hybrid
     type (domain1d_t), pointer, intent(in) :: dom_mt(:)

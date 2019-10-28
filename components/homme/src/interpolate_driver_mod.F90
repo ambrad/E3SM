@@ -952,7 +952,7 @@ contains
   end subroutine pio_read_gll_topo_file
 
   subroutine pio_write_physgrid_topo_file(infilename, outfilenameprefix, elem, par, &
-       gll_fields, pg_fields, latlon, fieldnames, nphys)
+       gll_fields, pg_fields, latlon, fieldnames, nphys, history)
     ! gll_fields and fieldnames are as output from pio_read_gll_topo_file.
 
     use element_mod, only : element_t
@@ -974,7 +974,7 @@ contains
 
     integer, parameter :: nvar = 8, nvar_old = 5
 
-    character(len=*), intent(in) :: infilename, outfilenameprefix
+    character(len=*), intent(in) :: infilename, outfilenameprefix, history
     type(element_t), intent(in) :: elem(:)
     type(parallel_t), intent(in) :: par
     real(kind=real_kind), intent(in) :: &
@@ -1065,8 +1065,7 @@ contains
     end do
     call pio_closefile(infile%fileid)
     call free_infile(infile)
-    j = pio_put_att(ncdf(1)%fileid, pio_global, 'history', &
-         'Converted from '// trim(infilename) // ' by HOMME pio_write_physgrid_topo_file')
+    j = pio_put_att(ncdf(1)%fileid, pio_global, 'history', history)
     
     call nf_output_init_complete(ncdf)
 

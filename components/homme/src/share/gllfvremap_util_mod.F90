@@ -2,9 +2,7 @@
 #include "config.h"
 #endif
 
-module gllfvremap_test_mod
-  ! Test gllfvremap's main API.
-
+module gllfvremap_util_mod
   use hybrid_mod, only: hybrid_t
   use kinds, only: real_kind
   use dimensions_mod, only: nelemd, np, nlev, nlevp, qsize
@@ -33,7 +31,11 @@ module gllfvremap_test_mod
 
   type (PhysgridData_t), private :: pg_data
 
-  public :: gfr_check_api, gfr_convert_topo
+  public :: &
+       ! Test gllfvremap's main API.
+       gfr_check_api, &
+       ! Convert a topography file from pure GLL to physgrid format.
+       gfr_convert_topo
 
 contains
   
@@ -556,7 +558,14 @@ contains
     if (hybrid%ithr == 0) ftype = ftype_in
   end subroutine gfr_check_api
 
-  subroutine gfr_convert_topo(par, elem)
+  subroutine gfr_convert_topo(par, elem, nphys, intopofn, outtopoprefix)
+    ! Read a pure-GLL topography file. Remap all fields to physgrid. Write a new
+    ! topography file that contains physgrid data, plus ncol_d and PHIS_d that
+    ! are the original GLL data.
+    !   The resulting file has physgrid PHIS data that are consistent with
+    ! PHIS_d in the sense that an integral of either one over a finite volume
+    ! subcell has the same value.
+
     use common_io_mod, only : infilenames, varname_len
     use parallel_mod, only: parallel_t
     use gllfvremap_mod, only: gfr_init, gfr_finish, gfr_dyn_to_fv_phys_topo_data, gfr_f_get_latlon
@@ -565,17 +574,14 @@ contains
 
     type (parallel_t), intent(in) :: par
     type (element_t), intent(inout) :: elem(:)
-
-    character(*), parameter :: &
-         intopofn = '/ascldap/users/ambradl/climate/physgrid/USGS-gtopo30_ne30np4_16xdel2-PFC-consistentSGH.nc', &
-         outtopoprefix = '/ascldap/users/ambradl/climate/physgrid/USGS-gtopo30_ne30np4pg2_16xdel2-PFC-consistentSGH_converted'
+    integer, intent(in) :: nphys
+    character(*), intent(in) :: intopofn, outtopoprefix
 
     real(real_kind), allocatable :: gll_fields(:,:,:,:), pg_fields(:,:,:), latlon(:,:,:)
-    integer :: unit, nphys, nf2, vari, phisidx, ie, i, j, k
+    integer :: unit, nf2, vari, phisidx, ie, i, j, k
     logical :: square, augment
     character(len=varname_len) :: fieldnames(5)
 
-    nphys = 2
     nf2 = nphys*nphys
     call gfr_init(par, elem, nphys, check=.true.)
 
@@ -621,8 +627,9 @@ contains
 #endif
 
     call pio_write_physgrid_topo_file(intopofn, outtopoprefix, elem, par, &
-         gll_fields, pg_fields, latlon, fieldnames, nphys)
+         gll_fields, pg_fields, latlon, fieldnames, nphys, &
+         'Converted from '// trim(intopofn) // ' by HOMME gfr_convert_topo')
 
     deallocate(gll_fields, pg_fields, latlon)
   end subroutine gfr_convert_topo
-end module gllfvremap_test_mod
+end module gllfvremap_util_mod
