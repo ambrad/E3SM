@@ -561,6 +561,7 @@ contains
     use parallel_mod, only: parallel_t
     use gllfvremap_mod, only: gfr_init, gfr_finish, gfr_dyn_to_fv_phys_topo_data, gfr_f_get_latlon
     use interpolate_driver_mod, only: pio_read_gll_topo_file, pio_write_physgrid_topo_file
+    use physical_constants, only: dd_pi
 
     type (parallel_t), intent(in) :: par
     type (element_t), intent(inout) :: elem(:)
@@ -607,6 +608,8 @@ contains
           end do
        end do
     end do
+    ! Convert to degrees.
+    latlon = latlon*(180.0_real_kind/dd_pi)
 
     call gfr_finish()
 
