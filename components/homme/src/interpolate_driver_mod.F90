@@ -1001,6 +1001,7 @@ contains
     integer(kind=nfsizekind) :: unused(1)
     logical :: varreqs(nvar)
     real(kind=real_kind), allocatable :: gll_unique(:)
+    type(file_t) :: infile
 
     output_dir_save = output_dir
     output_prefix_save = output_prefix
@@ -1056,6 +1057,12 @@ contains
     vartypes = pio_double
     call nf_output_register_variables(ncdf, nvar, varnames, vardims, vartypes, varreqs)
 
+    ! Copy variable and global attributes.
+    call infile_initialize(elem, par, trim(infilename), varnames(1:nvar-1), infile)
+    call copy_attributes(infile, ncdf(1))
+    call pio_closefile(infile%fileid)
+    call free_infile(infile)
+
     call nf_output_init_complete(ncdf)
 
     ! Write physgrid topo fields.
@@ -1078,6 +1085,8 @@ contains
     end do
     call nf_put_var_pio(ncdf(1), gll_unique, unused, unused, ncdf(1)%varlist(nvar))
     deallocate(gll_unique)
+
+    call pio_closefile(ncdf(1)%fileid)
 
     output_prefix = output_prefix_save
     output_dir = output_dir_save
