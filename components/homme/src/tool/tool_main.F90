@@ -4,7 +4,7 @@
 
 ! This program is an offline tool. See the documentation in the following
 ! subroutines, implemented below; each is a tool:
-!     * topo_convert
+!   * topo_convert
 
 program tool_main
   use prim_driver_mod,  only: prim_init1, prim_init2, prim_finalize
@@ -62,7 +62,7 @@ program tool_main
 
   call prim_finalize()
 
-  call haltmp("exiting tool_main...")
+  call haltmp("exiting homme_tool")
 
 contains
 
