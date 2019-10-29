@@ -24,14 +24,10 @@ program tool_main
   type (TimeLevel_t)          :: tl             ! Main time level struct
   integer :: ithr, nets, nete, ierr
   
-  ! =====================================================
-  ! Begin executable code set distributed memory world...
-  ! =====================================================
   par = initmp()
 
-  ! =====================================
-  ! Set number of threads...
-  ! =====================================
+  call set_namelist_defaults()
+
   call prim_init1(elem, par, dom_mt, tl)
 
   ! Set up fake threading; this offline tool doesn't thread.
@@ -40,12 +36,9 @@ program tool_main
   nets = 1
   nete = nelemd
 
-  ! ==================================
-  ! Initialize the vertical coordinate  (cam initializes hvcoord externally)
-  ! ==================================
   hvcoord = hvcoord_init(vfile_mid, vfile_int, .true., hybrid%masterthread, ierr)
   if (ierr /= 0) then
-     call haltmp("error in hvcoord_init")
+     call hvcoord_substitute()
   end if
 
   call prim_init2(elem, hybrid, nets, nete, tl, hvcoord)
@@ -53,4 +46,24 @@ program tool_main
   call prim_finalize()
 
   call haltmp("exiting tool_main...")
+
+contains
+
+  subroutine set_namelist_defaults()
+    ! Set some values that are irrelevant to the tool but make the namelist
+    ! processor succeed.
+
+    use time_mod, only: tstep
+    use control_mod, only: topology, test_case, vanalytic
+
+    tstep = 1
+    topology = 'cube'
+    test_case = 'dcmip2012_test1_1'
+    vanalytic = 1
+  end subroutine set_namelist_defaults
+  
+  subroutine hvcoord_substitute()
+    print *, 'hvcoord sub'
+  end subroutine hvcoord_substitute
+
 end program tool_main
