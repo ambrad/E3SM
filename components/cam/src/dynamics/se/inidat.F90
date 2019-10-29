@@ -469,8 +469,13 @@ contains
          ! addition to PHIS.
          call infld(fieldname // '_d', ncid_topo, ncol_name,      &
             1, npsq, 1, nelemd, tmp(:,1,:), found, gridname=grid_name)
-         if (.not. found) then
+         if (found) then
+            if (masterproc) &
+                 write(iulog,*) 'reading GLL ', fieldname // '_d', ' on gridname ', grid_name
+         else
             ! Pure-FV topo file, so read FV PHIS and convert it to GLL.
+            if (masterproc) &
+                 write(iulog,*) 'reading FV ', fieldname, ' on gridname physgrid_d'
             read_pg_grid = .true.
             call infld(fieldname, ncid_topo, 'ncol', 1, nphys_sq, &
                  1, nelemd, phys_tmp, found, gridname='physgrid_d')
