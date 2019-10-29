@@ -941,6 +941,9 @@ contains
        ! End points are always 0.
        elem(ie)%derived%eta_dot_dpdn(:,:,1) = zero
        elem(ie)%derived%eta_dot_dpdn(:,:,nlevp) = zero
+
+       ! Limit dp to be > 0.
+       
     end do
   end subroutine reconstruct_eta_dot_dpdn
 
