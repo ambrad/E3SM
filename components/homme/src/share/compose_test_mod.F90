@@ -91,10 +91,6 @@ contains
     type (derivative_t) :: deriv
     integer :: ithr, nets, nete
 
-    character(*), parameter :: &
-         intopofn = '/ascldap/users/ambradl/climate/physgrid/USGS-gtopo30_ne30np4_16xdel2-PFC-consistentSGH.nc', &
-         outtopoprefix = '/ascldap/users/ambradl/climate/physgrid/USGS-gtopo30_ne30np4pg2_16xdel2-PFC-consistentSGH_converted'
-
 #ifdef HOMME_ENABLE_COMPOSE
     if (transport_alg == 19) then
        nEndStep = -1
@@ -105,9 +101,6 @@ contains
     call derivinit(deriv)
 
     if (par%masterproc) print *, '~*~ Comprehensively test COMPOSE ~*~'
-
-    call gfr_convert_topo(par, elem, 2, intopofn, outtopoprefix)
-    return
 
     ! 1. Unit tests.
     call compose_unittest()

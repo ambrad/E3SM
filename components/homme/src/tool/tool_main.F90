@@ -37,11 +37,11 @@ program tool_main
   nete = nelemd
 
   hvcoord = hvcoord_init(vfile_mid, vfile_int, .true., hybrid%masterthread, ierr)
-  if (ierr /= 0) then
-     call hvcoord_substitute()
-  end if
+  if (ierr /= 0) call haltmp("error in hvcoord_init")
 
   call prim_init2(elem, hybrid, nets, nete, tl, hvcoord)
+
+  call run(par, elem)
 
   call prim_finalize()
 
@@ -55,15 +55,26 @@ contains
 
     use time_mod, only: tstep
     use control_mod, only: topology, test_case, vanalytic
+    use dimensions_mod, only: qsize_d, qsize
 
     tstep = 1
     topology = 'cube'
     test_case = 'dcmip2012_test1_1'
     vanalytic = 1
+    qsize = qsize_d
   end subroutine set_namelist_defaults
-  
-  subroutine hvcoord_substitute()
-    print *, 'hvcoord sub'
-  end subroutine hvcoord_substitute
 
+  subroutine run(par, elem)
+    use gllfvremap_util_mod, only: gfr_convert_topo
+
+    type (parallel_t), intent(in) :: par
+    type (element_t), intent(inout) :: elem(:)
+
+    character(*), parameter :: &
+         intopofn = '/ascldap/users/ambradl/climate/physgrid/USGS-gtopo30_ne30np4_16xdel2-PFC-consistentSGH.nc', &
+         outtopoprefix = '/ascldap/users/ambradl/climate/physgrid/USGS-gtopo30_ne30np4pg2_16xdel2-PFC-consistentSGH_converted'
+
+    call gfr_convert_topo(par, elem, 2, intopofn, outtopoprefix)    
+  end subroutine run
+  
 end program tool_main
