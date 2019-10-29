@@ -566,7 +566,7 @@ contains
     ! PHIS_d in the sense that an integral of either one over a finite volume
     ! subcell has the same value.
 
-    use common_io_mod, only : infilenames, varname_len
+    use common_io_mod, only: infilenames, varname_len
     use parallel_mod, only: parallel_t
     use gllfvremap_mod, only: gfr_init, gfr_finish, gfr_dyn_to_fv_phys_topo_data, gfr_f_get_latlon
     use interpolate_driver_mod, only: pio_read_gll_topo_file, pio_write_physgrid_topo_file
@@ -618,13 +618,6 @@ contains
     latlon = latlon*(180.0_real_kind/dd_pi)
 
     call gfr_finish()
-
-#if 0
-    unit = 42
-    open(unit, file='topo.dat')
-    write(unit, '(es11.4)') pg_fields
-    close(unit)
-#endif
 
     call pio_write_physgrid_topo_file(intopofn, outtopoprefix, elem, par, &
          gll_fields, pg_fields, latlon, fieldnames, nphys, &
