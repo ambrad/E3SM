@@ -182,7 +182,7 @@ contains
     integer :: iorank, dimcnt
     character(len=80) :: name
 
-    if (par%masterproc) print *,'initailizing input file: ',trim(infilename)
+    if (par%masterproc) print *,'initializing input file: ',trim(infilename)
 
     call PIO_Init(par%rank, par%comm, num_io_procs, num_agg, &
          io_stride, pio_rearr_box, PIOFS)
