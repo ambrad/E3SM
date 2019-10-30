@@ -30,9 +30,11 @@ module sl_advection
        eps = epsilon(1.0_real_kind)
 
   type (ghostBuffer3D_t)   :: ghostbuf_tr
-  integer :: sl_mpi
   type (cartesian3D_t), allocatable :: dep_points_all(:,:,:,:) ! (np,np,nlev,nelemd)
   real(kind=real_kind), dimension(:,:,:,:,:), allocatable :: minq, maxq ! (np,np,nlev,qsize,nelemd)
+
+  ! For use in make_nonnegative.
+  real(kind=real_kind) :: dp_tol
 
   public :: Prim_Advec_Tracers_remap_ALE, sl_init1, sl_vertically_remap_tracers
 
@@ -74,11 +76,6 @@ contains
        if (par%masterproc .and. nu_q > 0 .and. semi_lagrange_hv_q > 0) &
             print *, 'COMPOSE> use HV; nu_q, all:', nu_q, semi_lagrange_hv_q
        nslots = nlev*qsize
-       sl_mpi = 0
-       call slmm_get_mpi_pattern(sl_mpi)
-       if (.not. slmm .or. cisl .or. sl_mpi == 0) then
-          call abortmp('Only slmm with SL MPI is supported')
-       end if
        call interpolate_tracers_init()
        ! Technically a memory leak, but the array persists for the entire
        ! run, so not a big deal for now.
@@ -104,6 +101,7 @@ contains
           call cedr_sl_init(np, nlev, qsize, qsize_d, timelevels, need_conservation)
        end if
        allocate(minq(np,np,nlev,qsize,size(elem)), maxq(np,np,nlev,qsize,size(elem)))
+       dp_tol = -one
     endif
     call t_stopf('sl_init1')
 #endif
@@ -149,14 +147,18 @@ contains
     ! dynamics' vertical remap time step < tracer time step).
     independent_time_steps = dt_remap_factor < dt_tracer_factor
 
-    call TimeLevel_Qdp( tl, dt_tracer_factor, n0_qdp, np1_qdp)
+    call TimeLevel_Qdp(tl, dt_tracer_factor, n0_qdp, np1_qdp)
 
     do ie = nets,nete
        elem(ie)%derived%vn0 = elem(ie)%state%v(:,:,:,:,tl%np1)
     end do
     if (independent_time_steps) then
        call t_startf('SLMM_reconstruct')
-       call reconstruct_eta_dot_dpdn(hybrid, elem, nets, nete, hvcoord, tl, dt, deriv)
+       if (dp_tol < zero) then
+          ! Thread write race condition; benign b/c written value is same in all threads.
+          call set_dp_tol(hvcoord, dp_tol)
+       end if
+       call reconstruct_eta_dot_dpdn(hybrid, elem, nets, nete, hvcoord, tl, dt, deriv, dp_tol)
        do ie = nets,nete
           ! use divdp for dp_star
           elem(ie)%derived%divdp = elem(ie)%state%dp3d(:,:,:,tl%np1) + &
@@ -820,7 +822,7 @@ contains
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   end subroutine biharmonic_wk_scalar
 
-  subroutine reconstruct_eta_dot_dpdn(hybrid, elem, nets, nete, hvcoord, tl, dt, deriv)
+  subroutine reconstruct_eta_dot_dpdn(hybrid, elem, nets, nete, hvcoord, tl, dt, deriv, dp_tol)
     ! Reconstruct the vertically Lagrangian levels, thus permitting
     ! the dynamics vertical remap time step to be shorter than the
     ! tracer time step. This routine provides the reconstruction via
@@ -834,7 +836,7 @@ contains
     integer, intent(in) :: nets, nete
     type (hvcoord_t), intent(in) :: hvcoord
     type (TimeLevel_t), intent(in) :: tl
-    real(kind=real_kind), intent(in) :: dt
+    real(kind=real_kind), intent(in) :: dt, dp_tol
     type (derivative_t), intent(in) :: deriv
 
     real(real_kind), dimension(np,np,nlevp) :: pref, p0r, p1r
@@ -943,7 +945,8 @@ contains
        elem(ie)%derived%eta_dot_dpdn(:,:,nlevp) = zero
 
        ! Limit dp to be > 0.
-       
+       call make_nonnegative(elem(ie)%state%dp3d(:,:,:,tl%np1), dt, dp_tol, &
+            elem(ie)%derived%eta_dot_dpdn)
     end do
   end subroutine reconstruct_eta_dot_dpdn
 
@@ -1010,6 +1013,46 @@ contains
     end do
   end subroutine calc_p
 
+  subroutine set_dp_tol(hvcoord, dp_tol)
+    ! Pad by an amount ~ smallest level to keep the computed dp > 0.
+
+    type (hvcoord_t), intent(in) :: hvcoord
+    real(kind=real_kind), intent(out) :: dp_tol
+
+    dp_tol = 10_real_kind*eps*minval(hvcoord%dp0)
+  end subroutine set_dp_tol
+
+  subroutine make_nonnegative(dpref, dt, dp_tol, eta_dot_dpdn)
+    ! Move mass around in a column as needed to make dp nonnegative.
+
+    real(kind=real_kind), intent(in) :: dpref(np,np,nlev), dt, dp_tol
+    real(kind=real_kind), intent(inout) :: eta_dot_dpdn(np,np,nlevp)
+
+    integer :: k, i, j
+    real(kind=real_kind) :: nmass, w(nlev), dp(nlev)
+
+    do j = 1,np
+       do i = 1,np
+          nmass = zero
+          do k = 1,nlev
+             dp(k) = dpref(i,j,k) + dt*(eta_dot_dpdn(i,j,k+1) - eta_dot_dpdn(i,j,k))
+             if (dp(k) < dp_tol) then
+                nmass = nmass + dp(k)
+                dp(k) = dp_tol
+                w(k) = zero
+             else
+                w(k) = dp(k) - dp_tol
+             end if
+          end do
+          if (nmass == zero) cycle
+          dp = dp + nmass*(w/sum(w))
+          do k = 1,nlev
+             eta_dot_dpdn(i,j,k+1) = eta_dot_dpdn(i,j,k) + (dp(k) - dpref(i,j,k))/dt
+          end do
+       end do
+    end do
+  end subroutine make_nonnegative
+
   subroutine sl_vertically_remap_tracers(hybrid, elem, nets, nete, tl, dt_q)
     ! Remap the tracers after a tracer time step, in the case that the
     ! vertical remap time step for dynamics is shorter than the tracer
@@ -1037,7 +1080,7 @@ contains
        ! levels.
        dp_star = elem(ie)%state%dp3d(:,:,:,tl%np1) + &
                  dt_q*(elem(ie)%derived%eta_dot_dpdn(:,:,2:    ) - &
-                       elem(ie)%derived%eta_dot_dpdn(:,:,1:nlev))
+                       elem(ie)%derived%eta_dot_dpdn(:,:, :nlev))
        if (minval(dp_star) < 0) then
           write(iulog,*) 'sl_vertically_remap_tracers> dp_star -ve: rank, ie', hybrid%par%rank, ie
           do j = 1,np
