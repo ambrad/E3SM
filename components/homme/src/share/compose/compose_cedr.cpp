@@ -5470,6 +5470,16 @@ make_tree_non_sgi (const cedr::mpi::Parallel::Ptr& p, const Int nelem,
   return tree;
 }
 
+qlt::tree::Node::Ptr
+make_tree (const cedr::mpi::Parallel::Ptr& p, const Int nelem,
+           const Int* gid_data, const Int* rank_data, const Int nsublev,
+           const bool use_sgi, const bool independent_time_steps) {
+  auto tree = use_sgi ?
+    make_tree_sgi    (p, nelem, gid_data, rank_data, nsublev) :
+    make_tree_non_sgi(p, nelem, gid_data, rank_data, nsublev);
+  return tree;
+}
+
 Int test_tree_maker () {
   Int nerr = 0;
   if (get_tree_height(3) != 3) ++nerr;
@@ -5541,8 +5551,8 @@ struct CDR {
       p(p_), inited_tracers_(false)
   {
     if (Alg::is_qlt(alg)) {
-      tree = use_sgi ? make_tree_sgi(p, ncell, gid_data, rank_data, nsublev) :
-        make_tree_non_sgi(p, ncell, gid_data, rank_data, nsublev);
+      tree = make_tree(p, ncell, gid_data, rank_data, nsublev, use_sgi,
+                       independent_time_steps);
       cedr::CDR::Options options;
       options.prefer_numerical_mass_conservation_to_numerical_bounds = true;
       cdr = std::make_shared<QLTT>(p, ncell*nsublev, tree, options);
