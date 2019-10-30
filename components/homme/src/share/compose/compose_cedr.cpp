@@ -5470,13 +5470,59 @@ make_tree_non_sgi (const cedr::mpi::Parallel::Ptr& p, const Int nelem,
   return tree;
 }
 
+void clone_and_renumber_leaves (const qlt::tree::Node::Ptr& node,
+                                const Int nelem, const Int supidx) {
+  for (Int k = 0; k < node->nkids; ++k) {
+    const auto& kid = node->kids[k];
+    if (kid->nkids)
+      clone_and_renumber_leaves(kid, nelem, supidx);
+    else {
+      const auto leaf = std::make_shared<qlt::tree::Node>(*kid);
+      leaf->cellidx = supidx*nelem + kid->cellidx;
+      node->kids[k] = leaf;
+    }
+  }
+}
+
+void attach_and_renumber_horizontal_trees (const qlt::tree::Node::Ptr& supnode,
+                                           const qlt::tree::Node::Ptr& htree,
+                                           const Int nelem) {
+  if (supnode->nkids) {
+    for (Int k = 0; k < supnode->nkids; ++k)
+      attach_and_renumber_horizontal_trees(supnode->kids[k], htree, nelem);
+  } else {
+    supnode->nkids = htree->nkids;
+    supnode->rank = htree->rank;
+    supnode->level = htree->level;
+    for (Int k = 0; k < htree->nkids; ++k) {
+      supnode->kids[k] = htree->kids[k];
+      supnode->kids[k]->parent = supnode.get();
+    }
+    clone_and_renumber_leaves(supnode, nelem, supnode->cellidx);
+  }
+}
+
+qlt::tree::Node::Ptr
+combine_superlevels(const cedr::mpi::Parallel::Ptr& p,
+                    const qlt::tree::Node::Ptr& horiz_tree, const Int nelem,
+                    const Int nsuplev) {
+  cedr_assert(horiz_tree->nkids == 2);
+  // In this tree, cellidx 0 is the top super level.
+  const auto suptree = qlt::tree::make_tree_over_1d_mesh(p, nsuplev);
+  attach_and_renumber_horizontal_trees(suptree, horiz_tree, nelem);
+  return suptree;
+}
+
 qlt::tree::Node::Ptr
 make_tree (const cedr::mpi::Parallel::Ptr& p, const Int nelem,
            const Int* gid_data, const Int* rank_data, const Int nsublev,
-           const bool use_sgi, const bool independent_time_steps) {
+           const bool use_sgi, const bool independent_time_steps,
+           const Int nsuplev) {
   auto tree = use_sgi ?
     make_tree_sgi    (p, nelem, gid_data, rank_data, nsublev) :
     make_tree_non_sgi(p, nelem, gid_data, rank_data, nsublev);
+  if (independent_time_steps)
+    ; //tree = combine_superlevels(p, tree, nelem, nsuplev);
   return tree;
 }
 
@@ -5552,7 +5598,7 @@ struct CDR {
   {
     if (Alg::is_qlt(alg)) {
       tree = make_tree(p, ncell, gid_data, rank_data, nsublev, use_sgi,
-                       independent_time_steps);
+                       independent_time_steps, nsuplev);
       cedr::CDR::Options options;
       options.prefer_numerical_mass_conservation_to_numerical_bounds = true;
       cdr = std::make_shared<QLTT>(p, ncell*nsublev, tree, options);
