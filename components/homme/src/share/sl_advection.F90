@@ -67,7 +67,8 @@ contains
          nu_q, semi_lagrange_hv_q
     use element_state,          only : timelevels
     use coordinate_systems_mod, only : cartesian3D_t, change_coordinates
-    use perf_mod, only : t_startf, t_stopf
+    use perf_mod, only: t_startf, t_stopf
+    use kinds, only: iulog
 
     type (parallel_t) :: par
     type (element_t) :: elem(:)
@@ -80,7 +81,7 @@ contains
     if (transport_alg > 0) then
        call sl_parse_transport_alg(transport_alg, slmm, cisl, qos, sl_test, independent_time_steps)
        if (par%masterproc .and. nu_q > 0 .and. semi_lagrange_hv_q > 0) &
-            print *, 'COMPOSE> use HV; nu_q, all:', nu_q, semi_lagrange_hv_q
+            write(iulog,*) 'COMPOSE> use HV; nu_q, all:', nu_q, semi_lagrange_hv_q
        nslots = nlev*qsize
        call interpolate_tracers_init()
        ! Technically a memory leak, but the array persists for the entire
@@ -831,6 +832,7 @@ contains
 
     use control_mod, only: dt_remap_factor
     use derivative_mod, only: derivative_t, gradient_sphere
+    use kinds, only: iulog
 
     type (hybrid_t), intent(in) :: hybrid
     type (element_t), intent(inout) :: elem(:)
@@ -843,6 +845,7 @@ contains
     real(real_kind), dimension(np,np,nlevp) :: pref, p0r, p1r
     real(real_kind), dimension(np,np) :: dps, ptp0, pth, v1h, v2h, divdp
     real(real_kind), dimension(np,np,2) :: grad, vdp
+    real(real_kind) :: dp_neg_min
     integer :: ie, i, j, k, k1, k2, d
 
     if (abs(hvcoord%hybi(1)) > 10*eps .or. hvcoord%hyai(nlevp) > 10*eps) then
@@ -946,8 +949,12 @@ contains
        elem(ie)%derived%eta_dot_dpdn(:,:,nlevp) = zero
 
        ! Limit dp to be > 0.
-       call make_positive(elem(ie)%state%dp3d(:,:,:,tl%np1), dt, dp_tol, &
+       dp_neg_min = make_positive(elem(ie)%state%dp3d(:,:,:,tl%np1), dt, dp_tol, &
             elem(ie)%derived%eta_dot_dpdn)
+       if (dp_neg_min < zero) then
+          write(iulog, '(a,i7,i7,es11.4)') 'sl_advection: make_positive (rank,ie) returned', &
+               hybrid%par%rank, ie, dp_neg_min
+       end if
     end do
   end subroutine reconstruct_eta_dot_dpdn
 
@@ -1023,15 +1030,16 @@ contains
     dp_tol = 10_real_kind*eps*minval(hvcoord%dp0)
   end subroutine set_dp_tol
 
-  subroutine make_positive(dpref, dt, dp_tol, eta_dot_dpdn)
+  function make_positive(dpref, dt, dp_tol, eta_dot_dpdn) result(dp_neg_min)
     ! Move mass around in a column as needed to make dp nonnegative.
 
     real(kind=real_kind), intent(in) :: dpref(np,np,nlev), dt, dp_tol
     real(kind=real_kind), intent(inout) :: eta_dot_dpdn(np,np,nlevp)
 
     integer :: k, i, j
-    real(kind=real_kind) :: nmass, w(nlev), dp(nlev)
+    real(kind=real_kind) :: nmass, w(nlev), dp(nlev), dp_neg_min
 
+    dp_neg_min = zero ! < 0 if the limiter has to adjust dp
     do j = 1,np
        do i = 1,np
           nmass = zero
@@ -1039,6 +1047,7 @@ contains
              dp(k) = dpref(i,j,k) + dt*(eta_dot_dpdn(i,j,k+1) - eta_dot_dpdn(i,j,k))
              if (dp(k) < dp_tol) then
                 nmass = nmass + dp(k)
+                dp_neg_min = min(dp_neg_min, dp(k))
                 dp(k) = dp_tol
                 w(k) = zero
              else
@@ -1052,7 +1061,7 @@ contains
           end do
        end do
     end do
-  end subroutine make_positive
+  end function make_positive
 
   subroutine sl_vertically_remap_tracers(hybrid, elem, nets, nete, tl, dt_q)
     ! Remap the tracers after a tracer time step, in the case that the
