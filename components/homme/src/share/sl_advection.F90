@@ -36,7 +36,7 @@ module sl_advection
   ! For use in make_positive.
   real(kind=real_kind) :: dp_tol
 
-  public :: Prim_Advec_Tracers_remap_ALE, sl_init1, sl_vertically_remap_tracers
+  public :: Prim_Advec_Tracers_remap_ALE, sl_init1, sl_vertically_remap_tracers, sl_unittest
 
   logical, parameter :: barrier = .false.
 
@@ -1102,5 +1102,59 @@ contains
        enddo
     end do
   end subroutine sl_vertically_remap_tracers
+
+  function test_lagrange() result(nerr)
+    use kinds, only: rt => real_kind
+
+    real(rt), parameter :: xs(3) = (/-one, zero, half/)
+    integer, parameter :: n = 3, ntrial = 10
+
+    real(rt) :: a, b, c, x, y1, y2, alpha, ys(3), xsi(np,np,n), ysi(np,np,n), &
+         xi(np,np), y2i(np,np)
+    integer :: i, j, trial, nerr
+
+    nerr = 0
+    a = -half; b = 0.3_rt; c = 1.7_rt
+
+    do i = 1,3
+       x = xs(i)
+       ys(i) = (a*x + b)*x + c
+    end do
+
+    do trial = 0,ntrial
+       alpha = real(trial,rt)/ntrial
+       x = (1-alpha)*(-2_rt) + alpha*2_rt
+       y1 = 2*a*x + b
+       do j = 1,np
+          do i = 1,np
+             xsi(i,j,:) = xs
+             ysi(i,j,:) = ys
+             xi(i,j) = x
+          end do
+       end do
+       call eval_lagrange_poly_derivative(n, xsi, ysi, xi, y2i)
+       if (abs(y2i(np,np) - y1) > 1d-14*abs(y1)) nerr = nerr + 1
+    end do
+  end function test_lagrange
+
+  function test_make_positive() result(nerr)
+    integer :: nerr
+
+    nerr = 0
+  end function test_make_positive
+
+  subroutine sl_unittest(par)
+    use kinds, only: iulog
+
+    type (parallel_t), intent(in) :: par
+
+    integer :: nerr
+
+    nerr = 0
+    nerr = nerr + test_lagrange()
+    nerr = nerr + test_make_positive()
+
+    if (nerr > 0 .and. par%masterproc) write(iulog,'(a,i2)'), 'sl_unittest FAIL', nerr
+  end subroutine sl_unittest
 
 end module sl_advection
