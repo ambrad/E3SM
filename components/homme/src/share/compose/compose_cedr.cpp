@@ -1,6 +1,10 @@
 // Uncomment this to look for MPI-related memory leaks.
 //#define COMPOSE_DEBUG_MPI
 
+#pragma message "DEFINES"
+#undef NDEBUG
+#define COMPOSE_DEBUG_MPI
+
 //>> cedr_kokkos.hpp
 // COMPOSE version 1.0: Copyright 2018 NTESS. This software is released under
 // the BSD license; see LICENSE in the top-level directory.
@@ -5476,6 +5480,7 @@ clone (const qlt::tree::Node::Ptr& in, const qlt::tree::Node* parent = nullptr) 
   out->parent = parent;
   for (Int k = 0; k < in->nkids; ++k)
     out->kids[k] = clone(in->kids[k], out.get());
+  return out;
 }
 
 void renumber_leaves (const qlt::tree::Node::Ptr& node, const Int nelem,
@@ -5509,13 +5514,14 @@ Int attach_and_renumber_horizontal_trees (const qlt::tree::Node::Ptr& supnode,
     }
     renumber_leaves(supnode, nelem, supnode->cellidx);
   }
+  return supnode->level;
 }
 
 qlt::tree::Node::Ptr
 combine_superlevels(const cedr::mpi::Parallel::Ptr& p,
                     const qlt::tree::Node::Ptr& horiz_tree, const Int nelem,
                     const Int nsuplev) {
-  cedr_assert(horiz_tree->nkids == 2);
+  cedr_assert(horiz_tree->nkids > 0);
   // In this tree, cellidx 0 is the top super level.
   const auto suptree = qlt::tree::make_tree_over_1d_mesh(p, nsuplev);
   suptree->level =
