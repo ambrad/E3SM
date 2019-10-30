@@ -33,7 +33,7 @@ module sl_advection
   type (cartesian3D_t), allocatable :: dep_points_all(:,:,:,:) ! (np,np,nlev,nelemd)
   real(kind=real_kind), dimension(:,:,:,:,:), allocatable :: minq, maxq ! (np,np,nlev,qsize,nelemd)
 
-  ! For use in make_nonnegative.
+  ! For use in make_positive.
   real(kind=real_kind) :: dp_tol
 
   public :: Prim_Advec_Tracers_remap_ALE, sl_init1, sl_vertically_remap_tracers
@@ -945,7 +945,7 @@ contains
        elem(ie)%derived%eta_dot_dpdn(:,:,nlevp) = zero
 
        ! Limit dp to be > 0.
-       call make_nonnegative(elem(ie)%state%dp3d(:,:,:,tl%np1), dt, dp_tol, &
+       call make_positive(elem(ie)%state%dp3d(:,:,:,tl%np1), dt, dp_tol, &
             elem(ie)%derived%eta_dot_dpdn)
     end do
   end subroutine reconstruct_eta_dot_dpdn
@@ -1022,7 +1022,7 @@ contains
     dp_tol = 10_real_kind*eps*minval(hvcoord%dp0)
   end subroutine set_dp_tol
 
-  subroutine make_nonnegative(dpref, dt, dp_tol, eta_dot_dpdn)
+  subroutine make_positive(dpref, dt, dp_tol, eta_dot_dpdn)
     ! Move mass around in a column as needed to make dp nonnegative.
 
     real(kind=real_kind), intent(in) :: dpref(np,np,nlev), dt, dp_tol
@@ -1051,7 +1051,7 @@ contains
           end do
        end do
     end do
-  end subroutine make_nonnegative
+  end subroutine make_positive
 
   subroutine sl_vertically_remap_tracers(hybrid, elem, nets, nete, tl, dt_q)
     ! Remap the tracers after a tracer time step, in the case that the
