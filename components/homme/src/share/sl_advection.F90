@@ -44,15 +44,21 @@ contains
 
   !=================================================================================================!
 
-  subroutine sl_parse_transport_alg(transport_alg, slmm, cisl, qos, sl_test)
+  subroutine sl_parse_transport_alg(transport_alg, slmm, cisl, qos, sl_test, independent_time_steps)
+    use control_mod, only: dt_remap_factor, dt_tracer_factor
+
     integer, intent(in) :: transport_alg
-    logical, intent(out) :: slmm, cisl, qos, sl_test
+    logical, intent(out) :: slmm, cisl, qos, sl_test, independent_time_steps
 
     slmm = transport_alg > 1
     cisl = transport_alg == 2 .or. transport_alg == 3 .or. transport_alg >= 20
     qos  = cisl .and. (transport_alg == 3 .or. transport_alg == 39)  
     sl_test = (transport_alg >= 17 .and. transport_alg <= 19) .or. &
          transport_alg == 29 .or. transport_alg == 39
+    ! Either dt_remap_factor = 0 (vertically Eulerian dynamics) or
+    ! dt_remap_factor < dt_tracer_factor (vertically Lagrangian
+    ! dynamics' vertical remap time step < tracer time step).
+    independent_time_steps = dt_remap_factor < dt_tracer_factor
   end subroutine sl_parse_transport_alg
 
   subroutine sl_init1(par, elem)
@@ -67,12 +73,12 @@ contains
     type (element_t) :: elem(:)
     type (cartesian3D_t) :: pinside
     integer :: nslots, ie, num_neighbors, need_conservation, i, j
-    logical :: slmm, cisl, qos, sl_test
+    logical :: slmm, cisl, qos, sl_test, independent_time_steps
 
 #ifdef HOMME_ENABLE_COMPOSE
     call t_startf('sl_init1')
     if (transport_alg > 0) then
-       call sl_parse_transport_alg(transport_alg, slmm, cisl, qos, sl_test)
+       call sl_parse_transport_alg(transport_alg, slmm, cisl, qos, sl_test, independent_time_steps)
        if (par%masterproc .and. nu_q > 0 .and. semi_lagrange_hv_q > 0) &
             print *, 'COMPOSE> use HV; nu_q, all:', nu_q, semi_lagrange_hv_q
        nslots = nlev*qsize
@@ -112,8 +118,8 @@ contains
     use dimensions_mod,         only : max_neigh_edges
     use bndry_mod,              only : ghost_exchangevfull
     use interpolate_mod,        only : interpolate_tracers, minmax_tracers
-    use control_mod,            only : dt_tracer_factor, dt_remap_factor, nu_q, &
-         transport_alg, semi_lagrange_hv_q, semi_lagrange_cdr_alg, semi_lagrange_cdr_check
+    use control_mod,            only : dt_tracer_factor, nu_q, transport_alg, semi_lagrange_hv_q, &
+         semi_lagrange_cdr_alg, semi_lagrange_cdr_check
     ! For DCMIP16 supercell test case.
     use control_mod,            only : dcmip16_mu_q
     use prim_advection_base,    only : advance_physical_vis
@@ -140,12 +146,7 @@ contains
     call t_barrierf('Prim_Advec_Tracers_remap_ALE', hybrid%par%comm)
     call t_startf('Prim_Advec_Tracers_remap_ALE')
 
-    call sl_parse_transport_alg(transport_alg, slmm, cisl, qos, sl_test)
-
-    ! Either dt_remap_factor = 0 (vertically Eulerian dynamics) or
-    ! dt_remap_factor < dt_tracer_factor (vertically Lagrangian
-    ! dynamics' vertical remap time step < tracer time step).
-    independent_time_steps = dt_remap_factor < dt_tracer_factor
+    call sl_parse_transport_alg(transport_alg, slmm, cisl, qos, sl_test, independent_time_steps)
 
     call TimeLevel_Qdp(tl, dt_tracer_factor, n0_qdp, np1_qdp)
 

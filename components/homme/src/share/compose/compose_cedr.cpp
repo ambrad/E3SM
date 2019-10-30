@@ -5532,7 +5532,7 @@ struct CDR {
   std::vector<Int> ie2lci; // Map Homme ie to CDR local cell index (lclcellidx).
 
   CDR (Int cdr_alg_, Int ngblcell_, Int nlclcell_, Int nlev_, bool use_sgi,
-       const Int* gid_data, const Int* rank_data,
+       bool independent_time_steps, const Int* gid_data, const Int* rank_data,
        const cedr::mpi::Parallel::Ptr& p_, Int fcomm)
     : alg(Alg::convert(cdr_alg_)), ncell(ngblcell_), nlclcell(nlclcell_),
       nlev(nlev_),
@@ -6077,10 +6077,12 @@ extern "C" void
 cedr_init_impl (const homme::Int fcomm, const homme::Int cdr_alg, const bool use_sgi,
                 const homme::Int* gid_data, const homme::Int* rank_data,
                 const homme::Int gbl_ncell, const homme::Int lcl_ncell,
-                const homme::Int nlev, const homme::Int, const homme::Int) {
+                const homme::Int nlev, const bool independent_time_steps,
+                const homme::Int, const homme::Int) {
   const auto p = cedr::mpi::make_parallel(MPI_Comm_f2c(fcomm));
   g_cdr = std::make_shared<homme::CDR>(
-    cdr_alg, gbl_ncell, lcl_ncell, nlev, use_sgi, gid_data, rank_data, p, fcomm);
+    cdr_alg, gbl_ncell, lcl_ncell, nlev, use_sgi, independent_time_steps,
+    gid_data, rank_data, p, fcomm);
 }
 
 extern "C" void cedr_query_bufsz (homme::Int* sendsz, homme::Int* recvsz) {
