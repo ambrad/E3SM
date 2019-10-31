@@ -5666,7 +5666,7 @@ struct CDR {
       tree = nullptr;
     } else if (Alg::is_caas(alg)) {
       cedr_throw_if(tree_over_super_levels,
-                    "COMPOSE::CEDR: CAAS does not support independent time steps.")
+                    "COMPOSE::CEDR: CAAS does not support independent time steps.");
       const auto caas = std::make_shared<CAAST>(
         p, nlclcell*nsublev, std::make_shared<ReproSumReducer>(fcomm));
       cdr = caas;
