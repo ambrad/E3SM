@@ -5549,6 +5549,7 @@ combine_superlevels(const qlt::tree::Node::Ptr& horiz_tree, const Int horiz_nlea
 
 void check_tree (const cedr::mpi::Parallel::Ptr& p, const qlt::tree::Node::Ptr& n,
                  const Int nleaf) {
+#ifndef NDEBUG
   cedr_assert(n->nkids >= -1 && n->nkids <= 2);
   cedr_assert(n->rank >= 0);
   cedr_assert(n->reserved == -1);
@@ -5562,25 +5563,23 @@ void check_tree (const cedr::mpi::Parallel::Ptr& p, const qlt::tree::Node::Ptr& 
     cedr_assert(n.get() == n->kids[k]->parent);
     check_tree(p, n->kids[k], nleaf);
   }
+#endif
 }
 
 qlt::tree::Node::Ptr
 make_tree (const cedr::mpi::Parallel::Ptr& p, const Int nelem,
            const Int* gid_data, const Int* rank_data, const Int nsublev,
-           const bool use_sgi, const bool independent_time_steps,
+           const bool use_sgi, const bool tree_over_super_levels,
            const Int nsuplev) {
   auto tree = use_sgi ?
     make_tree_sgi    (p, nelem, gid_data, rank_data, nsublev) :
     make_tree_non_sgi(p, nelem, gid_data, rank_data, nsublev);
   Int nleaf = nelem*nsublev;
-  if (independent_time_steps) {
-    const auto foo = combine_superlevels(tree, nleaf, nsuplev);
+  if (tree_over_super_levels) {
+    tree = combine_superlevels(tree, nleaf, nsuplev);
     nleaf *= nsuplev;
-    if (use_sgi) check_tree(p, foo, nleaf);
   }
-#ifndef NDEBUG
   if (use_sgi) check_tree(p, tree, nleaf);
-#endif
   return tree;
 }
 
@@ -5639,6 +5638,7 @@ struct CDR {
   
   const Alg::Enum alg;
   const Int ncell, nlclcell, nlev, nsublev, nsuplev;
+  const bool tree_over_super_levels;
   const cedr::mpi::Parallel::Ptr p;
   qlt::tree::Node::Ptr tree; // Don't need this except for unit testing.
   cedr::CDR::Ptr cdr;
@@ -5646,22 +5646,27 @@ struct CDR {
   std::vector<Int> ie2lci; // Map Homme ie to CDR local cell index (lclcellidx).
 
   CDR (Int cdr_alg_, Int ngblcell_, Int nlclcell_, Int nlev_, bool use_sgi,
-       bool independent_time_steps, const Int* gid_data, const Int* rank_data,
+       bool tree_over_super_levels_, const Int* gid_data, const Int* rank_data,
        const cedr::mpi::Parallel::Ptr& p_, Int fcomm)
-    : alg(Alg::convert(cdr_alg_)), ncell(ngblcell_), nlclcell(nlclcell_),
-      nlev(nlev_),
+    : alg(Alg::convert(cdr_alg_)),
+      ncell(ngblcell_), nlclcell(nlclcell_), nlev(nlev_),
       nsublev(Alg::is_suplev(alg) ? nsublev_per_suplev : 1),
       nsuplev((nlev + nsublev - 1) / nsublev),
-      p(p_), inited_tracers_(false)
+      p(p_), inited_tracers_(false),
+      tree_over_super_levels(false && tree_over_super_levels_)
   {
     if (Alg::is_qlt(alg)) {
       tree = make_tree(p, ncell, gid_data, rank_data, nsublev, use_sgi,
-                       independent_time_steps, nsuplev);
+                       tree_over_super_levels, nsuplev);
       cedr::CDR::Options options;
       options.prefer_numerical_mass_conservation_to_numerical_bounds = true;
-      cdr = std::make_shared<QLTT>(p, ncell*nsublev, tree, options);
+      Int nleaf = ncell*nsublev;
+      if (tree_over_super_levels) nleaf *= nsuplev;
+      cdr = std::make_shared<QLTT>(p, nleaf, tree, options);
       tree = nullptr;
     } else if (Alg::is_caas(alg)) {
+      cedr_throw_if(tree_over_super_levels,
+                    "COMPOSE::CEDR: CAAS does not support independent time steps.")
       const auto caas = std::make_shared<CAAST>(
         p, nlclcell*nsublev, std::make_shared<ReproSumReducer>(fcomm));
       cdr = caas;
