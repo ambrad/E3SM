@@ -5477,55 +5477,57 @@ make_tree_non_sgi (const cedr::mpi::Parallel::Ptr& p, const Int nelem,
 qlt::tree::Node::Ptr
 clone (const qlt::tree::Node::Ptr& in, const qlt::tree::Node* parent = nullptr) {
   const auto out = std::make_shared<qlt::tree::Node>(*in);
+  cedr_assert(out->rank == in->rank && out->level == in->level &&
+              out->nkids == in->nkids && out->cellidx == in->cellidx);
   out->parent = parent;
   for (Int k = 0; k < in->nkids; ++k)
     out->kids[k] = clone(in->kids[k], out.get());
   return out;
 }
 
-void renumber_leaves (const qlt::tree::Node::Ptr& node, const Int nelem,
+void renumber_leaves (const qlt::tree::Node::Ptr& node, const Int horiz_nleaf,
                       const Int supidx) {
   if (node->nkids) {
     for (Int k = 0; k < node->nkids; ++k)
-      renumber_leaves(node->kids[k], nelem, supidx);
+      renumber_leaves(node->kids[k], horiz_nleaf, supidx);
   } else {
-    if (node->cellidx != -1) node->cellidx = supidx*nelem + node->cellidx;
+    if (node->cellidx != -1)
+      node->cellidx = supidx*horiz_nleaf + node->cellidx;
   }
 }
 
-Int attach_and_renumber_horizontal_trees (const qlt::tree::Node::Ptr& supnode,
-                                          const qlt::tree::Node::Ptr& htree,
-                                          const Int nelem) {
-  if (supnode->nkids) {
-    Int level = -1;
-    for (Int k = 0; k < supnode->nkids; ++k)
-      level = std::max(
-        level,
-        attach_and_renumber_horizontal_trees(supnode->kids[k], htree, nelem));
-    supnode->level = 1 + level;
-  } else {
-    const auto chtree = clone(htree);
-    supnode->nkids = chtree->nkids;
-    supnode->rank = chtree->rank;
-    supnode->level = chtree->level;
-    for (Int k = 0; k < chtree->nkids; ++k) {
-      supnode->kids[k] = chtree->kids[k];
-      supnode->kids[k]->parent = supnode.get();
+void attach_and_renumber_horizontal_trees (const qlt::tree::Node::Ptr& supnode,
+                                           const qlt::tree::Node::Ptr& htree,
+                                           const Int horiz_nleaf) {
+  Int level = -1, rank;
+  for (Int k = 0; k < supnode->nkids; ++k) {
+    auto& kid = supnode->kids[k];
+    if (kid->nkids) {
+      attach_and_renumber_horizontal_trees(kid, htree, horiz_nleaf);
+    } else {
+      const auto supidx = kid->cellidx;
+      supnode->kids[k] = clone(htree);
+      kid = supnode->kids[k];
+      kid->parent = supnode.get();
+      kid->cellidx = -1;
+      renumber_leaves(kid, horiz_nleaf, supidx);
     }
-    renumber_leaves(supnode, nelem, supnode->cellidx);
+    rank = kid->rank;
+    level = std::max(level, kid->level);
   }
-  return supnode->level;
+  if (level != -1) ++level;
+  supnode->level = level;
+  supnode->rank = rank;
 }
 
 qlt::tree::Node::Ptr
 combine_superlevels(const cedr::mpi::Parallel::Ptr& p,
-                    const qlt::tree::Node::Ptr& horiz_tree, const Int nelem,
+                    const qlt::tree::Node::Ptr& horiz_tree, const Int horiz_nleaf,
                     const Int nsuplev) {
   cedr_assert(horiz_tree->nkids > 0);
   // In this tree, cellidx 0 is the top super level.
   const auto suptree = qlt::tree::make_tree_over_1d_mesh(p, nsuplev);
-  suptree->level =
-    1 + attach_and_renumber_horizontal_trees(suptree, horiz_tree, nelem);
+  attach_and_renumber_horizontal_trees(suptree, horiz_tree, horiz_nleaf);
   return suptree;
 }
 
@@ -5556,9 +5558,9 @@ make_tree (const cedr::mpi::Parallel::Ptr& p, const Int nelem,
     make_tree_non_sgi(p, nelem, gid_data, rank_data, nsublev);
   Int nleaf = nelem*nsublev;
   if (independent_time_steps) {
-    const auto foo = combine_superlevels(p, tree, nelem, nsuplev);
+    const auto foo = combine_superlevels(p, tree, nleaf, nsuplev);
     nleaf *= nsuplev;
-    //if (use_sgi) check_tree(p, foo, nleaf);
+    if (use_sgi) check_tree(p, foo, nleaf);
   }
 #ifndef NDEBUG
   if (use_sgi) check_tree(p, tree, nleaf);
