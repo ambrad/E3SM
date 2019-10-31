@@ -5680,7 +5680,8 @@ struct CDR {
 
   void init_tracers (const Int qsize, const bool need_conservation) {
     typedef cedr::ProblemType PT;
-    for (Int ti = 0, nt = nsuplev*qsize; ti < nt; ++ti)
+    const Int nt = tree_over_super_levels ? qsize : nsuplev*qsize;
+    for (Int ti = 0; ti < nt; ++ti)
       cdr->declare_tracer(PT::shapepreserve |
                           (need_conservation ? PT::conserve : 0), 0);
     cdr->end_tracer_declarations();
@@ -5820,7 +5821,8 @@ static void run_cdr (CDR& q) {
 void run (CDR& cdr, const Data& d, const Real* q_min_r, const Real* q_max_r,
           const Int nets, const Int nete) {
   static constexpr Int max_np = 4;
-  const Int np = d.np, nlev = d.nlev, qsize = d.qsize;
+  const Int np = d.np, nlev = d.nlev, qsize = d.qsize,
+    nlevwrem = cdr.nsuplev*cdr.nsublev;
   cedr_assert(np <= max_np);
 
   FA5<const Real>
@@ -5838,10 +5840,13 @@ void run (CDR& cdr, const Data& d, const Real* q_min_r, const Real* q_max_r,
     for (Int spli = 0; spli < cdr.nsuplev; ++spli) {
       const Int k0 = cdr.nsublev*spli;
       for (Int q = 0; q < qsize; ++q) {
-        const Int ti = spli*qsize + q;
+        const Int ti = cdr.tree_over_super_levels ? q : spli*qsize + q;
         for (Int sbli = 0; sbli < cdr.nsublev; ++sbli) {
-          const Int lci = cdr.ie2lci[cdr.nsublev*ie + sbli];
-          const Int k = k0 + sbli;
+          const auto k = k0 + sbli;
+          const auto ie_idx = cdr.tree_over_super_levels ?
+            nlevwrem*ie + k :
+            cdr.nsublev*ie + sbli;
+          const auto lci = cdr.ie2lci[ie_idx];
           if (k >= nlev) {
             cdr.cdr->set_Qm(lci, ti, 0, 0, 0, 0);
             if (ti == 0) cdr.cdr->set_rhom(lci, 0, 0);
@@ -5903,7 +5908,8 @@ void run_local (CDR& cdr, const Data& d, const Real* q_min_r, const Real* q_max_
                 const Int nets, const Int nete, const bool scalar_bounds,
                 const Int limiter_option) {
   static constexpr Int max_np = 4, max_np2 = max_np*max_np;
-  const Int np = d.np, np2 = np*np, nlev = d.nlev, qsize = d.qsize;
+  const Int np = d.np, np2 = np*np, nlev = d.nlev, qsize = d.qsize,
+    nlevwrem = cdr.nsuplev*cdr.nsublev;;
   cedr_assert(np <= max_np);
 
   FA5<const Real>
@@ -5921,11 +5927,14 @@ void run_local (CDR& cdr, const Data& d, const Real* q_min_r, const Real* q_max_
     for (Int spli = 0; spli < cdr.nsuplev; ++spli) {
       const Int k0 = cdr.nsublev*spli;
       for (Int q = 0; q < qsize; ++q) {
-        const Int ti = spli*qsize + q;
+        const Int ti = cdr.tree_over_super_levels ? q : spli*qsize + q;
         for (Int sbli = 0; sbli < cdr.nsublev; ++sbli) {
           const Int k = k0 + sbli;
-          const Int lci = cdr.ie2lci[cdr.nsublev*ie + sbli];
           if (k >= nlev) break;
+          const auto ie_idx = cdr.tree_over_super_levels ?
+            nlevwrem*ie + k :
+            cdr.nsublev*ie + sbli;
+          const auto lci = cdr.ie2lci[ie_idx];
           Real wa[max_np2], qlo[max_np2], qhi[max_np2], y[max_np2], x[max_np2];
           Real rhom = 0;
           for (Int j = 0, cnt = 0; j < np; ++j)
