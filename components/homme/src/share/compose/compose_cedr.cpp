@@ -1,10 +1,6 @@
 // Uncomment this to look for MPI-related memory leaks.
 //#define COMPOSE_DEBUG_MPI
 
-#pragma message "DEFINES"
-#undef NDEBUG
-#define COMPOSE_DEBUG_MPI
-
 //>> cedr_kokkos.hpp
 // COMPOSE version 1.0: Copyright 2018 NTESS. This software is released under
 // the BSD license; see LICENSE in the top-level directory.
