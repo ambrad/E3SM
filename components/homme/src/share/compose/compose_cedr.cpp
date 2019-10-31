@@ -5491,8 +5491,10 @@ void renumber_leaves (const qlt::tree::Node::Ptr& node, const Int horiz_nleaf,
     for (Int k = 0; k < node->nkids; ++k)
       renumber_leaves(node->kids[k], horiz_nleaf, supidx);
   } else {
-    if (node->cellidx != -1)
-      node->cellidx = supidx*horiz_nleaf + node->cellidx;
+    if (node->cellidx != -1) {
+      cedr_assert(node->cellidx >= 0 && node->cellidx < horiz_nleaf);
+      node->cellidx += horiz_nleaf*supidx;
+    }
   }
 }
 
@@ -5653,7 +5655,7 @@ struct CDR {
       nsublev(Alg::is_suplev(alg) ? nsublev_per_suplev : 1),
       nsuplev((nlev + nsublev - 1) / nsublev),
       p(p_), inited_tracers_(false),
-      tree_over_super_levels(false && tree_over_super_levels_)
+      tree_over_super_levels(tree_over_super_levels_)
   {
     if (Alg::is_qlt(alg)) {
       tree = make_tree(p, ncell, gid_data, rank_data, nsublev, use_sgi,
@@ -5700,14 +5702,28 @@ private:
 void set_ie2gci (CDR& q, const Int ie, const Int gci) { q.ie2gci[ie] = gci; }
 
 void init_ie2lci (CDR& q) {
-  q.ie2lci.resize(q.nsublev*q.ie2gci.size());
+  Int nleaf = q.nsublev*q.ie2gci.size();
+  if (q.tree_over_super_levels) nleaf *= q.nsuplev;
+  q.ie2lci.resize(nleaf);
   if (CDR::Alg::is_qlt(q.alg)) {
     auto qlt = std::static_pointer_cast<CDR::QLTT>(q.cdr);
-    for (size_t ie = 0; ie < q.ie2gci.size(); ++ie) {
-      for (Int sbli = 0; sbli < q.nsublev; ++sbli)
-        q.ie2lci[q.nsublev*ie + sbli] = qlt->gci2lci(q.nsublev*q.ie2gci[ie] + sbli);
+    if (q.tree_over_super_levels) {
+      const auto nlev = q.nsuplev*q.nsublev;
+      for (size_t ie = 0; ie < q.ie2gci.size(); ++ie)
+        for (Int spli = 0; spli < q.nsuplev; ++spli)
+          for (Int sbli = 0; sbli < q.nsublev; ++sbli)
+            //       local indexing is fastest over the whole column
+            q.ie2lci[nlev*ie + q.nsublev*spli + sbli] =
+              //           but global indexing is organized according to the tree
+              qlt->gci2lci(q.nsublev*(q.ncell*spli + q.ie2gci[ie]) + sbli);
+    } else {
+      for (size_t ie = 0; ie < q.ie2gci.size(); ++ie)
+        for (Int sbli = 0; sbli < q.nsublev; ++sbli)
+          q.ie2lci[q.nsublev*ie + sbli] =
+            qlt->gci2lci(q.nsublev*q.ie2gci[ie] + sbli);
     }
   } else {
+    cedr_assert( ! q.tree_over_super_levels);
     for (size_t ie = 0; ie < q.ie2gci.size(); ++ie)
       for (Int sbli = 0; sbli < q.nsublev; ++sbli) {
         const Int id = q.nsublev*ie + sbli;
