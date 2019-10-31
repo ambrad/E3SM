@@ -5349,10 +5349,10 @@ void renumber (const Int* sc2gci, const Int* sc2rank,
 
 // Build a subtree over [0, nsublev).
 void add_sub_levels (const qlt::tree::Node::Ptr& node, const Int nsublev,
-                     const Int gci, const Int rank, const bool calc_level,
-                     const Int slb, const Int sle) {
+                     const Int gci, const Int my_rank, const Int rank,
+                     const bool calc_level, const Int slb, const Int sle) {
   if (slb+1 == sle) {
-    node->cellidx = nsublev*gci + slb;
+    node->cellidx = rank == my_rank ? nsublev*gci + slb : -1;
     if (calc_level) node->level = 0;
   } else {
     node->nkids = 2;
@@ -5363,8 +5363,8 @@ void add_sub_levels (const qlt::tree::Node::Ptr& node, const Int nsublev,
       node->kids[k] = kid;
     }
     const Int mid = slb + (sle - slb)/2;
-    add_sub_levels(node->kids[0], nsublev, gci, rank, calc_level, slb, mid);
-    add_sub_levels(node->kids[1], nsublev, gci, rank, calc_level, mid, sle);
+    add_sub_levels(node->kids[0], nsublev, gci, my_rank, rank, calc_level, slb, mid);
+    add_sub_levels(node->kids[1], nsublev, gci, my_rank, rank, calc_level, mid, sle);
     if (calc_level)
       node->level = 1 + std::max(node->kids[0]->level, node->kids[1]->level);
   }
@@ -5380,7 +5380,7 @@ void add_sub_levels (const Int my_rank, const qlt::tree::Node::Ptr& node,
   } else {
     const Int gci = node->cellidx;
     const Int rank = node->rank;
-    add_sub_levels(node, nsublev, gci, rank, level_offset, 0, nsublev);
+    add_sub_levels(node, nsublev, gci, my_rank, rank, level_offset, 0, nsublev);
     // Level already calculated if requested.
     cedr_assert(level_offset == 0 || node->level == level_offset);
   }
@@ -5398,11 +5398,12 @@ qlt::tree::Node::Ptr
 make_my_tree_part (const qlt::oned::Mesh& m, const Int cs, const Int ce,
                    const qlt::tree::Node* parent,
                    const Int& nrank, const Int* rank2sfc) {
+  const auto my_rank = m.parallel()->rank();
   const Int cn = ce - cs, cn0 = cn/2;
   qlt::tree::Node::Ptr n = std::make_shared<qlt::tree::Node>();
   n->parent = parent;
-  n->cellidx = cs;
   n->rank = rank2sfc_search(rank2sfc, nrank, cs);
+  n->cellidx = n->rank == my_rank ? cs : -1;
   cedr_assert(n->rank >= 0 && n->rank < nrank);
   if (cn == 1) {
     n->nkids = 0;
@@ -5412,7 +5413,6 @@ make_my_tree_part (const qlt::oned::Mesh& m, const Int cs, const Int ce,
   const auto k1 = make_my_tree_part(m, cs, cs + cn0, n.get(), nrank, rank2sfc);
   const auto k2 = make_my_tree_part(m, cs + cn0, ce, n.get(), nrank, rank2sfc);
   n->level = 1 + std::max(k1->level, k2->level);
-  const auto my_rank = m.parallel()->rank();
   if (n->rank == my_rank) {
     // Need to know both kids for comm.
     n->nkids = 2;
@@ -5489,7 +5489,7 @@ void renumber_leaves (const qlt::tree::Node::Ptr& node, const Int nelem,
     for (Int k = 0; k < node->nkids; ++k)
       renumber_leaves(node->kids[k], nelem, supidx);
   } else {
-    node->cellidx = supidx*nelem + node->cellidx;
+    if (node->cellidx != -1) node->cellidx = supidx*nelem + node->cellidx;
   }
 }
 
@@ -5529,6 +5529,23 @@ combine_superlevels(const cedr::mpi::Parallel::Ptr& p,
   return suptree;
 }
 
+void check_tree (const cedr::mpi::Parallel::Ptr& p, const qlt::tree::Node::Ptr& n,
+                 const Int nleaf) {
+  cedr_assert(n->nkids >= -1 && n->nkids <= 2);
+  cedr_assert(n->rank >= 0);
+  cedr_assert(n->reserved == -1);
+  if (n->nkids == 2)
+    cedr_assert(n->level == 1 + std::max(n->kids[0]->level, n->kids[1]->level));
+  if (n->nkids == 1) cedr_assert(n->level >= 1 + n->kids[0]->level);
+  if (n->nkids == 0) cedr_assert(n->level == 0);
+  if (n->rank != p->rank()) cedr_assert(n->cellidx == -1);
+  else cedr_assert(n->cellidx < nleaf);
+  for (Int k = 0; k < n->nkids; ++k) {
+    cedr_assert(n.get() == n->kids[k]->parent);
+    check_tree(p, n->kids[k], nleaf);
+  }
+}
+
 qlt::tree::Node::Ptr
 make_tree (const cedr::mpi::Parallel::Ptr& p, const Int nelem,
            const Int* gid_data, const Int* rank_data, const Int nsublev,
@@ -5537,8 +5554,15 @@ make_tree (const cedr::mpi::Parallel::Ptr& p, const Int nelem,
   auto tree = use_sgi ?
     make_tree_sgi    (p, nelem, gid_data, rank_data, nsublev) :
     make_tree_non_sgi(p, nelem, gid_data, rank_data, nsublev);
-  if (independent_time_steps)
-    /*tree = */combine_superlevels(p, tree, nelem, nsuplev);
+  Int nleaf = nelem*nsublev;
+  if (independent_time_steps) {
+    const auto foo = combine_superlevels(p, tree, nelem, nsuplev);
+    nleaf *= nsuplev;
+    //if (use_sgi) check_tree(p, foo, nleaf);
+  }
+#ifndef NDEBUG
+  if (use_sgi) check_tree(p, tree, nleaf);
+#endif
   return tree;
 }
 
