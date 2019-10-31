@@ -5521,12 +5521,28 @@ void attach_and_renumber_horizontal_trees (const qlt::tree::Node::Ptr& supnode,
 }
 
 qlt::tree::Node::Ptr
-combine_superlevels(const cedr::mpi::Parallel::Ptr& p,
-                    const qlt::tree::Node::Ptr& horiz_tree, const Int horiz_nleaf,
+make_tree_over_index_range (const Int cs, const Int ce,
+                            const qlt::tree::Node* parent = nullptr) {
+  const Int cn = ce - cs, cn0 = cn/2;
+  const auto n = std::make_shared<qlt::tree::Node>();
+  n->parent = parent;
+  if (cn == 1) {
+    n->nkids = 0;
+    n->cellidx = cs;
+  } else {
+    n->nkids = 2;
+    n->kids[0] = make_tree_over_index_range(cs, cs + cn0, n.get());
+    n->kids[1] = make_tree_over_index_range(cs + cn0, ce, n.get());
+  }
+  return n;
+}
+
+qlt::tree::Node::Ptr
+combine_superlevels(const qlt::tree::Node::Ptr& horiz_tree, const Int horiz_nleaf,
                     const Int nsuplev) {
   cedr_assert(horiz_tree->nkids > 0);
   // In this tree, cellidx 0 is the top super level.
-  const auto suptree = qlt::tree::make_tree_over_1d_mesh(p, nsuplev);
+  const auto suptree = make_tree_over_index_range(0, nsuplev);
   attach_and_renumber_horizontal_trees(suptree, horiz_tree, horiz_nleaf);
   return suptree;
 }
@@ -5558,7 +5574,7 @@ make_tree (const cedr::mpi::Parallel::Ptr& p, const Int nelem,
     make_tree_non_sgi(p, nelem, gid_data, rank_data, nsublev);
   Int nleaf = nelem*nsublev;
   if (independent_time_steps) {
-    const auto foo = combine_superlevels(p, tree, nleaf, nsuplev);
+    const auto foo = combine_superlevels(tree, nleaf, nsuplev);
     nleaf *= nsuplev;
     if (use_sgi) check_tree(p, foo, nleaf);
   }
