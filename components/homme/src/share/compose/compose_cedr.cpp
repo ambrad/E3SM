@@ -6034,14 +6034,15 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
             const Int nets, const Int nete) {
   using cedr::mpi::reduce;
 
-  const Int np = d.np, nlev = d.nlev, nsuplev = cdr.nsuplev, qsize = d.qsize;
+  const Int np = d.np, nlev = d.nlev, nsuplev = cdr.nsuplev, qsize = d.qsize,
+    nprob = cdr.cdr_over_super_levels ? 1 : nsuplev;
 
   Kokkos::View<Real**, Kokkos::Serial>
-    mass_p("mass_p", nsuplev, qsize), mass_c("mass_c", nsuplev, qsize),
-    mass_lo("mass_lo", nsuplev, qsize), mass_hi("mass_hi", nsuplev, qsize),
-    q_lo("q_lo", nsuplev, qsize), q_hi("q_hi", nsuplev, qsize),
-    q_min_l("q_min_l", nsuplev, qsize), q_max_l("q_max_l", nsuplev, qsize),
-    qd_lo("qd_lo", nsuplev, qsize), qd_hi("qd_hi", nsuplev, qsize);
+    mass_p("mass_p", nprob, qsize), mass_c("mass_c", nprob, qsize),
+    mass_lo("mass_lo", nprob, qsize), mass_hi("mass_hi", nprob, qsize),
+    q_lo("q_lo", nprob, qsize), q_hi("q_hi", nprob, qsize),
+    q_min_l("q_min_l", nprob, qsize), q_max_l("q_max_l", nprob, qsize),
+    qd_lo("qd_lo", nprob, qsize), qd_hi("qd_hi", nprob, qsize);
   FA5<const Real>
     q_min(q_min_r, np, np, nlev, qsize, nete+1),
     q_max(q_max_r, np, np, nlev, qsize, nete+1);
@@ -6052,6 +6053,8 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
   Kokkos::deep_copy(qd_lo, 0);
   Kokkos::deep_copy(qd_hi, 0);
 
+  Int iprob = 0;
+
   bool fp_issue = false; // Limit output once the first issue is seen.
   for (Int ie = nets; ie <= nete; ++ie) {
     FA2<const Real> spheremp(d.spheremp[ie], np, np);
@@ -6059,6 +6062,7 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
     FA4<const Real> dp3d_c(d.dp3d_c[ie], np, np, nlev, d.timelevels);
     FA4<const Real> q_c(d.q_c[ie], np, np, nlev, d.qsize_d);
     for (Int spli = 0; spli < nsuplev; ++spli) {
+      if (nprob > 1) iprob = spli;
       for (Int k = spli*cdr.nsublev; k < (spli+1)*cdr.nsublev; ++k) {
         if (k >= nlev) continue;
         if ( ! fp_issue) {
@@ -6095,22 +6099,22 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
                 { pr("q Inf:" pu(q) pu(k) pu(i) pu(j)); fp_issue = true; }
               }
               // Mass conservation.
-              mass_p(spli,q) += qdp_pc(i,j,k,q,d.n0_qdp) * spheremp(i,j);
-              mass_c(spli,q) += qdp_pc(i,j,k,q,d.n1_qdp) * spheremp(i,j);
+              mass_p(iprob,q) += qdp_pc(i,j,k,q,d.n0_qdp) * spheremp(i,j);
+              mass_c(iprob,q) += qdp_pc(i,j,k,q,d.n1_qdp) * spheremp(i,j);
               // Local bound constraints w.r.t. cell-local extrema.
               if (q_c(i,j,k,q) < qlo_s)
-                qd_lo(spli,q) = std::max(qd_lo(spli,q), qlo_s - q_c(i,j,k,q));
+                qd_lo(iprob,q) = std::max(qd_lo(iprob,q), qlo_s - q_c(i,j,k,q));
               if (q_c(i,j,k,q) > qhi_s)
-                qd_hi(spli,q) = std::max(qd_hi(spli,q), q_c(i,j,k,q) - qhi_s);
+                qd_hi(iprob,q) = std::max(qd_hi(iprob,q), q_c(i,j,k,q) - qhi_s);
               // Safety problem bound constraints.
-              mass_lo(spli,q) += (q_min(i,j,k,q,ie) * dp3d_c(i,j,k,d.tl_np1) *
+              mass_lo(iprob,q) += (q_min(i,j,k,q,ie) * dp3d_c(i,j,k,d.tl_np1) *
                                   spheremp(i,j));
-              mass_hi(spli,q) += (q_max(i,j,k,q,ie) * dp3d_c(i,j,k,d.tl_np1) *
+              mass_hi(iprob,q) += (q_max(i,j,k,q,ie) * dp3d_c(i,j,k,d.tl_np1) *
                                   spheremp(i,j));
-              q_lo(spli,q) = std::min(q_lo(spli,q), q_min(i,j,k,q,ie));
-              q_hi(spli,q) = std::max(q_hi(spli,q), q_max(i,j,k,q,ie));
-              q_min_l(spli,q) = std::min(q_min_l(spli,q), q_min(i,j,k,q,ie));
-              q_max_l(spli,q) = std::max(q_max_l(spli,q), q_max(i,j,k,q,ie));
+              q_lo(iprob,q) = std::min(q_lo(iprob,q), q_min(i,j,k,q,ie));
+              q_hi(iprob,q) = std::max(q_hi(iprob,q), q_max(i,j,k,q,ie));
+              q_min_l(iprob,q) = std::min(q_min_l(iprob,q), q_min(i,j,k,q,ie));
+              q_max_l(iprob,q) = std::max(q_max_l(iprob,q), q_max(i,j,k,q,ie));
             }
         }
       }
@@ -6123,7 +6127,7 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
 #endif
   {
     if ( ! d.check)
-      d.check = std::make_shared<Data::Check>(nsuplev, qsize);
+      d.check = std::make_shared<Data::Check>(nprob, qsize);
     auto& c = *d.check;
     Kokkos::deep_copy(c.mass_p, 0);
     Kokkos::deep_copy(c.mass_c, 0);
@@ -6143,19 +6147,21 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
 #endif
   {
     auto& c = *d.check;
-    for (Int spli = 0; spli < nsuplev; ++spli)
+    for (Int spli = 0; spli < nprob; ++spli) {
+      if (nprob > 1) iprob = spli;
       for (Int q = 0; q < qsize; ++q) {
-        c.mass_p(spli,q) += mass_p(spli,q);
-        c.mass_c(spli,q) += mass_c(spli,q);
-        c.qd_lo(spli,q) = std::max(c.qd_lo(spli,q), qd_lo(spli,q));
-        c.qd_hi(spli,q) = std::max(c.qd_hi(spli,q), qd_hi(spli,q));
-        c.mass_lo(spli,q) += mass_lo(spli,q);
-        c.mass_hi(spli,q) += mass_hi(spli,q);
-        c.q_lo(spli,q) = std::min(c.q_lo(spli,q), q_lo(spli,q));
-        c.q_hi(spli,q) = std::max(c.q_hi(spli,q), q_hi(spli,q));
-        c.q_min_l(spli,q) = std::min(c.q_min_l(spli,q), q_min_l(spli,q));
-        c.q_max_l(spli,q) = std::max(c.q_max_l(spli,q), q_max_l(spli,q));
+        c.mass_p(iprob,q) += mass_p(iprob,q);
+        c.mass_c(iprob,q) += mass_c(iprob,q);
+        c.qd_lo(iprob,q) = std::max(c.qd_lo(iprob,q), qd_lo(iprob,q));
+        c.qd_hi(iprob,q) = std::max(c.qd_hi(iprob,q), qd_hi(iprob,q));
+        c.mass_lo(iprob,q) += mass_lo(iprob,q);
+        c.mass_hi(iprob,q) += mass_hi(iprob,q);
+        c.q_lo(iprob,q) = std::min(c.q_lo(iprob,q), q_lo(iprob,q));
+        c.q_hi(iprob,q) = std::max(c.q_hi(iprob,q), q_hi(iprob,q));
+        c.q_min_l(iprob,q) = std::min(c.q_min_l(iprob,q), q_min_l(iprob,q));
+        c.q_max_l(iprob,q) = std::max(c.q_max_l(iprob,q), q_max_l(iprob,q));
       }
+    }
   }
 
 #ifdef HORIZ_OPENMP
@@ -6164,16 +6170,16 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
 #endif
   {
     Kokkos::View<Real**, Kokkos::Serial>
-      mass_p_g("mass_p_g", nsuplev, qsize), mass_c_g("mass_c_g", nsuplev, qsize),
-      mass_lo_g("mass_lo_g", nsuplev, qsize), mass_hi_g("mass_hi_g", nsuplev, qsize),
-      q_lo_g("q_lo_g", nsuplev, qsize), q_hi_g("q_hi_g", nsuplev, qsize),
-      q_min_g("q_min_g", nsuplev, qsize), q_max_g("q_max_g", nsuplev, qsize),
-      qd_lo_g("qd_lo_g", nsuplev, qsize), qd_hi_g("qd_hi_g", nsuplev, qsize);
+      mass_p_g("mass_p_g", nprob, qsize), mass_c_g("mass_c_g", nprob, qsize),
+      mass_lo_g("mass_lo_g", nprob, qsize), mass_hi_g("mass_hi_g", nprob, qsize),
+      q_lo_g("q_lo_g", nprob, qsize), q_hi_g("q_hi_g", nprob, qsize),
+      q_min_g("q_min_g", nprob, qsize), q_max_g("q_max_g", nprob, qsize),
+      qd_lo_g("qd_lo_g", nprob, qsize), qd_hi_g("qd_hi_g", nprob, qsize);
 
     const auto& p = *cdr.p;
     const auto& c = *d.check;
     const auto root = cdr.p->root();
-    const auto N = nsuplev*qsize;
+    const auto N = nprob*qsize;
 
     reduce(p, c.mass_p.data(), mass_p_g.data(), N, MPI_SUM, root);
     reduce(p, c.mass_c.data(), mass_c_g.data(), N, MPI_SUM, root);
@@ -6189,7 +6195,7 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
 
     if (cdr.p->amroot()) {
       const Real tol = 1e4*std::numeric_limits<Real>::epsilon();
-      for (Int k = 0; k < nsuplev; ++k)
+      for (Int k = 0; k < nprob; ++k)
         for (Int q = 0; q < qsize; ++q) {
           const Real rd = cedr::util::reldif(mass_p_g(k,q), mass_c_g(k,q));
           if (rd > tol)
