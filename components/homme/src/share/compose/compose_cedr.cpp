@@ -5571,13 +5571,13 @@ void check_tree (const cedr::mpi::Parallel::Ptr& p, const qlt::tree::Node::Ptr& 
 qlt::tree::Node::Ptr
 make_tree (const cedr::mpi::Parallel::Ptr& p, const Int nelem,
            const Int* gid_data, const Int* rank_data, const Int nsublev,
-           const bool use_sgi, const bool tree_over_super_levels,
+           const bool use_sgi, const bool cdr_over_super_levels,
            const Int nsuplev) {
   auto tree = use_sgi ?
     make_tree_sgi    (p, nelem, gid_data, rank_data, nsublev) :
     make_tree_non_sgi(p, nelem, gid_data, rank_data, nsublev);
   Int nleaf = nelem*nsublev;
-  if (tree_over_super_levels) {
+  if (cdr_over_super_levels) {
     tree = combine_superlevels(tree, nleaf, nsuplev);
     nleaf *= nsuplev;
   }
@@ -5640,7 +5640,7 @@ struct CDR {
   
   const Alg::Enum alg;
   const Int ncell, nlclcell, nlev, nsublev, nsuplev;
-  const bool tree_over_super_levels;
+  const bool cdr_over_super_levels;
   const cedr::mpi::Parallel::Ptr p;
   qlt::tree::Node::Ptr tree; // Don't need this except for unit testing.
   cedr::CDR::Ptr cdr;
@@ -5648,29 +5648,28 @@ struct CDR {
   std::vector<Int> ie2lci; // Map Homme ie to CDR local cell index (lclcellidx).
 
   CDR (Int cdr_alg_, Int ngblcell_, Int nlclcell_, Int nlev_, bool use_sgi,
-       bool tree_over_super_levels_, const Int* gid_data, const Int* rank_data,
+       bool cdr_over_super_levels_, const Int* gid_data, const Int* rank_data,
        const cedr::mpi::Parallel::Ptr& p_, Int fcomm)
     : alg(Alg::convert(cdr_alg_)),
       ncell(ngblcell_), nlclcell(nlclcell_), nlev(nlev_),
       nsublev(Alg::is_suplev(alg) ? nsublev_per_suplev : 1),
       nsuplev((nlev + nsublev - 1) / nsublev),
       p(p_), inited_tracers_(false),
-      tree_over_super_levels(tree_over_super_levels_)
+      cdr_over_super_levels(cdr_over_super_levels_)
   {
     if (Alg::is_qlt(alg)) {
       tree = make_tree(p, ncell, gid_data, rank_data, nsublev, use_sgi,
-                       tree_over_super_levels, nsuplev);
+                       cdr_over_super_levels, nsuplev);
       cedr::CDR::Options options;
       options.prefer_numerical_mass_conservation_to_numerical_bounds = true;
       Int nleaf = ncell*nsublev;
-      if (tree_over_super_levels) nleaf *= nsuplev;
+      if (cdr_over_super_levels) nleaf *= nsuplev;
       cdr = std::make_shared<QLTT>(p, nleaf, tree, options);
       tree = nullptr;
     } else if (Alg::is_caas(alg)) {
-      cedr_throw_if(tree_over_super_levels,
-                    "COMPOSE::CEDR: CAAS does not support independent time steps.");
       const auto caas = std::make_shared<CAAST>(
-        p, nlclcell*nsublev, std::make_shared<ReproSumReducer>(fcomm));
+        p, nlclcell*nsublev*(cdr_over_super_levels ? nsuplev : 1),
+        std::make_shared<ReproSumReducer>(fcomm));
       cdr = caas;
     } else {
       cedr_throw_if(true, "Invalid semi_lagrange_cdr_alg " << alg);
@@ -5680,7 +5679,7 @@ struct CDR {
 
   void init_tracers (const Int qsize, const bool need_conservation) {
     typedef cedr::ProblemType PT;
-    const Int nt = tree_over_super_levels ? qsize : nsuplev*qsize;
+    const Int nt = cdr_over_super_levels ? qsize : nsuplev*qsize;
     for (Int ti = 0; ti < nt; ++ti)
       cdr->declare_tracer(PT::shapepreserve |
                           (need_conservation ? PT::conserve : 0), 0);
@@ -5704,17 +5703,17 @@ void set_ie2gci (CDR& q, const Int ie, const Int gci) { q.ie2gci[ie] = gci; }
 
 void init_ie2lci (CDR& q) {
   Int nleaf = q.nsublev*q.ie2gci.size();
-  if (q.tree_over_super_levels) nleaf *= q.nsuplev;
+  if (q.cdr_over_super_levels) nleaf *= q.nsuplev;
   q.ie2lci.resize(nleaf);
   if (CDR::Alg::is_qlt(q.alg)) {
     auto qlt = std::static_pointer_cast<CDR::QLTT>(q.cdr);
-    if (q.tree_over_super_levels) {
-      const auto nlev = q.nsuplev*q.nsublev;
+    if (q.cdr_over_super_levels) {
+      const auto nlevwrem = q.nsuplev*q.nsublev;
       for (size_t ie = 0; ie < q.ie2gci.size(); ++ie)
         for (Int spli = 0; spli < q.nsuplev; ++spli)
           for (Int sbli = 0; sbli < q.nsublev; ++sbli)
             //       local indexing is fastest over the whole column
-            q.ie2lci[nlev*ie + q.nsublev*spli + sbli] =
+            q.ie2lci[nlevwrem*ie + q.nsublev*spli + sbli] =
               //           but global indexing is organized according to the tree
               qlt->gci2lci(q.nsublev*(q.ncell*spli + q.ie2gci[ie]) + sbli);
     } else {
@@ -5724,12 +5723,21 @@ void init_ie2lci (CDR& q) {
             qlt->gci2lci(q.nsublev*q.ie2gci[ie] + sbli);
     }
   } else {
-    cedr_assert( ! q.tree_over_super_levels);
-    for (size_t ie = 0; ie < q.ie2gci.size(); ++ie)
-      for (Int sbli = 0; sbli < q.nsublev; ++sbli) {
-        const Int id = q.nsublev*ie + sbli;
-        q.ie2lci[id] = id;
-      }
+    if (q.cdr_over_super_levels) {
+      const auto nlevwrem = q.nsuplev*q.nsublev;
+      for (size_t ie = 0; ie < q.ie2gci.size(); ++ie)
+        for (Int spli = 0; spli < q.nsuplev; ++spli)
+          for (Int sbli = 0; sbli < q.nsublev; ++sbli) {
+            const Int id = nlevwrem*ie + q.nsublev*spli + sbli;
+            q.ie2lci[id] = id;
+          }
+    } else {
+      for (size_t ie = 0; ie < q.ie2gci.size(); ++ie)
+        for (Int sbli = 0; sbli < q.nsublev; ++sbli) {
+          const Int id = q.nsublev*ie + sbli;
+          q.ie2lci[id] = id;
+        }
+    }
   }
 }
 
@@ -5840,10 +5848,10 @@ void run (CDR& cdr, const Data& d, const Real* q_min_r, const Real* q_max_r,
     for (Int spli = 0; spli < cdr.nsuplev; ++spli) {
       const Int k0 = cdr.nsublev*spli;
       for (Int q = 0; q < qsize; ++q) {
-        const Int ti = cdr.tree_over_super_levels ? q : spli*qsize + q;
+        const Int ti = cdr.cdr_over_super_levels ? q : spli*qsize + q;
         for (Int sbli = 0; sbli < cdr.nsublev; ++sbli) {
           const auto k = k0 + sbli;
-          const auto ie_idx = cdr.tree_over_super_levels ?
+          const auto ie_idx = cdr.cdr_over_super_levels ?
             nlevwrem*ie + k :
             cdr.nsublev*ie + sbli;
           const auto lci = cdr.ie2lci[ie_idx];
@@ -5927,11 +5935,11 @@ void run_local (CDR& cdr, const Data& d, const Real* q_min_r, const Real* q_max_
     for (Int spli = 0; spli < cdr.nsuplev; ++spli) {
       const Int k0 = cdr.nsublev*spli;
       for (Int q = 0; q < qsize; ++q) {
-        const Int ti = cdr.tree_over_super_levels ? q : spli*qsize + q;
+        const Int ti = cdr.cdr_over_super_levels ? q : spli*qsize + q;
         for (Int sbli = 0; sbli < cdr.nsublev; ++sbli) {
           const Int k = k0 + sbli;
           if (k >= nlev) break;
-          const auto ie_idx = cdr.tree_over_super_levels ?
+          const auto ie_idx = cdr.cdr_over_super_levels ?
             nlevwrem*ie + k :
             cdr.nsublev*ie + sbli;
           const auto lci = cdr.ie2lci[ie_idx];
