@@ -620,11 +620,10 @@ module namelist_mod
        close(unit=7)
 #endif
 #endif
-! ^ ifndef CAM
-
        dtime = 0
        ierr = timestep_make_parameters_consistent(par, rsplit, qsplit, dt_remap_factor, dt_tracer_factor, &
             tstep, dtime, nsplit, nstep_factor)
+! ^ ifndef CAM
     end if
 
 #ifdef CAM
