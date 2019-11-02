@@ -200,7 +200,7 @@ CONTAINS
     ! Ignore ierr, as on error, timestep_make_eam_parameters_consistent defaults
     ! to printing an error and then aborting.
     ierr = timestep_make_eam_parameters_consistent(par, dt_remap_factor, dt_tracer_factor, &
-         tstep, dtime, se_nsplit, nstep_factor)
+         se_nsplit, nstep_factor, tstep, dtime)
     tstep = dtime/real(nstep_factor,r8)
     TimeLevel%nstep = get_nstep()*nstep_factor
 
