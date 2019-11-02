@@ -951,10 +951,12 @@ contains
        ! Limit dp to be > 0.
        dp_neg_min = make_positive(elem(ie)%state%dp3d(:,:,:,tl%np1), dt, dp_tol, &
             elem(ie)%derived%eta_dot_dpdn)
+#ifndef NDEBUG
        if (dp_neg_min < zero) then
           write(iulog, '(a,i7,i7,es11.4)') 'sl_advection: make_positive (rank,ie) returned', &
                hybrid%par%rank, ie, dp_neg_min
        end if
+#endif
     end do
   end subroutine reconstruct_eta_dot_dpdn
 
@@ -1046,8 +1048,10 @@ contains
           do k = 1,nlev
              dp(k) = dpref(i,j,k) + dt*(eta_dot_dpdn(i,j,k+1) - eta_dot_dpdn(i,j,k))
              if (dp(k) < dp_tol) then
-                nmass = nmass + dp(k)
+                nmass = nmass + (dp(k) - dp_tol)
+#ifndef NDEBUG
                 dp_neg_min = min(dp_neg_min, dp(k))
+#endif
                 dp(k) = dp_tol
                 w(k) = zero
              else
@@ -1057,7 +1061,7 @@ contains
           if (nmass == zero) cycle
           dp = dp + nmass*(w/sum(w))
           do k = 1,nlev
-             eta_dot_dpdn(i,j,k+1) = eta_dot_dpdn(i,j,k) + (dp(k) - dpref(i,j,k))/dt
+             eta_dot_dpdn(i,j,k+1) = (eta_dot_dpdn(i,j,k) - dpref(i,j,k)/dt) + dp(k)/dt
           end do
        end do
     end do
@@ -1068,7 +1072,7 @@ contains
     ! vertical remap time step for dynamics is shorter than the tracer
     ! time step.
 
-    use control_mod, only: dt_tracer_factor
+    use control_mod, only: dt_tracer_factor, dt_remap_factor
     use vertremap_base, only: remap1
     use parallel_mod, only: abortmp
     use kinds, only: iulog
@@ -1080,28 +1084,36 @@ contains
     type (TimeLevel_t), intent(in) :: tl
 
     real(kind=real_kind) :: dp_star(np,np,nlev)
-    integer :: ie, i, j, q, n0_qdp, np1_qdp
+    integer :: ie, i, j, k, q, n0_qdp, np1_qdp
 
     call TimeLevel_Qdp(tl, dt_tracer_factor, n0_qdp, np1_qdp)
 
     do ie = nets, nete
        ! The level-reconstruction algorithm set eta_dot_dpdn;
        ! otherwise, these would be 0 when dynamics uses floating
-       ! levels.
+       ! levels. For numerical reasons, in particular to avoid -ve
+       ! levels due to roundoff, it set
+       !    elem(ie)%derived%eta_dot_dpdn(:,:,k)
+       ! to its reconstructed
+       !    dt_q*(elem(ie)%derived%eta_dot_dpdn(:,:,2:    ) - &
+       !          elem(ie)%derived%eta_dot_dpdn(:,:, :nlev).
        dp_star = elem(ie)%state%dp3d(:,:,:,tl%np1) + &
                  dt_q*(elem(ie)%derived%eta_dot_dpdn(:,:,2:    ) - &
                        elem(ie)%derived%eta_dot_dpdn(:,:, :nlev))
-       if (minval(dp_star) < 0) then
-          write(iulog,*) 'sl_vertically_remap_tracers> dp_star -ve: rank, ie', hybrid%par%rank, ie
+!#ifndef NDEBUG
+       if (any(dp_star < zero)) then
+          write(iulog,*) 'sl_vertically_remap_tracers> dp_star -ve: rank, ie, dp_tol', &
+               hybrid%par%rank, ie, dp_tol
           do j = 1,np
              do i = 1,np
-                if (minval(dp_star(i,j,:)) < 0) then
+                if (any(dp_star(i,j,:) < zero)) then
                    write(iulog,*), 'i,j,dp_star(i,j,:)', i, j, dp_star(i,j,:)
                    call abortmp('sl_vertically_remap_tracers> -ve dp_star')
                 end if
              end do
           end do
        end if
+!#endif
        ! vertical_remap has side effects we must avoid. So call remap1
        ! directly.
        call remap1(elem(ie)%state%Qdp(:,:,:,:,np1_qdp), np, qsize, dp_star, &
@@ -1148,9 +1160,57 @@ contains
   end function test_lagrange
 
   function test_make_positive() result(nerr)
-    integer :: nerr
+    use physical_constants, only: p0
+    real(real_kind), parameter :: dt = 1800_real_kind, dp_tol = (p0/nlev)*eps, &
+         tol = 10_real_kind*eps
 
+    real(real_kind) :: dpref(np,np,nlev), dpfin(np,np,nlev,2), eta_dot_dpdn(np,np,nlevp,2), tmp
+    integer :: nerr, i, j, k
+
+    eta_dot_dpdn(1,1,nlevp,1) = zero
+    do k = 1,nlev
+       dpref(1,1,k) = k
+       eta_dot_dpdn(1,1,k,1) = (-one)**k*0.1_real_kind*(nlev-k)
+    end do
+    tmp = p0/sum(dpref(1,1,:))
+    dpref(1,1,:) = dpref(1,1,:)*tmp
+    eta_dot_dpdn(1,1,:,1) = eta_dot_dpdn(1,1,:,1)*tmp
+    eta_dot_dpdn(1,1,1,1) = zero
+
+    do j = 1,np
+       do i = 1,np
+          dpref(i,j,:) = dpref(1,1,:)
+          eta_dot_dpdn(i,j,:,1) = eta_dot_dpdn(1,1,:,1)
+       end do
+    end do
+    eta_dot_dpdn(:,:,:,2) = eta_dot_dpdn(:,:,:,1)
+
+    tmp = make_positive(dpref, dt, dp_tol, eta_dot_dpdn(:,:,:,2))
+
+    do k = 1,2
+       dpfin(:,:,:,k) = dpref + dt*(eta_dot_dpdn(:,:,2:,k) - eta_dot_dpdn(:,:,:nlev,k))
+    end do
+    
     nerr = 0
+    do j = 1,np
+       do i = 1,np
+          ! mass conservation
+          tmp = sum(dpref(i,j,:))
+          if (abs(sum(dpfin(i,j,:,1)) - tmp) > tol*tmp) nerr = nerr + 1
+          if (abs(sum(dpfin(i,j,:,2)) - tmp) > tol*tmp) nerr = nerr + 1
+          ! limiter needs to be active
+          if (minval(dpfin(i,j,:,1)) >= zero) nerr = nerr + 1
+          ! limiter succeeded
+          if (minval(dpfin(i,j,:,2)) < zero) nerr = nerr + 1
+       end do
+    end do
+
+    print *,'dpref',dpref(1,1,:)
+    print *,'dpfin1',dpfin(1,1,:,1)
+    print *,'dpfin2',dpfin(1,1,:,2)
+    print *,'delta',dt*(eta_dot_dpdn(1,1,2:,2) - eta_dot_dpdn(1,1,:nlev,2))
+    print *,'amb>',tmp,(sum(dpfin(1,1,:,1)) - tmp)/tmp,(sum(dpfin(1,1,:,2)) - sum(dpfin(1,1,:,1)))/sum(dpfin(1,1,:,1))
+    print *,'amb>',minval(dpfin(1,1,:,1)),minval(dpfin(1,1,:,2)),dp_tol
   end function test_make_positive
 
   subroutine sl_unittest(par)
@@ -1161,10 +1221,12 @@ contains
     integer :: nerr
 
     nerr = 0
+    return
     nerr = nerr + test_lagrange()
     nerr = nerr + test_make_positive()
 
-    if (nerr > 0 .and. par%masterproc) write(iulog,'(a,i2)'), 'sl_unittest FAIL', nerr
+    if (nerr >= 0 .and. par%masterproc) write(iulog,'(a,i3)'), 'sl_unittest FAIL', nerr
+    call exit(0)
   end subroutine sl_unittest
 
 end module sl_advection

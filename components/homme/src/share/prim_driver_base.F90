@@ -1320,6 +1320,11 @@ contains
                 call vertical_remap(hybrid, elem, hvcoord, dt_remap, tl%np1, -1, nets, nete)
              end if
           end if
+       else
+          ! Set np1_qdp to -1. Since dt_remap == 0, the only part of
+          ! vertical_remap that is active is the updates to
+          ! ps_v(:,:,np1) and dp3d(:,:,:,np1).
+          call vertical_remap(hybrid, elem, hvcoord, dt_remap, tl%np1, -1, nets, nete)
        end if
        ! defer final timelevel update until after Q update.
     enddo
@@ -1331,16 +1336,13 @@ contains
        call t_stopf("PAT_remap")
     end if
 
-    ! Remap tracers.
     if (dt_remap_factor == 0) then
-       ! dt_remap_factor = 0 means vertical_remap will not remap
-       ! dynamics variables.
        call TimeLevel_Qdp(tl, dt_tracer_factor, n0_qdp, np1_qdp)
        if (compute_diagnostics) call run_diagnostics(elem,hvcoord,tl,4,.false.,nets,nete)
-       call vertical_remap(hybrid,elem,hvcoord,dt_remap,tl%np1,np1_qdp,nets,nete)
-    else
-       call sl_vertically_remap_tracers(hybrid, elem, nets, nete, tl, dt_q)
     end if
+
+    ! Remap tracers.
+    call sl_vertically_remap_tracers(hybrid, elem, nets, nete, tl, dt_q)
   end subroutine prim_step_flexible
 
   subroutine run_diagnostics(elem, hvcoord, tl, n, t_before_advance, nets, nete)
