@@ -180,9 +180,9 @@ module namelist_mod
     integer :: se_phys_tscale, se_nsplit
     integer :: interp_nlat, interp_nlon, interp_gridtype, interp_type
     integer :: i, ii, j
-    integer  :: ierr, nstep_factor
+    integer  :: ierr, nstep_factor, dtime
     character(len=80) :: errstr, arg
-    real(kind=real_kind) :: dt_max, dtime
+    real(kind=real_kind) :: dt_max
 #ifdef CAM
     character(len=MAX_STRING_LEN) :: se_topology
     integer :: se_partmethod

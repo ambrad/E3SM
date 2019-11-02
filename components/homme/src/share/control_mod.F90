@@ -280,7 +280,7 @@ contains
     real(kind=real_kind), intent(inout) :: &
          ! Dynamics time step.
          tstep
-    real(kind=real_kind), intent(inout) :: &
+    integer, intent(inout) :: &
          ! Physics-dynamics coupling time step.
          dtime
     logical, intent(in), optional :: abort, silent
@@ -371,9 +371,9 @@ contains
 
     ! Every 'if' has an 'else', so every case is covered.
     if (nsplit > 0) nstep_factor = dt_max_factor*nsplit
-    if (dtime > zero) then
+    if (dtime > 0) then
        if (nsplit > zero) then
-          tmp = dtime/real(nstep_factor, real_kind)
+          tmp = real(dtime, real_kind)/real(nstep_factor, real_kind)
           if (tstep > zero) then
              if (abs(tstep - tmp) > divisible_tol*tmp) then
                 if (par%masterproc .and. .not. silent_in) then
@@ -387,7 +387,7 @@ contains
           end if
           tstep = tmp
        elseif (tstep > zero) then
-          nsplit_real = dtime/(dt_max_factor*tstep)
+          nsplit_real = real(dtime, real_kind)/(dt_max_factor*tstep)
           nsplit = idnint(nsplit_real)
           nstep_factor = dt_max_factor*nsplit
           if (abs(nsplit_real - nsplit) > divisible_tol*nsplit_real) then
@@ -443,15 +443,15 @@ contains
 
     real(real_kind), parameter :: eps = epsilon(1.0_real_kind), tol = 1e3_real_kind*eps
 
-    real(real_kind) :: tstep, dtime
-    integer :: i, rs, qs, drf, dtf, ns, nstep_fac
+    real(real_kind) :: tstep
+    integer :: i, rs, qs, drf, dtf, ns, nstep_fac, dtime
     logical :: a, s
 
     a = .false.
     nerr = 0
 
     !! Test backwards compatibility.
-    dtime = 1800_real_kind
+    dtime = 1800
 
     qs = 3; rs = 0; drf = -1; dtf = -1
     tstep = -1; ns = 2
@@ -485,7 +485,7 @@ contains
          nerr = nerr + 1
 
     qs = -1; rs = -1; drf = 12; dtf = 6
-    tstep = 300_real_kind; dtime = 7200_real_kind; ns = -1
+    tstep = 300_real_kind; dtime = 7200; ns = -1
     i = timestep_make_parameters_consistent(par,rs,qs,drf,dtf,tstep,dtime,ns,nstep_fac,a)
     if (i /= 0 .or. rs /= 2 .or. qs /= 6 .or. nstep_fac /= qs*rs*ns .or. ns /= 2 .or. &
          abs(tstep - dtime/(qs*rs*ns)) > tol) &
@@ -535,12 +535,12 @@ contains
 
     !! Test warning conditions.
     qs = 4; rs = 0; drf = 3; dtf = 6
-    tstep = -1; dtime = 1800_real_kind; ns = 2
+    tstep = -1; dtime = 1800; ns = 2
     i = timestep_make_parameters_consistent(par,rs,qs,drf,dtf,tstep,dtime,ns,nstep_fac,a,s)
     if (i /= 0 .or. qs /= dtf .or. rs /= 1) nerr = nerr + 1
 
     qs = 4; rs = 0; drf = 12; dtf = 6
-    tstep = -1; dtime = 1800_real_kind; ns = 2
+    tstep = -1; dtime = 1800; ns = 2
     i = timestep_make_parameters_consistent(par,rs,qs,drf,dtf,tstep,dtime,ns,nstep_fac,a,s)
     if (i /= 0 .or. qs /= dtf .or. rs /= 2) nerr = nerr + 1
 
