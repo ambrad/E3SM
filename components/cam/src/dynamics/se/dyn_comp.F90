@@ -97,7 +97,7 @@ CONTAINS
     use parallel_mod,     only: par, initmp
     use namelist_mod,     only: readnl
     use control_mod,      only: runtype, qsplit, rsplit, dt_tracer_factor, dt_remap_factor, &
-         timestep_make_parameters_consistent
+         timestep_make_eam_parameters_consistent
     use time_mod,         only: tstep
     use phys_control,     only: use_gw_front
     use physics_buffer,   only: pbuf_add_field, dtype_r8
@@ -197,9 +197,9 @@ CONTAINS
     !        tstep = the dynamics timestep:  
     !
 
-    ! Ignore ierr, as on error, timestep_make_parameters_consistent defaults to
-    ! printing an error and then aborting.
-    ierr = timestep_make_parameters_consistent(par, rsplit, qsplit, dt_remap_factor, dt_tracer_factor, &
+    ! Ignore ierr, as on error, timestep_make_eam_parameters_consistent defaults
+    ! to printing an error and then aborting.
+    ierr = timestep_make_eam_parameters_consistent(par, dt_remap_factor, dt_tracer_factor, &
          tstep, dtime, se_nsplit, nstep_factor)
     tstep = dtime/real(nstep_factor,r8)
     TimeLevel%nstep = get_nstep()*nstep_factor
