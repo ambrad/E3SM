@@ -160,11 +160,10 @@ contains
           ! Thread write race condition; benign b/c written value is same in all threads.
           call set_dp_tol(hvcoord, dp_tol)
        end if
-       call reconstruct_eta_dot_dpdn(hybrid, elem, nets, nete, hvcoord, tl, dt, deriv, dp_tol)
        do ie = nets,nete
-          ! use divdp for dp_star
-          elem(ie)%derived%divdp = elem(ie)%state%dp3d(:,:,:,tl%np1) + &
-               dt*(elem(ie)%derived%eta_dot_dpdn(:,:,2:) - elem(ie)%derived%eta_dot_dpdn(:,:,1:nlev))
+          ! divdp is dp_star
+          call calc_vertically_lagrangian_levels(hybrid, elem(ie), ie, hvcoord, tl, dt, &
+               deriv, dp_tol, elem(ie)%derived%divdp)
           wr(:,:,:,1) = elem(ie)%derived%vn0(:,:,1,:)*elem(ie)%state%dp3d(:,:,:,tl%np1)
           wr(:,:,:,2) = elem(ie)%derived%vn0(:,:,2,:)*elem(ie)%state%dp3d(:,:,:,tl%np1)
           call remap1(wr, np, 2, elem(ie)%state%dp3d(:,:,:,tl%np1), elem(ie)%derived%divdp)
@@ -175,13 +174,6 @@ contains
     end if
 
     call ALE_RKdss(elem, nets, nete, hybrid, deriv, dt, tl, independent_time_steps)
-
-    if (independent_time_steps) then
-       do ie = nets,nete
-          elem(ie)%derived%divdp = elem(ie)%state%dp3d(:,:,:,tl%np1) + &
-               dt*(elem(ie)%derived%eta_dot_dpdn(:,:,2:) - elem(ie)%derived%eta_dot_dpdn(:,:,1:nlev))
-       end do
-    end if
 
     if (barrier) call perf_barrier(hybrid)
     call t_startf('SLMM_v2x')
@@ -383,7 +375,8 @@ contains
           if (independent_time_steps) then
              elem(ie)%derived%vstar(:,:,1,k) = elem(ie)%derived%vstar(:,:,1,k)*elem(ie)%spheremp*elem(ie)%rspheremp
              elem(ie)%derived%vstar(:,:,2,k) = elem(ie)%derived%vstar(:,:,2,k)*elem(ie)%spheremp*elem(ie)%rspheremp
-             elem(ie)%derived%eta_dot_dpdn(:,:,k) = elem(ie)%derived%eta_dot_dpdn(:,:,k)*elem(ie)%spheremp*elem(ie)%rspheremp
+             ! divdp contains the reconstructed dp.
+             elem(ie)%derived%divdp(:,:,k) = elem(ie)%derived%divdp(:,:,k)*elem(ie)%spheremp*elem(ie)%rspheremp
           else
              !todo-notbfb Include rspheremp here and rm from unpack loop.
              elem(ie)%derived%vstar(:,:,1,k) = elem(ie)%derived%vstar(:,:,1,k)*elem(ie)%spheremp
@@ -391,7 +384,7 @@ contains
           end if
        enddo
        call edgeVpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%vstar,2*nlev,0,nlyr)
-       if (independent_time_steps) call edgeVpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%eta_dot_dpdn,nlevp,2*nlev,nlyr)
+       if (independent_time_steps) call edgeVpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%divdp,nlevp,2*nlev,nlyr)
     enddo
 
     call t_startf('ALE_RKdss_bexchV')
@@ -401,7 +394,7 @@ contains
     do ie = nets,nete
        call edgeVunpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%vstar,2*nlev,0,nlyr)
        if (independent_time_steps) then
-          call edgeVunpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%eta_dot_dpdn,nlevp,2*nlev,nlyr)
+          call edgeVunpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%divdp,nlevp,2*nlev,nlyr)
        else
           do k = 1,nlev
              elem(ie)%derived%vstar(:,:,1,k) = elem(ie)%derived%vstar(:,:,1,k)*elem(ie)%rspheremp(:,:)
@@ -824,141 +817,144 @@ contains
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   end subroutine biharmonic_wk_scalar
 
-  subroutine reconstruct_eta_dot_dpdn(hybrid, elem, nets, nete, hvcoord, tl, dt, deriv, dp_tol)
+  subroutine calc_vertically_lagrangian_levels( &
+       hybrid, elem, ie, hvcoord, tl, dt, deriv, dp_tol, dprecon)
     ! Reconstruct the vertically Lagrangian levels, thus permitting
     ! the dynamics vertical remap time step to be shorter than the
-    ! tracer time step. This routine provides the reconstruction via
-    ! updated derived%eta_dot_dpdn.
+    ! tracer time step.
 
     use control_mod, only: dt_remap_factor
     use derivative_mod, only: derivative_t, gradient_sphere
     use kinds, only: iulog
 
     type (hybrid_t), intent(in) :: hybrid
-    type (element_t), intent(inout) :: elem(:)
-    integer, intent(in) :: nets, nete
+    type (element_t), intent(in) :: elem
+    integer, intent(in) :: ie
     type (hvcoord_t), intent(in) :: hvcoord
     type (TimeLevel_t), intent(in) :: tl
     real(kind=real_kind), intent(in) :: dt, dp_tol
     type (derivative_t), intent(in) :: deriv
+    real(kind=real_kind), intent(out) :: dprecon(np,np,nlev)
 
-    real(real_kind), dimension(np,np,nlevp) :: pref, p0r, p1r
+    real(real_kind), dimension(np,np,nlevp) :: pref, p0r, p1r, eta_dot_dpdn
     real(real_kind), dimension(np,np) :: dps, ptp0, pth, v1h, v2h, divdp
     real(real_kind), dimension(np,np,2) :: grad, vdp
     real(real_kind) :: dp_neg_min
-    integer :: ie, i, j, k, k1, k2, d
+    integer :: i, j, k, k1, k2, d
 
+#ifndef NDEBUG
     if (abs(hvcoord%hybi(1)) > 10*eps .or. hvcoord%hyai(nlevp) > 10*eps) then
        if (hybrid%masterthread) &
-            print *, 'reconstruct_eta_dot_dpdn: bi(1)', hvcoord%hybi(1), 'ai(nlevp)', &
+            print *, 'calc_vertically_lagrangian_levels: bi(1)', hvcoord%hybi(1), 'ai(nlevp)', &
             hvcoord%hyai(nlevp)
        call abortmp('hvcoord has unexpected non-0 entries at the bottom and/or top')
     end if
-
-    do ie = nets,nete
-       if (dt_remap_factor /= 0) then
-          ! Reconstruct an approximation to the midpoint eta_dot_dpdn on
-          ! Eulerian levels.
-          elem(ie)%derived%eta_dot_dpdn(:,:,1) = zero
-          do k = 1,nlev
-             do d = 1,2
-                vdp(:,:,d) = half*(elem(ie)%derived%vstar(:,:,d,k)*elem(ie)%derived%dp(:,:,k       ) + &
-                                   elem(ie)%derived%vn0  (:,:,d,k)*elem(ie)%state%dp3d(:,:,k,tl%np1))
-             end do
-             divdp = divergence_sphere(vdp, deriv, elem(ie))
-             elem(ie)%derived%eta_dot_dpdn(:,:,k+1) = elem(ie)%derived%eta_dot_dpdn(:,:,k) + divdp
-          end do
-          dps = elem(ie)%derived%eta_dot_dpdn(:,:,nlevp)
-          elem(ie)%derived%eta_dot_dpdn(:,:,nlevp) = zero
-          do k = 2,nlev
-             elem(ie)%derived%eta_dot_dpdn(:,:,k) = dps - elem(ie)%derived%eta_dot_dpdn(:,:,k)
-          end do
-       end if
-
-       ! Recall
-       !   p(eta,ps) = A(eta) p0 + B(eta) ps
-       !   => dp/dt = p_eta deta/dt + p_ps dps/dt
-       !            = (A_eta p0 + B_eta ps) deta/dt + B(eta) dps/dt
-       ! In what follows, we consistently drop the surface pressure
-       ! time derivative term, B(eta) dps/dt. In particular, pref
-       ! is used for both n0 and np1, even though it's computed for
-       ! n0 only. At the end, in each term of the expression (p1r -
-       ! pref), there is a missing B(eta) dps/dt term, and these
-       ! missing terms cancel in the subtraction.
-       !
-       ! The departure point algorithm is as follows. Let 0, h, 1
-       ! suffixes denote start, middle and end of the time step. A
-       ! Taylor series expansion of v at the midpoint in space and
-       ! time gives
-       !   v(ph,th) a= v(p1,th) + gradv(p1,th) (ph - p1)
-       ! Approximate
-       !   ph - p1 a= -v(p1,th) dt/2
-       ! Then
-       !   (p1 - p0)/dt a= v(ph,th)
-       !                 = v(p1,th) + gradv(p1,th) (ph - p1)
-       !                a= v(p1,th) - dt/2 gradv(p1,th) v(p1,th)
-       !   => p0 := p1 - dt (v(p1,th) - dt/2 gradv(p1,th) v(p1,th))
-       ! where the final line gives the departure point at time 0.
-       
-       call calc_p(hvcoord, elem(ie)%derived%dp, pref)
-
-       p0r(:,:,1) = pref(:,:,1)
-       p0r(:,:,nlevp) = pref(:,:,nlevp)
-
-       do k = 2, nlev
-          ! Gradient of eta_dot_dpdn = p_eta deta/dt at initial
-          ! time w.r.t. horizontal sphere coords.
-          grad = gradient_sphere(elem(ie)%derived%eta_dot_dpdn(:,:,k), &
-               deriv, elem(ie)%Dinv)
-
-          ! Gradient of eta_dot_dpdn = p_eta deta/dt at initial
-          ! time w.r.t. p at initial time.
-          k1 = k-1
-          k2 = k+1
-          call eval_lagrange_poly_derivative(k2-k1+1, pref(:,:,k1:k2), &
-               elem(ie)%derived%eta_dot_dpdn(:,:,k1:k2), &
-               pref(:,:,k), ptp0)
-
-          ! Horizontal velocity at time midpoint.
-          k1 = k-1
-          k2 = k
-          v1h = fourth*(elem(ie)%state%v(:,:,1,k1,tl%n0 ) + elem(ie)%state%v(:,:,1,k2,tl%n0 ) + &
-                        elem(ie)%state%v(:,:,1,k1,tl%np1) + elem(ie)%state%v(:,:,1,k2,tl%np1))
-          v2h = fourth*(elem(ie)%state%v(:,:,2,k1,tl%n0 ) + elem(ie)%state%v(:,:,2,k2,tl%n0 ) + &
-                        elem(ie)%state%v(:,:,2,k1,tl%np1) + elem(ie)%state%v(:,:,2,k2,tl%np1))
-
-          ! Vertical eta_dot_dpdn at time midpoint.
-          pth = elem(ie)%derived%eta_dot_dpdn(:,:,k)
-
-          ! Reconstruct departure level coordinate at intial time.
-          p0r(:,:,k) = pref(:,:,k) - &
-               dt*(pth - half*dt*(ptp0*pth + grad(:,:,1)*v1h + grad(:,:,2)*v2h))
-       end do
-
-       ! Interpolate Lagrangian level in p coord to final time.
-       do j = 1,np
-          do i = 1,np
-             call interp(nlevp, p0r(i,j,:), pref(i,j,:), pref(i,j,:), p1r(i,j,:))
-          end do
-       end do
-
-       ! Reconstruct eta_dot_dpdn over the time interval.
-       elem(ie)%derived%eta_dot_dpdn = (p1r - pref)/dt
-       ! End points are always 0.
-       elem(ie)%derived%eta_dot_dpdn(:,:,1) = zero
-       elem(ie)%derived%eta_dot_dpdn(:,:,nlevp) = zero
-
-       ! Limit dp to be > 0.
-       dp_neg_min = make_positive(elem(ie)%state%dp3d(:,:,:,tl%np1), dt, dp_tol, &
-            elem(ie)%derived%eta_dot_dpdn)
-#ifndef NDEBUG
-       if (dp_neg_min < zero) then
-          write(iulog, '(a,i7,i7,es11.4)') 'sl_advection: make_positive (rank,ie) returned', &
-               hybrid%par%rank, ie, dp_neg_min
-       end if
 #endif
+
+    if (dt_remap_factor == 0) then
+       eta_dot_dpdn = elem%derived%eta_dot_dpdn
+    else
+       ! Reconstruct an approximation to the midpoint eta_dot_dpdn on
+       ! Eulerian levels.
+       eta_dot_dpdn(:,:,1) = zero
+       do k = 1,nlev
+          do d = 1,2
+             vdp(:,:,d) = half*(elem%derived%vstar(:,:,d,k)*elem%derived%dp(:,:,k       ) + &
+                                elem%derived%vn0  (:,:,d,k)*elem%state%dp3d(:,:,k,tl%np1))
+          end do
+          divdp = divergence_sphere(vdp, deriv, elem)
+          eta_dot_dpdn(:,:,k+1) = eta_dot_dpdn(:,:,k) + divdp
+       end do
+       dps = eta_dot_dpdn(:,:,nlevp)
+       eta_dot_dpdn(:,:,nlevp) = zero
+       do k = 2,nlev
+          eta_dot_dpdn(:,:,k) = dps - eta_dot_dpdn(:,:,k)
+       end do
+    end if
+
+    ! Recall
+    !   p(eta,ps) = A(eta) p0 + B(eta) ps
+    !   => dp/dt = p_eta deta/dt + p_ps dps/dt
+    !            = (A_eta p0 + B_eta ps) deta/dt + B(eta) dps/dt
+    ! In what follows, we consistently drop the surface pressure time
+    ! derivative term, B(eta) dps/dt. In particular, pref is used for
+    ! both n0 and np1, even though it's computed for n0 only. At the
+    ! end, in each term of the expression (p1r - pref), there is a
+    ! missing B(eta) dps/dt term, and these missing terms cancel in
+    ! the subtraction.
+    !
+    ! The departure point algorithm is as follows. Let 0, h, 1
+    ! suffixes denote start, middle and end of the time step. A Taylor
+    ! series expansion of v at the midpoint in space and time gives
+    !   v(ph,th) a= v(p1,th) + gradv(p1,th) (ph - p1)
+    ! Approximate
+    !   ph - p1 a= -v(p1,th) dt/2
+    ! Then
+    !   (p1 - p0)/dt a= v(ph,th)
+    !                 = v(p1,th) + gradv(p1,th) (ph - p1)
+    !                a= v(p1,th) - dt/2 gradv(p1,th) v(p1,th)
+    !   => p0 := p1 - dt (v(p1,th) - dt/2 gradv(p1,th) v(p1,th))
+    ! where the final line gives the departure point at time 0.
+
+    call calc_p(hvcoord, elem%derived%dp, pref)
+
+    p0r(:,:,1) = pref(:,:,1)
+    p0r(:,:,nlevp) = pref(:,:,nlevp)
+
+    do k = 2, nlev
+       ! Gradient of eta_dot_dpdn = p_eta deta/dt at initial
+       ! time w.r.t. horizontal sphere coords.
+       grad = gradient_sphere(eta_dot_dpdn(:,:,k), deriv, elem%Dinv)
+
+       ! Gradient of eta_dot_dpdn = p_eta deta/dt at initial
+       ! time w.r.t. p at initial time.
+       k1 = k-1
+       k2 = k+1
+       call eval_lagrange_poly_derivative(k2-k1+1, pref(:,:,k1:k2), &
+            eta_dot_dpdn(:,:,k1:k2), &
+            pref(:,:,k), ptp0)
+
+       ! Horizontal velocity at time midpoint.
+       k1 = k-1
+       k2 = k
+       v1h = fourth*(elem%state%v(:,:,1,k1,tl%n0 ) + elem%state%v(:,:,1,k2,tl%n0 ) + &
+                     elem%state%v(:,:,1,k1,tl%np1) + elem%state%v(:,:,1,k2,tl%np1))
+       v2h = fourth*(elem%state%v(:,:,2,k1,tl%n0 ) + elem%state%v(:,:,2,k2,tl%n0 ) + &
+                     elem%state%v(:,:,2,k1,tl%np1) + elem%state%v(:,:,2,k2,tl%np1))
+
+       ! Vertical eta_dot_dpdn at time midpoint.
+       pth = eta_dot_dpdn(:,:,k)
+
+       ! Reconstruct departure level coordinate at intial time.
+       p0r(:,:,k) = pref(:,:,k) - &
+            dt*(pth - half*dt*(ptp0*pth + grad(:,:,1)*v1h + grad(:,:,2)*v2h))
     end do
-  end subroutine reconstruct_eta_dot_dpdn
+
+    ! Interpolate Lagrangian level in p coord to final time.
+    do j = 1,np
+       do i = 1,np
+          call interp(nlevp, p0r(i,j,:), pref(i,j,:), pref(i,j,:), p1r(i,j,:))
+       end do
+    end do
+
+    ! Reconstruct eta_dot_dpdn over the time interval.
+    eta_dot_dpdn = (p1r - pref)/dt
+    ! End points are always 0.
+    eta_dot_dpdn(:,:,1) = zero
+    eta_dot_dpdn(:,:,nlevp) = zero
+
+    ! Limit dp to be > 0 and store update in eta_dot_dpdn rather
+    ! than true eta_dot_dpdn. See comments below for more.
+    dp_neg_min = reconstruct_and_limit_dp(elem%state%dp3d(:,:,:,tl%np1), &
+         dt, dp_tol, eta_dot_dpdn, dprecon)
+#ifndef NDEBUG
+    if (dp_neg_min < zero) then
+       write(iulog, '(a,i7,i7,es11.4)') &
+            'sl_advection: reconstruct_and_limit_dp (rank,ie) returned', &
+            hybrid%par%rank, ie, dp_neg_min
+    end if
+#endif
+  end subroutine calc_vertically_lagrangian_levels
 
   subroutine eval_lagrange_poly_derivative(n, xs, ys, xi, yp)
     integer, intent(in) :: n
@@ -1032,11 +1028,11 @@ contains
     dp_tol = 10_real_kind*eps*minval(hvcoord%dp0)
   end subroutine set_dp_tol
 
-  function make_positive(dpref, dt, dp_tol, eta_dot_dpdn) result(dp_neg_min)
+  function reconstruct_and_limit_dp(dpref, dt, dp_tol, eta_dot_dpdn, dprecon) result(dp_neg_min)
     ! Move mass around in a column as needed to make dp nonnegative.
 
-    real(kind=real_kind), intent(in) :: dpref(np,np,nlev), dt, dp_tol
-    real(kind=real_kind), intent(inout) :: eta_dot_dpdn(np,np,nlevp)
+    real(kind=real_kind), intent(in) :: dpref(np,np,nlev), dt, dp_tol, eta_dot_dpdn(np,np,nlevp)
+    real(kind=real_kind), intent(out) :: dprecon(np,np,nlev)
 
     integer :: k, i, j
     real(kind=real_kind) :: nmass, w(nlev), dp(nlev), dp_neg_min
@@ -1058,21 +1054,21 @@ contains
                 w(k) = dp(k) - dp_tol
              end if
           end do
-          if (nmass == zero) cycle
-          dp = dp + nmass*(w/sum(w))
-          do k = 1,nlev
-             eta_dot_dpdn(i,j,k+1) = (eta_dot_dpdn(i,j,k) - dpref(i,j,k)/dt) + dp(k)/dt
-          end do
+          ! Store the full update rather than reconstructing
+          ! eta_dot_dpdn. See comment in sl_vertically_remap_tracers
+          ! for more.
+          dprecon(i,j,:) = dp
+          if (nmass /= zero) dprecon(i,j,:) = dprecon(i,j,:) + nmass*(w/sum(w))
        end do
     end do
-  end function make_positive
+  end function reconstruct_and_limit_dp
 
   subroutine sl_vertically_remap_tracers(hybrid, elem, nets, nete, tl, dt_q)
     ! Remap the tracers after a tracer time step, in the case that the
     ! vertical remap time step for dynamics is shorter than the tracer
     ! time step.
 
-    use control_mod, only: dt_tracer_factor, dt_remap_factor
+    use control_mod, only: dt_tracer_factor
     use vertremap_base, only: remap1
     use parallel_mod, only: abortmp
     use kinds, only: iulog
@@ -1083,40 +1079,28 @@ contains
     real(kind=real_kind), intent(in) :: dt_q
     type (TimeLevel_t), intent(in) :: tl
 
-    real(kind=real_kind) :: dp_star(np,np,nlev)
     integer :: ie, i, j, k, q, n0_qdp, np1_qdp
 
     call TimeLevel_Qdp(tl, dt_tracer_factor, n0_qdp, np1_qdp)
 
     do ie = nets, nete
-       ! The level-reconstruction algorithm set eta_dot_dpdn;
-       ! otherwise, these would be 0 when dynamics uses floating
-       ! levels. For numerical reasons, in particular to avoid -ve
-       ! levels due to roundoff, it set
-       !    elem(ie)%derived%eta_dot_dpdn(:,:,k)
-       ! to its reconstructed
-       !    dt_q*(elem(ie)%derived%eta_dot_dpdn(:,:,2:    ) - &
-       !          elem(ie)%derived%eta_dot_dpdn(:,:, :nlev).
-       dp_star = elem(ie)%state%dp3d(:,:,:,tl%np1) + &
-                 dt_q*(elem(ie)%derived%eta_dot_dpdn(:,:,2:    ) - &
-                       elem(ie)%derived%eta_dot_dpdn(:,:, :nlev))
-!#ifndef NDEBUG
-       if (any(dp_star < zero)) then
+       ! divdp contains the reconstructed vertically Lagrangian level
+       ! dp_star.
+#ifndef NDEBUG
+       if (any(elem(ie)%derived%divdp < zero)) then
           write(iulog,*) 'sl_vertically_remap_tracers> dp_star -ve: rank, ie, dp_tol', &
                hybrid%par%rank, ie, dp_tol
           do j = 1,np
              do i = 1,np
-                if (any(dp_star(i,j,:) < zero)) then
-                   write(iulog,*), 'i,j,dp_star(i,j,:)', i, j, dp_star(i,j,:)
+                if (any(elem(ie)%derived%divdp(i,j,:) < zero)) then
+                   write(iulog,*), 'i,j,dp_star(i,j,:)', i, j, elem(ie)%derived%divdp(i,j,:)
                    call abortmp('sl_vertically_remap_tracers> -ve dp_star')
                 end if
              end do
           end do
        end if
-!#endif
-       ! vertical_remap has side effects we must avoid. So call remap1
-       ! directly.
-       call remap1(elem(ie)%state%Qdp(:,:,:,:,np1_qdp), np, qsize, dp_star, &
+#endif
+       call remap1(elem(ie)%state%Qdp(:,:,:,:,np1_qdp), np, qsize, elem(ie)%derived%divdp, &
             elem(ie)%state%dp3d(:,:,:,tl%np1))
        do q = 1,qsize
           elem(ie)%state%Q(:,:,:,q) = elem(ie)%state%Qdp(:,:,:,q,np1_qdp)/ &
@@ -1159,37 +1143,34 @@ contains
     end do
   end function test_lagrange
 
-  function test_make_positive() result(nerr)
+  function test_reconstruct_and_limit_dp() result(nerr)
     use physical_constants, only: p0
     real(real_kind), parameter :: dt = 1800_real_kind, dp_tol = (p0/nlev)*eps, &
-         tol = 10_real_kind*eps
+         tol = 20_real_kind*eps
 
-    real(real_kind) :: dpref(np,np,nlev), dpfin(np,np,nlev,2), eta_dot_dpdn(np,np,nlevp,2), tmp
+    real(real_kind) :: dpref(np,np,nlev), dpfin(np,np,nlev,2), eta_dot_dpdn(np,np,nlevp), tmp
     integer :: nerr, i, j, k
 
-    eta_dot_dpdn(1,1,nlevp,1) = zero
+    eta_dot_dpdn(1,1,nlevp) = zero
     do k = 1,nlev
        dpref(1,1,k) = k
-       eta_dot_dpdn(1,1,k,1) = (-one)**k*0.1_real_kind*(nlev-k)
+       eta_dot_dpdn(1,1,k) = (-one)**k*0.1_real_kind*(nlev-k)
     end do
     tmp = p0/sum(dpref(1,1,:))
     dpref(1,1,:) = dpref(1,1,:)*tmp
-    eta_dot_dpdn(1,1,:,1) = eta_dot_dpdn(1,1,:,1)*tmp
-    eta_dot_dpdn(1,1,1,1) = zero
+    eta_dot_dpdn(1,1,:) = eta_dot_dpdn(1,1,:)*tmp
+    eta_dot_dpdn(1,1,1) = zero
 
     do j = 1,np
        do i = 1,np
           dpref(i,j,:) = dpref(1,1,:)
-          eta_dot_dpdn(i,j,:,1) = eta_dot_dpdn(1,1,:,1)
+          eta_dot_dpdn(i,j,:) = eta_dot_dpdn(1,1,:)
        end do
     end do
-    eta_dot_dpdn(:,:,:,2) = eta_dot_dpdn(:,:,:,1)
 
-    tmp = make_positive(dpref, dt, dp_tol, eta_dot_dpdn(:,:,:,2))
+    dpfin(:,:,:,1) = dpref + dt*(eta_dot_dpdn(:,:,2:) - eta_dot_dpdn(:,:,:nlev))
 
-    do k = 1,2
-       dpfin(:,:,:,k) = dpref + dt*(eta_dot_dpdn(:,:,2:,k) - eta_dot_dpdn(:,:,:nlev,k))
-    end do
+    tmp = reconstruct_and_limit_dp(dpref, dt, dp_tol, eta_dot_dpdn, dpfin(:,:,:,2))
     
     nerr = 0
     do j = 1,np
@@ -1204,14 +1185,7 @@ contains
           if (minval(dpfin(i,j,:,2)) < zero) nerr = nerr + 1
        end do
     end do
-
-    print *,'dpref',dpref(1,1,:)
-    print *,'dpfin1',dpfin(1,1,:,1)
-    print *,'dpfin2',dpfin(1,1,:,2)
-    print *,'delta',dt*(eta_dot_dpdn(1,1,2:,2) - eta_dot_dpdn(1,1,:nlev,2))
-    print *,'amb>',tmp,(sum(dpfin(1,1,:,1)) - tmp)/tmp,(sum(dpfin(1,1,:,2)) - sum(dpfin(1,1,:,1)))/sum(dpfin(1,1,:,1))
-    print *,'amb>',minval(dpfin(1,1,:,1)),minval(dpfin(1,1,:,2)),dp_tol
-  end function test_make_positive
+  end function test_reconstruct_and_limit_dp
 
   subroutine sl_unittest(par)
     use kinds, only: iulog
@@ -1221,12 +1195,10 @@ contains
     integer :: nerr
 
     nerr = 0
-    return
     nerr = nerr + test_lagrange()
-    nerr = nerr + test_make_positive()
+    nerr = nerr + test_reconstruct_and_limit_dp()
 
     if (nerr >= 0 .and. par%masterproc) write(iulog,'(a,i3)'), 'sl_unittest FAIL', nerr
-    call exit(0)
   end subroutine sl_unittest
 
 end module sl_advection

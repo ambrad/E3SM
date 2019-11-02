@@ -1021,10 +1021,12 @@ contains
     real(kind=real_kind) :: dp, dt_q, dt_remap
     real(kind=real_kind) :: dp_np1(np,np)
     integer :: ie,i,j,k,n,q,t,scm_dum
-    integer :: n0_qdp,np1_qdp,r,nstep_end,nets_in,nete_in
+    integer :: n0_qdp,np1_qdp,r,nstep_end,nets_in,nete_in,step_factor
     logical :: compute_diagnostics, independent_time_steps
 
-    independent_time_steps = dt_remap_factor > 0 .and. dt_remap_factor < dt_tracer_factor
+    ! Use the flexible time stepper if dt_remap_factor == 0
+    ! (vertically Eulerian dynamics) or dt_remap < dt_tracer.
+    independent_time_steps = dt_remap_factor < dt_tracer_factor
 
     ! compute timesteps for tracer transport and vertical remap
     dt_q = dt*dt_tracer_factor
@@ -1033,8 +1035,9 @@ contains
        nstep_end = tl%nstep + dt_tracer_factor
     else
        ! dt_remap_factor = 0 means use eulerian code, not vert. lagrange
-       dt_remap  = dt*dt_remap_factor
-       nstep_end = tl%nstep + max(dt_remap_factor, dt_tracer_factor) ! nstep at end of this routine
+       step_factor = max(dt_remap_factor, dt_tracer_factor)
+       dt_remap  = dt*step_factor
+       nstep_end = tl%nstep + step_factor ! nstep at end of this routine
     endif
 
     ! activate diagnostics periodically for display to stdout and on first 2 timesteps
@@ -1275,7 +1278,7 @@ contains
 
     dt_q = dt*dt_tracer_factor
     if (dt_remap_factor == 0) then
-       dt_remap = dt_q
+       dt_remap = dt
     else
        dt_remap = dt*dt_remap_factor
     end if
@@ -1283,7 +1286,7 @@ contains
     call set_tracer_transport_derived_values(elem, nets, nete, tl)
 
     call t_startf("prim_step_dyn")
-    do n = 1,dt_tracer_factor
+    do n = 1, dt_tracer_factor
        compute_diagnostics_it = logical(compute_diagnostics .and. n == 1)
 
        if (n > 1) call TimeLevel_update(tl, "leapfrog")
@@ -1298,10 +1301,14 @@ contains
        call prim_advance_exp(elem, deriv1, hvcoord,hybrid, dt, tl, nets, nete, &
             compute_diagnostics_it)
 
-       if (dt_remap_factor /= 0) then
+       if (dt_remap_factor == 0) then
+          ! Set np1_qdp to -1. Since dt_remap == 0, the only part of
+          ! vertical_remap that is active is the updates to
+          ! ps_v(:,:,np1) and dp3d(:,:,:,np1).
+          call vertical_remap(hybrid, elem, hvcoord, dt_remap, tl%np1, -1, nets, nete)
+       else
           if (modulo(n, dt_remap_factor) == 0) then
              if (compute_diagnostics) call run_diagnostics(elem,hvcoord,tl,4,.false.,nets,nete)
-
              if (prescribed_wind == 1) then
                 ! Prescribed winds are evaluated on reference levels,
                 ! not floating levels, so don't remap, just update dp3d.
@@ -1320,11 +1327,6 @@ contains
                 call vertical_remap(hybrid, elem, hvcoord, dt_remap, tl%np1, -1, nets, nete)
              end if
           end if
-       else
-          ! Set np1_qdp to -1. Since dt_remap == 0, the only part of
-          ! vertical_remap that is active is the updates to
-          ! ps_v(:,:,np1) and dp3d(:,:,:,np1).
-          call vertical_remap(hybrid, elem, hvcoord, dt_remap, tl%np1, -1, nets, nete)
        end if
        ! defer final timelevel update until after Q update.
     enddo
@@ -1332,17 +1334,19 @@ contains
 
     if (qsize > 0) then
        call t_startf("PAT_remap")
-       call Prim_Advec_Tracers_remap(elem,deriv1,hvcoord,hybrid,dt_q,tl,nets,nete)
+       call Prim_Advec_Tracers_remap(elem, deriv1, hvcoord, hybrid, dt_q, tl, nets, nete)
        call t_stopf("PAT_remap")
     end if
 
-    if (dt_remap_factor == 0) then
+    if (dt_remap_factor == 0 .and. compute_diagnostics) then
        call TimeLevel_Qdp(tl, dt_tracer_factor, n0_qdp, np1_qdp)
-       if (compute_diagnostics) call run_diagnostics(elem,hvcoord,tl,4,.false.,nets,nete)
+       call run_diagnostics(elem,hvcoord,tl,4,.false.,nets,nete)
     end if
 
     ! Remap tracers.
-    call sl_vertically_remap_tracers(hybrid, elem, nets, nete, tl, dt_q)
+    if (qsize > 0) then
+       call sl_vertically_remap_tracers(hybrid, elem, nets, nete, tl, dt_q)
+    end if
   end subroutine prim_step_flexible
 
   subroutine run_diagnostics(elem, hvcoord, tl, n, t_before_advance, nets, nete)
@@ -1376,18 +1380,18 @@ contains
     ! initialize mean flux accumulation variables and save some variables at n0
     ! for use by advection
     ! ===============
-    do ie=nets,nete
-       elem(ie)%derived%eta_dot_dpdn=0     ! mean vertical mass flux
-       elem(ie)%derived%vn0=0              ! mean horizontal mass flux
-       elem(ie)%derived%omega_p=0
+    do ie = nets,nete
+       elem(ie)%derived%eta_dot_dpdn = 0     ! mean vertical mass flux
+       elem(ie)%derived%vn0 = 0              ! mean horizontal mass flux
+       elem(ie)%derived%omega_p = 0
        if (nu_p > 0) then
-          elem(ie)%derived%dpdiss_ave=0
-          elem(ie)%derived%dpdiss_biharmonic=0
+          elem(ie)%derived%dpdiss_ave = 0
+          elem(ie)%derived%dpdiss_biharmonic = 0
        endif
        if (transport_alg > 0) then
-          elem(ie)%derived%vstar=elem(ie)%state%v(:,:,:,:,tl%n0)
+          elem(ie)%derived%vstar = elem(ie)%state%v(:,:,:,:,tl%n0)
        end if
-       elem(ie)%derived%dp(:,:,:)=elem(ie)%state%dp3d(:,:,:,tl%n0)
+       elem(ie)%derived%dp(:,:,:) = elem(ie)%state%dp3d(:,:,:,tl%n0)
     enddo
   end subroutine set_tracer_transport_derived_values
 
