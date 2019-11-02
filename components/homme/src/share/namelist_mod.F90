@@ -619,10 +619,10 @@ module namelist_mod
 #if defined(OSF1) || defined(_NAMELIST_FROM_FILE)
        close(unit=7)
 #endif
-#endif
        dtime = 0
        ierr = timestep_make_parameters_consistent(par, rsplit, qsplit, dt_remap_factor, dt_tracer_factor, &
             tstep, dtime, nsplit, nstep_factor)
+#endif
 ! ^ ifndef CAM
     end if
 
