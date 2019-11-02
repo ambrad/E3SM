@@ -291,17 +291,38 @@ contains
          eps = epsilon(1.0_real_kind), &
          divisible_tol = 1e3_real_kind*eps
 
-    real(kind=real_kind) :: nsplit_real, tmp
-    integer :: qsplit_prev, rsplit_prev, dt_max_factor
-    logical :: abort_in, silent_in, split_specified, factor_specified, split_is_master
-
-    status = -1 ! error value for early returns on error
+    logical :: abort_in, silent_in
 
     abort_in = .true.
     if (present(abort)) abort_in = abort
 
     silent_in = .false.
     if (present(silent)) silent_in = silent
+
+    status = timestep_make_subcycle_parameters_consistent( &
+         par, rsplit, qsplit, dt_remap_factor, dt_tracer_factor, &
+         abort_in, silent_in)
+    if (status /= 0) return
+    status = timestep_make_eam_parameters_consistent( &
+         par, dt_remap_factor, dt_tracer_factor, nsplit, nstep_factor, tstep, dtime, &
+         abort_in, silent_in)
+  end function timestep_make_parameters_consistent
+
+  function timestep_make_subcycle_parameters_consistent(par, rsplit, qsplit, &
+       dt_remap_factor, dt_tracer_factor, abort_in, silent_in) result(status)
+
+    use parallel_mod, only: abortmp, parallel_t
+    use kinds, only: iulog
+
+    type (parallel_t), intent(in) :: par
+    integer, intent(inout) :: rsplit, qsplit, dt_remap_factor, dt_tracer_factor
+    logical, intent(in) :: abort_in, silent_in
+    integer :: status
+
+    integer :: qsplit_prev, rsplit_prev
+    logical :: split_specified, factor_specified, split_is_master
+
+    status = -1 ! error value for early returns on error
 
     split_specified = rsplit >= 0 .and. qsplit >= 1
     factor_specified = dt_remap_factor >= 0 .and. dt_tracer_factor >= 1
@@ -365,9 +386,37 @@ contains
                qsplit_prev, ' to ', qsplit, ' and rsplit from ', rsplit_prev, ' to ', rsplit, '.'
        end if
     end if
-    dt_max_factor = max(dt_remap_factor, dt_tracer_factor)
+
+    status = 0 ! success value
+  end function timestep_make_subcycle_parameters_consistent
+
+  function timestep_make_eam_parameters_consistent(par, dt_remap_factor, dt_tracer_factor, &
+       nsplit, nstep_factor, tstep, dtime, abort_in, silent_in) result(status)
+
+    use parallel_mod, only: abortmp, parallel_t
+    use kinds, only: iulog
+
+    type (parallel_t), intent(in) :: par
+    integer, intent(in) :: dt_remap_factor, dt_tracer_factor
+    integer, intent(inout) :: nsplit
+    integer, intent(out) :: nstep_factor
+    real(kind=real_kind), intent(inout) :: tstep
+    integer, intent(inout) :: dtime
+    logical, intent(in) :: abort_in, silent_in
+    integer :: status
+
+    real(kind=real_kind), parameter :: &
+         zero = 0.0_real_kind, &
+         eps = epsilon(1.0_real_kind), &
+         divisible_tol = 1e3_real_kind*eps
+
+    real(kind=real_kind) :: nsplit_real, tmp
+    integer :: dt_max_factor
+
+    status = -1 ! error value for early returns on error
 
     !! Process dtime, tstep, nsplit.
+    dt_max_factor = max(dt_remap_factor, dt_tracer_factor)
 
     ! Every 'if' has an 'else', so every case is covered.
     if (nsplit > 0) nstep_factor = dt_max_factor*nsplit
@@ -377,7 +426,7 @@ contains
           if (tstep > zero) then
              if (abs(tstep - tmp) > divisible_tol*tmp) then
                 if (par%masterproc .and. .not. silent_in) then
-                   write(iulog,'(a,a,es11.4,a,i2,a,es11.4,a,i2)') &
+                   write(iulog,'(a,a,i6,a,i2,a,es11.4,a,i2)') &
                         'dtime, nsplit, tstep were all >0 on input, but they disagree: ', &
                         'dtime ', dtime, ' nsplit ', nsplit, ' tstep ', tstep, ' nstep_factor ', nstep_factor
                 end if
@@ -392,7 +441,7 @@ contains
           nstep_factor = dt_max_factor*nsplit
           if (abs(nsplit_real - nsplit) > divisible_tol*nsplit_real) then
              if (par%masterproc .and. .not. silent_in) then
-                write(iulog,'(a,es11.4,a,es11.4,a,es11.4,a)') &
+                write(iulog,'(a,es11.4,a,i7,a,es11.4,a)') &
                      'nsplit was computed as ', nsplit_real, ' based on dtime ', dtime, &
                      ' and tstep ', tstep, ', which is outside the divisibility tolerance. Set &
                      &tstep so that it divides dtime.'
@@ -430,7 +479,7 @@ contains
     end if
 
     status = 0 ! success value
-  end function timestep_make_parameters_consistent
+  end function timestep_make_eam_parameters_consistent
 
   subroutine test_timestep_make_parameters_consistent(par, nerr)
     ! Test timestep_make_parameters_consistent.
