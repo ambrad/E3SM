@@ -213,30 +213,8 @@ contains
 
     if (semi_lagrange_hv_q > 0 .and. nu_q > 0) then
        n = semi_lagrange_hv_q
-       do ie = nets, nete
-          if (independent_time_steps) then
-             wr(:,:,:,1) = elem(ie)%derived%divdp
-          else
-             wr(:,:,:,1) = elem(ie)%state%dp3d(:,:,:,tl%np1)
-          end if
-          do q = 1, n
-             elem(ie)%state%Qdp(:,:,:,q,np1_qdp) = elem(ie)%state%Q(:,:,:,q) * &
-                  elem(ie)%state%dp3d(:,:,:,tl%np1)
-          enddo
-       end do
        call advance_hypervis_scalar(elem, hvcoord, hybrid, deriv, tl%np1, np1_qdp, nets, nete, dt, n)
        ! No barrier needed: advance_hypervis_scalar has a horiz thread barrier at the end.
-       do ie = nets, nete
-          if (independent_time_steps) then
-             wr(:,:,:,1) = elem(ie)%derived%divdp
-          else
-             wr(:,:,:,1) = elem(ie)%state%dp3d(:,:,:,tl%np1)
-          end if
-          do q = 1, n
-             elem(ie)%state%Q(:,:,:,q) = elem(ie)%state%Qdp(:,:,:,q,np1_qdp) / &
-                  elem(ie)%state%dp3d(:,:,:,tl%np1)
-          enddo
-       end do
     end if
 
     ! CEDR works with either classical SL or IR.
@@ -654,52 +632,25 @@ contains
     real (kind=real_kind), dimension(np,np,nlev,qsize,nets:nete) :: Qtens
     real (kind=real_kind), dimension(np,np,nlev                ) :: dp
     real (kind=real_kind) :: dt
-    integer :: k , i , j , ie , ic , q
+    integer :: k , ie , ic , q
 
     if ( nu_q           == 0 ) return
     if ( hypervis_order /= 2 ) return
     !   call t_barrierf('sync_advance_hypervis_scalar', hybrid%par%comm)
     call t_startf('advance_hypervis_scalar')
 
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    !  hyper viscosity
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     dt = dt2 / hypervis_subcycle_q
 
     do ic = 1 , hypervis_subcycle_q
        do ie = nets , nete
-          ! Qtens = Q/dp   (apply hyperviscsoity to dp0 * Q, not Qdp)
-          ! various options:
-          !   1)  biharmonic( Qdp )
-          !   2)  dp0 * biharmonic( Qdp/dp )
-          !   3)  dpave * biharmonic(Q/dp)
-          ! For trace mass / mass consistenciy, we use #2 when nu_p=0
-          ! and #e when nu_p>0, where dpave is the mean mass flux from the nu_p
-          ! contribution from dynamics.
-
-          if (nu_p>0) then
 #if (defined COLUMN_OPENMP)
-             !$omp parallel do private(q,k) collapse(2)
+          !$omp parallel do private(q,k) collapse(2)
 #endif
-             do q = 1 , nq
-                do k = 1 , nlev
-                   dp(:,:,k) = elem(ie)%derived%dp(:,:,k) - dt2*elem(ie)%derived%divdp_proj(:,:,k)
-                   Qtens(:,:,k,q,ie) = elem(ie)%derived%dpdiss_ave(:,:,k)*&
-                        elem(ie)%state%Qdp(:,:,k,q,nt_qdp) / dp(:,:,k)
-                enddo
+          do q = 1 , nq
+             do k = 1 , nlev
+                Qtens(:,:,k,q,ie) = elem(ie)%state%Q(:,:,k,q)
              enddo
-
-          else
-#if (defined COLUMN_OPENMP)
-             !$omp parallel do private(q,k) collapse(2)
-#endif
-             do q = 1 , nq
-                do k = 1 , nlev
-                   dp(:,:,k) = elem(ie)%derived%dp(:,:,k) - dt2*elem(ie)%derived%divdp_proj(:,:,k)
-                   Qtens(:,:,k,q,ie) = hvcoord%dp0(k)*elem(ie)%state%Qdp(:,:,k,q,nt_qdp) / dp(:,:,k)
-                enddo
-             enddo
-          endif
+          enddo
        enddo ! ie loop
 
        ! compute biharmonic operator. Qtens = input and output
@@ -707,22 +658,15 @@ contains
 
        do ie = nets , nete
 #if (defined COLUMN_OPENMP)
-          !$omp parallel do private(q,k,j,i)
+          !$omp parallel do private(q,k,j,i) collapse(2)
 #endif
           do q = 1 , nq
              do k = 1 , nlev
-                do j = 1 , np
-                   do i = 1 , np
-                      ! advection Qdp.  For mass advection consistency:
-                      ! DIFF( Qdp) ~   dp0 DIFF (Q)  =  dp0 DIFF ( Qdp/dp )
-                      elem(ie)%state%Qdp(i,j,k,q,nt_qdp) = elem(ie)%state%Qdp(i,j,k,q,nt_qdp) * elem(ie)%spheremp(i,j) &
-                           - dt * nu_q * Qtens(i,j,k,q,ie)
-                   enddo
-                enddo
+                elem(ie)%state%Q(:,:,k,q) = elem(ie)%state%Q(:,:,k,q) * elem(ie)%spheremp &
+                     - dt * nu_q * Qtens(:,:,k,q,ie)
              enddo
-
           enddo
-          call edgeVpack_nlyr(edge_g , elem(ie)%desc, elem(ie)%state%Qdp(:,:,:,:,nt_qdp) , nq*nlev , 0 , nq*nlev )
+          call edgeVpack_nlyr(edge_g , elem(ie)%desc, elem(ie)%state%Q , nq*nlev , 0 , nq*nlev )
        enddo ! ie loop
 
        call t_startf('ah_scalar_bexchV')
@@ -730,14 +674,14 @@ contains
        call t_stopf('ah_scalar_bexchV')
 
        do ie = nets , nete
-          call edgeVunpack_nlyr(edge_g , elem(ie)%desc, elem(ie)%state%Qdp(:,:,:,:,nt_qdp) , nq*nlev , 0, nq*nlev)
+          call edgeVunpack_nlyr(edge_g , elem(ie)%desc, elem(ie)%state%Q , nq*nlev , 0, nq*nlev)
 #if (defined COLUMN_OPENMP)
           !$omp parallel do private(q,k) collapse(2)
 #endif
           do q = 1 , nq
              ! apply inverse mass matrix
              do k = 1 , nlev
-                elem(ie)%state%Qdp(:,:,k,q,nt_qdp) = elem(ie)%rspheremp(:,:) * elem(ie)%state%Qdp(:,:,k,q,nt_qdp)
+                elem(ie)%state%Q(:,:,k,q) = elem(ie)%rspheremp(:,:) * elem(ie)%state%Q(:,:,k,q)
              enddo
           enddo
        enddo ! ie loop
@@ -751,12 +695,12 @@ contains
   end subroutine advance_hypervis_scalar
 
   subroutine biharmonic_wk_scalar(elem,qtens,deriv,edgeq,hybrid,nets,nete,nq)
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     ! compute weak biharmonic operator
     !    input:  qtens = Q
     !    output: qtens = weak biharmonic of Q
     !
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     use control_mod, only : hypervis_scaling
     use derivative_mod, only : laplace_sphere_wk
 
