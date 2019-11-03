@@ -172,6 +172,7 @@ contains
 
     gfr%check = .false.
     if (present(check)) gfr%check = check
+    gfr%check = .true.
 
     gfr%boost_pg1 = .false.
     if (present(boost_pg1)) gfr%boost_pg1 = boost_pg1    
@@ -247,6 +248,7 @@ contains
     use hybvcoord_mod, only: hvcoord_t
     use element_ops, only: get_temperature, get_field
     use physical_constants, only: p0, kappa
+    use kinds, only: iulog
 
     type (hybrid_t), intent(in) :: hybrid
     integer, intent(in) :: nt
@@ -259,6 +261,13 @@ contains
     real(kind=real_kind), dimension(np,np,nlev) :: dp, dp_fv, wr1, wr2, p, p_fv
     real(kind=real_kind) :: qmin, qmax, ones(np,np)
     integer :: ie, nf, nf2, ncol, qi, qsize
+
+    integer, save :: count = 0
+    if (hybrid%masterthread) then
+       count = count + 1
+       write(iulog,*) 'gfr_dyn_to_fv_phys_hybrid',count
+       print *, 'gfr_dyn_to_fv_phys_hybrid',count
+    end if
 
     ones = one
     nf = gfr%nphys
@@ -324,6 +333,7 @@ contains
     use hybvcoord_mod, only: hvcoord_t
     use physical_constants, only: p0, kappa
     use control_mod, only: ftype
+    use kinds, only: iulog
 
     type (hybrid_t), intent(in) :: hybrid
     integer, intent(in) :: nt
@@ -337,6 +347,13 @@ contains
     real(kind=real_kind) :: qmin, qmax
     integer :: ie, nf, ncol, k, qsize, qi
     logical :: q_adjustment
+
+    integer, save :: count = 0
+    if (hybrid%masterthread) then
+       count = count + 1
+       write(iulog,*) 'gfr_fv_phys_to_dyn_hybrid',count
+       print *, 'gfr_fv_phys_to_dyn_hybrid',count
+    end if
 
     nf = gfr%nphys
     ncol = nf*nf
@@ -1960,11 +1977,12 @@ contains
        mass_f = sum(reshape(gfr%w_ff(:nf2)*gfr%fv_metdet(:nf2,ie), (/nf,nf/))* &
             dp_fv(:nf,:nf,k)*q_f(:nf,:nf,k))
        mass_g = sum(elem(ie)%spheremp*dp(:,:,k)*q_g(:,:,k))
+       if (abs(mass_f) < 1d-20) cycle
        if (qmin_f < qmin_g - 10*eps*den .or. qmax_f > qmax_g + 10*eps*den) then
           write(iulog,*) 'gfr> g2f mixing ratio limits:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
                qmin_g, qmin_f-qmin_g, qmax_f-qmax_g, qmax_g, mass_f, mass_g, 'ERROR'
        end if
-       if (abs(mass_f - mass_g) > gfr%tolfac*20*eps*max(mass_f, mass_g)) then
+       if (abs(mass_f - mass_g) > gfr%tolfac*20*eps*max(abs(mass_f), abs(mass_g))) then
           write(iulog,*) 'gfr> g2f mixing ratio mass:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
                qmin_g, qmax_g, mass_f, mass_g, 'ERROR'
        end if
@@ -1992,17 +2010,18 @@ contains
        qmax_f = qmax(k)
        qmin_g = minval(q1_g(:,:,k))
        qmax_g = maxval(q1_g(:,:,k))
-       den = gfr%tolfac*max(1e-10_real_kind, maxval(abs(q0_g(:,:,k))))
-       if (qmin_g < qmin_f - 50*eps*den .or. qmax_g > qmax_f + 50*eps*den) then
-          write(iulog,*) 'gfr> f2g mixing ratio limits:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
-               qmin_f, qmin_g-qmin_f, qmax_g-qmax_f, qmax_f, mass0, mass1, 'ERROR'
-       end if
        mass0 = sum(elem(ie)%spheremp*dp(:,:,k)*q0_g(:,:,k))
+       if (abs(mass0) < 1d-20) cycle
        mass1 = sum(elem(ie)%spheremp*dp(:,:,k)*q1_g(:,:,k))
        den = sum(elem(ie)%spheremp*dp(:,:,k)*maxval(abs(q0_g(:,:,k))))
        if (abs(mass1 - mass0) > gfr%tolfac*20*eps*den) then
           write(iulog,*) 'gfr> f2g mixing ratio mass:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
                qmin_f, qmin_g, qmax_g, qmax_f, mass0, mass1, 'ERROR'
+       end if
+       den = gfr%tolfac*max(1e-10_real_kind, maxval(abs(q0_g(:,:,k))))
+       if (qmin_g < qmin_f - 50*eps*den .or. qmax_g > qmax_f + 50*eps*den) then
+          write(iulog,*) 'gfr> f2g mixing ratio limits:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
+               qmin_f, qmin_g-qmin_f, qmax_g-qmax_f, qmax_f, mass0, mass1, 'ERROR'
        end if
     end do
   end subroutine check_f2g_mixing_ratio

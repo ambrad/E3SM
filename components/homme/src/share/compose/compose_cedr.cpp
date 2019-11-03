@@ -5824,6 +5824,9 @@ static void run_cdr (CDR& q) {
 
 void run (CDR& cdr, const Data& d, const Real* q_min_r, const Real* q_max_r,
           const Int nets, const Int nete) {
+  static bool first_pass = true;
+  static bool first = true;
+
   static constexpr Int max_np = 4;
   const Int np = d.np, nlev = d.nlev, qsize = d.qsize,
     nlevwrem = cdr.nsuplev*cdr.nsublev;
@@ -5833,6 +5836,7 @@ void run (CDR& cdr, const Data& d, const Real* q_min_r, const Real* q_max_r,
     q_min(q_min_r, np, np, nlev, qsize, nete+1),
     q_max(q_max_r, np, np, nlev, qsize, nete+1);
 
+  bool found = false;
   for (Int ie = nets; ie <= nete; ++ie) {
     FA2<const Real> spheremp(d.spheremp[ie], np, np);
     FA5<const Real> qdp_p(d.qdp_pc[ie], np, np, nlev, d.qsize_d, 2);
@@ -5875,35 +5879,34 @@ void run (CDR& cdr, const Data& d, const Real* q_min_r, const Real* q_max_r,
           //todo Generalize to one rhom field per level. Until then, we're not
           // getting QLT's safety benefit.
           if (ti == 0) cdr.cdr->set_rhom(lci, 0, volume);
-          if (Qm_prev < -0.5) {
-            static bool first = true;
-            if (first) {
-              first = false;
-              std::stringstream ss;
-              ss << "Qm_prev < -0.5: Qm_prev = " << Qm_prev
-                 << " on rank " << cdr.p->rank()
-                 << " at (ie,gid,spli,k0,q,ti,sbli,lci,k,n0_qdp,tl_np1) = ("
-                 << ie << "," << cdr.ie2gci[ie] << "," << spli << "," << k0 << ","
-                 << q << "," << ti << "," << sbli << "," << lci << "," << k << ","
-                 << d.n0_qdp << "," << d.tl_np1 << ")\n";
-              ss << "Qdp(:,:,k,q,n0_qdp) = [";
-              for (Int j = 0; j < np; ++j)
-                for (Int i = 0; i < np; ++i)
-                  ss << " " << qdp_p(i,j,k,q,d.n0_qdp);
-              ss << "]\n";
-              ss << "dp3d(:,:,k,tl_np1) = [";
-              for (Int j = 0; j < np; ++j)
-                for (Int i = 0; i < np; ++i)
-                  ss << " " << dp3d_c(i,j,k,d.tl_np1);
-              ss << "]\n";
-              pr(ss.str());
-            }
+          if (first && Qm_prev < -0.5) {
+            found = true;
+            std::stringstream ss;
+            ss << "Qm_prev < -0.5: Qm_prev = " << Qm_prev
+               << " on rank " << cdr.p->rank()
+               << " at (q,ie,gid,spli,k0,ti,sbli,lci,k,n0_qdp,tl_np1,first_pass) = ("
+               << q << "," << ie << "," << cdr.ie2gci[ie] << "," << spli << ","
+               << k0 << "," << ti << "," << sbli << "," << lci << "," << k << ","
+               << d.n0_qdp << "," << d.tl_np1 << "," << first_pass << ")\n";
+            ss << "Qdp(:,:,k,q,n0_qdp) = [";
+            for (Int j = 0; j < np; ++j)
+              for (Int i = 0; i < np; ++i)
+                ss << " " << qdp_p(i,j,k,q,d.n0_qdp);
+            ss << "]\n";
+            ss << "dp3d(:,:,k,tl_np1) = [";
+            for (Int j = 0; j < np; ++j)
+              for (Int i = 0; i < np; ++i)
+                ss << " " << dp3d_c(i,j,k,d.tl_np1);
+            ss << "]\n";
+            pr(ss.str());
           }
           cdr.cdr->set_Qm(lci, ti, Qm, Qm_min, Qm_max, Qm_prev);
         }
       }
     }
   }
+  first_pass = false;
+  if (found) first = false;
 
   run_cdr(cdr);
 }
