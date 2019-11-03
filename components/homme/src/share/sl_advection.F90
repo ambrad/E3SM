@@ -1092,7 +1092,7 @@ contains
   function test_reconstruct_and_limit_dp() result(nerr)
     use physical_constants, only: p0
     real(real_kind), parameter :: dt = 1800_real_kind, dp_tol = (p0/nlev)*eps, &
-         tol = 20_real_kind*eps
+         tol = 100_real_kind*eps
 
     real(real_kind) :: dpref(np,np,nlev), dpfin(np,np,nlev,2), eta_dot_dpdn(np,np,nlevp), tmp
     integer :: nerr, i, j, k
@@ -1144,7 +1144,7 @@ contains
     nerr = nerr + test_lagrange()
     nerr = nerr + test_reconstruct_and_limit_dp()
 
-    if (nerr >= 0 .and. par%masterproc) write(iulog,'(a,i3)'), 'sl_unittest FAIL', nerr
+    if (nerr > 0 .and. par%masterproc) write(iulog,'(a,i3)'), 'sl_unittest FAIL', nerr
   end subroutine sl_unittest
 
 end module sl_advection

@@ -92,7 +92,6 @@ contains
     integer :: ithr, nets, nete
 
 #ifdef HOMME_ENABLE_COMPOSE
-    call sl_unittest(par)
     if (transport_alg == 19) then
        nEndStep = -1
     else
@@ -105,6 +104,7 @@ contains
 
     ! 1. Unit tests.
     call compose_unittest()
+    call sl_unittest(par)
 
 #if (defined HORIZ_OPENMP)
     !$omp parallel num_threads(hthreads), default(SHARED), private(ithr,nets,nete,hybrid)
