@@ -689,7 +689,7 @@ contains
 
     use control_mod,          only: runtype, test_case, &
                                     debug_level, vfile_int, vform, vfile_mid, &
-                                    topology,rsplit, qsplit, rk_stage_user,&
+                                    topology, dt_remap_factor, dt_tracer_factor, rk_stage_user,&
                                     sub_case, limiter_option, nu, nu_q, nu_div, tstep_type, hypervis_subcycle, &
                                     hypervis_subcycle_q, moisture, use_moisture
     use global_norms_mod,     only: test_global_integral, print_cfl
@@ -788,11 +788,11 @@ contains
     ! compute most restrictive dt*nu for use by variable res viscosity:
     ! compute timestep seen by viscosity operator:
     dt_dyn_vis = tstep
-    if (qsplit>1 .and. tstep_type == 1) then
+    if (dt_tracer_factor>1 .and. tstep_type == 1) then
        ! tstep_type==1: RK2 followed by LF.  internal LF stages apply viscosity at 2*dt
        dt_dyn_vis = 2*tstep
     endif
-    dt_tracer_vis=tstep*qsplit
+    dt_tracer_vis=tstep*dt_tracer_factor
     
     ! compute most restrictive condition:
     ! note: dtnu ignores subcycling
@@ -930,7 +930,7 @@ contains
     endif
 
     if (runtype==1) then
-       call TimeLevel_Qdp( tl, qsplit, n0_qdp)
+       call TimeLevel_Qdp( tl, dt_tracer_factor, n0_qdp)
        do ie=nets,nete
           do q=1,qsize
              elem(ie)%state%Q(:,:,:,q)=elem(ie)%state%Qdp(:,:,:,q,n0_qdp)/elem(ie)%state%dp3d(:,:,:,tl%n0)
@@ -952,9 +952,10 @@ contains
     if (hybrid%masterthread) then
        ! CAM has set tstep based on dtime before calling prim_init2(),
        ! so only now does HOMME learn the timstep.  print them out:
-       write(iulog,'(a,2f9.2)') "dt_remap: (0=disabled)   ",tstep*qsplit*rsplit
+       write(iulog,'(a,2f9.2)') "dt_remap: (0=disabled)   ",tstep*dt_remap_factor
        if (qsize>0) then
-          write(iulog,'(a,2f9.2)') "dt_tracer (SE), per RK stage: ",tstep*qsplit,(tstep*qsplit)/(rk_stage_user-1)
+          write(iulog,'(a,2f9.2)') "dt_tracer (SE), per RK stage: ", &
+               tstep*dt_tracer_factor,(tstep*dt_tracer_factor)/(rk_stage_user-1)
        end if
        write(iulog,'(a,2f9.2)')    "dt_dyn:                  ",tstep
        write(iulog,'(a,2f9.2)')    "dt_dyn (viscosity):      ",dt_dyn_vis
@@ -965,7 +966,7 @@ contains
        if (phys_tscale/=0) then
           write(iulog,'(a,2f9.2)') "CAM physics timescale:       ",phys_tscale
        endif
-       write(iulog,'(a,2f9.2)') "CAM dtime (dt_phys):         ",tstep*nsplit*qsplit*max(rsplit,1)
+       write(iulog,'(a,2f9.2)') "CAM dtime (dt_phys):         ",tstep*nsplit*max(dt_remap_factor, dt_tracer_factor)
 #endif
     end if
 
