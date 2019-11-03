@@ -812,7 +812,7 @@ contains
        dps = eta_dot_dpdn(:,:,nlevp)
        eta_dot_dpdn(:,:,nlevp) = zero
        do k = 2,nlev
-          eta_dot_dpdn(:,:,k) = dps - eta_dot_dpdn(:,:,k)
+          eta_dot_dpdn(:,:,k) = hvcoord%hybi(k)*dps - eta_dot_dpdn(:,:,k)
        end do
     end if
 

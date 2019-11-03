@@ -1299,7 +1299,7 @@ contains
           if (compute_diagnostics_it) call run_diagnostics(elem,hvcoord,tl,1,.true.,nets,nete)
        end if
 
-       call prim_advance_exp(elem, deriv1, hvcoord,hybrid, dt, tl, nets, nete, &
+       call prim_advance_exp(elem, deriv1, hvcoord, hybrid, dt, tl, nets, nete, &
             compute_diagnostics_it)
 
        if (dt_remap_factor == 0) then
