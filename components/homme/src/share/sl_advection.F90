@@ -1016,6 +1016,7 @@ contains
     use vertremap_base, only: remap1
     use parallel_mod, only: abortmp
     use kinds, only: iulog
+    use perf_mod, only: t_startf, t_stopf
 
     type (hybrid_t), intent(in) :: hybrid
     type (element_t), intent(inout) :: elem(:)
@@ -1025,8 +1026,8 @@ contains
 
     integer :: ie, i, j, k, q, n0_qdp, np1_qdp
 
+    call t_startf('SLMM vertical remap')
     call TimeLevel_Qdp(tl, dt_tracer_factor, n0_qdp, np1_qdp)
-
     do ie = nets, nete
        ! divdp contains the reconstructed vertically Lagrangian level
        ! dp_star.
@@ -1051,6 +1052,7 @@ contains
                                       elem(ie)%state%dp3d(:,:,:,tl%np1)
        enddo
     end do
+    call t_stopf('SLMM vertical remap')
   end subroutine sl_vertically_remap_tracers
 
   function test_lagrange() result(nerr)
