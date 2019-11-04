@@ -2960,13 +2960,14 @@ end subroutine add_fld_default_calls
 
 subroutine check_s(lbl, st, te, pte)
   use ppgrid, only: pver, pverp
+  use spmd_utils, only: masterproc
 
-  character(*) :: lbl
-  type(physics_state), intent(inout) :: st
-  type(physics_tend ), intent(inout) :: te
-  type(physics_ptend ), intent(inout) :: pte
+  character(*), intent(in) :: lbl
+  type(physics_state), intent(in) :: st
+  type(physics_tend), intent(in) :: te
+  type(physics_ptend), intent(in) :: pte
 
-  integer :: i, k
+  integer :: i, k, kb, ke
   logical :: isbad(10)
 
   isbad = .true.
@@ -2976,7 +2977,7 @@ subroutine check_s(lbl, st, te, pte)
      isbad(3) = st%tw_ini(i) /= st%tw_ini(i)
      isbad(4) = st%tw_cur(i) /= st%tw_cur(i)
      if (any(isbad(1:4))) then
-        print *,'check_s st i', trim(lbl), i, isbad(1:4)
+        print *,'check_s st i ', trim(lbl), i, isbad(1:4)
      end if
      do k = 1, pver
         isbad(1) = st%s(i,k) /= st%s(i,k)
@@ -2990,34 +2991,40 @@ subroutine check_s(lbl, st, te, pte)
         isbad(9) = st%pdel(i,k) <= 0
         isbad(10) = st%pdeldry(i,k) <= 0
         if (any(isbad(1:10))) then
-           print *,'check_s st ik', trim(lbl), i,k, isbad(1:10)
+           print *,'check_s st ik ', trim(lbl), i,k, isbad(1:10)
         end if
      end do
      isbad(1) = te%te_tnd(i) /= te%te_tnd(i)
      isbad(2) = te%tw_tnd(i) /= te%tw_tnd(i)
      if (any(isbad(1:2))) then
-        print *,'check_s te i', trim(lbl), i, isbad(1:2)
+        print *,'check_s te i ', trim(lbl), i, isbad(1:2)
      end if
-     do k = pte%top_level, pte%bot_level
-        isbad(1) = pte%s(i,k) /= pte%s(i,k)
-        isbad(2) = pte%u(i,k) /= pte%u(i,k)
-        isbad(3) = pte%v(i,k) /= pte%v(i,k)
-        isbad(4) = any(pte%q(i,k,:) /= pte%q(i,k,:))
-        if (any(isbad(1:4))) then
-           print *,'check_s pte ik', trim(lbl), i,k, isbad(1:4)
+#if 0
+     if (pte%top_level >= 1 .and. pte%bot_level <= pver) then
+        kb = max(1,pte%top_level)
+        ke = min(pver,pte%bot_level)
+        do k = kb,ke
+           isbad(1) = pte%s(i,k) /= pte%s(i,k)
+           isbad(2) = pte%u(i,k) /= pte%u(i,k)
+           isbad(3) = pte%v(i,k) /= pte%v(i,k)
+           isbad(4) = any(pte%q(i,k,:) /= pte%q(i,k,:))
+           if (any(isbad(1:4))) then
+              print *,'check_s pte ik ', trim(lbl), i,k, isbad(1:4)
+           end if
+        end do
+        isbad(1) = pte%hflux_srf(i) /= pte%hflux_srf(i)
+        isbad(2) = pte%hflux_top(i) /= pte%hflux_top(i)
+        isbad(3) = pte%taux_srf(i) /= pte%taux_srf(i)
+        isbad(4) = pte%taux_top(i) /= pte%taux_top(i)
+        isbad(5) = pte%tauy_srf(i) /= pte%tauy_srf(i)
+        isbad(6) = pte%tauy_top(i) /= pte%tauy_top(i)
+        isbad(7) = any(pte%cflx_srf(i,:) /= pte%cflx_srf(i,:))
+        isbad(8) = any(pte%cflx_top(i,:) /= pte%cflx_top(i,:))
+        if (any(isbad(1:8))) then
+           print *,'check_s pte i ', trim(lbl), i, isbad(1:8)
         end if
-     end do
-     isbad(1) = pte%hflux_srf(i) /= pte%hflux_srf(i)
-     isbad(2) = pte%hflux_top(i) /= pte%hflux_top(i)
-     isbad(3) = pte%taux_srf(i) /= pte%taux_srf(i)
-     isbad(4) = pte%taux_top(i) /= pte%taux_top(i)
-     isbad(5) = pte%tauy_srf(i) /= pte%tauy_srf(i)
-     isbad(6) = pte%tauy_top(i) /= pte%tauy_top(i)
-     isbad(7) = any(pte%cflx_srf(i,:) /= pte%cflx_srf(i,:))
-     isbad(8) = any(pte%cflx_top(i,:) /= pte%cflx_top(i,:))
-     if (any(isbad(1:8))) then
-        print *,'check_s pte i', trim(lbl), i, isbad(1:8)
      end if
+#endif
   end do
 end subroutine check_s
 
