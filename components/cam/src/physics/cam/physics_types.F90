@@ -1246,6 +1246,14 @@ end subroutine physics_ptend_copy
        state%pint  (:ncol,k+1) = state%pint(:ncol,k  ) + state%pdel(:ncol,k)
        state%lnpint(:ncol,k+1) = log(state%pint(:ncol,k+1))
        state%rpdel (:ncol,k  ) = 1._r8/ state%pdel(:ncol,k  )
+
+       if (any(state%pdel(:ncol,k) < 0)) then
+          do i = 1,ncol
+             if (state%pdel(i,k) < 0) then
+                print *,'physics_dme_adjust i,k,pdel,fdq,qini',i,k,state%pdel(i,k),fdq(i),qini(i,k)
+             end if
+          end do
+       end if
     end do
 
     if ( waccmx_is('ionosphere') .or. waccmx_is('neutral') ) then 

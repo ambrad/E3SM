@@ -572,6 +572,17 @@ CONTAINS
         end do
       end do
 
+      if (any(phys_state(lchnk)%pdel <= 0)) then         
+         print *,'dp_coupling phys_state(lchnk)%pdel <= 0'
+         do k = 1,nlev
+            do i = 1,ncol
+               if (phys_state(lchnk)%pdel(i,k) <= 0) then
+                  print *,'dp_coupling phys_state i,k,pdel,ps',i,k,phys_state(lchnk)%pdel(i,k),phys_state(lchnk)%ps(i)
+               end if
+            end do
+         end do
+      end if
+
       !----------------------------------------------------
       ! Need to fill zvirv 2D variables to be 
       ! compatible with geopotential_t interface
