@@ -172,7 +172,7 @@ contains
 
     gfr%check = .false.
     if (present(check)) gfr%check = check
-    gfr%check = .true.
+    !gfr%check = .true.
 
     gfr%boost_pg1 = .false.
     if (present(boost_pg1)) gfr%boost_pg1 = boost_pg1    
@@ -262,12 +262,14 @@ contains
     real(kind=real_kind) :: qmin, qmax, ones(np,np)
     integer :: ie, nf, nf2, ncol, qi, qsize
 
+#if 0
     integer, save :: count = 0
     if (hybrid%masterthread) then
        count = count + 1
        write(iulog,*) 'gfr_dyn_to_fv_phys_hybrid',count
        print *, 'gfr_dyn_to_fv_phys_hybrid',count
     end if
+#endif
 
     ones = one
     nf = gfr%nphys
@@ -348,12 +350,14 @@ contains
     integer :: ie, nf, ncol, k, qsize, qi
     logical :: q_adjustment
 
+#if 0
     integer, save :: count = 0
     if (hybrid%masterthread) then
        count = count + 1
        write(iulog,*) 'gfr_fv_phys_to_dyn_hybrid',count
        print *, 'gfr_fv_phys_to_dyn_hybrid',count
     end if
+#endif
 
     nf = gfr%nphys
     ncol = nf*nf
@@ -1982,7 +1986,7 @@ contains
           write(iulog,*) 'gfr> g2f mixing ratio limits:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
                qmin_g, qmin_f-qmin_g, qmax_f-qmax_g, qmax_g, mass_f, mass_g, 'ERROR'
        end if
-       if (abs(mass_f - mass_g) > gfr%tolfac*20*eps*max(abs(mass_f), abs(mass_g))) then
+       if (abs(mass_f - mass_g) > gfr%tolfac*100*eps*max(abs(mass_f), abs(mass_g))) then
           write(iulog,*) 'gfr> g2f mixing ratio mass:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
                qmin_g, qmax_g, mass_f, mass_g, 'ERROR'
        end if

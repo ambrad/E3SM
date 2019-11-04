@@ -2,6 +2,8 @@
 # include "config.h"
 #endif
 
+#undef NDEBUG
+
 module sl_advection
   use kinds, only              : real_kind, int_kind
   use dimensions_mod, only     : nlev, nlevp, np, qsize, qsize_d
@@ -82,6 +84,9 @@ contains
        call sl_parse_transport_alg(transport_alg, slmm, cisl, qos, sl_test, independent_time_steps)
        if (par%masterproc .and. nu_q > 0 .and. semi_lagrange_hv_q > 0) &
             write(iulog,*) 'COMPOSE> use HV; nu_q, all:', nu_q, semi_lagrange_hv_q
+#ifndef NDEBUG
+       if (par%masterproc) write(iulog,*) 'sl_advection has undefed NDEBUG'
+#endif
        nslots = nlev*qsize
        call interpolate_tracers_init()
        ! Technically a memory leak, but the array persists for the entire
@@ -815,6 +820,11 @@ contains
           eta_dot_dpdn(:,:,k) = hvcoord%hybi(k)*dps - eta_dot_dpdn(:,:,k)
        end do
     end if
+    if (any(eta_dot_dpdn /= eta_dot_dpdn)) then
+       print *,'sl_advection recon 1',ie,'eta_dot_dpdn',eta_dot_dpdn,'vdp',vdp, &
+            'vstar',elem%derived%vstar,'vn0',elem%derived%vn0, &
+            'dp',elem%derived%dp,'dp3d',elem%state%dp3d(:,:,:,tl%np1)
+    end if
 
     ! Recall
     !   p(eta,ps) = A(eta) p0 + B(eta) ps
@@ -887,12 +897,17 @@ contains
     eta_dot_dpdn(:,:,1) = zero
     eta_dot_dpdn(:,:,nlevp) = zero
 
+    if (any(eta_dot_dpdn /= eta_dot_dpdn)) then
+       print *,'sl_advection recon 2',ie,'eta_dot_dpdn',eta_dot_dpdn, &
+            'pref',pref,'p0r',p0r,'p1r',p1r
+    end if
+
     ! Limit dp to be > 0 and store update in eta_dot_dpdn rather
     ! than true eta_dot_dpdn. See comments below for more.
     dp_neg_min = reconstruct_and_limit_dp(elem%state%dp3d(:,:,:,tl%np1), &
          dt, dp_tol, eta_dot_dpdn, dprecon)
 #ifndef NDEBUG
-    if (dp_neg_min < zero) then
+    if (dp_neg_min < dp_tol) then
        write(iulog, '(a,i7,i7,es11.4)') &
             'sl_advection: reconstruct_and_limit_dp (rank,ie) returned', &
             hybrid%par%rank, ie, dp_neg_min
@@ -981,7 +996,7 @@ contains
     integer :: k, i, j
     real(kind=real_kind) :: nmass, w(nlev), dp(nlev), dp_neg_min
 
-    dp_neg_min = zero ! < 0 if the limiter has to adjust dp
+    dp_neg_min = dp_tol ! < dp_tol if the limiter has to adjust dp
     do j = 1,np
        do i = 1,np
           nmass = zero
