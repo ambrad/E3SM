@@ -111,6 +111,12 @@ contains
 
           zm(i,k) = zi(i,k+1) + rog(i,k) * tv * hkk(i)
           zi(i,k) = zi(i,k+1) + rog(i,k) * tv * hkl(i)
+
+          if (zi(i,k) /= zi(i,k)) then
+             print *,'geopotential_dse 1',i,k,zi(i,k),rog(i,k),tv,hkl(i)
+             print *,'geopotential_dse 2',i,k,dse(i,k),phis(i),cpair(i,k),rair(i,k),hkk(i)
+             print *,'geopotential_dse 3',i,k,pdel(i,k),pmid(i,k),tvfac,zvir(i,k),q(i,k)
+          end if
        end do
     end do
 
@@ -207,6 +213,11 @@ use ppgrid, only : pcols
 
           zm(i,k) = zi(i,k+1) + rog(i,k) * tv * hkk(i)
           zi(i,k) = zi(i,k+1) + rog(i,k) * tv * hkl(i)
+          
+          if (zi(i,k) /= zi(i,k)) then
+             print *,'geopotential_t 1',i,k,zi(i,k),rog(i,k),tv,tvfac,t(i,k)
+             print *,'geopotential_t 2',i,k,zvir(i,k),q(i,k),pdel(i,k),pmid(i,k)
+          end if
        end do
     end do
 
