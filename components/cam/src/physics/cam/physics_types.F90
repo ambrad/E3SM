@@ -1247,10 +1247,12 @@ end subroutine physics_ptend_copy
        state%lnpint(:ncol,k+1) = log(state%pint(:ncol,k+1))
        state%rpdel (:ncol,k  ) = 1._r8/ state%pdel(:ncol,k  )
 
-       if (any(state%pdel(:ncol,k) < 0)) then
+       if (any(state%s(:ncol,k) /= state%s(:ncol,k))) then
           do i = 1,ncol
-             if (state%pdel(i,k) < 0) then
-                print *,'physics_dme_adjust i,k,pdel,fdq,qini',i,k,state%pdel(i,k),fdq(i),qini(i,k)
+             if (state%s(i,k) /= state%s(i,k)) then
+                print *,'physics_dme_adjust 1',i,k,state%pdel(i,k),fdq(i),qini(i,k),state%s(i,k)
+                print *,'physics_dme_adjust 2',i,k,te(i),state%u(i,k),state%v(i,k)
+                print *,'physics_dme_adjust 3',i,k,state%q(i,k,1),qini(i,k)
              end if
           end do
        end if
