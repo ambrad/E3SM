@@ -774,11 +774,13 @@ module advance_clubb_core_module
 
     !----- Begin Code -----
 
-   if (any(wm_zm /= wm_zm) .or. any(wz_zt /= wz_zt)) then
+#if 0
+   if (any(wm_zm /= wm_zm) .or. any(wm_zt /= wm_zt)) then
       print *,'advance_clubb_core wm_zm',wm_zm
       print *,'advance_clubb_core wm_zt',wm_zt
       return
    end if
+#endif
 
     ! Sanity checks
     if ( clubb_at_least_debug_level( 0 ) ) then
@@ -2919,10 +2921,12 @@ module advance_clubb_core_module
     call compute_cloud_cover &
        ( pdf_params, cloud_frac, rcm, & ! intent(in)
          cloud_cover, rcm_in_layer, err )    ! intent(out)
+#if 0
     if (err /= 0) then
        print *,'clubb pdf_closure_driver wm_zm', wm_zm
        print *,'clubb pdf_closure_driver wm_zt', wm_zt
     end if
+#endif
 
     ! Use cloud_cover and rcm_in_layer to help boost cloud_frac and rcm to help
     ! increase cloudiness at coarser grid resolutions.

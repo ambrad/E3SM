@@ -1719,7 +1719,8 @@ contains
      elem(ie)%derived%eta_dot_dpdn(:,:,nlev+1) = &
              elem(ie)%derived%eta_dot_dpdn(:,:,nlev+1) + eta_ave_w*eta_dot_dpdn(:,:,nlev+1)
      if (any(elem(ie)%derived%omega_p /= elem(ie)%derived%omega_p)) then
-        print *,'omega_p debug',ie,'omega',omega,'omega_i',omega_i,'divdp',divdp,'vtemp',vtemp,'vgrad_p',vgrad_p,'pi_i',pi_i,'dp3d',dp3d
+        print *,'omega_p debug',hybrid%par%rank
+        !print *,'omega_p debug',ie,'omega',omega,'omega_i',omega_i,'divdp',divdp,'vtemp',vtemp,'vgrad_p',vgrad_p,'pi_i',pi_i,'dp3d',dp3d
      end if
 
      ! ================================================

@@ -1759,9 +1759,13 @@ end subroutine clubb_init_cnst
          wm_zt(k+1) = -1._r8*state1%omega(i,pver-k+1)*invrs_rho_ds_zt(k+1)*invrs_gravit
       enddo
       if (any(wm_zt /= wm_zt)) then
-         print *,'clubb_intr wm_zt',wm_zt
-         print *,'clubb_intr omega',state1%omega(i,:)
+         !print *,'clubb_intr wm_zt',wm_zt
+         !print *,'clubb_intr omega',state1%omega(i,:)
          print *,'clubb_intr invrs_rho_ds_zt',invrs_rho_ds_zt
+         print *,'clubb_intr pdel',state1%pdel(i,:)
+         print *,'clubb_intr zi',state1%zi(i,:)
+         print *,'clubb_intr dz_g',dz_g
+         call endrun('clubb_intr endrun')
       end if
     
       ! ------------------------------------------------- !
