@@ -469,6 +469,11 @@ subroutine stepon_run2(phys_state, phys_tend, dyn_in, dyn_out )
          omega(:,:,k) = dyn_in%elem(ie)%derived%omega_p(:,:,k) * p_m(:,:,k)
       enddo
       call outfld('DYN_OMEGA',omega(:,:,:),npsq,ie)
+      if (any(omega /= omega)) then
+         print *,'stepon omega',omega
+         print *,'stepon p_i',p_i
+         print *,'stepon state%dp3d',dyn_in%elem(ie)%state%dp3d(:,:,:,tl_f)
+      end if
    end do
    
    

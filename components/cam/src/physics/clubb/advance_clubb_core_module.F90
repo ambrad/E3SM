@@ -774,6 +774,12 @@ module advance_clubb_core_module
 
     !----- Begin Code -----
 
+   if (any(wm_zm /= wm_zm) .or. any(wz_zt /= wz_zt)) then
+      print *,'advance_clubb_core wm_zm',wm_zm
+      print *,'advance_clubb_core wm_zt',wm_zt
+      return
+   end if
+
     ! Sanity checks
     if ( clubb_at_least_debug_level( 0 ) ) then
 
@@ -2501,7 +2507,7 @@ module advance_clubb_core_module
 
     logical :: l_spur_supersat   ! Spurious supersaturation?
 
-    integer :: i, k
+    integer :: i, k, err
 
     !---------------------------------------------------------------------------
     ! Interpolate wp3, rtp3, and thlp3 to momentum levels, and wp2, rtp2, and
@@ -2912,7 +2918,11 @@ module advance_clubb_core_module
     ! Added July 2009
     call compute_cloud_cover &
        ( pdf_params, cloud_frac, rcm, & ! intent(in)
-         cloud_cover, rcm_in_layer )    ! intent(out)
+         cloud_cover, rcm_in_layer, err )    ! intent(out)
+    if (err /= 0) then
+       print *,'clubb pdf_closure_driver wm_zm', wm_zm
+       print *,'clubb pdf_closure_driver wm_zt', wm_zt
+    end if
 
     ! Use cloud_cover and rcm_in_layer to help boost cloud_frac and rcm to help
     ! increase cloudiness at coarser grid resolutions.
@@ -4251,7 +4261,7 @@ module advance_clubb_core_module
     !-----------------------------------------------------------------------
     subroutine compute_cloud_cover &
              ( pdf_params, cloud_frac, rcm, & ! intent(in)
-               cloud_cover, rcm_in_layer )    ! intent(out)
+               cloud_cover, rcm_in_layer, err )    ! intent(out)
       !
       ! Description:
       !   Subroutine to compute cloud cover (the amount of sky
@@ -4308,9 +4318,11 @@ module advance_clubb_core_module
         vert_cloud_frac_lower, & ! Fraction of cloud in bottom half of grid box
         vert_cloud_frac          ! Fraction of cloud filling the grid box in the vertical
 
-      integer :: k
+      integer :: k, err
 
       ! ------------ Begin code ---------------
+
+      err = 0
 
       do k = 1, gr%nz
 
@@ -4404,6 +4416,9 @@ module advance_clubb_core_module
             write(fstderr,*) "rcm(k) = ", rcm(k)
             write(fstderr,*) "rcm(k+1) = ", rcm(k+1)
             write(fstderr,*) "rcm(k-1) = ", rcm(k-1)
+            write(fstderr,*) "gr%zt(k) = ", gr%zt(k)
+            write(fstderr,*) "gr%zm(k) = ", gr%zm(k)
+            err = err + 1
 
             return
 
