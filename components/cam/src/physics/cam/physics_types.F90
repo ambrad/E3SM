@@ -857,6 +857,10 @@ contains
 
 !-----------------------------------------------------------------------
 
+    if (fac <= 1d-15) then
+       print *,'physics_ptend_scale fac',fac
+    end if
+
     call t_startf('physics_ptend_scale')
 ! Update u,v fields
     if (ptend%lu) &

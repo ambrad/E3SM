@@ -2630,18 +2630,19 @@ end if
              call physics_ptend_sum(ptend_aero, ptend, ncol)
              call physics_ptend_dealloc(ptend_aero)
           endif
-
+          call check_s('MG microp_tend aft 1', state, tend, ptend)
           ! Have to scale and apply for full timestep to get tend right
           ! (see above note for macrophysics).
           call physics_ptend_scale(ptend, 1._r8/cld_macmic_num_steps, ncol)
-
+          call check_s('MG microp_tend aft 2', state, tend, ptend)
           call physics_update (state, ptend, ztodt, tend)
+          call check_s('MG microp_tend aft 3', state, tend, ptend)
           call check_energy_chng(state, tend, "microp_tend", nstep, ztodt, &
                zero, prec_str(:ncol)/cld_macmic_num_steps, &
                snow_str(:ncol)/cld_macmic_num_steps, zero)
 
           call t_stopf('microp_tend')
-          call check_s('MG microp_tend aft', state, tend, ptend)
+          call check_s('MG microp_tend aft 4', state, tend, ptend)
         else 
         ! If microphysics is off, set surface cloud liquid/ice and rain/snow fluxes to zero
 
@@ -2960,6 +2961,7 @@ end subroutine add_fld_default_calls
 
 subroutine check_s(lbl, st, te, pte)
   use ppgrid, only: pver, pverp
+  use constituents, only: pcnst
   use spmd_utils, only: masterproc
 
   character(*), intent(in) :: lbl
@@ -2967,7 +2969,7 @@ subroutine check_s(lbl, st, te, pte)
   type(physics_tend), intent(in) :: te
   type(physics_ptend), intent(in) :: pte
 
-  integer :: i, k, kb, ke
+  integer :: i, k, kb, ke, q, n, qbad(40)
   logical :: isbad(10)
 
   isbad = .true.
@@ -2992,6 +2994,16 @@ subroutine check_s(lbl, st, te, pte)
         isbad(10) = st%pdeldry(i,k) <= 0
         if (any(isbad(1:10))) then
            print *,'check_s st ik ', trim(lbl), i,k, isbad(1:10)
+           if (isbad(8)) then
+              n = 0
+              do q = 1, pcnst
+                 if (st%q(i,k,q) /= st%q(i,k,q)) then
+                    n = n + 1
+                    qbad(n) = q
+                 end if
+              end do
+              print *,'check_s st ik qs ', trim(lbl), i,k, qbad(:n)
+           end if
         end if
      end do
      isbad(1) = te%te_tnd(i) /= te%te_tnd(i)
