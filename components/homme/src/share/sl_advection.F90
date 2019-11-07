@@ -223,6 +223,7 @@ contains
        call cedr_sl_set_pointers_begin(nets, nete)
        do ie = nets, nete
           call cedr_sl_set_spheremp(ie, elem(ie)%spheremp)
+          call cedr_sl_set_dp0(hvcoord%dp0)
           call cedr_sl_set_Qdp(ie, elem(ie)%state%Qdp, n0_qdp, np1_qdp)
           if (independent_time_steps) then
              call cedr_sl_set_dp(ie, elem(ie)%derived%divdp) ! dp_star
@@ -299,7 +300,7 @@ contains
     use kinds,           only : real_kind
     use hybrid_mod,      only : hybrid_t
     use element_mod,     only : element_t
-    use dimensions_mod,   only : np, nlev
+    use dimensions_mod,  only : np, nlev
 
     implicit none
 

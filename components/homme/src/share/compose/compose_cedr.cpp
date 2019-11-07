@@ -4991,11 +4991,93 @@ namespace homme {
 namespace compose {
 
 template <typename ES>
-struct QLT : public cedr::qlt::QLT<ES> {
+class QLT : public cedr::qlt::QLT<ES> {
+  typedef cedr::qlt::QLT<ES> Super;
+  typedef typename Super::RealList RealList;
+
+  struct VerticalLevelsData {
+    typedef std::shared_ptr<VerticalLevelsData> Ptr;
+
+    RealList lo, hi, mass, ones;
+
+    VerticalLevelsData (const cedr::Int n)
+      : lo("lo", n), hi("hi", n), mass("mass", n), ones("ones", n)
+    {
+      for (cedr::Int k = 0; k < n; ++k) ones(k) = 1;
+    }
+  };
+
+  typename VerticalLevelsData::Ptr vld_;
+
+  void reconcile_vertical (const cedr::Int problem_type, const cedr::Int bd_os,
+                           const cedr::Int bis, const cedr::Int bie) {
+    using cedr::Int;
+    using cedr::Real;
+    using cedr::ProblemType;
+
+    cedr_assert(problem_type & ProblemType::shapepreserve & ProblemType::conserve);
+
+    auto& md = this->md_;
+    auto& bd = this->bd_;
+    const auto& vld = *vld_;
+    const Int nlev = vld.lo.extent_int(0);
+    const Int nprob = (bie - bis)/nlev;
+
+#if defined THREAD_QLT_RUN && defined HORIZ_OPENMP
+#   pragma omp for
+#endif
+    for (Int pi = 0; pi < nprob; ++pi) {
+      const Int bd_os_pi = bd_os + md.a_d.trcr2bl2r(md.a_d.bidx2trcr(bis + pi));
+      //#define RV_DIAG
+#ifdef RV_DIAG
+      Real oob = 0;
+#endif
+      Real tot_mass = 0;
+      for (Int k = 0; k < nlev; ++k) {
+        const Int bd_os_k = bd_os_pi + nprob*4*k;
+        vld.lo  (k) = bd.l2r_data(bd_os_k    );
+        vld.hi  (k) = bd.l2r_data(bd_os_k + 2);
+        vld.mass(k) = bd.l2r_data(bd_os_k + 3); // previous mass, not current one
+        tot_mass += vld.mass(k);
+#ifdef RV_DIAG
+        if (vld.mass(k) < vld.lo(k)) oob += vld.lo(k) - vld.mass(k);
+        if (vld.mass(k) > vld.hi(k)) oob += vld.mass(k) - vld.hi(k);
+#endif
+      }
+      cedr::local::caas(nlev, vld.ones.data(), tot_mass,
+                        vld.lo.data(), vld.hi.data(),
+                        vld.mass.data(), vld.mass.data(),
+                        false);
+      Real tot_mass_slv = 0, oob_slv = 0;
+      for (Int k = 0; k < nlev; ++k) {
+        const Int bd_os_k = bd_os_pi + nprob*4*k;
+        bd.l2r_data(bd_os_k + 3) = vld.mass(k); // previous mass, not current one
+#ifdef RV_DIAG
+        tot_mass_slv += vld.mass(k);
+        if (vld.mass(k) < vld.lo(k)) oob_slv += vld.lo(k) - vld.mass(k);
+        if (vld.mass(k) > vld.hi(k)) oob_slv += vld.mass(k) - vld.hi(k);
+#endif
+      }
+#ifdef RV_DIAG
+      printf("%2d %9.2e %9.2e %9.2e %9.2e\n", pi,
+             oob/tot_mass, oob_slv/tot_mass,
+             tot_mass, std::abs(tot_mass_slv - tot_mass)/tot_mass);
+#endif
+    }
+#if defined THREAD_QLT_RUN && defined HORIZ_OPENMP
+#   pragma omp barrier
+#endif
+  }
+
+public:
   QLT (const cedr::mpi::Parallel::Ptr& p, const cedr::Int& ncells,
-       const cedr::qlt::tree::Node::Ptr& tree, const cedr::CDR::Options& options)
+       const cedr::qlt::tree::Node::Ptr& tree, const cedr::CDR::Options& options,
+       const cedr::Int& vertical_levels)
     : cedr::qlt::QLT<ES>(p, ncells, tree, options)
-  {}
+  {
+    if (vertical_levels)
+      vld_ = std::make_shared<VerticalLevelsData>(vertical_levels);
+  }
 
   void run () override {
     static const int mpitag = 42;
@@ -5108,6 +5190,7 @@ struct QLT : public cedr::qlt::QLT<ES> {
         for (Int pti = 0; pti < md_.nprobtypes; ++pti) {
           const Int problem_type = md_.get_problem_type(pti);
           const Int bis = md_.a_d.prob2trcrptr[pti], bie = md_.a_d.prob2trcrptr[pti+1];
+          if (vld_) reconcile_vertical(problem_type, n->offset*l2rndps, bis, bie);
 #if defined THREAD_QLT_RUN && defined HORIZ_OPENMP && defined COLUMN_OPENMP
 #         pragma omp parallel
 #endif
@@ -5636,7 +5719,7 @@ struct CDR {
   
   const Alg::Enum alg;
   const Int ncell, nlclcell, nlev, nsublev, nsuplev;
-  const bool cdr_over_super_levels, hard_zero;
+  const bool threed, cdr_over_super_levels, hard_zero;
   const cedr::mpi::Parallel::Ptr p;
   qlt::tree::Node::Ptr tree; // Don't need this except for unit testing.
   cedr::CDR::Ptr cdr;
@@ -5645,13 +5728,14 @@ struct CDR {
   std::vector<char> nonneg;
 
   CDR (Int cdr_alg_, Int ngblcell_, Int nlclcell_, Int nlev_, bool use_sgi,
-       bool cdr_over_super_levels_, const bool hard_zero_, const Int* gid_data,
+       bool independent_time_steps, const bool hard_zero_, const Int* gid_data,
        const Int* rank_data, const cedr::mpi::Parallel::Ptr& p_, Int fcomm)
     : alg(Alg::convert(cdr_alg_)),
       ncell(ngblcell_), nlclcell(nlclcell_), nlev(nlev_),
       nsublev(Alg::is_suplev(alg) ? nsublev_per_suplev : 1),
       nsuplev((nlev + nsublev - 1) / nsublev),
-      cdr_over_super_levels(cdr_over_super_levels_), hard_zero(hard_zero_),
+      threed(independent_time_steps),
+      cdr_over_super_levels(false), hard_zero(hard_zero_),
       p(p_), inited_tracers_(false)
   {
     if (Alg::is_qlt(alg)) {
@@ -5661,7 +5745,8 @@ struct CDR {
       options.prefer_numerical_mass_conservation_to_numerical_bounds = true;
       Int nleaf = ncell*nsublev;
       if (cdr_over_super_levels) nleaf *= nsuplev;
-      cdr = std::make_shared<QLTT>(p, nleaf, tree, options);
+      cdr = std::make_shared<QLTT>(p, nleaf, tree, options,
+                                   independent_time_steps ? nsuplev : 0);
       tree = nullptr;
     } else if (Alg::is_caas(alg)) {
       const auto caas = std::make_shared<CAAST>(
@@ -5770,6 +5855,7 @@ struct Data {
   Int n0_qdp, n1_qdp, tl_np1;
   std::vector<const Real*> spheremp, dp3d_c;
   std::vector<Real*> q_c, qdp_pc;
+  const Real* dp0;
 
   struct Check {
     Kokkos::View<Real**, Kokkos::Serial>
@@ -5810,6 +5896,7 @@ void insert (const Data::Ptr& d, const Int ie, const Int ptridx, Real* array,
   case 1: insert<      double>(d->qdp_pc,   ie, array); d->n0_qdp = i0; d->n1_qdp = i1; break;
   case 2: insert<const double>(d->dp3d_c,   ie, array); d->tl_np1 = i0; break;
   case 3: insert<      double>(d->q_c,      ie, array); break;
+  case 4: d->dp0 = array; break;
   default: cedr_throw_if(true, "Invalid pointer index " << ptridx);
   }
 }
@@ -5872,13 +5959,17 @@ void run (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
               Qm_prev += qdp_p(i,j,k,q,d.n0_qdp) * spheremp(i,j);
             }
           }
-          //kludge For now, handle just one rhom. For feasible global problems,
+          // For now, handle just one rhom. For feasible global problems,
           // it's used only as a weight vector in QLT, so it's fine. In fact,
           // use just the cell geometry, rather than total density, since in QLT
           // this field is used as a weight vector.
+          //   In the case of no tree in the vertical direction, dp0
+          // doesn't matter.
+          //   In the case of super levels, dp0 from the highest-k-
+          // index level in the super level is used.
           //todo Generalize to one rhom field per level. Until then, we're not
           // getting QLT's safety benefit.
-          if (ti == 0) cdr.cdr->set_rhom(lci, 0, volume);
+          if (ti == 0) cdr.cdr->set_rhom(lci, 0, volume/**d.dp0[k]*/);
           if (Qm_prev < -0.5) {
             static bool first = true;
             if (first) {
@@ -6035,7 +6126,7 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
   using cedr::mpi::reduce;
 
   const Int np = d.np, nlev = d.nlev, nsuplev = cdr.nsuplev, qsize = d.qsize,
-    nprob = cdr.cdr_over_super_levels ? 1 : nsuplev;
+    nprob = cdr.threed ? 1 : nsuplev;
 
   Kokkos::View<Real**, Kokkos::Serial>
     mass_p("mass_p", nprob, qsize), mass_c("mass_c", nprob, qsize),
@@ -6296,7 +6387,7 @@ extern "C" void cedr_sl_set_pointers_begin (homme::Int nets, homme::Int nete) {}
 extern "C" void cedr_sl_set_spheremp (homme::Int ie, homme::Real* v)
 { homme::sl::insert(g_sl, ie - 1, 0, v); }
 extern "C" void cedr_sl_set_qdp (homme::Int ie, homme::Real* v, homme::Int n0_qdp,
-                                  homme::Int n1_qdp)
+                                 homme::Int n1_qdp)
 { homme::sl::insert(g_sl, ie - 1, 1, v, n0_qdp - 1, n1_qdp - 1); }
 extern "C" void cedr_sl_set_dp3d (homme::Int ie, homme::Real* v, homme::Int tl_np1)
 { homme::sl::insert(g_sl, ie - 1, 2, v, tl_np1 - 1); }
@@ -6304,6 +6395,8 @@ extern "C" void cedr_sl_set_dp (homme::Int ie, homme::Real* v)
 { homme::sl::insert(g_sl, ie - 1, 2, v, 0); }
 extern "C" void cedr_sl_set_q (homme::Int ie, homme::Real* v)
 { homme::sl::insert(g_sl, ie - 1, 3, v); }
+extern "C" void cedr_sl_set_dp0 (homme::Real* v)
+{ homme::sl::insert(g_sl, 0, 4, v); }
 extern "C" void cedr_sl_set_pointers_end () {}
 
 // Run QLT.
