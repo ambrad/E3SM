@@ -5770,6 +5770,7 @@ struct Data {
   Int n0_qdp, n1_qdp, tl_np1;
   std::vector<const Real*> spheremp, dp3d_c;
   std::vector<Real*> q_c, qdp_pc;
+  const Real* dp0;
 
   struct Check {
     Kokkos::View<Real**, Kokkos::Serial>
@@ -5810,6 +5811,7 @@ void insert (const Data::Ptr& d, const Int ie, const Int ptridx, Real* array,
   case 1: insert<      double>(d->qdp_pc,   ie, array); d->n0_qdp = i0; d->n1_qdp = i1; break;
   case 2: insert<const double>(d->dp3d_c,   ie, array); d->tl_np1 = i0; break;
   case 3: insert<      double>(d->q_c,      ie, array); break;
+  case 4: d->dp0 = array; break;
   default: cedr_throw_if(true, "Invalid pointer index " << ptridx);
   }
 }
@@ -5878,7 +5880,7 @@ void run (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
           // this field is used as a weight vector.
           //todo Generalize to one rhom field per level. Until then, we're not
           // getting QLT's safety benefit.
-          if (ti == 0) cdr.cdr->set_rhom(lci, 0, volume);
+          if (ti == 0) cdr.cdr->set_rhom(lci, 0, volume*d.dp0[k]);
           if (Qm_prev < -0.5) {
             static bool first = true;
             if (first) {
@@ -6296,7 +6298,7 @@ extern "C" void cedr_sl_set_pointers_begin (homme::Int nets, homme::Int nete) {}
 extern "C" void cedr_sl_set_spheremp (homme::Int ie, homme::Real* v)
 { homme::sl::insert(g_sl, ie - 1, 0, v); }
 extern "C" void cedr_sl_set_qdp (homme::Int ie, homme::Real* v, homme::Int n0_qdp,
-                                  homme::Int n1_qdp)
+                                 homme::Int n1_qdp)
 { homme::sl::insert(g_sl, ie - 1, 1, v, n0_qdp - 1, n1_qdp - 1); }
 extern "C" void cedr_sl_set_dp3d (homme::Int ie, homme::Real* v, homme::Int tl_np1)
 { homme::sl::insert(g_sl, ie - 1, 2, v, tl_np1 - 1); }
@@ -6304,6 +6306,8 @@ extern "C" void cedr_sl_set_dp (homme::Int ie, homme::Real* v)
 { homme::sl::insert(g_sl, ie - 1, 2, v, 0); }
 extern "C" void cedr_sl_set_q (homme::Int ie, homme::Real* v)
 { homme::sl::insert(g_sl, ie - 1, 3, v); }
+extern "C" void cedr_sl_set_dp0 (homme::Real* v)
+{ homme::sl::insert(g_sl, 0, 4, v); }
 extern "C" void cedr_sl_set_pointers_end () {}
 
 // Run QLT.

@@ -2,6 +2,8 @@
 # include "config.h"
 #endif
 
+#undef NDEBUG
+
 module sl_advection
   use kinds, only              : real_kind, int_kind
   use dimensions_mod, only     : nlev, nlevp, np, qsize, qsize_d
@@ -223,6 +225,7 @@ contains
        call cedr_sl_set_pointers_begin(nets, nete)
        do ie = nets, nete
           call cedr_sl_set_spheremp(ie, elem(ie)%spheremp)
+          call cedr_sl_set_dp0(hvcoord%dp0)
           call cedr_sl_set_Qdp(ie, elem(ie)%state%Qdp, n0_qdp, np1_qdp)
           if (independent_time_steps) then
              call cedr_sl_set_dp(ie, elem(ie)%derived%divdp) ! dp_star
