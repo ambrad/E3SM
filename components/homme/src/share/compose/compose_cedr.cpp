@@ -5874,10 +5874,14 @@ void run (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
               Qm_prev += qdp_p(i,j,k,q,d.n0_qdp) * spheremp(i,j);
             }
           }
-          //kludge For now, handle just one rhom. For feasible global problems,
+          // For now, handle just one rhom. For feasible global problems,
           // it's used only as a weight vector in QLT, so it's fine. In fact,
           // use just the cell geometry, rather than total density, since in QLT
           // this field is used as a weight vector.
+          //   In the case of no tree in the vertical direction, dp0
+          // doesn't matter.
+          //   In the case of super levels, dp0 from the highest-k-
+          // index level in the super level is used.
           //todo Generalize to one rhom field per level. Until then, we're not
           // getting QLT's safety benefit.
           if (ti == 0) cdr.cdr->set_rhom(lci, 0, volume*d.dp0[k]);
