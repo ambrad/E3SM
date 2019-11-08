@@ -4992,33 +4992,68 @@ namespace compose {
 
 template <typename ES>
 class QLT : public cedr::qlt::QLT<ES> {
-  bool vertical_levels;
+  typedef cedr::qlt::QLT<ES> Super;
+  typedef typename Super::RealList RealList;
+
+  struct VerticalLevelsData {
+    typedef std::shared_ptr<VerticalLevelsData> Ptr;
+
+    RealList lo, hi, mass, wrk;
+
+    VerticalLevelsData (const cedr::Int n)
+      : lo("lo", n), hi("hi", n), mass("mass", n), wrk("wrk", n)
+    {}
+  };
+
+  typename VerticalLevelsData::Ptr vld_;
 
   /* todo
      - prototype a better method
      - make a clean hook for it
      - add back dp0 when i'm ready to remake baselines
    */
-  void reconcile_vertical (const cedr::Int problem_type,
+  void reconcile_vertical (const cedr::Int problem_type, const cedr::Int bd_os,
                            const cedr::Int bis, const cedr::Int bie) {
     using cedr::Int;
     using cedr::Real;
     using cedr::ProblemType;
-    auto& md_ = this->md_;
-    auto& bd_ = this->bd_;
-    auto& ns_ = this->ns_;
-    auto& p_ = this->p_;
 
     cedr_assert(problem_type & ProblemType::shapepreserve & ProblemType::conserve);
+
+    auto& md = this->md_;
+    auto& bd = this->bd_;
+    const auto& vld = *vld_;
+    const Int nlev = vld.lo.extent_int(0);
+    const Int nprob = (bie - bis)/nlev;
+
+    for (Int pi = 0; pi < nprob; ++pi) {
+      const Int bd_os_pi = bd_os + md.a_d.trcr2bl2r(md.a_d.bidx2trcr(bis + nlev*pi));
+      for (Int k = 0; k < nlev; ++k) {
+        const Int bd_os_k = bd_os_pi + k;
+        vld.lo  (k) = bd.l2r_data(bd_os_k    );
+        vld.hi  (k) = bd.l2r_data(bd_os_k + 2);
+        vld.mass(k) = bd.l2r_data(bd_os_k + 3); // previous mass, not current one
+      }
+      solve(vld);
+      for (Int k = 0; k < nlev; ++k) {
+        const Int bd_os_k = bd_os_pi + k;
+        bd.l2r_data(bd_os_k + 3) = vld.mass(k); // previous mass, not current one
+      }
+    }
+  }
+
+  void solve (const VerticalLevelsData& vld) {
   }
 
 public:
   QLT (const cedr::mpi::Parallel::Ptr& p, const cedr::Int& ncells,
        const cedr::qlt::tree::Node::Ptr& tree, const cedr::CDR::Options& options,
-       const cedr::Int& vertical_levels_)
-    : cedr::qlt::QLT<ES>(p, ncells, tree, options),
-      vertical_levels(vertical_levels_)
-  {}
+       const cedr::Int& vertical_levels)
+    : cedr::qlt::QLT<ES>(p, ncells, tree, options)
+  {
+    if (vertical_levels)
+      vld_ = std::make_shared<VerticalLevelsData>(vertical_levels);
+  }
 
   void run () override {
     static const int mpitag = 42;
@@ -5131,8 +5166,8 @@ public:
         for (Int pti = 0; pti < md_.nprobtypes; ++pti) {
           const Int problem_type = md_.get_problem_type(pti);
           const Int bis = md_.a_d.prob2trcrptr[pti], bie = md_.a_d.prob2trcrptr[pti+1];
-          if (vertical_levels)
-            reconcile_vertical(problem_type, bis, bie);
+          if (vld_)
+            reconcile_vertical(problem_type, n->offset*l2rndps, bis, bie);
 #if defined THREAD_QLT_RUN && defined HORIZ_OPENMP && defined COLUMN_OPENMP
 #         pragma omp parallel
 #endif
