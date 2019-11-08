@@ -56,6 +56,8 @@ module prim_advance_mod
   save
   public :: prim_advance_exp, prim_advance_init1, advance_hypervis, &
             applycamforcing_dynamics, compute_andor_apply_rhs
+  ! for testing
+  public :: compute_gwphis
 
 contains
 
