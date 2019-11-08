@@ -225,7 +225,7 @@ contains
        ! No barrier needed: advance_hypervis_scalar has a horiz thread barrier at the end.
     end if
 
-    call qdb_before(hvcoord, hybrid, elem, nets, nete, tl)
+    !call qdb_before(hvcoord, hybrid, elem, nets, nete, tl)
     ! CEDR works with either classical SL or IR.
     if (semi_lagrange_cdr_alg > 1) then
        scalar_q_bounds = 0
@@ -280,7 +280,7 @@ contains
        if (barrier) call perf_barrier(hybrid)
        call t_stopf('CEDR_check')
     end if
-    call qdb_after(hvcoord, hybrid, elem, nets, nete, tl)
+    !call qdb_after(hvcoord, hybrid, elem, nets, nete, tl)
     ! physical viscosity for supercell test case
     if (dcmip16_mu_q > 0) then
        call advance_physical_vis(elem, hvcoord, hybrid, deriv, tl%np1, np1_qdp, nets, nete, dt, dcmip16_mu_q)
