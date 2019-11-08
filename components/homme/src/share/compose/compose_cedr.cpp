@@ -4994,6 +4994,11 @@ template <typename ES>
 class QLT : public cedr::qlt::QLT<ES> {
   bool vertical_levels;
 
+  /* todo
+     - prototype a better method
+     - make a clean hook for it
+     - add back dp0 when i'm ready to remake baselines
+   */
   void reconcile_vertical (const cedr::Int problem_type,
                            const cedr::Int bis, const cedr::Int bie) {
     using cedr::Int;
@@ -5905,7 +5910,7 @@ void run (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
           // index level in the super level is used.
           //todo Generalize to one rhom field per level. Until then, we're not
           // getting QLT's safety benefit.
-          if (ti == 0) cdr.cdr->set_rhom(lci, 0, volume*d.dp0[k]);
+          if (ti == 0) cdr.cdr->set_rhom(lci, 0, volume/**d.dp0[k]*/);
           if (Qm_prev < -0.5) {
             static bool first = true;
             if (first) {
