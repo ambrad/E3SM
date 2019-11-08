@@ -5035,15 +5035,16 @@ class QLT : public cedr::qlt::QLT<ES> {
       const Int bd_os_pi = bd_os + md.a_d.trcr2bl2r(md.a_d.bidx2trcr(bis + pi));
       //#define RV_DIAG
 #ifdef RV_DIAG
-      Real tot_mass = 0, oob = 0;
+      Real oob = 0;
 #endif
+      Real tot_mass = 0;
       for (Int k = 0; k < nlev; ++k) {
         const Int bd_os_k = bd_os_pi + nprob*4*k;
         vld.lo  (k) = bd.l2r_data(bd_os_k    );
         vld.hi  (k) = bd.l2r_data(bd_os_k + 2);
         vld.mass(k) = bd.l2r_data(bd_os_k + 3); // previous mass, not current one
-#ifdef RV_DIAG
         tot_mass += vld.mass(k);
+#ifdef RV_DIAG
         if (vld.mass(k) < vld.lo(k)) oob += vld.lo(k) - vld.mass(k);
         if (vld.mass(k) > vld.hi(k)) oob += vld.mass(k) - vld.hi(k);
 #endif
