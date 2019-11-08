@@ -4998,11 +4998,13 @@ class QLT : public cedr::qlt::QLT<ES> {
   struct VerticalLevelsData {
     typedef std::shared_ptr<VerticalLevelsData> Ptr;
 
-    RealList lo, hi, mass, wrk;
+    RealList lo, hi, mass, ones;
 
     VerticalLevelsData (const cedr::Int n)
-      : lo("lo", n), hi("hi", n), mass("mass", n), wrk("wrk", n)
-    {}
+      : lo("lo", n), hi("hi", n), mass("mass", n), ones("ones", n)
+    {
+      Kokkos::deep_copy(ones, 1);
+    }
   };
 
   typename VerticalLevelsData::Ptr vld_;
@@ -5028,21 +5030,23 @@ class QLT : public cedr::qlt::QLT<ES> {
 
     for (Int pi = 0; pi < nprob; ++pi) {
       const Int bd_os_pi = bd_os + md.a_d.trcr2bl2r(md.a_d.bidx2trcr(bis + nlev*pi));
+      Real tot_mass = 0;
       for (Int k = 0; k < nlev; ++k) {
         const Int bd_os_k = bd_os_pi + k;
         vld.lo  (k) = bd.l2r_data(bd_os_k    );
         vld.hi  (k) = bd.l2r_data(bd_os_k + 2);
         vld.mass(k) = bd.l2r_data(bd_os_k + 3); // previous mass, not current one
+        tot_mass += vld.mass(k);
       }
-      solve(vld);
+      cedr::local::caas(nlev, vld.ones.data(), tot_mass,
+                        vld.lo.data(), vld.hi.data(),
+                        vld.mass.data(), vld.mass.data(),
+                        false);
       for (Int k = 0; k < nlev; ++k) {
         const Int bd_os_k = bd_os_pi + k;
         bd.l2r_data(bd_os_k + 3) = vld.mass(k); // previous mass, not current one
       }
     }
-  }
-
-  void solve (const VerticalLevelsData& vld) {
   }
 
 public:
