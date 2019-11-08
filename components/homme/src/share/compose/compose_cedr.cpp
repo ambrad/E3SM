@@ -5003,7 +5003,7 @@ class QLT : public cedr::qlt::QLT<ES> {
     VerticalLevelsData (const cedr::Int n)
       : lo("lo", n), hi("hi", n), mass("mass", n), ones("ones", n)
     {
-      Kokkos::deep_copy(ones, 1);
+      for (cedr::Int k = 0; k < n; ++k) ones(k) = 1;
     }
   };
 
@@ -5028,25 +5028,49 @@ class QLT : public cedr::qlt::QLT<ES> {
     const Int nlev = vld.lo.extent_int(0);
     const Int nprob = (bie - bis)/nlev;
 
+#if defined THREAD_QLT_RUN && defined HORIZ_OPENMP
+#   pragma omp for
+#endif
     for (Int pi = 0; pi < nprob; ++pi) {
-      const Int bd_os_pi = bd_os + md.a_d.trcr2bl2r(md.a_d.bidx2trcr(bis + nlev*pi));
-      Real tot_mass = 0;
+      const Int bd_os_pi = bd_os + md.a_d.trcr2bl2r(md.a_d.bidx2trcr(bis + pi));
+      //#define RV_DIAG
+#ifdef RV_DIAG
+      Real tot_mass = 0, oob = 0;
+#endif
       for (Int k = 0; k < nlev; ++k) {
-        const Int bd_os_k = bd_os_pi + k;
+        const Int bd_os_k = bd_os_pi + nprob*4*k;
         vld.lo  (k) = bd.l2r_data(bd_os_k    );
         vld.hi  (k) = bd.l2r_data(bd_os_k + 2);
         vld.mass(k) = bd.l2r_data(bd_os_k + 3); // previous mass, not current one
+#ifdef RV_DIAG
         tot_mass += vld.mass(k);
+        if (vld.mass(k) < vld.lo(k)) oob += vld.lo(k) - vld.mass(k);
+        if (vld.mass(k) > vld.hi(k)) oob += vld.mass(k) - vld.hi(k);
+#endif
       }
       cedr::local::caas(nlev, vld.ones.data(), tot_mass,
                         vld.lo.data(), vld.hi.data(),
                         vld.mass.data(), vld.mass.data(),
                         false);
+      Real tot_mass_slv = 0, oob_slv = 0;
       for (Int k = 0; k < nlev; ++k) {
-        const Int bd_os_k = bd_os_pi + k;
+        const Int bd_os_k = bd_os_pi + nprob*4*k;
         bd.l2r_data(bd_os_k + 3) = vld.mass(k); // previous mass, not current one
+#ifdef RV_DIAG
+        tot_mass_slv += vld.mass(k);
+        if (vld.mass(k) < vld.lo(k)) oob_slv += vld.lo(k) - vld.mass(k);
+        if (vld.mass(k) > vld.hi(k)) oob_slv += vld.mass(k) - vld.hi(k);
+#endif
       }
+#ifdef RV_DIAG
+      printf("%2d %9.2e %9.2e %9.2e %9.2e\n", pi,
+             oob/tot_mass, oob_slv/tot_mass,
+             tot_mass, std::abs(tot_mass_slv - tot_mass)/tot_mass);
+#endif
     }
+#if defined THREAD_QLT_RUN && defined HORIZ_OPENMP
+#   pragma omp barrier
+#endif
   }
 
 public:
@@ -5170,8 +5194,7 @@ public:
         for (Int pti = 0; pti < md_.nprobtypes; ++pti) {
           const Int problem_type = md_.get_problem_type(pti);
           const Int bis = md_.a_d.prob2trcrptr[pti], bie = md_.a_d.prob2trcrptr[pti+1];
-          if (vld_)
-            reconcile_vertical(problem_type, n->offset*l2rndps, bis, bie);
+          if (vld_) reconcile_vertical(problem_type, n->offset*l2rndps, bis, bie);
 #if defined THREAD_QLT_RUN && defined HORIZ_OPENMP && defined COLUMN_OPENMP
 #         pragma omp parallel
 #endif
@@ -5700,7 +5723,7 @@ struct CDR {
   
   const Alg::Enum alg;
   const Int ncell, nlclcell, nlev, nsublev, nsuplev;
-  const bool cdr_over_super_levels, hard_zero;
+  const bool threed, cdr_over_super_levels, hard_zero;
   const cedr::mpi::Parallel::Ptr p;
   qlt::tree::Node::Ptr tree; // Don't need this except for unit testing.
   cedr::CDR::Ptr cdr;
@@ -5715,6 +5738,7 @@ struct CDR {
       ncell(ngblcell_), nlclcell(nlclcell_), nlev(nlev_),
       nsublev(Alg::is_suplev(alg) ? nsublev_per_suplev : 1),
       nsuplev((nlev + nsublev - 1) / nsublev),
+      threed(independent_time_steps),
       cdr_over_super_levels(false), hard_zero(hard_zero_),
       p(p_), inited_tracers_(false)
   {
@@ -6106,7 +6130,7 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
   using cedr::mpi::reduce;
 
   const Int np = d.np, nlev = d.nlev, nsuplev = cdr.nsuplev, qsize = d.qsize,
-    nprob = cdr.cdr_over_super_levels ? 1 : nsuplev;
+    nprob = cdr.threed ? 1 : nsuplev;
 
   Kokkos::View<Real**, Kokkos::Serial>
     mass_p("mass_p", nprob, qsize), mass_c("mass_c", nprob, qsize),
