@@ -4992,16 +4992,18 @@ namespace compose {
 
 template <typename ES>
 class QLT : public cedr::qlt::QLT<ES> {
+  typedef cedr::Int Int;
+  typedef cedr::Real Real;
   typedef cedr::qlt::QLT<ES> Super;
   typedef typename Super::RealList RealList;
 
   struct VerticalLevelsData {
     typedef std::shared_ptr<VerticalLevelsData> Ptr;
 
-    RealList lo, hi, mass, ones;
+    RealList lo, hi, mass, ones, wrk;
 
     VerticalLevelsData (const cedr::Int n)
-      : lo("lo", n), hi("hi", n), mass("mass", n), ones("ones", n)
+      : lo("lo", n), hi("hi", n), mass("mass", n), ones("ones", n), wrk("wrk", 2*n)
     {
       for (cedr::Int k = 0; k < n; ++k) ones(k) = 1;
     }
@@ -5009,10 +5011,8 @@ class QLT : public cedr::qlt::QLT<ES> {
 
   typename VerticalLevelsData::Ptr vld_;
 
-  void reconcile_vertical (const cedr::Int problem_type, const cedr::Int bd_os,
-                           const cedr::Int bis, const cedr::Int bie) {
-    using cedr::Int;
-    using cedr::Real;
+  void reconcile_vertical (const Int problem_type, const Int bd_os,
+                           const Int bis, const Int bie) {
     using cedr::ProblemType;
 
     cedr_assert(problem_type & ProblemType::shapepreserve & ProblemType::conserve);
@@ -5044,10 +5044,8 @@ class QLT : public cedr::qlt::QLT<ES> {
         if (vld.mass(k) > vld.hi(k)) oob += vld.mass(k) - vld.hi(k);
 #endif
       }
-      cedr::local::caas(nlev, vld.ones.data(), tot_mass,
-                        vld.lo.data(), vld.hi.data(),
-                        vld.mass.data(), vld.mass.data(),
-                        false);
+      solve(nlev, vld.ones.data(), tot_mass, vld.lo.data(), vld.hi.data(),
+            vld.mass.data(), vld.wrk.data());
       Real tot_mass_slv = 0, oob_slv = 0;
       for (Int k = 0; k < nlev; ++k) {
         const Int bd_os_k = bd_os_pi + nprob*4*k;
@@ -5067,6 +5065,22 @@ class QLT : public cedr::qlt::QLT<ES> {
 #if defined THREAD_QLT_RUN && defined HORIZ_OPENMP
 #   pragma omp barrier
 #endif
+  }
+
+  static Int solve (const Int n, const Real* a, const Real b,
+                    const Real* xlo, const Real* xhi,
+                    Real* x, Real* wrk) {
+    Int status = 0;
+    Real tot_lo = 0, tot_hi = 0;
+    for (Int i = 0; i < n; ++i) tot_lo += xlo[i];
+    for (Int i = 0; i < n; ++i) tot_hi += xhi[i];
+    if (b < tot_lo || b > tot_hi) {
+      if (b < tot_lo) status = -2;
+      if (b > tot_hi) status = -1;
+      
+    }
+    cedr::local::caas(n, a, b, xlo, xhi, x, x, false);
+    return status;
   }
 
 public:
@@ -5735,8 +5749,8 @@ struct CDR {
       nsublev(Alg::is_suplev(alg) ? nsublev_per_suplev : 1),
       nsuplev((nlev + nsublev - 1) / nsublev),
       threed(independent_time_steps),
-      cdr_over_super_levels(false), hard_zero(hard_zero_),
-      p(p_), inited_tracers_(false)
+      cdr_over_super_levels(threed && Alg::is_caas(alg)),
+      hard_zero(hard_zero_), p(p_), inited_tracers_(false)
   {
     if (Alg::is_qlt(alg)) {
       tree = make_tree(p, ncell, gid_data, rank_data, nsublev, use_sgi,
@@ -5746,7 +5760,7 @@ struct CDR {
       Int nleaf = ncell*nsublev;
       if (cdr_over_super_levels) nleaf *= nsuplev;
       cdr = std::make_shared<QLTT>(p, nleaf, tree, options,
-                                   independent_time_steps ? nsuplev : 0);
+                                   threed ? nsuplev : 0);
       tree = nullptr;
     } else if (Alg::is_caas(alg)) {
       const auto caas = std::make_shared<CAAST>(
