@@ -42,6 +42,12 @@ module sl_advection
 
   logical, parameter :: barrier = .false.
 
+  type :: qltdbg_t
+     real(real_kind) :: Qdp(nlev)
+     integer :: rank, ie
+  end type qltdbg_t
+  type (qltdbg_t) :: qdb
+
 contains
 
   !=================================================================================================!
@@ -219,6 +225,7 @@ contains
        ! No barrier needed: advance_hypervis_scalar has a horiz thread barrier at the end.
     end if
 
+    call qdb_before(hvcoord, hybrid, elem, nets, nete, tl)
     ! CEDR works with either classical SL or IR.
     if (semi_lagrange_cdr_alg > 1) then
        scalar_q_bounds = 0
@@ -273,6 +280,7 @@ contains
        if (barrier) call perf_barrier(hybrid)
        call t_stopf('CEDR_check')
     end if
+    call qdb_after(hvcoord, hybrid, elem, nets, nete, tl)
     ! physical viscosity for supercell test case
     if (dcmip16_mu_q > 0) then
        call advance_physical_vis(elem, hvcoord, hybrid, deriv, tl%np1, np1_qdp, nets, nete, dt, dcmip16_mu_q)
@@ -280,6 +288,84 @@ contains
     call t_stopf('Prim_Advec_Tracers_remap_ALE')
 #endif
   end subroutine prim_advec_tracers_remap_ALE
+
+  subroutine qdb_before(hvcoord, hybrid, elem, nets, nete, tl)
+    use control_mod, only: dt_tracer_factor
+    use dimensions_mod, only: nelemd
+    use parallel_mod, only: mpi_maxloc, mpi2real_t
+
+    type (hvcoord_t), intent(in) :: hvcoord
+    type (hybrid_t), intent(in) :: hybrid
+    type (element_t), intent(in) :: elem(:)
+    integer, intent(in) :: nets, nete
+    type (TimeLevel_t), intent(in) :: tl
+
+    integer :: ie, n0_qdp, np1_qdp, q, max_ie, ierr, k
+    real(real_kind) :: val, max_val, lbuf(2), gbuf(2)
+
+    call TimeLevel_Qdp(tl, dt_tracer_factor, n0_qdp, np1_qdp)
+    q = 1
+
+    !$omp barrier
+    !$omp master
+    max_val = -1
+    max_ie = 1
+    do ie = 1,nelemd
+       val = 0
+       do k = 1,nlev
+          val = val + sum(elem(ie)%state%Qdp(:,:,k,q,np1_qdp)*elem(ie)%spheremp)
+       end do
+       if (val > max_val .or. max_ie == 1) then
+          max_ie = ie
+          max_val = val
+       end if
+    end do
+    lbuf(1) = max_val
+    lbuf(2) = hybrid%par%rank
+    call mpi_allreduce(lbuf, gbuf, 1, mpi2real_t, mpi_maxloc, hybrid%par%comm, ierr)
+    qdb%rank = nint(gbuf(2))
+    qdb%ie = max_ie
+    ie = max_ie
+    if (hybrid%par%rank == qdb%rank) then
+       do k = 1,nlev
+          qdb%Qdp(k) = sum(elem(ie)%state%Qdp(:,:,k,q,np1_qdp)*elem(ie)%spheremp)
+       end do
+    end if
+    !$omp end master
+    !$omp barrier
+  end subroutine qdb_before
+
+  subroutine qdb_after(hvcoord, hybrid, elem, nets, nete, tl)
+    use control_mod, only: dt_tracer_factor
+
+    type (hvcoord_t), intent(in) :: hvcoord
+    type (hybrid_t), intent(in) :: hybrid
+    type (element_t), intent(in) :: elem(:)
+    integer, intent(in) :: nets, nete
+    type (TimeLevel_t), intent(in) :: tl
+
+    integer :: ie, q, k, n0_qdp, np1_qdp
+    real(real_kind) :: Qdp
+
+    call TimeLevel_Qdp(tl, dt_tracer_factor, n0_qdp, np1_qdp)
+
+    !$omp barrier
+    !$omp master
+    if (hybrid%par%rank == qdb%rank) then
+       q = 1
+       ie = qdb%ie
+       print *,'d> rank,ie,gid', qdb%rank, ie, elem(ie)%globalid
+       do k = 1,nlev
+          Qdp = sum(elem(ie)%state%Qdp(:,:,k,q,np1_qdp)*elem(ie)%spheremp)
+          print '(a,i3,es8.1,es8.1,es8.1,es8.1,es8.1,es9.1,es9.1)', 'd>', &
+               k, hvcoord%dp0(k), minval(elem(ie)%derived%divdp(:,:,k)), &
+               minval(elem(ie)%state%dp3d(:,:,k,tl%np1)), &
+               qdb%Qdp(k), Qdp, (Qdp - qdb%Qdp(k)), (Qdp - qdb%Qdp(k))/(1d-16 + qdb%Qdp(k))
+       end do
+    end if
+    !$omp end master
+    !$omp barrier
+  end subroutine qdb_after
 
   ! ----------------------------------------------------------------------------------!
   !SUBROUTINE ALE_RKDSS
@@ -302,7 +388,7 @@ contains
     use kinds,           only : real_kind
     use hybrid_mod,      only : hybrid_t
     use element_mod,     only : element_t
-    use dimensions_mod,   only : np, nlev
+    use dimensions_mod,  only : np, nlev
 
     implicit none
 
