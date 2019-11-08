@@ -4991,10 +4991,28 @@ namespace homme {
 namespace compose {
 
 template <typename ES>
-struct QLT : public cedr::qlt::QLT<ES> {
+class QLT : public cedr::qlt::QLT<ES> {
+  bool vertical_levels;
+
+  void reconcile_vertical (const cedr::Int problem_type,
+                           const cedr::Int bis, const cedr::Int bie) {
+    using cedr::Int;
+    using cedr::Real;
+    using cedr::ProblemType;
+    auto& md_ = this->md_;
+    auto& bd_ = this->bd_;
+    auto& ns_ = this->ns_;
+    auto& p_ = this->p_;
+
+    cedr_assert(problem_type & ProblemType::shapepreserve & ProblemType::conserve);
+  }
+
+public:
   QLT (const cedr::mpi::Parallel::Ptr& p, const cedr::Int& ncells,
-       const cedr::qlt::tree::Node::Ptr& tree, const cedr::CDR::Options& options)
-    : cedr::qlt::QLT<ES>(p, ncells, tree, options)
+       const cedr::qlt::tree::Node::Ptr& tree, const cedr::CDR::Options& options,
+       const cedr::Int& vertical_levels_)
+    : cedr::qlt::QLT<ES>(p, ncells, tree, options),
+      vertical_levels(vertical_levels_)
   {}
 
   void run () override {
@@ -5108,6 +5126,8 @@ struct QLT : public cedr::qlt::QLT<ES> {
         for (Int pti = 0; pti < md_.nprobtypes; ++pti) {
           const Int problem_type = md_.get_problem_type(pti);
           const Int bis = md_.a_d.prob2trcrptr[pti], bie = md_.a_d.prob2trcrptr[pti+1];
+          if (vertical_levels)
+            reconcile_vertical(problem_type, bis, bie);
 #if defined THREAD_QLT_RUN && defined HORIZ_OPENMP && defined COLUMN_OPENMP
 #         pragma omp parallel
 #endif
@@ -5645,13 +5665,13 @@ struct CDR {
   std::vector<char> nonneg;
 
   CDR (Int cdr_alg_, Int ngblcell_, Int nlclcell_, Int nlev_, bool use_sgi,
-       bool cdr_over_super_levels_, const bool hard_zero_, const Int* gid_data,
+       bool independent_time_steps, const bool hard_zero_, const Int* gid_data,
        const Int* rank_data, const cedr::mpi::Parallel::Ptr& p_, Int fcomm)
     : alg(Alg::convert(cdr_alg_)),
       ncell(ngblcell_), nlclcell(nlclcell_), nlev(nlev_),
       nsublev(Alg::is_suplev(alg) ? nsublev_per_suplev : 1),
       nsuplev((nlev + nsublev - 1) / nsublev),
-      cdr_over_super_levels(cdr_over_super_levels_), hard_zero(hard_zero_),
+      cdr_over_super_levels(false), hard_zero(hard_zero_),
       p(p_), inited_tracers_(false)
   {
     if (Alg::is_qlt(alg)) {
@@ -5661,7 +5681,8 @@ struct CDR {
       options.prefer_numerical_mass_conservation_to_numerical_bounds = true;
       Int nleaf = ncell*nsublev;
       if (cdr_over_super_levels) nleaf *= nsuplev;
-      cdr = std::make_shared<QLTT>(p, nleaf, tree, options);
+      cdr = std::make_shared<QLTT>(p, nleaf, tree, options,
+                                   independent_time_steps ? nsuplev : 0);
       tree = nullptr;
     } else if (Alg::is_caas(alg)) {
       const auto caas = std::make_shared<CAAST>(
