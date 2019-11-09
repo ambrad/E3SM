@@ -6113,7 +6113,7 @@ void run (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
   run_cdr(cdr);
 }
 
-void solve_local (const Int ie, const Int k, const Int q, const Int lci, const Int ti,
+void solve_local (const Int ie, const Int k, const Int q,
                   const Int tl_np1, const Int n1_qdp, const Int np, 
                   const bool scalar_bounds, const Int limiter_option,
                   const FA2<const Real>& spheremp, const FA4<const Real>& dp3d_c,
@@ -6228,23 +6228,30 @@ void run_local (CDR& cdr, const Data& d, const Real* q_min_r, const Real* q_max_
       const Int k0 = cdr.nsublev*spli;
       for (Int q = 0; q < qsize; ++q) {
         const Int ti = cdr.cdr_over_super_levels ? q : spli*qsize + q;
-        Int ie_idx;
         if (cdr.caas_in_suplev) {
-          ie_idx = cdr.cdr_over_super_levels ?
+          const auto ie_idx = cdr.cdr_over_super_levels ?
             cdr.nsuplev*ie + spli :
             ie;
-          
+          const auto lci = cdr.ie2lci[ie_idx];
+          const Real Qm = cdr.cdr->get_Qm(lci, ti);
+          Real Qms[CDR::nsublev_per_suplev];
+          for (Int sbli = 0; sbli < cdr.nsublev; ++sbli) {
+            const Int k = k0 + sbli;
+            if (k >= nlev) break;
+            solve_local(ie, k, q, d.tl_np1, d.n1_qdp, np,
+                        scalar_bounds, limiter_option,
+                        spheremp, dp3d_c, q_min, q_max, Qms[sbli], qdp_c, q_c);
+          }
         } else {
           for (Int sbli = 0; sbli < cdr.nsublev; ++sbli) {
             const Int k = k0 + sbli;
             if (k >= nlev) break;
-            if ( ! cdr.caas_in_suplev)
-              ie_idx = cdr.cdr_over_super_levels ?
-                nlevwrem*ie + k :
-                cdr.nsublev*ie + sbli;
+            const auto ie_idx = cdr.cdr_over_super_levels ?
+              nlevwrem*ie + k :
+              cdr.nsublev*ie + sbli;
             const auto lci = cdr.ie2lci[ie_idx];
             const Real Qm = cdr.cdr->get_Qm(lci, ti);
-            solve_local(ie, k, q, lci, ti, d.tl_np1, d.n1_qdp, np,
+            solve_local(ie, k, q, d.tl_np1, d.n1_qdp, np,
                         scalar_bounds, limiter_option,
                         spheremp, dp3d_c, q_min, q_max, Qm, qdp_c, q_c);
           }
