@@ -5819,7 +5819,7 @@ struct CDR {
   
   const Alg::Enum alg;
   const Int ncell, nlclcell, nlev, nsublev, nsuplev;
-  const bool threed, cdr_over_super_levels, hard_zero;
+  const bool threed, cdr_over_super_levels, hard_zero, caas_in_suplev;
   const cedr::mpi::Parallel::Ptr p;
   qlt::tree::Node::Ptr tree; // Don't need this except for unit testing.
   cedr::CDR::Ptr cdr;
@@ -5836,21 +5836,22 @@ struct CDR {
       nsuplev((nlev + nsublev - 1) / nsublev),
       threed(independent_time_steps),
       cdr_over_super_levels(threed && Alg::is_caas(alg)),
-      hard_zero(hard_zero_), p(p_), inited_tracers_(false)
+      hard_zero(hard_zero_), caas_in_suplev(false),
+      p(p_), inited_tracers_(false)
   {
     if (Alg::is_qlt(alg)) {
       tree = make_tree(p, ncell, gid_data, rank_data, nsublev, use_sgi,
                        cdr_over_super_levels, nsuplev);
       cedr::CDR::Options options;
       options.prefer_numerical_mass_conservation_to_numerical_bounds = true;
-      Int nleaf = ncell*nsublev;
+      Int nleaf = ncell*(caas_in_suplev ? 1 : nsublev);
       if (cdr_over_super_levels) nleaf *= nsuplev;
       cdr = std::make_shared<QLTT>(p, nleaf, tree, options,
                                    threed ? nsuplev : 0);
       tree = nullptr;
     } else if (Alg::is_caas(alg)) {
       const auto caas = std::make_shared<CAAST>(
-        p, nlclcell*nsublev*(cdr_over_super_levels ? nsuplev : 1),
+        p, nlclcell*(caas_in_suplev ? 1 : nsublev)*(cdr_over_super_levels ? nsuplev : 1),
         std::make_shared<ReproSumReducer>(fcomm));
       cdr = caas;
     } else {
@@ -5885,39 +5886,42 @@ private:
 void set_ie2gci (CDR& q, const Int ie, const Int gci) { q.ie2gci[ie] = gci; }
 
 void init_ie2lci (CDR& q) {
-  Int nleaf = q.nsublev*q.ie2gci.size();
-  if (q.cdr_over_super_levels) nleaf *= q.nsuplev;
+  const Int n_id_in_suplev = q.caas_in_suplev ? 1 : q.nsublev;
+  const Int nleaf =
+    n_id_in_suplev*
+    q.ie2gci.size()*
+    (q.cdr_over_super_levels ? q.nsuplev : 1);
   q.ie2lci.resize(nleaf);
   if (CDR::Alg::is_qlt(q.alg)) {
     auto qlt = std::static_pointer_cast<CDR::QLTT>(q.cdr);
     if (q.cdr_over_super_levels) {
-      const auto nlevwrem = q.nsuplev*q.nsublev;
+      const auto nlevwrem = q.nsuplev*n_id_in_suplev;
       for (size_t ie = 0; ie < q.ie2gci.size(); ++ie)
         for (Int spli = 0; spli < q.nsuplev; ++spli)
-          for (Int sbli = 0; sbli < q.nsublev; ++sbli)
+          for (Int sbli = 0; sbli < n_id_in_suplev; ++sbli)
             //       local indexing is fastest over the whole column
-            q.ie2lci[nlevwrem*ie + q.nsublev*spli + sbli] =
+            q.ie2lci[nlevwrem*ie + n_id_in_suplev*spli + sbli] =
               //           but global indexing is organized according to the tree
-              qlt->gci2lci(q.nsublev*(q.ncell*spli + q.ie2gci[ie]) + sbli);
+              qlt->gci2lci(n_id_in_suplev*(q.ncell*spli + q.ie2gci[ie]) + sbli);
     } else {
       for (size_t ie = 0; ie < q.ie2gci.size(); ++ie)
-        for (Int sbli = 0; sbli < q.nsublev; ++sbli)
-          q.ie2lci[q.nsublev*ie + sbli] =
-            qlt->gci2lci(q.nsublev*q.ie2gci[ie] + sbli);
+        for (Int sbli = 0; sbli < n_id_in_suplev; ++sbli)
+          q.ie2lci[n_id_in_suplev*ie + sbli] =
+            qlt->gci2lci(n_id_in_suplev*q.ie2gci[ie] + sbli);
     }
   } else {
     if (q.cdr_over_super_levels) {
-      const auto nlevwrem = q.nsuplev*q.nsublev;
+      const auto nlevwrem = q.nsuplev*n_id_in_suplev;
       for (size_t ie = 0; ie < q.ie2gci.size(); ++ie)
         for (Int spli = 0; spli < q.nsuplev; ++spli)
-          for (Int sbli = 0; sbli < q.nsublev; ++sbli) {
-            const Int id = nlevwrem*ie + q.nsublev*spli + sbli;
+          for (Int sbli = 0; sbli < n_id_in_suplev; ++sbli) {
+            const Int id = nlevwrem*ie + n_id_in_suplev*spli + sbli;
             q.ie2lci[id] = id;
           }
     } else {
       for (size_t ie = 0; ie < q.ie2gci.size(); ++ie)
-        for (Int sbli = 0; sbli < q.nsublev; ++sbli) {
-          const Int id = q.nsublev*ie + sbli;
+        for (Int sbli = 0; sbli < n_id_in_suplev; ++sbli) {
+          const Int id = n_id_in_suplev*ie + sbli;
           q.ie2lci[id] = id;
         }
     }
@@ -6017,7 +6021,6 @@ void run (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
   const Int np = d.np, nlev = d.nlev, qsize = d.qsize,
     nlevwrem = cdr.nsuplev*cdr.nsublev;
   cedr_assert(np <= max_np);
-
   
   FA5<      Real> q_min(q_min_r, np, np, nlev, qsize, nete+1);
   FA5<const Real> q_max(q_max_r, np, np, nlev, qsize, nete+1);
@@ -6035,66 +6038,73 @@ void run (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
       for (Int q = 0; q < qsize; ++q) {
         const bool nonneg = cdr.nonneg[q];
         const Int ti = cdr.cdr_over_super_levels ? q : spli*qsize + q;
+        Real Qm = 0, Qm_min = 0, Qm_max = 0, Qm_prev = 0, rhom = 0, volume = 0;
+        Int ie_idx;
+        if (cdr.caas_in_suplev)
+          ie_idx = cdr.cdr_over_super_levels ?
+            cdr.nsuplev*ie + spli :
+            ie;
         for (Int sbli = 0; sbli < cdr.nsublev; ++sbli) {
           const auto k = k0 + sbli;
-          const auto ie_idx = cdr.cdr_over_super_levels ?
-            nlevwrem*ie + k :
-            cdr.nsublev*ie + sbli;
+          if ( ! cdr.caas_in_suplev)
+            ie_idx = cdr.cdr_over_super_levels ?
+              nlevwrem*ie + k :
+              cdr.nsublev*ie + sbli;
           const auto lci = cdr.ie2lci[ie_idx];
-          if (k >= nlev) {
-            cdr.cdr->set_Qm(lci, ti, 0, 0, 0, 0);
-            if (ti == 0) cdr.cdr->set_rhom(lci, 0, 0);
-            continue;
+          if ( ! cdr.caas_in_suplev) {
+            Qm = 0; Qm_min = 0; Qm_max = 0; Qm_prev = 0;
+            rhom = 0;
+            volume = 0;
           }
-          Real Qm = 0, Qm_min = 0, Qm_max = 0, Qm_prev = 0, rhom = 0, volume = 0;
-          for (Int j = 0; j < np; ++j) {
-            for (Int i = 0; i < np; ++i) {
-              volume += spheremp(i,j);
-              const Real rhomij = dp3d_c(i,j,k,d.tl_np1) * spheremp(i,j);
-              rhom += rhomij;
-              Qm += q_c(i,j,k,q) * rhomij;
-              if (nonneg) q_min(i,j,k,q,ie) = std::max<Real>(q_min(i,j,k,q,ie), 0);
-              Qm_min += q_min(i,j,k,q,ie) * rhomij;
-              Qm_max += q_max(i,j,k,q,ie) * rhomij;
-              Qm_prev += qdp_p(i,j,k,q,d.n0_qdp) * spheremp(i,j);
+          if (k < nlev) {
+            for (Int j = 0; j < np; ++j) {
+              for (Int i = 0; i < np; ++i) {
+                volume += spheremp(i,j);// * d.dp0[k];
+                const Real rhomij = dp3d_c(i,j,k,d.tl_np1) * spheremp(i,j);
+                rhom += rhomij;
+                Qm += q_c(i,j,k,q) * rhomij;
+                if (nonneg) q_min(i,j,k,q,ie) = std::max<Real>(q_min(i,j,k,q,ie), 0);
+                Qm_min += q_min(i,j,k,q,ie) * rhomij;
+                Qm_max += q_max(i,j,k,q,ie) * rhomij;
+                Qm_prev += qdp_p(i,j,k,q,d.n0_qdp) * spheremp(i,j);
+              }
             }
           }
-          // For now, handle just one rhom. For feasible global problems,
-          // it's used only as a weight vector in QLT, so it's fine. In fact,
-          // use just the cell geometry, rather than total density, since in QLT
-          // this field is used as a weight vector.
-          //   In the case of no tree in the vertical direction, dp0
-          // doesn't matter.
-          //   In the case of super levels, dp0 from the highest-k-
-          // index level in the super level is used.
-          //todo Generalize to one rhom field per level. Until then, we're not
-          // getting QLT's safety benefit.
-          if (ti == 0) cdr.cdr->set_rhom(lci, 0, volume/**d.dp0[k]*/);
-          if (Qm_prev < -0.5) {
-            static bool first = true;
-            if (first) {
-              first = false;
-              std::stringstream ss;
-              ss << "Qm_prev < -0.5: Qm_prev = " << Qm_prev
-                 << " on rank " << cdr.p->rank()
-                 << " at (ie,gid,spli,k0,q,ti,sbli,lci,k,n0_qdp,tl_np1) = ("
-                 << ie << "," << cdr.ie2gci[ie] << "," << spli << "," << k0 << ","
-                 << q << "," << ti << "," << sbli << "," << lci << "," << k << ","
-                 << d.n0_qdp << "," << d.tl_np1 << ")\n";
-              ss << "Qdp(:,:,k,q,n0_qdp) = [";
-              for (Int j = 0; j < np; ++j)
-                for (Int i = 0; i < np; ++i)
-                  ss << " " << qdp_p(i,j,k,q,d.n0_qdp);
-              ss << "]\n";
-              ss << "dp3d(:,:,k,tl_np1) = [";
-              for (Int j = 0; j < np; ++j)
-                for (Int i = 0; i < np; ++i)
-                  ss << " " << dp3d_c(i,j,k,d.tl_np1);
-              ss << "]\n";
-              pr(ss.str());
+          const bool write = ! cdr.caas_in_suplev || sbli == cdr.nsublev-1;
+          if (write) {
+            // For now, handle just one rhom. For feasible global problems,
+            // it's used only as a weight vector in QLT, so it's fine. In fact,
+            // use just the cell geometry, rather than total density, since in QLT
+            // this field is used as a weight vector.
+            //todo Generalize to one rhom field per level. Until then, we're not
+            // getting QLT's safety benefit.
+            if (ti == 0) cdr.cdr->set_rhom(lci, 0, volume);
+            cdr.cdr->set_Qm(lci, ti, Qm, Qm_min, Qm_max, Qm_prev);
+            if (Qm_prev < -0.5) {
+              static bool first = true;
+              if (first) {
+                first = false;
+                std::stringstream ss;
+                ss << "Qm_prev < -0.5: Qm_prev = " << Qm_prev
+                   << " on rank " << cdr.p->rank()
+                   << " at (ie,gid,spli,k0,q,ti,sbli,lci,k,n0_qdp,tl_np1) = ("
+                   << ie << "," << cdr.ie2gci[ie] << "," << spli << "," << k0 << ","
+                   << q << "," << ti << "," << sbli << "," << lci << "," << k << ","
+                   << d.n0_qdp << "," << d.tl_np1 << ")\n";
+                ss << "Qdp(:,:,k,q,n0_qdp) = [";
+                for (Int j = 0; j < np; ++j)
+                  for (Int i = 0; i < np; ++i)
+                    ss << " " << qdp_p(i,j,k,q,d.n0_qdp);
+                ss << "]\n";
+                ss << "dp3d(:,:,k,tl_np1) = [";
+                for (Int j = 0; j < np; ++j)
+                  for (Int i = 0; i < np; ++i)
+                    ss << " " << dp3d_c(i,j,k,d.tl_np1);
+                ss << "]\n";
+                pr(ss.str());
+              }
             }
           }
-          cdr.cdr->set_Qm(lci, ti, Qm, Qm_min, Qm_max, Qm_prev);
         }
       }
     }
@@ -6103,11 +6113,103 @@ void run (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
   run_cdr(cdr);
 }
 
+void solve_local (CDR& cdr, const Data& d,
+                  const Int ie, const Int k, const Int q, const Int lci, const Int ti,
+                  const bool scalar_bounds, const Int limiter_option,
+                  const FA2<const Real>& spheremp, const FA4<const Real>& dp3d_c,
+                  const FA5<const Real>& q_min, const FA5<const Real>& q_max,
+                  FA5<Real>& qdp_c, FA4<Real>& q_c) {
+  static constexpr Int max_np = 4, max_np2 = max_np*max_np;
+  const Int np = d.np, np2 = np*np;
+
+  Real wa[max_np2], qlo[max_np2], qhi[max_np2], y[max_np2], x[max_np2];
+  Real rhom = 0;
+  for (Int j = 0, cnt = 0; j < np; ++j)
+    for (Int i = 0; i < np; ++i, ++cnt) {
+      const Real rhomij = dp3d_c(i,j,k,d.tl_np1) * spheremp(i,j);
+      rhom += rhomij;
+      wa[cnt] = rhomij;
+      y[cnt] = q_c(i,j,k,q);
+      x[cnt] = y[cnt];
+    }
+  const Real Qm = cdr.cdr->get_Qm(lci, ti);
+
+  //todo Replace with ReconstructSafely.
+  if (scalar_bounds) {
+    qlo[0] = q_min(0,0,k,q,ie);
+    qhi[0] = q_max(0,0,k,q,ie);
+    const Int N = std::min(max_np2, np2);
+    for (Int i = 1; i < N; ++i) qlo[i] = qlo[0];
+    for (Int i = 1; i < N; ++i) qhi[i] = qhi[0];
+    // We can use either 2-norm minimization or ClipAndAssuredSum for
+    // the local filter. CAAS is the faster. It corresponds to limiter
+    // = 0. 2-norm minimization is the same in spirit as limiter = 8,
+    // but it assuredly achieves the first-order optimality conditions
+    // whereas limiter 8 does not.
+    if (limiter_option == 8)
+      cedr::local::solve_1eq_bc_qp(np2, wa, wa, Qm, qlo, qhi, y, x);
+    else {
+      // We need to use *some* limiter; if 8 isn't chosen, default to
+      // CAAS.
+      cedr::local::caas(np2, wa, Qm, qlo, qhi, y, x);
+    }
+  } else {
+    const Int N = std::min(max_np2, np2);
+    for (Int j = 0, cnt = 0; j < np; ++j)
+      for (Int i = 0; i < np; ++i, ++cnt) {
+        qlo[cnt] = q_min(i,j,k,q,ie);
+        qhi[cnt] = q_max(i,j,k,q,ie);
+      }
+    for (Int trial = 0; trial < 3; ++trial) {
+      int info;
+      if (limiter_option == 8) {
+        info = cedr::local::solve_1eq_bc_qp(
+          np2, wa, wa, Qm, qlo, qhi, y, x);
+        if (info == 1) info = 0;
+      } else {
+        info = 0;
+        cedr::local::caas(np2, wa, Qm, qlo, qhi, y, x, false /* clip */);
+        // Clip for numerics against the cell extrema.
+        Real qlo_s = qlo[0], qhi_s = qhi[0];
+        for (Int i = 1; i < N; ++i) {
+          qlo_s = std::min(qlo_s, qlo[i]);
+          qhi_s = std::max(qhi_s, qhi[i]);
+        }
+        for (Int i = 0; i < N; ++i)
+          x[i] = cedr::impl::max(qlo_s, cedr::impl::min(qhi_s, x[i]));
+      }
+      if (info == 0 || trial == 1) break;
+      switch (trial) {
+      case 0: {
+        Real qlo_s = qlo[0], qhi_s = qhi[0];
+        for (Int i = 1; i < N; ++i) {
+          qlo_s = std::min(qlo_s, qlo[i]);
+          qhi_s = std::max(qhi_s, qhi[i]);
+        }
+        const Int N = std::min(max_np2, np2);
+        for (Int i = 0; i < N; ++i) qlo[i] = qlo_s;
+        for (Int i = 0; i < N; ++i) qhi[i] = qhi_s;
+      } break;
+      case 1: {
+        const Real q = Qm / rhom;
+        for (Int i = 0; i < N; ++i) qlo[i] = std::min(qlo[i], q);
+        for (Int i = 0; i < N; ++i) qhi[i] = std::max(qhi[i], q);                
+      } break;
+      }
+    }
+  }
+        
+  for (Int j = 0, cnt = 0; j < np; ++j)
+    for (Int i = 0; i < np; ++i, ++cnt) {
+      q_c(i,j,k,q) = x[cnt];
+      qdp_c(i,j,k,q,d.n1_qdp) = q_c(i,j,k,q) * dp3d_c(i,j,k,d.tl_np1);
+    }
+}
+
 void run_local (CDR& cdr, const Data& d, const Real* q_min_r, const Real* q_max_r,
                 const Int nets, const Int nete, const bool scalar_bounds,
                 const Int limiter_option) {
-  static constexpr Int max_np = 4, max_np2 = max_np*max_np;
-  const Int np = d.np, np2 = np*np, nlev = d.nlev, qsize = d.qsize,
+  const Int np = d.np, nlev = d.nlev, qsize = d.qsize,
     nlevwrem = cdr.nsuplev*cdr.nsublev;;
   cedr_assert(np <= max_np);
 
@@ -6127,94 +6229,22 @@ void run_local (CDR& cdr, const Data& d, const Real* q_min_r, const Real* q_max_
       const Int k0 = cdr.nsublev*spli;
       for (Int q = 0; q < qsize; ++q) {
         const Int ti = cdr.cdr_over_super_levels ? q : spli*qsize + q;
+        Int ie_idx;
+        if (cdr.caas_in_suplev)
+          ie_idx = cdr.cdr_over_super_levels ?
+            cdr.nsuplev*ie + spli :
+            ie;
         for (Int sbli = 0; sbli < cdr.nsublev; ++sbli) {
           const Int k = k0 + sbli;
           if (k >= nlev) break;
-          const auto ie_idx = cdr.cdr_over_super_levels ?
-            nlevwrem*ie + k :
-            cdr.nsublev*ie + sbli;
+          if ( ! cdr.caas_in_suplev)
+            ie_idx = cdr.cdr_over_super_levels ?
+              nlevwrem*ie + k :
+              cdr.nsublev*ie + sbli;
           const auto lci = cdr.ie2lci[ie_idx];
-          Real wa[max_np2], qlo[max_np2], qhi[max_np2], y[max_np2], x[max_np2];
-          Real rhom = 0;
-          for (Int j = 0, cnt = 0; j < np; ++j)
-            for (Int i = 0; i < np; ++i, ++cnt) {
-              const Real rhomij = dp3d_c(i,j,k,d.tl_np1) * spheremp(i,j);
-              rhom += rhomij;
-              wa[cnt] = rhomij;
-              y[cnt] = q_c(i,j,k,q);
-              x[cnt] = y[cnt];
-            }
-          const Real Qm = cdr.cdr->get_Qm(lci, ti);
-
-          //todo Replace with ReconstructSafely.
-          if (scalar_bounds) {
-            qlo[0] = q_min(0,0,k,q,ie);
-            qhi[0] = q_max(0,0,k,q,ie);
-            const Int N = std::min(max_np2, np2);
-            for (Int i = 1; i < N; ++i) qlo[i] = qlo[0];
-            for (Int i = 1; i < N; ++i) qhi[i] = qhi[0];
-            // We can use either 2-norm minimization or ClipAndAssuredSum for the
-            // local filter. CAAS is the faster. It corresponds to limiter =
-            // 0. 2-norm minimization is the same in spirit as limiter = 8, but it
-            // assuredly achieves the first-order optimality conditions whereas
-            // limiter 8 does not.
-            if (limiter_option == 8)
-              cedr::local::solve_1eq_bc_qp(np2, wa, wa, Qm, qlo, qhi, y, x);
-            else {
-              // We need to use *some* limiter; if 8 isn't chosen, default to CAAS.
-              cedr::local::caas(np2, wa, Qm, qlo, qhi, y, x);
-            }
-          } else {
-            const Int N = std::min(max_np2, np2);
-            for (Int j = 0, cnt = 0; j < np; ++j)
-              for (Int i = 0; i < np; ++i, ++cnt) {
-                qlo[cnt] = q_min(i,j,k,q,ie);
-                qhi[cnt] = q_max(i,j,k,q,ie);
-              }
-            for (Int trial = 0; trial < 3; ++trial) {
-              int info;
-              if (limiter_option == 8) {
-                info = cedr::local::solve_1eq_bc_qp(
-                  np2, wa, wa, Qm, qlo, qhi, y, x);
-                if (info == 1) info = 0;
-              } else {
-                info = 0;
-                cedr::local::caas(np2, wa, Qm, qlo, qhi, y, x, false /* clip */);
-                // Clip for numerics against the cell extrema.
-                Real qlo_s = qlo[0], qhi_s = qhi[0];
-                for (Int i = 1; i < N; ++i) {
-                  qlo_s = std::min(qlo_s, qlo[i]);
-                  qhi_s = std::max(qhi_s, qhi[i]);
-                }
-                for (Int i = 0; i < N; ++i)
-                  x[i] = cedr::impl::max(qlo_s, cedr::impl::min(qhi_s, x[i]));
-              }
-              if (info == 0 || trial == 1) break;
-              switch (trial) {
-              case 0: {
-                Real qlo_s = qlo[0], qhi_s = qhi[0];
-                for (Int i = 1; i < N; ++i) {
-                  qlo_s = std::min(qlo_s, qlo[i]);
-                  qhi_s = std::max(qhi_s, qhi[i]);
-                }
-                const Int N = std::min(max_np2, np2);
-                for (Int i = 0; i < N; ++i) qlo[i] = qlo_s;
-                for (Int i = 0; i < N; ++i) qhi[i] = qhi_s;
-              } break;
-              case 1: {
-                const Real q = Qm / rhom;
-                for (Int i = 0; i < N; ++i) qlo[i] = std::min(qlo[i], q);
-                for (Int i = 0; i < N; ++i) qhi[i] = std::max(qhi[i], q);                
-              } break;
-              }
-            }
-          }
-        
-          for (Int j = 0, cnt = 0; j < np; ++j)
-            for (Int i = 0; i < np; ++i, ++cnt) {
-              q_c(i,j,k,q) = x[cnt];
-              qdp_c(i,j,k,q,d.n1_qdp) = q_c(i,j,k,q) * dp3d_c(i,j,k,d.tl_np1);
-            }
+          solve_local(cdr, d, ie, k, q, lci, ti,
+                      scalar_bounds, limiter_option,
+                      spheremp, dp3d_c, q_min, q_max, qdp_c, q_c);
         }
       }
     }
