@@ -5003,7 +5003,7 @@ class QLT : public cedr::qlt::QLT<ES> {
     RealList lo, hi, mass, ones, wrk;
 
     VerticalLevelsData (const cedr::Int n)
-      : lo("lo", n), hi("hi", n), mass("mass", n), ones("ones", n), wrk("wrk", 2*n)
+      : lo("lo", n), hi("hi", n), mass("mass", n), ones("ones", n), wrk("wrk", n)
     {
       for (cedr::Int k = 0; k < n; ++k) ones(k) = 1;
     }
@@ -5068,16 +5068,33 @@ class QLT : public cedr::qlt::QLT<ES> {
   static Int solve (const Int n, const Real* a, const Real b,
                     const Real* xlo, const Real* xhi,
                     Real* x, Real* wrk) {
+#ifndef NDEBUG
+    cedr_assert(b >= 0);
+    for (Int i = 0; i < n; ++i) {
+      cedr_assert(a[i] > 0);
+      cedr_assert(xlo[i] >= 0);
+      cedr_assert(xhi[i] >= xlo[i]);
+    }
+#endif
     Int status = 0;
     Real tot_lo = 0, tot_hi = 0;
-    for (Int i = 0; i < n; ++i) tot_lo += xlo[i];
-    for (Int i = 0; i < n; ++i) tot_hi += xhi[i];
-    if (b < tot_lo || b > tot_hi) {
-      if (b < tot_lo) status = -2;
-      if (b > tot_hi) status = -1;
-      
+    for (Int i = 0; i < n; ++i) tot_lo += a[i]*xlo[i];
+    for (Int i = 0; i < n; ++i) tot_hi += a[i]*xhi[i];
+    if (b < tot_lo) {
+      status = -2;
+      for (Int i = 0; i < n; ++i) wrk[i] = 0;
+      for (Int i = 0; i < n; ++i) x[i] = xlo[i];
+      // Find a new xlo >= 0 minimally far from the current one. This
+      // is also the solution x.
+      cedr::local::caas(n, a, b, wrk, xlo, x, x, false);
+    } else if (b > tot_hi) {
+      status = -1;
+      const Real f = b/tot_hi;
+      // a[i] divides out.
+      for (Int i = 0; i < n; ++i) x[i] = f*xhi[i];
+    } else {
+      cedr::local::caas(n, a, b, xlo, xhi, x, x, false);
     }
-    cedr::local::caas(n, a, b, xlo, xhi, x, x, false);
     return status;
   }
 
@@ -5088,7 +5105,53 @@ class QLT : public cedr::qlt::QLT<ES> {
   }
 
   static Int solve_unittest () {
-    return 0;
+    static const auto eps = std::numeric_limits<Real>::epsilon();
+
+    static const Int n = 7;
+    Real a[n], xlo[n], xhi[n], x[n], wrk[n];
+    static const Real x0  [n] = { 1.2, 0.5,3  , 2  , 1.5, 1.8,0.2};
+    static const Real dxlo[n] = {-0.1,-0.2,0.5,-1.5,-0.1,-1.1,0.1};
+    static const Real dxhi[n] = { 0.1,-0.1,1  ,-0.5, 0.1,-0.2,0.5};
+    for (Int i = 0; i < n; ++i) a[i] = i;
+    for (Int i = 0; i < n; ++i) xlo[i] = x0[i] + dxlo[i];
+    for (Int i = 0; i < n; ++i) xhi[i] = x0[i] + dxhi[i];
+    Real b, b1;
+    Int status, nerr = 0;
+
+    const auto check_mass = [&] () {
+      b1 = 0;
+      for (Int i = 0; i < n; ++i) b1 += a[i]*x[i];
+      if (std::abs(b1 - b) >= 10*eps*b) ++nerr;
+    };
+
+    for (Int i = 0; i < n; ++i) x[i] = x0[i];
+    b = 0;
+    for (Int i = 0; i < n; ++i) b += a[i]*xlo[i];
+    b *= 0.9;
+    status = solve(n, a, b, xlo, xhi, x, wrk);
+    if (status != -2) ++nerr;
+    check_mass();
+    for (Int i = 0; i < n; ++i) if (x[i] > xhi[i]*(1 + 10*eps)) ++nerr;
+
+    for (Int i = 0; i < n; ++i) x[i] = x0[i];
+    b = 0;
+    for (Int i = 0; i < n; ++i) b += a[i]*xhi[i];
+    b *= 1.1;
+    status = solve(n, a, b, xlo, xhi, x, wrk);
+    if (status != -1) ++nerr;
+    check_mass();
+    for (Int i = 0; i < n; ++i) if (x[i] < xlo[i]*(1 - 10*eps)) ++nerr;
+
+    for (Int i = 0; i < n; ++i) x[i] = x0[i];
+    b = 0;
+    for (Int i = 0; i < n; ++i) b += 0.5*a[i]*(xlo[i] + xhi[i]);
+    status = solve(n, a, b, xlo, xhi, x, wrk);
+    if (status != 0) ++nerr;
+    check_mass();
+    for (Int i = 0; i < n; ++i) if (x[i] < xlo[i]*(1 - 10*eps)) ++nerr;
+    for (Int i = 0; i < n; ++i) if (x[i] > xhi[i]*(1 + 10*eps)) ++nerr;
+
+    return nerr;
   }
 
 public:
