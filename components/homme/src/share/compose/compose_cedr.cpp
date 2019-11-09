@@ -5024,11 +5024,10 @@ class QLT : public cedr::qlt::QLT<ES> {
     const Int nprob = (bie - bis)/nlev;
 
 #if defined THREAD_QLT_RUN && defined HORIZ_OPENMP
-#   pragma omp for
+#   pragma omp master
 #endif
     for (Int pi = 0; pi < nprob; ++pi) {
       const Int bd_os_pi = bd_os + md.a_d.trcr2bl2r(md.a_d.bidx2trcr(bis + pi));
-      //#define RV_DIAG
 #ifdef RV_DIAG
       Real oob = 0;
 #endif
@@ -5044,8 +5043,7 @@ class QLT : public cedr::qlt::QLT<ES> {
         if (vld.mass(k) > vld.hi(k)) oob += vld.mass(k) - vld.hi(k);
 #endif
       }
-      solve(nlev, vld.ones.data(), tot_mass, vld.lo.data(), vld.hi.data(),
-            vld.mass.data(), vld.wrk.data());
+      solve(nlev, vld, tot_mass);
       Real tot_mass_slv = 0, oob_slv = 0;
       for (Int k = 0; k < nlev; ++k) {
         const Int bd_os_k = bd_os_pi + nprob*4*k;
@@ -5081,6 +5079,12 @@ class QLT : public cedr::qlt::QLT<ES> {
     }
     cedr::local::caas(n, a, b, xlo, xhi, x, x, false);
     return status;
+  }
+
+  static Int solve (const Int nlev, const VerticalLevelsData& vld,
+                    const Real& tot_mass) {
+    solve(nlev, vld.ones.data(), tot_mass, vld.lo.data(), vld.hi.data(),
+          vld.mass.data(), vld.wrk.data());    
   }
 
   static Int solve_unittest () {
