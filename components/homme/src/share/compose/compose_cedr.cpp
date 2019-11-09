@@ -5083,6 +5083,10 @@ class QLT : public cedr::qlt::QLT<ES> {
     return status;
   }
 
+  static Int solve_unittest () {
+    return 0;
+  }
+
 public:
   QLT (const cedr::mpi::Parallel::Ptr& p, const cedr::Int& ncells,
        const cedr::qlt::tree::Node::Ptr& tree, const cedr::CDR::Options& options,
@@ -5326,6 +5330,10 @@ public:
     }
 #endif
   }
+
+  static Int unittest () {
+    return solve_unittest();
+  }
 };
 
 // We explicitly use Kokkos::Serial here so we can run the Kokkos kernels in the
@@ -5532,8 +5540,15 @@ make_my_tree_part (const cedr::mpi::Parallel::Ptr& p, const Int& ncells,
   return make_my_tree_part(m, 0, m.ncell(), nullptr, nrank, rank2sfc);
 }
 
+static size_t nextpow2 (size_t n) {
+  size_t p = 1;
+  while (p < n) p <<= 1;
+  return p;
+}
+
 static size_t get_tree_height (size_t nleaf) {
   size_t height = 0;
+  nleaf = nextpow2(nleaf);
   while (nleaf) {
     ++height;
     nleaf >>= 1;
@@ -5680,9 +5695,13 @@ make_tree (const cedr::mpi::Parallel::Ptr& p, const Int nelem,
 
 Int test_tree_maker () {
   Int nerr = 0;
+  if (nextpow2(3) != 4) ++nerr;
+  if (nextpow2(4) != 4) ++nerr;
+  if (nextpow2(5) != 8) ++nerr;
   if (get_tree_height(3) != 3) ++nerr;
   if (get_tree_height(4) != 3) ++nerr;
   if (get_tree_height(5) != 4) ++nerr;
+  if (get_tree_height(8) != 4) ++nerr;
   return nerr;
 }
 
@@ -6362,6 +6381,7 @@ extern "C" void cedr_set_bufs (homme::Real* sendbuf, homme::Real* recvbuf,
 }
 
 extern "C" void cedr_unittest (const homme::Int fcomm, homme::Int* nerrp) {
+#if 0
   cedr_assert(g_cdr);
   cedr_assert(g_cdr->tree);
   auto p = cedr::mpi::make_parallel(MPI_Comm_f2c(fcomm));
@@ -6370,7 +6390,9 @@ extern "C" void cedr_unittest (const homme::Int fcomm, homme::Int* nerrp) {
                                        1, false, false, true, false);
   else
     *nerrp = cedr::caas::test::unittest(p);
+#endif
   *nerrp += homme::test_tree_maker();
+  *nerrp += homme::CDR::QLTT::unittest();
 }
 
 extern "C" void cedr_set_ie2gci (const homme::Int ie, const homme::Int gci) {
