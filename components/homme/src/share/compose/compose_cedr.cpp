@@ -5106,13 +5106,13 @@ class QLT : public cedr::qlt::QLT<ES> {
 
   static Int solve_unittest () {
     static const auto eps = std::numeric_limits<Real>::epsilon();
-
     static const Int n = 7;
+
     Real a[n], xlo[n], xhi[n], x[n], wrk[n];
     static const Real x0  [n] = { 1.2, 0.5,3  , 2  , 1.5, 1.8,0.2};
     static const Real dxlo[n] = {-0.1,-0.2,0.5,-1.5,-0.1,-1.1,0.1};
     static const Real dxhi[n] = { 0.1,-0.1,1  ,-0.5, 0.1,-0.2,0.5};
-    for (Int i = 0; i < n; ++i) a[i] = i;
+    for (Int i = 0; i < n; ++i) a[i] = i+1;
     for (Int i = 0; i < n; ++i) xlo[i] = x0[i] + dxlo[i];
     for (Int i = 0; i < n; ++i) xhi[i] = x0[i] + dxhi[i];
     Real b, b1;
@@ -6270,6 +6270,7 @@ void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
           const Real Qm_tot = cdr.cdr->get_Qm(lci, ti);
           Real rhom[CDR::nsublev_per_suplev], Qm[CDR::nsublev_per_suplev],
             Qm_min[CDR::nsublev_per_suplev], Qm_max[CDR::nsublev_per_suplev];
+          // Redistribute mass in the vertical direction of the super level.
           Int n = cdr.nsublev;
           for (Int i = 0; i < cdr.nsublev; ++i) {
             const Int k = k0 + i;
@@ -6285,6 +6286,7 @@ void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
                          volume, rhom[i], Qm[i], Qm_prev, Qm_min[i], Qm_max[i]);
           }
           safe_caas(n, rhom, Qm_min, Qm_max, Qm);
+          // Redistribute mass in the horizontal direction of each level.
           for (Int sbli = 0; sbli < cdr.nsublev; ++sbli) {
             const Int k = k0 + sbli;
             if (k >= nlev) break;
@@ -6501,17 +6503,17 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
 
 static Int safe_caas_unittest () {
   static const auto eps = std::numeric_limits<Real>::epsilon();
-
   static const Int n = 7;
-  Real a[n], xlo[n], xhi[n], x[n], wrk[n], asum = 0, xsum = 0;
+
+  Real a[n], xlo[n], xhi[n], x[n], asum = 0, x0sum = 0;
   static const Real x0  [n] = { 1.2, 0.5,3  , 2  , 1.5, 1.8,0.2};
   static const Real dxlo[n] = {-0.1,-0.2,0.5,-1.5,-0.1,-1.1,0.1};
   static const Real dxhi[n] = { 0.1,-0.1,1  ,-0.5, 0.1,-0.2,0.5};
-  for (Int i = 0; i < n; ++i) a[i] = i;
-  for (Int i = 0; i < n; ++i) asum += a[i];
-  for (Int i = 0; i < n; ++i) xsum += x0[i];
+  for (Int i = 0; i < n; ++i) a[i] = i+1;
   for (Int i = 0; i < n; ++i) xlo[i] = x0[i] + dxlo[i];
   for (Int i = 0; i < n; ++i) xhi[i] = x0[i] + dxhi[i];
+  for (Int i = 0; i < n; ++i) asum += a[i];
+  for (Int i = 0; i < n; ++i) x0sum += x0[i];
   Real b, b1;
   Int status, nerr = 0;
 
@@ -6523,36 +6525,40 @@ static Int safe_caas_unittest () {
 
   const auto solve = [&] () {
     Real ac[n], xloc[n], xhic[n];
-    for (Int i = 0; i < n; ++i) x[i] = (b/xsum)*x0[i];
+    for (Int i = 0; i < n; ++i) x[i] = (b/x0sum)*x0[i];
     for (Int i = 0; i < n; ++i) ac[i] = a[i];
     for (Int i = 0; i < n; ++i) xloc[i] = xlo[i];
     for (Int i = 0; i < n; ++i) xhic[i] = xhi[i];
-    return safe_caas(n, ac, xloc, xhic, x);
+    status = safe_caas(n, ac, xloc, xhic, x);
   };
 
   b = 0;
   for (Int i = 0; i < n; ++i) b += xlo[i];
   b *= 0.9;
-  status = solve();
+  solve();
   if (status != -2) ++nerr;
   check_mass();
-  for (Int i = 0; i < n; ++i) if (x[i] < a[i]*(xsum/asum)*(1 - 10*eps)) ++nerr;
+  prc(nerr);
+  for (Int i = 0; i < n; ++i) if (x[i] < a[i]*(b/asum)*(1 - 10*eps)) ++nerr;
+  prc(nerr);
   for (Int i = 0; i < n; ++i) if (x[i] > xhi[i]*(1 + 10*eps)) ++nerr;
   pr(puf(status) pu(nerr) pu((b1 - b)/b));
 
   b = 0;
   for (Int i = 0; i < n; ++i) b += xhi[i];
   b *= 1.1;
-  status = solve();
+  solve();
   if (status != -1) ++nerr;
   check_mass();
+  prc(nerr);
   for (Int i = 0; i < n; ++i) if (x[i] < xlo[i]*(1 - 10*eps)) ++nerr;
-  for (Int i = 0; i < n; ++i) if (x[i] > a[i]*(xsum/asum)*(1 + 10*eps)) ++nerr;
+  prc(nerr);
+  for (Int i = 0; i < n; ++i) if (x[i] > a[i]*(b/asum)*(1 + 10*eps)) ++nerr;
   pr(puf(status) pu(nerr) pu((b1 - b)/b));
 
   b = 0;
   for (Int i = 0; i < n; ++i) b += 0.5*(xlo[i] + xhi[i]);
-  status = solve();
+  solve();
   if (status != 0) ++nerr;
   check_mass();
   for (Int i = 0; i < n; ++i) if (x[i] < xlo[i]*(1 - 10*eps)) ++nerr;
