@@ -5001,6 +5001,8 @@ class QLT : public cedr::qlt::QLT<ES> {
   typedef cedr::qlt::QLT<ES> Super;
   typedef typename Super::RealList RealList;
 
+  //todo All of this VerticalLevelsData-related code should be impl'ed
+  // using a new optional root-node-function QLT registration function.
   struct VerticalLevelsData {
     typedef std::shared_ptr<VerticalLevelsData> Ptr;
 
@@ -6223,6 +6225,8 @@ void solve_local (const Int ie, const Int k, const Int q,
     }
 }
 
+//todo Move to cedr::local; rename as reconstruct_safely; take a CDR
+// function as input.
 Int safe_caas (const Int n, Real* rhom, const Real Qm_tot,
                Real* Qmlo, Real* Qmhi, Real* Qm) {
   Real Qmlo_tot = 0, Qmhi_tot = 0;
