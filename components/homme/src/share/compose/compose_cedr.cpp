@@ -1,10 +1,6 @@
 // Uncomment this to look for MPI-related memory leaks.
 //#define COMPOSE_DEBUG_MPI
 
-#pragma message "DEBUG stuff on"
-#define COMPOSE_DEBUG_MPI
-#undef NDEBUG
-
 //>> cedr_kokkos.hpp
 // COMPOSE version 1.0: Copyright 2018 NTESS. This software is released under
 // the BSD license; see LICENSE in the top-level directory.
@@ -5842,7 +5838,7 @@ struct CDR {
       nsuplev((nlev + nsublev - 1) / nsublev),
       threed(independent_time_steps),
       cdr_over_super_levels(threed && Alg::is_caas(alg)),
-      caas_in_suplev(/*Alg::is_qlt(alg) &&*/ nsublev > 1),
+      caas_in_suplev(Alg::is_qlt(alg) && nsublev > 1),
       hard_zero(hard_zero_),
       p(p_), inited_tracers_(false)
   {
