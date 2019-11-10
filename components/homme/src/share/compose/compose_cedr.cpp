@@ -6015,6 +6015,27 @@ static void run_cdr (CDR& q) {
 #endif
 }
 
+void accum_values (const Int ie, const Int k, const Int q, const Int tl_np1,
+                   const Int n0_qdp, const Int np, const bool nonneg,
+                   const FA2<const Real>& spheremp, const FA4<const Real>& dp3d_c,
+                   const FA5<Real>& q_min, const FA5<const Real>& q_max,
+                   const FA5<const Real>& qdp_p, const FA4<const Real>& q_c,
+                   Real& volume, Real& rhom, Real& Qm, Real& Qm_prev,
+                   Real& Qm_min, Real& Qm_max) {
+  for (Int j = 0; j < np; ++j) {
+    for (Int i = 0; i < np; ++i) {
+      volume += spheremp(i,j);// * dp0[k];
+      const Real rhomij = dp3d_c(i,j,k,tl_np1) * spheremp(i,j);
+      rhom += rhomij;
+      Qm += q_c(i,j,k,q) * rhomij;
+      if (nonneg) q_min(i,j,k,q,ie) = std::max<Real>(q_min(i,j,k,q,ie), 0);
+      Qm_min += q_min(i,j,k,q,ie) * rhomij;
+      Qm_max += q_max(i,j,k,q,ie) * rhomij;
+      Qm_prev += qdp_p(i,j,k,q,n0_qdp) * spheremp(i,j);
+    }
+  }
+}
+
 void run (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
           const Int nets, const Int nete) {
   static constexpr Int max_np = 4;
@@ -6056,20 +6077,10 @@ void run (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
             rhom = 0;
             volume = 0;
           }
-          if (k < nlev) {
-            for (Int j = 0; j < np; ++j) {
-              for (Int i = 0; i < np; ++i) {
-                volume += spheremp(i,j);// * d.dp0[k];
-                const Real rhomij = dp3d_c(i,j,k,d.tl_np1) * spheremp(i,j);
-                rhom += rhomij;
-                Qm += q_c(i,j,k,q) * rhomij;
-                if (nonneg) q_min(i,j,k,q,ie) = std::max<Real>(q_min(i,j,k,q,ie), 0);
-                Qm_min += q_min(i,j,k,q,ie) * rhomij;
-                Qm_max += q_max(i,j,k,q,ie) * rhomij;
-                Qm_prev += qdp_p(i,j,k,q,d.n0_qdp) * spheremp(i,j);
-              }
-            }
-          }
+          if (k < nlev)
+            accum_values(ie, k, q, d.tl_np1, d.n0_qdp, np, nonneg,
+                         spheremp, dp3d_c, q_min, q_max, qdp_p, q_c,
+                         volume, rhom, Qm, Qm_prev, Qm_min, Qm_max);
           const bool write = ! cdr.caas_in_suplev || sbli == cdr.nsublev-1;
           if (write) {
             // For now, handle just one rhom. For feasible global problems,
@@ -6206,15 +6217,38 @@ void solve_local (const Int ie, const Int k, const Int q,
     }
 }
 
-void run_local (CDR& cdr, const Data& d, const Real* q_min_r, const Real* q_max_r,
+Int safe_caas (const Int n, Real* rhom, const Real* Qmlo, const Real* Qmhi,
+               Real* Qm) {
+  Real Qm_tot = 0, Qmlo_tot = 0, Qmhi_tot = 0, rhom_tot = 0;
+  for (Int i = 0; i < n; ++i) Qm_tot += Qm[i];
+  for (Int i = 0; i < n; ++i) Qmlo_tot += Qmlo[i];
+  for (Int i = 0; i < n; ++i) Qmhi_tot += Qmhi[i];
+  Int status = 0;
+  if (Qm_tot < Qmlo_tot) {
+    status = -2;
+    for (Int i = 0; i < n; ++i) rhom_tot += rhom[i];
+    const Real q_min = Qm_tot/rhom_tot;
+    for (Int i = 0; i < n; ++i) Qm[i] = q_min*rhom[i];
+  } else if (Qm_tot > Qmhi_tot) {
+    status = -1;
+    for (Int i = 0; i < n; ++i) rhom_tot += rhom[i];
+    const Real q_max = Qm_tot/rhom_tot;
+    for (Int i = 0; i < n; ++i) Qm[i] = q_max*rhom[i];
+  } else {
+    for (Int i = 0; i < n; ++i) rhom[i] = 1;
+    cedr::local::caas(n, rhom, Qm_tot, Qmlo, Qmhi, Qm, Qm, false);
+  }
+  return status;
+}
+
+void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
                 const Int nets, const Int nete, const bool scalar_bounds,
                 const Int limiter_option) {
   const Int np = d.np, nlev = d.nlev, qsize = d.qsize,
     nlevwrem = cdr.nsuplev*cdr.nsublev;
 
-  FA5<const Real>
-    q_min(q_min_r, np, np, nlev, qsize, nete+1),
-    q_max(q_max_r, np, np, nlev, qsize, nete+1);
+  FA5<      Real> q_min(q_min_r, np, np, nlev, qsize, nete+1);
+  FA5<const Real> q_max(q_max_r, np, np, nlev, qsize, nete+1);
 
   for (Int ie = nets; ie <= nete; ++ie) {
     FA2<const Real> spheremp(d.spheremp[ie], np, np);
@@ -6233,14 +6267,30 @@ void run_local (CDR& cdr, const Data& d, const Real* q_min_r, const Real* q_max_
             cdr.nsuplev*ie + spli :
             ie;
           const auto lci = cdr.ie2lci[ie_idx];
-          const Real Qm = cdr.cdr->get_Qm(lci, ti);
-          Real Qms[CDR::nsublev_per_suplev];
+          const Real Qm_tot = cdr.cdr->get_Qm(lci, ti);
+          Real rhom[CDR::nsublev_per_suplev], Qm[CDR::nsublev_per_suplev],
+            Qm_min[CDR::nsublev_per_suplev], Qm_max[CDR::nsublev_per_suplev];
+          Int n = cdr.nsublev;
+          for (Int i = 0; i < cdr.nsublev; ++i) {
+            const Int k = k0 + i;
+            if (k >= nlev) {
+              n = i;
+              break;
+            }
+            rhom[i] = 0; Qm[i] = 0; Qm_min[i] = 0; Qm_max[i] = 0;
+            Real Qm_prev = 0, volume = 0;
+            accum_values(ie, k, q, d.tl_np1, d.n0_qdp, np,
+                         false /* nonneg already applied */,
+                         spheremp, dp3d_c, q_min, q_max, qdp_c, q_c,
+                         volume, rhom[i], Qm[i], Qm_prev, Qm_min[i], Qm_max[i]);
+          }
+          safe_caas(n, rhom, Qm_min, Qm_max, Qm);
           for (Int sbli = 0; sbli < cdr.nsublev; ++sbli) {
             const Int k = k0 + sbli;
             if (k >= nlev) break;
             solve_local(ie, k, q, d.tl_np1, d.n1_qdp, np,
                         scalar_bounds, limiter_option,
-                        spheremp, dp3d_c, q_min, q_max, Qms[sbli], qdp_c, q_c);
+                        spheremp, dp3d_c, q_min, q_max, Qm[sbli], qdp_c, q_c);
           }
         } else {
           for (Int sbli = 0; sbli < cdr.nsublev; ++sbli) {
@@ -6448,6 +6498,69 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
     }
   }
 }
+
+static Int safe_caas_unittest () {
+  static const auto eps = std::numeric_limits<Real>::epsilon();
+
+  static const Int n = 7;
+  Real a[n], xlo[n], xhi[n], x[n], wrk[n], asum = 0, xsum = 0;
+  static const Real x0  [n] = { 1.2, 0.5,3  , 2  , 1.5, 1.8,0.2};
+  static const Real dxlo[n] = {-0.1,-0.2,0.5,-1.5,-0.1,-1.1,0.1};
+  static const Real dxhi[n] = { 0.1,-0.1,1  ,-0.5, 0.1,-0.2,0.5};
+  for (Int i = 0; i < n; ++i) a[i] = i;
+  for (Int i = 0; i < n; ++i) asum += a[i];
+  for (Int i = 0; i < n; ++i) xsum += x0[i];
+  for (Int i = 0; i < n; ++i) xlo[i] = x0[i] + dxlo[i];
+  for (Int i = 0; i < n; ++i) xhi[i] = x0[i] + dxhi[i];
+  Real b, b1;
+  Int status, nerr = 0;
+
+  const auto check_mass = [&] () {
+    b1 = 0;
+    for (Int i = 0; i < n; ++i) b1 += x[i];
+    if (std::abs(b1 - b) >= 10*eps*b) ++nerr;
+  };
+
+  const auto solve = [&] () {
+    Real ac[n], xloc[n], xhic[n];
+    for (Int i = 0; i < n; ++i) x[i] = (b/xsum)*x0[i];
+    for (Int i = 0; i < n; ++i) ac[i] = a[i];
+    for (Int i = 0; i < n; ++i) xloc[i] = xlo[i];
+    for (Int i = 0; i < n; ++i) xhic[i] = xhi[i];
+    return safe_caas(n, ac, xloc, xhic, x);
+  };
+
+  b = 0;
+  for (Int i = 0; i < n; ++i) b += xlo[i];
+  b *= 0.9;
+  status = solve();
+  if (status != -2) ++nerr;
+  check_mass();
+  for (Int i = 0; i < n; ++i) if (x[i] < a[i]*(xsum/asum)*(1 - 10*eps)) ++nerr;
+  for (Int i = 0; i < n; ++i) if (x[i] > xhi[i]*(1 + 10*eps)) ++nerr;
+  pr(puf(status) pu(nerr) pu((b1 - b)/b));
+
+  b = 0;
+  for (Int i = 0; i < n; ++i) b += xhi[i];
+  b *= 1.1;
+  status = solve();
+  if (status != -1) ++nerr;
+  check_mass();
+  for (Int i = 0; i < n; ++i) if (x[i] < xlo[i]*(1 - 10*eps)) ++nerr;
+  for (Int i = 0; i < n; ++i) if (x[i] > a[i]*(xsum/asum)*(1 + 10*eps)) ++nerr;
+  pr(puf(status) pu(nerr) pu((b1 - b)/b));
+
+  b = 0;
+  for (Int i = 0; i < n; ++i) b += 0.5*(xlo[i] + xhi[i]);
+  status = solve();
+  if (status != 0) ++nerr;
+  check_mass();
+  for (Int i = 0; i < n; ++i) if (x[i] < xlo[i]*(1 - 10*eps)) ++nerr;
+  for (Int i = 0; i < n; ++i) if (x[i] > xhi[i]*(1 + 10*eps)) ++nerr;
+  pr(puf(status) pu(nerr) pu((b1 - b)/b));
+
+  return nerr;
+}
 } // namespace sl
 } // namespace homme
 
@@ -6500,6 +6613,7 @@ extern "C" void cedr_unittest (const homme::Int fcomm, homme::Int* nerrp) {
 #endif
   *nerrp += homme::test_tree_maker();
   *nerrp += homme::CDR::QLTT::unittest();
+  *nerrp += homme::sl::safe_caas_unittest();
 }
 
 extern "C" void cedr_set_ie2gci (const homme::Int ie, const homme::Int gci) {
@@ -6552,7 +6666,7 @@ extern "C" void cedr_sl_run (homme::Real* minq, const homme::Real* maxq,
 }
 
 // Run the cell-local limiter problem.
-extern "C" void cedr_sl_run_local (const homme::Real* minq, const homme::Real* maxq,
+extern "C" void cedr_sl_run_local (homme::Real* minq, const homme::Real* maxq,
                                    homme::Int nets, homme::Int nete, homme::Int use_ir,
                                    homme::Int limiter_option) {
   cedr_assert(minq != maxq);
