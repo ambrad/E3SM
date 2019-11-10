@@ -5842,7 +5842,7 @@ struct CDR {
       nsuplev((nlev + nsublev - 1) / nsublev),
       threed(independent_time_steps),
       cdr_over_super_levels(threed && Alg::is_caas(alg)),
-      caas_in_suplev(Alg::is_qlt(alg) && nsublev > 1),
+      caas_in_suplev(/*Alg::is_qlt(alg) &&*/ nsublev > 1),
       hard_zero(hard_zero_),
       p(p_), inited_tracers_(false)
   {
@@ -6225,54 +6225,33 @@ void solve_local (const Int ie, const Int k, const Int q,
     }
 }
 
-//todo Move to cedr::local; rename as reconstruct_safely; take a CDR
-// function as input.
-Int safe_caas (const Int n, Real* rhom, const Real Qm_tot,
-               Real* Qmlo, Real* Qmhi, Real* Qm) {
-  Real Qmlo_tot = 0, Qmhi_tot = 0;
-  for (Int i = 0; i < n; ++i) Qmlo_tot += Qmlo[i];
-  for (Int i = 0; i < n; ++i) Qmhi_tot += Qmhi[i];
+Int vertical_caas_backup (const Int n, Real* rhom,
+                          const Real q_min, const Real q_max,
+                          Real Qmlo_tot, Real Qmhi_tot, const Real Qm_tot,
+                          Real* Qmlo, Real* Qmhi, Real* Qm) {
   Int status = 0;
   if (Qm_tot < Qmlo_tot || Qm_tot > Qmhi_tot) {
-    Int i = 0;
-    for (i = 0; i < n; ++i) if (rhom[i] > 0) break;
-    if (i == n) return -5; // all-0 rhom
     if (Qm_tot < Qmlo_tot) {
       status = -2;
-      Real q_min = Qm[i]/rhom[i];
-      for (i = 0; i < n; ++i)
-        if (rhom[i] > 0)
-          q_min = std::min(q_min, Qm[i]/rhom[i]);
-      for (i = 0; i < n; ++i) Qmhi[i] = Qmlo[i];
-      for (i = 0; i < n; ++i) Qmlo[i] = q_min*rhom[i];
+      for (Int i = 0; i < n; ++i) Qmhi[i] = Qmlo[i];
+      for (Int i = 0; i < n; ++i) Qmlo[i] = q_min*rhom[i];
       Qmlo_tot = 0;
-      for (i = 0; i < n; ++i) Qmlo_tot += Qmlo[i];
-      if (Qm_tot < Qmlo_tot) {
-        status = -4;
-        Real rhom_tot = 0;
-        for (i = 0; i < n; ++i) rhom_tot += rhom[i];
-        q_min = Qm_tot/rhom_tot;
-        for (i = 0; i < n; ++i) Qm[i] = q_min*rhom[i];
-        return status;
-      }
+      for (Int i = 0; i < n; ++i) Qmlo_tot += Qmlo[i];
+      if (Qm_tot < Qmlo_tot) status = -4;
     } else {
       status = -1;
-      Real q_max = Qm[i]/rhom[i];
-      for (i = 0; i < n; ++i)
-        if (rhom[i] > 0)
-          q_max = std::max(q_max, Qm[i]/rhom[i]);
-      for (i = 0; i < n; ++i) Qmlo[i] = Qmhi[i];
-      for (i = 0; i < n; ++i) Qmhi[i] = q_max*rhom[i];
+      for (Int i = 0; i < n; ++i) Qmlo[i] = Qmhi[i];
+      for (Int i = 0; i < n; ++i) Qmhi[i] = q_max*rhom[i];
       Qmhi_tot = 0;
-      for (i = 0; i < n; ++i) Qmhi_tot += Qmhi[i];
-      if (Qm_tot > Qmhi_tot) {
-        status = -3;
-        Real rhom_tot = 0;
-        for (i = 0; i < n; ++i) rhom_tot += rhom[i];
-        q_max = Qm_tot/rhom_tot;
-        for (i = 0; i < n; ++i) Qm[i] = q_max*rhom[i];
-        return status;
-      }
+      for (Int i = 0; i < n; ++i) Qmhi_tot += Qmhi[i];
+      if (Qm_tot > Qmhi_tot) status = -3;
+    }
+    if (status < -2) {
+      Real rhom_tot = 0;
+      for (Int i = 0; i < n; ++i) rhom_tot += rhom[i];
+      const Real q = Qm_tot/rhom_tot;
+      for (Int i = 0; i < n; ++i) Qm[i] = q*rhom[i];
+      return status;
     }
   }
   for (Int i = 0; i < n; ++i) rhom[i] = 1;
@@ -6307,30 +6286,58 @@ void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
             ie;
           const auto lci = cdr.ie2lci[ie_idx];
           const Real Qm_tot = cdr.cdr->get_Qm(lci, ti);
+          Real Qm_min_tot = 0, Qm_max_tot = 0;
           Real rhom[CDR::nsublev_per_suplev], Qm[CDR::nsublev_per_suplev],
             Qm_min[CDR::nsublev_per_suplev], Qm_max[CDR::nsublev_per_suplev];
           // Redistribute mass in the vertical direction of the super level.
           Int n = cdr.nsublev;
-          for (Int i = 0; i < cdr.nsublev; ++i) {
-            const Int k = k0 + i;
+          for (Int sbli = 0; sbli < cdr.nsublev; ++sbli) {
+            const Int k = k0 + sbli;
             if (k >= nlev) {
-              n = i;
+              n = sbli;
               break;
             }
-            rhom[i] = 0; Qm[i] = 0; Qm_min[i] = 0; Qm_max[i] = 0;
+            rhom[sbli] = 0; Qm[sbli] = 0; Qm_min[sbli] = 0; Qm_max[sbli] = 0;
             Real Qm_prev = 0, volume = 0;
             accum_values(ie, k, q, d.tl_np1, d.n0_qdp, np,
                          false /* nonneg already applied */,
                          spheremp, dp3d_c, q_min, q_max, qdp_c, q_c,
-                         volume, rhom[i], Qm[i], Qm_prev, Qm_min[i], Qm_max[i]);
+                         volume, rhom[sbli], Qm[sbli], Qm_prev,
+                         Qm_min[sbli], Qm_max[sbli]);
+            Qm_min_tot += Qm_min[sbli];
+            Qm_max_tot += Qm_max[sbli];
           }
-          safe_caas(n, rhom, Qm_tot, Qm_min, Qm_max, Qm);
+          if (Qm_tot >= Qm_min_tot && Qm_tot <= Qm_max_tot) {
+            for (Int i = 0; i < n; ++i) rhom[i] = 1;
+            cedr::local::caas(n, rhom, Qm_tot, Qm_min, Qm_max, Qm, Qm, false);
+          } else {
+            Real q_min_s, q_max_s;
+            bool first = true;
+            for (Int sbli = 0; sbli < n; ++sbli) {
+              const Int k = k0 + sbli;
+              for (Int j = 0; j < np; ++j) {
+                for (Int i = 0; i < np; ++i) {
+                  if (first) {
+                    q_min_s = q_min(i,j,k,q,ie);
+                    q_max_s = q_max(i,j,k,q,ie);
+                    first = false;
+                  } else {
+                    q_min_s = std::min(q_min_s, q_min(i,j,k,q,ie));
+                    q_max_s = std::max(q_max_s, q_max(i,j,k,q,ie));
+                  }
+                }
+              }
+            }
+            vertical_caas_backup(n, rhom, q_min_s, q_max_s,
+                                 Qm_min_tot, Qm_max_tot, Qm_tot,
+                                 Qm_min, Qm_max, Qm);
+          }
           // Redistribute mass in the horizontal direction of each level.
-          for (Int sbli = 0; sbli < n; ++sbli) {
-            const Int k = k0 + sbli;
+          for (Int i = 0; i < n; ++i) {
+            const Int k = k0 + i;
             solve_local(ie, k, q, d.tl_np1, d.n1_qdp, np,
                         scalar_bounds, limiter_option,
-                        spheremp, dp3d_c, q_min, q_max, Qm[sbli], qdp_c, q_c);
+                        spheremp, dp3d_c, q_min, q_max, Qm[i], qdp_c, q_c);
           }
         } else {
           for (Int sbli = 0; sbli < cdr.nsublev; ++sbli) {
@@ -6539,82 +6546,6 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
   }
 }
 
-static Int safe_caas_unittest () {
-  static const auto eps = std::numeric_limits<Real>::epsilon();
-  static const Int n = 7;
-
-  Real a[n], xlo[n], xhi[n], x[n], x0sum = 0;
-  static const Real x0  [n] = { 1.2, 0.5,3  , 2  , 1.5, 1.8,0.2};
-  static const Real dxlo[n] = {-0.1,-0.2,0.5,-1.5,-0.1,-1.1,0.1};
-  static const Real dxhi[n] = { 0.1,-0.1,1  ,-0.5, 0.1,-0.2,0.5};
-  for (Int i = 0; i < n; ++i) a[i] = i+1;
-  for (Int i = 0; i < n; ++i) xlo[i] = x0[i] + dxlo[i];
-  for (Int i = 0; i < n; ++i) xhi[i] = x0[i] + dxhi[i];
-  for (Int i = 0; i < n; ++i) x0sum += x0[i];
-  Real b, b1;
-  Int status, nerr = 0;
-
-  const auto check_mass = [&] () {
-    b1 = 0;
-    for (Int i = 0; i < n; ++i) b1 += x[i];
-    if (std::abs(b1 - b) >= 10*eps*b) ++nerr;
-  };
-
-  const auto solve = [&] () {
-    Real ac[n], xloc[n], xhic[n];
-    for (Int i = 0; i < n; ++i) x[i] = x0[i];
-    for (Int i = 0; i < n; ++i) ac[i] = a[i];
-    for (Int i = 0; i < n; ++i) xloc[i] = xlo[i];
-    for (Int i = 0; i < n; ++i) xhic[i] = xhi[i];
-    status = safe_caas(n, ac, b, xloc, xhic, x);
-  };
-
-  b = 0;
-  for (Int i = 0; i < n; ++i) b += xlo[i];
-  b *= 0.003;
-  solve();
-  if (status != -4) ++nerr;
-  check_mass();
-
-  b = 0;
-  for (Int i = 0; i < n; ++i) b += xlo[i];
-  b *= 333;
-  solve();
-  if (status != -3) ++nerr;
-  check_mass();
-
-  b = 0;
-  for (Int i = 0; i < n; ++i) b += xlo[i];
-  b *= 0.33;
-  solve();
-  if (status != -2) ++nerr;
-  check_mass();
-  Real q_min = 1000;
-  for (Int i = 0; i < n; ++i) q_min = std::min(q_min, x[i]/a[i]);
-  for (Int i = 0; i < n; ++i) if (x[i] < a[i]*q_min*(1 - 10*eps)) ++nerr;
-  for (Int i = 0; i < n; ++i) if (x[i] > xhi[i]*(1 + 10*eps)) ++nerr;
-
-  b = 0;
-  for (Int i = 0; i < n; ++i) b += xhi[i];
-  b *= 1.3;
-  solve();
-  if (status != -1) ++nerr;
-  check_mass();
-  for (Int i = 0; i < n; ++i) if (x[i] < xlo[i]*(1 - 10*eps)) ++nerr;
-  Real q_max = -1000;
-  for (Int i = 0; i < n; ++i) q_max = std::max(q_max, x[i]/a[i]);
-  for (Int i = 0; i < n; ++i) if (x[i] > a[i]*q_max*(1 + 10*eps)) ++nerr;
-
-  b = 0;
-  for (Int i = 0; i < n; ++i) b += 0.5*(xlo[i] + xhi[i]);
-  solve();
-  if (status != 0) ++nerr;
-  check_mass();
-  for (Int i = 0; i < n; ++i) if (x[i] < xlo[i]*(1 - 10*eps)) ++nerr;
-  for (Int i = 0; i < n; ++i) if (x[i] > xhi[i]*(1 + 10*eps)) ++nerr;
-
-  return nerr;
-}
 } // namespace sl
 } // namespace homme
 
@@ -6667,7 +6598,6 @@ extern "C" void cedr_unittest (const homme::Int fcomm, homme::Int* nerrp) {
 #endif
   *nerrp += homme::test_tree_maker();
   *nerrp += homme::CDR::QLTT::unittest();
-  *nerrp += homme::sl::safe_caas_unittest();
 }
 
 extern "C" void cedr_set_ie2gci (const homme::Int ie, const homme::Int gci) {
