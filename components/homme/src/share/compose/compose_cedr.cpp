@@ -1,6 +1,10 @@
 // Uncomment this to look for MPI-related memory leaks.
 //#define COMPOSE_DEBUG_MPI
 
+#pragma message "DEBUG stuff on"
+#define COMPOSE_DEBUG_MPI
+#undef NDEBUG
+
 //>> cedr_kokkos.hpp
 // COMPOSE version 1.0: Copyright 2018 NTESS. This software is released under
 // the BSD license; see LICENSE in the top-level directory.
@@ -5819,7 +5823,7 @@ struct CDR {
   
   const Alg::Enum alg;
   const Int ncell, nlclcell, nlev, nsublev, nsuplev;
-  const bool threed, cdr_over_super_levels, hard_zero, caas_in_suplev;
+  const bool threed, cdr_over_super_levels, caas_in_suplev, hard_zero;
   const cedr::mpi::Parallel::Ptr p;
   qlt::tree::Node::Ptr tree; // Don't need this except for unit testing.
   cedr::CDR::Ptr cdr;
@@ -5836,22 +5840,24 @@ struct CDR {
       nsuplev((nlev + nsublev - 1) / nsublev),
       threed(independent_time_steps),
       cdr_over_super_levels(threed && Alg::is_caas(alg)),
-      hard_zero(hard_zero_), caas_in_suplev(false),
+      caas_in_suplev(Alg::is_qlt(alg) && nsublev > 1),
+      hard_zero(hard_zero_),
       p(p_), inited_tracers_(false)
   {
+    const Int n_id_in_suplev = caas_in_suplev ? 1 : nsublev;
     if (Alg::is_qlt(alg)) {
-      tree = make_tree(p, ncell, gid_data, rank_data, nsublev, use_sgi,
+      tree = make_tree(p, ncell, gid_data, rank_data, n_id_in_suplev, use_sgi,
                        cdr_over_super_levels, nsuplev);
       cedr::CDR::Options options;
       options.prefer_numerical_mass_conservation_to_numerical_bounds = true;
-      Int nleaf = ncell*(caas_in_suplev ? 1 : nsublev);
+      Int nleaf = ncell*n_id_in_suplev;
       if (cdr_over_super_levels) nleaf *= nsuplev;
       cdr = std::make_shared<QLTT>(p, nleaf, tree, options,
                                    threed ? nsuplev : 0);
       tree = nullptr;
     } else if (Alg::is_caas(alg)) {
       const auto caas = std::make_shared<CAAST>(
-        p, nlclcell*(caas_in_suplev ? 1 : nsublev)*(cdr_over_super_levels ? nsuplev : 1),
+        p, nlclcell*n_id_in_suplev*(cdr_over_super_levels ? nsuplev : 1),
         std::make_shared<ReproSumReducer>(fcomm));
       cdr = caas;
     } else {
