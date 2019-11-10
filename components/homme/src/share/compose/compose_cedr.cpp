@@ -6217,27 +6217,33 @@ void solve_local (const Int ie, const Int k, const Int q,
     }
 }
 
-Int safe_caas (const Int n, Real* rhom, const Real* Qmlo, const Real* Qmhi,
+Int safe_caas (const Int n, Real* rhom, Real* Qmlo, Real* Qmhi,
                Real* Qm) {
-  Real Qm_tot = 0, Qmlo_tot = 0, Qmhi_tot = 0, rhom_tot = 0;
+  Real Qm_tot = 0, Qmlo_tot = 0, Qmhi_tot = 0;
   for (Int i = 0; i < n; ++i) Qm_tot += Qm[i];
   for (Int i = 0; i < n; ++i) Qmlo_tot += Qmlo[i];
   for (Int i = 0; i < n; ++i) Qmhi_tot += Qmhi[i];
   Int status = 0;
-  if (Qm_tot < Qmlo_tot) {
-    status = -2;
-    for (Int i = 0; i < n; ++i) rhom_tot += rhom[i];
-    const Real q_min = Qm_tot/rhom_tot;
-    for (Int i = 0; i < n; ++i) Qm[i] = q_min*rhom[i];
-  } else if (Qm_tot > Qmhi_tot) {
-    status = -1;
-    for (Int i = 0; i < n; ++i) rhom_tot += rhom[i];
-    const Real q_max = Qm_tot/rhom_tot;
-    for (Int i = 0; i < n; ++i) Qm[i] = q_max*rhom[i];
-  } else {
-    for (Int i = 0; i < n; ++i) rhom[i] = 1;
-    cedr::local::caas(n, rhom, Qm_tot, Qmlo, Qmhi, Qm, Qm, false);
+  if (Qm_tot < Qmlo_tot || Qm_tot > Qmhi_tot) {
+    Int i = 0;
+    for (i = 0; i < n; ++i) if (rhom[i] > 0) break;
+    if (i == n) return -3; // all-0 rhom
+    if (Qm_tot < Qmlo_tot) {
+      status = -2;
+      Real q_min = Qm[i]/rhom[i];
+      for (i = 0; i < n; ++i) if (rhom[i] > 0) q_min = std::min(q_min, Qm[i]/rhom[i]);
+      for (i = 0; i < n; ++i) Qmhi[i] = Qmlo[i];
+      for (i = 0; i < n; ++i) Qmlo[i] = q_min*rhom[i];
+    } else {
+      status = -1;
+      Real q_max = Qm[i]/rhom[i];
+      for (i = 0; i < n; ++i) if (rhom[i] > 0) q_max = std::max(q_max, Qm[i]/rhom[i]);
+      for (i = 0; i < n; ++i) Qmlo[i] = Qmhi[i];
+      for (i = 0; i < n; ++i) Qmhi[i] = q_max*rhom[i];
+    }
   }
+  for (Int i = 0; i < n; ++i) rhom[i] = 1;
+  cedr::local::caas(n, rhom, Qm_tot, Qmlo, Qmhi, Qm, Qm, false);
   return status;
 }
 
@@ -6505,14 +6511,13 @@ static Int safe_caas_unittest () {
   static const auto eps = std::numeric_limits<Real>::epsilon();
   static const Int n = 7;
 
-  Real a[n], xlo[n], xhi[n], x[n], asum = 0, x0sum = 0;
+  Real a[n], xlo[n], xhi[n], x[n], x0sum = 0;
   static const Real x0  [n] = { 1.2, 0.5,3  , 2  , 1.5, 1.8,0.2};
   static const Real dxlo[n] = {-0.1,-0.2,0.5,-1.5,-0.1,-1.1,0.1};
   static const Real dxhi[n] = { 0.1,-0.1,1  ,-0.5, 0.1,-0.2,0.5};
   for (Int i = 0; i < n; ++i) a[i] = i+1;
   for (Int i = 0; i < n; ++i) xlo[i] = x0[i] + dxlo[i];
   for (Int i = 0; i < n; ++i) xhi[i] = x0[i] + dxhi[i];
-  for (Int i = 0; i < n; ++i) asum += a[i];
   for (Int i = 0; i < n; ++i) x0sum += x0[i];
   Real b, b1;
   Int status, nerr = 0;
@@ -6534,27 +6539,28 @@ static Int safe_caas_unittest () {
 
   b = 0;
   for (Int i = 0; i < n; ++i) b += xlo[i];
-  b *= 0.9;
+  b *= 0.33;
   solve();
   if (status != -2) ++nerr;
   check_mass();
-  prc(nerr);
-  for (Int i = 0; i < n; ++i) if (x[i] < a[i]*(b/asum)*(1 - 10*eps)) ++nerr;
-  prc(nerr);
+  Real q_min = 1000;
+  for (Int i = 0; i < n; ++i) q_min = std::min(q_min, x[i]/a[i]);
+  for (Int i = 0; i < n; ++i) if (x[i] < a[i]*q_min*(1 - 10*eps)) ++nerr;
   for (Int i = 0; i < n; ++i) if (x[i] > xhi[i]*(1 + 10*eps)) ++nerr;
-  pr(puf(status) pu(nerr) pu((b1 - b)/b));
 
   b = 0;
   for (Int i = 0; i < n; ++i) b += xhi[i];
-  b *= 1.1;
+  b *= 3.3;
   solve();
   if (status != -1) ++nerr;
   check_mass();
-  prc(nerr);
   for (Int i = 0; i < n; ++i) if (x[i] < xlo[i]*(1 - 10*eps)) ++nerr;
-  prc(nerr);
-  for (Int i = 0; i < n; ++i) if (x[i] > a[i]*(b/asum)*(1 + 10*eps)) ++nerr;
-  pr(puf(status) pu(nerr) pu((b1 - b)/b));
+  for (Int i = 0; i < n; ++i)
+    if (x[i] < xlo[i]*(1 - 10*eps))
+      pr(puf(i) pu(x[i]) pu(xlo[i]) pu(xlo[i]-x[i]));
+  Real q_max = -1000;
+  for (Int i = 0; i < n; ++i) q_max = std::max(q_max, x[i]/a[i]);
+  for (Int i = 0; i < n; ++i) if (x[i] > a[i]*q_max*(1 + 10*eps)) ++nerr;
 
   b = 0;
   for (Int i = 0; i < n; ++i) b += 0.5*(xlo[i] + xhi[i]);
@@ -6563,7 +6569,6 @@ static Int safe_caas_unittest () {
   check_mass();
   for (Int i = 0; i < n; ++i) if (x[i] < xlo[i]*(1 - 10*eps)) ++nerr;
   for (Int i = 0; i < n; ++i) if (x[i] > xhi[i]*(1 + 10*eps)) ++nerr;
-  pr(puf(status) pu(nerr) pu((b1 - b)/b));
 
   return nerr;
 }
