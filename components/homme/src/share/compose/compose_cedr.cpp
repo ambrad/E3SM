@@ -6030,7 +6030,7 @@ void accum_values (const Int ie, const Int k, const Int q, const Int tl_np1,
                    Real& Qm_min, Real& Qm_max) {
   for (Int j = 0; j < np; ++j) {
     for (Int i = 0; i < np; ++i) {
-      volume += spheremp(i,j);// * dp0[k];
+      volume += spheremp(i,j); // * dp0[k];
       const Real rhomij = dp3d_c(i,j,k,tl_np1) * spheremp(i,j);
       rhom += rhomij;
       Qm += q_c(i,j,k,q) * rhomij;
@@ -6223,29 +6223,52 @@ void solve_local (const Int ie, const Int k, const Int q,
     }
 }
 
-Int safe_caas (const Int n, Real* rhom, Real* Qmlo, Real* Qmhi,
-               Real* Qm) {
-  Real Qm_tot = 0, Qmlo_tot = 0, Qmhi_tot = 0;
-  for (Int i = 0; i < n; ++i) Qm_tot += Qm[i];
+Int safe_caas (const Int n, Real* rhom, const Real Qm_tot,
+               Real* Qmlo, Real* Qmhi, Real* Qm) {
+  Real Qmlo_tot = 0, Qmhi_tot = 0;
   for (Int i = 0; i < n; ++i) Qmlo_tot += Qmlo[i];
   for (Int i = 0; i < n; ++i) Qmhi_tot += Qmhi[i];
   Int status = 0;
   if (Qm_tot < Qmlo_tot || Qm_tot > Qmhi_tot) {
     Int i = 0;
     for (i = 0; i < n; ++i) if (rhom[i] > 0) break;
-    if (i == n) return -3; // all-0 rhom
+    if (i == n) return -5; // all-0 rhom
     if (Qm_tot < Qmlo_tot) {
       status = -2;
       Real q_min = Qm[i]/rhom[i];
-      for (i = 0; i < n; ++i) if (rhom[i] > 0) q_min = std::min(q_min, Qm[i]/rhom[i]);
+      for (i = 0; i < n; ++i)
+        if (rhom[i] > 0)
+          q_min = std::min(q_min, Qm[i]/rhom[i]);
       for (i = 0; i < n; ++i) Qmhi[i] = Qmlo[i];
       for (i = 0; i < n; ++i) Qmlo[i] = q_min*rhom[i];
+      Qmlo_tot = 0;
+      for (i = 0; i < n; ++i) Qmlo_tot += Qmlo[i];
+      if (Qm_tot < Qmlo_tot) {
+        status = -4;
+        Real rhom_tot = 0;
+        for (i = 0; i < n; ++i) rhom_tot += rhom[i];
+        q_min = Qm_tot/rhom_tot;
+        for (i = 0; i < n; ++i) Qm[i] = q_min*rhom[i];
+        return status;
+      }
     } else {
       status = -1;
       Real q_max = Qm[i]/rhom[i];
-      for (i = 0; i < n; ++i) if (rhom[i] > 0) q_max = std::max(q_max, Qm[i]/rhom[i]);
+      for (i = 0; i < n; ++i)
+        if (rhom[i] > 0)
+          q_max = std::max(q_max, Qm[i]/rhom[i]);
       for (i = 0; i < n; ++i) Qmlo[i] = Qmhi[i];
       for (i = 0; i < n; ++i) Qmhi[i] = q_max*rhom[i];
+      Qmhi_tot = 0;
+      for (i = 0; i < n; ++i) Qmhi_tot += Qmhi[i];
+      if (Qm_tot > Qmhi_tot) {
+        status = -3;
+        Real rhom_tot = 0;
+        for (i = 0; i < n; ++i) rhom_tot += rhom[i];
+        q_max = Qm_tot/rhom_tot;
+        for (i = 0; i < n; ++i) Qm[i] = q_max*rhom[i];
+        return status;
+      }
     }
   }
   for (Int i = 0; i < n; ++i) rhom[i] = 1;
@@ -6297,11 +6320,10 @@ void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
                          spheremp, dp3d_c, q_min, q_max, qdp_c, q_c,
                          volume, rhom[i], Qm[i], Qm_prev, Qm_min[i], Qm_max[i]);
           }
-          safe_caas(n, rhom, Qm_min, Qm_max, Qm);
+          safe_caas(n, rhom, Qm_tot, Qm_min, Qm_max, Qm);
           // Redistribute mass in the horizontal direction of each level.
-          for (Int sbli = 0; sbli < cdr.nsublev; ++sbli) {
+          for (Int sbli = 0; sbli < n; ++sbli) {
             const Int k = k0 + sbli;
-            if (k >= nlev) break;
             solve_local(ie, k, q, d.tl_np1, d.n1_qdp, np,
                         scalar_bounds, limiter_option,
                         spheremp, dp3d_c, q_min, q_max, Qm[sbli], qdp_c, q_c);
@@ -6536,12 +6558,26 @@ static Int safe_caas_unittest () {
 
   const auto solve = [&] () {
     Real ac[n], xloc[n], xhic[n];
-    for (Int i = 0; i < n; ++i) x[i] = (b/x0sum)*x0[i];
+    for (Int i = 0; i < n; ++i) x[i] = x0[i];
     for (Int i = 0; i < n; ++i) ac[i] = a[i];
     for (Int i = 0; i < n; ++i) xloc[i] = xlo[i];
     for (Int i = 0; i < n; ++i) xhic[i] = xhi[i];
-    status = safe_caas(n, ac, xloc, xhic, x);
+    status = safe_caas(n, ac, b, xloc, xhic, x);
   };
+
+  b = 0;
+  for (Int i = 0; i < n; ++i) b += xlo[i];
+  b *= 0.003;
+  solve();
+  if (status != -4) ++nerr;
+  check_mass();
+
+  b = 0;
+  for (Int i = 0; i < n; ++i) b += xlo[i];
+  b *= 333;
+  solve();
+  if (status != -3) ++nerr;
+  check_mass();
 
   b = 0;
   for (Int i = 0; i < n; ++i) b += xlo[i];
@@ -6556,14 +6592,11 @@ static Int safe_caas_unittest () {
 
   b = 0;
   for (Int i = 0; i < n; ++i) b += xhi[i];
-  b *= 3.3;
+  b *= 1.3;
   solve();
   if (status != -1) ++nerr;
   check_mass();
   for (Int i = 0; i < n; ++i) if (x[i] < xlo[i]*(1 - 10*eps)) ++nerr;
-  for (Int i = 0; i < n; ++i)
-    if (x[i] < xlo[i]*(1 - 10*eps))
-      pr(puf(i) pu(x[i]) pu(xlo[i]) pu(xlo[i]-x[i]));
   Real q_max = -1000;
   for (Int i = 0; i < n; ++i) q_max = std::max(q_max, x[i]/a[i]);
   for (Int i = 0; i < n; ++i) if (x[i] > a[i]*q_max*(1 + 10*eps)) ++nerr;
