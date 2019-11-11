@@ -5017,7 +5017,8 @@ class QLT : public cedr::qlt::QLT<ES> {
                            const Int bis, const Int bie) {
     using cedr::ProblemType;
 
-    cedr_assert(problem_type & ProblemType::shapepreserve & ProblemType::conserve);
+    cedr_assert((problem_type & ProblemType::shapepreserve) &&
+                (problem_type & ProblemType::conserve));
 
     auto& md = this->md_;
     auto& bd = this->bd_;
@@ -5277,6 +5278,7 @@ public:
         for (Int pti = 0; pti < md_.nprobtypes; ++pti) {
           const Int problem_type = md_.get_problem_type(pti);
           const Int bis = md_.a_d.prob2trcrptr[pti], bie = md_.a_d.prob2trcrptr[pti+1];
+          if (bie == bis) continue;
           if (vld_) reconcile_vertical(problem_type, n->offset*l2rndps, bis, bie);
 #if defined THREAD_QLT_RUN && defined HORIZ_OPENMP && defined COLUMN_OPENMP
 #         pragma omp parallel
