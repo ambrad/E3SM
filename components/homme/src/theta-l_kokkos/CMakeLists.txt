@@ -3,6 +3,7 @@
 MACRO(THETAL_KOKKOS_SETUP)
 
 SET(TARGET_DIR        ${HOMME_SOURCE_DIR}/src/theta-l_kokkos)
+SET(TARGET_ORIG_DIR   ${HOMME_SOURCE_DIR}/src/theta-l)
 SET(UTILS_SHARE_DIR   ${HOMME_SOURCE_DIR}/utils/csm_share)
 SET(SRC_DIR           ${HOMME_SOURCE_DIR}/src)
 SET(SRC_SHARE_DIR     ${HOMME_SOURCE_DIR}/src/share)
@@ -38,6 +39,7 @@ SET (TARGET_F90
   ${TARGET_DIR}/vertremap_mod.F90
   ${TARGET_DIR}/viscosity_mod.F90
   ${TARGET_DIR}/viscosity_theta.F90
+  ${TARGET_ORIG_DIR}/imex_mod.F90
 )
 
 SET (SRC_SHARE_F90
@@ -133,7 +135,6 @@ SET(THETAL_DEPS_F90
   ${UTILS_SHARE_DIR}/shr_vmath_mod.F90 
   ${UTILS_SHARE_DIR}/shr_const_mod.F90 
   ${UTILS_SHARE_DIR}/shr_spfn_mod.F90
-  ${SRC_SHARE_DIR}/cxx/utilities/tridiag_bfb_mod.F90
 )
 
 SET(THETAL_DEPS_CXX
@@ -168,7 +169,6 @@ SET(THETAL_DEPS_CXX
   ${SRC_SHARE_DIR}/cxx/mpi/Connectivity.cpp
   ${SRC_SHARE_DIR}/cxx/mpi/MpiBuffersManager.cpp
   ${SRC_SHARE_DIR}/cxx/mpi/mpi_cxx_f90_interface.cpp
-  ${SRC_SHARE_DIR}/cxx/utilities/tridiag_bfb.cpp
 )
 
 IF (HOMME_USE_ARKODE)
