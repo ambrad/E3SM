@@ -14,12 +14,11 @@
 #include "KernelVariables.hpp"
 #include "SimulationParams.hpp"
 #include "PhysicalConstants.hpp"
-
-#include "utilities/SubviewUtils.hpp"
-#include "utilities/ViewUtils.hpp"
-
 #include "profiling.hpp"
 #include "ErrorDefs.hpp"
+#include "utilities/SubviewUtils.hpp"
+#include "utilities/ViewUtils.hpp"
+#include "utilities/scream_tridiag.hpp"
 
 #include <assert.h>
 
@@ -308,6 +307,12 @@ struct DirkFunctorImpl {
         const auto b = 2*a/(dp3d(k-1,i) + dp3d(k,i));
         dl(k,i) = b*(pnh(k-1,i)/dphi(k-1,i));
         du(k,i) = b*(pnh(k  ,i)/dphi(k  ,i));
+        // In all rows k,
+        //     dl <= 0, du <= 0,
+        // and thus
+        //     d = 1 + |dl| + |du| > |dl| + |du|,
+        // making this Jacobian matrix strictly diagonally dominant. Thus, we
+        // need not pivot when factorizing the matrix.
         d (k,i) = 1 - dl(k,i) - du(k,i);
       };
       parallel_for(pv, kmid);
@@ -323,6 +328,25 @@ struct DirkFunctorImpl {
       parallel_for(pv, ke);
     };
     parallel_for(pt1, f3);
+  }
+
+  template <typename W>
+  KOKKOS_INLINE_FUNCTION
+  static void solve (const KernelVariables& kv,
+                     const W& dl, const W& d, const W& du, const W& x) {
+    if (OnGpu<ExecSpace>::value)
+      scream::tridiag::cr(kv.team, dl, d, du, x);
+    else {
+      const auto f = [&] () { scream::tridiag::thomas(dl, d, du, x); };
+      Kokkos::single(Kokkos::PerTeam(kv.team), f);
+    }
+  }
+
+  template <typename W>
+  KOKKOS_INLINE_FUNCTION
+  static void solvebfb (const KernelVariables& kv,
+                        const W& dl, const W& d, const W& du, const W& x) {
+    scream::tridiag::bfb(kv.team, dl, d, du, x);
   }
 };
 

@@ -33,6 +33,7 @@ extern "C" {
   void compute_gwphis_f90(Real* gwh_i, const Real* dp3d, const Real* v, const Real* gradphis);
   void get_dirk_jacobian_f90(Real* dl, Real* d, Real* du, Real dt, const Real* dp3d,
                              const Real* dphi, const Real* pnh);
+  void tridiag_diagdom_bfb_a1x1(int n, Real* dl, Real* d, Real* du, Real* x);
 } // extern "C"
 
 class Random {
@@ -225,7 +226,7 @@ TEST_CASE("dirk", "dirk_testing") {
       d  = dfi::get_slot(w, 0, 4),
       du = dfi::get_slot(w, 0, 5);
 
-    const auto f = KOKKOS_LAMBDA(const dfi::MT& t) {
+    const auto f1 = KOKKOS_LAMBDA(const dfi::MT& t) {
       KernelVariables kv(t);
       dfi::transpose(kv, nlev, dp3d, dp3dw);
       dfi::transpose(kv, nlev, dphi, dphiw);
@@ -233,7 +234,7 @@ TEST_CASE("dirk", "dirk_testing") {
       kv.team_barrier();
       dfi::calc_jacobian(kv, dt, dp3dw, dphiw, pnhw, dl, d, du);
     };
-    parallel_for(d1.m_policy, f); fence();
+    parallel_for(d1.m_policy, f1); fence();
 
     const auto dlm = create_mirror_view(dl), dm = create_mirror_view(d),
       dum = create_mirror_view(du);
@@ -260,6 +261,41 @@ TEST_CASE("dirk", "dirk_testing") {
         }
     };
     eq(dlm, 1, dlf, nlev-1); eq(dm, 0, df, nlev); eq(dum, 0, duf, nlev-1);
+
+    // Test solvers.
+    dfi::Work w1("w1", 1);
+    const auto
+      x1  = dfi::get_slot(w1, 0, 0),
+      x2  = dfi::get_slot(w1, 0, 1),
+      dl2 = dfi::get_slot(w1, 0, 2),
+      d2  = dfi::get_slot(w1, 0, 3),
+      du2 = dfi::get_slot(w1, 0, 4);
+    FA3d x3("x3", np, np, nlev);
+    const auto x1m = create_mirror_view(x1);
+    // Fill RHS with random numbers.
+    for (int k = 0; k < nlev; ++k)
+      for (int i = 0; i < np; ++i)
+        for (int j = 0; j < np; ++j) {
+          const auto
+            idx = i*np + j,
+            pi = idx / dfi::packn,
+            si = idx % dfi::packn;
+          const auto v = r.urrng(-1,1);
+          x1m(k,pi)[si] = v;
+          x3(i,j,k) = v;
+        }
+    deep_copy(x1, x1m);
+    deep_copy(x2, x1);
+    deep_copy(dl2, dl); deep_copy(du2, du); deep_copy(du2, du);
+    const auto f2 = KOKKOS_LAMBDA(const dfi::MT& t) {
+      KernelVariables kv(t);
+      dfi::solve   (kv, dl , d , du , x1);
+      dfi::solvebfb(kv, dl2, d2, du2, x2);
+    };
+    parallel_for(d1.m_policy, f2); fence();
+    for (int i = 0; i < dfi::scaln; ++i)
+      tridiag_diagdom_bfb_a1x1(nlev, dlf.data() + (nlev-1)*i - 1, df.data() + nlev*i,
+                               duf.data() + (nlev-1)*i, x3.data() + nlev*i);
   }
 
   SECTION ("pnh_and_exner_from_eos") {
