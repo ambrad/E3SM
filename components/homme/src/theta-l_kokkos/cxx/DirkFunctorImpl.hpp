@@ -176,7 +176,48 @@ struct DirkFunctorImpl {
     const W& gwh_i,
     const int nlev = NUM_PHYSICAL_LEV)
   {
-    
+    using Kokkos::parallel_for;
+
+    const int n = npack;
+    const auto pv = Kokkos::ThreadVectorRange(kv.team, n);
+
+    const auto f1 = [&] (const int) {
+      const auto k0 = [&] (const int i) { gwh_i(0,i) = 0; };
+      parallel_for(pv, k0);
+    };
+    parallel_for(Kokkos::TeamThreadRange(kv.team, 1), f1);
+
+    const auto f2 = [&] (const int km1) {
+      const auto
+      k = km1 + 1,
+      pk = k / packn,
+      sk = k % packn,
+      pkm1 = (k-1) / packn,
+      skm1 = (k-1) % packn;
+      const auto g = [&] (const int i) {
+        Scalar dp3dk, dp3dkm1, v1k, v2k, v1km1, v2km1, gphis1, gphis2;
+        for (int s = 0; s < packn; ++s) {
+          const auto
+          idx = packn*i + s,
+          gi = idx / NP,
+          gj = idx % NP;
+          dp3dkm1[s] = dp3d(gi,gj,pkm1)[skm1];
+          dp3dk  [s] = dp3d(gi,gj,pk  )[sk];
+          v1km1  [s] = v (0,gi,gj,pkm1)[skm1];
+          v2km1  [s] = v (2,gi,gj,pkm1)[skm1];
+          v1k    [s] = v (0,gi,gj,pk  )[sk];
+          v2k    [s] = v (2,gi,gj,pk  )[sk];
+          gphis1 [s] = gradphis(0,gi,gj);
+          gphis2 [s] = gradphis(1,gi,gj);
+        }
+        const auto den = dp3dkm1 + dp3dk;
+        const auto v1_i = (dp3dk*v1k + dp3dkm1*v1km1) / den;
+        const auto v2_i = (dp3dk*v2k + dp3dkm1*v2km1) / den;
+        gwh_i(k,i) = (v1_i*gphis1 + v2_i*gphis2)*hybi(k);
+      };
+      parallel_for(pv, g);
+    };
+    parallel_for(Kokkos::TeamThreadRange(kv.team, nlev-1), f2);
   }
 
   template <typename R, typename W, typename Wi>
