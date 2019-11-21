@@ -1,6 +1,6 @@
 #include <catch2/catch.hpp>
 
-//#include "/home/ambradl/climate/sik/hommexx/dbg.hpp"
+#include "/home/ambradl/climate/sik/hommexx/dbg.hpp"
 // make -j8 dirk_ut;if [ $? == 0 ]; then OMP_NUM_THREADS=1 ./test_execs/thetal_kokkos_ut/dirk_ut; fi
 // OMP_NUM_THREADS=2 ctest -R dirk_ut -VV
 
@@ -22,6 +22,7 @@ using Kokkos::create_mirror_view;
 using Kokkos::deep_copy;
 using FA3 = Kokkos::View<Real*[NP][NP], Kokkos::LayoutRight, Kokkos::HostSpace>;
 using FA3d = Kokkos::View<Real***, Kokkos::LayoutRight, Kokkos::HostSpace>;
+using FA4 = Kokkos::View<Real*[2][NP][NP], Kokkos::LayoutRight, Kokkos::HostSpace>;
 using dfi = DirkFunctorImpl;
 
 extern "C" {
@@ -29,6 +30,7 @@ extern "C" {
                      Real ps0);
   void pnh_and_exner_from_eos_f90(const Real* vtheta_dp, const Real* dp3d, const Real* dphi,
                                   Real* pnh, Real* exner, Real* dpnh_dp_i);
+  void compute_gwphis_f90(Real* gwh_i, const Real* dp3d, const Real* v, const Real* gradphis);
   void get_dirk_jacobian_f90(Real* dl, Real* d, Real* du, Real dt, const Real* dp3d,
                              const Real* dphi, const Real* pnh);
 } // extern "C"
@@ -71,7 +73,21 @@ void fill (Random& r, const V& a,
     for (int j = 0; j < a.extent_int(1); ++j)
       for (int k = 0; k < a.extent_int(2); ++k)
         for (int s = 0; s < dfi::packn; ++s)
-          am(i,j,k)[s] = r.urrng(); 
+          am(i,j,k)[s] = r.urrng(-1,1); 
+  deep_copy(a, am);
+}
+
+template <typename V>
+void fill (Random& r, const V& a,
+           typename std::enable_if<V::rank == 4>::type* = 0) {
+  const auto am = create_mirror_view(a);
+  deep_copy(am, a);
+  for (int i = 0; i < a.extent_int(0); ++i)
+    for (int j = 0; j < a.extent_int(1); ++j)
+      for (int k = 0; k < a.extent_int(2); ++k)
+        for (int l = 0; l < a.extent_int(3); ++l)
+          for (int s = 0; s < dfi::packn; ++s)
+            am(i,j,k,l)[s] = r.urrng(-1,1); 
   deep_copy(a, am);
 }
 
@@ -138,6 +154,19 @@ void c2f(const V& c, const FA3& f) {
       for (int k = 0; k < f.extent(0); ++k)
         f(k,i,j) = p[k];
     }
+}
+
+template <typename V>
+void c2f(const V& c, const FA4& f) {
+  const auto cm = create_mirror_view(c);
+  deep_copy(cm, c);
+  for (int d = 0; d < c.extent_int(0); ++d)
+    for (int i = 0; i < c.extent_int(1); ++i)
+      for (int j = 0; j < c.extent_int(2); ++j) {
+        Real* const p = &cm(d,i,j,0)[0];
+        for (int k = 0; k < f.extent(0); ++k)
+          f(k,d,i,j) = p[k];
+      }
 }
 
 TEST_CASE("dirk", "dirk_testing") {
@@ -281,6 +310,50 @@ TEST_CASE("dirk", "dirk_testing") {
           si = idx % dfi::packn;
         for (int k = 0; k < nlev; ++k)
           REQUIRE(equal(dpnh_dp_im(k,pi)[si], dpnh_dp_if(k,i,j)));
+      }
+  }
+
+  SECTION ("calc_gwphis") {
+    const int nlev = NUM_PHYSICAL_LEV, np = NP;
+
+    ExecView<Scalar[NP][NP][NUM_LEV]> dp3d("dp3d");
+    fill_inc(r, nlev, 5, 10000, dp3d);
+    ExecView<Scalar[2][NP][NP][NUM_LEV]> v("v");
+    fill(r, v);
+    ExecView<Real[2][NP][NP]> gradphis("gradphis");
+    const auto gpm = create_mirror_view(gradphis);
+    for (int d = 0; d < 2; ++d)
+      for (int i = 0; i < np; ++i)
+        for (int j = 0; j < np; ++j)
+          gpm(d,i,j) = r.urrng(-1,1);
+    deep_copy(gradphis, gpm);
+    const auto hybi = hvcoord.hybrid_bi;
+    
+    dfi d1(1);
+    const auto w = d1.m_work;
+    const auto gwh_i = dfi::get_slot(w, 0, 0);
+
+    const auto f = KOKKOS_LAMBDA(const dfi::MT& t) {
+      KernelVariables kv(t);
+      dfi::calc_gwphis(kv, dp3d, v, gradphis, hybi, gwh_i);
+    };
+    parallel_for(d1.m_policy, f); fence();
+    const auto gwh_im = create_mirror_view(gwh_i); deep_copy(gwh_im, gwh_i);
+
+    FA3 dp3df("dp3df", nlev), gwh_if("gwh_if", nlev+1);
+    c2f(dp3d, dp3df);
+    FA4 vf("vf", nlev);
+    c2f(v, vf);
+    compute_gwphis_f90(gwh_if.data(), dp3df.data(), vf.data(), gpm.data());
+
+    for (int i = 0; i < np; ++i)
+      for (int j = 0; j < np; ++j) {
+        const auto
+          idx = np*i + j,
+          pi = idx / dfi::packn,
+          si = idx % dfi::packn;
+        for (int k = 0; k < nlev; ++k)
+          REQUIRE(equal(gwh_im(k,pi)[si], gwh_if(k,i,j)));
       }
   }
 }

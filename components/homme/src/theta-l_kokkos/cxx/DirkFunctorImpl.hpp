@@ -204,9 +204,9 @@ struct DirkFunctorImpl {
           dp3dkm1[s] = dp3d(gi,gj,pkm1)[skm1];
           dp3dk  [s] = dp3d(gi,gj,pk  )[sk];
           v1km1  [s] = v (0,gi,gj,pkm1)[skm1];
-          v2km1  [s] = v (2,gi,gj,pkm1)[skm1];
+          v2km1  [s] = v (1,gi,gj,pkm1)[skm1];
           v1k    [s] = v (0,gi,gj,pk  )[sk];
-          v2k    [s] = v (2,gi,gj,pk  )[sk];
+          v2k    [s] = v (1,gi,gj,pk  )[sk];
           gphis1 [s] = gradphis(0,gi,gj);
           gphis2 [s] = gradphis(1,gi,gj);
         }
