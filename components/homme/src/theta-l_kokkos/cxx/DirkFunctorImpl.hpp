@@ -166,13 +166,16 @@ struct DirkFunctorImpl {
     Kokkos::parallel_for(Kokkos::TeamThreadRange(kv.team, NP*NP), f);
   }
 
+  // Compute a vertical velocity induced by surface topography:
+  //     wh_i = ubar grad phis
   template <typename R, typename Rv, typename Rgphis, typename Rhybi, typename W>
   KOKKOS_INLINE_FUNCTION
   static void calc_gwphis (
     const KernelVariables& kv,
     // All in arrays are in Hxx format.
     const R& dp3d, const Rv& v, const Rgphis& gradphis, const Rhybi& hybi,
-    // Out array is in DIRK format.
+    // Out array is in DIRK format. gwh_i(nlevp,:) is not written since it is
+    // not used.
     const W& gwh_i,
     const int nlev = NUM_PHYSICAL_LEV)
   {
