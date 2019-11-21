@@ -30,6 +30,7 @@ struct DirkFunctorImpl {
   enum : int { npack = (scaln + packn - 1)/packn };
   enum : int { max_num_lev_pack = NUM_LEV_P };
   enum : int { num_lev_aligned = max_num_lev_pack*packn };
+  enum : int { num_phys_lev = NUM_PHYSICAL_LEV };
   enum : int { num_work = 8 };
 
   using TeamPolicy = Kokkos::TeamPolicy<ExecSpace>;
@@ -46,9 +47,25 @@ struct DirkFunctorImpl {
     = Kokkos::View<const Scalar     [num_lev_aligned][npack],
                    Kokkos::LayoutRight, ExecSpace,
                    Kokkos::MemoryTraits<Kokkos::Unmanaged> >;
+  using LinearSystem
+    = Kokkos::View<Scalar*[4][num_phys_lev][npack],
+                   Kokkos::LayoutRight, ExecSpace>;
+  using LinearSystemSlot
+    = Kokkos::View<Scalar    [num_phys_lev][npack],
+                   Kokkos::LayoutRight, ExecSpace,
+                   Kokkos::MemoryTraits<Kokkos::Unmanaged> >;
 
   KOKKOS_INLINE_FUNCTION
-  static WorkSlot get_slot (const Work& w, const int& wi, const int& si) {
+  static WorkSlot get_work_slot (const Work& w, const int& wi, const int& si) {
+    using Kokkos::subview;
+    using Kokkos::ALL;
+    const auto a = ALL();
+    return subview(w, wi, si, a, a);
+  }
+
+  KOKKOS_INLINE_FUNCTION
+  static LinearSystemSlot get_ls_slot (const LinearSystem& w, const int& wi,
+                                       const int& si) {
     using Kokkos::subview;
     using Kokkos::ALL;
     const auto a = ALL();
@@ -56,6 +73,7 @@ struct DirkFunctorImpl {
   }
 
   Work m_work;
+  LinearSystem m_ls;
   TeamPolicy m_policy;
 
   KOKKOS_INLINE_FUNCTION
@@ -87,26 +105,10 @@ struct DirkFunctorImpl {
     }
     const int nteam = get_num_concurrent_teams(m_policy);
     m_work = Work("DirkFunctorImpl::m_work", nteam);
+    m_ls = LinearSystem("DirkFunctorImpl::m_ls", nteam);
   }
 
   void run () {
-    const auto work = m_work;
-
-    const auto f = KOKKOS_LAMBDA (const MT& t) {
-      KernelVariables kv(t);
-
-      const ConstWorkSlot
-      dp3d = get_slot(work, kv.team_idx, 0),
-      dphi = get_slot(work, kv.team_idx, 1),
-      pnh  = get_slot(work, kv.team_idx, 2);
-      const WorkSlot
-      dl   = get_slot(work, kv.team_idx, 3),
-      d    = get_slot(work, kv.team_idx, 4),
-      du   = get_slot(work, kv.team_idx, 5);
-
-      calc_jacobian(kv, 1.0, dp3d, dphi, pnh, dl, d, du);
-    };
-    Kokkos::parallel_for(m_policy, f);
   }
 
   // Format of rest of Hxx -> DIRK Newton iteration format.
@@ -334,6 +336,8 @@ struct DirkFunctorImpl {
   KOKKOS_INLINE_FUNCTION
   static void solve (const KernelVariables& kv,
                      const W& dl, const W& d, const W& du, const W& x) {
+    assert(d.extent_int(0) == num_phys_lev);
+    using Kokkos::subview;
     if (OnGpu<ExecSpace>::value)
       scream::tridiag::cr(kv.team, dl, d, du, x);
     else {
@@ -346,6 +350,7 @@ struct DirkFunctorImpl {
   KOKKOS_INLINE_FUNCTION
   static void solvebfb (const KernelVariables& kv,
                         const W& dl, const W& d, const W& du, const W& x) {
+    assert(d.extent_int(0) == num_phys_lev);
     scream::tridiag::bfb(kv.team, dl, d, du, x);
   }
 };

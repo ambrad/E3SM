@@ -188,7 +188,7 @@ TEST_CASE("dirk", "dirk_testing") {
     fill(r, hai0);
     dfi d(nelem);
     const auto w = d.m_work;
-    const auto a = dfi::get_slot(w, 0, 0);
+    const auto a = dfi::get_work_slot(w, 0, 0);
     const auto f1 = KOKKOS_LAMBDA(const dfi::MT& t) {
       KernelVariables kv(t);
       dfi::transpose(kv, nlev, ham0, a);
@@ -219,12 +219,14 @@ TEST_CASE("dirk", "dirk_testing") {
     dfi d1(1);
     const auto w = d1.m_work;
     const auto
-      dp3dw = dfi::get_slot(w, 0, 0),
-      dphiw = dfi::get_slot(w, 0, 1),
-      pnhw  = dfi::get_slot(w, 0, 2),
-      dl = dfi::get_slot(w, 0, 3),
-      d  = dfi::get_slot(w, 0, 4),
-      du = dfi::get_slot(w, 0, 5);
+      dp3dw = dfi::get_work_slot(w, 0, 0),
+      dphiw = dfi::get_work_slot(w, 0, 1),
+      pnhw  = dfi::get_work_slot(w, 0, 2);
+    const auto ls = d1.m_ls;
+    const auto
+      dl = dfi::get_ls_slot(ls, 0, 0),
+      d  = dfi::get_ls_slot(ls, 0, 1),
+      du = dfi::get_ls_slot(ls, 0, 2);
 
     const auto f1 = KOKKOS_LAMBDA(const dfi::MT& t) {
       KernelVariables kv(t);
@@ -263,13 +265,13 @@ TEST_CASE("dirk", "dirk_testing") {
     eq(dlm, 1, dlf, nlev-1); eq(dm, 0, df, nlev); eq(dum, 0, duf, nlev-1);
 
     // Test solvers.
-    dfi::Work w1("w1", 1);
+    dfi::LinearSystem ls1("w1", 1);
     const auto
-      x1  = dfi::get_slot(w1, 0, 0),
-      x2  = dfi::get_slot(w1, 0, 1),
-      dl2 = dfi::get_slot(w1, 0, 2),
-      d2  = dfi::get_slot(w1, 0, 3),
-      du2 = dfi::get_slot(w1, 0, 4);
+      x1  = dfi::get_ls_slot(ls , 0, 3),
+      x2  = dfi::get_ls_slot(ls1, 0, 0),
+      dl2 = dfi::get_ls_slot(ls1, 0, 1),
+      d2  = dfi::get_ls_slot(ls1, 0, 2),
+      du2 = dfi::get_ls_slot(ls1, 0, 3);
     FA3d x3("x3", np, np, nlev);
     const auto x1m = create_mirror_view(x1);
     // Fill RHS with random numbers.
@@ -286,16 +288,34 @@ TEST_CASE("dirk", "dirk_testing") {
         }
     deep_copy(x1, x1m);
     deep_copy(x2, x1);
-    deep_copy(dl2, dl); deep_copy(du2, du); deep_copy(du2, du);
+    deep_copy(dl2, dl); deep_copy(d2, d); deep_copy(du2, du);
     const auto f2 = KOKKOS_LAMBDA(const dfi::MT& t) {
       KernelVariables kv(t);
       dfi::solve   (kv, dl , d , du , x1);
       dfi::solvebfb(kv, dl2, d2, du2, x2);
     };
     parallel_for(d1.m_policy, f2); fence();
+    // Test that BFB and non-BFB solvers give nearly the same answers.
+    deep_copy(x1m, x1);
+    const auto x2m = create_mirror_view(x2); deep_copy(x2m, x2);
+    for (int i = 0; i < np; ++i)
+      for (int j = 0; j < np; ++j) {
+        const auto
+          idx = np*i + j,
+          pi = idx / dfi::packn,
+          si = idx % dfi::packn;
+        for (int k = 0; k < nlev; ++k) {
+          const auto a = x1m(k,pi)[si];
+          const auto b = x2m(k,pi)[si];
+          const auto re = std::abs(a - b)/std::abs(1 + std::abs(a));
+          REQUIRE(re <= 1e3*std::numeric_limits<Real>::epsilon());
+        }
+      }
+    // Test BFB F90 and C++.
     for (int i = 0; i < dfi::scaln; ++i)
       tridiag_diagdom_bfb_a1x1(nlev, dlf.data() + (nlev-1)*i - 1, df.data() + nlev*i,
                                duf.data() + (nlev-1)*i, x3.data() + nlev*i);
+    eq(x2m, 0, x3, nlev);
   }
 
   SECTION ("pnh_and_exner_from_eos") {
@@ -309,12 +329,12 @@ TEST_CASE("dirk", "dirk_testing") {
     dfi d1(1);
     const auto w = d1.m_work;
     const auto
-      dp3dw = dfi::get_slot(w, 0, 0),
-      dphiw = dfi::get_slot(w, 0, 1),
-      vtheta_dpw = dfi::get_slot(w, 0, 2),
-      pnhw = dfi::get_slot(w, 0, 3),
-      exnerw = dfi::get_slot(w, 0, 4),
-      dpnh_dp_iw = dfi::get_slot(w, 0, 5);
+      dp3dw = dfi::get_work_slot(w, 0, 0),
+      dphiw = dfi::get_work_slot(w, 0, 1),
+      vtheta_dpw = dfi::get_work_slot(w, 0, 2),
+      pnhw = dfi::get_work_slot(w, 0, 3),
+      exnerw = dfi::get_work_slot(w, 0, 4),
+      dpnh_dp_iw = dfi::get_work_slot(w, 0, 5);
 
     const auto f = KOKKOS_LAMBDA(const dfi::MT& t) {
       KernelVariables kv(t);
@@ -367,7 +387,7 @@ TEST_CASE("dirk", "dirk_testing") {
     
     dfi d1(1);
     const auto w = d1.m_work;
-    const auto gwh_i = dfi::get_slot(w, 0, 0);
+    const auto gwh_i = dfi::get_work_slot(w, 0, 0);
 
     const auto f = KOKKOS_LAMBDA(const dfi::MT& t) {
       KernelVariables kv(t);
