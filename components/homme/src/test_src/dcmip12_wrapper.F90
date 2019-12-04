@@ -117,7 +117,7 @@ subroutine dcmip2012_test1_1(elem,hybrid,hvcoord,nets,nete,time,n0,n1)
 end subroutine
 
 !_____________________________________________________________________
-subroutine dcmip2012_test1_1_conv(elem,hybrid,hvcoord,nets,nete,time,n0,n1)
+subroutine dcmip2012_test1_1_conv(elem,hybrid,hvcoord,nets,nete,time,n0,n1,nstep)
 
   ! 3d deformational flow
 
@@ -130,6 +130,7 @@ subroutine dcmip2012_test1_1_conv(elem,hybrid,hvcoord,nets,nete,time,n0,n1)
   integer,            intent(in)            :: nets,nete                ! start, end element index
   real(rl),           intent(in)            :: time                     ! current time
   integer,            intent(in)            :: n0,n1                    ! time level indices
+  integer, intent(in) :: nstep
 
   logical ::  initialized = .false.
 
@@ -142,7 +143,12 @@ subroutine dcmip2012_test1_1_conv(elem,hybrid,hvcoord,nets,nete,time,n0,n1)
 
   integer :: i,j,k,ie                                                   ! loop indices
   real(rl):: lon,lat                                                    ! pointwise coordiantes
-  real(rl):: p,z,phis,u,v,w,T,phis_ps,ps,rho,q(4),dp,eta_dot,dp_dn       ! pointwise field values
+  real(rl):: p,z,phis,u,v,w,T,phis_ps,ps,rho,q(4),dp,eta_dot,dp_dn      ! pointwise field values
+
+  logical :: wrote = .false.
+  integer :: write_at = -2
+  character(128) :: str
+  character(128), save :: filename
 
   ! set analytic vertical coordinates at t=0
   if(.not. initialized) then
@@ -154,9 +160,37 @@ subroutine dcmip2012_test1_1_conv(elem,hybrid,hvcoord,nets,nete,time,n0,n1)
     call set_hybrid_coefficients(hvcoord,hybrid, hvcoord%etai(1),1.0_rl)! set hybrid A and B from eta levels
     call set_layer_locations(hvcoord, .true., hybrid%masterthread)
     initialized = .true.
+
+    call get_environment_variable("amb_dc12_write_at", str, status=i)
+    if (i /= 1) read(str, *, iostat=i) write_at
+    if (write_at > 0) then
+       call get_environment_variable("amb_dc12_filename", str, status=i)
+       if (i == 1) then
+          filename = 'oops.txt'
+       else
+          write (filename, '(a,i0.5)') trim(str), hybrid%par%rank
+       end if
+    end if
     !$omp end master
     !$omp barrier
   endif
+
+  if (nstep == write_at) then
+     !$omp barrier
+     !$omp master
+     open(unit=42, file=trim(filename), form='formatted')
+     k = nint(0.33*nlev)
+     do ie = 1,size(elem)
+        do j = 1,np
+           do i = 1,np
+              write(42, '(es13.6)') elem(ie)%state%Q(i,j,k,1)*elem(ie)%spheremp(i,j)
+           end do
+        end do
+     end do
+     close(42)
+     !$omp end master
+     !$omp barrier
+  end if
 
   ! set prescribed state at level midpoints
   do ie = nets,nete; do k=1,nlev; do j=1,np; do i=1,np
