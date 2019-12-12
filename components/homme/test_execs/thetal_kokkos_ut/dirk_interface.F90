@@ -155,15 +155,15 @@ contains
     end do
   end subroutine f2c_f90
 
-  subroutine compute_stage_value_dirk_f90(nm1,n0,np1,alphadt,dt2) bind(c)
+  subroutine compute_stage_value_dirk_f90(version,nm1,n0,np1,alphadt,dt2) bind(c)
     use iso_c_binding,         only: c_int
     use hybrid_mod,            only: hybrid_t
     use derivative_mod,        only: derivative_t
     use geometry_interface_mod,only: elem
     use thetal_test_interface, only: hvcoord
-    use imex_mod,              only: compute_stage_value_dirk
+    use imex_mod,              only: compute_stage_value_dirk, compute_stage_value_dirk_new
 
-    integer (kind=c_int), value, intent(in)  :: nm1, n0, np1
+    integer (kind=c_int), value, intent(in)  :: version, nm1, n0, np1
     real (kind=real_kind), value, intent(in) :: alphadt, dt2
 
     ! compute_stage_value_dirk doesn't actually use these.
@@ -175,11 +175,23 @@ contains
     nets = 1
     nete = size(elem)
     if (nm1 > 0) then
-       call compute_stage_value_dirk(n0, np1, alphadt, qn0, dt2, elem, hvcoord, hybrid, deriv, &
-            nets, nete, itercount, itererr, nm1)
+       select case (version)
+       case (0)
+          call compute_stage_value_dirk(n0, np1, alphadt, qn0, dt2, elem, hvcoord, hybrid, deriv, &
+               nets, nete, itercount, itererr, nm1)
+       case (1)
+          call compute_stage_value_dirk_new(n0, np1, alphadt, qn0, dt2, elem, hvcoord, hybrid, deriv, &
+               nets, nete, itercount, itererr, nm1)
+       end select
     else
-       call compute_stage_value_dirk(n0, np1, alphadt, qn0, dt2, elem, hvcoord, hybrid, deriv, &
-            nets, nete, itercount, itererr)
+       select case (version)
+       case (0)
+          call compute_stage_value_dirk(n0, np1, alphadt, qn0, dt2, elem, hvcoord, hybrid, deriv, &
+               nets, nete, itercount, itererr)
+       case (1)
+          call compute_stage_value_dirk_new(n0, np1, alphadt, qn0, dt2, elem, hvcoord, hybrid, deriv, &
+               nets, nete, itercount, itererr)
+       end select
     end if
   end subroutine compute_stage_value_dirk_f90
 

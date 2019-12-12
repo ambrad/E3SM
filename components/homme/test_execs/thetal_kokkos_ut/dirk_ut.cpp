@@ -31,7 +31,7 @@ extern "C" {
                Real* vtheta_dp, Real* phinh_i, Real* gradphis);
   void get_dirk_jacobian_f90(Real* dl, Real* d, Real* du, Real dt, const Real* dp3d,
                              const Real* dphi, const Real* pnh);
-  void compute_stage_value_dirk_f90(int nm1, int n0, int np1, Real alphadt, Real dt2);
+  void compute_stage_value_dirk_f90(int version, int nm1, int n0, int np1, Real alphadt, Real dt2);
 } // extern "C"
 
 using FA3 = Kokkos::View<Real*[NP][NP], Kokkos::LayoutRight, Kokkos::HostSpace>;
@@ -662,28 +662,6 @@ TEST_CASE ("dirk_toplevel_testing") {
       const auto phinh1m = cmvdc(phinh_i1);
       const auto phinh2m = cmvdc(phinh_i2);
 
-      // Run F90 with BFB solver.
-      c2f(e);
-      compute_stage_value_dirk_f90(nm1+1, n0+1, np1+1, alphadt, dt2);
-      Elements ef90;
-      ef90.init(nelemd, false, true);
-      f2c(ef90);
-
-      const auto phif = cmvdc(ef90.m_state.m_phinh_i);
-      const auto wif  = cmvdc(ef90.m_state.m_w_i);
-
-      // Test that C++ and F90 with BFB solvers produce the same answer.
-      for (int ie = 0; ie < nelemd; ++ie)
-        for (int i = 0; i < np; ++i)
-          for (int j = 0; j < np; ++j) {
-            for (int f = 0; f < 2; ++f) {
-              Real* pf = f == 0 ? &phif   (ie,np1,i,j,0)[0] : &wif(ie,np1,i,j,0)[0];
-              Real* pc = f == 0 ? &phinh2m(ie,np1,i,j,0)[0] : &w2m(ie,np1,i,j,0)[0];
-              for (int k = 0; k < nlev+1; ++k)
-                REQUIRE(equal(pf[k], pc[k], 1e6*eps));
-            }
-          }
-
       // Test that running with BFB and non-BFB solvers produces similar answers.
       for (int ie = 0; ie < nelemd; ++ie)
         for (int i = 0; i < np; ++i)
@@ -694,6 +672,30 @@ TEST_CASE ("dirk_toplevel_testing") {
               for (int k = 0; k < nlev+1; ++k)
                 REQUIRE(std::abs(p1[k] - p2[k]) <= 1e6*eps*(1 + std::abs(p1[k])));
             }
+
+      for (int version = 0; version <= 1; ++version) {
+        // Run F90 with BFB solver.
+        c2f(e);
+        compute_stage_value_dirk_f90(version, nm1+1, n0+1, np1+1, alphadt, dt2);
+        Elements ef90;
+        ef90.init(nelemd, false, true);
+        f2c(ef90);
+
+        const auto phif = cmvdc(ef90.m_state.m_phinh_i);
+        const auto wif  = cmvdc(ef90.m_state.m_w_i);
+
+        // Test that C++ and F90 with BFB solvers produce the same answer.
+        for (int ie = 0; ie < nelemd; ++ie)
+          for (int i = 0; i < np; ++i)
+            for (int j = 0; j < np; ++j) {
+              for (int f = 0; f < 2; ++f) {
+                Real* pf = f == 0 ? &phif   (ie,np1,i,j,0)[0] : &wif(ie,np1,i,j,0)[0];
+                Real* pc = f == 0 ? &phinh2m(ie,np1,i,j,0)[0] : &w2m(ie,np1,i,j,0)[0];
+                for (int k = 0; k < nlev+1; ++k)
+                  REQUIRE(equal(pf[k], pc[k], 1e6*eps));
+              }
+            }
+      }
     }
 
   Session::delete_singleton();
