@@ -252,7 +252,7 @@ contains
                    enddo
                    dphi(i,j,nlev)=dphi(i,j,nlev) - (0-x(nlev,i,j))*alpha
                 enddo
-                !if (nsafe>1) write(iulog,*) 'WARNING:IMEX reducing newton increment, nsafe=',nsafe
+                if (nsafe>1) write(iulog,*) 'WARNING:IMEX reducing newton increment, nsafe=',nsafe
                 ! if nsafe>8, code will crash in next call to pnh_and_exner_from_eos
              end do
           end do
@@ -286,6 +286,13 @@ contains
           if (deltaerr<deltatol) exit
        end do ! end do for the do while loop
 
+       do k=1,nlev
+          Fn(:,:,k) = phi_np1(:,:,k) - (phi_n0(:,:,k) - dt2*g*(elem(ie)%state%w_i(:,:,k,np1)))
+       enddo
+       do k=1,nlev
+          dphi(:,:,k) = phi_np1(:,:,k+1) - phi_np1(:,:,k)
+       end do
+       call pnh_and_exner_from_eos2(hvcoord,vtheta_dp,dp3d,dphi,pnh,exner,dpnh_dp_i,'dirk3')
        werr = maxval(abs(elem(ie)%state%w_i(:,:,1:nlev,np1) - &
             (w_n0(:,:,1:nlev) - g*dt2 * (1.0-dpnh_dp_i(:,:,1:nlev)))))
        print '(a,i4,i4,es10.3,es10.3,es10.3)','scan',0,itercount,deltaerr,reserr,werr
@@ -547,7 +554,7 @@ contains
     real (kind=real_kind) :: dpnh_dp_i(np,np,nlevp)
     real (kind=real_kind) :: exner(np,np,nlev)     ! exner nh pressure
     real (kind=real_kind) :: w_n0(np,np,nlevp)    
-    real (kind=real_kind) :: dphi(np,np,nlev)    
+    real (kind=real_kind) :: dphi(np,np,nlev),tmp(np,np,nlev)
     real (kind=real_kind) :: dphi_n0(np,np,nlev)    
     real (kind=real_kind) :: phi_n0(np,np,nlevp)    
     real (kind=real_kind) :: Ipiv(nlev,np,np)
@@ -671,22 +678,24 @@ contains
                 enddo
                 dphi(i,j,nlev) = dphi(i,j,nlev) + (0 - x(nlev,i,j))
 
-                alpha = 0
-                do nsafe=1,8
+                alpha = 1
+                do nsafe = 1,8
                    if (all(dphi(i,j,1:nlev) < 0)) exit
                    alpha = 1.0_real_kind/(2**nsafe)
-                   do k=1,nlev-1
-                      dphi(i,j,k)=dphi(i,j,k) - (x(k+1,i,j)-x(k,i,j))*alpha
+                   do k = 1,nlev-1
+                      dphi(i,j,k) = dphi(i,j,k) - (x(k+1,i,j) - x(k,i,j))*alpha
                    enddo
-                   dphi(i,j,nlev)=dphi(i,j,nlev) - (0-x(nlev,i,j))*alpha
+                   dphi(i,j,nlev) = dphi(i,j,nlev) - (0 - x(nlev,i,j))*alpha
                 enddo
-                !if (nsafe>1) write(iulog,*) 'WARNING:IMEX reducing newton increment, nsafe=',nsafe
+                if (nsafe>1) write(iulog,*) 'WARNING:IMEX reducing newton increment, nsafe=',nsafe
 
-                phi_np1(i,j,1:nlev) = phi_np1(i,j,1:nlev) + (1 - alpha)*x(1:nlev,i,j)
+                phi_np1(i,j,1:nlev) = phi_np1(i,j,1:nlev) + alpha*x(1:nlev,i,j)
              end do
           end do
           do k=1,nlev
+             tmp = dphi
              dphi(:,:,k) = phi_np1(:,:,k+1) - phi_np1(:,:,k)
+             if (dphi(1,4,k) > 0) print *,'huh',dphi(1,4,k),tmp(1,4,k),phi_np1(1,4,k),phi_np1(1,4,k+1)
           end do
 
           call pnh_and_exner_from_eos2(hvcoord,vtheta_dp,dp3d,dphi,pnh,exner,dpnh_dp_i,'dirk2')
@@ -705,15 +714,20 @@ contains
           itercount=itercount+1
           if (deltaerr<deltatol) exit
        end do ! end do for the do while loop
+
        if (version == 2) then
           do k = 1,nlev
              phi_np1(:,:,k) = phi_n0(:,:,k) + dt2*g*elem(ie)%state%w_i(:,:,k,np1)
           enddo
-          !TODO updatw w_i
-          do k = 1,nlev
-             Fn(:,:,k) = phi_np1(:,:,k) - (phi_n0(:,:,k) + dt2*g*elem(ie)%state%w_i(:,:,k,np1))
-          enddo
        end if
+
+       do k = 1,nlev
+          Fn(:,:,k) = phi_np1(:,:,k) - (phi_n0(:,:,k) + dt2*g*elem(ie)%state%w_i(:,:,k,np1))
+       enddo
+       do k=1,nlev
+          dphi(:,:,k) = phi_np1(:,:,k+1) - phi_np1(:,:,k)
+       end do
+       call pnh_and_exner_from_eos2(hvcoord,vtheta_dp,dp3d,dphi,pnh,exner,dpnh_dp_i,'dirk3')
        reserr = maxval(abs(Fn))/wgdtmax
        werr = maxval(abs(elem(ie)%state%w_i(:,:,1:nlev,np1) - &
             (w_n0(:,:,1:nlev) - g*dt2 * (1.0-dpnh_dp_i(:,:,1:nlev)))))
