@@ -175,23 +175,21 @@ contains
     nets = 1
     nete = 1!size(elem)
     if (nm1 > 0) then
-       select case (version)
-       case (0)
+       if (version == 0) then
           call compute_stage_value_dirk(n0, np1, alphadt, qn0, dt2, elem, hvcoord, hybrid, deriv, &
                nets, nete, itercount, itererr, nm1)
-       case (1)
-          call compute_stage_value_dirk_new(n0, np1, alphadt, qn0, dt2, elem, hvcoord, hybrid, deriv, &
+       else
+          call compute_stage_value_dirk_new(version, n0, np1, alphadt, qn0, dt2, elem, hvcoord, hybrid, deriv, &
                nets, nete, itercount, itererr, nm1)
-       end select
+       end if
     else
-       select case (version)
-       case (0)
+       if (version == 0) then
           call compute_stage_value_dirk(n0, np1, alphadt, qn0, dt2, elem, hvcoord, hybrid, deriv, &
                nets, nete, itercount, itererr)
-       case (1)
-          call compute_stage_value_dirk_new(n0, np1, alphadt, qn0, dt2, elem, hvcoord, hybrid, deriv, &
+       else
+          call compute_stage_value_dirk_new(version, n0, np1, alphadt, qn0, dt2, elem, hvcoord, hybrid, deriv, &
                nets, nete, itercount, itererr)
-       end select
+       end if
     end if
   end subroutine compute_stage_value_dirk_f90
 

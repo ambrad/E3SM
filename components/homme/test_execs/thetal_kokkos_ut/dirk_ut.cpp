@@ -67,7 +67,7 @@ struct Session {
   const int ne = 2;
   int nelemd;
 
-  //Session() : r(1) {}
+  Session() : r(2655333681) {}
 
   void init () {
     printf("seed %u\n", r.gen_seed());
@@ -675,7 +675,7 @@ TEST_CASE ("dirk_toplevel_testing") {
                 REQUIRE(std::abs(p1[k] - p2[k]) <= 1e6*eps*(1 + std::abs(p1[k])));
             }
 
-      for (int version = 0; version <= 1; ++version) {
+      for (int version = 0; version <= 2; ++version) {
         // Run F90 with BFB solver.
         c2f(e);
         compute_stage_value_dirk_f90(version, nm1+1, n0+1, np1+1, alphadt, dt2);
