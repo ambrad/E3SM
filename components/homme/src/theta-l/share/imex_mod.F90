@@ -677,15 +677,7 @@ contains
 #ifdef XX_BFB_TESTING
                 call tridiag_diagdom_bfb_a1x1(nlev, JacL(:,i,j), jacD(:,i,j), jacU(:,i,j), x(:,i,j))
 #else
-#ifdef NEWTONCOND
-                ! nlev condition number: 500e3 with phi, 850e3 with dphi
-                anorm=DLANGT('1-norm', nlev, JacL(:,i,j),jacD(:,i,j),jacU(:,i,j))
-                call DGTTRF(nlev, JacL(:,i,j), JacD(:,i,j),JacU(:,i,j),JacU2(:,i,j), Ipiv(:,i,j), info )
-                call DGTCON('1',nlev,JacL(:,i,j),JacD(:,i,j),JacU(:,i,j),jacU2(:,i,j),Ipiv(:,i,j),&
-                     ANORM, RCOND, WORK, IWORK, info2 )
-#else
                 call DGTTRF(nlev, JacL(:,i,j), JacD(:,i,j),JacU(:,i,j),JacU2(:,i,j), Ipiv(:,i,j), info(i,j) )
-#endif
                 ! Tridiagonal solve
                 call DGTTRS( 'N', nlev,1, JacL(:,i,j), JacD(:,i,j), JacU(:,i,j), JacU2(:,i,j), Ipiv(:,i,j),x(:,i,j), nlev, info(i,j) )
 #endif
