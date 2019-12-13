@@ -112,7 +112,7 @@ std::shared_ptr<Session> Session::s_session;
 static bool equal (const Real& a, const Real& b,
                    // Used only if not defined XX_BFB_TESTING.
                    const Real tol = 0) {
-#ifdef XX_BFB_TESTING
+#ifdef XX_BFB_TESTINGfoo
   if (a != b)
     printf("equal: a,b = %23.16e %23.16e re = %23.16e\n",
            a, b, std::abs((a-b)/a));
@@ -577,7 +577,7 @@ TEST_CASE ("dirk_toplevel_testing") {
 
   const int nlev = NUM_PHYSICAL_LEV, np = NP, n0 = 1, np1 = 2, ne = 2;
   const auto eps = std::numeric_limits<Real>::epsilon();
-  Real dt2 = 0.15;
+  Real dt2 = 0.25;
 
   auto& s = Session::singleton();
   const auto& hvcoord = s.h;
@@ -592,9 +592,9 @@ TEST_CASE ("dirk_toplevel_testing") {
       decltype(ElementsState::m_phinh_i) phinh_i("phinh_i", nelemd),
         phinh_i1("phinh_i1", nelemd), phinh_i2("phinh_i2", nelemd);
 
-      DirkFunctorImpl d(nelemd);
+      DirkFunctorImpl d(1);//nelemd);
 
-      const Real alphadt = alphadtwt*dt2*(6.0/22);
+      Real alphadt = alphadtwt*dt2*(6.0/22);
 
       bool good = false;
       for (int trial = 0; trial < 100 /* don't enter an inf loop */; ++trial) {
@@ -638,7 +638,9 @@ TEST_CASE ("dirk_toplevel_testing") {
             }
         if ( ! ok) {
           // Make the problems a little easier.
-          dt2 *= 0.95;
+          const Real f = 0.95;
+          dt2 *= f;
+          alphadt *= f;
           continue;
         }
         good = true;

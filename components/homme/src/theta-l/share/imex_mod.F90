@@ -136,7 +136,7 @@ contains
 
     ! dirk settings
     maxiter=20
-    deltatol=1.0e-13_real_kind  ! exit if newton increment < deltatol
+    deltatol=1.0e-15_real_kind  ! exit if newton increment < deltatol
 
     !restol=1.0e-13_real_kind    ! exit if residual < restol  
     ! condition number and thus residual depends strongly on dt and min(dz)
@@ -190,10 +190,6 @@ contains
        phi_n0(:,:,1:nlev) = phi_n0(:,:,1:nlev) -  dt2*gwh_i(:,:,1:nlev)
 
        dp3d  => elem(ie)%state%dp3d(:,:,:,np1)
-#if 0
-       ! use hydrostatic for initial guess
-       call phi_from_eos(hvcoord,elem(ie)%state%phis,vtheta_dp,dp3d,phi_np1)
-#endif
 
        ! newton iteration will iterate of d(phi)/deta.  initialize:
        do k=1,nlev
@@ -221,7 +217,6 @@ contains
           Fn(:,:,k) = (phi_np1(:,:,k) - phi_n0(:,:,k)) - dt2*g*(elem(ie)%state%w_i(:,:,k,np1))
        enddo
 
-
        itercount=0
        do while (itercount < maxiter) 
 
@@ -237,15 +232,7 @@ contains
 #ifdef XX_BFB_TESTING
                 call tridiag_diagdom_bfb_a1x1(nlev, JacL(:,i,j), jacD(:,i,j), jacU(:,i,j), x(:,i,j))
 #else
-#ifdef NEWTONCOND
-                ! nlev condition number: 500e3 with phi, 850e3 with dphi
-                anorm=DLANGT('1-norm', nlev, JacL(:,i,j),jacD(:,i,j),jacU(:,i,j))
-                call DGTTRF(nlev, JacL(:,i,j), JacD(:,i,j),JacU(:,i,j),JacU2(:,i,j), Ipiv(:,i,j), info )
-                call DGTCON('1',nlev,JacL(:,i,j),JacD(:,i,j),JacU(:,i,j),jacU2(:,i,j),Ipiv(:,i,j),&
-                     ANORM, RCOND, WORK, IWORK, info2 )
-#else
                 call DGTTRF(nlev, JacL(:,i,j), JacD(:,i,j),JacU(:,i,j),JacU2(:,i,j), Ipiv(:,i,j), info(i,j) )
-#endif
                 ! Tridiagonal solve
                 call DGTTRS( 'N', nlev,1, JacL(:,i,j), JacD(:,i,j), JacU(:,i,j), JacU2(:,i,j), Ipiv(:,i,j),x(:,i,j), nlev, info(i,j) )
 #endif
@@ -267,34 +254,20 @@ contains
                 enddo
                 if (nsafe>1) write(iulog,*) 'WARNING:IMEX reducing newton increment, nsafe=',nsafe
                 ! if nsafe>8, code will crash in next call to pnh_and_exner_from_eos
-#undef NOSCAN
-#ifdef NOSCAN
-                phi_np1(i,j,1:nlev) = phi_np1(i,j,1:nlev) + (1 - alpha)*x(1:nlev,i,j)
-#endif
              end do
           end do
-#ifdef NOSCAN
-          do k=1,nlev
-             dphi(:,:,k) = phi_np1(:,:,k+1) - phi_np1(:,:,k)
-          end do
-#endif
+
           call pnh_and_exner_from_eos2(hvcoord,vtheta_dp,dp3d,dphi,pnh,exner,dpnh_dp_i,'dirk2')
           ! update approximate solution of w
           elem(ie)%state%w_i(:,:,1:nlev,np1) = w_n0(:,:,1:nlev) - g*dt2 * &
                (1.0-dpnh_dp_i(:,:,1:nlev))
 
-#ifdef NOSCAN         
-          do k=1,nlev
-             Fn(:,:,k) = (phi_np1(:,:,k) - phi_n0(:,:,k)) - dt2*g*(elem(ie)%state%w_i(:,:,k,np1))
-          enddo
-#else
-          do k=nlev,1,-1  ! scan                                                                                                      
+          do k=nlev,1,-1  ! scan
              phi_np1(:,:,k) = phi_np1(:,:,k+1)-dphi(:,:,k)
           enddo
           do k=1,nlev
              Fn(:,:,k) = (phi_np1(:,:,k) - phi_n0(:,:,k)) - dt2*g*(elem(ie)%state%w_i(:,:,k,np1))
           enddo
-#endif
           reserr=maxval(abs(Fn))/wgdtmax   ! residual error in phi tendency, relative to source term gw
 
           deltaerr=0
@@ -302,11 +275,7 @@ contains
              ! delta residual:
              do i=1,np
                 do j=1,np
-#ifdef NOSCAN
-                   deltaerr=max(deltaerr, abs(x(k,i,j))/max(g,abs(dphi_n0(i,j,k))) )
-#else
                    deltaerr=max(deltaerr, abs(x(k,i,j))/max(g,abs(phi_n0(i,j,k))) )
-#endif
                 enddo
              enddo
           enddo
@@ -316,14 +285,12 @@ contains
           !if (reserr < restol) exit
           if (deltaerr<deltatol) exit
        end do ! end do for the do while loop
+       print *,'with scan',itercount,deltaerr,reserr,maxval(abs(Fn))/wgdtmax
 
        ! keep track of running  max iteraitons and max error (reset after each diagnostics output)
        max_itercnt=max(itercount,max_itercnt)
        max_deltaerr=max(deltaerr,max_deltaerr)
        max_reserr=max(reserr,max_reserr)
-#ifdef NEWTONCOND
-       min_rcond=min(rcond,min_rcond)
-#endif
        itererr=min(max_reserr,max_deltaerr) ! passed back to ARKODE
 
        if (itercount >= maxiter) then
@@ -554,7 +521,6 @@ contains
 
   subroutine compute_stage_value_dirk_new(n0,np1,alphadt,qn0,dt2,elem,hvcoord,hybrid,&
        deriv,nets,nete,itercount,itererr,nm1)
-
     integer, intent(in) :: n0,np1,qn0,nets,nete
     real (kind=real_kind), intent(in) :: dt2
     integer :: itercount
@@ -581,7 +547,6 @@ contains
     real (kind=real_kind) :: dphi(np,np,nlev)    
     real (kind=real_kind) :: dphi_n0(np,np,nlev)    
     real (kind=real_kind) :: phi_n0(np,np,nlevp)    
-    real (kind=real_kind) :: delta_phi(np,np,nlevp)    ! phi_np1-phi_n0
     real (kind=real_kind) :: Ipiv(nlev,np,np)
     real (kind=real_kind) :: Fn(np,np,nlev),x(nlev,np,np)
     real (kind=real_kind) :: gwh_i(np,np,nlevp)  ! w hydrostatic
@@ -600,14 +565,19 @@ contains
 
     call t_startf('compute_stage_value_dirk')
 
+    ! dirk settings
     maxiter=20
-    deltatol=1.0e-13_real_kind  ! exit if newton increment < deltatol
-    delta_phi(:,:,nlevp)=0
+    deltatol=1.0e-15_real_kind  ! exit if newton increment < deltatol
+
+    !restol=1.0e-13_real_kind    ! exit if residual < restol  
+    ! condition number and thus residual depends strongly on dt and min(dz)
+    ! more work needed to exit iteration early based on residual error
     min_rcond=1.0e20_real_kind
 
     do ie=nets,nete
        w_n0 = elem(ie)%state%w_i(:,:,:,np1)
        wgdtmax=max(1d0,maxval(abs(w_n0)))*abs(dt2)*g
+       ! approximate the initial error of f(x) \approx 0
        vtheta_dp  => elem(ie)%state%vtheta_dp(:,:,:,np1)
        phi_np1 => elem(ie)%state%phinh_i(:,:,:,np1)
 
@@ -627,6 +597,7 @@ contains
           phi_n0(:,:,1:nlev) = phi_n0(:,:,1:nlev) + &
                dt3*g*elem(ie)%state%w_i(:,:,1:nlev,nt) -  dt3*gwh_i(:,:,1:nlev)
        end if
+
 
        if (present(nm1)) then ! add dt*alpha*S(unm1) to the rhs
           dt3=alphadt
@@ -677,7 +648,6 @@ contains
           Fn(:,:,k) = (phi_np1(:,:,k) - phi_n0(:,:,k)) - dt2*g*(elem(ie)%state%w_i(:,:,k,np1))
        enddo
 
-
        itercount=0
        do while (itercount < maxiter) 
 
@@ -715,18 +685,18 @@ contains
                 enddo
                 if (nsafe>1) write(iulog,*) 'WARNING:IMEX reducing newton increment, nsafe=',nsafe
                 ! if nsafe>8, code will crash in next call to pnh_and_exner_from_eos
-
-                phi_np1(i,j,:) = phi_np1(i,j,:) + (1 - alpha)*x(:,i,j)
+                phi_np1(i,j,1:nlev) = phi_np1(i,j,1:nlev) + (1 - alpha)*x(1:nlev,i,j)
              end do
           end do
           do k=1,nlev
              dphi(:,:,k) = phi_np1(:,:,k+1) - phi_np1(:,:,k)
           end do
-          call pnh_and_exner_from_eos2(hvcoord,vtheta_dp,dp3d,dphi,pnh,exner,dpnh_dp_i,'dirk2')
 
+          call pnh_and_exner_from_eos2(hvcoord,vtheta_dp,dp3d,dphi,pnh,exner,dpnh_dp_i,'dirk2')
           ! update approximate solution of w
           elem(ie)%state%w_i(:,:,1:nlev,np1) = w_n0(:,:,1:nlev) - g*dt2 * &
                (1.0-dpnh_dp_i(:,:,1:nlev))
+
           do k=1,nlev
              Fn(:,:,k) = (phi_np1(:,:,k) - phi_n0(:,:,k)) - dt2*g*(elem(ie)%state%w_i(:,:,k,np1))
           enddo
@@ -737,14 +707,17 @@ contains
              ! delta residual:
              do i=1,np
                 do j=1,np
-                   deltaerr=max(deltaerr, abs(x(k,i,j))/max(g,abs(dphi_n0(i,j,k))) )
+                   deltaerr=max(deltaerr, abs(x(k,i,j))/max(g,abs(phi_n0(i,j,k))) )
                 enddo
              enddo
           enddo
 
+          ! update iteration count and error measure
           itercount=itercount+1
+          !if (reserr < restol) exit
           if (deltaerr<deltatol) exit
        end do ! end do for the do while loop
+       print *,'sans scan',itercount,deltaerr,reserr,maxval(abs(Fn))/wgdtmax
 
        ! keep track of running  max iteraitons and max error (reset after each diagnostics output)
        max_itercnt=max(itercount,max_itercnt)
@@ -760,6 +733,9 @@ contains
           enddo
        end if
     end do ! end do for the ie=nets,nete loop
+#ifdef NEWTONCOND
+    if (hybrid%masterthread) print *,'max J condition number (mpi task0): ',1/min_rcond
+#endif
 
     call t_stopf('compute_stage_value_dirk')
   end subroutine compute_stage_value_dirk_new

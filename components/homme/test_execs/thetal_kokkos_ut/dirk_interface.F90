@@ -173,7 +173,7 @@ contains
     real (kind=real_kind) :: itererr
     
     nets = 1
-    nete = size(elem)
+    nete = 1!size(elem)
     if (nm1 > 0) then
        select case (version)
        case (0)
