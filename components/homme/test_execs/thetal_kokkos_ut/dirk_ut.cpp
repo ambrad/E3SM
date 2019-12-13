@@ -67,7 +67,7 @@ struct Session {
   const int ne = 2;
   int nelemd;
 
-  //Session() : r(1) {}
+  Session() : r(2324954282) {}
 
   void init () {
     printf("seed %u\n", r.gen_seed());

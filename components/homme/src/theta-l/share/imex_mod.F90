@@ -107,7 +107,7 @@ contains
     real (kind=real_kind) :: dpnh_dp_i(np,np,nlevp)
     real (kind=real_kind) :: exner(np,np,nlev)     ! exner nh pressure
     real (kind=real_kind) :: w_n0(np,np,nlevp)    
-    real (kind=real_kind) :: dphi(np,np,nlev)    
+    real (kind=real_kind) :: dphi(np,np,nlev)    ,q(np,np,nlev)
     real (kind=real_kind) :: dphi_n0(np,np,nlev)    
     real (kind=real_kind) :: phi_n0(np,np,nlevp)    
     real (kind=real_kind) :: Ipiv(nlev,np,np)
@@ -214,7 +214,7 @@ contains
        elem(ie)%state%w_i(:,:,1:nlev,np1) = w_n0(:,:,1:nlev) - g*dt2 * &
             (1.0-dpnh_dp_i(:,:,1:nlev))
        do k=1,nlev
-          Fn(:,:,k) = (phi_np1(:,:,k) - phi_n0(:,:,k)) - dt2*g*(elem(ie)%state%w_i(:,:,k,np1))
+          Fn(:,:,k) = phi_np1(:,:,k) - (phi_n0(:,:,k) + dt2*g*elem(ie)%state%w_i(:,:,k,np1))
        enddo
 
        itercount=0
@@ -236,13 +236,16 @@ contains
                 ! Tridiagonal solve
                 call DGTTRS( 'N', nlev,1, JacL(:,i,j), JacD(:,i,j), JacU(:,i,j), JacU2(:,i,j), Ipiv(:,i,j),x(:,i,j), nlev, info(i,j) )
 #endif
+
                 ! update approximate solution of phi
                 do k=1,nlev-1
+                   q(i,j,k) = abs((x(k+1,i,j)-x(k,i,j))/dphi(i,j,k))
                    dphi(i,j,k)=dphi(i,j,k) + x(k+1,i,j)-x(k,i,j)
                 enddo
+                q(i,j,nlev) = abs((0-x(nlev,i,j))/dphi(i,j,nlev))
                 dphi(i,j,nlev)=dphi(i,j,nlev) + (0 - x(nlev,i,j) )
 
-                alpha = 0
+                alpha = 1
                 do nsafe=1,8
                    if (all(dphi(i,j,1:nlev) < 0 ))  exit
                    ! remove the last netwon increment, try reduced increment
@@ -252,7 +255,7 @@ contains
                    enddo
                    dphi(i,j,nlev)=dphi(i,j,nlev) - (0-x(nlev,i,j))*alpha
                 enddo
-                if (nsafe>1) write(iulog,*) 'WARNING:IMEX reducing newton increment, nsafe=',nsafe
+                !if (nsafe>1) write(iulog,*) 'WARNING:IMEX reducing newton increment, nsafe=',nsafe
                 ! if nsafe>8, code will crash in next call to pnh_and_exner_from_eos
              end do
           end do
@@ -266,7 +269,7 @@ contains
              phi_np1(:,:,k) = phi_np1(:,:,k+1)-dphi(:,:,k)
           enddo
           do k=1,nlev
-             Fn(:,:,k) = (phi_np1(:,:,k) - phi_n0(:,:,k)) - dt2*g*(elem(ie)%state%w_i(:,:,k,np1))
+             Fn(:,:,k) = phi_np1(:,:,k) - (phi_n0(:,:,k) + dt2*g*elem(ie)%state%w_i(:,:,k,np1))
           enddo
           reserr=maxval(abs(Fn))/wgdtmax   ! residual error in phi tendency, relative to source term gw
 
@@ -280,6 +283,7 @@ contains
              enddo
           enddo
 
+          !print *,'q',minval(q),sum(q)/(nlev*np*np),maxval(q),maxval(q(:,:,nlev))
           ! update iteration count and error measure
           itercount=itercount+1
           !if (reserr < restol) exit
@@ -287,12 +291,13 @@ contains
        end do ! end do for the do while loop
 
        do k=1,nlev
-          Fn(:,:,k) = phi_np1(:,:,k) - (phi_n0(:,:,k) - dt2*g*(elem(ie)%state%w_i(:,:,k,np1)))
+          Fn(:,:,k) = phi_np1(:,:,k) - (phi_n0(:,:,k) + dt2*g*elem(ie)%state%w_i(:,:,k,np1))
        enddo
        do k=1,nlev
           dphi(:,:,k) = phi_np1(:,:,k+1) - phi_np1(:,:,k)
        end do
        call pnh_and_exner_from_eos2(hvcoord,vtheta_dp,dp3d,dphi,pnh,exner,dpnh_dp_i,'dirk3')
+       reserr=maxval(abs(Fn))/wgdtmax
        werr = maxval(abs(elem(ie)%state%w_i(:,:,1:nlev,np1) - &
             (w_n0(:,:,1:nlev) - g*dt2 * (1.0-dpnh_dp_i(:,:,1:nlev)))))
        print '(a,i4,i4,es10.3,es10.3,es10.3)','scan',0,itercount,deltaerr,reserr,werr
@@ -554,7 +559,7 @@ contains
     real (kind=real_kind) :: dpnh_dp_i(np,np,nlevp)
     real (kind=real_kind) :: exner(np,np,nlev)     ! exner nh pressure
     real (kind=real_kind) :: w_n0(np,np,nlevp)    
-    real (kind=real_kind) :: dphi(np,np,nlev),tmp(np,np,nlev)
+    real (kind=real_kind) :: dphi(np,np,nlev),tmp(np,np,nlev),q(np,np,nlev),phis(np,np)
     real (kind=real_kind) :: dphi_n0(np,np,nlev)    
     real (kind=real_kind) :: phi_n0(np,np,nlevp)    
     real (kind=real_kind) :: Ipiv(nlev,np,np)
@@ -590,6 +595,11 @@ contains
        ! approximate the initial error of f(x) \approx 0
        vtheta_dp  => elem(ie)%state%vtheta_dp(:,:,:,np1)
        phi_np1 => elem(ie)%state%phinh_i(:,:,:,np1)
+
+       phis = phi_np1(:,:,nlevp)
+       do k = 1,nlevp
+          phi_np1(:,:,k) = phi_np1(:,:,k) - phis
+       end do
 
        phi_n0 = phi_np1
 
@@ -655,7 +665,7 @@ contains
        elem(ie)%state%w_i(:,:,1:nlev,np1) = w_n0(:,:,1:nlev) - g*dt2 * &
             (1.0-dpnh_dp_i(:,:,1:nlev))
        do k=1,nlev
-          Fn(:,:,k) = phi_np1(:,:,k) - phi_n0(:,:,k) + dt2*g*(elem(ie)%state%w_i(:,:,k,np1))
+          Fn(:,:,k) = phi_np1(:,:,k) - (phi_n0(:,:,k) + dt2*g*elem(ie)%state%w_i(:,:,k,np1))
        enddo
 
        itercount=0
@@ -687,8 +697,9 @@ contains
                    enddo
                    dphi(i,j,nlev) = dphi(i,j,nlev) - (0 - x(nlev,i,j))*alpha
                 enddo
-                if (nsafe>1) write(iulog,*) 'WARNING:IMEX reducing newton increment, nsafe=',nsafe
+                !if (nsafe>1) write(iulog,*) 'WARNING:IMEX reducing newton increment, nsafe=',nsafe
 
+                q(i,j,:) = abs(x(1:nlev,i,j)/phi_np1(i,j,1:nlev))
                 phi_np1(i,j,1:nlev) = phi_np1(i,j,1:nlev) + alpha*x(1:nlev,i,j)
              end do
           end do
@@ -704,13 +715,14 @@ contains
                (1.0-dpnh_dp_i(:,:,1:nlev))
 
           do k=1,nlev
-             Fn(:,:,k) = phi_np1(:,:,k) - (phi_n0(:,:,k) + dt2*g*(elem(ie)%state%w_i(:,:,k,np1)))
+             Fn(:,:,k) = phi_np1(:,:,k) - (phi_n0(:,:,k) + dt2*g*elem(ie)%state%w_i(:,:,k,np1))
           enddo
 
           deltaerr = 0
           do k = 1,nlev
              deltaerr = max(deltaerr, maxval(abs(x(k,:,:))/max(g,abs(phi_n0(:,:,k)))))
           end do
+          !if (version == 1) print *,'q',minval(q),sum(q)/(nlev*np*np),maxval(q),maxval(q(:,:,nlev))
           itercount=itercount+1
           if (deltaerr<deltatol) exit
        end do ! end do for the do while loop
@@ -746,6 +758,10 @@ contains
              !print *,k,( abs(Fn(i,j,k))/wgdtmax
           enddo
        end if
+
+       do k = 1,nlevp
+          phi_np1(:,:,k) = phi_np1(:,:,k) + phis
+       end do
     end do ! end do for the ie=nets,nete loop
 #ifdef NEWTONCOND
     if (hybrid%masterthread) print *,'max J condition number (mpi task0): ',1/min_rcond
