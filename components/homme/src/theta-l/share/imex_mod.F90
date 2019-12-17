@@ -187,7 +187,7 @@ contains
        ! w(np1) as initial guess:
        phi_np1(:,:,1:nlev) =  phi_n0(:,:,1:nlev) +  dt2*g*w_np1(:,:,1:nlev)
 #endif
-#if 1
+#if 0
        ! phi_np1 as initial guess:
        w_np1(:,:,1:nlev) = (phi_np1(:,:,1:nlev) -  phi_n0(:,:,1:nlev) )/(dt2*g)
 #endif
@@ -196,7 +196,7 @@ contains
        w_np1(:,:,1:nlev)=gwh_i(:,:,1:nlev)/g  
        phi_np1(:,:,1:nlev) =  phi_n0(:,:,1:nlev) +  dt2*g*w_np1(:,:,1:nlev)
 #endif
-#if 0
+#if 1
        ! use hydrostatic for initial guess
        call phi_from_eos(hvcoord,elem(ie)%state%phis,elem(ie)%state%vtheta_dp(:,:,:,np1),&
             elem(ie)%state%dp3d(:,:,:,np1),phi_np1)
@@ -214,8 +214,8 @@ contains
           do j=1,np
              do i=1,np
                 if ( dphi(i,j,k)  > -g) then
-                   write(iulog,*) 'WARNING:IMEX limiting initial guess. ie,i,j,k=',ie,i,j,k
-                   write(iulog,*) 'dphi(i,j,k)=  ',dphi(i,j,k)
+                   !write(iulog,*) 'WARNING:IMEX limiting initial guess. ie,i,j,k=',ie,i,j,k
+                   !write(iulog,*) 'dphi(i,j,k)=  ',dphi(i,j,k)
                    dphi(i,j,k)=-g
                    nsafe=1
                 endif
@@ -224,11 +224,12 @@ contains
        enddo
        if (nsafe==1) then
           ! in rare cases when limter was triggered, just recompute:
-          do k=nlev,1,-1  ! scan                                                                                                      
+          do k=nlev,1,-1  ! scan
              phi_np1(:,:,k) = phi_np1(:,:,k+1)-dphi(:,:,k)
           enddo
-          w_np1(:,:,1:nlev) = (phi_np1(:,:,1:nlev) -  phi_n0(:,:,1:nlev) )/(dt2*g)
+          w_np1(:,:,1:nlevp) = (phi_np1(:,:,1:nlevp) -  phi_n0(:,:,1:nlevp) )/(dt2*g)
        endif
+
        call pnh_and_exner_from_eos2(hvcoord,elem(ie)%state%vtheta_dp(:,:,:,np1),elem(ie)%state%dp3d(:,:,:,np1),&
             dphi,pnh,exner,dpnh_dp_i,'dirk1')
        Fn(:,:,1:nlev) = w_np1(:,:,1:nlev) - &
@@ -260,15 +261,25 @@ contains
                 ! Tridiagonal solve
                 call DGTTRS( 'N', nlev,1, JacL(:,i,j), JacD(:,i,j), JacU(:,i,j), JacU2(:,i,j), Ipiv(:,i,j),x(:,i,j), nlev, info(i,j) )
                 ! update approximate solution of w
+                gwh_i = w_np1
                 w_np1(i,j,1:nlev) = w_np1(i,j,1:nlev) + x(1:nlev,i,j)
 
+                do nsafe = 1,16
+                   do k=1,nlev-1
+                      dphi(i,j,k)=dphi_n0(i,j,k) + dt2*g*( w_np1(i,j,k+1)-w_np1(i,j,k) )
+                   enddo
+                   dphi(i,j,nlev)=dphi_n0(i,j,nlev) + dt2*g*( 0-w_np1(i,j,nlev) )
+
+                   if (maxval(dphi(i,j,1:nlev)) < 0) exit
+
+                   alpha = 1.0/2**nsafe
+                   w_np1(i,j,1:nlev) = w_np1(i,j,1:nlev) - alpha*x(1:nlev,i,j)
+                end do
+                if (nsafe > 1) then
+                   write(iulog,*) 'WARNING:IMEX is reducing step length; nsafe',nsafe
+                end if
              end do
           end do
-
-          do k=1,nlev-1
-             dphi(:,:,k)=dphi_n0(:,:,k) + dt2*g*( w_np1(:,:,k+1)-w_np1(:,:,k) )
-          enddo
-          dphi(:,:,nlev)=dphi_n0(:,:,nlev) + dt2*g*( 0-w_np1(:,:,nlev) )
 
           call pnh_and_exner_from_eos2(hvcoord,elem(ie)%state%vtheta_dp(:,:,:,np1),&
                elem(ie)%state%dp3d(:,:,:,np1),dphi,pnh,exner,dpnh_dp_i,'dirk2')
@@ -560,7 +571,7 @@ contains
     integer :: maxiter
     real*8 :: deltatol,restol,deltaerr,reserr,rcond,min_rcond,anorm,dt3,alpha
 
-    integer :: i,j,k,l,ie,info(np,np),nt
+    integer :: i,j,k,l,ie,in,nt
     integer :: nsafe
 
     call t_startf('compute_stage_value_dirk')
@@ -582,7 +593,6 @@ contains
        phi_np1 => elem(ie)%state%phinh_i(:,:,:,np1)
        w_np1 => elem(ie)%state%w_i(:,:,:,np1)
 
-
        if (alphadt_n0.ne.0d0) then ! add dt*alpha*S(un0) to the rhs
           dt3=alphadt_n0
           nt=n0
@@ -597,7 +607,6 @@ contains
           phi_n0(:,:,1:nlev) = phi_n0(:,:,1:nlev) + &
                dt3*g*elem(ie)%state%w_i(:,:,1:nlev,nt) -  dt3*gwh_i(:,:,1:nlev)
        end if
-
 
        if (alphadt_nm1.ne.0d0) then ! add dt*alpha*S(unm1) to the rhs
           dt3=alphadt_nm1
@@ -620,25 +629,8 @@ contains
             elem(ie)%derived%gradphis,hvcoord)
        phi_n0(:,:,1:nlev) = phi_n0(:,:,1:nlev) -  dt2*gwh_i(:,:,1:nlev)
 
-#if 0
-       ! w(np1) as initial guess:
-       phi_np1(:,:,1:nlev) =  phi_n0(:,:,1:nlev) +  dt2*g*w_np1(:,:,1:nlev)
-#endif
-#if 1
        ! phi_np1 as initial guess:
        w_np1(:,:,1:nlev) = (phi_np1(:,:,1:nlev) -  phi_n0(:,:,1:nlev) )/(dt2*g)
-#endif
-#if 0
-       ! wh_i as initial guess:
-       w_np1(:,:,1:nlev)=gwh_i(:,:,1:nlev)/g  
-       phi_np1(:,:,1:nlev) =  phi_n0(:,:,1:nlev) +  dt2*g*w_np1(:,:,1:nlev)
-#endif
-#if 0
-       ! use hydrostatic for initial guess
-       call phi_from_eos(hvcoord,elem(ie)%state%phis,elem(ie)%state%vtheta_dp(:,:,:,np1),&
-            elem(ie)%state%dp3d(:,:,:,np1),phi_np1)
-       w_np1(:,:,1:nlev) = (phi_np1(:,:,1:nlev) -  phi_n0(:,:,1:nlev) )/(dt2*g)
-#endif
 
        ! initial residual
        do k=1,nlev
@@ -672,32 +664,35 @@ contains
             (w_n0(:,:,1:nlev) + g*dt2 * (dpnh_dp_i(:,:,1:nlev)-1))
 
 
-
        itercount=0
        do while (itercount < maxiter) 
-
-          info(:,:) = 0
-          ! numerical J:
-          !call get_dirk_jacobian(JacL,JacD,JacU,dt2,elem(ie)%state%dp3d(:,:,:,np1),dphi,pnh,0,1d-4,hvcoord,dpnh_dp_i,vtheta_dp) 
-          ! analytic J:
           call get_dirk_jacobian(JacL,JacD,JacU,dt2,elem(ie)%state%dp3d(:,:,:,np1),dphi,pnh,1) 
 
           do i=1,np
              do j=1,np
-                x(1:nlev,i,j) = -Fn(i,j,1:nlev)  
-                call DGTTRF(nlev, JacL(:,i,j), JacD(:,i,j),JacU(:,i,j),JacU2(:,i,j), Ipiv(:,i,j), info(i,j) )
-                ! Tridiagonal solve
-                call DGTTRS( 'N', nlev,1, JacL(:,i,j), JacD(:,i,j), JacU(:,i,j), JacU2(:,i,j), Ipiv(:,i,j),x(:,i,j), nlev, info(i,j) )
-                ! update approximate solution of w
+                x(1:nlev,i,j) = -Fn(i,j,1:nlev)
+                call DGTTRF(nlev,JacL(:,i,j),JacD(:,i,j),JacU(:,i,j),JacU2(:,i,j),Ipiv(:,i,j),in)
+                call DGTTRS('N',nlev,1,JacL(:,i,j),JacD(:,i,j),JacU(:,i,j),JacU2(:,i,j),Ipiv(:,i,j),x(:,i,j),nlev,in)
+
+                gwh_i = w_np1
                 w_np1(i,j,1:nlev) = w_np1(i,j,1:nlev) + x(1:nlev,i,j)
 
+                do nsafe = 1,8
+                   do k=1,nlev-1
+                      dphi(i,j,k)=dphi_n0(i,j,k) + dt2*g*( w_np1(i,j,k+1)-w_np1(i,j,k) )
+                   enddo
+                   dphi(i,j,nlev)=dphi_n0(i,j,nlev) + dt2*g*( 0-w_np1(i,j,nlev) )
+
+                   if (maxval(dphi(i,j,1:nlev)) < 0) exit
+
+                   alpha = 1.0/2**nsafe
+                   w_np1(i,j,1:nlev) = w_np1(i,j,1:nlev) - alpha*x(1:nlev,i,j)
+                end do
+                if (nsafe > 1) then
+                   write(iulog,*) 'WARNING:IMEX is reducing step length; nsafe',nsafe
+                end if
              end do
           end do
-
-          do k=1,nlev-1
-             dphi(:,:,k)=dphi_n0(:,:,k) + dt2*g*( w_np1(:,:,k+1)-w_np1(:,:,k) )
-          enddo
-          dphi(:,:,nlev)=dphi_n0(:,:,nlev) + dt2*g*( 0-w_np1(:,:,nlev) )
 
           call pnh_and_exner_from_eos2(hvcoord,elem(ie)%state%vtheta_dp(:,:,:,np1),&
                elem(ie)%state%dp3d(:,:,:,np1),dphi,pnh,exner,dpnh_dp_i,'dirk2')
@@ -706,16 +701,12 @@ contains
           reserr=maxval(abs(Fn))/(wmax*abs(dt2)) 
           deltaerr=maxval(abs(x))/wmax
 
-
-          ! update iteration count and error measure
           itercount=itercount+1
-          !if (reserr < restol) exit
           if (deltaerr<deltatol) exit
        end do ! end do for the do while loop
 
        ! update phi:
        phi_np1(:,:,1:nlev) =  phi_n0(:,:,1:nlev) +  dt2*g*w_np1(:,:,1:nlev)
-
 
        ! keep track of running  max iteraitons and max error (reset after each diagnostics output)
        max_itercnt=max(itercount,max_itercnt)

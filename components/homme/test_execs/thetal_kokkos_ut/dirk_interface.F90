@@ -67,7 +67,7 @@ contains
     call get_dirk_jacobian(JacL,JacD,JacU,dt2,dp3d,dphi,pnh,1)
   end subroutine get_dirk_jacobian_f90
 
-  subroutine c2f_f90(n, cnlev, cnlevp, dp3d, w_i, v, vtheta_dp, phinh_i, gradphis) bind(c)
+  subroutine c2f_f90(n, cnlev, cnlevp, dp3d, w_i, v, vtheta_dp, phinh_i, gradphis, phis) bind(c)
     use iso_c_binding,         only: c_int
     use dimensions_mod,        only: nlev, nlevp, np
     use geometry_interface_mod,only: elem
@@ -77,7 +77,8 @@ contains
     integer (kind=c_int), value, intent(in) :: n, cnlev, cnlevp
     real (kind=real_kind), intent(in) :: &
          dp3d(cnlev,np,np,ntl,n), w_i(cnlevp,np,np,ntl,n), v(cnlev,np,np,2,ntl,n), &
-         vtheta_dp(cnlev,np,np,ntl,n), phinh_i(cnlevp,np,np,ntl,n), gradphis(np,np,2,n)
+         vtheta_dp(cnlev,np,np,ntl,n), phinh_i(cnlevp,np,np,ntl,n), gradphis(np,np,2,n), &
+         phis(np,np,n)
 
     integer :: ie, t, k, j, i
 
@@ -104,6 +105,7 @@ contains
        end do
        do j = 1,np
           do i = 1,np
+             elem(ie)%state%phis(i,j) = phis(j,i,ie)
              elem(ie)%derived%gradphis(i,j,1) = gradphis(j,i,1,ie)
              elem(ie)%derived%gradphis(i,j,2) = gradphis(j,i,2,ie)
           end do
