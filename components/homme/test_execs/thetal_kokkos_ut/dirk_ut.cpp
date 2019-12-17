@@ -31,7 +31,8 @@ extern "C" {
                Real* vtheta_dp, Real* phinh_i, Real* gradphis);
   void get_dirk_jacobian_f90(Real* dl, Real* d, Real* du, Real dt, const Real* dp3d,
                              const Real* dphi, const Real* pnh);
-  void compute_stage_value_dirk_f90(int version, int nm1, int n0, int np1, Real alphadt, Real dt2);
+  void compute_stage_value_dirk_f90(int version, int nm1, Real alphadt_nm1,
+                                    int n0, Real alphadt_n0, int np1, Real dt2);
 } // extern "C"
 
 using FA3 = Kokkos::View<Real*[NP][NP], Kokkos::LayoutRight, Kokkos::HostSpace>;
@@ -585,16 +586,15 @@ TEST_CASE ("dirk_toplevel_testing") {
   auto& e = s.e;
   const auto nelemd = s.nelemd;
 
-  for (int nm1 : {-1, 0})
-    for (Real alphadtwt : {0.0, 1.0}) {
+  for (Real alphadtwt_nm1 : {0.0}) {
+    const int nm1 = alphadtwt_nm1 == 0.0 ? -1 : 0;
+    for (Real alphadtwt_n0 : {0.0}) {
       decltype(ElementsState::m_w_i) w_i("w_i", nelemd),
         w_i1("w_i1", nelemd), w_i2("w_i2", nelemd);
       decltype(ElementsState::m_phinh_i) phinh_i("phinh_i", nelemd),
         phinh_i1("phinh_i1", nelemd), phinh_i2("phinh_i2", nelemd);
 
       DirkFunctorImpl d(1);//nelemd);
-
-      Real alphadt = alphadtwt*dt2*(6.0/22);
 
       bool good = false;
       for (int trial = 0; trial < 100 /* don't enter an inf loop */; ++trial) {
@@ -604,7 +604,7 @@ TEST_CASE ("dirk_toplevel_testing") {
         deep_copy(phinh_i, e.m_state.m_phinh_i);
 
         // Run C++ with BFB solver.
-        d.run(nm1, n0, np1, alphadt, dt2, e, hvcoord, true /* BFB solver */);
+        d.run(nm1, n0, np1, alphadtwt_n0*dt2, dt2, e, hvcoord, true /* BFB solver */);
         fence();
         deep_copy(w_i2, e.m_state.m_w_i);
         deep_copy(phinh_i2, e.m_state.m_phinh_i);
@@ -640,13 +640,14 @@ TEST_CASE ("dirk_toplevel_testing") {
           // Make the problems a little easier.
           const Real f = 0.95;
           dt2 *= f;
-          alphadt *= f;
+          alphadtwt_nm1 *= f;
+          alphadtwt_n0 *= f;
           continue;
         }
         good = true;
 
         // Run C++ with non-BFB solver.
-        d.run(nm1, n0, np1, alphadt, dt2, e, hvcoord, false /* non-BFB solver */);
+        d.run(nm1, n0, np1, alphadtwt_n0*dt2, dt2, e, hvcoord, false /* non-BFB solver */);
         fence();
         deep_copy(w_i1, e.m_state.m_w_i);
         deep_copy(phinh_i1, e.m_state.m_phinh_i);
@@ -675,10 +676,10 @@ TEST_CASE ("dirk_toplevel_testing") {
                 REQUIRE(std::abs(p1[k] - p2[k]) <= 1e6*eps*(1 + std::abs(p1[k])));
             }
 
-      for (int version = 0; version <= 2; ++version) {
+      for (int version = 0; version <= 1; ++version) {
         // Run F90 with BFB solver.
         c2f(e);
-        compute_stage_value_dirk_f90(version, nm1+1, n0+1, np1+1, alphadt, dt2);
+        compute_stage_value_dirk_f90(version, nm1+1, alphadtwt_nm1*dt2, n0+1, alphadtwt_n0*dt2, np1+1, dt2);
         Elements ef90;
         ef90.init(nelemd, false, true);
         f2c(ef90);
@@ -699,6 +700,7 @@ TEST_CASE ("dirk_toplevel_testing") {
             }
       }
     }
+  }
 
   Session::delete_singleton();
 }

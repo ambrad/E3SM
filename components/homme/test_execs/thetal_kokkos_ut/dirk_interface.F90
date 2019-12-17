@@ -155,7 +155,7 @@ contains
     end do
   end subroutine f2c_f90
 
-  subroutine compute_stage_value_dirk_f90(version,nm1,n0,np1,alphadt,dt2) bind(c)
+  subroutine compute_stage_value_dirk_f90(version,nm1,alphadt_nm1,n0,alphadt_n0,np1,dt2) bind(c)
     use iso_c_binding,         only: c_int
     use hybrid_mod,            only: hybrid_t
     use derivative_mod,        only: derivative_t
@@ -164,32 +164,22 @@ contains
     use imex_mod,              only: compute_stage_value_dirk, compute_stage_value_dirk_new
 
     integer (kind=c_int), value, intent(in)  :: version, nm1, n0, np1
-    real (kind=real_kind), value, intent(in) :: alphadt, dt2
+    real (kind=real_kind), value, intent(in) :: alphadt_nm1, alphadt_n0, dt2
 
     ! compute_stage_value_dirk doesn't actually use these.
     type (hybrid_t) :: hybrid
     type (derivative_t) :: deriv
     integer :: qn0, itercount, nets, nete
     real (kind=real_kind) :: itererr
-    
+
     nets = 1
     nete = 1!size(elem)
-    if (nm1 > 0) then
-       if (version == 0) then
-          call compute_stage_value_dirk(n0, np1, alphadt, qn0, dt2, elem, hvcoord, hybrid, deriv, &
-               nets, nete, itercount, itererr, nm1)
-       else
-          call compute_stage_value_dirk_new(version, n0, np1, alphadt, qn0, dt2, elem, hvcoord, hybrid, deriv, &
-               nets, nete, itercount, itererr, nm1)
-       end if
+    if (version == 0) then
+       call compute_stage_value_dirk(nm1, alphadt_nm1, n0, alphadt_n0, np1, &
+            dt2, qn0, elem, hvcoord, hybrid, deriv, nets, nete, itercount, itererr)
     else
-       if (version == 0) then
-          call compute_stage_value_dirk(n0, np1, alphadt, qn0, dt2, elem, hvcoord, hybrid, deriv, &
-               nets, nete, itercount, itererr)
-       else
-          call compute_stage_value_dirk_new(version, n0, np1, alphadt, qn0, dt2, elem, hvcoord, hybrid, deriv, &
-               nets, nete, itercount, itererr)
-       end if
+       call compute_stage_value_dirk_new(version, nm1, alphadt_nm1, n0, alphadt_n0, np1, &
+            dt2, qn0, elem, hvcoord, hybrid, deriv, nets, nete, itercount, itererr)
     end if
   end subroutine compute_stage_value_dirk_f90
 

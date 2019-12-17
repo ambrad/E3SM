@@ -147,6 +147,7 @@ contains
     ! Take timestep
     ! ==================================
     dt_vis = dt
+#ifdef compileout
     if (tstep_type==1) then 
        ! RK2                                                                                                              
        ! forward euler to u(dt/2) = u(0) + (dt/2) RHS(0)  (store in u(np1))                                               
@@ -385,7 +386,7 @@ contains
     else
        call abortmp('ERROR: bad choice of tstep_type')
     endif
-
+#endif
 
     ! ==============================================
     ! Time-split Horizontal diffusion: nu.del^2 or nu.del^4
@@ -501,6 +502,7 @@ contains
     ! Take timestep
     ! ==================================
     dt_vis = dt
+#ifdef compileout
     if (tstep_type==1) then 
        ! RK2                                                                                                              
        ! forward euler to u(dt/2) = u(0) + (dt/2) RHS(0)  (store in u(np1))                                               
@@ -819,7 +821,7 @@ contains
     else 
        call abortmp('ERROR: bad choice of tstep_type')
     endif
-
+#endif
     ! Use ARKode to advance solution
     if (tstep_type >= 20) then
 
