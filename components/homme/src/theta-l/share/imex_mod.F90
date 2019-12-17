@@ -261,7 +261,6 @@ contains
                 ! Tridiagonal solve
                 call DGTTRS( 'N', nlev,1, JacL(:,i,j), JacD(:,i,j), JacU(:,i,j), JacU2(:,i,j), Ipiv(:,i,j),x(:,i,j), nlev, info(i,j) )
                 ! update approximate solution of w
-                gwh_i = w_np1
                 w_np1(i,j,1:nlev) = w_np1(i,j,1:nlev) + x(1:nlev,i,j)
 
                 do nsafe = 1,16
@@ -276,7 +275,7 @@ contains
                    w_np1(i,j,1:nlev) = w_np1(i,j,1:nlev) - alpha*x(1:nlev,i,j)
                 end do
                 if (nsafe > 1) then
-                   write(iulog,*) 'WARNING:IMEX is reducing step length; nsafe',nsafe
+                   write(iulog,*) 'WARNING:IMEX is reducing step length; nsafe',i,j,itercount,nsafe
                 end if
              end do
           end do
@@ -570,6 +569,7 @@ contains
     real (kind=real_kind) :: wmax
     integer :: maxiter
     real*8 :: deltatol,restol,deltaerr,reserr,rcond,min_rcond,anorm,dt3,alpha
+    real (kind=real_kind) :: dw,dx,alpha_k
 
     integer :: i,j,k,l,ie,in,nt
     integer :: nsafe
@@ -629,7 +629,9 @@ contains
             elem(ie)%derived%gradphis,hvcoord)
        phi_n0(:,:,1:nlev) = phi_n0(:,:,1:nlev) -  dt2*gwh_i(:,:,1:nlev)
 
-       ! phi_np1 as initial guess:
+       ! use hydrostatic for initial guess
+       call phi_from_eos(hvcoord,elem(ie)%state%phis,elem(ie)%state%vtheta_dp(:,:,:,np1),&
+            elem(ie)%state%dp3d(:,:,:,np1),phi_np1)
        w_np1(:,:,1:nlev) = (phi_np1(:,:,1:nlev) -  phi_n0(:,:,1:nlev) )/(dt2*g)
 
        ! initial residual
@@ -643,8 +645,8 @@ contains
           do j=1,np
              do i=1,np
                 if ( dphi(i,j,k)  > -g) then
-                   write(iulog,*) 'WARNING:IMEX limiting initial guess. ie,i,j,k=',ie,i,j,k
-                   write(iulog,*) 'dphi(i,j,k)=  ',dphi(i,j,k)
+                   !write(iulog,*) 'WARNING:IMEX limiting initial guess. ie,i,j,k=',ie,i,j,k
+                   !write(iulog,*) 'dphi(i,j,k)=  ',dphi(i,j,k)
                    dphi(i,j,k)=-g
                    nsafe=1
                 endif
@@ -674,22 +676,36 @@ contains
                 call DGTTRF(nlev,JacL(:,i,j),JacD(:,i,j),JacU(:,i,j),JacU2(:,i,j),Ipiv(:,i,j),in)
                 call DGTTRS('N',nlev,1,JacL(:,i,j),JacD(:,i,j),JacU(:,i,j),JacU2(:,i,j),Ipiv(:,i,j),x(:,i,j),nlev,in)
 
-                gwh_i = w_np1
-                w_np1(i,j,1:nlev) = w_np1(i,j,1:nlev) + x(1:nlev,i,j)
+                alpha = 1
+                do nsafe = 1,2
+                   do k = 1,nlev-1
+                      dphi(i,j,k) = dphi_n0(i,j,k) + &
+                           dt2*g*((w_np1(i,j,k+1) - w_np1(i,j,k)) + &
+                                  alpha*(x(k+1,i,j) - x(k,i,j)))
+                   end do
+                   dphi(i,j,nlev) = dphi_n0(i,j,nlev) - dt2*g*(w_np1(i,j,nlev) + alpha*x(nlev,i,j))
 
-                do nsafe = 1,8
-                   do k=1,nlev-1
-                      dphi(i,j,k)=dphi_n0(i,j,k) + dt2*g*( w_np1(i,j,k+1)-w_np1(i,j,k) )
-                   enddo
-                   dphi(i,j,nlev)=dphi_n0(i,j,nlev) + dt2*g*( 0-w_np1(i,j,nlev) )
+                   if (nsafe == 2 .or. maxval(dphi(i,j,1:nlev)) < 0) exit
 
-                   if (maxval(dphi(i,j,1:nlev)) < 0) exit
-
-                   alpha = 1.0/2**nsafe
-                   w_np1(i,j,1:nlev) = w_np1(i,j,1:nlev) - alpha*x(1:nlev,i,j)
+                   ! Step halfway to the distance at which at least one dphi is 0.
+                   do k = 1,nlev
+                      if (k < nlev) then
+                         dx = x(k+1,i,j) - x(k,i,j)
+                         dw = w_np1(i,j,k+1) - w_np1(i,j,k)
+                      else
+                         dx = -x(k,i,j)
+                         dw = -w_np1(i,j,k)
+                      end if
+                      if (dx /= 0) then
+                         alpha_k = -(dphi_n0(i,j,k) + dt2*g*dw)/(dt2*g*dx)
+                         if (alpha_k >= 0) alpha = min(alpha, alpha_k)
+                      end if
+                   end do
+                   alpha = alpha/2
                 end do
+                w_np1(i,j,1:nlev) = w_np1(i,j,1:nlev) + alpha*x(1:nlev,i,j)
                 if (nsafe > 1) then
-                   write(iulog,*) 'WARNING:IMEX is reducing step length; nsafe',nsafe
+                   write(iulog,*) 'WARNING:IMEX is reducing step length from 1 to',i,j,itercount,alpha
                 end if
              end do
           end do
