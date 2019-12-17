@@ -146,7 +146,6 @@ contains
        phi_np1 => elem(ie)%state%phinh_i(:,:,:,np1)
        w_np1 => elem(ie)%state%w_i(:,:,:,np1)
 
-
        if (alphadt_n0.ne.0d0) then ! add dt*alpha*S(un0) to the rhs
           dt3=alphadt_n0
           nt=n0
@@ -188,7 +187,7 @@ contains
        ! w(np1) as initial guess:
        phi_np1(:,:,1:nlev) =  phi_n0(:,:,1:nlev) +  dt2*g*w_np1(:,:,1:nlev)
 #endif
-#if 0
+#if 1
        ! phi_np1 as initial guess:
        w_np1(:,:,1:nlev) = (phi_np1(:,:,1:nlev) -  phi_n0(:,:,1:nlev) )/(dt2*g)
 #endif
@@ -197,7 +196,7 @@ contains
        w_np1(:,:,1:nlev)=gwh_i(:,:,1:nlev)/g  
        phi_np1(:,:,1:nlev) =  phi_n0(:,:,1:nlev) +  dt2*g*w_np1(:,:,1:nlev)
 #endif
-#if 1
+#if 0
        ! use hydrostatic for initial guess
        call phi_from_eos(hvcoord,elem(ie)%state%phis,elem(ie)%state%vtheta_dp(:,:,:,np1),&
             elem(ie)%state%dp3d(:,:,:,np1),phi_np1)
@@ -526,35 +525,6 @@ contains
 
   subroutine compute_stage_value_dirk_new(version,nm1,alphadt_nm1,n0,alphadt_n0,np1,dt2,qn0,elem,hvcoord,hybrid,&
        deriv,nets,nete,itercount,itererr)
-    !===================================================================================
-    ! this subroutine solves a stage value equation for a DIRK method which takes the form
-    !
-    ! gi = un0 + dt* sum(1:i-1)(aij n(gj)+a2ij s(gj)) + dt *a2ii s(gi) := y + dt a2ii s(gi)
-    !
-    ! It is assumed that un0 has the value of y and the computed value of gi is stored at
-    ! unp1
-    ! 
-    ! w_0 = w(np1)
-    ! phi_0 = phi(np1)
-    ! Then solve (ovewriting w(np1),phi(np1): 
-    ! w(np1) = w_0 + alphadt_n0 * SW(n0)  + alphadt_nm1*SW(nm1) +  dt2*SW(np1)
-    ! phi(np1) = phi_0 + alphadt_n0 * SPHI(n0)  + alphadt_nm1*SPHI(nm1) +  dt2*SPHI(np1)
-    !
-    ! SW(nt) = g*dpnh_dp_i(nt)-1
-    ! SPHI(nt) = g*w(nt) -g*a(k) u(nt) dot grad_phis
-    !
-    ! pnh_and_exner_from_eos()   used to compute dpnh_dp_i(nt) in SW(nt)
-    ! compute_gwphis()            used to compute g*a(k) u(nt) dot grad_phis  in SPHI(nt)   
-    !
-    ! We then precompute:
-    !  w_rhs = w_0 + alphadt_n0 * SW(n0)  + alphadt_nm1*SW(nm1) 
-    !  phi_rhs = w_0 + alphad_n0 * SPHI(n0)  + alphadt1_nm1*SPHI(nm1) -  dt2*compute_gwphi(np1)
-    ! and solve, via Newton iteraiton:
-    !   w(np1) = w_rhs + dt2*SW(np1)
-    !   phi(np1) = phi_rhs + dt2*g*w(np1)
-    !
-    !===================================================================================
-
     integer, intent(in) :: nm1,n0,np1,qn0,nets,nete,version
     real (kind=real_kind), intent(in) :: dt2
     integer :: itercount
@@ -565,7 +535,6 @@ contains
     type (hybrid_t)      , intent(in) :: hybrid
     type (element_t)     , intent(inout), target :: elem(:)
     type (derivative_t)  , intent(in) :: deriv
-
 
     ! local
     real (kind=real_kind), pointer, dimension(:,:,:)   :: phi_np1
@@ -587,19 +556,12 @@ contains
     real (kind=real_kind) :: Jac2D(nlev,np,np)  , Jac2L(nlev-1,np,np)
     real (kind=real_kind) :: Jac2U(nlev-1,np,np)
 
-
     real (kind=real_kind) :: wmax
     integer :: maxiter
     real*8 :: deltatol,restol,deltaerr,reserr,rcond,min_rcond,anorm,dt3,alpha
 
     integer :: i,j,k,l,ie,info(np,np),nt
     integer :: nsafe
-#undef NEWTONCOND
-#ifdef NEWTONCOND
-    real*8 :: DLANGT  ! external
-    real (kind=real_kind) :: work(2*nlev)
-    integer :: iwork(nlev),info2
-#endif
 
     call t_startf('compute_stage_value_dirk')
 
@@ -662,7 +624,7 @@ contains
        ! w(np1) as initial guess:
        phi_np1(:,:,1:nlev) =  phi_n0(:,:,1:nlev) +  dt2*g*w_np1(:,:,1:nlev)
 #endif
-#if 0
+#if 1
        ! phi_np1 as initial guess:
        w_np1(:,:,1:nlev) = (phi_np1(:,:,1:nlev) -  phi_n0(:,:,1:nlev) )/(dt2*g)
 #endif
@@ -671,7 +633,7 @@ contains
        w_np1(:,:,1:nlev)=gwh_i(:,:,1:nlev)/g  
        phi_np1(:,:,1:nlev) =  phi_n0(:,:,1:nlev) +  dt2*g*w_np1(:,:,1:nlev)
 #endif
-#if 1
+#if 0
        ! use hydrostatic for initial guess
        call phi_from_eos(hvcoord,elem(ie)%state%phis,elem(ie)%state%vtheta_dp(:,:,:,np1),&
             elem(ie)%state%dp3d(:,:,:,np1),phi_np1)
@@ -699,7 +661,7 @@ contains
        enddo
        if (nsafe==1) then
           ! in rare cases when limter was triggered, just recompute:
-          do k=nlev,1,-1  ! scan                                                                                                      
+          do k=nlev,1,-1  ! scan
              phi_np1(:,:,k) = phi_np1(:,:,k+1)-dphi(:,:,k)
           enddo
           w_np1(:,:,1:nlev) = (phi_np1(:,:,1:nlev) -  phi_n0(:,:,1:nlev) )/(dt2*g)
@@ -723,15 +685,7 @@ contains
           do i=1,np
              do j=1,np
                 x(1:nlev,i,j) = -Fn(i,j,1:nlev)  
-#ifdef NEWTONCOND
-                ! nlev condition number: 500e3 with phi, 850e3 with dphi
-                anorm=DLANGT('1-norm', nlev, JacL(:,i,j),jacD(:,i,j),jacU(:,i,j))
-                call DGTTRF(nlev, JacL(:,i,j), JacD(:,i,j),JacU(:,i,j),JacU2(:,i,j), Ipiv(:,i,j), info )
-                call DGTCON('1',nlev,JacL(:,i,j),JacD(:,i,j),JacU(:,i,j),jacU2(:,i,j),Ipiv(:,i,j),&
-                     ANORM, RCOND, WORK, IWORK, info2 )
-#else
                 call DGTTRF(nlev, JacL(:,i,j), JacD(:,i,j),JacU(:,i,j),JacU2(:,i,j), Ipiv(:,i,j), info(i,j) )
-#endif
                 ! Tridiagonal solve
                 call DGTTRS( 'N', nlev,1, JacL(:,i,j), JacD(:,i,j), JacU(:,i,j), JacU2(:,i,j), Ipiv(:,i,j),x(:,i,j), nlev, info(i,j) )
                 ! update approximate solution of w
@@ -767,18 +721,12 @@ contains
        max_itercnt=max(itercount,max_itercnt)
        max_deltaerr=max(deltaerr,max_deltaerr)
        max_reserr=max(reserr,max_reserr)
-#ifdef NEWTONCOND
-       min_rcond=min(rcond,min_rcond)
-#endif
        itererr=min(max_reserr,max_deltaerr) ! passed back to ARKODE
 
        if (itercount >= maxiter) then
           write(iulog,*) 'WARNING:IMEX solver failed b/c max iteration count was met',deltaerr,reserr
        end if
     end do ! end do for the ie=nets,nete loop
-#ifdef NEWTONCOND
-    if (hybrid%masterthread) print *,'max J condition number (mpi task0): ',1/min_rcond
-#endif
 
     call t_stopf('compute_stage_value_dirk')
   end subroutine compute_stage_value_dirk_new

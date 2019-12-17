@@ -15,6 +15,8 @@
 #include "utilities/SyncUtils.hpp"
 #include "utilities/ViewUtils.hpp"
 
+#include "/home/ambradl/climate/sik/hommexx/dbg.hpp"
+
 using namespace Homme;
 
 extern "C" {
@@ -68,7 +70,7 @@ struct Session {
   const int ne = 2;
   int nelemd;
 
-  Session() : r(2324954282) {}
+  Session() : r(4145989072) {}
 
   void init () {
     printf("seed %u\n", r.gen_seed());
@@ -638,7 +640,8 @@ TEST_CASE ("dirk_toplevel_testing") {
             }
         if ( ! ok) {
           // Make the problems a little easier.
-          const Real f = 0.95;
+          const Real f = 0.99;
+          prc(f);
           dt2 *= f;
           alphadtwt_nm1 *= f;
           alphadtwt_n0 *= f;
