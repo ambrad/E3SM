@@ -113,21 +113,26 @@ private:
 
 std::shared_ptr<Session> Session::s_session;
 
-static bool equal (const Real& a, const Real& b,
-                   // Used only if not defined HOMMEXX_BFB_TESTING.
-                   const Real tol = 0) {
-#ifdef HOMMEXX_BFB_TESTING_WIP // rm _WIP once the new w-formulation is impl'ed
-  if (a != b)
-    printf("equal: a,b = %23.16e %23.16e re = %23.16e\n",
-           a, b, std::abs((a-b)/a));
-  return a == b;
-#else
+static bool almost_equal (const Real& a, const Real& b,
+                          const Real tol = 0) {
   const auto re = std::abs(a-b)/(1 + std::abs(a));
   const bool good = re <= tol;
   if ( ! good)
     printf("equal: a,b = %23.16e %23.16e re = %23.16e tol %9.2e\n",
            a, b, re, tol);
   return good;
+}
+
+static bool equal (const Real& a, const Real& b,
+                   // Used only if not defined HOMMEXX_BFB_TESTING.
+                   const Real tol = 0) {
+#ifdef HOMMEXX_BFB_TESTING
+  if (a != b)
+    printf("equal: a,b = %23.16e %23.16e re = %23.16e\n",
+           a, b, std::abs((a-b)/a));
+  return a == b;
+#else
+  return almost_equal(a, b, tol);
 #endif
 }
 
@@ -713,7 +718,7 @@ TEST_CASE ("dirk_toplevel_testing") {
               Real* pf = f == 0 ? &phif   (ie,np1,i,j,0)[0] : &wif(ie,np1,i,j,0)[0];
               Real* pc = f == 0 ? &phinh2m(ie,np1,i,j,0)[0] : &w2m(ie,np1,i,j,0)[0];
               for (int k = 0; k < nlev; ++k)
-                REQUIRE(equal(pf[k], pc[k], 1e8*eps));
+                REQUIRE(almost_equal(pf[k], pc[k], 1e8*eps));
             }
           }
     }
