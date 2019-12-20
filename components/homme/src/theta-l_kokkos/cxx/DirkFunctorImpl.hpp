@@ -306,7 +306,8 @@ struct DirkFunctorImpl {
           gk = gk0 + s,
           gi = gk / NP,
           gj = gk % NP;
-          if (gk >= scaln) break;
+          if (scaln % packn != 0 && // try to compile out this conditional when possible
+              gk >= scaln) break;
           dst(k,i)[s] = src(gi,gj,pk)[sk];
         }
       };
@@ -384,7 +385,7 @@ struct DirkFunctorImpl {
           idx = packn*i + s,
           gi = idx / NP,
           gj = idx % NP;
-          if (idx >= scaln) break;
+          if (scaln % packn != 0 && idx >= scaln) break;
           dp3dkm1[s] = dp3d(gi,gj,pkm1)[skm1];
           dp3dk  [s] = dp3d(gi,gj,pk  )[sk];
           v1km1  [s] = v (0,gi,gj,pkm1)[skm1];
