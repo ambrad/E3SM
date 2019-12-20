@@ -18,7 +18,7 @@
 #include "ErrorDefs.hpp"
 #include "utilities/scream_tridiag.hpp"
 
-#include <assert.h>
+#include <cassert>
 
 namespace Homme {
 
@@ -76,6 +76,7 @@ struct DirkFunctorImpl {
   Work m_work;
   LinearSystem m_ls;
   TeamPolicy m_policy;
+  int nteam;
 
   KOKKOS_INLINE_FUNCTION
   size_t shmem_size (const int team_size) const {
@@ -110,9 +111,19 @@ struct DirkFunctorImpl {
         ::team_num_threads_vectors(nelem, tp);
       m_policy = TeamPolicy(nelem, p.first, 1);
     }
-    const int nteam = std::min(nelem, get_num_concurrent_teams(m_policy));
-    m_work = Work("DirkFunctorImpl::m_work", nteam);
-    m_ls = LinearSystem("DirkFunctorImpl::m_ls", nteam);
+    nteam = std::min(nelem, get_num_concurrent_teams(m_policy));
+  }
+
+  int requested_buffer_size () const {
+    // FunctorsBuffersManager wants the size in terms of sizeof(Real).
+    return (Work::shmem_size(nteam) + LinearSystem::shmem_size(nteam))/sizeof(Real);
+  }
+
+  void init_buffers (const FunctorsBuffersManager& fbm) {
+    Scalar* mem = reinterpret_cast<Scalar*>(fbm.get_memory());
+    m_work = Work(mem, nteam);
+    mem += Work::shmem_size(nteam)/sizeof(Scalar);
+    m_ls = LinearSystem(mem, nteam);
   }
 
   void run (int nm1, Real alphadt_nm1, int n0, Real alphadt_n0, int np1, Real dt2,

@@ -1,3 +1,6 @@
+#pragma message "AMB DBG"
+#include "/home/ambradl/climate/sik/hommexx/dbg.hpp"
+
 #include <catch2/catch.hpp>
 
 #include "DirkFunctorImpl.hpp"
@@ -227,6 +230,12 @@ void c2f(const V& c, const FA4& f) {
       }
 }
 
+static void init (dfi& d, FunctorsBuffersManager& fbm) {
+  fbm.request_size(d.requested_buffer_size());
+  fbm.allocate();
+  d.init_buffers(fbm);
+}
+
 TEST_CASE ("dirk_pieces_testing") {
   using Kokkos::parallel_for;
   using Kokkos::fence;
@@ -236,15 +245,18 @@ TEST_CASE ("dirk_pieces_testing") {
   auto& r = s.r;
   const auto eps = std::numeric_limits<Real>::epsilon();
 
+  const int nelem = 1;
+  dfi d1(nelem);
+  FunctorsBuffersManager fbm;
+  init(d1, fbm);
+
   SECTION ("transpose") {
-    const int nelem = 1;
     ExecView<Scalar[NP][NP][NUM_LEV  ]> ham0("ham0"), ham1("ham1");
     ExecView<Scalar[NP][NP][NUM_LEV_P]> hai0("hai0"), hai1("hai1");
     const int nlev = NUM_LEV*VECTOR_SIZE - 2; // test with some remainder
     fill(r, ham0);
     fill(r, hai0);
-    dfi d(nelem);
-    const auto w = d.m_work;
+    const auto w = d1.m_work;
     const auto a = dfi::get_work_slot(w, 0, 0);
     const auto f1 = KOKKOS_LAMBDA(const dfi::MT& t) {
       KernelVariables kv(t);
@@ -252,7 +264,7 @@ TEST_CASE ("dirk_pieces_testing") {
       kv.team_barrier();
       dfi::transpose(kv, nlev, a, ham1);
     };
-    parallel_for(d.m_policy, f1); fence();
+    parallel_for(d1.m_policy, f1); fence();
     require_all_equal(nlev, ham0, ham1);
     const auto f2 = KOKKOS_LAMBDA(const dfi::MT& t) {
       KernelVariables kv(t);
@@ -260,7 +272,7 @@ TEST_CASE ("dirk_pieces_testing") {
       kv.team_barrier();
       dfi::transpose(kv, nlev+1, a, hai1);
     };
-    parallel_for(d.m_policy, f2); fence();
+    parallel_for(d1.m_policy, f2); fence();
     require_all_equal(nlev+1, hai0, hai1);
   }
 
@@ -273,7 +285,6 @@ TEST_CASE ("dirk_pieces_testing") {
     fill_mid(r, nlev, 5, 10000, pnh);
     fill_inc(r, nlev, 500000, 100, dphi);
 
-    dfi d1(1);
     const auto w = d1.m_work;
     const auto
       dp3dw = dfi::get_work_slot(w, 0, 0),
@@ -397,7 +408,6 @@ TEST_CASE ("dirk_pieces_testing") {
     fill_inc(r, nlev, 500000, 100, dphi);
     fill_inc(r, nlev, 5*300, 10000*300, vtheta_dp);
 
-    dfi d1(1);
     const auto w = d1.m_work;
     const auto
       dp3dw = dfi::get_work_slot(w, 0, 0),
@@ -455,7 +465,6 @@ TEST_CASE ("dirk_pieces_testing") {
     deep_copy(gradphis, gpm);
     const auto hybi = hvcoord.hybrid_bi;
     
-    dfi d1(1);
     const auto w = d1.m_work;
     const auto gwh_i = dfi::get_work_slot(w, 0, 0);
 
@@ -601,6 +610,8 @@ TEST_CASE ("dirk_toplevel_testing") {
         phinh_i1("phinh_i1", nelemd), phinh_i2("phinh_i2", nelemd);
 
       DirkFunctorImpl d(nelemd);
+      FunctorsBuffersManager fbm;
+      init(d, fbm);
 
       bool good = false;
       for (int trial = 0; trial < 100 /* don't enter an inf loop */; ++trial) {
