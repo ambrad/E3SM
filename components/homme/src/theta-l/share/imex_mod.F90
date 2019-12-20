@@ -214,8 +214,8 @@ contains
           do j=1,np
              do i=1,np
                 if ( dphi(i,j,k)  > -g) then
-                   !write(iulog,*) 'WARNING:IMEX limiting initial guess. ie,i,j,k=',ie,i,j,k
-                   !write(iulog,*) 'dphi(i,j,k)=  ',dphi(i,j,k)
+                   write(iulog,*) 'WARNING:IMEX limiting initial guess. ie,i,j,k=',ie,i,j,k
+                   write(iulog,*) 'dphi(i,j,k)=  ',dphi(i,j,k)
                    dphi(i,j,k)=-g
                    nsafe=1
                 endif
@@ -645,8 +645,8 @@ contains
           do j=1,np
              do i=1,np
                 if ( dphi(i,j,k)  > -g) then
-                   !write(iulog,*) 'WARNING:IMEX limiting initial guess. ie,i,j,k=',ie,i,j,k
-                   !write(iulog,*) 'dphi(i,j,k)=  ',dphi(i,j,k)
+                   write(iulog,*) 'WARNING:IMEX limiting initial guess. ie,i,j,k=',ie,i,j,k
+                   write(iulog,*) 'dphi(i,j,k)=  ',dphi(i,j,k)
                    dphi(i,j,k)=-g
                    nsafe=1
                 endif

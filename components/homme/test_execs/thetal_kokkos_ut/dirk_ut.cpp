@@ -683,7 +683,7 @@ TEST_CASE ("dirk_toplevel_testing") {
                 REQUIRE(std::abs(p1[k] - p2[k]) <= 1e6*eps*(1 + std::abs(p1[k])));
             }
 
-      for (int version = 1; version >= 0; --version) {
+      for (int version = 0; version >= 0; --version) {
         prc(version);
 
         // Run F90 with BFB solver.
