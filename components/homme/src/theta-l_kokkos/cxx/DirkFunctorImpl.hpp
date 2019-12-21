@@ -136,7 +136,7 @@ struct DirkFunctorImpl {
     const auto grav = PhysicalConstants::g;
     const int nvec = npack;
     const int maxiter = 20;
-    const Real deltatol = 1e-13; // exit if newton increment < deltatol
+    const Real deltatol = 1e-11; // exit if newton increment < deltatol
 
     const auto work = m_work;
     const auto ls = m_ls;
@@ -162,6 +162,7 @@ struct DirkFunctorImpl {
       w_np1     = get_work_slot(work, kv.team_idx,  4),
       dpnh_dp_i = get_work_slot(work, kv.team_idx,  5),
       gwh_i     = get_work_slot(work, kv.team_idx,  6),
+      dphi_n0   = get_work_slot(work, kv.team_idx,  6), // reuse gwh_i
       vtheta_dp = get_work_slot(work, kv.team_idx,  7),
       dp3d      = get_work_slot(work, kv.team_idx,  8),
       pnh       = get_work_slot(work, kv.team_idx,  9),
@@ -237,6 +238,16 @@ struct DirkFunctorImpl {
           w_np1(k,i) = (phi_np1(k,i) - phi_n0(k,i))/(dt2*grav);
         });
       }
+
+      loop_ki(kv, nlev, nvec, [&] (int k, int i) {
+        dphi_n0(k,i) = phi_n0(k+1,i) - phi_n0(k,i);
+      });
+      loop_ki(kv, nlev, nvec, [&] (int k, int i) {
+        dphi(k,i) = phi_np1(k+1,i) - phi_np1(k,i);
+      });
+      // If any dphi > -g in a column, set it to -g and integrate to get a
+      // new initial phi_np1 and w_np1.
+      calc_whether_gt_and_set(kv, nlev, nvec, -grav, dphi, wrk);
 
       for (int it = 0; it <= maxiter; ++it) { // Newton iteration
         kv.team_barrier();
@@ -628,8 +639,50 @@ struct DirkFunctorImpl {
       kv.team_barrier();
     }
   }
+
+  // Determine whether any dphi > threshold. Set the entry to threshold.
+  KOKKOS_INLINE_FUNCTION static void
+  calc_whether_gt_and_set (const KernelVariables& kv,
+                           const int nlev, const int nvec,
+                           const Real threshold,
+                           // dphi > threshold?
+                           const WorkSlot& dphi,
+                           // On output, wrk(0,:) contains 0 for no, 1 for yes
+                           const WorkSlot& wrk) {
+    loop_ki(kv, 1, nvec, [&] (int k, int i) {
+      wrk(0,i) = 0;
+    });
+    kv.team_barrier();
+    loop_ki(kv, nlev, nvec, [&] (int k, int i) {
+      for (int s = 0; s < packn; ++s)
+        if (dphi(k,i)[s] > threshold) {
+          dphi(k,i)[s] = threshold;
+          wrk(k,i)[s] = 1; // benign write race
+        }
+    });
+  }
+
+  // Determine whether any dphi >= threshold.
+  KOKKOS_INLINE_FUNCTION static void
+  calc_whether_ge (const KernelVariables& kv,
+                   const int nlev, const int nvec,
+                   const Real threshold,
+                   // dphi >= threshold?
+                   const WorkSlot& dphi,
+                   // On output, wrk(0,:) contains 0 for no, 1 for yes
+                   const WorkSlot& wrk) {
+    loop_ki(kv, 1, nvec, [&] (int k, int i) {
+      wrk(0,i) = 0;
+    });
+    kv.team_barrier();
+    loop_ki(kv, nlev, nvec, [&] (int k, int i) {
+      for (int s = 0; s < packn; ++s)
+        if (dphi(k,i)[s] >= threshold)
+          wrk(k,i)[s] = 1; // benign write race
+    });
+  }
 };
 
-} // Namespace Homme
+} // namespace Homme
 
 #endif // HOMMEXX_DIRK_FUNCTOR_IMPL_HPP
