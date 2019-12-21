@@ -145,6 +145,7 @@ struct DirkFunctorImpl {
     const auto e_phinh_i = e.m_state.m_phinh_i;
     const auto e_dp3d = e.m_state.m_dp3d;
     const auto e_v = e.m_state.m_v;
+    const auto e_phis = e.m_geometry.m_phis;
     const auto e_gradphis = e.m_geometry.m_gradphis;
     const auto hybi = hvcoord.hybrid_bi;
 
@@ -158,7 +159,7 @@ struct DirkFunctorImpl {
       phi_np1   = get_work_slot(work, kv.team_idx,  1),
       dphi      = get_work_slot(work, kv.team_idx,  2),
       w_n0      = get_work_slot(work, kv.team_idx,  3),
-      w_i       = get_work_slot(work, kv.team_idx,  4),
+      w_np1     = get_work_slot(work, kv.team_idx,  4),
       dpnh_dp_i = get_work_slot(work, kv.team_idx,  5),
       gwh_i     = get_work_slot(work, kv.team_idx,  6),
       vtheta_dp = get_work_slot(work, kv.team_idx,  7),
@@ -178,7 +179,7 @@ struct DirkFunctorImpl {
 
       const auto transpose4 = [&] (const int nt) {
         transpose(kv, nlev+1, subview(e_phinh_i  ,ie,nt,a,a,a), phi_np1  );
-        transpose(kv, nlev+1, subview(e_w_i      ,ie,nt,a,a,a), w_i      );
+        transpose(kv, nlev+1, subview(e_w_i      ,ie,nt,a,a,a), w_np1    );
         transpose(kv, nlev,   subview(e_vtheta_dp,ie,nt,a,a,a), vtheta_dp);
         transpose(kv, nlev,   subview(e_dp3d     ,ie,nt,a,a,a), dp3d     );        
       };
@@ -202,7 +203,7 @@ struct DirkFunctorImpl {
           w_n0(k,i) += dt3*grav*(dpnh_dp_i(k,i) - 1);
         });
         loop_ki(kv, nlev, nvec, [&] (int k, int i) {
-          phi_n0(k,i) = phi_n0(k,i) + dt3*grav*w_i(k,i) - dt3*gwh_i(k,i);
+          phi_n0(k,i) = phi_n0(k,i) + dt3*grav*w_np1(k,i) - dt3*gwh_i(k,i);
         });
       };
 
@@ -226,6 +227,17 @@ struct DirkFunctorImpl {
       kv.team_barrier();
       loop_ki(kv, nlev, nvec, [&] (int k, int i) { phi_n0(k,i) -= dt2*gwh_i(k,i); });
 
+      { // Initial guess: use hydrostatic phi.
+        const auto phinh_i = subview(e_phinh_i,ie,np1,a,a,a);
+        EquationOfState::compute_phi_i(
+          kv, subview(e_phis,ie,a,a), subview(e_vtheta_dp,ie,np1,a,a,a),
+          subview(e_dp3d,ie,np1,a,a,a), phinh_i);
+        transpose(kv, nlev+1, phinh_i, phi_np1);
+        loop_ki(kv, nlev, nvec, [&] (int k, int i) {
+          w_np1(k,i) = (phi_np1(k,i) - phi_n0(k,i))/(dt2*grav);
+        });
+      }
+
       for (int it = 0; it <= maxiter; ++it) { // Newton iteration
         kv.team_barrier();
         loop_ki(kv, nlev, nvec, [&] (int k, int i) {
@@ -235,7 +247,7 @@ struct DirkFunctorImpl {
         pnh_and_exner_from_eos(kv, hvcoord, vtheta_dp, dp3d, dphi, pnh, wrk, dpnh_dp_i);
         kv.team_barrier();
         loop_ki(kv, nlev, nvec, [&] (const int k, const int i) {
-          w_i(k,i) = w_n0(k,i) - grav*dt2*(1 - dpnh_dp_i(k,i));
+          w_np1(k,i) = w_n0(k,i) - grav*dt2*(1 - dpnh_dp_i(k,i));
         });
 
         if (it > 0 &&
@@ -245,7 +257,7 @@ struct DirkFunctorImpl {
 
         kv.team_barrier();
         loop_ki(kv, nlev, nvec, [&] (const int k, const int i) {
-          x(k,i) = -((phi_np1(k,i) - phi_n0(k,i)) - dt2*grav*w_i(k,i)); // -residual
+          x(k,i) = -((phi_np1(k,i) - phi_n0(k,i)) - dt2*grav*w_np1(k,i)); // -residual
         });
 
         calc_jacobian(kv, dt2, dp3d, dphi, pnh, dl, d, du);
@@ -262,7 +274,7 @@ struct DirkFunctorImpl {
 
       kv.team_barrier();
       transpose(kv, nlev+1, phi_np1, subview(e_phinh_i,ie,np1,a,a,a));
-      transpose(kv, nlev+1, w_i,     subview(e_w_i    ,ie,np1,a,a,a));
+      transpose(kv, nlev+1, w_np1,   subview(e_w_i    ,ie,np1,a,a,a));
     };
 
     Kokkos::parallel_for(m_policy, toplevel);

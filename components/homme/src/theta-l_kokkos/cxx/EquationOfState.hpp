@@ -125,12 +125,12 @@ public:
   //       otherwise it will be the non-hydrostatic. In particular, if the pressure
   //       p is computed using dp from pnh, this will be the discrete inverse of
   //       the compute_pnh_and_exner method.
-  KOKKOS_INLINE_FUNCTION
+  KOKKOS_INLINE_FUNCTION static
   void compute_phi_i (const KernelVariables& kv,
                       const ExecViewUnmanaged<const Real   [NP][NP]           >& phis,
                       const ExecViewUnmanaged<const Scalar [NP][NP][NUM_LEV]  >& vtheta_dp,
                       const ExecViewUnmanaged<const Scalar [NP][NP][NUM_LEV]  >& p,
-                      const ExecViewUnmanaged<      Scalar [NP][NP][NUM_LEV_P]>& phi_i) const {
+                      const ExecViewUnmanaged<      Scalar [NP][NP][NUM_LEV_P]>& phi_i) {
     Kokkos::parallel_for(Kokkos::TeamThreadRange(kv.team,NP*NP),
                          [&](const int idx) {
       const int igp = idx / NP;
@@ -145,11 +145,11 @@ public:
   // VThetaProvider can be either a 1d view or a lambda,
   // as long as vtheta_dp(ilev) returns vtheta_dp at pack ilev
   template<typename VThetaProvider>
-  KOKKOS_INLINE_FUNCTION
+  KOKKOS_INLINE_FUNCTION static
   void compute_phi_i (const KernelVariables& kv, const Real phis,
                       const VThetaProvider& vtheta_dp,
                       const ExecViewUnmanaged<const Scalar [NUM_LEV]  >& p,
-                      const ExecViewUnmanaged<      Scalar [NUM_LEV_P]>& phi_i) const
+                      const ExecViewUnmanaged<      Scalar [NUM_LEV_P]>& phi_i)
   {
     // Init phi on surface with phis
     phi_i(LAST_INT_PACK)[LAST_INT_PACK_END] = phis;
