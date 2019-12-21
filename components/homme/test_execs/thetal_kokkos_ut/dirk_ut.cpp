@@ -496,6 +496,65 @@ TEST_CASE ("dirk_pieces_testing") {
           REQUIRE(equal(gwh_im(k,pi)[si], gwh_if(k,i,j), 1e3*eps));
       }
   }
+
+  SECTION ("threshold") {
+    const int nlev = dfi::num_phys_lev, nvec = dfi::npack, ilim = nvec*dfi::packn;
+    const auto w = d1.m_work;
+    const auto
+      a = dfi::get_work_slot(w, 0, 0),
+      b = dfi::get_work_slot(w, 0, 1),
+      wa = dfi::get_work_slot(w, 0, 2),
+      wb = dfi::get_work_slot(w, 0, 3);
+    const Real threshold = 0.42;
+
+    const auto am = create_mirror_view(a);
+    const auto bm = create_mirror_view(b);
+    for (int k = 0; k < nlev; ++k) {
+      Real* const ap = &am(k,0)[0];
+      Real* const bp = &bm(k,0)[0];
+      for (int i = 0; i < ilim; ++i)
+        ap[i] = bp[i] = r.urrng(-2,0);
+      if (k == 1) ap[2] = bp[2] = threshold;
+      if (k == 2) ap[3] = bp[3] = threshold + 1e-10;
+    }
+    deep_copy(a, am);
+    deep_copy(b, bm);
+
+    const auto f1 = KOKKOS_LAMBDA(const dfi::MT& t) {
+      KernelVariables kv(t);
+      dfi::calc_whether_gt_and_set(kv, nlev, nvec, threshold, a, wa);
+    };
+    parallel_for(d1.m_policy, f1); fence();
+
+    const auto f2 = KOKKOS_LAMBDA(const dfi::MT& t) {
+      KernelVariables kv(t);
+      dfi::calc_whether_ge(kv, nlev, nvec, threshold, b, wb);
+    };
+    parallel_for(d1.m_policy, f2); fence();
+
+    deep_copy(am, a);
+    deep_copy(bm, b);
+    const auto wam = cmvdc(wa);
+    const auto wbm = cmvdc(wb);
+    Real* wp = &wam(0,0)[0];
+    REQUIRE(wp[3] == 1);
+    for (int i = 0; i < ilim; ++i) REQUIRE((i == 3 || wp[i] == 0));
+    wp = &wbm(0,0)[0];
+    REQUIRE(wp[2] == 1);
+    REQUIRE(wp[3] == 1);
+    for (int i = 0; i < ilim; ++i) REQUIRE((i == 2 || i == 3 || wp[i] == 0));
+    int thr_cnt = 0;
+    for (int k = 0; k < nlev; ++k) {
+      Real* const ap = &am(k,0)[0];
+      Real* const bp = &bm(k,0)[0];
+      if (k == 2) REQUIRE(ap[3] == threshold);
+      for (int i = 0; i < ilim; ++i) {
+        if (ap[i] >= threshold) ++thr_cnt;
+        if (bp[i] >= threshold) ++thr_cnt;
+      }
+    }
+    REQUIRE(thr_cnt == 4);
+  }
 }
 
 static void c2f (const Elements& e) {

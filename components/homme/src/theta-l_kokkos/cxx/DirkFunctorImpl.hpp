@@ -657,7 +657,7 @@ struct DirkFunctorImpl {
       for (int s = 0; s < packn; ++s)
         if (dphi(k,i)[s] > threshold) {
           dphi(k,i)[s] = threshold;
-          wrk(k,i)[s] = 1; // benign write race
+          wrk(0,i)[s] = 1; // benign write race
         }
     });
   }
@@ -678,7 +678,7 @@ struct DirkFunctorImpl {
     loop_ki(kv, nlev, nvec, [&] (int k, int i) {
       for (int s = 0; s < packn; ++s)
         if (dphi(k,i)[s] >= threshold)
-          wrk(k,i)[s] = 1; // benign write race
+          wrk(0,i)[s] = 1; // benign write race
     });
   }
 };
