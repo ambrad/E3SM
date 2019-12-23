@@ -36,6 +36,7 @@ extern "C" {
                              const Real* dphi, const Real* pnh);
   void compute_stage_value_dirk_f90(int nm1, Real alphadt_nm1, int n0, Real alphadt_n0,
                                     int np1, Real dt2);
+  void phi_from_eos_f90(const Real* phis, const Real* vtheta_dp, const Real* dp, Real* phi_i);
 } // extern "C"
 
 using FA3 = Kokkos::View<Real*[NP][NP], Kokkos::LayoutRight, Kokkos::HostSpace>;
@@ -213,7 +214,7 @@ void require_all_equal (const int nlev, const V& a, const V& b,
 }
 
 template <typename V>
-void c2f(const V& c, const FA3& f) {
+void c2f (const V& c, const FA3& f) {
   const auto cm = cmvdc(c);
   for (int i = 0; i < c.extent_int(0); ++i)
     for (int j = 0; j < c.extent_int(1); ++j) {
@@ -224,7 +225,19 @@ void c2f(const V& c, const FA3& f) {
 }
 
 template <typename V>
-void c2f(const V& c, const FA4& f) {
+void f2c (const FA3& f, const V& c) {
+  const auto cm = Kokkos::create_mirror_view(c);
+  for (int i = 0; i < c.extent_int(0); ++i)
+    for (int j = 0; j < c.extent_int(1); ++j) {
+      Real* const p = &cm(i,j,0)[0];
+      for (int k = 0; k < f.extent(0); ++k)
+        p[k] = f(k,i,j);
+    }
+  deep_copy(c, cm);
+}
+
+template <typename V>
+void c2f (const V& c, const FA4& f) {
   const auto cm = cmvdc(c);
   for (int d = 0; d < c.extent_int(0); ++d)
     for (int i = 0; i < c.extent_int(1); ++i)
@@ -655,7 +668,8 @@ TEST_CASE ("dirk_toplevel_testing") {
   using Kokkos::subview;
   using Kokkos::deep_copy;
 
-  const int nlev = NUM_PHYSICAL_LEV, np = NP, n0 = 1, np1 = 2, ne = 2;
+  const int np = NP, n0 = 1, np1 = 2, ne = 2;
+  const int nlev = dfi::num_phys_lev, nvec = dfi::npack, ilim = nvec*dfi::packn;
   const auto eps = std::numeric_limits<Real>::epsilon();
   Real dt2 = 0.05; // Until I do the w-formulation conversion, keep the problems easy.
 
@@ -665,6 +679,57 @@ TEST_CASE ("dirk_toplevel_testing") {
   auto& e = s.e;
   const auto nelemd = s.nelemd;
 
+  DirkFunctorImpl d(nelemd);
+  FunctorsBuffersManager fbm;
+  init(d, fbm);
+
+  { // Test initial guess function.
+    init_elems(ne, s.nelemd, r, hvcoord, e);
+    { // C++ version
+      const auto e_phis = e.m_geometry.m_phis;
+      const auto e_vtheta_dp = e.m_state.m_vtheta_dp;
+      const auto e_dp3d = e.m_state.m_dp3d;
+      const auto e_phinh_i = e.m_state.m_phinh_i;
+      const auto f = KOKKOS_LAMBDA(const dfi::MT& t) {
+        KernelVariables kv(t);
+        const auto ie = kv.ie;
+        const auto a = Kokkos::ALL();
+        EquationOfState::compute_phi_i(
+          kv, subview(e_phis,ie,a,a), subview(e_vtheta_dp,ie,np1,a,a,a),
+          subview(e_dp3d,ie,np1,a,a,a), subview(e_phinh_i,ie,np1,a,a,a));
+      };
+      parallel_for(d.m_policy, f); fence();
+    }
+    const auto phic = cmvdc(e.m_state.m_phinh_i);
+    { // F90 version
+      const auto e_phis = cmvdc(e.m_geometry.m_phis);
+      const auto e_vtheta_dp = cmvdc(e.m_state.m_vtheta_dp);
+      const auto e_dp3d = cmvdc(e.m_state.m_dp3d);
+      const auto e_phinh_i = cmvdc(e.m_state.m_phinh_i);
+      const auto a = Kokkos::ALL();
+      for (int ie = 0; ie < nelemd; ++ie) {
+        const auto phis = subview(e_phis,ie,a,a);
+        const auto vtheta_dp = subview(e_vtheta_dp,ie,np1,a,a,a);
+        const auto dp3d = subview(e_dp3d,ie,np1,a,a,a);
+        const auto phi_i = subview(e_phinh_i,ie,np1,a,a,a);
+        FA3 vtheta_dpf("vtheta_dpf", nlev), dp3df("dp3df", nlev), phif("phif", nlev+1);
+        c2f(vtheta_dp, vtheta_dpf); c2f(dp3d, dp3df); c2f(phi_i, phif);
+        phi_from_eos_f90(phis.data(), vtheta_dpf.data(), dp3df.data(), phif.data());
+        f2c(phif, phi_i);
+      }
+      deep_copy(e.m_state.m_phinh_i, e_phinh_i);
+    }
+    const auto phif = cmvdc(e.m_state.m_phinh_i);
+    for (int ie = 0; ie < nelemd; ++ie)
+      for (int i = 0; i < np; ++i)
+        for (int j = 0; j < np; ++j) {
+          Real* pf = &phif(ie,np1,i,j,0)[0];
+          Real* pc = &phic(ie,np1,i,j,0)[0];
+          for (int k = 0; k < nlev; ++k)
+            REQUIRE(equal(pf[k], pc[k], 1e6*eps));
+        }
+  }
+
   for (Real alphadtwt_nm1 : {0.0, 0.3}) {
     const int nm1 = alphadtwt_nm1 == 0.0 ? -1 : 0;
     for (Real alphadtwt_n0 : {0.0, 0.7}) {
@@ -672,10 +737,6 @@ TEST_CASE ("dirk_toplevel_testing") {
         w_i1("w_i1", nelemd), w_i2("w_i2", nelemd);
       decltype(ElementsState::m_phinh_i) phinh_i("phinh_i", nelemd),
         phinh_i1("phinh_i1", nelemd), phinh_i2("phinh_i2", nelemd);
-
-      DirkFunctorImpl d(nelemd);
-      FunctorsBuffersManager fbm;
-      init(d, fbm);
 
       bool good = false;
       for (int trial = 0; trial < 100 /* don't enter an inf loop */; ++trial) {
