@@ -685,7 +685,7 @@ TEST_CASE ("dirk_toplevel_testing") {
 
   { // Test initial guess function.
     init_elems(ne, s.nelemd, r, hvcoord, e);
-    { // C++ version with DIRK-newton-loop  policy.
+    { // C++ version with DIRK-newton-loop policy.
       const auto e_phis = e.m_geometry.m_phis;
       const auto e_vtheta_dp = e.m_state.m_vtheta_dp;
       const auto e_dp3d = e.m_state.m_dp3d;
@@ -715,7 +715,7 @@ TEST_CASE ("dirk_toplevel_testing") {
     { // C++ version with separate dispatch and Hommexx patterns.
       d.run_initial_guess(np1, e, hvcoord);
     }
-    const auto phic2_m = cmvdc(e.m_state.m_phinh_i);
+    const auto phic2_m = cmvdc(e.m_derived.m_divdp_proj);
     decltype(phic2_m) phic2("phic2", phic2_m.extent_int(0));
     deep_copy(phic2, phic2_m);
     { // F90 version.
@@ -742,7 +742,7 @@ TEST_CASE ("dirk_toplevel_testing") {
         for (int j = 0; j < np; ++j) {
           Real* pf = &phif(ie,np1,i,j,0)[0];
           Real* pc1 = &phic1(ie,np1,i,j,0)[0];
-          Real* pc2 = &phic2(ie,np1,i,j,0)[0];
+          Real* pc2 = &phic2(ie,i,j,0)[0];
           for (int k = 0; k < nlev; ++k) REQUIRE(equal(pf[k], pc1[k], 1e6*eps));
           for (int k = 0; k < nlev; ++k) REQUIRE(equal(pf[k], pc2[k], 1e6*eps));
         }

@@ -31,7 +31,7 @@ struct DirkFunctorImpl {
   enum : int { num_lev_aligned = max_num_lev_pack*packn };
   enum : int { num_phys_lev = NUM_PHYSICAL_LEV };
   enum : int { num_work = 12 };
-  enum : bool { calc_initial_guess_in_newton_kernel = true };
+  enum : bool { calc_initial_guess_in_newton_kernel = false };
 
   static_assert(num_lev_aligned >= 3,
                 "We use wrk(0:2,:) and so need num_lev_aligned >= 3");
@@ -132,8 +132,10 @@ struct DirkFunctorImpl {
   void run (int nm1, Real alphadt_nm1, int n0, Real alphadt_n0, int np1, Real dt2,
             const Elements& e, const HybridVCoord& hvcoord,
             const bool bfb_solver = false) {
-    if ( ! calc_initial_guess_in_newton_kernel)
+    if ( ! calc_initial_guess_in_newton_kernel) {
       run_initial_guess(np1, e, hvcoord);
+      Kokkos::fence();
+    }
     run_newton(nm1, alphadt_nm1, n0, alphadt_n0, np1, dt2, e, hvcoord, bfb_solver);
   }
 
@@ -144,12 +146,11 @@ struct DirkFunctorImpl {
   void run_initial_guess (int np1, const Elements& e, const HybridVCoord& hvcoord) {
     using Kokkos::subview;
     using Kokkos::parallel_for;
-    const auto a = Kokkos::ALL();
 
     const auto e_phis = e.m_geometry.m_phis;
     const auto e_vtheta_dp = e.m_state.m_vtheta_dp;
-    const auto e_phinh_i = e.m_state.m_phinh_i;
     const auto e_dp3d = e.m_state.m_dp3d;
+    const auto e_phinh_i = e.m_derived.m_divdp_proj;
 
     ElementOps elem_ops;
     elem_ops.init(hvcoord);
@@ -164,18 +165,25 @@ struct DirkFunctorImpl {
         reinterpret_cast<Scalar*>(get_work_slot(work, kv.team_idx, 0).data()));
       const ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV]> p(
         reinterpret_cast<Scalar*>(get_work_slot(work, kv.team_idx, 1).data()));
+      const ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV_P]> phi_i(
+        reinterpret_cast<Scalar*>(get_work_slot(work, kv.team_idx, 2).data()));
 
       const auto f = [&] (const int idx) {
         const int igp = idx / NP, jgp = idx % NP;
 
         const auto p_i_c = Homme::subview(p_i,igp,jgp);
         const auto p_c = Homme::subview(p,igp,jgp);
+        const auto phi_i_c = Homme::subview(phi_i,igp,jgp);
 
         elem_ops.compute_hydrostatic_p(kv, Homme::subview(e_dp3d,ie,np1,igp,jgp), p_i_c, p_c);
         EquationOfState::compute_phi_i(kv, e_phis(ie,igp,jgp),
                                        Homme::subview(e_vtheta_dp,ie,np1,igp,jgp),
-                                       p_c,
-                                       Homme::subview(e_phinh_i,ie,np1,igp,jgp));
+                                       p_c, phi_i_c);
+
+        // Copy phi_i for use in run_newton. Don't need nlevp, since that's
+        // always phis.
+        const auto g = [&] (const int k) { e_phinh_i(ie,igp,jgp,k) = phi_i_c(k); };
+        Kokkos::parallel_for(Kokkos::ThreadVectorRange(kv.team, NUM_LEV), g);
       };
       parallel_for(Kokkos::TeamThreadRange(kv.team, NP*NP), f);
     };
@@ -202,6 +210,7 @@ struct DirkFunctorImpl {
     const auto e_v = e.m_state.m_v;
     const auto e_phis = e.m_geometry.m_phis;
     const auto e_gradphis = e.m_geometry.m_gradphis;
+    const auto e_initial_guess = e.m_derived.m_divdp_proj;
     const auto hybi = hvcoord.hybrid_bi;
 
     const auto toplevel = KOKKOS_LAMBDA (const MT& team) {
@@ -233,11 +242,12 @@ struct DirkFunctorImpl {
       LinearSystemSlot x = subview(xfull, Kokkos::pair<int,int>(0,nlev), a);
       assert(xfull(nlev,0)[0] == 0);
 
-      const auto transpose4 = [&] (const int nt) {
-        transpose(kv, nlev+1, subview(e_phinh_i  ,ie,nt,a,a,a), phi_np1  );
+      const auto transpose4 = [&] (const int nt, const bool transpose_phi_np1 = true) {
         transpose(kv, nlev+1, subview(e_w_i      ,ie,nt,a,a,a), w_np1    );
         transpose(kv, nlev,   subview(e_vtheta_dp,ie,nt,a,a,a), vtheta_dp);
-        transpose(kv, nlev,   subview(e_dp3d     ,ie,nt,a,a,a), dp3d     );        
+        transpose(kv, nlev,   subview(e_dp3d     ,ie,nt,a,a,a), dp3d     );
+        if ( ! transpose_phi_np1) return;
+        transpose(kv, nlev+1, subview(e_phinh_i  ,ie,nt,a,a,a), phi_np1  );
       };
 
       const auto accum_n0 = [&] (const Real dt3, const int nt) {
@@ -278,18 +288,26 @@ struct DirkFunctorImpl {
         kv.team_barrier();
       }
       // Always computed.
-      transpose4(np1);
+      transpose4(np1, false);
       calc_gwphis(kv, subview(e_dp3d,ie,np1,a,a,a), subview(e_v,ie,np1,a,a,a,a),
                   subview(e_gradphis,ie,a,a,a), hybi, gwh_i);
       kv.team_barrier();
       loop_ki(kv, nlev, nvec, [&] (int k, int i) { phi_n0(k,i) -= dt2*gwh_i(k,i); });
 
+      // Initial guess for phi_np1, w_np1.
       if (calc_initial_guess_in_newton_kernel) {
-        // Initial guess for phi_i: use hydrostatic phi.
+        // Use hydrostatic phi.
         phi_from_eos(kv, nlev, nvec, hvcoord, subview(e_phis,ie,a,a),
                      vtheta_dp, dp3d, phi_np1);
-        kv.team_barrier();
+      } else {
+        // Copy initial guess from where run_initial_guess stashed it.
+        transpose(kv, nlev, subview(e_initial_guess,ie,a,a,a), phi_np1);
+        const auto phis = subview(e_phis,ie,a,a);
+        loop_ki(kv, 1, nvec, [&] (int, int i) {
+          set_phis(i, phis, phi_np1);
+        });
       }
+      kv.team_barrier();
       loop_ki(kv, nlev, nvec, [&] (int k, int i) {
         w_np1(k,i) = (phi_np1(k,i) - phi_n0(k,i))/(dt2*grav);
       });
@@ -568,14 +586,20 @@ struct DirkFunctorImpl {
     });
     // Scan to compute phi_i.
     loop_ki(kv, 1, nvec, [&] (int, int i) {
-      for (int s = 0; s < packn; ++s) {
-        const int idx = i*packn + s, gi = idx / NP, gj = idx % NP;
-        if (scaln % packn != 0 && idx >= scaln) break;        
-        wrk(nlev,i)[s] = phis(gi,gj);
-      }
+      set_phis(i, phis, wrk);
       for (int k = nlev-1; k >= 0; --k)
         wrk(k,i) = wrk(k+1,i) + wrk(k,i); // phi_i below + dphi
     });
+  }
+
+  template <typename Rphis, typename W>
+  KOKKOS_INLINE_FUNCTION static void
+  set_phis (const int i, const Rphis& phis, const W& phi_i) {
+    for (int s = 0; s < packn; ++s) {
+      const int idx = i*packn + s, gi = idx / NP, gj = idx % NP;
+      if (scaln % packn != 0 && idx >= scaln) break;        
+      phi_i(num_phys_lev,i)[s] = phis(gi,gj);
+    }    
   }
 
   KOKKOS_INLINE_FUNCTION
