@@ -669,7 +669,7 @@ TEST_CASE ("dirk_toplevel_testing") {
   using Kokkos::deep_copy;
 
   const int np = NP, n0 = 1, np1 = 2, ne = 2;
-  const int nlev = dfi::num_phys_lev, nvec = dfi::npack, ilim = nvec*dfi::packn;
+  const int nlev = dfi::num_phys_lev, nvec = dfi::npack;
   const auto eps = std::numeric_limits<Real>::epsilon();
   Real dt2 = 0.05; // Until I do the w-formulation conversion, keep the problems easy.
 
@@ -690,17 +690,28 @@ TEST_CASE ("dirk_toplevel_testing") {
       const auto e_vtheta_dp = e.m_state.m_vtheta_dp;
       const auto e_dp3d = e.m_state.m_dp3d;
       const auto e_phinh_i = e.m_state.m_phinh_i;
+      const auto w = d.m_work;
       const auto f = KOKKOS_LAMBDA(const dfi::MT& t) {
         KernelVariables kv(t);
         const auto ie = kv.ie;
         const auto a = Kokkos::ALL();
-        EquationOfState::compute_phi_i(
-          kv, subview(e_phis,ie,a,a), subview(e_vtheta_dp,ie,np1,a,a,a),
-          subview(e_dp3d,ie,np1,a,a,a), subview(e_phinh_i,ie,np1,a,a,a));
+        const auto
+        vtheta_dp = dfi::get_work_slot(w, kv.team_idx, 0),
+        dp3d = dfi::get_work_slot(w, kv.team_idx, 1),
+        phi_np1 = dfi::get_work_slot(w, kv.team_idx, 2);
+        dfi::transpose(kv, nlev, subview(e_vtheta_dp,ie,np1,a,a,a), vtheta_dp);
+        dfi::transpose(kv, nlev, subview(e_dp3d,ie,np1,a,a,a), dp3d);
+        kv.team_barrier();
+        dfi::calc_initial_guess(kv, nlev, nvec, subview(e_phis,ie,a,a),
+                                vtheta_dp, dp3d, phi_np1);
+        kv.team_barrier();
+        dfi::transpose(kv, nlev, phi_np1, subview(e_phinh_i,ie,np1,a,a,a));
       };
       parallel_for(d.m_policy, f); fence();
     }
-    const auto phic = cmvdc(e.m_state.m_phinh_i);
+    const auto phic_m = cmvdc(e.m_state.m_phinh_i);
+    decltype(phic_m) phic("phic", phic_m.extent_int(0));
+    deep_copy(phic, phic_m);
     { // F90 version
       const auto e_phis = cmvdc(e.m_geometry.m_phis);
       const auto e_vtheta_dp = cmvdc(e.m_state.m_vtheta_dp);

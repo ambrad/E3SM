@@ -228,16 +228,11 @@ struct DirkFunctorImpl {
       kv.team_barrier();
       loop_ki(kv, nlev, nvec, [&] (int k, int i) { phi_n0(k,i) -= dt2*gwh_i(k,i); });
 
-      { // Initial guess: use hydrostatic phi.
-        const auto phinh_i = subview(e_phinh_i,ie,np1,a,a,a);
-        EquationOfState::compute_phi_i(
-          kv, subview(e_phis,ie,a,a), subview(e_vtheta_dp,ie,np1,a,a,a),
-          subview(e_dp3d,ie,np1,a,a,a), phinh_i);
-        transpose(kv, nlev+1, phinh_i, phi_np1);
-        loop_ki(kv, nlev, nvec, [&] (int k, int i) {
-          w_np1(k,i) = (phi_np1(k,i) - phi_n0(k,i))/(dt2*grav);
-        });
-      }
+      calc_initial_guess(kv, nlev, nvec, subview(e_phis,ie,a,a), vtheta_dp, dp3d, phi_np1);
+      kv.team_barrier();
+      loop_ki(kv, nlev, nvec, [&] (int k, int i) {
+        w_np1(k,i) = (phi_np1(k,i) - phi_n0(k,i))/(dt2*grav);
+      });
 
       loop_ki(kv, nlev, nvec, [&] (int k, int i) {
         dphi_n0(k,i) = phi_n0(k+1,i) - phi_n0(k,i);
@@ -484,6 +479,15 @@ struct DirkFunctorImpl {
       parallel_for(pv, kr);
     };
     parallel_for(Kokkos::TeamThreadRange(kv.team, nlev-1), f3);
+  }
+
+  template <typename Rphis, typename R, typename W>
+  KOKKOS_INLINE_FUNCTION
+  static void calc_initial_guess (const KernelVariables& kv, const int nlev, const int nvec,
+                                  const Rphis& phis, const R& vtheta_dp, const R& dp3d,
+                                  const W& phi_np1) {
+    // Initial guess: use hydrostatic phi.    
+    
   }
 
   KOKKOS_INLINE_FUNCTION
