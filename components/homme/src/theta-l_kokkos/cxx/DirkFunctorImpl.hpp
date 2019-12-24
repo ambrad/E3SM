@@ -75,7 +75,7 @@ struct DirkFunctorImpl {
 
   Work m_work;
   LinearSystem m_ls;
-  TeamPolicy m_policy;
+  TeamPolicy m_policy, m_ig_policy;
   int nteam;
 
   KOKKOS_INLINE_FUNCTION
@@ -84,7 +84,7 @@ struct DirkFunctorImpl {
   }
 
   DirkFunctorImpl (const int nelem)
-    : m_policy(1,1,1) // throwaway settings
+    : m_policy(1,1,1), m_ig_policy(1,1,1) // throwaway settings
   {
     init(nelem);
   }
@@ -112,6 +112,7 @@ struct DirkFunctorImpl {
       m_policy = TeamPolicy(nelem, p.first, 1);
     }
     nteam = std::min(nelem, get_num_concurrent_teams(m_policy));
+    m_ig_policy = Homme::get_default_team_policy<ExecSpace>(nelem);
   }
 
   int requested_buffer_size () const {
@@ -129,6 +130,16 @@ struct DirkFunctorImpl {
   void run (int nm1, Real alphadt_nm1, int n0, Real alphadt_n0, int np1, Real dt2,
             const Elements& e, const HybridVCoord& hvcoord,
             const bool bfb_solver = false) {
+    run_initial_guess();
+    run_newton(nm1, alphadt_nm1, n0, alphadt_n0, np1, dt2, e, hvcoord, bfb_solver);
+  }
+
+  void run_initial_guess () {
+    
+  }
+
+  void run_newton (int nm1, Real alphadt_nm1, int n0, Real alphadt_n0, int np1, Real dt2,
+                   const Elements& e, const HybridVCoord& hvcoord, const bool bfb_solver) {
     using Kokkos::subview;
     using Kokkos::parallel_for;
     const auto a = Kokkos::ALL();
@@ -483,6 +494,7 @@ struct DirkFunctorImpl {
     parallel_for(Kokkos::TeamThreadRange(kv.team, nlev-1), f3);
   }
 
+  // Suboptimal impl that uses the policy native to the DIRK functor.
   template <typename Rphis, typename R, typename W>
   KOKKOS_INLINE_FUNCTION static void
   phi_from_eos (const KernelVariables& kv, const int nlev, const int nvec,

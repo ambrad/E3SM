@@ -685,7 +685,7 @@ TEST_CASE ("dirk_toplevel_testing") {
 
   { // Test initial guess function.
     init_elems(ne, s.nelemd, r, hvcoord, e);
-    { // C++ version
+    { // C++ version with DIRK-native policy.
       const auto e_phis = e.m_geometry.m_phis;
       const auto e_vtheta_dp = e.m_state.m_vtheta_dp;
       const auto e_dp3d = e.m_state.m_dp3d;
@@ -709,10 +709,16 @@ TEST_CASE ("dirk_toplevel_testing") {
       };
       parallel_for(d.m_policy, f); fence();
     }
-    const auto phic_m = cmvdc(e.m_state.m_phinh_i);
-    decltype(phic_m) phic("phic", phic_m.extent_int(0));
-    deep_copy(phic, phic_m);
-    { // F90 version
+    const auto phic1_m = cmvdc(e.m_state.m_phinh_i);
+    decltype(phic1_m) phic1("phic1", phic1_m.extent_int(0));
+    deep_copy(phic1, phic1_m);
+    { // C++ version with separate dispatch.
+#pragma message "extra dispatch to compute phi_np1 optimally"
+    }
+    const auto phic2_m = cmvdc(e.m_state.m_phinh_i);
+    decltype(phic2_m) phic2("phic2", phic2_m.extent_int(0));
+    deep_copy(phic2, phic2_m);
+    { // F90 version.
       const auto e_phis = cmvdc(e.m_geometry.m_phis);
       const auto e_vtheta_dp = cmvdc(e.m_state.m_vtheta_dp);
       const auto e_dp3d = cmvdc(e.m_state.m_dp3d);
@@ -735,9 +741,10 @@ TEST_CASE ("dirk_toplevel_testing") {
       for (int i = 0; i < np; ++i)
         for (int j = 0; j < np; ++j) {
           Real* pf = &phif(ie,np1,i,j,0)[0];
-          Real* pc = &phic(ie,np1,i,j,0)[0];
-          for (int k = 0; k < nlev; ++k)
-            REQUIRE(equal(pf[k], pc[k], 1e6*eps));
+          Real* pc1 = &phic1(ie,np1,i,j,0)[0];
+          Real* pc2 = &phic2(ie,np1,i,j,0)[0];
+          for (int k = 0; k < nlev; ++k) REQUIRE(equal(pf[k], pc1[k], 1e6*eps));
+          //for (int k = 0; k < nlev; ++k) REQUIRE(equal(pf[k], pc2[k], 1e6*eps));
         }
   }
 
