@@ -228,7 +228,9 @@ struct DirkFunctorImpl {
       kv.team_barrier();
       loop_ki(kv, nlev, nvec, [&] (int k, int i) { phi_n0(k,i) -= dt2*gwh_i(k,i); });
 
-      calc_initial_guess(kv, nlev, nvec, subview(e_phis,ie,a,a), vtheta_dp, dp3d, phi_np1);
+      // Initial guess for phi_i: use hydrostatic phi.
+      calc_phi_from_eos(kv, nlev, nvec, hvcoord, subview(e_phis,ie,a,a),
+                        vtheta_dp, dp3d, phi_np1);
       kv.team_barrier();
       loop_ki(kv, nlev, nvec, [&] (int k, int i) {
         w_np1(k,i) = (phi_np1(k,i) - phi_n0(k,i))/(dt2*grav);
@@ -482,12 +484,36 @@ struct DirkFunctorImpl {
   }
 
   template <typename Rphis, typename R, typename W>
-  KOKKOS_INLINE_FUNCTION
-  static void calc_initial_guess (const KernelVariables& kv, const int nlev, const int nvec,
-                                  const Rphis& phis, const R& vtheta_dp, const R& dp3d,
-                                  const W& phi_np1) {
-    // Initial guess: use hydrostatic phi.    
-    
+  KOKKOS_INLINE_FUNCTION static void
+  calc_phi_from_eos (
+    const KernelVariables& kv, const int nlev, const int nvec, const HybridVCoord& hvcoord,
+    const Rphis& phis, const R& vtheta_dp, const R& dp,
+    // phi_i on output
+    const W& wrk)
+  {
+    // Scan to compute pressure.
+    loop_ki(kv, 1, nvec, [&] (int, int i) {
+      wrk(0,i) = hvcoord.hybrid_ai0*hvcoord.ps0;
+      for (int k = 0; k < nlev; ++k) {
+        wrk(k+1,i) = wrk(k,i) + dp(k,i);      // p_i at interface k+1
+        wrk(k,i) = (wrk(k+1,i) + wrk(k,i))/2; // p_m at midpoint  k
+      }
+    });
+    kv.team_barrier();
+    // Do most of the flops.
+    loop_ki(kv, nlev, nvec, [&] (int k, int i) {
+      wrk(k,i) = EquationOfState::compute_dphi(vtheta_dp(k,i), wrk(k,i)); // dphi
+    });
+    // Scan to compute phi_i.
+    loop_ki(kv, 1, nvec, [&] (int, int i) {
+      for (int s = 0; s < packn; ++s) {
+        const int idx = i*packn + s, gi = idx / NP, gj = idx % NP;
+        if (scaln % packn != 0 && idx >= scaln) break;        
+        wrk(nlev+1,i)[s] = phis(gi,gj);
+      }
+      for (int k = nlev-1; k >= 0; --k)
+        wrk(k,i) = wrk(k+1,i) + wrk(k,i); // phi_i below + dphi
+    });
   }
 
   KOKKOS_INLINE_FUNCTION
