@@ -14,6 +14,7 @@
 #include "HybridVCoord.hpp"
 #include "KernelVariables.hpp"
 #include "PhysicalConstants.hpp"
+#include "ElementOps.hpp"
 #include "profiling.hpp"
 #include "ErrorDefs.hpp"
 #include "utilities/scream_tridiag.hpp"
@@ -30,6 +31,7 @@ struct DirkFunctorImpl {
   enum : int { num_lev_aligned = max_num_lev_pack*packn };
   enum : int { num_phys_lev = NUM_PHYSICAL_LEV };
   enum : int { num_work = 12 };
+  enum : bool { calc_initial_guess_in_newton_kernel = true };
 
   static_assert(num_lev_aligned >= 3,
                 "We use wrk(0:2,:) and so need num_lev_aligned >= 3");
@@ -130,12 +132,54 @@ struct DirkFunctorImpl {
   void run (int nm1, Real alphadt_nm1, int n0, Real alphadt_n0, int np1, Real dt2,
             const Elements& e, const HybridVCoord& hvcoord,
             const bool bfb_solver = false) {
-    run_initial_guess();
+    if ( ! calc_initial_guess_in_newton_kernel)
+      run_initial_guess(np1, e, hvcoord);
     run_newton(nm1, alphadt_nm1, n0, alphadt_n0, np1, dt2, e, hvcoord, bfb_solver);
   }
 
-  void run_initial_guess () {
-    
+  // Optimal impl of phi_from_eos for the initial guess. See comments for the
+  // function phi_from_eos, below, for discussion. This kernel uses standard
+  // Hommexx layout and parallelization approaches to compute the scans
+  // optimally.
+  void run_initial_guess (int np1, const Elements& e, const HybridVCoord& hvcoord) {
+    using Kokkos::subview;
+    using Kokkos::parallel_for;
+    const auto a = Kokkos::ALL();
+
+    const auto e_phis = e.m_geometry.m_phis;
+    const auto e_vtheta_dp = e.m_state.m_vtheta_dp;
+    const auto e_phinh_i = e.m_state.m_phinh_i;
+    const auto e_dp3d = e.m_state.m_dp3d;
+
+    ElementOps elem_ops;
+    elem_ops.init(hvcoord);
+
+    const auto work = m_work;
+
+    const auto toplevel = KOKKOS_LAMBDA (const MT& team) {
+      KernelVariables kv(team);
+      const auto ie = kv.ie;
+
+      const ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV_P]> p_i(
+        reinterpret_cast<Scalar*>(get_work_slot(work, kv.team_idx, 0).data()));
+      const ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV]> p(
+        reinterpret_cast<Scalar*>(get_work_slot(work, kv.team_idx, 1).data()));
+
+      const auto f = [&] (const int idx) {
+        const int igp = idx / NP, jgp = idx % NP;
+
+        const auto p_i_c = Homme::subview(p_i,igp,jgp);
+        const auto p_c = Homme::subview(p,igp,jgp);
+
+        elem_ops.compute_hydrostatic_p(kv, Homme::subview(e_dp3d,ie,np1,igp,jgp), p_i_c, p_c);
+        EquationOfState::compute_phi_i(kv, e_phis(ie,igp,jgp),
+                                       Homme::subview(e_vtheta_dp,ie,np1,igp,jgp),
+                                       p_c,
+                                       Homme::subview(e_phinh_i,ie,np1,igp,jgp));
+      };
+      parallel_for(Kokkos::TeamThreadRange(kv.team, NP*NP), f);
+    };
+    Kokkos::parallel_for(m_ig_policy, toplevel);
   }
 
   void run_newton (int nm1, Real alphadt_nm1, int n0, Real alphadt_n0, int np1, Real dt2,
@@ -197,10 +241,11 @@ struct DirkFunctorImpl {
       };
 
       const auto accum_n0 = [&] (const Real dt3, const int nt) {
-        // This transpose is inefficient, but it lets us use the same
-        // pnh_and_exner_from_eos as we use elsewhere. This function
-        // is called only in ~1 out of 5 DIRK stage calls, and only
-        // outside of the Newton iteration.
+        // Computing these transposes is inefficient, but doing so lets us use
+        // the same pnh_and_exner_from_eos as we use elsewhere. This function is
+        // called only in ~1 out of 5 DIRK stage calls, and only outside of the
+        // Newton iteration. (Also, tbc, transpose and pnh_and_exner_from_eos
+        // are parallel efficient.)
         transpose4(nt);
         calc_gwphis(kv, subview(e_dp3d,ie,nt,a,a,a), subview(e_v,ie,nt,a,a,a,a),
                     subview(e_gradphis,ie,a,a,a), hybi, gwh_i);
@@ -239,10 +284,12 @@ struct DirkFunctorImpl {
       kv.team_barrier();
       loop_ki(kv, nlev, nvec, [&] (int k, int i) { phi_n0(k,i) -= dt2*gwh_i(k,i); });
 
-      // Initial guess for phi_i: use hydrostatic phi.
-      phi_from_eos(kv, nlev, nvec, hvcoord, subview(e_phis,ie,a,a),
-                   vtheta_dp, dp3d, phi_np1);
-      kv.team_barrier();
+      if (calc_initial_guess_in_newton_kernel) {
+        // Initial guess for phi_i: use hydrostatic phi.
+        phi_from_eos(kv, nlev, nvec, hvcoord, subview(e_phis,ie,a,a),
+                     vtheta_dp, dp3d, phi_np1);
+        kv.team_barrier();
+      }
       loop_ki(kv, nlev, nvec, [&] (int k, int i) {
         w_np1(k,i) = (phi_np1(k,i) - phi_n0(k,i))/(dt2*grav);
       });
@@ -494,7 +541,11 @@ struct DirkFunctorImpl {
     parallel_for(Kokkos::TeamThreadRange(kv.team, nlev-1), f3);
   }
 
-  // Suboptimal impl that uses the policy native to the DIRK functor.
+  // Suboptimal impl of the initial guess that uses the policy native to the
+  // DIRK Newton iteration. It is suboptimal because there are two scans, and
+  // both the memory layout and the parallelization are suboptimal for these.
+  // run_initial_guess, above, runs a separate kernel with optimal layout and
+  // parallelization.
   template <typename Rphis, typename R, typename W>
   KOKKOS_INLINE_FUNCTION static void
   phi_from_eos (const KernelVariables& kv, const int nlev, const int nvec,
