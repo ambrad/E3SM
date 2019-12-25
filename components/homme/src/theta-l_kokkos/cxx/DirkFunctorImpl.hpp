@@ -161,12 +161,11 @@ struct DirkFunctorImpl {
       KernelVariables kv(team);
       const auto ie = kv.ie;
 
-      const ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV_P]> p_i(
-        reinterpret_cast<Scalar*>(get_work_slot(work, kv.team_idx, 0).data()));
-      const ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV]> p(
-        reinterpret_cast<Scalar*>(get_work_slot(work, kv.team_idx, 1).data()));
-      const ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV_P]> phi_i(
-        reinterpret_cast<Scalar*>(get_work_slot(work, kv.team_idx, 2).data()));
+      const ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV_P]>
+        p_i  (reinterpret_cast<Scalar*>(get_work_slot(work, kv.team_idx, 0).data())),
+        phi_i(reinterpret_cast<Scalar*>(get_work_slot(work, kv.team_idx, 2).data()));
+      const ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV  ]>
+        p    (reinterpret_cast<Scalar*>(get_work_slot(work, kv.team_idx, 1).data()));
 
       const auto f = [&] (const int idx) {
         const int igp = idx / NP, jgp = idx % NP;
@@ -318,38 +317,42 @@ struct DirkFunctorImpl {
       loop_ki(kv, nlev, nvec, [&] (int k, int i) { dphi_n0(k,i) = phi_n0(k+1,i) - phi_n0(k,i); });
 
       for (int it = 0; it <= maxiter; ++it) { // Newton iteration
-        kv.team_barrier();
-        loop_ki(kv, nlev, nvec, [&] (int k, int i) {
-          dphi(k,i) = phi_np1(k+1,i) - phi_np1(k,i);
-        });
-        kv.team_barrier();
         pnh_and_exner_from_eos(kv, hvcoord, vtheta_dp, dp3d, dphi, pnh, wrk, dpnh_dp_i);
         kv.team_barrier();
         loop_ki(kv, nlev, nvec, [&] (const int k, const int i) {
-          w_np1(k,i) = w_n0(k,i) - grav*dt2*(1 - dpnh_dp_i(k,i));
+          x(k,i) = -(w_np1(k,i) - (w_n0(k,i) + grav*dt2*(dpnh_dp_i(k,i) - 1))); // -residual
         });
 
         if (it > 0 &&
             (it == maxiter ||
              exit_on_step(kv, nlev, nvec, deltatol, x, phi_n0)))
-          break; // from Newton iteration
-
-        kv.team_barrier();
-        loop_ki(kv, nlev, nvec, [&] (const int k, const int i) {
-          x(k,i) = -((phi_np1(k,i) - phi_n0(k,i)) - dt2*grav*w_np1(k,i)); // -residual
-        });
+          ;//break; // from Newton iteration
 
         calc_jacobian(kv, dt2, dp3d, dphi, pnh, dl, d, du);
         kv.team_barrier();
         if (bfb_solver) solvebfb(kv, dl, d, du, x); else solve(kv, dl, d, du, x);
         kv.team_barrier();
 
-        calc_step_size(kv, nlev, nvec, xfull, dphi, wrk);
+        loop_ki(kv, 1, nvec, [&] (int k, int i) { wrk(0,i) = 1; });
 
-        loop_ki(kv, nlev, nvec, [&] (int k, int i) {
-          phi_np1(k,i) += (1 - wrk(0,i))*x(k,i);
-        });
+        for (int nsafe = 0; nsafe < 2; ++nsafe) {
+          loop_ki(kv, nlev-1, nvec, [&] (int k, int i) {
+            dphi(k,i) = dphi_n0(k,i) + dt2*grav*(         (w_np1(k+1,i) - w_np1(k,i)) +
+                                                 wrk(0,i)*(    x(k+1,i) -     x(k,i)));
+          });
+          loop_ki(kv, 1, nvec, [&] (int, int i) {
+            const auto k = nlev-1;
+            dphi(k,i) = dphi_n0(k,i) - dt2*grav*(w_np1(k,i) + wrk(0,i)*x(k,i));
+          });
+          break; //todo
+        }
+
+        loop_ki(kv, nlev, nvec, [&] (int k, int i) { w_np1(k,i) += wrk(0,i)*x(k,i); });
       } // Newton iteration
+      kv.team_barrier();
+
+      // Update phi_np1.
+      loop_ki(kv, nlev, nvec, [&] (int k, int i) { phi_np1(k,i) = phi_n0(k,i) + dt2*grav*w_np1(k,i); });
 
       kv.team_barrier();
       transpose(kv, nlev+1, phi_np1, subview(e_phinh_i,ie,np1,a,a,a));
@@ -719,7 +722,7 @@ struct DirkFunctorImpl {
                               // On output, alpha is in wrk(0,:)
                               const WorkSlot& wrk) {
     loop_ki(kv, 1, nvec, [&] (int k, int i) {
-      wrk(0,i) = 0;
+      wrk(0,i) = 1;
     });
     loop_ki(kv, nlev, nvec, [&] (int k, int i) {
       dphi(k,i) += xfull(k+1,i) - xfull(k,i);
