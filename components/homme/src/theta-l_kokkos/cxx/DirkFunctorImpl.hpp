@@ -276,6 +276,8 @@ struct DirkFunctorImpl {
       // Compute w_n0, phi_n0.
       transpose(kv, nlev+1, subview(e_phinh_i,ie,np1,a,a,a), phi_n0);
       transpose(kv, nlev+1, subview(e_w_i    ,ie,np1,a,a,a), w_n0  );
+      // wmax is computed before optional updates to w_n0.
+      const auto wmax = calc_wmax(kv, nlev, nvec, w_n0);
       // Computed only in some cases.
       if (alphadt_n0 != 0) {
         accum_n0(alphadt_n0, n0);
@@ -309,6 +311,7 @@ struct DirkFunctorImpl {
       // If any dphi > -g in a column, set it to -g and integrate to get a
       // new initial phi_np1 and w_np1.
       calc_whether_gt_and_set(kv, nlev, nvec, -grav, dphi, wrk);
+      kv.team_barrier();
       if (scan_dphi_if_needed(kv, nlev, nvec, wrk, dphi, phi_np1)) kv.team_barrier();
 
       // Initial guess for w_np1.
@@ -323,10 +326,11 @@ struct DirkFunctorImpl {
           x(k,i) = -(w_np1(k,i) - (w_n0(k,i) + grav*dt2*(dpnh_dp_i(k,i) - 1))); // -residual
         });
 
+        kv.team_barrier();
         if (it > 0 &&
             (it == maxiter ||
-             exit_on_step(kv, nlev, nvec, deltatol, x, phi_n0)))
-          ;//break; // from Newton iteration
+             exit_on_step(kv, nlev, nvec, wmax, deltatol, x)))
+          break; // from Newton iteration
 
         calc_jacobian(kv, dt2, dp3d, dphi, pnh, dl, d, du);
         kv.team_barrier();
@@ -601,9 +605,33 @@ struct DirkFunctorImpl {
   }
 
   KOKKOS_INLINE_FUNCTION
-  static bool exit_on_step (const KernelVariables& kv, const int nlev,
-                            const int nvec, const Real& deltatol,
-                            const LinearSystemSlot& x, const WorkSlot& phi_n0) {
+  static bool calc_wmax (const KernelVariables& kv, const int nlev, const int nvec,
+                         const WorkSlot& w) {
+    using Kokkos::parallel_reduce;
+    using Kokkos::TeamThreadRange;
+    using Kokkos::ThreadVectorRange;
+
+    const auto f = [&] (int k, Real& maxval) {
+      const auto g = [&] (int i, Real& lmaxval) {
+        const auto v = w(k,i);
+        for (int s = 0; s < packn; ++s)
+          lmaxval = max(lmaxval, std::abs(v[s]));
+      };
+      Real lmaxval;
+      const auto vr = ThreadVectorRange(kv.team, nvec);
+      parallel_reduce(vr, g, Kokkos::Max<Real>(lmaxval));
+      maxval = max(maxval, lmaxval); // benign write race
+    };
+    Real wmax;
+    const auto tr = TeamThreadRange(kv.team, nlev);
+    parallel_reduce(tr, f, Kokkos::Max<Real>(wmax));
+    return wmax;
+  }
+
+  KOKKOS_INLINE_FUNCTION
+  static bool exit_on_step (const KernelVariables& kv, const int nlev, const int nvec,
+                            const Real& wmax, const Real& deltatol,
+                            const LinearSystemSlot& x) {
     using Kokkos::parallel_reduce;
     using Kokkos::TeamThreadRange;
     using Kokkos::ThreadVectorRange;
@@ -611,11 +639,7 @@ struct DirkFunctorImpl {
     // deltaerr = maxval(abs(x) / max(g, abs(dphi_n0)))
     const auto f = [&] (int k, Real& maxval) {
       const auto g = [&] (int i, Real& lmaxval) {
-        Scalar d;
-        d = phi_n0(k+1,i) - phi_n0(k,i);
-        for (int s = 0; s < packn; ++s)
-          d[s] = max(PhysicalConstants::g, std::abs(d[s]));
-        const auto v = x(k,i)/d;
+        const auto v = x(k,i)/wmax;
         for (int s = 0; s < packn; ++s)
           lmaxval = max(lmaxval, std::abs(v[s]));
       };
