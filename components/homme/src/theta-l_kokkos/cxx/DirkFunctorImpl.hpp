@@ -319,7 +319,7 @@ struct DirkFunctorImpl {
 
       loop_ki(kv, nlev, nvec, [&] (int k, int i) { dphi_n0(k,i) = phi_n0(k+1,i) - phi_n0(k,i); });
 
-      for (int it = 0; it <= maxiter; ++it) { // Newton iteration
+      for (int it = 0; it < maxiter; ++it) { // Newton iteration
         pnh_and_exner_from_eos(kv, hvcoord, vtheta_dp, dp3d, dphi, pnh, wrk, dpnh_dp_i);
         kv.team_barrier();
         loop_ki(kv, nlev, nvec, [&] (const int k, const int i) {
