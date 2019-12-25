@@ -350,7 +350,7 @@ struct DirkFunctorImpl {
           kv.team_barrier();
           if (wrk(1,0)[0] == 0) break;
           //todo
-          loop_ki(kv, 1, nvec, [&] (int k, int i) { wrk(2,i) *= 0.5; });
+          calc_step_size(kv, nlev, nvec, grav, dt2, dphi_n0, w_np1, x, wrk);
           kv.team_barrier();
         }
         kv.team_barrier();
@@ -748,45 +748,62 @@ struct DirkFunctorImpl {
   }
 
   // Determine a step length 0 < alpha <= 1.
-  //todo-future This step-length procedure should be reworked to not use
-  // dphi. Currently it's done this way to be BFB with the F90.
-  KOKKOS_INLINE_FUNCTION
-  static void calc_step_size (const KernelVariables& kv, const int nlev,
-                              const int nvec, const WorkSlot& xfull,
-                              const WorkSlot& dphi, // work array
-                              // On output, alpha is in wrk(0,:)
-                              const WorkSlot& wrk) {
-    loop_ki(kv, 1, nvec, [&] (int k, int i) {
-      wrk(0,i) = 1;
-    });
+  KOKKOS_INLINE_FUNCTION static void
+  calc_step_size (const KernelVariables& kv, const int nlev, const int nvec,
+                  const Real& grav, const Real& dt2,
+                  const WorkSlot& dphi_n0, const WorkSlot& w_np1, const LinearSystemSlot& x,
+                  // On input, wrk(0,i)[s] is 1 if the step length should be
+                  // smaller. On output, alpha is in wrk(2,:).
+                  const WorkSlot& wrk) {
+    using Kokkos::parallel_reduce;
+    using Kokkos::parallel_for;
+    using Kokkos::TeamThreadRange;
+    using Kokkos::ThreadVectorRange;
+    // Set all alpha_k to 1 except row 0. Include row nlev for use as a flag.
+    loop_ki(kv, nlev, nvec, [&] (int k, int i) { wrk(k+1,i) = 1; });
+    kv.team_barrier();
     loop_ki(kv, nlev, nvec, [&] (int k, int i) {
-      dphi(k,i) += xfull(k+1,i) - xfull(k,i);
+      for (int s = 0; s < packn; ++s) {
+        if (scaln % packn != 0 && i*packn + s >= scaln) break;
+        if (wrk(0,i)[s] == 0) {
+          // Indicate this column is already good.
+          wrk(nlev,i)[s] = 0;
+          continue;
+        }
+        Real dx, dw;
+        if (k < nlev-1) {
+          dx =     x(k+1,i)[s] -     x(k,i)[s];
+          dw = w_np1(k+1,i)[s] - w_np1(k,i)[s];
+        } else {
+          dx = -    x(k,i)[s];
+          dw = -w_np1(k,i)[s];          
+        }
+        if (dx != 0) {
+          // Step length at which dphi(k,i)[s] would = 0.
+          const Real alpha = -(dphi_n0(k,i)[s] + dt2*grav*dw)/(dt2*grav*dx);
+          // A negative step is irrelevant.
+          if (alpha >= 0) wrk(k,i)[s] = alpha;
+        }
+      }
     });
-    int alpha_den = 1;
-    for (int nsafe = 0; nsafe < 8; ++nsafe) {
-      loop_ki(kv, 2, nvec, [&] (int k, int i) { wrk(k+1,i) = 0; });
-      kv.team_barrier();
-      loop_ki(kv, nlev, nvec, [&] (int k, int i) {
-        for (int s = 0; s < packn; ++s) {
-          if (dphi(k,i)[s] < 0) continue;
-          wrk(1,i)[s] = 1;
-          wrk(2,0)[0] = 1;
-        }
-      });
-      kv.team_barrier();
-      if (wrk(2,0)[0] != 1) break;
-      alpha_den <<= 1;
-      const Real alpha = 1.0/alpha_den;
-      loop_ki(kv, nlev, nvec, [&] (int k, int i) {
-        for (int s = 0; s < packn; ++s) {
-          if (wrk(1,i)[s] != 1) continue;
-          wrk(0,i)[s] = alpha;
-          // Remove the last Newton increment; try reduced increment.
-          dphi(k,i)[s] -= (xfull(k+1,i)[s] - xfull(k,i)[s])*alpha;
-        }
-      });
-      kv.team_barrier();
-    }
+    kv.team_barrier();
+    // Find minimum alpha in each column. This calculation is performed rarely,
+    // so we can use the following suboptimal reduction arising from the
+    // Newton-loop team policy without essentially any performance loss. The
+    // code itself is fine, but the current policy has too many teams and too
+    // few vector lanes on GPU compared with the optimal policy.
+    const auto f = [&] (int idx) {
+      const int i = idx / packn, s = idx % packn;
+      if (wrk(nlev,i)[s] == 0) return;
+      const auto g = [&] (int k, Real& lalpha) { lalpha = min(lalpha, wrk(k,i)[s]); };
+      Real alpha;
+      const auto vr = ThreadVectorRange(kv.team, nlev);
+      parallel_reduce(vr, g, Kokkos::Min<Real>(alpha));
+      // Step halfway to the distance at which at least one dphi is 0.
+      wrk(2,i)[s] = min(1.0, alpha)/2;
+    };
+    const auto tr = TeamThreadRange(kv.team, static_cast<int>(scaln));
+    parallel_for(tr, f);
   }
 
   // Determine whether any dphi > threshold. Set the entry to threshold.

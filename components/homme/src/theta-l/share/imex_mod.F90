@@ -311,9 +311,9 @@ contains
                 end do
                 w_np1(i,j,1:nlev) = w_np1(i,j,1:nlev) + alpha*x(1:nlev,i,j)
                 if (nsafe > 1) then
-                   !if (verbosity > 0) then
+                   if (verbosity > 0) then
                    write(iulog,*) 'WARNING:IMEX is reducing step length from 1 to',alpha
-                   !end if
+                   end if
                 end if
 
 
