@@ -277,7 +277,7 @@ struct DirkFunctorImpl {
       transpose(kv, nlev+1, subview(e_phinh_i,ie,np1,a,a,a), phi_n0);
       transpose(kv, nlev+1, subview(e_w_i    ,ie,np1,a,a,a), w_n0  );
       // wmax is computed before optional updates to w_n0.
-      const auto wmax = calc_wmax(kv, nlev, nvec, w_n0);
+      const auto wmax = calc_wmax(kv, nlev+1, nvec, w_n0);
       // Computed only in some cases.
       if (alphadt_n0 != 0) {
         accum_n0(alphadt_n0, n0);
@@ -303,8 +303,7 @@ struct DirkFunctorImpl {
       } else {
         // Copy initial guess from where run_initial_guess stashed it.
         transpose(kv, nlev, subview(e_initial_guess,ie,a,a,a), phi_np1);
-        const auto phis = subview(e_phis,ie,a,a);
-        loop_ki(kv, 1, nvec, [&] (int, int i) { set_phis(i, phis, phi_np1); });
+        loop_ki(kv, 1, nvec, [&] (int, int i) { set_phis(i, subview(e_phis,ie,a,a), phi_np1); });
       }
       kv.team_barrier();
       loop_ki(kv, nlev, nvec, [&] (int k, int i) { dphi(k,i) = phi_np1(k+1,i) - phi_np1(k,i); });
@@ -605,7 +604,7 @@ struct DirkFunctorImpl {
   }
 
   KOKKOS_INLINE_FUNCTION
-  static bool calc_wmax (const KernelVariables& kv, const int nlev, const int nvec,
+  static Real calc_wmax (const KernelVariables& kv, const int nlev, const int nvec,
                          const WorkSlot& w) {
     using Kokkos::parallel_reduce;
     using Kokkos::TeamThreadRange;
@@ -614,8 +613,10 @@ struct DirkFunctorImpl {
     const auto f = [&] (int k, Real& maxval) {
       const auto g = [&] (int i, Real& lmaxval) {
         const auto v = w(k,i);
-        for (int s = 0; s < packn; ++s)
+        for (int s = 0; s < packn; ++s) {
+          if (scaln % packn != 0 && i*packn + s >= scaln) break;
           lmaxval = max(lmaxval, std::abs(v[s]));
+        }
       };
       Real lmaxval;
       const auto vr = ThreadVectorRange(kv.team, nvec);
@@ -625,7 +626,7 @@ struct DirkFunctorImpl {
     Real wmax;
     const auto tr = TeamThreadRange(kv.team, nlev);
     parallel_reduce(tr, f, Kokkos::Max<Real>(wmax));
-    return wmax;
+    return max(1.0, wmax);
   }
 
   KOKKOS_INLINE_FUNCTION
@@ -640,8 +641,10 @@ struct DirkFunctorImpl {
     const auto f = [&] (int k, Real& maxval) {
       const auto g = [&] (int i, Real& lmaxval) {
         const auto v = x(k,i)/wmax;
-        for (int s = 0; s < packn; ++s)
+        for (int s = 0; s < packn; ++s) {
+          if (scaln % packn != 0 && i*packn + s >= scaln) break;
           lmaxval = max(lmaxval, std::abs(v[s]));
+        }
       };
       Real lmaxval;
       const auto vr = ThreadVectorRange(kv.team, nvec);
@@ -839,6 +842,20 @@ struct DirkFunctorImpl {
         phi_i(k,i) = phi_i(k+1,i) - dphi(k,i);
     });
     return true;
+  }
+
+  // Debug routine, not for GPU.
+  template <typename R>
+  static bool good (const R& a) {
+    bool good = true;
+    for (int k = 0; k < num_phys_lev; ++k)
+      for (int i = 0; i < a.extent_int(1); ++i)
+        for (int s = 0; s < packn; ++s) {
+          if (i*packn + s >= scaln) continue;
+          const auto v = a(k,i)[s];
+          if (std::isnan(v) || std::isinf(v)) good = false;
+        }
+    return good;
   }
 };
 
