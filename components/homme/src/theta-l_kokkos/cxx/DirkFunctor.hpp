@@ -33,7 +33,7 @@ public:
            const Elements& elements, const HybridVCoord& hvcoord);
 
 private:
-  //std::unique_ptr<DirkFunctorImpl> m_dirk_impl;
+  std::unique_ptr<DirkFunctorImpl> m_dirk_impl;
 };
 
 } // Namespace Homme

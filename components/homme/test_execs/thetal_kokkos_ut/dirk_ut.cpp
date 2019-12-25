@@ -1,7 +1,3 @@
-#pragma message "AMB DBG"
-#pragma message "DON'T FORGET TO UNCOMMENT DRIVER"
-#include "/home/ambradl/climate/sik/hommexx/dbg.hpp"
-
 #include <catch2/catch.hpp>
 
 #include "DirkFunctorImpl.hpp"
@@ -857,7 +853,7 @@ TEST_CASE ("dirk_toplevel_testing") {
               Real* pf = f == 0 ? &phif   (ie,np1,i,j,0)[0] : &wif(ie,np1,i,j,0)[0];
               Real* pc = f == 0 ? &phinh2m(ie,np1,i,j,0)[0] : &w2m(ie,np1,i,j,0)[0];
               for (int k = 0; k < nlev; ++k)
-                (equal(pf[k], pc[k], 1e8*eps));
+                REQUIRE(equal(pf[k], pc[k], 1e8*eps));
             }
           }
     }

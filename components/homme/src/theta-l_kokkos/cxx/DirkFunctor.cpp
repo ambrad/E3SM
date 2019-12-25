@@ -5,7 +5,7 @@
  *******************************************************************************/
 
 #include "DirkFunctor.hpp"
-//#include "DirkFunctorImpl.hpp"
+#include "DirkFunctorImpl.hpp"
 #include "Context.hpp"
 
 #include "profiling.hpp"
@@ -16,7 +16,7 @@
 namespace Homme {
 
 DirkFunctor::DirkFunctor (int nelem) {
-  //m_dirk_impl.reset(new DirkFunctorImpl(nelem));
+  m_dirk_impl.reset(new DirkFunctorImpl(nelem));
 }
 
 // Note: you cannot declare the default destructor in the header,
@@ -27,16 +27,16 @@ DirkFunctor::DirkFunctor (int nelem) {
 DirkFunctor::~DirkFunctor () = default;
 
 int DirkFunctor::requested_buffer_size () const {
-  //return m_dirk_impl->requested_buffer_size();
+  return m_dirk_impl->requested_buffer_size();
 }
 
 void DirkFunctor::init_buffers (const FunctorsBuffersManager& fbm) {
-  //m_dirk_impl->init_buffers(fbm);
+  m_dirk_impl->init_buffers(fbm);
 }
 
 void DirkFunctor::run (int nm1, Real alphadt_nm1, int n0, Real alphadt_n0, int np1, Real dt2,
                        const Elements& elements, const HybridVCoord& hvcoord) {
-  //m_dirk_impl->run(nm1, alphadt_nm1, n0, alphadt_n0, np1, dt2, elements, hvcoord);
+  m_dirk_impl->run(nm1, alphadt_nm1, n0, alphadt_n0, np1, dt2, elements, hvcoord);
 }
 
 } // Namespace Homme
