@@ -348,7 +348,7 @@ struct DirkFunctorImpl {
           kv.team_barrier();
           calc_whether_ge(kv, nlev, nvec, 0, dphi, wrk);
           kv.team_barrier();
-          break; //todo
+          if (wrk(1,0)[0] == 0) break;
         }
         kv.team_barrier();
 
@@ -795,7 +795,7 @@ struct DirkFunctorImpl {
                            // On output, wrk(0,:) contains 0 for no, 1 for yes;
                            // if any is yes, then wrk(1,0) is 1, else 0.
                            const WorkSlot& wrk) {
-    loop_ki(kv, 1, nvec, [&] (int k, int i) { wrk(0,i) = 0; });
+    loop_ki(kv, 2, nvec, [&] (int k, int i) { wrk(k,i) = 0; });
     kv.team_barrier();
     loop_ki(kv, nlev, nvec, [&] (int k, int i) {
       for (int s = 0; s < packn; ++s) {
@@ -818,7 +818,7 @@ struct DirkFunctorImpl {
                    // On output, wrk(0,:) contains 0 for no, 1 for yes;
                    // if any is yes, then wrk(1,0) is 1, else 0.
                    const WorkSlot& wrk) {
-    loop_ki(kv, 1, nvec, [&] (int k, int i) { wrk(0,i) = 0; });
+    loop_ki(kv, 2, nvec, [&] (int k, int i) { wrk(k,i) = 0; });
     kv.team_barrier();
     loop_ki(kv, nlev, nvec, [&] (int k, int i) {
       for (int s = 0; s < packn; ++s) {
