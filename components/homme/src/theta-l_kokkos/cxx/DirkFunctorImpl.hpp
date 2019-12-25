@@ -299,8 +299,7 @@ struct DirkFunctorImpl {
       // Initial guess for phi_np1.
       if (calc_initial_guess_in_newton_kernel) {
         // Use hydrostatic phi.
-        phi_from_eos(kv, nlev, nvec, hvcoord, subview(e_phis,ie,a,a),
-                     vtheta_dp, dp3d, phi_np1);
+        phi_from_eos(kv, nlev, nvec, hvcoord, subview(e_phis,ie,a,a), vtheta_dp, dp3d, phi_np1);
       } else {
         // Copy initial guess from where run_initial_guess stashed it.
         transpose(kv, nlev, subview(e_initial_guess,ie,a,a,a), phi_np1);
@@ -308,6 +307,7 @@ struct DirkFunctorImpl {
       }
       kv.team_barrier();
       loop_ki(kv, nlev, nvec, [&] (int k, int i) { dphi(k,i) = phi_np1(k+1,i) - phi_np1(k,i); });
+      kv.team_barrier();
       // If any dphi > -g in a column, set it to -g and integrate to get a
       // new initial phi_np1 and w_np1.
       calc_whether_gt_and_set(kv, nlev, nvec, -grav, dphi, wrk);
@@ -332,7 +332,7 @@ struct DirkFunctorImpl {
         kv.team_barrier();
 
         loop_ki(kv, 1, nvec, [&] (int k, int i) { wrk(0,i) = 1; });
-
+        kv.team_barrier();
         for (int nsafe = 0; nsafe < 2; ++nsafe) {
           loop_ki(kv, nlev-1, nvec, [&] (int k, int i) {
             dphi(k,i) = dphi_n0(k,i) + dt2*grav*(         (w_np1(k+1,i) - w_np1(k,i)) +
@@ -344,6 +344,7 @@ struct DirkFunctorImpl {
           });
           break; //todo
         }
+        kv.team_barrier();
 
         loop_ki(kv, nlev, nvec, [&] (int k, int i) { w_np1(k,i) += wrk(0,i)*x(k,i); });
 
@@ -787,16 +788,16 @@ struct DirkFunctorImpl {
                            const WorkSlot& dphi,
                            // On output, wrk(0,:) contains 0 for no, 1 for yes
                            const WorkSlot& wrk) {
-    loop_ki(kv, 1, nvec, [&] (int k, int i) {
-      wrk(0,i) = 0;
-    });
+    loop_ki(kv, 1, nvec, [&] (int k, int i) { wrk(0,i) = 0; });
     kv.team_barrier();
     loop_ki(kv, nlev, nvec, [&] (int k, int i) {
-      for (int s = 0; s < packn; ++s)
+      for (int s = 0; s < packn; ++s) {
+        if (scaln % packn != 0 && i*packn + s >= scaln) break;
         if (dphi(k,i)[s] > threshold) {
           dphi(k,i)[s] = threshold;
           wrk(0,i)[s] = 1; // benign write race
         }
+      }
     });
   }
 
@@ -808,14 +809,14 @@ struct DirkFunctorImpl {
                    const WorkSlot& dphi,
                    // On output, wrk(0,:) contains 0 for no, 1 for yes
                    const WorkSlot& wrk) {
-    loop_ki(kv, 1, nvec, [&] (int k, int i) {
-      wrk(0,i) = 0;
-    });
+    loop_ki(kv, 1, nvec, [&] (int k, int i) { wrk(0,i) = 0; });
     kv.team_barrier();
     loop_ki(kv, nlev, nvec, [&] (int k, int i) {
-      for (int s = 0; s < packn; ++s)
+      for (int s = 0; s < packn; ++s) {
+        if (scaln % packn != 0 && i*packn + s >= scaln) break;
         if (dphi(k,i)[s] >= threshold)
           wrk(0,i)[s] = 1; // benign write race
+      }
     });
   }
 
