@@ -835,7 +835,7 @@ TEST_CASE ("dirk_toplevel_testing") {
               Real* p1 = f == 0 ? &w1m(ie,np1,i,j,0)[0] : &phinh1m(ie,np1,i,j,0)[0];
               Real* p2 = f == 0 ? &w2m(ie,np1,i,j,0)[0] : &phinh2m(ie,np1,i,j,0)[0];
               for (int k = 0; k < nlev+1; ++k)
-                REQUIRE(almost_equal(p1[k], p2[k], 1e6));
+                REQUIRE(almost_equal(p1[k], p2[k], 1e6*eps));
             }
 
       // Run F90 with BFB solver.
