@@ -1,4 +1,5 @@
 #pragma message "AMB DBG"
+#pragma message "DON'T FORGET TO UNCOMMENT DRIVER"
 #include "/home/ambradl/climate/sik/hommexx/dbg.hpp"
 
 #include <catch2/catch.hpp>

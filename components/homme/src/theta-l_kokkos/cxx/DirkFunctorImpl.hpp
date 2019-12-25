@@ -312,7 +312,10 @@ struct DirkFunctorImpl {
       // new initial phi_np1 and w_np1.
       calc_whether_gt_and_set(kv, nlev, nvec, -grav, dphi, wrk);
       kv.team_barrier();
-      if (scan_dphi_if_needed(kv, nlev, nvec, wrk, dphi, phi_np1)) kv.team_barrier();
+      if (wrk(1,0)[0] == 1) {
+        scan_dphi(kv, nlev, nvec, wrk, dphi, phi_np1);
+        kv.team_barrier();
+      }
 
       // Initial guess for w_np1.
       loop_ki(kv, nlev, nvec, [&] (int k, int i) { w_np1(k,i) = (phi_np1(k,i) - phi_n0(k,i))/(dt2*grav); });
@@ -331,22 +334,25 @@ struct DirkFunctorImpl {
         if (bfb_solver) solvebfb(kv, dl, d, du, x); else solve(kv, dl, d, du, x);
         kv.team_barrier();
 
-        loop_ki(kv, 1, nvec, [&] (int k, int i) { wrk(0,i) = 1; });
+        loop_ki(kv, 1, nvec, [&] (int k, int i) { wrk(2,i) = 1; });
         kv.team_barrier();
         for (int nsafe = 0; nsafe < 2; ++nsafe) {
           loop_ki(kv, nlev-1, nvec, [&] (int k, int i) {
             dphi(k,i) = dphi_n0(k,i) + dt2*grav*(         (w_np1(k+1,i) - w_np1(k,i)) +
-                                                 wrk(0,i)*(    x(k+1,i) -     x(k,i)));
+                                                 wrk(2,i)*(    x(k+1,i) -     x(k,i)));
           });
           loop_ki(kv, 1, nvec, [&] (int, int i) {
             const auto k = nlev-1;
-            dphi(k,i) = dphi_n0(k,i) - dt2*grav*(w_np1(k,i) + wrk(0,i)*x(k,i));
+            dphi(k,i) = dphi_n0(k,i) - dt2*grav*(w_np1(k,i) + wrk(2,i)*x(k,i));
           });
+          kv.team_barrier();
+          calc_whether_ge(kv, nlev, nvec, 0, dphi, wrk);
+          kv.team_barrier();
           break; //todo
         }
         kv.team_barrier();
 
-        loop_ki(kv, nlev, nvec, [&] (int k, int i) { w_np1(k,i) += wrk(0,i)*x(k,i); });
+        loop_ki(kv, nlev, nvec, [&] (int k, int i) { w_np1(k,i) += wrk(2,i)*x(k,i); });
 
         Real deltaerr;
         if (it == maxiter || exit_on_step(kv, nlev, nvec, wmax, deltatol, x, deltaerr))
@@ -786,7 +792,8 @@ struct DirkFunctorImpl {
                            const Real threshold,
                            // dphi > threshold?
                            const WorkSlot& dphi,
-                           // On output, wrk(0,:) contains 0 for no, 1 for yes
+                           // On output, wrk(0,:) contains 0 for no, 1 for yes;
+                           // if any is yes, then wrk(1,0) is 1, else 0.
                            const WorkSlot& wrk) {
     loop_ki(kv, 1, nvec, [&] (int k, int i) { wrk(0,i) = 0; });
     kv.team_barrier();
@@ -796,6 +803,7 @@ struct DirkFunctorImpl {
         if (dphi(k,i)[s] > threshold) {
           dphi(k,i)[s] = threshold;
           wrk(0,i)[s] = 1; // benign write race
+          wrk(1,0)[0] = 1; // benign write race
         }
       }
     });
@@ -807,35 +815,31 @@ struct DirkFunctorImpl {
                    const Real threshold,
                    // dphi >= threshold?
                    const WorkSlot& dphi,
-                   // On output, wrk(0,:) contains 0 for no, 1 for yes
+                   // On output, wrk(0,:) contains 0 for no, 1 for yes;
+                   // if any is yes, then wrk(1,0) is 1, else 0.
                    const WorkSlot& wrk) {
     loop_ki(kv, 1, nvec, [&] (int k, int i) { wrk(0,i) = 0; });
     kv.team_barrier();
     loop_ki(kv, nlev, nvec, [&] (int k, int i) {
       for (int s = 0; s < packn; ++s) {
         if (scaln % packn != 0 && i*packn + s >= scaln) break;
-        if (dphi(k,i)[s] >= threshold)
+        if (dphi(k,i)[s] >= threshold) {
           wrk(0,i)[s] = 1; // benign write race
+          wrk(1,0)[0] = 1; // benign write race
+        }
       }
     });
   }
 
   KOKKOS_INLINE_FUNCTION static bool
-  scan_dphi_if_needed (const KernelVariables& kv, const int nlev, const int nvec,
-                       // On input, wrk(0,:) contains 0 for no, 1 for yes
-                       const WorkSlot& wrk, const WorkSlot& dphi, const WorkSlot& phi_i) {
-    // imex_mod scans all cols if even one is bad. So do that here. Check if any
-    // is bad.
-    loop_ki(kv, 1, nvec, [&] (int, int i) {
-      for (int s = 0; s < packn; ++s)
-        if (wrk(0,i)[s] == 1) wrk(0,0)[0] = 1;
-    });
-    kv.team_barrier();
-    if (wrk(0,0)[0] == 0) return false;
-    // Scan. This is suboptimal, but it's much better to do it like this than
-    // have separate kernels just b/c of a safety scan. All scans except the
-    // initial guess, which we do indeed handle in a separate kernel, are
-    // triggered only very occasionally.
+  scan_dphi (const KernelVariables& kv, const int nlev, const int nvec,
+             // On input, wrk(0,:) contains 0 for no, 1 for yes
+             const WorkSlot& wrk, const WorkSlot& dphi, const WorkSlot& phi_i) {
+    // imex_mod scans all cols if even one is bad. So do that here. The scan is
+    // suboptimal, but it's much better to do it like this than have separate
+    // kernels just b/c of a safety scan. All scans except the initial guess,
+    // which we do indeed handle in a separate kernel, are triggered only very
+    // occasionally.
     loop_ki(kv, 1, nvec, [&] (int, int i) {
       for (int k = nlev-1; k >= 0; --k)
         phi_i(k,i) = phi_i(k+1,i) - dphi(k,i);
