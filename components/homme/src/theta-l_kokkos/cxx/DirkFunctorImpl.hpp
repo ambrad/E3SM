@@ -294,7 +294,7 @@ struct DirkFunctorImpl {
       kv.team_barrier();
       loop_ki(kv, nlev, nvec, [&] (int k, int i) { phi_n0(k,i) -= dt2*gwh_i(k,i); });
 
-      // Initial guess for phi_np1, w_np1.
+      // Initial guess for phi_np1.
       if (calc_initial_guess_in_newton_kernel) {
         // Use hydrostatic phi.
         phi_from_eos(kv, nlev, nvec, hvcoord, subview(e_phis,ie,a,a),
@@ -303,24 +303,19 @@ struct DirkFunctorImpl {
         // Copy initial guess from where run_initial_guess stashed it.
         transpose(kv, nlev, subview(e_initial_guess,ie,a,a,a), phi_np1);
         const auto phis = subview(e_phis,ie,a,a);
-        loop_ki(kv, 1, nvec, [&] (int, int i) {
-          set_phis(i, phis, phi_np1);
-        });
+        loop_ki(kv, 1, nvec, [&] (int, int i) { set_phis(i, phis, phi_np1); });
       }
       kv.team_barrier();
-      loop_ki(kv, nlev, nvec, [&] (int k, int i) {
-        w_np1(k,i) = (phi_np1(k,i) - phi_n0(k,i))/(dt2*grav);
-      });
-
-      loop_ki(kv, nlev, nvec, [&] (int k, int i) {
-        dphi_n0(k,i) = phi_n0(k+1,i) - phi_n0(k,i);
-      });
-      loop_ki(kv, nlev, nvec, [&] (int k, int i) {
-        dphi(k,i) = phi_np1(k+1,i) - phi_np1(k,i);
-      });
+      loop_ki(kv, nlev, nvec, [&] (int k, int i) { dphi(k,i) = phi_np1(k+1,i) - phi_np1(k,i); });
       // If any dphi > -g in a column, set it to -g and integrate to get a
       // new initial phi_np1 and w_np1.
       calc_whether_gt_and_set(kv, nlev, nvec, -grav, dphi, wrk);
+      if (scan_dphi_if_needed(kv, nlev, nvec, wrk, dphi, phi_np1)) kv.team_barrier();
+
+      // Initial guess for w_np1.
+      loop_ki(kv, nlev, nvec, [&] (int k, int i) { w_np1(k,i) = (phi_np1(k,i) - phi_n0(k,i))/(dt2*grav); });
+
+      loop_ki(kv, nlev, nvec, [&] (int k, int i) { dphi_n0(k,i) = phi_n0(k+1,i) - phi_n0(k,i); });
 
       for (int it = 0; it <= maxiter; ++it) { // Newton iteration
         kv.team_barrier();
@@ -597,7 +592,7 @@ struct DirkFunctorImpl {
   set_phis (const int i, const Rphis& phis, const W& phi_i) {
     for (int s = 0; s < packn; ++s) {
       const int idx = i*packn + s, gi = idx / NP, gj = idx % NP;
-      if (scaln % packn != 0 && idx >= scaln) break;        
+      if (scaln % packn != 0 && idx >= scaln) break;
       phi_i(num_phys_lev,i)[s] = phis(gi,gj);
     }    
   }
@@ -758,8 +753,7 @@ struct DirkFunctorImpl {
 
   // Determine whether any dphi > threshold. Set the entry to threshold.
   KOKKOS_INLINE_FUNCTION static void
-  calc_whether_gt_and_set (const KernelVariables& kv,
-                           const int nlev, const int nvec,
+  calc_whether_gt_and_set (const KernelVariables& kv, const int nlev, const int nvec,
                            const Real threshold,
                            // dphi > threshold?
                            const WorkSlot& dphi,
@@ -780,8 +774,7 @@ struct DirkFunctorImpl {
 
   // Determine whether any dphi >= threshold.
   KOKKOS_INLINE_FUNCTION static void
-  calc_whether_ge (const KernelVariables& kv,
-                   const int nlev, const int nvec,
+  calc_whether_ge (const KernelVariables& kv, const int nlev, const int nvec,
                    const Real threshold,
                    // dphi >= threshold?
                    const WorkSlot& dphi,
@@ -796,6 +789,29 @@ struct DirkFunctorImpl {
         if (dphi(k,i)[s] >= threshold)
           wrk(0,i)[s] = 1; // benign write race
     });
+  }
+
+  KOKKOS_INLINE_FUNCTION static bool
+  scan_dphi_if_needed (const KernelVariables& kv, const int nlev, const int nvec,
+                       // On input, wrk(0,:) contains 0 for no, 1 for yes
+                       const WorkSlot& wrk, const WorkSlot& dphi, const WorkSlot& phi_i) {
+    // imex_mod scans all cols if even one is bad. So do that here. Check if any
+    // is bad.
+    loop_ki(kv, 1, nvec, [&] (int, int i) {
+      for (int s = 0; s < packn; ++s)
+        if (wrk(0,i)[s] == 1) wrk(0,0)[0] = 1;
+    });
+    kv.team_barrier();
+    if (wrk(0,0)[0] == 0) return false;
+    // Scan. This is suboptimal, but it's much better to do it like this than
+    // have separate kernels just b/c of a safety scan. All scans except the
+    // initial guess, which we do indeed handle in a separate kernel, are
+    // triggered only very occasionally.
+    loop_ki(kv, 1, nvec, [&] (int, int i) {
+      for (int k = nlev-1; k >= 0; --k)
+        phi_i(k,i) = phi_i(k+1,i) - dphi(k,i);
+    });
+    return true;
   }
 };
 
