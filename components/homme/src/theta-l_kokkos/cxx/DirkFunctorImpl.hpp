@@ -349,6 +349,9 @@ struct DirkFunctorImpl {
           calc_whether_ge(kv, nlev, nvec, 0, dphi, wrk);
           kv.team_barrier();
           if (wrk(1,0)[0] == 0) break;
+          //todo
+          loop_ki(kv, 1, nvec, [&] (int k, int i) { wrk(2,i) *= 0.5; });
+          kv.team_barrier();
         }
         kv.team_barrier();
 
