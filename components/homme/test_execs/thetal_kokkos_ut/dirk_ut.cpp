@@ -684,7 +684,7 @@ TEST_CASE ("dirk_toplevel_testing") {
   init(d, fbm);
 
   { // Test initial guess function.
-    init_elems(ne, s.nelemd, r, hvcoord, e);
+    init_elems(ne, nelemd, r, hvcoord, e);
     { // C++ version with DIRK-newton-loop policy.
       const auto e_phis = e.m_geometry.m_phis;
       const auto e_vtheta_dp = e.m_state.m_vtheta_dp;
@@ -758,7 +758,7 @@ TEST_CASE ("dirk_toplevel_testing") {
 
       bool good = false;
       for (int trial = 0; trial < 100 /* don't enter an inf loop */; ++trial) {
-        init_elems(ne, s.nelemd, r, hvcoord, e);
+        init_elems(ne, nelemd, r, hvcoord, e);
 
         deep_copy(w_i, e.m_state.m_w_i);
         deep_copy(phinh_i, e.m_state.m_phinh_i);
@@ -835,7 +835,7 @@ TEST_CASE ("dirk_toplevel_testing") {
               Real* p1 = f == 0 ? &w1m(ie,np1,i,j,0)[0] : &phinh1m(ie,np1,i,j,0)[0];
               Real* p2 = f == 0 ? &w2m(ie,np1,i,j,0)[0] : &phinh2m(ie,np1,i,j,0)[0];
               for (int k = 0; k < nlev+1; ++k)
-                REQUIRE(std::abs(p1[k] - p2[k]) <= 1e6*eps*(1 + std::abs(p1[k])));
+                REQUIRE(almost_equal(p1[k], p2[k], 1e6));
             }
 
       // Run F90 with BFB solver.
@@ -856,7 +856,7 @@ TEST_CASE ("dirk_toplevel_testing") {
               Real* pf = f == 0 ? &phif   (ie,np1,i,j,0)[0] : &wif(ie,np1,i,j,0)[0];
               Real* pc = f == 0 ? &phinh2m(ie,np1,i,j,0)[0] : &w2m(ie,np1,i,j,0)[0];
               for (int k = 0; k < nlev; ++k)
-                REQUIRE(almost_equal(pf[k], pc[k], 1e8*eps));
+                REQUIRE(equal(pf[k], pc[k], 1e8*eps));
             }
           }
     }
