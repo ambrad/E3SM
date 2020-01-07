@@ -638,7 +638,7 @@ contains
 #ifndef CAM
     use common_io_mod, only: varname_len
     use gllfvremap_mod, only: gfr_init, gfr_finish, gfr_fv_phys_to_dyn_topo, gfr_dyn_to_fv_phys_topo
-    use interpolate_driver_mod, only: pio_read_gll_topo_file, pio_write_physgrid_topo_file
+    use interpolate_driver_mod, only: pio_read_physgrid_topo_file, pio_write_physgrid_topo_file
     use physical_constants, only: dd_pi
 #endif
     use parallel_mod, only: parallel_t
@@ -656,10 +656,7 @@ contains
     allocate(gll_fields(np,np,nelemd,1), pg_fields(np*np,nelemd,1))
 
     fieldnames(1) = 'PHIS'
-#if 0
-    call pio_read_physgrid_topo_file(intopofn, intopo_nphys, elem, par, &
-         intopo_nphys, pg_fields, fieldnames)
-#endif
+    call pio_read_physgrid_topo_file(intopofn, intopo_nphys, elem, par, fieldnames, pg_fields)
 
     call gfr_init(par, elem, intopo_nphys)
     call gfr_fv_phys_to_dyn_topo(par, elem, pg_fields(:,:,1))

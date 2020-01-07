@@ -33,7 +33,7 @@ module interpolate_driver_mod
 !#include "pnetcdf.inc"
 #endif
   public :: interpolate_driver, pio_read_phis, &
-       pio_read_gll_topo_file, pio_write_physgrid_topo_file
+       pio_read_gll_topo_file, pio_read_physgrid_topo_file, pio_write_physgrid_topo_file
 
 #ifndef HOMME_WITHOUT_PIOLIBRARY
   integer :: nlat, nlon
@@ -961,6 +961,29 @@ contains
 #endif
   end subroutine pio_read_gll_topo_file
 
+  subroutine pio_read_physgrid_topo_file(infilename, nphys, elem, par, fieldnames, pg_fields)
+    use element_mod, only : element_t
+    use parallel_mod, only : parallel_t, syncmp
+#ifndef HOMME_WITHOUT_PIOLIBRARY
+    use kinds, only : real_kind
+    use dimensions_mod, only : nelemd, nlev, np, npsq, nelem
+    use common_io_mod, only : varname_len, output_frequency, output_start_time, &
+         output_end_time, output_dir, output_prefix
+    use pio_io_mod, only : nf_init_decomp, nf_put_var_pio
+    use control_mod, only: max_string_len
+#endif
+
+    character(len=*), intent(in) :: infilename
+    type(element_t), intent(in) :: elem(:)
+    type(parallel_t), intent(in) :: par
+    real(kind=real_kind), intent(out) :: pg_fields(:,:,:)
+    character(len=varname_len), intent(in) :: fieldnames(:)
+    integer, intent(in) :: nphys
+
+#ifndef HOMME_WITHOUT_PIOLIBRARY
+#endif    
+  end subroutine pio_read_physgrid_topo_file
+
   subroutine pio_write_physgrid_topo_file(infilename, outfilenameprefix, elem, par, &
        gll_fields, pg_fields, latlon, fieldnames, nphys, history)
     ! gll_fields and fieldnames are as output from pio_read_gll_topo_file.
@@ -970,10 +993,7 @@ contains
 #ifndef HOMME_WITHOUT_PIOLIBRARY
     use dof_mod, only : UniquePoints, putUniquePoints
     use kinds, only : real_kind
-    use edge_mod, only : edgevpack, edgevunpack, initedgebuffer, freeedgebuffer
-    use edgetype_mod, only : edgebuffer_t
     use dimensions_mod, only : nelemd, nlev, np, npsq, nelem
-    use bndry_mod, only : bndry_exchangeV
     use common_io_mod, only : varname_len, output_frequency, output_start_time, &
          output_end_time, output_dir, output_prefix
     use pio_io_mod, only : nf_output_init_begin, nf_output_init_complete, &
