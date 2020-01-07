@@ -34,8 +34,12 @@ module gllfvremap_util_mod
   public :: &
        ! Test gllfvremap's main API.
        gfr_check_api, &
-       ! Convert a topography file from pure GLL to physgrid format.
-       gfr_convert_topo
+       ! Convert a topography file from pure GLL to physgrid format, as a
+       ! convenience to avoid going through the full tool chain; see next
+       ! function.
+       gfr_convert_topo, &
+       ! One part of the full physgrid from-scratch topography tool chain.
+       gfr_pgn_to_smoothed_topo
 
 contains
   
@@ -586,7 +590,7 @@ contains
     character(len=varname_len) :: fieldnames(5)
 
     nf2 = nphys*nphys
-    call gfr_init(par, elem, nphys, check=.true.)
+    call gfr_init(par, elem, nphys)
 
     allocate(gll_fields(np,np,nelemd,5), pg_fields(nf2,nelemd,5), latlon(nf2,nelemd,2))
 
@@ -629,4 +633,55 @@ contains
     deallocate(gll_fields, pg_fields, latlon)
 #endif
   end subroutine gfr_convert_topo
+
+  subroutine gfr_pgn_to_smoothed_topo(par, elem, output_nphys, intopofn, outtopoprefix)
+#ifndef CAM
+    use common_io_mod, only: varname_len
+    use gllfvremap_mod, only: gfr_init, gfr_finish, gfr_fv_phys_to_dyn_topo, gfr_dyn_to_fv_phys_topo
+    use interpolate_driver_mod, only: pio_read_gll_topo_file, pio_write_physgrid_topo_file
+    use physical_constants, only: dd_pi
+#endif
+    use parallel_mod, only: parallel_t
+
+    type (parallel_t), intent(in) :: par
+    type (element_t), intent(inout) :: elem(:)
+    integer, intent(in) :: output_nphys
+    character(*), intent(in) :: intopofn, outtopoprefix
+
+#ifndef CAM
+    real(real_kind), allocatable :: gll_fields(:,:,:,:), pg_fields(:,:,:)
+    integer :: intopo_nphys, ie
+    character(len=varname_len) :: fieldnames(1)
+
+    allocate(gll_fields(np,np,nelemd,1), pg_fields(np*np,nelemd,1))
+
+    fieldnames(1) = 'PHIS'
+#if 0
+    call pio_read_physgrid_topo_file(intopofn, intopo_nphys, elem, par, &
+         intopo_nphys, pg_fields, fieldnames)
+#endif
+
+    call gfr_init(par, elem, intopo_nphys)
+    call gfr_fv_phys_to_dyn_topo(par, elem, pg_fields(:,:,1))
+    do ie = 1,nelemd
+       gll_fields(:,:,ie,1) = elem(ie)%state%phis
+    end do
+    call gfr_finish()
+
+    !TODO smooth
+
+    call gfr_init(par, elem, output_nphys)
+    call gfr_dyn_to_fv_phys_topo(par, elem, pg_fields(:,:,1))
+    call gfr_finish()
+
+    ! ncol, PHIS, PHIS_d
+#if 0
+    call pio_write_physgrid_smoothed_phis_file(intopofn, outtopoprefix, elem, par, &
+         gll_fields, pg_fields, output_nphys, &
+         'Created from '// trim(intopofn) // ' by HOMME gfr_pgn_to_smoothed_topo')
+#endif
+
+    deallocate(gll_fields, pg_fields)
+#endif
+  end subroutine gfr_pgn_to_smoothed_topo
 end module gllfvremap_util_mod

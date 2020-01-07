@@ -17,7 +17,7 @@ program tool_main
   use element_mod,      only: element_t
   use common_io_mod,    only: output_dir, infilenames
   use time_mod,         only: timelevel_t
-  use control_mod,      only: vfile_mid, vfile_int
+  use control_mod,      only: vfile_mid, vfile_int, theta_hydrostatic_mode
   use common_io_mod,    only: tool
   use kinds,            only: iulog
 
@@ -85,8 +85,12 @@ contains
   end subroutine set_namelist_defaults
 
   subroutine topo_convert(par, elem)
-    ! Convert pure-GLL topography file to GLL-physgrid topography file. Namelist
-    ! example:
+    ! Convert a pure-GLL topography file to GLL-physgrid topography file. This
+    ! is useful if you have an existing v1 GLL topo file and want to run an
+    ! equivalent physgrid-based simulation without having to run the topography
+    ! tool chain from scratch.
+    !
+    ! Namelist example:
     !
     ! &ctl_nl
     ! ne = 30
@@ -111,7 +115,15 @@ contains
 
   subroutine topo_pgn_to_smoothed(par, elem)
     ! Use a pure-physgrid non-smoothed topography file to create a smoothed
-    ! GLL-physgrid topography file. Namelist example:
+    ! GLL-physgrid topography file. This is part of the physgrid topography full
+    ! tool chain.
+    !   The input is an unsmoothed pg4 topography file output by
+    ! cube_to_target. The output is a GLL-physgrid file with smoothed topography
+    ! and GLL-physgrid consistent PHIS_d and PHIS fields, respectively. This
+    ! file is then input for a second run of cube_to_target, this time to
+    ! compute SGH, SGH30, LANDFRAC, and LANDM_COSLAT on physgrid.
+    !
+    ! Namelist example:
     !
     ! &ctl_nl
     ! ne = 30
@@ -119,23 +131,28 @@ contains
     ! smooth_phis_nudt = 28e7
     ! hypervis_scaling = 0 
     ! hypervis_order = 2
+    ! ftype = 2 ! actually output NPHYS; overloaded use of ftype
     ! /
     ! &vert_nl
     ! /
     ! &analysis_nl
     ! tool = 'topo_pgn_to_smoothed'
-    ! infilenames = 'ne30pg4_c2t_topo.nc', 'USGS-gtopo30_ne30np4pg2_16xdel2-PFC-consistentSGH'
+    ! infilenames = 'ne30pg4_c2t_topo.nc', 'USGS-gtopo30_ne30np4pg2_16xdel2'
     ! /
 
-    use gllfvremap_util_mod, only: gfr_convert_topo
+    use gllfvremap_util_mod, only: gfr_pgn_to_smoothed_topo
+    use control_mod, only: ftype
 
     type (parallel_t), intent(in) :: par
     type (element_t), intent(inout) :: elem(:)
 
+    integer :: output_nphys
+
     if (min(len(trim(infilenames(1))), len(trim(infilenames(2)))) == 0) then
        call abortmp('homme_tool: topo_pgn_to_smoothed requires infilenames 1 and 2 to be defined')
     end if
-
+    output_nphys = ftype
+    call gfr_pgn_to_smoothed_topo(par, elem, output_nphys, infilenames(1), infilenames(2))
   end subroutine topo_pgn_to_smoothed
   
 end program tool_main
