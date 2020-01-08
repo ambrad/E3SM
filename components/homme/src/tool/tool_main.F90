@@ -131,7 +131,7 @@ contains
     ! smooth_phis_nudt = 28e7
     ! hypervis_scaling = 0 
     ! hypervis_order = 2
-    ! ftype = 2 ! actually output NPHYS; overloaded use of ftype
+    ! se_ftype = 2 ! actually output NPHYS; overloaded use of ftype
     ! /
     ! &vert_nl
     ! /
@@ -146,13 +146,16 @@ contains
     type (parallel_t), intent(in) :: par
     type (element_t), intent(inout) :: elem(:)
 
-    integer :: output_nphys
+    integer :: output_nphys, stat
 
     if (min(len(trim(infilenames(1))), len(trim(infilenames(2)))) == 0) then
        call abortmp('homme_tool: topo_pgn_to_smoothed requires infilenames 1 and 2 to be defined')
     end if
     output_nphys = ftype
-    call gfr_pgn_to_smoothed_topo(par, elem, output_nphys, infilenames(1), infilenames(2))
+    stat = gfr_pgn_to_smoothed_topo(par, elem, output_nphys, infilenames(1), infilenames(2))
+    if (stat /= 0) then
+       call abortmp('homme_tool: gfr_pgn_to_smoothed_topo returned an error code')
+    end if
   end subroutine topo_pgn_to_smoothed
   
 end program tool_main

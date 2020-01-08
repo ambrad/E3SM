@@ -634,7 +634,7 @@ contains
 #endif
   end subroutine gfr_convert_topo
 
-  subroutine gfr_pgn_to_smoothed_topo(par, elem, output_nphys, intopofn, outtopoprefix)
+  function gfr_pgn_to_smoothed_topo(par, elem, output_nphys, intopofn, outtopoprefix) result(stat)
 #ifndef CAM
     use common_io_mod, only: varname_len
     use gllfvremap_mod, only: gfr_init, gfr_finish, gfr_fv_phys_to_dyn_topo, gfr_dyn_to_fv_phys_topo
@@ -650,13 +650,14 @@ contains
 
 #ifndef CAM
     real(real_kind), allocatable :: gll_fields(:,:,:,:), pg_fields(:,:,:)
-    integer :: intopo_nphys, ie
+    integer :: intopo_nphys, ie, stat
     character(len=varname_len) :: fieldnames(1)
 
     allocate(gll_fields(np,np,nelemd,1), pg_fields(np*np,nelemd,1))
 
     fieldnames(1) = 'PHIS'
-    call pio_read_physgrid_topo_file(intopofn, intopo_nphys, elem, par, fieldnames, pg_fields)
+    stat = pio_read_physgrid_topo_file(intopofn, intopo_nphys, elem, par, fieldnames, pg_fields)
+    if (stat /= 0) return
 
     call gfr_init(par, elem, intopo_nphys)
     call gfr_fv_phys_to_dyn_topo(par, elem, pg_fields(:,:,1))
@@ -679,6 +680,7 @@ contains
 #endif
 
     deallocate(gll_fields, pg_fields)
+    stat = 0
 #endif
-  end subroutine gfr_pgn_to_smoothed_topo
+  end function gfr_pgn_to_smoothed_topo
 end module gllfvremap_util_mod

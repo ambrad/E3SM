@@ -974,7 +974,7 @@ contains
     end if
   end function get_iotype
 
-  subroutine pio_read_physgrid_topo_file(infilename, nphys, elem, par, fieldnames, pg_fields)
+  function pio_read_physgrid_topo_file(infilename, nphys, elem, par, fieldnames, pg_fields) result(stat)
     use element_mod, only : element_t
     use parallel_mod, only : parallel_t, syncmp
 #ifndef HOMME_WITHOUT_PIOLIBRARY
@@ -983,7 +983,7 @@ contains
     use common_io_mod, only : varname_len, io_stride, num_io_procs, num_agg
     use pio_io_mod, only : nf_init_decomp, nf_put_var_pio
     use control_mod, only : max_string_len
-    use pio, only : pio_init, pio_openfile, pio_rearr_box
+    use pio, only : pio_init, pio_openfile, pio_rearr_box, pio_inquire
 #endif
 
     character(len=*), intent(in) :: infilename
@@ -995,19 +995,26 @@ contains
 
 #ifndef HOMME_WITHOUT_PIOLIBRARY
     type(file_desc_t) :: fileid
-    integer :: stat, nfield, vari, iotype
+    integer :: stat, ndims, nvars, natts, nfield, vari, iotype
 
     call pio_init(par%rank, par%comm, num_io_procs, num_agg, io_stride, pio_rearr_box, piofs)
     iotype = get_iotype()
     stat = pio_openfile(piofs, fileid, iotype, infilename)
+    stat = pio_inquire(fileid, ndimensions=ndims, nvariables=nvars)
+    if (ndims /= 1) then
+       if (par%masterproc) print *, 'pio_read_physgrid_topo_file expects input file to have 1 dim'
+       stat = -1
+       return
+    end if
 
     nfield = size(fieldnames)
     do vari = 1,nfield       
     end do
 
     call pio_closefile(fileid)
+    stat = 0
 #endif
-  end subroutine pio_read_physgrid_topo_file
+  end function pio_read_physgrid_topo_file
 
   subroutine pio_write_physgrid_topo_file(infilename, outfilenameprefix, elem, par, &
        gll_fields, pg_fields, latlon, fieldnames, nphys, history)
