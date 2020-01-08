@@ -974,7 +974,7 @@ contains
     end if
   end function get_iotype
 
-  function pio_read_physgrid_topo_file(infilename, nphys, elem, par, fieldnames, pg_fields) result(stat)
+  subroutine pio_read_physgrid_topo_file(infilename, elem, par, fieldnames, nphys, pg_fields, stat)
     use element_mod, only : element_t
     use parallel_mod, only : parallel_t, syncmp
 #ifndef HOMME_WITHOUT_PIOLIBRARY
@@ -983,19 +983,21 @@ contains
     use common_io_mod, only : varname_len, io_stride, num_io_procs, num_agg
     use pio_io_mod, only : nf_init_decomp, nf_put_var_pio
     use control_mod, only : max_string_len
-    use pio, only : pio_init, pio_openfile, pio_rearr_box, pio_inquire
+    use pio, only : pio_init, pio_openfile, pio_rearr_box, pio_inquire, pio_inq_dimname, &
+         pio_inq_dimlen
 #endif
 
     character(len=*), intent(in) :: infilename
     type(element_t), intent(in) :: elem(:)
     type(parallel_t), intent(in) :: par
-    real(kind=real_kind), intent(out) :: pg_fields(:,:,:)
     character(len=varname_len), intent(in) :: fieldnames(:)
-    integer, intent(in) :: nphys
+    real(kind=real_kind), intent(out) :: pg_fields(:,:,:)
+    integer, intent(out) :: nphys, stat
 
 #ifndef HOMME_WITHOUT_PIOLIBRARY
     type(file_desc_t) :: fileid
-    integer :: stat, ndims, nvars, natts, nfield, vari, iotype
+    integer :: ndims, ncol, nvars, natts, nfield, vari, iotype
+    character(len=pio_max_name) :: dimname
 
     call pio_init(par%rank, par%comm, num_io_procs, num_agg, io_stride, pio_rearr_box, piofs)
     iotype = get_iotype()
@@ -1007,6 +1009,29 @@ contains
        return
     end if
 
+    stat = pio_inq_dimname(fileid, 1, dimname)
+    if (dimname /= 'ncol') then
+       if (par%masterproc) print *, 'pio_read_physgrid_topo_file expects dimname "ncol"'
+       stat = -1
+       return
+    end if
+    stat = pio_inq_dimlen(fileid, 1, ncol)
+
+    nphys = nint(sqrt(real(ncol/nelem, real_kind)))
+    if (nphys*nphys*nelem /= ncol) then
+       if (par%masterproc) then
+          print *, 'pio_read_physgrid_topo_file has inconsistent nelem, ncol, nphys:', &
+               nelem, ncol, nphys
+       end if
+       stat = -1
+       return
+    end if
+    if (nphys > np) then
+       if (par%masterproc) print *, 'pio_read_physgrid_topo_file has nphys > np:', nphys, np
+       stat = -1
+       return
+    end if
+
     nfield = size(fieldnames)
     do vari = 1,nfield       
     end do
@@ -1014,7 +1039,7 @@ contains
     call pio_closefile(fileid)
     stat = 0
 #endif
-  end function pio_read_physgrid_topo_file
+  end subroutine pio_read_physgrid_topo_file
 
   subroutine pio_write_physgrid_topo_file(infilename, outfilenameprefix, elem, par, &
        gll_fields, pg_fields, latlon, fieldnames, nphys, history)

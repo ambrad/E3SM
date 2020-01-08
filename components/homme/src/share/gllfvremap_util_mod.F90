@@ -656,7 +656,7 @@ contains
     allocate(gll_fields(np,np,nelemd,1), pg_fields(np*np,nelemd,1))
 
     fieldnames(1) = 'PHIS'
-    stat = pio_read_physgrid_topo_file(intopofn, intopo_nphys, elem, par, fieldnames, pg_fields)
+    call pio_read_physgrid_topo_file(intopofn, elem, par, fieldnames, intopo_nphys, pg_fields, stat)
     if (stat /= 0) return
 
     call gfr_init(par, elem, intopo_nphys)
