@@ -1002,10 +1002,9 @@ contains
     use kinds, only : real_kind
     use dimensions_mod, only : nelemd, nlev, np, npsq, nelem
     use common_io_mod, only : varname_len, io_stride, num_io_procs, num_agg
-    use pio_io_mod, only : nf_init_decomp, nf_put_var_pio
     use control_mod, only : max_string_len
     use pio, only : pio_init, pio_openfile, pio_rearr_box, pio_inquire, pio_inq_dimname, &
-         pio_inq_dimlen
+         pio_inq_dimlen, pio_initdecomp
 #endif
 
     character(len=*), intent(in) :: infilename
@@ -1017,22 +1016,24 @@ contains
 
 #ifndef HOMME_WITHOUT_PIOLIBRARY
     type(file_desc_t) :: fileid
-    integer :: ndims, ncol, nvars, natts, nfield, fldi, iotype
+    type(var_desc_t) :: vardesc
+    integer :: ndims, ncol, nvars, natts, nfield, fldi, iotype, nf2, ie
     character(len=pio_max_name) :: dimname
     integer, pointer :: dof(:)
+    real(real_kind), allocatable :: raw(:)
 
     call pio_init(par%rank, par%comm, num_io_procs, num_agg, io_stride, pio_rearr_box, piofs)
     iotype = get_iotype()
     stat = pio_openfile(piofs, fileid, iotype, infilename)
     stat = pio_inquire(fileid, ndimensions=ndims, nvariables=nvars)
     if (ndims /= 1) then
-       if (par%masterproc) print *, 'pio_read_physgrid_topo_file expects input file to have 1 dim'
+       if (par%masterproc) print *, 'read_physgrid_topo expects input file to have 1 dim'
        stat = -1; return
     end if
 
     stat = pio_inq_dimname(fileid, 1, dimname)
     if (dimname /= 'ncol') then
-       if (par%masterproc) print *, 'pio_read_physgrid_topo_file expects dimname "ncol"'
+       if (par%masterproc) print *, 'read_physgrid_topo expects dimname "ncol"'
        stat = -1; return
     end if
     stat = pio_inq_dimlen(fileid, 1, ncol)
@@ -1040,23 +1041,40 @@ contains
     nphys = nint(sqrt(real(ncol/nelem, real_kind)))
     if (nphys*nphys*nelem /= ncol) then
        if (par%masterproc) then
-          print *, 'pio_read_physgrid_topo_file has inconsistent nelem, ncol, nphys:', &
+          print *, 'read_physgrid_topo has inconsistent nelem, ncol, nphys:', &
                nelem, ncol, nphys
        end if
        stat = -1; return
     end if
     if (nphys > np) then
-       if (par%masterproc) print *, 'pio_read_physgrid_topo_file has nphys > np:', nphys, np
+       if (par%masterproc) print *, 'read_physgrid_topo has nphys > np:', nphys, np
        stat = -1; return
     end if
+    nf2 = nphys*nphys
 
     call make_physgrid_dof(elem, nphys, dof)
-    !TODO use dof
+    call pio_initdecomp(piofs, pio_double, (/ncol/), dof, iodesc2d)
     deallocate(dof)
 
+    allocate(raw(nf2*nelemd))
     nfield = size(fieldnames)
     do fldi = 1,nfield
+       stat = pio_inq_varid(fileid, fieldnames(fldi), vardesc)
+       if (stat /= 0) then
+          if (par%masterproc) print *, 'read_physgrid_topo: could not find var', fieldnames(fldi)
+          return
+       end if
+       print *,'amb> read ',fieldnames(fldi)
+       call read_darray(fileid, vardesc, iodesc2d, raw, stat)
+       if (stat /= 0) then
+          if (par%masterproc) print *, 'read_physgrid_topo: pio_read_darray returned stat', stat
+          return
+       end if
+       do ie = 1,nelemd
+          pg_fields(:nf2,ie,fldi) = raw(nf2*(ie-1)+1 : nf2*ie)
+       end do
     end do
+    deallocate(raw)
 
     call pio_closefile(fileid)
     stat = 0
