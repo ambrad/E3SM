@@ -1472,8 +1472,8 @@ contains
     ! variables
     varnames(1) = 'PHIS'
     vardims(1,1) = 1
-    varnames(1) = 'PHIS_d'
-    vardims(1,1) = 2
+    varnames(2) = 'PHIS_d'
+    vardims(1,2) = 2
     varreqs = .true.
     vartypes = pio_double
     call nf_output_register_variables(ncdf, nvar, varnames, vardims, vartypes, varreqs)
