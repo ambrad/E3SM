@@ -974,6 +974,27 @@ contains
     end if
   end function get_iotype
 
+  subroutine make_physgrid_dof(elem, nphys, dof)
+    ! Caller must deallocate dof when done.
+
+    use element_mod, only : element_t
+    use dimensions_mod, only : nelemd
+
+    type(element_t), intent(in) :: elem(:)
+    integer, intent(in) :: nphys
+    integer, intent(out), pointer :: dof(:)
+    
+    integer :: nf2, ie, j
+
+    nf2 = nphys*nphys
+    allocate(dof(nelemd*nf2))
+    do ie = 1,nelemd
+       do j = 1,nf2
+          dof(nf2*(ie-1) + j) = nf2*(elem(ie)%globalid-1) + j
+       end do
+    end do
+  end subroutine make_physgrid_dof
+
   subroutine pio_read_physgrid_topo_file(infilename, elem, par, fieldnames, nphys, pg_fields, stat)
     use element_mod, only : element_t
     use parallel_mod, only : parallel_t, syncmp
@@ -996,8 +1017,9 @@ contains
 
 #ifndef HOMME_WITHOUT_PIOLIBRARY
     type(file_desc_t) :: fileid
-    integer :: ndims, ncol, nvars, natts, nfield, vari, iotype
+    integer :: ndims, ncol, nvars, natts, nfield, fldi, iotype
     character(len=pio_max_name) :: dimname
+    integer, pointer :: dof(:)
 
     call pio_init(par%rank, par%comm, num_io_procs, num_agg, io_stride, pio_rearr_box, piofs)
     iotype = get_iotype()
@@ -1005,15 +1027,13 @@ contains
     stat = pio_inquire(fileid, ndimensions=ndims, nvariables=nvars)
     if (ndims /= 1) then
        if (par%masterproc) print *, 'pio_read_physgrid_topo_file expects input file to have 1 dim'
-       stat = -1
-       return
+       stat = -1; return
     end if
 
     stat = pio_inq_dimname(fileid, 1, dimname)
     if (dimname /= 'ncol') then
        if (par%masterproc) print *, 'pio_read_physgrid_topo_file expects dimname "ncol"'
-       stat = -1
-       return
+       stat = -1; return
     end if
     stat = pio_inq_dimlen(fileid, 1, ncol)
 
@@ -1023,17 +1043,19 @@ contains
           print *, 'pio_read_physgrid_topo_file has inconsistent nelem, ncol, nphys:', &
                nelem, ncol, nphys
        end if
-       stat = -1
-       return
+       stat = -1; return
     end if
     if (nphys > np) then
        if (par%masterproc) print *, 'pio_read_physgrid_topo_file has nphys > np:', nphys, np
-       stat = -1
-       return
+       stat = -1; return
     end if
 
+    call make_physgrid_dof(elem, nphys, dof)
+    !TODO use dof
+    deallocate(dof)
+
     nfield = size(fieldnames)
-    do vari = 1,nfield       
+    do fldi = 1,nfield
     end do
 
     call pio_closefile(fileid)
@@ -1111,12 +1133,7 @@ contains
     call nf_output_register_dims(ncdf, ndim, dimnames, dimsizes)
 
     ! physgrid decomp
-    allocate(dof(nelemd*nf2))
-    do ie = 1,nelemd
-       do j = 1,nf2
-          dof(nf2*(ie-1) + j) = nf2*(elem(ie)%globalid-1) + j
-       end do
-    end do
+    call make_physgrid_dof(elem, nphys, dof)
     call nf_init_decomp(ncdf, (/1/), dof, &
          itmp, unused, unused) ! these args are unused
     deallocate(dof)
