@@ -573,7 +573,7 @@ contains
 #ifndef CAM
     use common_io_mod, only: varname_len
     use gllfvremap_mod, only: gfr_init, gfr_finish, gfr_dyn_to_fv_phys_topo_data, gfr_f_get_latlon
-    use interpolate_driver_mod, only: pio_read_gll_topo_file, pio_write_physgrid_topo_file
+    use interpolate_driver_mod, only: read_gll_topo_file, write_physgrid_topo_file
     use physical_constants, only: dd_pi
 #endif
     use parallel_mod, only: parallel_t
@@ -594,7 +594,7 @@ contains
 
     allocate(gll_fields(np,np,nelemd,5), pg_fields(nf2,nelemd,5), latlon(nf2,nelemd,2))
 
-    call pio_read_gll_topo_file(intopofn, elem, par, gll_fields, fieldnames)
+    call read_gll_topo_file(intopofn, elem, par, gll_fields, fieldnames)
 
     do vari = 1,size(fieldnames)
        if (trim(fieldnames(vari)) == 'PHIS') then
@@ -626,7 +626,7 @@ contains
 
     call gfr_finish()
 
-    call pio_write_physgrid_topo_file(intopofn, outtopoprefix, elem, par, &
+    call write_physgrid_topo_file(intopofn, outtopoprefix, elem, par, &
          gll_fields, pg_fields, latlon, fieldnames, nphys, &
          'Converted from '// trim(intopofn) // ' by HOMME gfr_convert_topo')
 
@@ -638,7 +638,7 @@ contains
 #ifndef CAM
     use common_io_mod, only: varname_len
     use gllfvremap_mod, only: gfr_init, gfr_finish, gfr_fv_phys_to_dyn_topo, gfr_dyn_to_fv_phys_topo
-    use interpolate_driver_mod, only: pio_read_physgrid_topo_file, pio_write_physgrid_topo_file
+    use interpolate_driver_mod, only: read_physgrid_topo_file
     use physical_constants, only: dd_pi
 #endif
     use parallel_mod, only: parallel_t
@@ -656,7 +656,7 @@ contains
     allocate(gll_fields(np,np,nelemd,1), pg_fields(np*np,nelemd,1))
 
     fieldnames(1) = 'PHIS'
-    call pio_read_physgrid_topo_file(intopofn, elem, par, fieldnames, intopo_nphys, pg_fields, stat)
+    call read_physgrid_topo_file(intopofn, elem, par, fieldnames, intopo_nphys, pg_fields, stat)
     if (stat /= 0) return
 
     call gfr_init(par, elem, intopo_nphys)
@@ -674,7 +674,7 @@ contains
 
     ! ncol, PHIS, PHIS_d
 #if 0
-    call pio_write_physgrid_smoothed_phis_file(intopofn, outtopoprefix, elem, par, &
+    call write_physgrid_smoothed_phis_file(intopofn, outtopoprefix, elem, par, &
          gll_fields, pg_fields, output_nphys, &
          'Created from '// trim(intopofn) // ' by HOMME gfr_pgn_to_smoothed_topo')
 #endif
