@@ -638,7 +638,7 @@ contains
 #ifndef CAM
     use common_io_mod, only: varname_len
     use gllfvremap_mod, only: gfr_init, gfr_finish, gfr_fv_phys_to_dyn_topo, gfr_dyn_to_fv_phys_topo
-    use interpolate_driver_mod, only: read_physgrid_topo_file
+    use interpolate_driver_mod, only: read_physgrid_topo_file, write_physgrid_smoothed_phis_file
     use physical_constants, only: dd_pi
 #endif
     use parallel_mod, only: parallel_t
@@ -673,11 +673,9 @@ contains
     call gfr_finish()
 
     ! ncol, PHIS, PHIS_d
-#if 0
-    call write_physgrid_smoothed_phis_file(intopofn, outtopoprefix, elem, par, &
-         gll_fields, pg_fields, output_nphys, &
+    call write_physgrid_smoothed_phis_file(outtopoprefix, elem, par, &
+         gll_fields(:,:,:,1), pg_fields(:,:,1), output_nphys, &
          'Created from '// trim(intopofn) // ' by HOMME gfr_pgn_to_smoothed_topo')
-#endif
 
     deallocate(gll_fields, pg_fields)
     stat = 0

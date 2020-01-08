@@ -33,7 +33,8 @@ module interpolate_driver_mod
 !#include "pnetcdf.inc"
 #endif
   public :: interpolate_driver, pio_read_phis, &
-       read_gll_topo_file, read_physgrid_topo_file, write_physgrid_topo_file
+       read_gll_topo_file, read_physgrid_topo_file, write_physgrid_topo_file, &
+       write_physgrid_smoothed_phis_file
 
 #ifndef HOMME_WITHOUT_PIOLIBRARY
   integer :: nlat, nlon
@@ -1375,11 +1376,9 @@ contains
     integer, intent(in) :: nphys
 
 #ifndef HOMME_WITHOUT_PIOLIBRARY
-    integer, parameter :: ndim = 2
-
     character(len=varname_len) :: varnames(nvar), name
     character(len=max_string_len) :: save_state(2)
-    integer :: nf2, ie, i, j, k, n, vardims(1,nvar), vartypes(nvar)
+    integer :: nf2, i, j, k, n, vardims(1,nvar), vartypes(nvar)
     integer(kind=nfsizekind) :: unused(1)
     logical :: varreqs(nvar)
     type(file_t) :: infile
@@ -1436,6 +1435,59 @@ contains
     call restore_output_vars(save_state)
 #endif
   end subroutine write_physgrid_topo_file
+
+  subroutine write_physgrid_smoothed_phis_file(outfilenameprefix, elem, par, &
+       gll_phis, pg_phis, nphys, history)
+    ! gll_fields and fieldnames are as output from pio_read_gll_topo_file.
+
+    use element_mod, only: element_t
+    use parallel_mod, only: parallel_t
+#ifndef HOMME_WITHOUT_PIOLIBRARY
+    use kinds, only: real_kind
+    use dimensions_mod, only: nelemd, nlev, np, npsq, nelem
+    use common_io_mod, only: varname_len
+    use pio_io_mod, only: nf_output_init_complete, nf_output_register_variables, nf_put_var_pio
+    use control_mod, only: max_string_len
+#endif
+
+    integer, parameter :: nvar = 2
+
+    character(len=*), intent(in) :: outfilenameprefix, history
+    type(element_t), intent(in) :: elem(:)
+    type(parallel_t), intent(in) :: par
+    real(kind=real_kind), intent(in) :: gll_phis(np,np,nelemd), pg_phis(:,:)
+    integer, intent(in) :: nphys
+
+#ifndef HOMME_WITHOUT_PIOLIBRARY
+    character(len=varname_len) :: varnames(nvar), name
+    character(len=max_string_len) :: save_state(2)
+    integer :: nf2, stat, vardims(1,nvar), vartypes(nvar)
+    integer(kind=nfsizekind) :: unused(1)
+    logical :: varreqs(nvar)
+
+    nf2 = nphys*nphys
+    call set_output_vars(save_state)
+    call physgrid_topo_begin_write(elem, par, outfilenameprefix, nphys)
+
+    ! variables
+    varnames(1) = 'PHIS'
+    vardims(1,1) = 1
+    varnames(1) = 'PHIS_d'
+    vardims(1,1) = 2
+    varreqs = .true.
+    vartypes = pio_double
+    call nf_output_register_variables(ncdf, nvar, varnames, vardims, vartypes, varreqs)
+    stat = pio_put_att(ncdf(1)%fileid, pio_global, 'history', history)
+    call nf_output_init_complete(ncdf)
+
+    call nf_put_var_pio(ncdf(1), reshape(pg_phis(:nf2,:), (/nf2*nelemd/)), &
+         unused, unused, ncdf(1)%varlist(1))
+    call write_gll_phis(elem, ncdf(1), gll_phis, ncdf(1)%varlist(2))
+
+    call pio_closefile(ncdf(1)%fileid)
+    call restore_output_vars(save_state)
+#endif
+  end subroutine write_physgrid_smoothed_phis_file
 
   ! ------------------------------------
   ! Utils
@@ -1548,7 +1600,6 @@ contains
     call nf_init_decomp(ncdf, (/2/), dof, itmp, unused, unused)
     deallocate(dof)
   end subroutine physgrid_topo_begin_write
-#endif
   
   subroutine write_gll_phis(elem, ncdf, phis, nfvar)
     use element_mod, only: element_t
@@ -1577,5 +1628,6 @@ contains
     call nf_put_var_pio(ncdf, gll_unique, unused, unused, nfvar)
     deallocate(gll_unique)
   end subroutine write_gll_phis
+#endif
 
 end module interpolate_driver_mod
