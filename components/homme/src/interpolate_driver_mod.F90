@@ -1064,8 +1064,7 @@ contains
           if (par%masterproc) print *, 'read_physgrid_topo: could not find var', fieldnames(fldi)
           return
        end if
-       print *,'amb> read ',fieldnames(fldi)
-       call read_darray(fileid, vardesc, iodesc2d, raw, stat)
+       call pio_read_darray(fileid, vardesc, iodesc2d, raw, stat)
        if (stat /= 0) then
           if (par%masterproc) print *, 'read_physgrid_topo: pio_read_darray returned stat', stat
           return

@@ -720,7 +720,7 @@ contains
 
     if (.not. par%dynproc) return
     hybrid = hybrid_create(par, 0, 1)
-    call gfr_dyn_to_fv_phys_topo_hybrid(hybrid, elem, nets, nete, phis)
+    call gfr_dyn_to_fv_phys_topo_hybrid(hybrid, elem, 1, nelemd, phis)
   end subroutine gfr_dyn_to_fv_phys_topo_mpi_only
 
   subroutine gfr_fv_phys_to_dyn_topo_dom_mt(par, dom_mt, elem, phis)
@@ -765,7 +765,7 @@ contains
 
     if (.not. par%dynproc) return
     hybrid = hybrid_create(par, 0, 1)
-    call gfr_fv_phys_to_dyn_topo_hybrid(hybrid, elem, nets, nete, phis)
+    call gfr_fv_phys_to_dyn_topo_hybrid(hybrid, elem, 1, nelemd, phis)
   end subroutine gfr_fv_phys_to_dyn_topo_mpi_only
 
   ! ----------------------------------------------------------------------
