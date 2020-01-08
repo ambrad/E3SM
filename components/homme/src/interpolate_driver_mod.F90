@@ -1188,16 +1188,16 @@ contains
     ! fields(:np,:np,:nelemd,i) is field i in the list
     !     PHIS, SGH, SGH30, LANDM_COSLAT, LANDFRAC
 
-    use element_mod, only : element_t
-    use parallel_mod, only : parallel_t
+    use element_mod, only: element_t
+    use parallel_mod, only: parallel_t
 #ifndef HOMME_WITHOUT_PIOLIBRARY
-    use dof_mod, only : putuniquepoints
-    use kinds, only : real_kind
-    use edge_mod, only : edgevpack, edgevunpack, initedgebuffer, freeedgebuffer
-    use edgetype_mod, only : edgebuffer_t
-    use dimensions_mod, only : nelemd, nlev, np, npsq
-    use bndry_mod, only : bndry_exchangeV
-    use common_io_mod, only : varname_len
+    use dof_mod, only: putuniquepoints
+    use kinds, only: real_kind
+    use edge_mod, only: edgevpack, edgevunpack, initedgebuffer, freeedgebuffer
+    use edgetype_mod, only: edgebuffer_t
+    use dimensions_mod, only: nelemd, nlev, np, npsq
+    use bndry_mod, only: bndry_exchangeV
+    use common_io_mod, only: varname_len
 #endif
 
     character(len=*), intent(in) :: filename
@@ -1264,14 +1264,14 @@ contains
   end subroutine read_gll_topo_file
 
   subroutine read_physgrid_topo_file(infilename, elem, par, fieldnames, nphys, pg_fields, stat)
-    use element_mod, only : element_t
-    use parallel_mod, only : parallel_t
+    use element_mod, only: element_t
+    use parallel_mod, only: parallel_t
 #ifndef HOMME_WITHOUT_PIOLIBRARY
-    use kinds, only : real_kind
-    use dimensions_mod, only : nelemd, nlev, np, npsq, nelem
-    use common_io_mod, only : varname_len, io_stride, num_io_procs, num_agg
-    use control_mod, only : max_string_len
-    use pio, only : pio_init, pio_openfile, pio_rearr_box, pio_inquire, pio_inq_dimname, &
+    use kinds, only: real_kind
+    use dimensions_mod, only: nelemd, nlev, np, npsq, nelem
+    use common_io_mod, only: varname_len, io_stride, num_io_procs, num_agg
+    use control_mod, only: max_string_len
+    use pio, only: pio_init, pio_openfile, pio_rearr_box, pio_inquire, pio_inq_dimname, &
          pio_inq_dimlen, pio_initdecomp
 #endif
 
@@ -1352,14 +1352,13 @@ contains
        gll_fields, pg_fields, latlon, fieldnames, nphys, history)
     ! gll_fields and fieldnames are as output from pio_read_gll_topo_file.
 
-    use element_mod, only : element_t
-    use parallel_mod, only : parallel_t
+    use element_mod, only: element_t
+    use parallel_mod, only: parallel_t
 #ifndef HOMME_WITHOUT_PIOLIBRARY
-    use dof_mod, only : UniquePoints, putUniquePoints
-    use kinds, only : real_kind
-    use dimensions_mod, only : nelemd, nlev, np, npsq, nelem
-    use common_io_mod, only : varname_len
-    use pio_io_mod, only : nf_output_init_complete, nf_output_register_variables, nf_put_var_pio
+    use kinds, only: real_kind
+    use dimensions_mod, only: nelemd, nlev, np, npsq, nelem
+    use common_io_mod, only: varname_len
+    use pio_io_mod, only: nf_output_init_complete, nf_output_register_variables, nf_put_var_pio
     use control_mod, only: max_string_len
 #endif
 
@@ -1383,7 +1382,6 @@ contains
     integer :: nf2, ie, i, j, k, n, vardims(1,nvar), vartypes(nvar)
     integer(kind=nfsizekind) :: unused(1)
     logical :: varreqs(nvar)
-    real(kind=real_kind), allocatable :: gll_unique(:)
     type(file_t) :: infile
 
     nf2 = nphys*nphys
@@ -1432,18 +1430,9 @@ contains
             unused, unused, ncdf(1)%varlist(i))
     end do
     ! Write GLL field PHIS_d.
-    allocate(gll_unique(sum(elem%idxp%NumUniquePts)))
-    k = 1
-    do i = 1,nelemd
-       call UniquePoints(elem(i)%idxP, gll_fields(:,:,i,1), &
-            gll_unique(k : k + elem(i)%idxp%NumUniquePts - 1))
-       k = k + elem(i)%idxp%NumUniquePts
-    end do
-    call nf_put_var_pio(ncdf(1), gll_unique, unused, unused, ncdf(1)%varlist(nvar))
-    deallocate(gll_unique)
+    call write_gll_phis(elem, ncdf(1), gll_fields(:,:,:,1), ncdf(1)%varlist(nvar))
 
     call pio_closefile(ncdf(1)%fileid)
-
     call restore_output_vars(save_state)
 #endif
   end subroutine write_physgrid_topo_file
@@ -1467,8 +1456,8 @@ contains
   subroutine make_physgrid_dof(elem, nphys, dof)
     ! Caller must deallocate dof when done.
 
-    use element_mod, only : element_t
-    use dimensions_mod, only : nelemd
+    use element_mod, only: element_t
+    use dimensions_mod, only: nelemd
 
     type(element_t), intent(in) :: elem(:)
     integer, intent(in) :: nphys
@@ -1486,7 +1475,7 @@ contains
   end subroutine make_physgrid_dof
 
   subroutine set_output_vars(save_state)
-    use common_io_mod, only : output_frequency, output_start_time, output_end_time, &
+    use common_io_mod, only: output_frequency, output_start_time, output_end_time, &
          output_dir, output_prefix
     use control_mod, only: max_string_len
     
@@ -1507,7 +1496,7 @@ contains
   end subroutine set_output_vars
 
   subroutine restore_output_vars(save_state)
-    use common_io_mod, only : output_frequency, output_start_time, output_end_time, &
+    use common_io_mod, only: output_frequency, output_start_time, output_end_time, &
          output_dir, output_prefix
     use control_mod, only: max_string_len
     
@@ -1518,11 +1507,11 @@ contains
   end subroutine restore_output_vars
 
   subroutine physgrid_topo_begin_write(elem, par, outfilenameprefix, nphys)
-    use element_mod, only : element_t
-    use parallel_mod, only : parallel_t
-    use dimensions_mod, only : np, nelem
-    use pio_io_mod, only : nf_output_init_begin, nf_output_register_dims, nf_init_decomp
-    use common_io_mod, only : varname_len
+    use element_mod, only: element_t
+    use parallel_mod, only: parallel_t
+    use dimensions_mod, only: np, nelem
+    use pio_io_mod, only: nf_output_init_begin, nf_output_register_dims, nf_init_decomp
+    use common_io_mod, only: varname_len
 
     integer, parameter :: ndim = 2
 
@@ -1560,5 +1549,33 @@ contains
     deallocate(dof)
   end subroutine physgrid_topo_begin_write
 #endif
+  
+  subroutine write_gll_phis(elem, ncdf, phis, nfvar)
+    use element_mod, only: element_t
+    use common_io_mod, only: nf_variable
+    use dof_mod, only: UniquePoints
+    use dimensions_mod, only: nelemd
+    use kinds, only: real_kind
+    use pio_io_mod, only: nf_put_var_pio
+
+    type(element_t), intent(in) :: elem(:)
+    type(nf_handle), intent(inout) :: ncdf
+    real(real_kind), intent(in) :: phis(:,:,:)
+    type(nf_variable), intent(in) :: nfvar
+
+    integer(kind=nfsizekind) :: unused(1)
+    real(kind=real_kind), allocatable :: gll_unique(:)
+    integer :: k, i
+
+    allocate(gll_unique(sum(elem%idxp%NumUniquePts)))
+    k = 1
+    do i = 1,nelemd
+       call UniquePoints(elem(i)%idxP, phis(:,:,i), &
+            gll_unique(k : k + elem(i)%idxp%NumUniquePts - 1))
+       k = k + elem(i)%idxp%NumUniquePts
+    end do
+    call nf_put_var_pio(ncdf, gll_unique, unused, unused, nfvar)
+    deallocate(gll_unique)
+  end subroutine write_gll_phis
 
 end module interpolate_driver_mod
