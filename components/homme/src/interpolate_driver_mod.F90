@@ -961,16 +961,29 @@ contains
 #endif
   end subroutine pio_read_gll_topo_file
 
+  ! Some short util functions.
+  function get_iotype() result(iotype)
+    use pio, only: iotype_netcdf, iotype_pnetcdf
+
+    integer :: iotype
+
+    if (output_type == 'netcdf') then
+       iotype = iotype_netcdf
+    else
+       iotype = iotype_pnetcdf
+    end if
+  end function get_iotype
+
   subroutine pio_read_physgrid_topo_file(infilename, nphys, elem, par, fieldnames, pg_fields)
     use element_mod, only : element_t
     use parallel_mod, only : parallel_t, syncmp
 #ifndef HOMME_WITHOUT_PIOLIBRARY
     use kinds, only : real_kind
     use dimensions_mod, only : nelemd, nlev, np, npsq, nelem
-    use common_io_mod, only : varname_len, output_frequency, output_start_time, &
-         output_end_time, output_dir, output_prefix
+    use common_io_mod, only : varname_len, io_stride, num_io_procs, num_agg
     use pio_io_mod, only : nf_init_decomp, nf_put_var_pio
-    use control_mod, only: max_string_len
+    use control_mod, only : max_string_len
+    use pio, only : pio_init, pio_openfile, pio_rearr_box
 #endif
 
     character(len=*), intent(in) :: infilename
@@ -981,7 +994,19 @@ contains
     integer, intent(in) :: nphys
 
 #ifndef HOMME_WITHOUT_PIOLIBRARY
-#endif    
+    type(file_desc_t) :: fileid
+    integer :: stat, nfield, vari, iotype
+
+    call pio_init(par%rank, par%comm, num_io_procs, num_agg, io_stride, pio_rearr_box, piofs)
+    iotype = get_iotype()
+    stat = pio_openfile(piofs, fileid, iotype, infilename)
+
+    nfield = size(fieldnames)
+    do vari = 1,nfield       
+    end do
+
+    call pio_closefile(fileid)
+#endif
   end subroutine pio_read_physgrid_topo_file
 
   subroutine pio_write_physgrid_topo_file(infilename, outfilenameprefix, elem, par, &
