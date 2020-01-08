@@ -1189,7 +1189,7 @@ contains
     !     PHIS, SGH, SGH30, LANDM_COSLAT, LANDFRAC
 
     use element_mod, only : element_t
-    use parallel_mod, only : parallel_t, syncmp
+    use parallel_mod, only : parallel_t
 #ifndef HOMME_WITHOUT_PIOLIBRARY
     use dof_mod, only : putuniquepoints
     use kinds, only : real_kind
@@ -1263,42 +1263,9 @@ contains
 #endif
   end subroutine read_gll_topo_file
 
-  function get_iotype() result(iotype)
-    use pio, only: iotype_netcdf, iotype_pnetcdf
-
-    integer :: iotype
-
-    if (output_type == 'netcdf') then
-       iotype = iotype_netcdf
-    else
-       iotype = iotype_pnetcdf
-    end if
-  end function get_iotype
-
-  subroutine make_physgrid_dof(elem, nphys, dof)
-    ! Caller must deallocate dof when done.
-
-    use element_mod, only : element_t
-    use dimensions_mod, only : nelemd
-
-    type(element_t), intent(in) :: elem(:)
-    integer, intent(in) :: nphys
-    integer, intent(out), pointer :: dof(:)
-    
-    integer :: nf2, ie, j
-
-    nf2 = nphys*nphys
-    allocate(dof(nelemd*nf2))
-    do ie = 1,nelemd
-       do j = 1,nf2
-          dof(nf2*(ie-1) + j) = nf2*(elem(ie)%globalid-1) + j
-       end do
-    end do
-  end subroutine make_physgrid_dof
-
   subroutine read_physgrid_topo_file(infilename, elem, par, fieldnames, nphys, pg_fields, stat)
     use element_mod, only : element_t
-    use parallel_mod, only : parallel_t, syncmp
+    use parallel_mod, only : parallel_t
 #ifndef HOMME_WITHOUT_PIOLIBRARY
     use kinds, only : real_kind
     use dimensions_mod, only : nelemd, nlev, np, npsq, nelem
@@ -1386,16 +1353,13 @@ contains
     ! gll_fields and fieldnames are as output from pio_read_gll_topo_file.
 
     use element_mod, only : element_t
-    use parallel_mod, only : parallel_t, syncmp
+    use parallel_mod, only : parallel_t
 #ifndef HOMME_WITHOUT_PIOLIBRARY
     use dof_mod, only : UniquePoints, putUniquePoints
     use kinds, only : real_kind
     use dimensions_mod, only : nelemd, nlev, np, npsq, nelem
-    use common_io_mod, only : varname_len, output_frequency, output_start_time, &
-         output_end_time, output_dir, output_prefix
-    use pio_io_mod, only : nf_output_init_begin, nf_output_init_complete, &
-         nf_output_register_dims, nf_output_register_variables, nf_init_decomp, &
-         nf_put_var_pio
+    use common_io_mod, only : varname_len
+    use pio_io_mod, only : nf_output_init_complete, nf_output_register_variables, nf_put_var_pio
     use control_mod, only: max_string_len
 #endif
 
@@ -1414,51 +1378,17 @@ contains
 #ifndef HOMME_WITHOUT_PIOLIBRARY
     integer, parameter :: ndim = 2
 
-    character(len=varname_len) :: dimnames(ndim), varnames(nvar), name
-    character(len=max_string_len) :: output_dir_save, output_prefix_save
-    integer :: nf2, ie, i, j, k, n, dimsizes(ndim), vardims(1,nvar), vartypes(nvar), itmp(1)
-    integer, pointer :: dof(:)
+    character(len=varname_len) :: varnames(nvar), name
+    character(len=max_string_len) :: save_state(2)
+    integer :: nf2, ie, i, j, k, n, vardims(1,nvar), vartypes(nvar)
     integer(kind=nfsizekind) :: unused(1)
     logical :: varreqs(nvar)
     real(kind=real_kind), allocatable :: gll_unique(:)
     type(file_t) :: infile
 
-    ! Save global output-file state.
-    output_dir_save = output_dir
-    output_prefix_save = output_prefix
-
-    ! We get a spurious '1' at the end of the output filename, but other than
-    ! that, we get exactly what we want.
-    output_prefix = ''
-    output_dir = ''
-    output_frequency(2:max_output_streams) = 0
-    output_frequency(1) = 1
-    output_start_time(1) = 0
-    output_end_time(1) = 1
-
     nf2 = nphys*nphys
-
-    call nf_output_init_begin(ncdf, par%masterproc, par%nprocs, par%rank, par%comm, &
-         outfilenameprefix, 0)
-
-    ! dimensions
-    dimnames(1) = 'ncol'
-    dimsizes(1) = nelem*nf2
-    dimnames(2) = 'ncol_d'
-    ! Euler's formula applied to the GLL grid:
-    !   v - e + f = 2 => v = e - f + 2 = 2 f - f + 2 = (np-1)^2 nelem + 2
-    dimsizes(2) = (np-1)**2*nelem + 2
-    call nf_output_register_dims(ncdf, ndim, dimnames, dimsizes)
-
-    ! physgrid decomp
-    call make_physgrid_dof(elem, nphys, dof)
-    call nf_init_decomp(ncdf, (/1/), dof, &
-         itmp, unused, unused) ! these args are unused
-    deallocate(dof)
-    ! GLL decomp
-    call getcompdof(dof, elem, 1)
-    call nf_init_decomp(ncdf, (/2/), dof, itmp, unused, unused)
-    deallocate(dof)
+    call set_output_vars(save_state)
+    call physgrid_topo_begin_write(elem, par, outfilenameprefix, nphys)
 
     ! variables
     do i = 1,nvar_old
@@ -1514,10 +1444,121 @@ contains
 
     call pio_closefile(ncdf(1)%fileid)
 
-    ! Restore global output-file state.
-    output_prefix = output_prefix_save
-    output_dir = output_dir_save
+    call restore_output_vars(save_state)
 #endif
   end subroutine write_physgrid_topo_file
+
+  ! ------------------------------------
+  ! Utils
+
+#ifndef HOMME_WITHOUT_PIOLIBRARY
+  function get_iotype() result(iotype)
+    use pio, only: iotype_netcdf, iotype_pnetcdf
+
+    integer :: iotype
+
+    if (output_type == 'netcdf') then
+       iotype = iotype_netcdf
+    else
+       iotype = iotype_pnetcdf
+    end if
+  end function get_iotype
+
+  subroutine make_physgrid_dof(elem, nphys, dof)
+    ! Caller must deallocate dof when done.
+
+    use element_mod, only : element_t
+    use dimensions_mod, only : nelemd
+
+    type(element_t), intent(in) :: elem(:)
+    integer, intent(in) :: nphys
+    integer, intent(out), pointer :: dof(:)
+    
+    integer :: nf2, ie, j
+
+    nf2 = nphys*nphys
+    allocate(dof(nelemd*nf2))
+    do ie = 1,nelemd
+       do j = 1,nf2
+          dof(nf2*(ie-1) + j) = nf2*(elem(ie)%globalid-1) + j
+       end do
+    end do
+  end subroutine make_physgrid_dof
+
+  subroutine set_output_vars(save_state)
+    use common_io_mod, only : output_frequency, output_start_time, output_end_time, &
+         output_dir, output_prefix
+    use control_mod, only: max_string_len
+    
+    character(len=max_string_len), intent(out) :: save_state(2)
+
+    ! Save global output-file state.
+    save_state(1) = output_dir
+    save_state(2) = output_prefix
+
+    ! We get a spurious '1' at the end of the output filename, but other than
+    ! that, we get exactly what we want.
+    output_prefix = ''
+    output_dir = ''
+    output_frequency(2:max_output_streams) = 0
+    output_frequency(1) = 1
+    output_start_time(1) = 0
+    output_end_time(1) = 1
+  end subroutine set_output_vars
+
+  subroutine restore_output_vars(save_state)
+    use common_io_mod, only : output_frequency, output_start_time, output_end_time, &
+         output_dir, output_prefix
+    use control_mod, only: max_string_len
+    
+    character(len=max_string_len), intent(in) :: save_state(2)
+
+    output_dir = save_state(1)
+    output_prefix = save_state(2)
+  end subroutine restore_output_vars
+
+  subroutine physgrid_topo_begin_write(elem, par, outfilenameprefix, nphys)
+    use element_mod, only : element_t
+    use parallel_mod, only : parallel_t
+    use dimensions_mod, only : np, nelem
+    use pio_io_mod, only : nf_output_init_begin, nf_output_register_dims, nf_init_decomp
+    use common_io_mod, only : varname_len
+
+    integer, parameter :: ndim = 2
+
+    type(element_t), intent(in) :: elem(:)
+    type(parallel_t), intent(in) :: par
+    character(len=*), intent(in) :: outfilenameprefix
+    integer, intent(in) :: nphys
+
+    character(len=varname_len) :: dimnames(ndim)
+    integer :: dimsizes(ndim), nf2, itmp(1)
+    integer(kind=nfsizekind) :: unused(1)
+    integer, pointer :: dof(:)
+
+    call nf_output_init_begin(ncdf, par%masterproc, par%nprocs, par%rank, par%comm, &
+         outfilenameprefix, 0)
+
+    ! dimensions
+    nf2 = nphys*nphys
+    dimnames(1) = 'ncol'
+    dimsizes(1) = nelem*nf2
+    dimnames(2) = 'ncol_d'
+    ! Euler's formula applied to the GLL grid:
+    !   v - e + f = 2 => v = e - f + 2 = 2 f - f + 2 = (np-1)^2 nelem + 2
+    dimsizes(2) = (np-1)**2*nelem + 2
+    call nf_output_register_dims(ncdf, ndim, dimnames, dimsizes)
+
+    ! physgrid decomp
+    call make_physgrid_dof(elem, nphys, dof)
+    call nf_init_decomp(ncdf, (/1/), dof, &
+         itmp, unused, unused) ! these args are unused
+    deallocate(dof)
+    ! GLL decomp
+    call getcompdof(dof, elem, 1)
+    call nf_init_decomp(ncdf, (/2/), dof, itmp, unused, unused)
+    deallocate(dof)
+  end subroutine physgrid_topo_begin_write
+#endif
 
 end module interpolate_driver_mod
