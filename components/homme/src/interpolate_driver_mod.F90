@@ -1429,7 +1429,7 @@ contains
             unused, unused, ncdf(1)%varlist(i))
     end do
     ! Write GLL field PHIS_d.
-    call write_gll_phis(elem, ncdf(1), gll_fields(:,:,:,1), ncdf(1)%varlist(nvar))
+    call write_gll_field(elem, ncdf(1), gll_fields(:,:,:,1), ncdf(1)%varlist(nvar))
 
     call pio_closefile(ncdf(1)%fileid)
     call restore_output_vars(save_state)
@@ -1460,7 +1460,7 @@ contains
 #ifndef HOMME_WITHOUT_PIOLIBRARY
     character(len=varname_len) :: varnames(max_nvar), name
     character(len=max_string_len) :: save_state(2)
-    integer :: nf2, stat, nvar, vardims(1,max_nvar), vartypes(max_nvar)
+    integer :: i, nf2, stat, nvar, vardims(1,max_nvar), vartypes(max_nvar)
     integer(kind=nfsizekind) :: unused(1)
     logical :: varreqs(max_nvar), outll
 
@@ -1498,10 +1498,13 @@ contains
 
     call nf_put_var_pio(ncdf(1), reshape(pg_fields(:nf2,:,1), (/nf2*nelemd/)), &
          unused, unused, ncdf(1)%varlist(1))
-    call write_gll_phis(elem, ncdf(1), gll_fields(:,:,:,1), ncdf(1)%varlist(2))
+    call write_gll_field(elem, ncdf(1), gll_fields(:,:,:,1), ncdf(1)%varlist(2))
     if (outll) then
-       !call nf_put_var_pio(ncdf(1), reshape(latlon(:,:,i-nvar_old), (/nf2*nelemd/)), &
-       !     unused, unused, ncdf(1)%varlist(i))
+       do i = 1,2
+          call nf_put_var_pio(ncdf(1), reshape(gll_fields(:,:,:,i+1), (/nf2*nelemd/)), &
+               unused, unused, ncdf(1)%varlist(1 + 2*i))
+          call write_gll_field(elem, ncdf(1), gll_fields(:,:,:,i+1), ncdf(1)%varlist(2 + 2*i))
+       end do
     end if
 
     call pio_closefile(ncdf(1)%fileid)
@@ -1621,7 +1624,7 @@ contains
     deallocate(dof)
   end subroutine physgrid_topo_begin_write
   
-  subroutine write_gll_phis(elem, ncdf, phis, nfvar)
+  subroutine write_gll_field(elem, ncdf, phis, nfvar)
     use element_mod, only: element_t
     use common_io_mod, only: nf_variable
     use dof_mod, only: UniquePoints
@@ -1647,7 +1650,7 @@ contains
     end do
     call nf_put_var_pio(ncdf, gll_unique, unused, unused, nfvar)
     deallocate(gll_unique)
-  end subroutine write_gll_phis
+  end subroutine write_gll_field
 #endif
 
 end module interpolate_driver_mod

@@ -613,8 +613,6 @@ contains
             square, augment)
     end do
 
-    print *,'amb> maxes 0',maxval(gll_fields(:,:,:,1)),maxval(pg_fields(:nphys*nphys,:,1))
-
     do ie = 1,nelemd
        do j = 1,nphys
           do i = 1,nphys
@@ -639,7 +637,8 @@ contains
   function gfr_pgn_to_smoothed_topo(par, elem, output_nphys, intopofn, outtopoprefix) result(stat)
 #ifndef CAM
     use common_io_mod, only: varname_len
-    use gllfvremap_mod, only: gfr_init, gfr_finish, gfr_fv_phys_to_dyn_topo, gfr_dyn_to_fv_phys_topo
+    use gllfvremap_mod, only: gfr_init, gfr_finish, gfr_fv_phys_to_dyn_topo, &
+         gfr_dyn_to_fv_phys_topo, gfr_f_get_latlon
     use interpolate_driver_mod, only: read_physgrid_topo_file, write_physgrid_smoothed_phis_file
     use physical_constants, only: dd_pi
 #endif
@@ -652,10 +651,17 @@ contains
 
 #ifndef CAM
     real(real_kind), allocatable :: gll_fields(:,:,:,:), pg_fields(:,:,:)
-    integer :: intopo_nphys, ie, stat
+    integer :: intopo_nphys, ie, i, j, k, stat, nvar, nf2
     character(len=varname_len) :: fieldnames(1)
+    real(real_kind) :: rad2deg
+    logical :: write_latlon
 
-    allocate(gll_fields(np,np,nelemd,1), pg_fields(np*np,nelemd,1))
+    write_latlon = .true.
+
+    nvar = 1
+    if (write_latlon) nvar = 3
+
+    allocate(gll_fields(np,np,nelemd,nvar), pg_fields(np*np,nelemd,nvar))
 
     fieldnames(1) = 'PHIS'
     call read_physgrid_topo_file(intopofn, elem, par, fieldnames, intopo_nphys, pg_fields, stat)
@@ -666,17 +672,36 @@ contains
     do ie = 1,nelemd
        gll_fields(:,:,ie,1) = elem(ie)%state%phis
     end do
-    print *,'amb> maxes 1',maxval(gll_fields(:,:,:,1)),maxval(pg_fields(:intopo_nphys*intopo_nphys,:,1))
     call gfr_finish()
 
     !TODO smooth
 
     call gfr_init(par, elem, output_nphys)
     call gfr_dyn_to_fv_phys_topo(par, elem, pg_fields(:,:,1))
+    if (write_latlon) then
+       rad2deg = 180.0_real_kind/dd_pi
+       do ie = 1,nelemd
+          do j = 1,output_nphys
+             do i = 1,output_nphys
+                k = output_nphys*(j-1) + i
+                call gfr_f_get_latlon(ie, i, j, pg_fields(k,ie,2), pg_fields(k,ie,3))
+             end do
+          end do
+       end do
+       ! Convert to degrees.
+       nf2 = output_nphys*output_nphys
+       pg_fields(:nf2,:,2:3) = pg_fields(:nf2,:,2:3)*rad2deg
+       do ie = 1,nelemd
+          do j = 1,np
+             do i = 1,np
+                gll_fields(i,j,ie,2) = elem(ie)%spherep(i,j)%lat*rad2deg
+                gll_fields(i,j,ie,3) = elem(ie)%spherep(i,j)%lon*rad2deg
+             end do
+          end do
+       end do
+    end if
     call gfr_finish()
-    print *,'amb> maxes 2',maxval(gll_fields(:,:,:,1)),maxval(pg_fields(:output_nphys*output_nphys,:,1))
 
-    ! ncol, PHIS, PHIS_d
     call write_physgrid_smoothed_phis_file(outtopoprefix, elem, par, &
          gll_fields, pg_fields, output_nphys, &
          'Created from '// trim(intopofn) // ' by HOMME gfr_pgn_to_smoothed_topo', &
