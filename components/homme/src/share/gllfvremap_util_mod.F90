@@ -665,10 +665,13 @@ contains
 
     allocate(gll_fields(np,np,nelemd,nvar), pg_fields(np*np,nelemd,nvar))
 
+    ! Read the unsmoothed physgrid topo data from cube_to_target's first
+    ! run. Here, pg4 will give the best quality.
     fieldnames(1) = 'PHIS'
     call read_physgrid_topo_file(intopofn, elem, par, fieldnames, intopo_nphys, pg_fields, stat)
     if (stat /= 0) return
 
+    ! Map this topo field to GLL.
     call gfr_init(par, elem, intopo_nphys)
     call gfr_fv_phys_to_dyn_topo(par, elem, pg_fields(:,:,1))
     do ie = 1,nelemd
@@ -683,8 +686,10 @@ contains
     end do
     call gfr_finish()
 
-    !TODO smooth
+    ! Smooth on the GLL grid.
+    !TODO
 
+    ! Map the GLL data to the target physgrid, e.g., pg2.
     call gfr_init(par, elem, output_nphys)
     call gfr_dyn_to_fv_phys_topo(par, elem, pg_fields(:,:,1))
     if (write_latlon) then
@@ -710,6 +715,11 @@ contains
     end if
     call gfr_finish()
 
+    ! Write the netcdf file that will be used as the --smoothed-topography file
+    ! in the second run of cube_to_target. Only ncol, PHIS are needed for
+    ! this. We include PHIS_d for use in the final assembled GLL-physgrid topo
+    ! file. Optionally, we also include physgrid and GLL lat-lon data for easy
+    ! visualization using just this file.
     call write_physgrid_smoothed_phis_file(outtopoprefix, elem, par, &
          gll_fields, pg_fields, output_nphys, &
          'Created from '// trim(intopofn) // ' by HOMME gfr_pgn_to_smoothed_topo', &
