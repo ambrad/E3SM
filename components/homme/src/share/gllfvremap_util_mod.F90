@@ -641,6 +641,8 @@ contains
          gfr_dyn_to_fv_phys_topo, gfr_f_get_latlon
     use interpolate_driver_mod, only: read_physgrid_topo_file, write_physgrid_smoothed_phis_file
     use physical_constants, only: dd_pi
+    use edge_mod, only: edgevpack_nlyr, edgevunpack_nlyr, edge_g
+    use bndry_mod, only: bndry_exchangev
 #endif
     use parallel_mod, only: parallel_t
 
@@ -670,6 +672,13 @@ contains
     call gfr_init(par, elem, intopo_nphys)
     call gfr_fv_phys_to_dyn_topo(par, elem, pg_fields(:,:,1))
     do ie = 1,nelemd
+       call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%phis, 1, 0, 1)
+    end do
+    call bndry_exchangeV(par, edge_g)
+    do ie = 1,nelemd
+       call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%state%phis, 1, 0, 1)
+    end do
+    do ie = 1,nelemd
        gll_fields(:,:,ie,1) = elem(ie)%state%phis
     end do
     call gfr_finish()
@@ -688,7 +697,6 @@ contains
              end do
           end do
        end do
-       ! Convert to degrees.
        nf2 = output_nphys*output_nphys
        pg_fields(:nf2,:,2:3) = pg_fields(:nf2,:,2:3)*rad2deg
        do ie = 1,nelemd

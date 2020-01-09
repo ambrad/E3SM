@@ -1501,7 +1501,7 @@ contains
     call write_gll_field(elem, ncdf(1), gll_fields(:,:,:,1), ncdf(1)%varlist(2))
     if (outll) then
        do i = 1,2
-          call nf_put_var_pio(ncdf(1), reshape(gll_fields(:,:,:,i+1), (/nf2*nelemd/)), &
+          call nf_put_var_pio(ncdf(1), reshape(pg_fields(:nf2,:,i+1), (/nf2*nelemd/)), &
                unused, unused, ncdf(1)%varlist(1 + 2*i))
           call write_gll_field(elem, ncdf(1), gll_fields(:,:,:,i+1), ncdf(1)%varlist(2 + 2*i))
        end do
