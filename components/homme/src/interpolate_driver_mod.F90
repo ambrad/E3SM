@@ -1437,9 +1437,7 @@ contains
   end subroutine write_physgrid_topo_file
 
   subroutine write_physgrid_smoothed_phis_file(outfilenameprefix, elem, par, &
-       gll_phis, pg_phis, nphys, history)
-    ! gll_fields and fieldnames are as output from pio_read_gll_topo_file.
-
+       gll_fields, pg_fields, nphys, history, output_latlon)
     use element_mod, only: element_t
     use parallel_mod, only: parallel_t
 #ifndef HOMME_WITHOUT_PIOLIBRARY
@@ -1450,39 +1448,61 @@ contains
     use control_mod, only: max_string_len
 #endif
 
-    integer, parameter :: nvar = 2
+    integer, parameter :: max_nvar = 6
 
     character(len=*), intent(in) :: outfilenameprefix, history
     type(element_t), intent(in) :: elem(:)
     type(parallel_t), intent(in) :: par
-    real(kind=real_kind), intent(in) :: gll_phis(np,np,nelemd), pg_phis(:,:)
+    real(kind=real_kind), intent(in) :: gll_fields(:,:,:,:), pg_fields(:,:,:)
     integer, intent(in) :: nphys
+    logical, optional, intent(in) :: output_latlon
 
 #ifndef HOMME_WITHOUT_PIOLIBRARY
-    character(len=varname_len) :: varnames(nvar), name
+    character(len=varname_len) :: varnames(max_nvar), name
     character(len=max_string_len) :: save_state(2)
-    integer :: nf2, stat, vardims(1,nvar), vartypes(nvar)
+    integer :: nf2, stat, nvar, vardims(1,max_nvar), vartypes(max_nvar)
     integer(kind=nfsizekind) :: unused(1)
-    logical :: varreqs(nvar)
+    logical :: varreqs(max_nvar), outll
+
+    outll = .false.
+    if (present(output_latlon)) outll = output_latlon
+    if (size(gll_fields,4) < 3 .or. size(pg_fields,3) < 3) then
+       if (par%masterproc) then
+          print *, 'write_physgrid_smoothed_phis_file: gll_fields and pg_fields must&
+               & have 3 fields if output_latlon=true; setting output_latlon=false'
+       end if
+       outll = .false.
+    end if
+
+    nvar = 2
+    if (outll) nvar = 6
 
     nf2 = nphys*nphys
     call set_output_vars(save_state)
     call physgrid_topo_begin_write(elem, par, outfilenameprefix, nphys)
 
     ! variables
-    varnames(1) = 'PHIS'
-    vardims(1,1) = 1
-    varnames(2) = 'PHIS_d'
-    vardims(1,2) = 2
+    varnames(1) = 'PHIS'  ; vardims(1,1) = 1
+    varnames(2) = 'PHIS_d'; vardims(1,2) = 2
+    if (outll) then
+       varnames(3) = 'lat'  ; vardims(1,3) = 1
+       varnames(4) = 'lat_d'; vardims(1,4) = 2
+       varnames(5) = 'lon'  ; vardims(1,5) = 1
+       varnames(6) = 'lon_d'; vardims(1,6) = 2
+    end if
     varreqs = .true.
     vartypes = pio_double
     call nf_output_register_variables(ncdf, nvar, varnames, vardims, vartypes, varreqs)
     stat = pio_put_att(ncdf(1)%fileid, pio_global, 'history', history)
     call nf_output_init_complete(ncdf)
 
-    call nf_put_var_pio(ncdf(1), reshape(pg_phis(:nf2,:), (/nf2*nelemd/)), &
+    call nf_put_var_pio(ncdf(1), reshape(pg_fields(:nf2,:,1), (/nf2*nelemd/)), &
          unused, unused, ncdf(1)%varlist(1))
-    call write_gll_phis(elem, ncdf(1), gll_phis, ncdf(1)%varlist(2))
+    call write_gll_phis(elem, ncdf(1), gll_fields(:,:,:,1), ncdf(1)%varlist(2))
+    if (outll) then
+       !call nf_put_var_pio(ncdf(1), reshape(latlon(:,:,i-nvar_old), (/nf2*nelemd/)), &
+       !     unused, unused, ncdf(1)%varlist(i))
+    end if
 
     call pio_closefile(ncdf(1)%fileid)
     call restore_output_vars(save_state)

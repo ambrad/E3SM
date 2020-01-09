@@ -613,6 +613,8 @@ contains
             square, augment)
     end do
 
+    print *,'amb> maxes 0',maxval(gll_fields(:,:,:,1)),maxval(pg_fields(:nphys*nphys,:,1))
+
     do ie = 1,nelemd
        do j = 1,nphys
           do i = 1,nphys
@@ -664,6 +666,7 @@ contains
     do ie = 1,nelemd
        gll_fields(:,:,ie,1) = elem(ie)%state%phis
     end do
+    print *,'amb> maxes 1',maxval(gll_fields(:,:,:,1)),maxval(pg_fields(:intopo_nphys*intopo_nphys,:,1))
     call gfr_finish()
 
     !TODO smooth
@@ -671,11 +674,13 @@ contains
     call gfr_init(par, elem, output_nphys)
     call gfr_dyn_to_fv_phys_topo(par, elem, pg_fields(:,:,1))
     call gfr_finish()
+    print *,'amb> maxes 2',maxval(gll_fields(:,:,:,1)),maxval(pg_fields(:output_nphys*output_nphys,:,1))
 
     ! ncol, PHIS, PHIS_d
     call write_physgrid_smoothed_phis_file(outtopoprefix, elem, par, &
-         gll_fields(:,:,:,1), pg_fields(:,:,1), output_nphys, &
-         'Created from '// trim(intopofn) // ' by HOMME gfr_pgn_to_smoothed_topo')
+         gll_fields, pg_fields, output_nphys, &
+         'Created from '// trim(intopofn) // ' by HOMME gfr_pgn_to_smoothed_topo', &
+         .true.)
 
     deallocate(gll_fields, pg_fields)
     stat = 0
