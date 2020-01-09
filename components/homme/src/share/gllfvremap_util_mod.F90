@@ -643,6 +643,8 @@ contains
     use physical_constants, only: dd_pi
     use edge_mod, only: edgevpack_nlyr, edgevunpack_nlyr, edge_g
     use bndry_mod, only: bndry_exchangev
+    use prim_driver_base, only: smooth_topo_datasets
+    use hybrid_mod, only: hybrid_t, hybrid_create
 #endif
     use parallel_mod, only: parallel_t
 
@@ -657,8 +659,9 @@ contains
     character(len=varname_len) :: fieldnames(1)
     real(real_kind) :: rad2deg
     logical :: write_latlon
+    type(hybrid_t) :: hybrid
 
-    write_latlon = .true.
+    write_latlon = .false.
 
     nvar = 1
     if (write_latlon) nvar = 3
@@ -687,7 +690,8 @@ contains
     call gfr_finish()
 
     ! Smooth on the GLL grid.
-    !TODO
+    hybrid = hybrid_create(par, 0, 1)
+    call smooth_topo_datasets(elem, hybrid, 1, nelemd)
 
     ! Map the GLL data to the target physgrid, e.g., pg2.
     call gfr_init(par, elem, output_nphys)
