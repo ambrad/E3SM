@@ -2148,7 +2148,6 @@
       <nx>235160</nx>
       <ny>1</ny>
       <file grid="ice|ocn">$DIN_LOC_ROOT/share/domains/domain.ocn.oEC60to30v3.161222.nc</file>
-      <!--brad323 file grid="ice|ocn">/compyfs/brad323/ne30pg2_r05_oECv3/domain.ocn.oEC60to30v3.200110.nc</file-->
       <desc>oEC60to30v3 is a MPAS ocean grid generated with the eddy closure density function that is roughly comparable to the pop 1 degree resolution:</desc>
     </domain>
 
@@ -2263,8 +2262,6 @@
       <ny>360</ny>
       <file grid="atm" mask="oEC60to30v3">$DIN_LOC_ROOT/share/domains/domain.lnd.r05_oEC60to30v3.190418.nc</file>
       <file grid="lnd" mask="oEC60to30v3">$DIN_LOC_ROOT/share/domains/domain.lnd.r05_oEC60to30v3.190418.nc</file>
-      <!--brad323 file grid="atm" mask="oEC60to30v3">/compyfs/brad323/ne30pg2_r05_oECv3/domain.lnd.r05_oEC60to30v3.200110.nc</file-->
-      <!--brad323 file grid="lnd" mask="oEC60to30v3">/compyfs/brad323/ne30pg2_r05_oECv3/domain.lnd.r05_oEC60to30v3.200110.nc</file-->
       <file grid="lnd" mask="gx1v6">$DIN_LOC_ROOT/share/domains/domain.lnd.r05_gx1v6.191014.nc</file>
       <desc>r05 is 1/2 degree river routing grid:</desc>
     </domain>
