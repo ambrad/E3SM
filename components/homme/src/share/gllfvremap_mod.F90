@@ -254,7 +254,8 @@ contains
     use dimensions_mod, only: nlev
     use hybvcoord_mod, only: hvcoord_t
     use element_ops, only: get_temperature, get_field
-    use physical_constants, only: p0, kappa
+    use physical_constants, only: p0, kappa, Rgas, Rwater_vapor
+    use control_mod, only: use_moisture
 
     type (hybrid_t), intent(in) :: hybrid
     integer, intent(in) :: nt
@@ -266,7 +267,8 @@ contains
 
     real(kind=real_kind), dimension(np,np,nlev) :: dp, dp_fv, wr1, wr2, p, p_fv
     real(kind=real_kind) :: qmin, qmax, ones(np,np)
-    integer :: ie, nf, nf2, ncol, qi, qsize
+    integer :: ie, k, nf, nf2, ncol, qi, qsize
+    logical :: T_done
 
     ones = one
     nf = gfr%nphys
@@ -288,14 +290,6 @@ contains
 
        dp = elem(ie)%state%dp3d(:,:,:,nt)
        call gfr_g2f_scalar(ie, elem(ie)%metdet, dp, dp_fv)
-
-       call get_temperature(elem(ie), wr2, hvcoord, nt)
-       call get_field(elem(ie), 'p', p, hvcoord, nt, -1)
-       call gfr_g2f_scalar(ie, elem(ie)%metdet, p, p_fv)
-       wr2 = wr2*(p/p0)**kappa
-       call gfr_g2f_scalar_dp(gfr, ie, elem(ie)%metdet, dp, dp_fv, wr2, wr1)
-       wr1(:nf,:nf,:) = wr1(:nf,:nf,:)/(p_fv(:nf,:nf,:)/p0)**kappa
-       T(:ncol,:,ie) = reshape(wr1(:nf,:nf,:), (/ncol,nlev/))
 
        call gfr_g2f_vector(gfr, ie, elem, &
             elem(ie)%state%v(:,:,1,:,nt), elem(ie)%state%v(:,:,2,:,nt), &
@@ -320,6 +314,36 @@ contains
                   elem(ie)%state%Q(:,:,:,qi), wr1)
           end if
        end do
+
+       T_done = .false.
+#ifdef MODEL_THETA_L
+       if (use_moisture) then
+          ! FV vtheta_dp
+          call gfr_g2f_scalar(ie, elem(ie)%metdet, elem(ie)%state%vtheta_dp(:,:,:,nt), wr1)
+          ! FV R*
+          wr2(:nf,:nf,1) = Rgas + (Rwater_vapor - Rgas)*reshape(q(:ncol,:,1,ie), (/nf,nf/))
+          ! FV R/R*
+          wr2(:nf,:nf,1) = Rgas/wr2(:nf,:nf,1)
+          ! FV T
+          do k = 1,nlev
+             wr1(:nf,:nf,k) = wr2(:nf,:nf,1)    & ! R/R*
+                  * wr1(:nf,:nf,k)              & ! vtheta_dp
+                  * (p_fv(:nf,:nf,k)/p0)**kappa & ! exner
+                  / dp_fv(:nf,:nf,k)
+          end do
+          T(:ncol,:,ie) = reshape(wr1(:nf,:nf,:), (/ncol,nlev/))
+          T_done = .true.
+       end if
+#endif
+       if (.not. T_done) then
+          call get_temperature(elem(ie), wr2, hvcoord, nt)
+          call get_field(elem(ie), 'p', p, hvcoord, nt, -1)
+          call gfr_g2f_scalar(ie, elem(ie)%metdet, p, p_fv)
+          wr2 = wr2*(p/p0)**kappa
+          call gfr_g2f_scalar_dp(gfr, ie, elem(ie)%metdet, dp, dp_fv, wr2, wr1)
+          wr1(:nf,:nf,:) = wr1(:nf,:nf,:)/(p_fv(:nf,:nf,:)/p0)**kappa
+          T(:ncol,:,ie) = reshape(wr1(:nf,:nf,:), (/ncol,nlev/))
+       end if
     end do
   end subroutine gfr_dyn_to_fv_phys_hybrid
 
