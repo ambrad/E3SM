@@ -291,6 +291,9 @@ contains
        dp = elem(ie)%state%dp3d(:,:,:,nt)
        call gfr_g2f_scalar(ie, elem(ie)%metdet, dp, dp_fv)
 
+       call get_field(elem(ie), 'p', p, hvcoord, nt, -1)
+       call gfr_g2f_scalar(ie, elem(ie)%metdet, p, p_fv)
+
        call gfr_g2f_vector(gfr, ie, elem, &
             elem(ie)%state%v(:,:,1,:,nt), elem(ie)%state%v(:,:,2,:,nt), &
             wr1, wr2)
@@ -305,6 +308,7 @@ contains
        ! for preqx, omega_p = omega/p
        omega_p(:ncol,:,ie) = reshape(wr1(:nf,:nf,:)/p_fv(:nf,:nf,:), (/ncol,nlev/))
 #endif
+
        do qi = 1,qsize
           call gfr_g2f_mixing_ratio(gfr, ie, elem(ie)%metdet, dp, dp_fv, &
                dp*elem(ie)%state%Q(:,:,:,qi), wr1)
@@ -335,8 +339,6 @@ contains
 #endif
        if (.not. T_done) then
           call get_temperature(elem(ie), wr2, hvcoord, nt)
-          call get_field(elem(ie), 'p', p, hvcoord, nt, -1)
-          call gfr_g2f_scalar(ie, elem(ie)%metdet, p, p_fv)
           wr2 = wr2*(p0/p)**kappa
           call gfr_g2f_scalar_dp(gfr, ie, elem(ie)%metdet, dp, dp_fv, wr2, wr1)
           wr1(:nf,:nf,:) = wr1(:nf,:nf,:)*(p_fv(:nf,:nf,:)/p0)**kappa
