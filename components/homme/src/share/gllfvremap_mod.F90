@@ -267,7 +267,7 @@ contains
 
     real(kind=real_kind), dimension(np,np,nlev) :: dp, dp_fv, wr1, wr2, p, p_fv
     real(kind=real_kind) :: qmin, qmax, ones(np,np)
-    integer :: ie, k, nf, nf2, ncol, qi, qsize
+    integer :: ie, nf, nf2, ncol, qi, qsize
     logical :: T_done
 
     ones = one
@@ -316,21 +316,19 @@ contains
        end do
 
        T_done = .false.
-#ifdef MODEL_THETA_L
+#ifdef MODEL_THETA_Lfoo
        if (use_moisture) then
           ! FV vtheta_dp
           call gfr_g2f_scalar(ie, elem(ie)%metdet, elem(ie)%state%vtheta_dp(:,:,:,nt), wr1)
           ! FV R*
-          wr2(:nf,:nf,1) = Rgas + (Rwater_vapor - Rgas)*reshape(q(:ncol,:,1,ie), (/nf,nf/))
+          wr2(:nf,:nf,:) = Rgas + (Rwater_vapor - Rgas)*reshape(q(:ncol,:,1,ie), (/nf,nf,nlev/))
           ! FV R/R*
-          wr2(:nf,:nf,1) = Rgas/wr2(:nf,:nf,1)
+          wr2(:nf,:nf,:) = Rgas/wr2(:nf,:nf,:)
           ! FV T
-          do k = 1,nlev
-             wr1(:nf,:nf,k) = wr2(:nf,:nf,1)    & ! R/R*
-                  * wr1(:nf,:nf,k)              & ! vtheta_dp
-                  * (p_fv(:nf,:nf,k)/p0)**kappa & ! exner
-                  / dp_fv(:nf,:nf,k)
-          end do
+          wr1(:nf,:nf,:) = wr2(:nf,:nf,:)    & ! R/R*
+               * wr1(:nf,:nf,:)              & ! vtheta_dp
+               * (p_fv(:nf,:nf,:)/p0)**kappa & ! exner
+               / dp_fv(:nf,:nf,:)
           T(:ncol,:,ie) = reshape(wr1(:nf,:nf,:), (/ncol,nlev/))
           T_done = .true.
        end if
@@ -339,9 +337,9 @@ contains
           call get_temperature(elem(ie), wr2, hvcoord, nt)
           call get_field(elem(ie), 'p', p, hvcoord, nt, -1)
           call gfr_g2f_scalar(ie, elem(ie)%metdet, p, p_fv)
-          wr2 = wr2*(p/p0)**kappa
+          wr2 = wr2*(p0/p)**kappa
           call gfr_g2f_scalar_dp(gfr, ie, elem(ie)%metdet, dp, dp_fv, wr2, wr1)
-          wr1(:nf,:nf,:) = wr1(:nf,:nf,:)/(p_fv(:nf,:nf,:)/p0)**kappa
+          wr1(:nf,:nf,:) = wr1(:nf,:nf,:)*(p_fv(:nf,:nf,:)/p0)**kappa
           T(:ncol,:,ie) = reshape(wr1(:nf,:nf,:), (/ncol,nlev/))
        end if
     end do
@@ -389,9 +387,9 @@ contains
        call get_field(elem(ie), 'p', p, hvcoord, nt, -1)
        call gfr_g2f_scalar(ie, elem(ie)%metdet, p, p_fv)
        wr1(:nf,:nf,:) = reshape(T(:ncol,:,ie), (/nf,nf,nlev/))
-       wr1(:nf,:nf,:) = wr1(:nf,:nf,:)*(p_fv(:nf,:nf,:)/p0)**kappa
+       wr1(:nf,:nf,:) = wr1(:nf,:nf,:)*(p0/p_fv(:nf,:nf,:))**kappa
        call gfr_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wr1, elem(ie)%derived%FT)
-       elem(ie)%derived%FT = elem(ie)%derived%FT/(p/p0)**kappa
+       elem(ie)%derived%FT = elem(ie)%derived%FT*(p/p0)**kappa
 
        do qi = 1,qsize
           if (q_adjustment) then
@@ -1527,7 +1525,7 @@ contains
              elem(ie)%derived%FM(:,:,q,k) = elem(ie)%derived%FM(:,:,q,k)*elem(ie)%spheremp(:,:)
           end do
        end do
-       call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%FM, 2*nlev, qsize*nlev, npack)
+       call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%FM(:,:,1:2,:), 2*nlev, qsize*nlev, npack)
        do k = 1,nlev
           elem(ie)%derived%FT(:,:,k) = elem(ie)%derived%FT(:,:,k)*elem(ie)%spheremp(:,:)
        end do
@@ -1541,7 +1539,7 @@ contains
              elem(ie)%derived%FQ(:,:,k,q) = elem(ie)%derived%FQ(:,:,k,q)*elem(ie)%rspheremp(:,:)
           end do
        end do
-       call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%FM, 2*nlev, qsize*nlev, npack)
+       call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%FM(:,:,1:2,:), 2*nlev, qsize*nlev, npack)
        do q = 1,2
           do k = 1,nlev
              elem(ie)%derived%FM(:,:,q,k) = elem(ie)%derived%FM(:,:,q,k)*elem(ie)%rspheremp(:,:)
@@ -1780,7 +1778,7 @@ contains
        dp = elem(ie)%state%dp3d(:,:,:,nt)
 
        call get_field(elem(ie), 'p', p, hvcoord, nt, -1)
-       wr1 = (p/p0)**kappa
+       wr1 = (p0/p)**kappa
        elem(ie)%derived%FT = elem(ie)%derived%FT*wr1
        call gfr_pg1_g_reconstruct_scalar_dp(gfr, ie, elem(ie)%metdet, dp, &
             elem(ie)%derived%FT)

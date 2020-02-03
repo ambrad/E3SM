@@ -454,12 +454,16 @@ contains
                      sum(wr*elem(ie)%state%v(:,:,qi,:,nt1)**2)
              else
                 call get_temperature(elem(ie), wr1, hvcoord, nt1)
+                if (ie==0 .and. nphys == 2) then
+                   print *,'FT',elem(ie)%derived%FT
+                   print *,'wr1',wr1
+                end if
                 global_shared_buf(ie,1) = sum(wr*(elem(ie)%derived%FT - wr1)**2)
                 global_shared_buf(ie,2) = sum(wr*wr1**2)                
-                wr1 = wr1*(elem(ie)%state%dp3d(:,:,:,nt1)/p0)**kappa
+                wr1 = wr1*(p0/elem(ie)%state%dp3d(:,:,:,nt1))**kappa
                 global_shared_buf(ie,4) = sum(wr(:,:,1)*elem(ie)%state%dp3d(:,:,1,nt1)*wr1(:,:,1))
                 wr1 = elem(ie)%derived%FT
-                wr1 = wr1*(elem(ie)%state%dp3d(:,:,:,nt1)/p0)**kappa
+                wr1 = wr1*(p0/elem(ie)%state%dp3d(:,:,:,nt1))**kappa
                 global_shared_buf(ie,3) = sum(wr(:,:,1)*elem(ie)%state%dp3d(:,:,1,nt1)*wr1(:,:,1))
              end if
           else
@@ -516,7 +520,7 @@ contains
     ! and without the OOA boost.
 
     use hybvcoord_mod, only: hvcoord_t
-    use control_mod, only: ftype
+    use control_mod, only: ftype, theta_hydrostatic_mode
     use gllfvremap_mod
 
     type (hybrid_t), intent(in) :: hybrid
@@ -525,9 +529,10 @@ contains
     integer, intent(in) :: nets, nete
 
     integer :: nphys, ftype_in, ftype_idx, boost_idx
-    logical :: boost_pg1
+    logical :: boost_pg1, theta_hydro_mode_in
 
     ftype_in = ftype
+    theta_hydro_mode_in = theta_hydrostatic_mode
 
     do nphys = 1, np
        do ftype_idx = 1,2
@@ -562,7 +567,10 @@ contains
     end do
 
     !$omp barrier
-    if (hybrid%ithr == 0) ftype = ftype_in
+    if (hybrid%ithr == 0) then
+       ftype = ftype_in
+       theta_hydrostatic_mode = theta_hydro_mode_in
+    end if
   end subroutine gfr_check_api
 
   subroutine gfr_convert_topo(par, elem, nphys, intopofn, outtopoprefix)
