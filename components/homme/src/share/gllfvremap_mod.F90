@@ -320,7 +320,7 @@ contains
        end do
 
        T_done = .false.
-#ifdef MODEL_THETA_L
+#ifdef MODEL_THETA_Lfoo
        if (use_moisture) then
           ! FV vtheta_dp
           call gfr_g2f_scalar(ie, elem(ie)%metdet, elem(ie)%state%vtheta_dp(:,:,:,nt), wr1)
