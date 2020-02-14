@@ -799,6 +799,7 @@ contains
     real(real_kind), dimension(np,np) :: ps, ps_t, ptp0, pth, v1, v2, divdp
     real(real_kind), dimension(np,np,2) :: vdp
     real(real_kind), dimension(np,np,3) :: grad
+    real(real_kind), dimension(nlevp) :: hyai_eta, hybi_eta
     real(real_kind) :: dp_neg_min
     integer :: i, j, k, k1, k2, d
 
@@ -810,6 +811,10 @@ contains
        call abortmp('hvcoord has unexpected non-0 entries at the bottom and/or top')
     end if
 #endif
+
+    ! Obviously preprocess this.
+    call hydiff(hvcoord%hyai, hvcoord%hyam, hvcoord%etai, hvcoord%etam, hyai_eta)
+    call hydiff(hvcoord%hybi, hvcoord%hybm, hvcoord%etai, hvcoord%etam, hybi_eta)
 
     if (dt_remap_factor == 0) then
        call abortmp('not impled yet')
@@ -840,7 +845,7 @@ contains
              ! Finish computing eta_dot_dpdn.
              eta_dot(:,:,k,i) = -hvcoord%hybi(k)*ps_t - eta_dot(:,:,k,i)
              ! Compute eta_dot from eta_dot_dpdn.
-             eta_dot(:,:,k,i) = eta_dot(:,:,k,i)/(hvcoord%hyai(k)*hvcoord%ps0 + hvcoord%hybi(k)*ps)
+             eta_dot(:,:,k,i) = eta_dot(:,:,k,i)/(hyai_eta(k)*hvcoord%ps0 + hybi_eta(k)*ps)
           end do
        end do
     end if
@@ -885,9 +890,9 @@ contains
     do k = 2,nlev
        do j = 1,np
           do i = 1,np
-             eta_dot(i,j,k,1) = &                                            ! eta_dot_dpdn
-                  (hvcoord%hyai(k)*hvcoord%ps0 + hvcoord%hybi(k)*ps(i,j))* & ! p_eta
-                  ((eta1r(i,j,k) - hvcoord%etai(k))/dt)                      ! deta/dt
+             eta_dot(i,j,k,1) = &                                    ! eta_dot_dpdn
+                  (hyai_eta(k)*hvcoord%ps0 + hybi_eta(k)*ps(i,j))* & ! p_eta
+                  ((eta1r(i,j,k) - hvcoord%etai(k))/dt)              ! deta/dt
           end do
        end do
     end do
@@ -1014,6 +1019,21 @@ contains
        end do
     end do
   end function reconstruct_and_limit_dp
+
+  subroutine hydiff(xi, xm, etai, etam, xi_eta)
+    real(real_kind), intent(in), dimension(:) :: xi, xm, etai, etam
+    real(real_kind), intent(out), dimension(:) :: xi_eta
+
+    integer :: k
+
+    xi_eta(1) = (xm(1) - xi(1))/(etam(1) - etai(1))
+    do k = 2,nlev
+       xi_eta(k) = half*( &
+            (xi(k) - xm(k-1))/(etai(k) - etam(k-1)) + &
+            (xm(k) - xi(k))/(etam(k) - etai(k)))
+    end do
+    xi_eta(nlevp) = (xi(nlevp) - xm(nlev))/(etai(nlevp) - etai(nlev))
+  end subroutine hydiff
 
   subroutine sl_vertically_remap_tracers(hybrid, elem, nets, nete, tl, dt_q)
     ! Remap the tracers after a tracer time step, in the case that the
