@@ -816,9 +816,9 @@ contains
        !eta_dot_dpdn = elem%derived%eta_dot_dpdn
     else
        ! eta_dot is actually eta_dot_dpdn until the end.
-       eta_dot(:,:,1,i) = zero
-       ps = hvcoord%hyai(1)*hvcoord%ps0
        do i = 1,2
+          ps = hvcoord%hyai(1)*hvcoord%ps0
+          eta_dot(:,:,1,i) = zero
           do k = 1,nlev
              if (i == 1) then
                 do d = 1,2
