@@ -801,7 +801,9 @@ contains
     real(real_kind), dimension(np,np,3) :: grad
     real(real_kind), dimension(nlevp) :: hyai_eta, hybi_eta
     real(real_kind) :: dp_neg_min
-    integer :: i, j, k, k1, k2, d
+    integer :: i, j, k, k1, k2, d, dbg
+
+    dbg = 0
 
 #ifndef NDEBUG
     if (abs(hvcoord%hybi(1)) > 10*eps .or. hvcoord%hyai(nlevp) > 10*eps) then
@@ -815,6 +817,10 @@ contains
     ! Obviously preprocess this.
     call hydiff(hvcoord%hyai, hvcoord%hyam, hvcoord%etai, hvcoord%etam, hyai_eta)
     call hydiff(hvcoord%hybi, hvcoord%hybm, hvcoord%etai, hvcoord%etam, hybi_eta)
+    if (dbg > 1 .and. hybrid%masterthread .and. ie == 1) then
+       print *,'hyai_eta',hyai_eta
+       print *,'hybi_eta',hybi_eta
+    end if
 
     if (dt_remap_factor == 0) then
        call abortmp('not impled yet')
@@ -850,6 +856,10 @@ contains
        end do
     end if
     ! At this point, ps contains the surface pressure at the final time.
+
+    if (dbg > 0 .and. hybrid%masterthread .and. ie == 1) then
+       print *,'0',eta_dot(1,1,:,1)
+    end if
 
     do k = 2, nlev
        ! Gradient of eta_dot at initial time w.r.t. horizontal sphere coords.
@@ -899,6 +909,12 @@ contains
     ! Boundary points are always 0.
     eta_dot(:,:,1,1) = zero
     eta_dot(:,:,nlevp,1) = zero
+
+    if (dbg > 0 .and. hybrid%masterthread .and. ie == 1) then
+       print *, '1',hvcoord%etai
+       print *, '2',eta1r(1,1,:)-hvcoord%etai
+       print *, '3',eta0r(1,1,:)-hvcoord%etai
+    end if
 
     ! Limit dp to be > 0 and store update in eta_dot_dpdn rather than true
     ! eta_dot_dpdn. See comments below for more.
@@ -1032,7 +1048,7 @@ contains
             (xi(k) - xm(k-1))/(etai(k) - etam(k-1)) + &
             (xm(k) - xi(k))/(etam(k) - etai(k)))
     end do
-    xi_eta(nlevp) = (xi(nlevp) - xm(nlev))/(etai(nlevp) - etai(nlev))
+    xi_eta(nlevp) = (xi(nlevp) - xm(nlev))/(etai(nlevp) - etam(nlev))
   end subroutine hydiff
 
   subroutine sl_vertically_remap_tracers(hybrid, elem, nets, nete, tl, dt_q)
