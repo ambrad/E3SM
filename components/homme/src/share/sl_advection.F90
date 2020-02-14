@@ -799,7 +799,7 @@ contains
     real(real_kind), dimension(np,np) :: ps, ps_t, ptp0, pth, v1, v2, divdp
     real(real_kind), dimension(np,np,2) :: vdp
     real(real_kind), dimension(np,np,3) :: grad
-    real(real_kind), dimension(nlevp) :: hyai_eta, hybi_eta
+    real(real_kind), dimension(nlevp) :: hyai_eta, hybi_eta, tmp
     real(real_kind) :: dp_neg_min
     integer :: i, j, k, k1, k2, d, dbg
 
@@ -879,15 +879,16 @@ contains
        v2 = half*(elem%state%v(:,:,2,k1,tl%np1) + elem%state%v(:,:,2,k2,tl%np1))
 
        ! Reconstruct departure level coordinate at initial time.
-       do j = 1,np
-          do i = 1,np
-             eta0r(i,j,:) = hvcoord%etai
-          end do
-       end do
-       eta0r(:,:,k) = eta0r(:,:,k) - half*dt*( &
+       eta0r(:,:,k) = hvcoord%etai(k) - half*dt*( &
             eta_dot(:,:,k,1) + eta_dot(:,:,k,2) - &
             dt*(grad(:,:,1)*v1 + grad(:,:,2)*v2 + grad(:,:,3)*eta_dot(:,:,k,2)))
+       if (dbg > 0 .and. hybrid%masterthread .and. ie == 1) then
+          print *,'lev',k,hvcoord%etai(k),eta0r(1,1,k),eta_dot(1,1,k,1),eta_dot(1,1,k,2),&
+               grad(1,1,1),v1(1,1),grad(1,1,2),v2(1,1),grad(1,1,3)
+       end if
     end do
+    eta0r(:,:,1) = hvcoord%etai(1)
+    eta0r(:,:,nlevp) = hvcoord%etai(nlevp)
 
     ! Interpolate Lagrangian level in eta coord to final time.
     do j = 1,np
@@ -912,8 +913,10 @@ contains
 
     if (dbg > 0 .and. hybrid%masterthread .and. ie == 1) then
        print *, '1',hvcoord%etai
-       print *, '2',eta1r(1,1,:)-hvcoord%etai
-       print *, '3',eta0r(1,1,:)-hvcoord%etai
+       do k = 1,nlevp
+          print *, '2',eta0r(1,1,k),hvcoord%etai(k),eta0r(1,1,k)-hvcoord%etai(k)
+       end do
+       print *, '3',eta1r(1,1,:)-hvcoord%etai
     end if
 
     ! Limit dp to be > 0 and store update in eta_dot_dpdn rather than true
@@ -931,7 +934,7 @@ contains
 
   subroutine eval_lagrange_poly_derivative(n, xs, ys, xi, yp)
     integer, intent(in) :: n
-    real(real_kind), intent(in) :: xs(np,np,n), ys(np,np,n), xi(np,np)
+    real(real_kind), intent(in) :: xs(n), ys(np,np,n), xi
     real(real_kind), intent(out) :: yp(np,np)
 
     integer :: i, j, k
@@ -948,9 +951,9 @@ contains
              if (k == j) then
                 num = one
              else
-                num = xi - xs(:,:,k)
+                num = xi - xs(k)
              end if
-             g = g*(num/(xs(:,:,i) - xs(:,:,k)))
+             g = g*(num/(xs(i) - xs(k)))
           end do
           f = f + g
        end do
@@ -1105,8 +1108,7 @@ contains
     real(rt), parameter :: xs(3) = (/-one, zero, half/)
     integer, parameter :: n = 3, ntrial = 10
 
-    real(rt) :: a, b, c, x, y1, y2, alpha, ys(3), xsi(np,np,n), ysi(np,np,n), &
-         xi(np,np), y2i(np,np)
+    real(rt) :: a, b, c, x, y1, y2, alpha, ys(3), ysi(np,np,n), y2i(np,np)
     integer :: i, j, trial, nerr
 
     nerr = 0
@@ -1123,12 +1125,10 @@ contains
        y1 = 2*a*x + b
        do j = 1,np
           do i = 1,np
-             xsi(i,j,:) = xs
              ysi(i,j,:) = ys
-             xi(i,j) = x
           end do
        end do
-       call eval_lagrange_poly_derivative(n, xsi, ysi, xi, y2i)
+       call eval_lagrange_poly_derivative(n, xs, ysi, x, y2i)
        if (abs(y2i(np,np) - y1) > 1d-14*abs(y1)) nerr = nerr + 1
     end do
   end function test_lagrange
