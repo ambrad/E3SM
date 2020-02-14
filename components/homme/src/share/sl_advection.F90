@@ -799,11 +799,9 @@ contains
     real(real_kind), dimension(np,np) :: ps, ps_t, ptp0, pth, v1, v2, divdp
     real(real_kind), dimension(np,np,2) :: vdp
     real(real_kind), dimension(np,np,3) :: grad
-    real(real_kind), dimension(nlevp) :: hyai_eta, hybi_eta, tmp
+    real(real_kind), dimension(nlevp) :: hyai_eta, hybi_eta
     real(real_kind) :: dp_neg_min
-    integer :: i, j, k, k1, k2, d, dbg
-
-    dbg = 0
+    integer :: i, j, k, k1, k2, d
 
 #ifndef NDEBUG
     if (abs(hvcoord%hybi(1)) > 10*eps .or. hvcoord%hyai(nlevp) > 10*eps) then
@@ -817,10 +815,6 @@ contains
     ! Obviously preprocess this.
     call hydiff(hvcoord%hyai, hvcoord%hyam, hvcoord%etai, hvcoord%etam, hyai_eta)
     call hydiff(hvcoord%hybi, hvcoord%hybm, hvcoord%etai, hvcoord%etam, hybi_eta)
-    if (dbg > 1 .and. hybrid%masterthread .and. ie == 1) then
-       print *,'hyai_eta',hyai_eta
-       print *,'hybi_eta',hybi_eta
-    end if
 
     if (dt_remap_factor == 0) then
        call abortmp('not impled yet')
@@ -857,10 +851,6 @@ contains
     end if
     ! At this point, ps contains the surface pressure at the final time.
 
-    if (dbg > 0 .and. hybrid%masterthread .and. ie == 1) then
-       print *,'0',eta_dot(1,1,:,1)
-    end if
-
     do k = 2, nlev
        ! Gradient of eta_dot at initial time w.r.t. horizontal sphere coords.
        grad(:,:,1:2) = gradient_sphere(eta_dot(:,:,k,1), deriv, elem%Dinv)
@@ -882,10 +872,6 @@ contains
        eta0r(:,:,k) = hvcoord%etai(k) - half*dt*( &
             eta_dot(:,:,k,1) + eta_dot(:,:,k,2) - &
             dt*(grad(:,:,1)*v1 + grad(:,:,2)*v2 + grad(:,:,3)*eta_dot(:,:,k,2)))
-       if (dbg > 0 .and. hybrid%masterthread .and. ie == 1) then
-          print *,'lev',k,hvcoord%etai(k),eta0r(1,1,k),eta_dot(1,1,k,1),eta_dot(1,1,k,2),&
-               grad(1,1,1),v1(1,1),grad(1,1,2),v2(1,1),grad(1,1,3)
-       end if
     end do
     eta0r(:,:,1) = hvcoord%etai(1)
     eta0r(:,:,nlevp) = hvcoord%etai(nlevp)
@@ -910,14 +896,6 @@ contains
     ! Boundary points are always 0.
     eta_dot(:,:,1,1) = zero
     eta_dot(:,:,nlevp,1) = zero
-
-    if (dbg > 0 .and. hybrid%masterthread .and. ie == 1) then
-       print *, '1',hvcoord%etai
-       do k = 1,nlevp
-          print *, '2',eta0r(1,1,k),hvcoord%etai(k),eta0r(1,1,k)-hvcoord%etai(k)
-       end do
-       print *, '3',eta1r(1,1,:)-hvcoord%etai
-    end if
 
     ! Limit dp to be > 0 and store update in eta_dot_dpdn rather than true
     ! eta_dot_dpdn. See comments below for more.
