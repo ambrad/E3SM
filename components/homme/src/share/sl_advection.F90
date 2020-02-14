@@ -160,6 +160,7 @@ contains
           ! Thread write race condition; benign b/c written value is same in all threads.
           call set_dp_tol(hvcoord, dp_tol)
        end if
+       call calc_eta_dot_dpdn(hybrid, elem, nets, nete, hvcoord, tl, deriv)
        do ie = nets,nete
           ! divdp is dp_star
           call calc_vertically_lagrangian_levels(hybrid, elem(ie), ie, hvcoord, tl, dt, &
@@ -753,6 +754,52 @@ contains
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   end subroutine biharmonic_wk_scalar
 
+  subroutine calc_eta_dot_dpdn(hybrid, elem, nets, nete, hvcoord, tl, deriv)
+    use control_mod, only: dt_remap_factor
+    use derivative_mod, only: derivative_t, gradient_sphere
+    use kinds, only: iulog
+    use bndry_mod, only: bndry_exchangev
+
+    type (hybrid_t), intent(in) :: hybrid
+    type (element_t), intent(inout) :: elem(:)
+    integer, intent(in) :: nets, nete
+    type (hvcoord_t), intent(in) :: hvcoord
+    type (TimeLevel_t), intent(in) :: tl
+    type (derivative_t), intent(in) :: deriv
+
+    real(real_kind), dimension(np,np,2) :: vdp
+    real(real_kind), dimension(np,np) :: dps, divdp
+    integer :: ie, k, d
+
+    if (dt_remap_factor == 0) return
+
+    do ie = nets,nete
+       elem(ie)%derived%eta_dot_dpdn(:,:,1) = zero
+       do k = 1,nlev
+          do d = 1,2
+             vdp(:,:,d) = half*(elem(ie)%derived%vstar(:,:,d,k)*elem(ie)%derived%dp(:,:,k) + &
+                  elem(ie)%derived%vn0(:,:,d,k)*elem(ie)%state%dp3d(:,:,k,tl%np1))
+          end do
+          divdp = divergence_sphere(vdp, deriv, elem(ie))
+          elem(ie)%derived%eta_dot_dpdn(:,:,k+1) = elem(ie)%derived%eta_dot_dpdn(:,:,k) + divdp
+       end do
+       dps = elem(ie)%derived%eta_dot_dpdn(:,:,nlevp)
+       elem(ie)%derived%eta_dot_dpdn(:,:,nlevp) = zero
+       do k = 2,nlev
+          elem(ie)%derived%eta_dot_dpdn(:,:,k) = hvcoord%hybi(k)*dps - elem(ie)%derived%eta_dot_dpdn(:,:,k)
+       end do
+       do k = 1,nlevp
+          elem(ie)%derived%eta_dot_dpdn(:,:,k) = elem(ie)%derived%eta_dot_dpdn(:,:,k)* &
+               elem(ie)%spheremp*elem(ie)%rspheremp
+       end do
+       call edgevpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%eta_dot_dpdn, nlevp, 0, nlevp)
+    end do
+    call bndry_exchangeV(hybrid, edge_g)
+    do ie = nets,nete
+       call edgevunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%eta_dot_dpdn, nlevp, 0, nlevp)
+    end do
+  end subroutine calc_eta_dot_dpdn
+
   subroutine calc_vertically_lagrangian_levels( &
        hybrid, elem, ie, hvcoord, tl, dt, deriv, dp_tol, dprecon)
     ! Reconstruct the vertically Lagrangian levels, thus permitting
@@ -774,9 +821,9 @@ contains
 
     real(real_kind), dimension(np,np,nlevp) :: pref, p0r, p1r, eta_dot_dpdn
     real(real_kind), dimension(np,np) :: dps, ptp0, pth, v1h, v2h, divdp
-    real(real_kind), dimension(np,np,2) :: grad, vdp
+    real(real_kind), dimension(np,np,2) :: grad
     real(real_kind) :: dp_neg_min
-    integer :: i, j, k, k1, k2, d
+    integer :: i, j, k, k1, k2
 
 #ifndef NDEBUG
     if (abs(hvcoord%hybi(1)) > 10*eps .or. hvcoord%hyai(nlevp) > 10*eps) then
@@ -787,26 +834,7 @@ contains
     end if
 #endif
 
-    if (dt_remap_factor == 0) then
-       eta_dot_dpdn = elem%derived%eta_dot_dpdn
-    else
-       ! Reconstruct an approximation to the midpoint eta_dot_dpdn on
-       ! Eulerian levels.
-       eta_dot_dpdn(:,:,1) = zero
-       do k = 1,nlev
-          do d = 1,2
-             vdp(:,:,d) = half*(elem%derived%vstar(:,:,d,k)*elem%derived%dp(:,:,k       ) + &
-                                elem%derived%vn0  (:,:,d,k)*elem%state%dp3d(:,:,k,tl%np1))
-          end do
-          divdp = divergence_sphere(vdp, deriv, elem)
-          eta_dot_dpdn(:,:,k+1) = eta_dot_dpdn(:,:,k) + divdp
-       end do
-       dps = eta_dot_dpdn(:,:,nlevp)
-       eta_dot_dpdn(:,:,nlevp) = zero
-       do k = 2,nlev
-          eta_dot_dpdn(:,:,k) = hvcoord%hybi(k)*dps - eta_dot_dpdn(:,:,k)
-       end do
-    end if
+    eta_dot_dpdn = elem%derived%eta_dot_dpdn
 
     ! Recall
     !   p(eta,ps) = A(eta) p0 + B(eta) ps
