@@ -755,9 +755,31 @@ contains
 
   subroutine calc_vertically_lagrangian_levels( &
        hybrid, elem, ie, hvcoord, tl, dt, deriv, dp_tol, dprecon)
-    ! Reconstruct the vertically Lagrangian levels, thus permitting
-    ! the dynamics vertical remap time step to be shorter than the
-    ! tracer time step.
+    ! Reconstruct the vertically Lagrangian levels, thus permitting the dynamics
+    ! vertical remap time step to be shorter than the tracer time step.
+    !
+    ! Recall
+    !   p(eta,ps) = A(eta) p0 + B(eta) ps
+    !   => dp/dt = p_eta deta/dt + p_ps dps/dt
+    !            = (A_eta p0 + B_eta ps) deta/dt + B(eta) dps/dt
+    ! In what follows, we consistently drop the surface pressure time derivative
+    ! term, B(eta) dps/dt. In particular, pref is used for both n0 and np1, even
+    ! though it's computed for n0 only. At the end, in each term of the
+    ! expression (p1r - pref), there is a missing B(eta) dps/dt term, and these
+    ! missing terms cancel in the subtraction.
+    !
+    ! The departure point algorithm is as follows. Let 0, h, 1 suffixes denote
+    ! start, middle, and end of the time step. A Taylor series expansion of v at
+    ! the midpoint in space and time gives
+    !   v(ph,th) a= v(p1,th) + gradv(p1,th) (ph - p1)
+    ! Approximate
+    !   ph - p1 a= -v(p1,th) dt/2
+    ! Then
+    !   (p1 - p0)/dt a= v(ph,th)
+    !                a= v(p1,th) + gradv(p1,th) (ph - p1)
+    !                a= v(p1,th) - dt/2 gradv(p1,th) v(p1,th)
+    !   => p0 := p1 - dt (v(p1,th) - dt/2 gradv(p1,th) v(p1,th))
+    ! where the final line gives the departure point at time 0.
 
     use control_mod, only: dt_remap_factor
     use derivative_mod, only: derivative_t, gradient_sphere
@@ -772,9 +794,11 @@ contains
     type (derivative_t), intent(in) :: deriv
     real(kind=real_kind), intent(out) :: dprecon(np,np,nlev)
 
-    real(real_kind), dimension(np,np,nlevp) :: pref, p0r, p1r, eta_dot_dpdn
-    real(real_kind), dimension(np,np) :: dps, ptp0, pth, v1h, v2h, divdp
-    real(real_kind), dimension(np,np,2) :: grad, vdp
+    real(real_kind), dimension(np,np,nlevp) :: pref, p0r, p1r
+    real(real_kind), dimension(np,np,nlevp,2) :: eta_dot
+    real(real_kind), dimension(np,np) :: ps, dps, ptp0, pth, v1h, v2h, divdp
+    real(real_kind), dimension(np,np,2) :: vdp
+    real(real_kind), dimension(np,np,3) :: grad
     real(real_kind) :: dp_neg_min
     integer :: i, j, k, k1, k2, d
 
@@ -788,49 +812,38 @@ contains
 #endif
 
     if (dt_remap_factor == 0) then
-       eta_dot_dpdn = elem%derived%eta_dot_dpdn
+       call abortmp('not impled yet')
+       !eta_dot_dpdn = elem%derived%eta_dot_dpdn
     else
-       ! Reconstruct an approximation to the midpoint eta_dot_dpdn on
-       ! Eulerian levels.
-       eta_dot_dpdn(:,:,1) = zero
-       do k = 1,nlev
-          do d = 1,2
-             vdp(:,:,d) = half*(elem%derived%vstar(:,:,d,k)*elem%derived%dp(:,:,k       ) + &
-                                elem%derived%vn0  (:,:,d,k)*elem%state%dp3d(:,:,k,tl%np1))
+       ! Here eta_dot is actually eta_dot_dpdn.
+       eta_dot(:,:,1,i) = zero
+       ps = hvcoord%hyai(1)*hvcoord%ps0
+       do i = 1,2
+          do k = 1,nlev
+             if (i == 1) then
+                do d = 1,2
+                   vdp(:,:,d) = elem%derived%vstar(:,:,d,k)*elem%derived%dp(:,:,k)
+                end do
+                ps = ps + elem%derived%dp(:,:,k)
+             else
+                do d = 1,2
+                   vdp(:,:,d) = elem%derived%vn0(:,:,d,k)*elem%state%dp3d(:,:,k,tl%np1)
+                end do
+                ps = ps + elem%state%dp3d(:,:,k,tl%np1)
+             end if
+             divdp = divergence_sphere(vdp, deriv, elem)
+             eta_dot(:,:,k+1,i) = eta_dot(:,:,k,i) + divdp
           end do
-          divdp = divergence_sphere(vdp, deriv, elem)
-          eta_dot_dpdn(:,:,k+1) = eta_dot_dpdn(:,:,k) + divdp
-       end do
-       dps = eta_dot_dpdn(:,:,nlevp)
-       eta_dot_dpdn(:,:,nlevp) = zero
-       do k = 2,nlev
-          eta_dot_dpdn(:,:,k) = hvcoord%hybi(k)*dps - eta_dot_dpdn(:,:,k)
+          dps = eta_dot(:,:,nlevp,i)
+          eta_dot(:,:,nlevp,i) = zero
+          do k = 2,nlev
+             ! Finishing computing eta_dot_dpdn.
+             eta_dot(:,:,k,i) = hvcoord%hybi(k)*dps - eta_dot(:,:,k,i)
+             ! Compute eta_dot from eta_dot_dpdn.
+             eta_dot(:,:,k,i) = eta_dot(:,:,k,i)/(hvcoord%hyai(k)*hvcoord%ps0 + hvcoord%hybi(k)*ps)
+          end do
        end do
     end if
-
-    ! Recall
-    !   p(eta,ps) = A(eta) p0 + B(eta) ps
-    !   => dp/dt = p_eta deta/dt + p_ps dps/dt
-    !            = (A_eta p0 + B_eta ps) deta/dt + B(eta) dps/dt
-    ! In what follows, we consistently drop the surface pressure time
-    ! derivative term, B(eta) dps/dt. In particular, pref is used for
-    ! both n0 and np1, even though it's computed for n0 only. At the
-    ! end, in each term of the expression (p1r - pref), there is a
-    ! missing B(eta) dps/dt term, and these missing terms cancel in
-    ! the subtraction.
-    !
-    ! The departure point algorithm is as follows. Let 0, h, 1
-    ! suffixes denote start, middle and end of the time step. A Taylor
-    ! series expansion of v at the midpoint in space and time gives
-    !   v(ph,th) a= v(p1,th) + gradv(p1,th) (ph - p1)
-    ! Approximate
-    !   ph - p1 a= -v(p1,th) dt/2
-    ! Then
-    !   (p1 - p0)/dt a= v(ph,th)
-    !                 = v(p1,th) + gradv(p1,th) (ph - p1)
-    !                a= v(p1,th) - dt/2 gradv(p1,th) v(p1,th)
-    !   => p0 := p1 - dt (v(p1,th) - dt/2 gradv(p1,th) v(p1,th))
-    ! where the final line gives the departure point at time 0.
 
     call calc_p(hvcoord, elem%derived%dp, pref)
 
@@ -838,17 +851,15 @@ contains
     p0r(:,:,nlevp) = pref(:,:,nlevp)
 
     do k = 2, nlev
-       ! Gradient of eta_dot_dpdn = p_eta deta/dt at initial
-       ! time w.r.t. horizontal sphere coords.
-       grad = gradient_sphere(eta_dot_dpdn(:,:,k), deriv, elem%Dinv)
+       ! Gradient of eta_dot at initial time w.r.t. horizontal sphere coords.
+       grad(:,:,1:2) = gradient_sphere(eta_dot(:,:,k,1), deriv, elem%Dinv)
 
-       ! Gradient of eta_dot_dpdn = p_eta deta/dt at initial
-       ! time w.r.t. p at initial time.
+       ! Gradient of eta_dot at initial time w.r.t. vertical ref coords.
        k1 = k-1
        k2 = k+1
-       call eval_lagrange_poly_derivative(k2-k1+1, pref(:,:,k1:k2), &
-            eta_dot_dpdn(:,:,k1:k2), &
-            pref(:,:,k), ptp0)
+       call eval_lagrange_poly_derivative(k2-k1+1, &
+            hvcoord%etai(k1:k2), eta_dot(:,:,k1:k2,1), &
+            hvcoord%etai(k), grad(:,:,3))
 
        ! Horizontal velocity at time midpoint.
        k1 = k-1
@@ -861,7 +872,7 @@ contains
        ! Vertical eta_dot_dpdn at time midpoint.
        pth = eta_dot_dpdn(:,:,k)
 
-       ! Reconstruct departure level coordinate at intial time.
+       ! Reconstruct departure level coordinate at initial time.
        p0r(:,:,k) = pref(:,:,k) - &
             dt*(pth - half*dt*(ptp0*pth + grad(:,:,1)*v1h + grad(:,:,2)*v2h))
     end do
@@ -879,8 +890,8 @@ contains
     eta_dot_dpdn(:,:,1) = zero
     eta_dot_dpdn(:,:,nlevp) = zero
 
-    ! Limit dp to be > 0 and store update in eta_dot_dpdn rather
-    ! than true eta_dot_dpdn. See comments below for more.
+    ! Limit dp to be > 0 and store update in eta_dot_dpdn rather than true
+    ! eta_dot_dpdn. See comments below for more.
     dp_neg_min = reconstruct_and_limit_dp(elem%state%dp3d(:,:,:,tl%np1), &
          dt, dp_tol, eta_dot_dpdn, dprecon)
 #ifndef NDEBUG
