@@ -32,6 +32,7 @@ module sl_advection
   type (ghostBuffer3D_t)   :: ghostbuf_tr
   type (cartesian3D_t), allocatable :: dep_points_all(:,:,:,:) ! (np,np,nlev,nelemd)
   real(kind=real_kind), dimension(:,:,:,:,:), allocatable :: minq, maxq ! (np,np,nlev,qsize,nelemd)
+  real(kind=real_kind), dimension(nlevp) :: hyai_eta, hybi_eta
 
   ! For use in make_positive.
   real(kind=real_kind) :: dp_tol
@@ -157,8 +158,16 @@ contains
     if (independent_time_steps) then
        call t_startf('SLMM_reconstruct')
        if (dp_tol < zero) then
-          ! Thread write race condition; benign b/c written value is same in all threads.
+#if (defined HORIZ_OPENMP)
+          !$omp master
+#endif      
           call set_dp_tol(hvcoord, dp_tol)
+          call hydiff(hvcoord%hyai, hvcoord%hyam, hvcoord%etai, hvcoord%etam, hyai_eta)
+          call hydiff(hvcoord%hybi, hvcoord%hybm, hvcoord%etai, hvcoord%etam, hybi_eta)
+#if (defined HORIZ_OPENMP)
+          !$omp end master
+          !$omp barrier
+#endif
        end if
        do ie = nets,nete
           ! divdp is dp_star
@@ -242,7 +251,9 @@ contains
        call t_startf('CEDR_local')
        call cedr_sl_run_local(minq, maxq, nets, nete, scalar_q_bounds, limiter_option)
        ! Barrier needed to protect edge_g buffers use in CEDR.
+#if (defined HORIZ_OPENMP)
        !$omp barrier
+#endif
        if (barrier) call perf_barrier(hybrid)
        call t_stopf('CEDR_local')
     else
@@ -755,10 +766,68 @@ contains
 
   subroutine calc_vertically_lagrangian_levels( &
        hybrid, elem, ie, hvcoord, tl, dt, deriv, dp_tol, dprecon)
-    ! Reconstruct the vertically Lagrangian levels, thus permitting
-    ! the dynamics vertical remap time step to be shorter than the
-    ! tracer time step.
 
+    ! Reconstruct the vertically Lagrangian levels, thus permitting the dynamics
+    ! vertical remap time step to be shorter than the tracer time step.
+    !   Recall
+    !     p(eta,ps) = A(eta) p0 + B(eta) ps
+    !     => dp/dt = p_eta deta/dt + p_ps dps/dt
+    !              = (A_eta p0 + B_eta ps) deta/dt + B(eta) dps/dt
+    ! dp3d already accounts for B(eta) dps/dt, so it does not appear in what
+    ! follows. We use eta as the vertical coordinate in these calculations. But
+    ! here, to focus on the key ideas, consider a p = (x,z) system with
+    ! velocities v = (u,w). Let 0, h, 1, suffixes denote start, middle, and end
+    ! of the time step. The algorithm is as follows.
+    !   The trajectory is computed forward in time, so the departure 0 points
+    ! are on the grid. We need to compute z(x0,t1), the floating height at
+    ! horizontal grid point x0 at time t1. We start by computing z1 = z(x1,t1),
+    ! the floating height at the non-grid point x1 at time t1 or, in other
+    ! words, the non-grid arrival point:
+    !     z1 = z0 + dt w(ph,th) + O(dt^3)
+    !     xh - x0 = dt/2 u(p0,th) + O(dt^2)
+    !     zh - z0 = dt/2 w(p0,th) + O(dt^2)
+    !     w(ph,th) = w(p0,th) + w_x(p0,th) (xh - x0) + O(|xh - x0|^2)
+    !                         + w_z(p0,th) (zh - z0) + O(|zh - z0|^2)
+    !              = w(p0,th) + dt/2 (  w_x(p0,th) u(p0,th)
+    !                                 + w_z(p0,th) w(p0,th)) + O(dt^2)
+    !     z1 = z0 + dt (w(p0,th) + dt/2 (  w_x(p0,th) u(p0,th)
+    !                                    + w_z(p0,th) w(p0,th))) + O(dt^3)   (*)
+    ! Now we compute z(x0,t1). First, we need
+    !     x0 - x1 = -dt u(ph,th) + O(dt^3)
+    ! and
+    !     z_x(x1,t1) = z0_x + dt w_x(p0,th) + O(dt^2)
+    !                = dt w_x(p0,th) + O(dt^2).
+    !     z_xx(x1,t1) = z0_xx + dt w_xx(p0,th) + O(dt^2)
+    !                 = dt w_xx(p0,th) + O(dt^2).
+    ! Then we expand z(x0,t1) in Taylor series and substitute:
+    !     z(x0,t1) = z(x1,t1) + z_x(x1,t1) (x0 - x1) + z_xx(x1,t1) (x0 - x1)^2
+    !                + O(|x0 - x1|^3)
+    !              = z(x1,t1) - dt z_x(x1,t1) u(ph,th)
+    !                + dt^2 z_xx(x1,t1) u(ph,th)^2
+    !                + O(dt^3) + O(|x0 - x1|^3)
+    !              = z(x1,t1) - dt^2 w_x(p0,th) u(ph,th)
+    !                + dt^3 w_xx(x1,t1) u(ph,th)^2
+    !                + O(dt^3) + O(|x0 - x1|^3).
+    ! Gather all O(dt^3) terms, with O(|x0 - x1|^p) = O(dt^p):
+    !     z(x0,t1) = z(x1,t1) - dt^2 w_x(p0,th) u(ph,th) + O(dt^3).
+    ! Now substitute (*) for z(x1,t1):
+    !     z(x0,t1) = z0 + dt (w(p0,th) + dt/2 (  w_x(p0,th) u(p0,th)
+    !                                          + w_z(p0,th) w(p0,th)))
+    !                - dt^2 w_x(p0,th) u(ph,th) + O(dt^3)
+    !              = z0 + dt (w(p0,th) + dt/2 ( -w_x(p0,th) u(p0,th)
+    !                                          + w_z(p0,th) w(p0,th))) + O(dt^3).
+    ! This is locally accurate to O(dt^3) and so globally 2nd-order
+    ! accurate. Notably, compared with (*), this formula differs only in a
+    ! sign. Note also that a straightforward first-order accurate formula is
+    !     z(x0,t1) = z0 + dt w(p0,th) + O(dt^2).
+    !   z(x0,t1) here corresponds to the reconstructed floating eta level
+    ! eta(x_sphere, t1), where x_sphere is the horizontal grid point
+    ! position. It is denoted eta1r in the code below. Given eta1r, we can then
+    ! compute eta_dot_dpdn to O(dt^2). If we used the input eta_dot_dpdn
+    ! directly we'd have it to O(dt). The final step is to use this
+    ! reconstructed eta_dot_dpdn and dp3d to compute the floating layers
+    ! dprecon.
+    
     use control_mod, only: dt_remap_factor
     use derivative_mod, only: derivative_t, gradient_sphere
     use kinds, only: iulog
@@ -772,9 +841,10 @@ contains
     type (derivative_t), intent(in) :: deriv
     real(kind=real_kind), intent(out) :: dprecon(np,np,nlev)
 
-    real(real_kind), dimension(np,np,nlevp) :: pref, p0r, p1r, eta_dot_dpdn
-    real(real_kind), dimension(np,np) :: dps, ptp0, pth, v1h, v2h, divdp
-    real(real_kind), dimension(np,np,2) :: grad, vdp
+    real(real_kind), dimension(np,np,nlevp) :: eta1r, eta_dot
+    real(real_kind), dimension(np,np) :: ps, ps_t, divdp
+    real(real_kind), dimension(np,np,2) :: vdp, v
+    real(real_kind), dimension(np,np,3) :: grad
     real(real_kind) :: dp_neg_min
     integer :: i, j, k, k1, k2, d
 
@@ -787,102 +857,84 @@ contains
     end if
 #endif
 
+    ! Obviously preprocess this.
+
+    ! eta_dot is actually eta_dot_dpdn here.
     if (dt_remap_factor == 0) then
-       eta_dot_dpdn = elem%derived%eta_dot_dpdn
+       eta_dot = elem%derived%eta_dot_dpdn
+       ps = hvcoord%hyai(1)*hvcoord%ps0
+       do k = 1,nlev
+          ps = ps + half*(elem%derived%dp(:,:,k) + elem%state%dp3d(:,:,k,tl%np1))
+       end do
     else
        ! Reconstruct an approximation to the midpoint eta_dot_dpdn on
        ! Eulerian levels.
-       eta_dot_dpdn(:,:,1) = zero
+       eta_dot(:,:,1) = zero
+       ps = hvcoord%hyai(1)*hvcoord%ps0
        do k = 1,nlev
           do d = 1,2
              vdp(:,:,d) = half*(elem%derived%vstar(:,:,d,k)*elem%derived%dp(:,:,k       ) + &
                                 elem%derived%vn0  (:,:,d,k)*elem%state%dp3d(:,:,k,tl%np1))
           end do
+          ps = ps + half*(elem%derived%dp(:,:,k) + elem%state%dp3d(:,:,k,tl%np1))
           divdp = divergence_sphere(vdp, deriv, elem)
-          eta_dot_dpdn(:,:,k+1) = eta_dot_dpdn(:,:,k) + divdp
+          eta_dot(:,:,k+1) = eta_dot(:,:,k) + divdp
        end do
-       dps = eta_dot_dpdn(:,:,nlevp)
-       eta_dot_dpdn(:,:,nlevp) = zero
+       ps_t = -eta_dot(:,:,nlevp)
+       eta_dot(:,:,nlevp) = zero
        do k = 2,nlev
-          eta_dot_dpdn(:,:,k) = hvcoord%hybi(k)*dps - eta_dot_dpdn(:,:,k)
+          eta_dot(:,:,k) = -hvcoord%hybi(k)*ps_t - eta_dot(:,:,k)
        end do
     end if
-
-    ! Recall
-    !   p(eta,ps) = A(eta) p0 + B(eta) ps
-    !   => dp/dt = p_eta deta/dt + p_ps dps/dt
-    !            = (A_eta p0 + B_eta ps) deta/dt + B(eta) dps/dt
-    ! In what follows, we consistently drop the surface pressure time
-    ! derivative term, B(eta) dps/dt. In particular, pref is used for
-    ! both n0 and np1, even though it's computed for n0 only. At the
-    ! end, in each term of the expression (p1r - pref), there is a
-    ! missing B(eta) dps/dt term, and these missing terms cancel in
-    ! the subtraction.
-    !
-    ! The departure point algorithm is as follows. Let 0, h, 1
-    ! suffixes denote start, middle and end of the time step. A Taylor
-    ! series expansion of v at the midpoint in space and time gives
-    !   v(ph,th) a= v(p1,th) + gradv(p1,th) (ph - p1)
-    ! Approximate
-    !   ph - p1 a= -v(p1,th) dt/2
-    ! Then
-    !   (p1 - p0)/dt a= v(ph,th)
-    !                 = v(p1,th) + gradv(p1,th) (ph - p1)
-    !                a= v(p1,th) - dt/2 gradv(p1,th) v(p1,th)
-    !   => p0 := p1 - dt (v(p1,th) - dt/2 gradv(p1,th) v(p1,th))
-    ! where the final line gives the departure point at time 0.
-
-    call calc_p(hvcoord, elem%derived%dp, pref)
-
-    p0r(:,:,1) = pref(:,:,1)
-    p0r(:,:,nlevp) = pref(:,:,nlevp)
+    ! Compute eta_dot from eta_dot_dpdn.
+    do k = 2,nlev
+       eta_dot(:,:,k) = eta_dot(:,:,k)/(hyai_eta(k)*hvcoord%ps0 + hybi_eta(k)*ps)
+    end do
+    ! At this point, ps contains the surface pressure at the final time.
 
     do k = 2, nlev
-       ! Gradient of eta_dot_dpdn = p_eta deta/dt at initial
-       ! time w.r.t. horizontal sphere coords.
-       grad = gradient_sphere(eta_dot_dpdn(:,:,k), deriv, elem%Dinv)
+       ! Gradient of eta_dot at midpoint time w.r.t. horizontal sphere coords.
+       grad(:,:,1:2) = gradient_sphere(eta_dot(:,:,k), deriv, elem%Dinv)
 
-       ! Gradient of eta_dot_dpdn = p_eta deta/dt at initial
-       ! time w.r.t. p at initial time.
+       ! Gradient of eta_dot at midpoint time w.r.t. vertical ref coords.
        k1 = k-1
        k2 = k+1
-       call eval_lagrange_poly_derivative(k2-k1+1, pref(:,:,k1:k2), &
-            eta_dot_dpdn(:,:,k1:k2), &
-            pref(:,:,k), ptp0)
+       call eval_lagrange_poly_derivative(k2-k1+1, &
+            hvcoord%etai(k1:k2), eta_dot(:,:,k1:k2), &
+            hvcoord%etai(k), grad(:,:,3))
 
        ! Horizontal velocity at time midpoint.
-       k1 = k-1
-       k2 = k
-       v1h = fourth*(elem%state%v(:,:,1,k1,tl%n0 ) + elem%state%v(:,:,1,k2,tl%n0 ) + &
-                     elem%state%v(:,:,1,k1,tl%np1) + elem%state%v(:,:,1,k2,tl%np1))
-       v2h = fourth*(elem%state%v(:,:,2,k1,tl%n0 ) + elem%state%v(:,:,2,k2,tl%n0 ) + &
-                     elem%state%v(:,:,2,k1,tl%np1) + elem%state%v(:,:,2,k2,tl%np1))
+       do d = 1,2
+          v(:,:,d) = fourth*(elem%derived%vstar(:,:,d,k-1) + elem%derived%vstar(:,:,d,k) + &
+                             elem%derived%vn0  (:,:,d,k-1) + elem%derived%vn0  (:,:,d,k))
+       end do
 
-       ! Vertical eta_dot_dpdn at time midpoint.
-       pth = eta_dot_dpdn(:,:,k)
-
-       ! Reconstruct departure level coordinate at intial time.
-       p0r(:,:,k) = pref(:,:,k) - &
-            dt*(pth - half*dt*(ptp0*pth + grad(:,:,1)*v1h + grad(:,:,2)*v2h))
+       ! Reconstruct departure level coordinate at final time.
+       eta1r(:,:,k) = hvcoord%etai(k) + dt*( &
+            eta_dot(:,:,k) + &
+            half*dt*(-grad(:,:,1)*v(:,:,1) - grad(:,:,2)*v(:,:,2) + grad(:,:,3)*eta_dot(:,:,k)))
     end do
-
-    ! Interpolate Lagrangian level in p coord to final time.
-    do j = 1,np
-       do i = 1,np
-          call interp(nlevp, p0r(i,j,:), pref(i,j,:), pref(i,j,:), p1r(i,j,:))
+    eta1r(:,:,1) = hvcoord%etai(1)
+    eta1r(:,:,nlevp) = hvcoord%etai(nlevp)
+    
+    ! Reconstruct eta_dot_dpdn over the time interval.
+    do k = 2,nlev
+       do j = 1,np
+          do i = 1,np
+             eta_dot(i,j,k) = &                                      ! eta_dot_dpdn
+                  (hyai_eta(k)*hvcoord%ps0 + hybi_eta(k)*ps(i,j))* & ! p_eta
+                  ((eta1r(i,j,k) - hvcoord%etai(k))/dt)              ! deta/dt
+          end do
        end do
     end do
+    ! Boundary points are always 0.
+    eta_dot(:,:,1) = zero
+    eta_dot(:,:,nlevp) = zero
 
-    ! Reconstruct eta_dot_dpdn over the time interval.
-    eta_dot_dpdn = (p1r - pref)/dt
-    ! End points are always 0.
-    eta_dot_dpdn(:,:,1) = zero
-    eta_dot_dpdn(:,:,nlevp) = zero
-
-    ! Limit dp to be > 0 and store update in eta_dot_dpdn rather
-    ! than true eta_dot_dpdn. See comments below for more.
+    ! Limit dp to be > 0 and store update in eta_dot_dpdn rather than true
+    ! eta_dot_dpdn. See comments below for more.
     dp_neg_min = reconstruct_and_limit_dp(elem%state%dp3d(:,:,:,tl%np1), &
-         dt, dp_tol, eta_dot_dpdn, dprecon)
+         dt, dp_tol, eta_dot(:,:,:), dprecon)
 #ifndef NDEBUG
     if (dp_neg_min < dp_tol) then
        write(iulog, '(a,i7,i7,es11.4)') &
@@ -894,7 +946,7 @@ contains
 
   subroutine eval_lagrange_poly_derivative(n, xs, ys, xi, yp)
     integer, intent(in) :: n
-    real(real_kind), intent(in) :: xs(np,np,n), ys(np,np,n), xi(np,np)
+    real(real_kind), intent(in) :: xs(n), ys(np,np,n), xi
     real(real_kind), intent(out) :: yp(np,np)
 
     integer :: i, j, k
@@ -911,49 +963,15 @@ contains
              if (k == j) then
                 num = one
              else
-                num = xi - xs(:,:,k)
+                num = xi - xs(k)
              end if
-             g = g*(num/(xs(:,:,i) - xs(:,:,k)))
+             g = g*(num/(xs(i) - xs(k)))
           end do
           f = f + g
        end do
        yp = yp + ys(:,:,i)*f
     end do
   end subroutine eval_lagrange_poly_derivative
-
-  subroutine interp(n, x, y, xi, yi)
-    integer, intent(in) :: n
-    real(kind=real_kind), intent(in) :: x(:), y(:), xi(:)
-    real(kind=real_kind), intent(out) :: yi(:)
-
-    real(kind=real_kind) :: alpha
-    integer :: j, ji
-
-    j = 1
-    ji = 1
-    do while (ji <= n)
-       if (j < n-1 .and. xi(ji) > x(j+1)) then
-          j = j + 1
-       else
-          alpha = (xi(ji) - x(j))/(x(j+1) - x(j))
-          yi(ji) = (1 - alpha)*y(j) + alpha*y(j+1)
-          ji = ji + 1
-       end if
-    end do
-  end subroutine interp
-
-  subroutine calc_p(hvcoord, dp, p)
-    type (hvcoord_t), intent(in) :: hvcoord
-    real(real_kind), intent(in) :: dp(np,np,nlev)
-    real(real_kind), intent(out) :: p(np,np,nlevp)
-
-    integer :: k
-
-    p(:,:,1) = hvcoord%hyai(1)*hvcoord%ps0
-    do k = 1,nlev
-       p(:,:,k+1) = p(:,:,k) + dp(:,:,k)
-    end do
-  end subroutine calc_p
 
   subroutine set_dp_tol(hvcoord, dp_tol)
     ! Pad by an amount ~ smallest level to keep the computed dp > 0.
@@ -998,6 +1016,21 @@ contains
        end do
     end do
   end function reconstruct_and_limit_dp
+
+  subroutine hydiff(xi, xm, etai, etam, xi_eta)
+    real(real_kind), intent(in), dimension(:) :: xi, xm, etai, etam
+    real(real_kind), intent(out), dimension(:) :: xi_eta
+
+    integer :: k
+
+    xi_eta(1) = (xm(1) - xi(1))/(etam(1) - etai(1))
+    do k = 2,nlev
+       xi_eta(k) = half*( &
+            (xi(k) - xm(k-1))/(etai(k) - etam(k-1)) + &
+            (xm(k) - xi(k))/(etam(k) - etai(k)))
+    end do
+    xi_eta(nlevp) = (xi(nlevp) - xm(nlev))/(etai(nlevp) - etam(nlev))
+  end subroutine hydiff
 
   subroutine sl_vertically_remap_tracers(hybrid, elem, nets, nete, tl, dt_q)
     ! Remap the tracers after a tracer time step, in the case that the
@@ -1053,8 +1086,7 @@ contains
     real(rt), parameter :: xs(3) = (/-one, zero, half/)
     integer, parameter :: n = 3, ntrial = 10
 
-    real(rt) :: a, b, c, x, y1, y2, alpha, ys(3), xsi(np,np,n), ysi(np,np,n), &
-         xi(np,np), y2i(np,np)
+    real(rt) :: a, b, c, x, y1, y2, alpha, ys(3), ysi(np,np,n), y2i(np,np)
     integer :: i, j, trial, nerr
 
     nerr = 0
@@ -1071,12 +1103,10 @@ contains
        y1 = 2*a*x + b
        do j = 1,np
           do i = 1,np
-             xsi(i,j,:) = xs
              ysi(i,j,:) = ys
-             xi(i,j) = x
           end do
        end do
-       call eval_lagrange_poly_derivative(n, xsi, ysi, xi, y2i)
+       call eval_lagrange_poly_derivative(n, xs, ysi, x, y2i)
        if (abs(y2i(np,np) - y1) > 1d-14*abs(y1)) nerr = nerr + 1
     end do
   end function test_lagrange
