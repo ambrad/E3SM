@@ -794,9 +794,9 @@ contains
     type (derivative_t), intent(in) :: deriv
     real(kind=real_kind), intent(out) :: dprecon(np,np,nlev)
 
-    real(real_kind), dimension(np,np,nlevp) :: pref, p0r, p1r
+    real(real_kind), dimension(np,np,nlevp) :: eta0r, eta1r
     real(real_kind), dimension(np,np,nlevp,2) :: eta_dot
-    real(real_kind), dimension(np,np) :: ps, dps, ptp0, pth, v1h, v2h, divdp
+    real(real_kind), dimension(np,np) :: ps, ps_t, ptp0, pth, v1, v2, divdp
     real(real_kind), dimension(np,np,2) :: vdp
     real(real_kind), dimension(np,np,3) :: grad
     real(real_kind) :: dp_neg_min
@@ -815,7 +815,7 @@ contains
        call abortmp('not impled yet')
        !eta_dot_dpdn = elem%derived%eta_dot_dpdn
     else
-       ! Here eta_dot is actually eta_dot_dpdn.
+       ! eta_dot is actually eta_dot_dpdn until the end.
        eta_dot(:,:,1,i) = zero
        ps = hvcoord%hyai(1)*hvcoord%ps0
        do i = 1,2
@@ -834,21 +834,17 @@ contains
              divdp = divergence_sphere(vdp, deriv, elem)
              eta_dot(:,:,k+1,i) = eta_dot(:,:,k,i) + divdp
           end do
-          dps = eta_dot(:,:,nlevp,i)
+          ps_t = -eta_dot(:,:,nlevp,i)
           eta_dot(:,:,nlevp,i) = zero
           do k = 2,nlev
-             ! Finishing computing eta_dot_dpdn.
-             eta_dot(:,:,k,i) = hvcoord%hybi(k)*dps - eta_dot(:,:,k,i)
+             ! Finish computing eta_dot_dpdn.
+             eta_dot(:,:,k,i) = -hvcoord%hybi(k)*ps_t - eta_dot(:,:,k,i)
              ! Compute eta_dot from eta_dot_dpdn.
              eta_dot(:,:,k,i) = eta_dot(:,:,k,i)/(hvcoord%hyai(k)*hvcoord%ps0 + hvcoord%hybi(k)*ps)
           end do
        end do
     end if
-
-    call calc_p(hvcoord, elem%derived%dp, pref)
-
-    p0r(:,:,1) = pref(:,:,1)
-    p0r(:,:,nlevp) = pref(:,:,nlevp)
+    ! At this point, ps contains the surface pressure at the final time.
 
     do k = 2, nlev
        ! Gradient of eta_dot at initial time w.r.t. horizontal sphere coords.
@@ -861,39 +857,48 @@ contains
             hvcoord%etai(k1:k2), eta_dot(:,:,k1:k2,1), &
             hvcoord%etai(k), grad(:,:,3))
 
-       ! Horizontal velocity at time midpoint.
+       ! Horizontal velocity at final time.
        k1 = k-1
        k2 = k
-       v1h = fourth*(elem%state%v(:,:,1,k1,tl%n0 ) + elem%state%v(:,:,1,k2,tl%n0 ) + &
-                     elem%state%v(:,:,1,k1,tl%np1) + elem%state%v(:,:,1,k2,tl%np1))
-       v2h = fourth*(elem%state%v(:,:,2,k1,tl%n0 ) + elem%state%v(:,:,2,k2,tl%n0 ) + &
-                     elem%state%v(:,:,2,k1,tl%np1) + elem%state%v(:,:,2,k2,tl%np1))
-
-       ! Vertical eta_dot_dpdn at time midpoint.
-       pth = eta_dot_dpdn(:,:,k)
+       v1 = half*(elem%state%v(:,:,1,k1,tl%np1) + elem%state%v(:,:,1,k2,tl%np1))
+       v2 = half*(elem%state%v(:,:,2,k1,tl%np1) + elem%state%v(:,:,2,k2,tl%np1))
 
        ! Reconstruct departure level coordinate at initial time.
-       p0r(:,:,k) = pref(:,:,k) - &
-            dt*(pth - half*dt*(ptp0*pth + grad(:,:,1)*v1h + grad(:,:,2)*v2h))
+       do j = 1,np
+          do i = 1,np
+             eta0r(i,j,:) = hvcoord%etai
+          end do
+       end do
+       eta0r(:,:,k) = eta0r(:,:,k) - half*dt*( &
+            eta_dot(:,:,k,1) + eta_dot(:,:,k,2) - &
+            dt*(grad(:,:,1)*v1 + grad(:,:,2)*v2 + grad(:,:,3)*eta_dot(:,:,k,2)))
     end do
 
-    ! Interpolate Lagrangian level in p coord to final time.
+    ! Interpolate Lagrangian level in eta coord to final time.
     do j = 1,np
        do i = 1,np
-          call interp(nlevp, p0r(i,j,:), pref(i,j,:), pref(i,j,:), p1r(i,j,:))
+          call interp(nlevp, eta0r(i,j,:), hvcoord%etai, hvcoord%etai, eta1r(i,j,:))
        end do
     end do
-
+    
     ! Reconstruct eta_dot_dpdn over the time interval.
-    eta_dot_dpdn = (p1r - pref)/dt
-    ! End points are always 0.
-    eta_dot_dpdn(:,:,1) = zero
-    eta_dot_dpdn(:,:,nlevp) = zero
+    do k = 2,nlev
+       do j = 1,np
+          do i = 1,np
+             eta_dot(i,j,k,1) = &                                            ! eta_dot_dpdn
+                  (hvcoord%hyai(k)*hvcoord%ps0 + hvcoord%hybi(k)*ps(i,j))* & ! p_eta
+                  ((eta1r(i,j,k) - hvcoord%etai(k))/dt)                      ! deta/dt
+          end do
+       end do
+    end do
+    ! Boundary points are always 0.
+    eta_dot(:,:,1,1) = zero
+    eta_dot(:,:,nlevp,1) = zero
 
     ! Limit dp to be > 0 and store update in eta_dot_dpdn rather than true
     ! eta_dot_dpdn. See comments below for more.
     dp_neg_min = reconstruct_and_limit_dp(elem%state%dp3d(:,:,:,tl%np1), &
-         dt, dp_tol, eta_dot_dpdn, dprecon)
+         dt, dp_tol, eta_dot(:,:,:,1), dprecon)
 #ifndef NDEBUG
     if (dp_neg_min < dp_tol) then
        write(iulog, '(a,i7,i7,es11.4)') &
