@@ -878,8 +878,8 @@ contains
           eta1r(:,:,k) = hvcoord%etai(k) + dt*( &
                eta_dot(:,:,k) + &
                half*dt*(grad(:,:,1)*v1 + grad(:,:,2)*v2 + grad(:,:,3)*eta_dot(:,:,k)))
-          eta1r(:,:,k) = max(hvcoord%etai(1), eta1r(:,:,k))
-          eta1r(:,:,k) = min(hvcoord%etai(nlevp), eta1r(:,:,k))
+          !eta1r(:,:,k) = max(hvcoord%etai(1), eta1r(:,:,k))
+          !eta1r(:,:,k) = min(hvcoord%etai(nlevp), eta1r(:,:,k))
        else
           eta0r(:,:,k) = hvcoord%etai(k) - dt*( &
                eta_dot(:,:,k) - &
@@ -889,6 +889,17 @@ contains
     if (amb_fwd /= 0) then
        eta1r(:,:,1) = hvcoord%etai(1)
        eta1r(:,:,nlevp) = hvcoord%etai(nlevp)
+#ifndef NDEBUG
+       do j = 1,np
+          do i = 1,np
+             d = 0
+             do k = 2,nlevp
+                if (eta1r(i,j,k-1) >= eta1r(i,j,k)) d = 1
+             end do
+             if (d /= 0) print *, 'amb> eta1r', eta1r(i,j,:)
+          end do
+       end do
+#endif
     else
        eta0r(:,:,1) = hvcoord%etai(1)
        eta0r(:,:,nlevp) = hvcoord%etai(nlevp)
@@ -969,9 +980,7 @@ contains
     do j = 2,n
        if (x(j-1) >= x(j)) unsort = .true.
     end do
-    if (unsort) then
-       print *, 'amb> x',x
-    end if
+    if (unsort) print *, 'amb> x',x
 #endif
 
     j = 1
