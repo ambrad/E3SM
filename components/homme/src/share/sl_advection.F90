@@ -926,27 +926,6 @@ contains
     end do
   end subroutine eval_lagrange_poly_derivative
 
-  subroutine interp(n, x, y, xi, yi)
-    integer, intent(in) :: n
-    real(kind=real_kind), intent(in) :: x(:), y(:), xi(:)
-    real(kind=real_kind), intent(out) :: yi(:)
-
-    real(kind=real_kind) :: alpha
-    integer :: j, ji
-
-    j = 1
-    ji = 1
-    do while (ji <= n)
-       if (j < n-1 .and. xi(ji) > x(j+1)) then
-          j = j + 1
-       else
-          alpha = (xi(ji) - x(j))/(x(j+1) - x(j))
-          yi(ji) = (1 - alpha)*y(j) + alpha*y(j+1)
-          ji = ji + 1
-       end if
-    end do
-  end subroutine interp
-
   subroutine calc_p(hvcoord, dp, p)
     type (hvcoord_t), intent(in) :: hvcoord
     real(real_kind), intent(in) :: dp(np,np,nlev)
