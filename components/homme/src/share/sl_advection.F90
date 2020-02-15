@@ -58,7 +58,7 @@ contains
     ! Either dt_remap_factor = 0 (vertically Eulerian dynamics) or
     ! dt_remap_factor < dt_tracer_factor (vertically Lagrangian
     ! dynamics' vertical remap time step < tracer time step).
-    independent_time_steps = dt_remap_factor < dt_tracer_factor
+    independent_time_steps = .true. !dt_remap_factor < dt_tracer_factor
   end subroutine sl_parse_transport_alg
 
   subroutine sl_init1(par, elem)

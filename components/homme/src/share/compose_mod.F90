@@ -238,7 +238,7 @@ contains
     use_sgi = sgi_is_initialized()
     hard_zero = .true.
 
-    independent_time_steps = dt_remap_factor < dt_tracer_factor
+    independent_time_steps = .true. !dt_remap_factor < dt_tracer_factor
 
     if (semi_lagrange_cdr_alg == 2 .or. semi_lagrange_cdr_alg == 20 .or. &
          semi_lagrange_cdr_alg == 21) then

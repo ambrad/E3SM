@@ -1030,7 +1030,7 @@ contains
 
     ! Use the flexible time stepper if dt_remap_factor == 0 (vertically Eulerian
     ! dynamics) or dt_remap < dt_tracer. This applies to SL transport only.
-    independent_time_steps = transport_alg > 1 .and. dt_remap_factor < dt_tracer_factor
+    independent_time_steps = .true. !transport_alg > 1 .and. dt_remap_factor < dt_tracer_factor
 
     ! compute timesteps for tracer transport and vertical remap
     dt_q = dt*dt_tracer_factor
