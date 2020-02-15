@@ -1,6 +1,7 @@
 #ifdef HAVE_CONFIG_H
 # include "config.h"
 #endif
+#undef NDEBUG
 
 module sl_advection
   use kinds, only              : real_kind, int_kind
@@ -40,6 +41,8 @@ module sl_advection
 
   logical, parameter :: barrier = .false.
 
+  integer :: amb_fwd
+
 contains
 
   !=================================================================================================!
@@ -76,6 +79,9 @@ contains
     integer :: nslots, ie, num_neighbors, need_conservation, i, j
     logical :: slmm, cisl, qos, sl_test, independent_time_steps
 
+    character (len=255) :: amb_exp_str
+    integer :: ithr
+
 #ifdef HOMME_ENABLE_COMPOSE
     call t_startf('sl_init1')
     if (transport_alg > 0) then
@@ -109,6 +115,11 @@ contains
        end if
        allocate(minq(np,np,nlev,qsize,size(elem)), maxq(np,np,nlev,qsize,size(elem)))
        dp_tol = -one
+       
+       amb_fwd = 0
+       call get_environment_variable("AMB_FWD", amb_exp_str, status=ithr)
+       if (ithr /= 1) read(amb_exp_str, *, iostat=ithr) amb_fwd
+       if (par%masterproc) write(iulog,*) 'amb> fwd', amb_fwd
     endif
     call t_stopf('sl_init1')
 #endif
@@ -862,29 +873,29 @@ contains
        v1 = half*(elem%derived%vstar(:,:,1,k1) + elem%derived%vstar(:,:,1,k2))
        v2 = half*(elem%derived%vstar(:,:,2,k1) + elem%derived%vstar(:,:,2,k2))
 
-#if 0
-       ! Reconstruct departure level coordinate at final time.
-       eta1r(:,:,k) = hvcoord%etai(k) + dt*( &
-            eta_dot(:,:,k) + &
-            half*dt*(grad(:,:,1)*v1 + grad(:,:,2)*v2 + grad(:,:,3)*eta_dot(:,:,k)))
-#else
-       eta0r(:,:,k) = hvcoord%etai(k) - dt*( &
-            eta_dot(:,:,k) - &
-            half*dt*(grad(:,:,1)*v1 + grad(:,:,2)*v2 + grad(:,:,3)*eta_dot(:,:,k)))
-#endif
+       if (amb_fwd /= 0) then
+          ! Reconstruct departure level coordinate at final time.
+          eta1r(:,:,k) = hvcoord%etai(k) + dt*( &
+               eta_dot(:,:,k) + &
+               half*dt*(grad(:,:,1)*v1 + grad(:,:,2)*v2 + grad(:,:,3)*eta_dot(:,:,k)))
+       else
+          eta0r(:,:,k) = hvcoord%etai(k) - dt*( &
+               eta_dot(:,:,k) - &
+               half*dt*(grad(:,:,1)*v1 + grad(:,:,2)*v2 + grad(:,:,3)*eta_dot(:,:,k)))
+       end if
     end do
-#if 0
-    eta1r(:,:,1) = hvcoord%etai(1)
-    eta1r(:,:,nlevp) = hvcoord%etai(nlevp)
-#else
-    eta0r(:,:,1) = hvcoord%etai(1)
-    eta0r(:,:,nlevp) = hvcoord%etai(nlevp)
-    do j = 1,np
-       do i = 1,np
-          call interp(nlevp, eta0r(i,j,:), hvcoord%etai, hvcoord%etai, eta1r(i,j,:))
+    if (amb_fwd /= 0) then
+       eta1r(:,:,1) = hvcoord%etai(1)
+       eta1r(:,:,nlevp) = hvcoord%etai(nlevp)
+    else
+       eta0r(:,:,1) = hvcoord%etai(1)
+       eta0r(:,:,nlevp) = hvcoord%etai(nlevp)
+       do j = 1,np
+          do i = 1,np
+             call interp(nlevp, eta0r(i,j,:), hvcoord%etai, hvcoord%etai, eta1r(i,j,:))
+          end do
        end do
-    end do
-#endif
+    end if
     
     ! Reconstruct eta_dot_dpdn over the time interval.
     do k = 2,nlev
@@ -949,6 +960,17 @@ contains
 
     real(kind=real_kind) :: alpha
     integer :: j, ji
+
+#ifndef NDEBUG
+    logical :: unsort
+    unsort = .false.
+    do j = 2,n
+       if (x(j-1) >= x(j)) unsort = .true.
+    end do
+    if (unsort) then
+       print *, 'amb> x',x
+    end if
+#endif
 
     j = 1
     ji = 1
