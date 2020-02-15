@@ -241,7 +241,7 @@ CONTAINS
     !-----------------------------------------------------
     !   Initialize specific humidity
     !-----------------------------------------------------
-    if (moist .eq. 1) then
+    if (.true.) then !(moist .eq. 1) then
       eta = p/p0
 
       if (eta .gt. moisttr) then
