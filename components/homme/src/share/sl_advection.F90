@@ -828,7 +828,6 @@ contains
 
     ! eta_dot is actually eta_dot_dpdn here.
     if (dt_remap_factor == 0) then
-       call abortmp('not impled yet')
        eta_dot = elem%derived%eta_dot_dpdn
     else
        ! Reconstruct an approximation to the midpoint eta_dot_dpdn on
