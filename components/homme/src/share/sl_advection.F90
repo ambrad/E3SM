@@ -794,7 +794,7 @@ contains
     type (derivative_t), intent(in) :: deriv
     real(kind=real_kind), intent(out) :: dprecon(np,np,nlev)
 
-    real(real_kind), dimension(np,np,nlevp) :: eta1r, eta_dot
+    real(real_kind), dimension(np,np,nlevp) :: eta0r, eta1r, eta_dot
     real(real_kind), dimension(np,np) :: ps, ps_t, ptp0, pth, v1, v2, divdp
     real(real_kind), dimension(np,np,2) :: vdp
     real(real_kind), dimension(np,np,3) :: grad
@@ -862,13 +862,29 @@ contains
        v1 = half*(elem%derived%vstar(:,:,1,k1) + elem%derived%vstar(:,:,1,k2))
        v2 = half*(elem%derived%vstar(:,:,2,k1) + elem%derived%vstar(:,:,2,k2))
 
+#if 0
        ! Reconstruct departure level coordinate at final time.
        eta1r(:,:,k) = hvcoord%etai(k) + dt*( &
             eta_dot(:,:,k) + &
             half*dt*(grad(:,:,1)*v1 + grad(:,:,2)*v2 + grad(:,:,3)*eta_dot(:,:,k)))
+#else
+       eta0r(:,:,k) = hvcoord%etai(k) - dt*( &
+            eta_dot(:,:,k) - &
+            half*dt*(grad(:,:,1)*v1 + grad(:,:,2)*v2 + grad(:,:,3)*eta_dot(:,:,k)))
+#endif
     end do
+#if 0
     eta1r(:,:,1) = hvcoord%etai(1)
     eta1r(:,:,nlevp) = hvcoord%etai(nlevp)
+#else
+    eta0r(:,:,1) = hvcoord%etai(1)
+    eta0r(:,:,nlevp) = hvcoord%etai(nlevp)
+    do j = 1,np
+       do i = 1,np
+          call interp(nlevp, eta0r(i,j,:), hvcoord%etai, hvcoord%etai, eta1r(i,j,:))
+       end do
+    end do
+#endif
     
     ! Reconstruct eta_dot_dpdn over the time interval.
     do k = 2,nlev
