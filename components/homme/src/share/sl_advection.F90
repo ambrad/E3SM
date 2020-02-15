@@ -853,35 +853,37 @@ contains
 
     do k = 2, nlev
        ! Gradient of eta_dot at initial time w.r.t. horizontal sphere coords.
-       grad(:,:,1:2) = gradient_sphere(eta_dot(:,:,k,1), deriv, elem%Dinv)
+       grad(:,:,1:2) = gradient_sphere(eta_dot(:,:,k,2), deriv, elem%Dinv)
 
        ! Gradient of eta_dot at initial time w.r.t. vertical ref coords.
        k1 = k-1
        k2 = k+1
        call eval_lagrange_poly_derivative(k2-k1+1, &
-            hvcoord%etai(k1:k2), eta_dot(:,:,k1:k2,1), &
+            hvcoord%etai(k1:k2), eta_dot(:,:,k1:k2,2), &
             hvcoord%etai(k), grad(:,:,3))
 
-       ! Horizontal velocity at final time.
+       ! Horizontal velocity at initial time.
        k1 = k-1
        k2 = k
-       v1 = half*(elem%state%v(:,:,1,k1,tl%np1) + elem%state%v(:,:,1,k2,tl%np1))
-       v2 = half*(elem%state%v(:,:,2,k1,tl%np1) + elem%state%v(:,:,2,k2,tl%np1))
+       v1 = half*(elem%derived%vstar(:,:,1,k1) + elem%derived%vstar(:,:,1,k2))
+       v2 = half*(elem%derived%vstar(:,:,2,k1) + elem%derived%vstar(:,:,2,k2))
 
        ! Reconstruct departure level coordinate at initial time.
-       eta0r(:,:,k) = hvcoord%etai(k) - half*dt*( &
-            eta_dot(:,:,k,1) + eta_dot(:,:,k,2) - &
-            dt*(grad(:,:,1)*v1 + grad(:,:,2)*v2 + grad(:,:,3)*eta_dot(:,:,k,2)))
+       eta1r(:,:,k) = hvcoord%etai(k) + half*dt*( &
+            eta_dot(:,:,k,1) + eta_dot(:,:,k,2) + &
+            dt*(grad(:,:,1)*v1 + grad(:,:,2)*v2 + grad(:,:,3)*eta_dot(:,:,k,1)))
     end do
-    eta0r(:,:,1) = hvcoord%etai(1)
-    eta0r(:,:,nlevp) = hvcoord%etai(nlevp)
+    eta1r(:,:,1) = hvcoord%etai(1)
+    eta1r(:,:,nlevp) = hvcoord%etai(nlevp)
 
+#if 0
     ! Interpolate Lagrangian level in eta coord to final time.
     do j = 1,np
        do i = 1,np
           call interp(nlevp, eta0r(i,j,:), hvcoord%etai, hvcoord%etai, eta1r(i,j,:))
        end do
     end do
+#endif
     
     ! Reconstruct eta_dot_dpdn over the time interval.
     do k = 2,nlev
