@@ -829,6 +829,10 @@ contains
     ! eta_dot is actually eta_dot_dpdn here.
     if (dt_remap_factor == 0) then
        eta_dot = elem%derived%eta_dot_dpdn
+       ps = hvcoord%hyai(1)*hvcoord%ps0
+       do k = 1,nlev
+          ps = ps + half*(elem%derived%dp(:,:,k) + elem%state%dp3d(:,:,k,tl%np1))
+       end do
     else
        ! Reconstruct an approximation to the midpoint eta_dot_dpdn on
        ! Eulerian levels.
