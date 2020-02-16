@@ -921,35 +921,25 @@ contains
     end do
   end subroutine eval_lagrange_poly_derivative
 
-  subroutine eval_lagrange_poly_derivative_scalar(n, xs, ys, xi, yp)
+  subroutine eval_lagrange_poly(n, xs, ys, xi, y)
     integer, intent(in) :: n
-    real(real_kind), intent(in) :: xs(n), ys(n), xi
-    real(real_kind), intent(out) :: yp
+    real(kind=real_kind), intent(in) :: xs(:), ys(:), xi
+    real(kind=real_kind), intent(out) :: y
 
-    integer :: i, j, k
-    real(real_kind) :: f, g, num
+    integer :: i, j
+    real(kind=real_kind) :: f
 
-    yp = zero
+    y = 0
     do i = 1,n
-       f = zero
+       f = 1
        do j = 1,n
-          if (j == i) cycle
-          g = one
-          do k = 1,n
-             if (k == i) cycle
-             if (k == j) then
-                num = one
-             else
-                num = xi - xs(k)
-             end if
-             g = g*(num/(xs(i) - xs(k)))
-          end do
-          f = f + g
+          if (i == j) cycle
+          f = f*((xi - xs(j))/(xs(i) - xs(j)))
        end do
-       yp = yp + ys(i)*f
+       y = y + ys(i)*f
     end do
-  end subroutine eval_lagrange_poly_derivative_scalar
- 
+  end subroutine eval_lagrange_poly
+
   subroutine interp(n, x, y, xi, yi)
     integer, intent(in) :: n
     real(kind=real_kind), intent(in) :: x(:), y(:), xi(:)
@@ -969,14 +959,11 @@ contains
           yi(ji) = (1 - alpha)*y(j) + alpha*y(j+1)
 #else
           if (j == 1) then
-             call eval_lagrange_poly_derivative_scalar( &
-                  3, x(1:3), y(1:3), xi(ji), yi(ji))
+             call eval_lagrange_poly(3, x(1:3), y(1:3), xi(ji), yi(ji))
           else if (j >= n-1) then
-             call eval_lagrange_poly_derivative_scalar( &
-                  3, x(n-2:n), y(n-2:n), xi(ji), yi(ji))
+             call eval_lagrange_poly(3, x(n-2:n), y(n-2:n), xi(ji), yi(ji))
           else
-             call eval_lagrange_poly_derivative_scalar( &
-                  4, x(j-1:j+2), y(j-1:j+2), xi(ji), yi(ji))
+             call eval_lagrange_poly(4, x(j-1:j+2), y(j-1:j+2), xi(ji), yi(ji))
           end if
 #endif
           ji = ji + 1
