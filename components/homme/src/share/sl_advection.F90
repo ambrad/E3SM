@@ -921,6 +921,35 @@ contains
     end do
   end subroutine eval_lagrange_poly_derivative
 
+  subroutine eval_lagrange_poly_derivative_scalar(n, xs, ys, xi, yp)
+    integer, intent(in) :: n
+    real(real_kind), intent(in) :: xs(n), ys(n), xi
+    real(real_kind), intent(out) :: yp
+
+    integer :: i, j, k
+    real(real_kind) :: f, g, num
+
+    yp = zero
+    do i = 1,n
+       f = zero
+       do j = 1,n
+          if (j == i) cycle
+          g = one
+          do k = 1,n
+             if (k == i) cycle
+             if (k == j) then
+                num = one
+             else
+                num = xi - xs(k)
+             end if
+             g = g*(num/(xs(i) - xs(k)))
+          end do
+          f = f + g
+       end do
+       yp = yp + ys(i)*f
+    end do
+  end subroutine eval_lagrange_poly_derivative_scalar
+ 
   subroutine interp(n, x, y, xi, yi)
     integer, intent(in) :: n
     real(kind=real_kind), intent(in) :: x(:), y(:), xi(:)
@@ -935,8 +964,21 @@ contains
        if (j < n-1 .and. xi(ji) > x(j+1)) then
           j = j + 1
        else
+#if 0
           alpha = (xi(ji) - x(j))/(x(j+1) - x(j))
           yi(ji) = (1 - alpha)*y(j) + alpha*y(j+1)
+#else
+          if (j == 1) then
+             call eval_lagrange_poly_derivative_scalar( &
+                  3, x(1:3), y(1:3), xi(ji), yi(ji))
+          else if (j >= n-1) then
+             call eval_lagrange_poly_derivative_scalar( &
+                  3, x(n-2:n), y(n-2:n), xi(ji), yi(ji))
+          else
+             call eval_lagrange_poly_derivative_scalar( &
+                  4, x(j-1:j+2), y(j-1:j+2), xi(ji), yi(ji))
+          end if
+#endif
           ji = ji + 1
        end if
     end do
