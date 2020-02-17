@@ -880,13 +880,17 @@ contains
           ! Reconstruct departure level coordinate at final time.
           eta1r(:,:,k) = hvcoord%etai(k) + dt*( &
                eta_dot(:,:,k) + &
-               half*dt*(grad(:,:,1)*v(:,:,1) + grad(:,:,2)*v(:,:,2) + grad(:,:,3)*eta_dot(:,:,k)))
-          !eta1r(:,:,k) = max(hvcoord%etai(1), eta1r(:,:,k))
-          !eta1r(:,:,k) = min(hvcoord%etai(nlevp), eta1r(:,:,k))
+               half*dt*(-grad(:,:,1)*v(:,:,1) - grad(:,:,2)*v(:,:,2) + grad(:,:,3)*eta_dot(:,:,k)))
+#ifndef NDEBUG
+          if (maxval(eta1r(:,:,k)) > hvcoord%etai(nlevp) .or. minval(eta1r(:,:,k)) < hvcoord%etai(1)) &
+             print *, 'amb> eta1r', eta1r(:,:,k)
+#endif
+          eta1r(:,:,k) = max(hvcoord%etai(1), eta1r(:,:,k))
+          eta1r(:,:,k) = min(hvcoord%etai(nlevp), eta1r(:,:,k))
        else
           eta0r(:,:,k) = hvcoord%etai(k) - dt*( &
                eta_dot(:,:,k) - &
-               half*dt*(grad(:,:,1)*v(:,:,1) + grad(:,:,2)*v(:,:,2) + grad(:,:,3)*eta_dot(:,:,k)))
+               half*dt*( grad(:,:,1)*v(:,:,1) + grad(:,:,2)*v(:,:,2) + grad(:,:,3)*eta_dot(:,:,k)))
        end if
     end do
     if (amb_fwd /= 0) then
