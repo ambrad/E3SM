@@ -870,11 +870,13 @@ contains
             hvcoord%etai(k1:k2), eta_dot(:,:,k1:k2), &
             hvcoord%etai(k), grad(:,:,3))
 
-       ! Horizontal velocity at initial time.
+       ! Horizontal velocity at time midpoint.
        k1 = k-1
        k2 = k
-       v1 = half*(elem%derived%vstar(:,:,1,k1) + elem%derived%vstar(:,:,1,k2))
-       v2 = half*(elem%derived%vstar(:,:,2,k1) + elem%derived%vstar(:,:,2,k2))
+       v1 = fourth*(elem%state%v(:,:,1,k1,tl%n0 ) + elem%state%v(:,:,1,k2,tl%n0 ) + &
+                    elem%state%v(:,:,1,k1,tl%np1) + elem%state%v(:,:,1,k2,tl%np1))
+       v2 = fourth*(elem%state%v(:,:,2,k1,tl%n0 ) + elem%state%v(:,:,2,k2,tl%n0 ) + &
+                    elem%state%v(:,:,2,k1,tl%np1) + elem%state%v(:,:,2,k2,tl%np1))
 
        if (amb_fwd /= 0) then
           ! Reconstruct departure level coordinate at final time.
