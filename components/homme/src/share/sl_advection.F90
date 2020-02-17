@@ -1,7 +1,6 @@
 #ifdef HAVE_CONFIG_H
 # include "config.h"
 #endif
-#undef NDEBUG
 
 module sl_advection
   use kinds, only              : real_kind, int_kind
@@ -33,6 +32,7 @@ module sl_advection
   type (ghostBuffer3D_t)   :: ghostbuf_tr
   type (cartesian3D_t), allocatable :: dep_points_all(:,:,:,:) ! (np,np,nlev,nelemd)
   real(kind=real_kind), dimension(:,:,:,:,:), allocatable :: minq, maxq ! (np,np,nlev,qsize,nelemd)
+  real(kind=real_kind), dimension(nlevp) :: hyai_eta, hybi_eta
 
   ! For use in make_positive.
   real(kind=real_kind) :: dp_tol
@@ -40,8 +40,6 @@ module sl_advection
   public :: Prim_Advec_Tracers_remap_ALE, sl_init1, sl_vertically_remap_tracers, sl_unittest
 
   logical, parameter :: barrier = .false.
-
-  integer :: amb_fwd
 
 contains
 
@@ -79,9 +77,6 @@ contains
     integer :: nslots, ie, num_neighbors, need_conservation, i, j
     logical :: slmm, cisl, qos, sl_test, independent_time_steps
 
-    character (len=255) :: amb_exp_str
-    integer :: ithr
-
 #ifdef HOMME_ENABLE_COMPOSE
     call t_startf('sl_init1')
     if (transport_alg > 0) then
@@ -115,11 +110,6 @@ contains
        end if
        allocate(minq(np,np,nlev,qsize,size(elem)), maxq(np,np,nlev,qsize,size(elem)))
        dp_tol = -one
-       
-       amb_fwd = 0
-       call get_environment_variable("AMB_FWD", amb_exp_str, status=ithr)
-       if (ithr /= 1) read(amb_exp_str, *, iostat=ithr) amb_fwd
-       if (par%masterproc) write(iulog,*) 'amb> fwd', amb_fwd
     endif
     call t_stopf('sl_init1')
 #endif
@@ -168,8 +158,12 @@ contains
     if (independent_time_steps) then
        call t_startf('SLMM_reconstruct')
        if (dp_tol < zero) then
-          ! Thread write race condition; benign b/c written value is same in all threads.
+          !$omp master          
           call set_dp_tol(hvcoord, dp_tol)
+          call hydiff(hvcoord%hyai, hvcoord%hyam, hvcoord%etai, hvcoord%etam, hyai_eta)
+          call hydiff(hvcoord%hybi, hvcoord%hybm, hvcoord%etai, hvcoord%etam, hybi_eta)
+          !$omp end master
+          !$omp barrier
        end if
        do ie = nets,nete
           ! divdp is dp_star
@@ -805,11 +799,10 @@ contains
     type (derivative_t), intent(in) :: deriv
     real(kind=real_kind), intent(out) :: dprecon(np,np,nlev)
 
-    real(real_kind), dimension(np,np,nlevp) :: eta0r, eta1r, eta_dot
-    real(real_kind), dimension(np,np) :: ps, ps_t, ptp0, pth, divdp
+    real(real_kind), dimension(np,np,nlevp) :: eta1r, eta_dot
+    real(real_kind), dimension(np,np) :: ps, ps_t, divdp
     real(real_kind), dimension(np,np,2) :: vdp, v
     real(real_kind), dimension(np,np,3) :: grad
-    real(real_kind), dimension(nlevp) :: hyai_eta, hybi_eta
     real(real_kind) :: dp_neg_min
     integer :: i, j, k, k1, k2, d
 
@@ -823,8 +816,6 @@ contains
 #endif
 
     ! Obviously preprocess this.
-    call hydiff(hvcoord%hyai, hvcoord%hyam, hvcoord%etai, hvcoord%etam, hyai_eta)
-    call hydiff(hvcoord%hybi, hvcoord%hybm, hvcoord%etai, hvcoord%etam, hybi_eta)
 
     ! eta_dot is actually eta_dot_dpdn here.
     if (dt_remap_factor == 0) then
@@ -876,46 +867,13 @@ contains
                              elem%derived%vn0  (:,:,d,k-1) + elem%derived%vn0  (:,:,d,k))
        end do
 
-       if (amb_fwd /= 0) then
-          ! Reconstruct departure level coordinate at final time.
-          eta1r(:,:,k) = hvcoord%etai(k) + dt*( &
-               eta_dot(:,:,k) + &
-               half*dt*(-grad(:,:,1)*v(:,:,1) - grad(:,:,2)*v(:,:,2) + grad(:,:,3)*eta_dot(:,:,k)))
-#ifndef NDEBUG
-          if (maxval(eta1r(:,:,k)) > hvcoord%etai(nlevp) .or. minval(eta1r(:,:,k)) < hvcoord%etai(1)) &
-             print *, 'amb> eta1r', eta1r(:,:,k)
-#endif
-          eta1r(:,:,k) = max(hvcoord%etai(1), eta1r(:,:,k))
-          eta1r(:,:,k) = min(hvcoord%etai(nlevp), eta1r(:,:,k))
-       else
-          eta0r(:,:,k) = hvcoord%etai(k) - dt*( &
-               eta_dot(:,:,k) - &
-               half*dt*( grad(:,:,1)*v(:,:,1) + grad(:,:,2)*v(:,:,2) + grad(:,:,3)*eta_dot(:,:,k)))
-       end if
+       ! Reconstruct departure level coordinate at final time.
+       eta1r(:,:,k) = hvcoord%etai(k) + dt*( &
+            eta_dot(:,:,k) + &
+            half*dt*(-grad(:,:,1)*v(:,:,1) - grad(:,:,2)*v(:,:,2) + grad(:,:,3)*eta_dot(:,:,k)))
     end do
-    if (amb_fwd /= 0) then
-       eta1r(:,:,1) = hvcoord%etai(1)
-       eta1r(:,:,nlevp) = hvcoord%etai(nlevp)
-#ifndef NDEBUG
-       do j = 1,np
-          do i = 1,np
-             d = 0
-             do k = 2,nlevp
-                if (eta1r(i,j,k-1) >= eta1r(i,j,k)) d = 1
-             end do
-             if (d /= 0) print *, 'amb> eta1r', eta1r(i,j,:)
-          end do
-       end do
-#endif
-    else
-       eta0r(:,:,1) = hvcoord%etai(1)
-       eta0r(:,:,nlevp) = hvcoord%etai(nlevp)
-       do j = 1,np
-          do i = 1,np
-             call interp(nlevp, eta0r(i,j,:), hvcoord%etai, hvcoord%etai, eta1r(i,j,:))
-          end do
-       end do
-    end if
+    eta1r(:,:,1) = hvcoord%etai(1)
+    eta1r(:,:,nlevp) = hvcoord%etai(nlevp)
     
     ! Reconstruct eta_dot_dpdn over the time interval.
     do k = 2,nlev
@@ -972,49 +930,6 @@ contains
        yp = yp + ys(:,:,i)*f
     end do
   end subroutine eval_lagrange_poly_derivative
-
-  subroutine interp(n, x, y, xi, yi)
-    integer, intent(in) :: n
-    real(kind=real_kind), intent(in) :: x(:), y(:), xi(:)
-    real(kind=real_kind), intent(out) :: yi(:)
-
-    real(kind=real_kind) :: alpha
-    integer :: j, ji
-
-#ifndef NDEBUG
-    logical :: unsort
-    unsort = .false.
-    do j = 2,n
-       if (x(j-1) >= x(j)) unsort = .true.
-    end do
-    if (unsort) print *, 'amb> x',x
-#endif
-
-    j = 1
-    ji = 1
-    do while (ji <= n)
-       if (j < n-1 .and. xi(ji) > x(j+1)) then
-          j = j + 1
-       else
-          alpha = (xi(ji) - x(j))/(x(j+1) - x(j))
-          yi(ji) = (1 - alpha)*y(j) + alpha*y(j+1)
-          ji = ji + 1
-       end if
-    end do
-  end subroutine interp
-
-  subroutine calc_p(hvcoord, dp, p)
-    type (hvcoord_t), intent(in) :: hvcoord
-    real(real_kind), intent(in) :: dp(np,np,nlev)
-    real(real_kind), intent(out) :: p(np,np,nlevp)
-
-    integer :: k
-
-    p(:,:,1) = hvcoord%hyai(1)*hvcoord%ps0
-    do k = 1,nlev
-       p(:,:,k+1) = p(:,:,k) + dp(:,:,k)
-    end do
-  end subroutine calc_p
 
   subroutine set_dp_tol(hvcoord, dp_tol)
     ! Pad by an amount ~ smallest level to keep the computed dp > 0.
