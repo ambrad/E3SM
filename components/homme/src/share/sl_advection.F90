@@ -832,7 +832,7 @@ contains
     type (derivative_t), intent(in) :: deriv
     real(kind=real_kind), intent(out) :: dprecon(np,np,nlev)
 
-    real(real_kind), dimension(np,np,nlevp) :: eta1r, eta_dot
+    real(real_kind), dimension(np,np,nlevp) :: pref, p1r, eta_dot_dpdn
     real(real_kind), dimension(np,np) :: dpi, ps_t, divdp
     real(real_kind), dimension(np,np,2) :: vdp, v
     real(real_kind), dimension(np,np,3) :: grad
@@ -848,44 +848,47 @@ contains
     end if
 #endif
 
-    ! eta_dot is actually eta_dot_dpdn here.
     if (dt_remap_factor == 0) then
-       eta_dot = elem%derived%eta_dot_dpdn
+       eta_dot_dpdn = elem%derived%eta_dot_dpdn
     else
        ! Reconstruct an approximation to the midpoint eta_dot_dpdn on
        ! Eulerian levels.
-       eta_dot(:,:,1) = zero
+       eta_dot_dpdn(:,:,1) = zero
        do k = 1,nlev
           do d = 1,2
              vdp(:,:,d) = half*(elem%derived%vstar(:,:,d,k)*elem%derived%dp(:,:,k       ) + &
                                 elem%derived%vn0  (:,:,d,k)*elem%state%dp3d(:,:,k,tl%np1))
           end do
           divdp = divergence_sphere(vdp, deriv, elem)
-          eta_dot(:,:,k+1) = eta_dot(:,:,k) + divdp
+          eta_dot_dpdn(:,:,k+1) = eta_dot_dpdn(:,:,k) + divdp
        end do
-       ps_t = -eta_dot(:,:,nlevp)
-       eta_dot(:,:,nlevp) = zero
+       ps_t = -eta_dot_dpdn(:,:,nlevp)
+       eta_dot_dpdn(:,:,nlevp) = zero
        do k = 2,nlev
           ! eta_dot_dpdn
-          eta_dot(:,:,k) = -hvcoord%hybi(k)*ps_t - eta_dot(:,:,k)
-          ! dp at interface
-          dpi = fourth*(elem%derived%dp(:,:,k-1) + elem%state%dp3d(:,:,k-1,tl%np1) + &
-                        elem%derived%dp(:,:,k  ) + elem%state%dp3d(:,:,k,  tl%np1))
-          ! eta_dot
-          eta_dot(:,:,k) = eta_dot(:,:,k)/dpi
+          eta_dot_dpdn(:,:,k) = -hvcoord%hybi(k)*ps_t - eta_dot_dpdn(:,:,k)
        end do
     end if
 
+    ! Use p0 as the reference coordinate system. p0 differs from p1 by B(eta)
+    ! (ps1 - ps0); dp3d already accounts for this term
+    ! w.r.t. derived%dp. Recall
+    !     eta_dot_dpdn = p_eta eta_dot = (A_eta p0 + B_eta ps) deta/dt,
+    ! except that in the code eta_dot_dpdn is actually dp deta/dt rather than
+    ! dp/deta deta/dt. eta_dot_dpdn is the motion of a pressure level excluding
+    ! its motion due to dps/dt.
+    call calc_p(hvcoord, elem%derived%dp, pref)
+
     do k = 2, nlev
        ! Gradient of eta_dot at midpoint time w.r.t. horizontal sphere coords.
-       grad(:,:,1:2) = gradient_sphere(eta_dot(:,:,k), deriv, elem%Dinv)
+       grad(:,:,1:2) = gradient_sphere(eta_dot_dpdn(:,:,k), deriv, elem%Dinv)
 
        ! Gradient of eta_dot at midpoint time w.r.t. vertical ref coords.
        k1 = k-1
        k2 = k+1
        call eval_lagrange_poly_derivative(k2-k1+1, &
-            hvcoord%etai(k1:k2), eta_dot(:,:,k1:k2), &
-            hvcoord%etai(k), grad(:,:,3))
+            pref(:,:,k1:k2), eta_dot_dpdn(:,:,k1:k2), &
+            pref(:,:,k), grad(:,:,3))
 
        ! Horizontal velocity at time midpoint.
        do d = 1,2
@@ -894,31 +897,23 @@ contains
        end do
 
        ! Reconstruct departure level coordinate at final time.
-       eta1r(:,:,k) = hvcoord%etai(k) + dt*( &
-            eta_dot(:,:,k) + &
-            half*dt*(-grad(:,:,1)*v(:,:,1) - grad(:,:,2)*v(:,:,2) + grad(:,:,3)*eta_dot(:,:,k)))
+       p1r(:,:,k) = pref(:,:,k) + dt*( &
+            eta_dot_dpdn(:,:,k) + &
+            half*dt*(-grad(:,:,1)*v(:,:,1) - grad(:,:,2)*v(:,:,2) + grad(:,:,3)*eta_dot_dpdn(:,:,k)))
     end do
-    eta1r(:,:,1) = hvcoord%etai(1)
-    eta1r(:,:,nlevp) = hvcoord%etai(nlevp)
+    p1r(:,:,1) = pref(:,:,1)
+    p1r(:,:,nlevp) = pref(:,:,nlevp)
     
     ! Reconstruct eta_dot_dpdn over the time interval.
-    do k = 2,nlev
-       ! eta_dot
-       eta_dot(:,:,k) = (eta1r(:,:,k) - hvcoord%etai(k))/dt
-       ! dp at interface
-       dpi = fourth*(elem%derived%dp(:,:,k-1) + elem%state%dp3d(:,:,k-1,tl%np1) + &
-                     elem%derived%dp(:,:,k  ) + elem%state%dp3d(:,:,k,  tl%np1))
-       ! eta_dot_dpdn
-       eta_dot(:,:,k) = eta_dot(:,:,k)*dpi
-    end do
+    eta_dot_dpdn = (p1r - pref)/dt
     ! Boundary points are always 0.
-    eta_dot(:,:,1) = zero
-    eta_dot(:,:,nlevp) = zero
+    eta_dot_dpdn(:,:,1) = zero
+    eta_dot_dpdn(:,:,nlevp) = zero
 
     ! Limit dp to be > 0 and store update in eta_dot_dpdn rather than true
     ! eta_dot_dpdn. See comments below for more.
     dp_neg_min = reconstruct_and_limit_dp(elem%state%dp3d(:,:,:,tl%np1), &
-         dt, dp_tol, eta_dot(:,:,:), dprecon)
+         dt, dp_tol, eta_dot_dpdn, dprecon)
 #ifndef NDEBUG
     if (dp_neg_min < dp_tol) then
        write(iulog, '(a,i7,i7,es11.4)') &
@@ -930,7 +925,7 @@ contains
 
   subroutine eval_lagrange_poly_derivative(n, xs, ys, xi, yp)
     integer, intent(in) :: n
-    real(real_kind), intent(in) :: xs(n), ys(np,np,n), xi
+    real(real_kind), intent(in) :: xs(np,np,n), ys(np,np,n), xi(np,np)
     real(real_kind), intent(out) :: yp(np,np)
 
     integer :: i, j, k
@@ -947,15 +942,28 @@ contains
              if (k == j) then
                 num = one
              else
-                num = xi - xs(k)
+                num = xi - xs(:,:,k)
              end if
-             g = g*(num/(xs(i) - xs(k)))
+             g = g*(num/(xs(:,:,i) - xs(:,:,k)))
           end do
           f = f + g
        end do
        yp = yp + ys(:,:,i)*f
     end do
   end subroutine eval_lagrange_poly_derivative
+
+  subroutine calc_p(hvcoord, dp, p)
+    type (hvcoord_t), intent(in) :: hvcoord
+    real(real_kind), intent(in) :: dp(np,np,nlev)
+    real(real_kind), intent(out) :: p(np,np,nlevp)
+
+    integer :: k
+
+    p(:,:,1) = hvcoord%hyai(1)*hvcoord%ps0
+    do k = 1,nlev
+       p(:,:,k+1) = p(:,:,k) + dp(:,:,k)
+    end do
+  end subroutine calc_p
 
   subroutine set_dp_tol(hvcoord, dp_tol)
     ! Pad by an amount ~ smallest level to keep the computed dp > 0.
@@ -1055,7 +1063,8 @@ contains
     real(rt), parameter :: xs(3) = (/-one, zero, half/)
     integer, parameter :: n = 3, ntrial = 10
 
-    real(rt) :: a, b, c, x, y1, y2, alpha, ys(3), ysi(np,np,n), y2i(np,np)
+    real(rt) :: a, b, c, x, y1, y2, alpha, ys(3), xsi(np,np,n), ysi(np,np,n), &
+         xi(np,np), y2i(np,np)
     integer :: i, j, trial, nerr
 
     nerr = 0
@@ -1072,10 +1081,12 @@ contains
        y1 = 2*a*x + b
        do j = 1,np
           do i = 1,np
+             xsi(i,j,:) = xs
              ysi(i,j,:) = ys
+             xi(i,j) = x
           end do
        end do
-       call eval_lagrange_poly_derivative(n, xs, ysi, x, y2i)
+       call eval_lagrange_poly_derivative(n, xsi, ysi, xi, y2i)
        if (abs(y2i(np,np) - y1) > 1d-14*abs(y1)) nerr = nerr + 1
     end do
   end function test_lagrange
