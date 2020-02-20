@@ -32,7 +32,6 @@ module sl_advection
   type (ghostBuffer3D_t)   :: ghostbuf_tr
   type (cartesian3D_t), allocatable :: dep_points_all(:,:,:,:) ! (np,np,nlev,nelemd)
   real(kind=real_kind), dimension(:,:,:,:,:), allocatable :: minq, maxq ! (np,np,nlev,qsize,nelemd)
-  real(kind=real_kind), dimension(nlevp) :: hyai_eta, hybi_eta
 
   ! For use in make_positive.
   real(kind=real_kind) :: dp_tol
@@ -158,16 +157,8 @@ contains
     if (independent_time_steps) then
        call t_startf('SLMM_reconstruct')
        if (dp_tol < zero) then
-#if (defined HORIZ_OPENMP)
-          !$omp master
-#endif      
+          ! benign write race condition
           call set_dp_tol(hvcoord, dp_tol)
-          call hydiff(hvcoord%hyai, hvcoord%hyam, hvcoord%etai, hvcoord%etam, hyai_eta)
-          call hydiff(hvcoord%hybi, hvcoord%hybm, hvcoord%etai, hvcoord%etam, hybi_eta)
-#if (defined HORIZ_OPENMP)
-          !$omp end master
-          !$omp barrier
-#endif
        end if
        do ie = nets,nete
           ! divdp is dp_star
@@ -842,7 +833,7 @@ contains
     real(kind=real_kind), intent(out) :: dprecon(np,np,nlev)
 
     real(real_kind), dimension(np,np,nlevp) :: eta1r, eta_dot
-    real(real_kind), dimension(np,np) :: ps, ps_t, divdp
+    real(real_kind), dimension(np,np) :: dpi, ps_t, divdp
     real(real_kind), dimension(np,np,2) :: vdp, v
     real(real_kind), dimension(np,np,3) :: grad
     real(real_kind) :: dp_neg_min
@@ -857,40 +848,33 @@ contains
     end if
 #endif
 
-    ! Obviously preprocess this.
-
     ! eta_dot is actually eta_dot_dpdn here.
     if (dt_remap_factor == 0) then
        eta_dot = elem%derived%eta_dot_dpdn
-       ps = hvcoord%hyai(1)*hvcoord%ps0
-       do k = 1,nlev
-          ps = ps + half*(elem%derived%dp(:,:,k) + elem%state%dp3d(:,:,k,tl%np1))
-       end do
     else
        ! Reconstruct an approximation to the midpoint eta_dot_dpdn on
        ! Eulerian levels.
        eta_dot(:,:,1) = zero
-       ps = hvcoord%hyai(1)*hvcoord%ps0
        do k = 1,nlev
           do d = 1,2
              vdp(:,:,d) = half*(elem%derived%vstar(:,:,d,k)*elem%derived%dp(:,:,k       ) + &
                                 elem%derived%vn0  (:,:,d,k)*elem%state%dp3d(:,:,k,tl%np1))
           end do
-          ps = ps + half*(elem%derived%dp(:,:,k) + elem%state%dp3d(:,:,k,tl%np1))
           divdp = divergence_sphere(vdp, deriv, elem)
           eta_dot(:,:,k+1) = eta_dot(:,:,k) + divdp
        end do
        ps_t = -eta_dot(:,:,nlevp)
        eta_dot(:,:,nlevp) = zero
        do k = 2,nlev
+          ! eta_dot_dpdn
           eta_dot(:,:,k) = -hvcoord%hybi(k)*ps_t - eta_dot(:,:,k)
+          ! dp at interface
+          dpi = fourth*(elem%derived%dp(:,:,k-1) + elem%state%dp3d(:,:,k-1,tl%np1) + &
+                        elem%derived%dp(:,:,k  ) + elem%state%dp3d(:,:,k,  tl%np1))
+          ! eta_dot
+          eta_dot(:,:,k) = eta_dot(:,:,k)/dpi
        end do
     end if
-    ! Compute eta_dot from eta_dot_dpdn.
-    do k = 2,nlev
-       eta_dot(:,:,k) = eta_dot(:,:,k)/(hyai_eta(k)*hvcoord%ps0 + hybi_eta(k)*ps)
-    end do
-    ! At this point, ps contains the surface pressure at the final time.
 
     do k = 2, nlev
        ! Gradient of eta_dot at midpoint time w.r.t. horizontal sphere coords.
@@ -919,13 +903,13 @@ contains
     
     ! Reconstruct eta_dot_dpdn over the time interval.
     do k = 2,nlev
-       do j = 1,np
-          do i = 1,np
-             eta_dot(i,j,k) = &                                      ! eta_dot_dpdn
-                  (hyai_eta(k)*hvcoord%ps0 + hybi_eta(k)*ps(i,j))* & ! p_eta
-                  ((eta1r(i,j,k) - hvcoord%etai(k))/dt)              ! deta/dt
-          end do
-       end do
+       ! eta_dot
+       eta_dot(:,:,k) = (eta1r(:,:,k) - hvcoord%etai(k))/dt
+       ! dp at interface
+       dpi = fourth*(elem%derived%dp(:,:,k-1) + elem%state%dp3d(:,:,k-1,tl%np1) + &
+                     elem%derived%dp(:,:,k  ) + elem%state%dp3d(:,:,k,  tl%np1))
+       ! eta_dot_dpdn
+       eta_dot(:,:,k) = eta_dot(:,:,k)*dpi
     end do
     ! Boundary points are always 0.
     eta_dot(:,:,1) = zero
@@ -1016,21 +1000,6 @@ contains
        end do
     end do
   end function reconstruct_and_limit_dp
-
-  subroutine hydiff(xi, xm, etai, etam, xi_eta)
-    real(real_kind), intent(in), dimension(:) :: xi, xm, etai, etam
-    real(real_kind), intent(out), dimension(:) :: xi_eta
-
-    integer :: k
-
-    xi_eta(1) = (xm(1) - xi(1))/(etam(1) - etai(1))
-    do k = 2,nlev
-       xi_eta(k) = half*( &
-            (xi(k) - xm(k-1))/(etai(k) - etam(k-1)) + &
-            (xm(k) - xi(k))/(etam(k) - etai(k)))
-    end do
-    xi_eta(nlevp) = (xi(nlevp) - xm(nlev))/(etai(nlevp) - etam(nlev))
-  end subroutine hydiff
 
   subroutine sl_vertically_remap_tracers(hybrid, elem, nets, nete, tl, dt_q)
     ! Remap the tracers after a tracer time step, in the case that the
