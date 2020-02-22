@@ -4986,6 +4986,7 @@ struct InputParser {
 #  include "config.h.c"
 # endif
 #endif
+#include "compose.hpp"
 
 namespace homme {
 namespace compose {
@@ -5026,7 +5027,7 @@ class QLT : public cedr::qlt::QLT<ES> {
     const Int nlev = vld.lo.extent_int(0);
     const Int nprob = (bie - bis)/nlev;
 
-#if defined THREAD_QLT_RUN && defined HORIZ_OPENMP
+#if defined THREAD_QLT_RUN && defined COMPOSE_HORIZ_OPENMP
 #   pragma omp master
 #endif
     for (Int pi = 0; pi < nprob; ++pi) {
@@ -5063,7 +5064,7 @@ class QLT : public cedr::qlt::QLT<ES> {
              tot_mass, std::abs(tot_mass_slv - tot_mass)/tot_mass);
 #endif
     }
-#if defined THREAD_QLT_RUN && defined HORIZ_OPENMP
+#if defined THREAD_QLT_RUN && defined COMPOSE_HORIZ_OPENMP
 #   pragma omp barrier
 #endif
   }
@@ -5178,7 +5179,7 @@ public:
     auto& bd_ = this->bd_;
     auto& ns_ = this->ns_;
     auto& p_ = this->p_;
-#if ! defined THREAD_QLT_RUN && defined HORIZ_OPENMP
+#if ! defined THREAD_QLT_RUN && defined COMPOSE_HORIZ_OPENMP
 #   pragma omp master
     {
 #endif
@@ -5192,7 +5193,7 @@ public:
 
         // Set up receives.
         if (lvl.kids.size()) {
-#if defined THREAD_QLT_RUN && defined HORIZ_OPENMP
+#if defined THREAD_QLT_RUN && defined COMPOSE_HORIZ_OPENMP
 #         pragma omp master
 #endif
           {
@@ -5203,14 +5204,14 @@ public:
             }
             mpi::waitall(lvl.kids_req.size(), lvl.kids_req.data());
           }
-#if defined THREAD_QLT_RUN && defined HORIZ_OPENMP
+#if defined THREAD_QLT_RUN && defined COMPOSE_HORIZ_OPENMP
 #         pragma omp barrier
 #endif
         }
 
         // Combine kids' data.
         if (lvl.nodes.size()) {
-#if defined THREAD_QLT_RUN && defined HORIZ_OPENMP
+#if defined THREAD_QLT_RUN && defined COMPOSE_HORIZ_OPENMP
 #         pragma omp for
 #endif
           for (size_t ni = 0; ni < lvl.nodes.size(); ++ni) {
@@ -5229,7 +5230,7 @@ public:
               const bool shapepreserve = problem_type & ProblemType::shapepreserve;
               const bool conserve = problem_type & ProblemType::conserve;
               const Int bis = md_.a_d.prob2trcrptr[pti], bie = md_.a_d.prob2trcrptr[pti+1];
-#if defined THREAD_QLT_RUN && defined COLUMN_OPENMP
+#if defined THREAD_QLT_RUN && defined COMPOSE_COLUMN_OPENMP
 #             pragma omp parallel for
 #endif
               for (Int bi = bis; bi < bie; ++bi) {
@@ -5255,7 +5256,7 @@ public:
 
         // Send to parents.
         if (lvl.me.size())
-#if defined THREAD_QLT_RUN && defined HORIZ_OPENMP
+#if defined THREAD_QLT_RUN && defined COMPOSE_HORIZ_OPENMP
 #       pragma omp master
 #endif
         {
@@ -5266,7 +5267,7 @@ public:
           }
         }
 
-#if defined THREAD_QLT_RUN && defined HORIZ_OPENMP
+#if defined THREAD_QLT_RUN && defined COMPOSE_HORIZ_OPENMP
 #       pragma omp barrier
 #endif
       }
@@ -5280,10 +5281,10 @@ public:
           if (bie == bis) continue;
           const Int problem_type = md_.get_problem_type(pti);
           if (vld_) reconcile_vertical(problem_type, n->offset*l2rndps, bis, bie);
-#if defined THREAD_QLT_RUN && defined HORIZ_OPENMP && defined COLUMN_OPENMP
+#if defined THREAD_QLT_RUN && defined COMPOSE_HORIZ_OPENMP && defined COMPOSE_COLUMN_OPENMP
 #         pragma omp parallel
 #endif
-#if defined THREAD_QLT_RUN && (defined HORIZ_OPENMP || defined COLUMN_OPENMP)
+#if defined THREAD_QLT_RUN && (defined COMPOSE_HORIZ_OPENMP || defined COMPOSE_COLUMN_OPENMP)
 #         pragma omp for
 #endif
           for (Int bi = bis; bi < bie; ++bi) {
@@ -5316,7 +5317,7 @@ public:
         auto& lvl = ns_->levels[il-1];
 
         if (lvl.me.size()) {
-#if defined THREAD_QLT_RUN && defined HORIZ_OPENMP
+#if defined THREAD_QLT_RUN && defined COMPOSE_HORIZ_OPENMP
 #         pragma omp master
 #endif
           {
@@ -5327,13 +5328,13 @@ public:
             }
             mpi::waitall(lvl.me_recv_req.size(), lvl.me_recv_req.data());
           }
-#if defined THREAD_QLT_RUN && defined HORIZ_OPENMP
+#if defined THREAD_QLT_RUN && defined COMPOSE_HORIZ_OPENMP
 #         pragma omp barrier
 #endif
         }
 
         // Solve QP for kids' values.
-#if defined THREAD_QLT_RUN && defined HORIZ_OPENMP
+#if defined THREAD_QLT_RUN && defined COMPOSE_HORIZ_OPENMP
 #       pragma omp for
 #endif
         for (size_t ni = 0; ni < lvl.nodes.size(); ++ni) {
@@ -5343,7 +5344,7 @@ public:
           for (Int pti = 0; pti < md_.nprobtypes; ++pti) {
             const Int problem_type = md_.get_problem_type(pti);
             const Int bis = md_.a_d.prob2trcrptr[pti], bie = md_.a_d.prob2trcrptr[pti+1];
-#if defined THREAD_QLT_RUN && defined COLUMN_OPENMP
+#if defined THREAD_QLT_RUN && defined COMPOSE_COLUMN_OPENMP
 #           pragma omp parallel for
 #endif
             for (Int bi = bis; bi < bie; ++bi) {
@@ -5386,7 +5387,7 @@ public:
 
         // Send.
         if (lvl.kids.size())
-#if defined THREAD_QLT_RUN && defined HORIZ_OPENMP
+#if defined THREAD_QLT_RUN && defined COMPOSE_HORIZ_OPENMP
 #       pragma omp master
 #endif
         {
@@ -5397,7 +5398,7 @@ public:
           }
         }
       }
-#if ! defined THREAD_QLT_RUN && defined HORIZ_OPENMP
+#if ! defined THREAD_QLT_RUN && defined COMPOSE_HORIZ_OPENMP
     }
 #endif
   }
@@ -5410,7 +5411,7 @@ public:
 // We explicitly use Kokkos::Serial here so we can run the Kokkos kernels in the
 // super class w/o triggering an expecution-space initialization error in
 // Kokkos. This complication results from the interaction of Homme's
-// HORIZ_OPENMP threading with Kokkos kernels.
+// COMPOSE_HORIZ_OPENMP threading with Kokkos kernels.
 struct CAAS : public cedr::caas::CAAS<Kokkos::Serial> {
   typedef cedr::caas::CAAS<Kokkos::Serial> Super;
 
@@ -5420,7 +5421,7 @@ struct CAAS : public cedr::caas::CAAS<Kokkos::Serial> {
   {}
 
   void run () override {
-#if defined HORIZ_OPENMP
+#if defined COMPOSE_HORIZ_OPENMP
 #   pragma omp master
 #endif
     {
@@ -6019,11 +6020,11 @@ void insert (const Data::Ptr& d, const Int ie, const Int ptridx, Real* array,
 }
 
 static void run_cdr (CDR& q) {
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
 #endif
   q.cdr->run();
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
 #endif
 }
@@ -6064,7 +6065,7 @@ void run (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
     FA5<const Real> qdp_p(d.qdp_pc[ie], np, np, nlev, d.qsize_d, 2);
     FA4<const Real> dp3d_c(d.dp3d_c[ie], np, np, nlev, d.timelevels);
     FA4<const Real> q_c(d.q_c[ie], np, np, nlev, d.qsize_d);
-#ifdef COLUMN_OPENMP
+#ifdef COMPOSE_COLUMN_OPENMP
 #   pragma omp parallel for
 #endif
     for (Int spli = 0; spli < cdr.nsuplev; ++spli) {
@@ -6278,7 +6279,7 @@ void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
     FA5<      Real> qdp_c(d.qdp_pc[ie], np, np, nlev, d.qsize_d, 2);
     FA4<const Real> dp3d_c(d.dp3d_c[ie], np, np, nlev, d.timelevels);
     FA4<      Real> q_c(d.q_c[ie], np, np, nlev, d.qsize_d);
-#ifdef COLUMN_OPENMP
+#ifdef COMPOSE_COLUMN_OPENMP
 #   pragma omp parallel for
 #endif
     for (Int spli = 0; spli < cdr.nsuplev; ++spli) {
@@ -6454,7 +6455,7 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
     }
   }
 
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
 # pragma omp master
 #endif
@@ -6474,7 +6475,7 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
     Kokkos::deep_copy(c.qd_hi, 0);
   }
 
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
 # pragma omp critical
 #endif
@@ -6497,7 +6498,7 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
     }
   }
 
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
 # pragma omp master
 #endif
