@@ -175,7 +175,9 @@ void calc_q (const IslMpi<MT>& cm, const Int& src_lid, const Int& lev,
   if (use_q) {
     // We can use q from calc_q_extrema.
     const Real* const qs0 = ed.q + levos;
-#   pragma ivdep
+    // It was found that Intel 18 produced code that was not BFB between runs
+    // due to this pragma.
+    //#pragma ivdep
     for (Int iq = 0; iq < cm.qsize; ++iq) {
       const Real* const qs = qs0 + iq*np2nlev;
       q_tgt[iq] =
@@ -188,7 +190,8 @@ void calc_q (const IslMpi<MT>& cm, const Int& src_lid, const Int& lev,
     // q from calc_q_extrema is being overwritten, so have to use qdp/dp.
     const Real* const dp = ed.dp + levos;
     const Real* const qdp0 = ed.qdp + levos;
-#   pragma ivdep
+    // I'm commenting out this pragma, too, to be safe.
+    //#pragma ivdep
     for (Int iq = 0; iq < cm.qsize; ++iq) {
       const Real* const qdp = qdp0 + iq*np2nlev;
       q_tgt[iq] = (ry[0]*(rx[0]*(qdp[ 0]/dp[ 0]) + rx[1]*(qdp[ 1]/dp[ 1])  +
@@ -262,15 +265,14 @@ void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
                  const FA4<Real>& q_min, const FA4<Real>& q_max) {
   const int tid = get_tid();
   for (Int tci = nets; tci <= nete; ++tci) {
-    const Int ie0 = tci - nets;
     auto& ed = cm.ed_d(tci);
     const FA3<Real> q_tgt(ed.q, cm.np2, cm.nlev, cm.qsize);
     for (const auto& e: ed.own) {
       const Int slid = ed.nbrs(ed.src(e.lev, e.k)).lid_on_rank;
       const auto& sed = cm.ed_d(slid);
       for (Int iq = 0; iq < cm.qsize; ++iq) {
-        q_min(e.k, e.lev, iq, ie0) = sed.q_extrema(iq, e.lev, 0);
-        q_max(e.k, e.lev, iq, ie0) = sed.q_extrema(iq, e.lev, 1);
+        q_min(e.k, e.lev, iq, tci) = sed.q_extrema(iq, e.lev, 0);
+        q_max(e.k, e.lev, iq, tci) = sed.q_extrema(iq, e.lev, 1);
       }
       Real* const qtmp = &cm.rwork(tid, 0);
       calc_q<np>(cm, slid, e.lev, &dep_points(0, e.k, e.lev, tci), qtmp, false);
@@ -299,7 +301,6 @@ void copy_q (IslMpi<MT>& cm, const Int& nets,
            end = cm.mylid_with_comm_tid_ptr_h(tid+1);
        ptr < end; ++ptr) {
     const Int tci = cm.mylid_with_comm_d(ptr);
-    const Int ie0 = tci - nets;
     auto& ed = cm.ed_d(tci);
     const FA3<Real> q_tgt(ed.q, cm.np2, cm.nlev, cm.qsize);
     for (const auto& e: ed.rmt) {
@@ -307,8 +308,8 @@ void copy_q (IslMpi<MT>& cm, const Int& nets,
       const Int ri = ed.nbrs(ed.src(e.lev, e.k)).rank_idx;
       const auto&& recvbuf = cm.recvbuf(ri);
       for (Int iq = 0; iq < cm.qsize; ++iq) {
-        q_min(e.k, e.lev, iq, ie0) = recvbuf(e.q_extrema_ptr + 2*iq    );
-        q_max(e.k, e.lev, iq, ie0) = recvbuf(e.q_extrema_ptr + 2*iq + 1);
+        q_min(e.k, e.lev, iq, tci) = recvbuf(e.q_extrema_ptr + 2*iq    );
+        q_max(e.k, e.lev, iq, tci) = recvbuf(e.q_extrema_ptr + 2*iq + 1);
       }
       for (Int iq = 0; iq < cm.qsize; ++iq) {
         slmm_assert(recvbuf(e.q_ptr + iq) != -1);

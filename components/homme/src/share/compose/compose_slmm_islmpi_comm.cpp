@@ -121,6 +121,7 @@ template void setup_irecv(IslMpi<slmm::MachineTraits>& cm, const bool skip_if_em
 template void isend(IslMpi<slmm::MachineTraits>& cm, const bool want_req,
                     const bool skip_if_empty);
 template void recv_and_wait_on_send(IslMpi<slmm::MachineTraits>& cm);
+template void wait_on_send(IslMpi<slmm::MachineTraits>& cm, const bool skip_if_empty);
 template void recv(IslMpi<slmm::MachineTraits>& cm, const bool skip_if_empty);
 
 } // namespace islmpi

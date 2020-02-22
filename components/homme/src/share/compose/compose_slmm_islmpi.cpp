@@ -6,6 +6,68 @@
 #include <memory>
 
 namespace homme {
+namespace mpi {
+#ifdef COMPOSE_DEBUG_MPI
+Request::Request () : unfreed(0) {}
+Request::~Request () {
+  if (unfreed) {
+    std::stringstream ss;
+    ss << "Request is being deleted with unfreed = " << unfreed;
+    int fin;
+    MPI_Finalized(&fin);
+    if (fin) {
+      ss << "\n";
+      std::cerr << ss.str();
+    } else {
+      pr(ss.str());
+    }
+  }
+}
+#endif
+
+int waitany (int count, Request* reqs, int* index, MPI_Status* stats) {
+#ifdef COMPOSE_DEBUG_MPI
+  std::vector<MPI_Request> vreqs(count);
+  for (int i = 0; i < count; ++i) vreqs[i] = reqs[i].request;
+  const auto out = MPI_Waitany(count, vreqs.data(), index,
+                               stats ? stats : MPI_STATUS_IGNORE);
+  for (int i = 0; i < count; ++i) reqs[i].request = vreqs[i];
+  reqs[*index].unfreed--;
+  return out;
+#else
+  return MPI_Waitany(count, reinterpret_cast<MPI_Request*>(reqs), index,
+                     stats ? stats : MPI_STATUS_IGNORE);
+#endif
+}
+
+int waitall (int count, Request* reqs, MPI_Status* stats) {
+#ifdef COMPOSE_DEBUG_MPI
+  std::vector<MPI_Request> vreqs(count);
+  for (int i = 0; i < count; ++i) vreqs[i] = reqs[i].request;
+  const auto out = MPI_Waitall(count, vreqs.data(),
+                               stats ? stats : MPI_STATUS_IGNORE);
+  for (int i = 0; i < count; ++i) {
+    reqs[i].request = vreqs[i];
+    reqs[i].unfreed--;
+  }
+  return out;
+#else
+  return MPI_Waitall(count, reinterpret_cast<MPI_Request*>(reqs),
+                     stats ? stats : MPI_STATUS_IGNORE);
+#endif
+}
+
+int wait (Request* req, MPI_Status* stat) {
+#ifdef COMPOSE_DEBUG_MPI
+  const auto out = MPI_Wait(&req->request, stat ? stat : MPI_STATUS_IGNORE);
+  req->unfreed--;
+  return out;
+#else
+  return MPI_Wait(reinterpret_cast<MPI_Request*>(req), stat ? stat : MPI_STATUS_IGNORE);
+#endif
+}
+} // namespace mpi
+
 namespace islmpi {
 namespace extend_halo {
 // Extend halo by one layer. This has two parts: finding neighbor (gid, rank) in
@@ -597,8 +659,8 @@ void set_idx2_maps (IslMpi<MT>& cm, const Rank2Gids& rank2rmtgids,
 // use essentially the same amount of memory, but not more. We could use less if
 // we were willing to realloc space at each SL time step.
 template <typename MT>
-void alloc_mpi_buffers (IslMpi<MT>& cm, const Rank2Gids& rank2rmtgids,
-                        const Rank2Gids& rank2owngids) {
+void size_mpi_buffers (IslMpi<MT>& cm, const Rank2Gids& rank2rmtgids,
+                       const Rank2Gids& rank2owngids) {
   const auto myrank = cm.p->rank();
   // sizeof real, int, single int (b/c of alignment)
   const Int sor = sizeof(Real), soi = sizeof(Int), sosi = sor;
@@ -621,29 +683,39 @@ void alloc_mpi_buffers (IslMpi<MT>& cm, const Rank2Gids& rank2rmtgids,
 
   slmm_assert(cm.ranks.back() == myrank);
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
-  std::vector<Int> nlid_per_rank(nrmtrank), sendsz(nrmtrank), recvsz(nrmtrank);
+  cm.nlid_per_rank.resize(nrmtrank);
+  cm.sendsz.resize(nrmtrank);
+  cm.recvsz.resize(nrmtrank);
   for (Int ri = 0; ri < nrmtrank; ++ri) {
     const auto& rmtgids = rank2rmtgids.at(cm.ranks(ri));
     const auto& owngids = rank2owngids.at(cm.ranks(ri));
-    nlid_per_rank[ri] = rmtgids.size();
-    sendsz[ri] = bytes2real(std::max(xbufcnt(rmtgids, owngids),
-                                     qbufcnt(owngids, rmtgids)));
-    recvsz[ri] = bytes2real(std::max(xbufcnt(owngids, rmtgids),
-                                     qbufcnt(rmtgids, owngids)));
+    cm.nlid_per_rank[ri] = rmtgids.size();
+    cm.sendsz[ri] = bytes2real(std::max(xbufcnt(rmtgids, owngids),
+                                        qbufcnt(owngids, rmtgids)));
+    cm.recvsz[ri] = bytes2real(std::max(xbufcnt(owngids, rmtgids),
+                                        qbufcnt(rmtgids, owngids)));
   }
+}
+
+template <typename MT>
+void alloc_mpi_buffers (IslMpi<MT>& cm, Real* sendbuf, Real* recvbuf) {
+  const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
   cm.nx_in_rank.reset_capacity(nrmtrank, true);
-  cm.nx_in_lid.init(nrmtrank, nlid_per_rank.data());
-  cm.bla.init(nrmtrank, nlid_per_rank.data(), cm.nlev);
-  cm.sendbuf.init(nrmtrank, sendsz.data());
-  cm.recvbuf.init(nrmtrank, recvsz.data());
-#ifdef COMPOSE_HORIZ_OPENMP
-  cm.ri_lidi_locks.init(nrmtrank, nlid_per_rank.data());
+  cm.nx_in_lid.init(nrmtrank, cm.nlid_per_rank.data());
+  cm.bla.init(nrmtrank, cm.nlid_per_rank.data(), cm.nlev);
+  cm.sendbuf.init(nrmtrank, cm.sendsz.data(), sendbuf);
+  cm.recvbuf.init(nrmtrank, cm.recvsz.data(), recvbuf);
+  cm.nlid_per_rank.clear();
+  cm.sendsz.clear();
+  cm.recvsz.clear();
+#ifdef HORIZ_OPENMP
+  cm.ri_lidi_locks.init(nrmtrank, cm.nlid_per_rank.data());
   for (Int ri = 0; ri < nrmtrank; ++ri) {
     auto&& locks = cm.ri_lidi_locks(ri);
     for (auto& lock: locks)
       omp_init_lock(&lock);
   }
-#endif
+#endif  
 }
 
 // At simulation initialization, set up a bunch of stuff to make the work at
@@ -658,7 +730,7 @@ void setup_comm_pattern (IslMpi<MT>& cm, const Int* nbr_id_rank, const Int* nirp
     comm_lid_on_rank(cm, rank2rmtgids, rank2owngids, gid2rmt_owning_lid);
     set_idx2_maps(cm, rank2rmtgids, gid2rmt_owning_lid);
   }
-  alloc_mpi_buffers(cm, rank2rmtgids, rank2owngids);
+  size_mpi_buffers(cm, rank2rmtgids, rank2owngids);
 }
 
 #ifdef COMPOSE_PORT
@@ -705,6 +777,8 @@ void sync_to_device (IslMpi<MT>& cm) {
     cm.ed_d = cm.ed_h;
 }
 
+template void
+alloc_mpi_buffers(IslMpi<slmm::MachineTraits>& cm, Real* sendbuf, Real* recvbuf);
 template void
 setup_comm_pattern(IslMpi<slmm::MachineTraits>& cm, const Int* nbr_id_rank,
                    const Int* nirptr);

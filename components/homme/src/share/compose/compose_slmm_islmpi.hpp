@@ -9,9 +9,6 @@
 
 #include <memory>
 
-// Uncomment this to look for MPI-related memory leaks.
-//#define COMPOSE_DEBUG_MPI
-
 namespace homme {
 typedef slmm::Int Int;
 typedef slmm::Real Real;
@@ -53,24 +50,6 @@ struct Request {
 #endif
 };
 
-#ifdef COMPOSE_DEBUG_MPI
-Request::Request () : unfreed(0) {}
-Request::~Request () {
-  if (unfreed) {
-    std::stringstream ss;
-    ss << "Request is being deleted with unfreed = " << unfreed;
-    int fin;
-    MPI_Finalized(&fin);
-    if (fin) {
-      ss << "\n";
-      std::cerr << ss.str();
-    } else {
-      pr(ss.str());
-    }
-  }
-}
-#endif
-
 template <typename T> MPI_Datatype get_type();
 template <> inline MPI_Datatype get_type<int>() { return MPI_INT; }
 template <> inline MPI_Datatype get_type<double>() { return MPI_DOUBLE; }
@@ -103,47 +82,9 @@ int irecv (const Parallel& p, T* buf, int count, int src, int tag, Request* ireq
   return ret;
 }
 
-inline int waitany (int count, Request* reqs, int* index, MPI_Status* stats = nullptr) {
-#ifdef COMPOSE_DEBUG_MPI
-  std::vector<MPI_Request> vreqs(count);
-  for (int i = 0; i < count; ++i) vreqs[i] = reqs[i].request;
-  const auto out = MPI_Waitany(count, vreqs.data(), index,
-                               stats ? stats : MPI_STATUS_IGNORE);
-  for (int i = 0; i < count; ++i) reqs[i].request = vreqs[i];
-  reqs[*index].unfreed--;
-  return out;
-#else
-  return MPI_Waitany(count, reinterpret_cast<MPI_Request*>(reqs), index,
-                     stats ? stats : MPI_STATUS_IGNORE);
-#endif
-}
-
-inline int waitall (int count, Request* reqs, MPI_Status* stats = nullptr) {
-#ifdef COMPOSE_DEBUG_MPI
-  std::vector<MPI_Request> vreqs(count);
-  for (int i = 0; i < count; ++i) vreqs[i] = reqs[i].request;
-  const auto out = MPI_Waitall(count, vreqs.data(),
-                               stats ? stats : MPI_STATUS_IGNORE);
-  for (int i = 0; i < count; ++i) {
-    reqs[i].request = vreqs[i];
-    reqs[i].unfreed--;
-  }
-  return out;
-#else
-  return MPI_Waitall(count, reinterpret_cast<MPI_Request*>(reqs),
-                     stats ? stats : MPI_STATUS_IGNORE);
-#endif
-}
-
-int wait (Request* req, MPI_Status* stat = nullptr) {
-#ifdef COMPOSE_DEBUG_MPI
-  const auto out = MPI_Wait(&req->request, stat ? stat : MPI_STATUS_IGNORE);
-  req->unfreed--;
-  return out;
-#else
-  return MPI_Wait(reinterpret_cast<MPI_Request*>(req), stat ? stat : MPI_STATUS_IGNORE);
-#endif
-}
+int waitany(int count, Request* reqs, int* index, MPI_Status* stats = nullptr);
+int waitall(int count, Request* reqs, MPI_Status* stats = nullptr);
+int wait(Request* req, MPI_Status* stat = nullptr);
 } // namespace mpi
 
 namespace islmpi {
@@ -314,7 +255,7 @@ struct ListOfLists {
 
   ListOfLists () {}
   ListOfLists (const Int nlist, const Int* nlist_per_list) { init(nlist, nlist_per_list); }
-  void init (const Int nlist, const Int* nlist_per_list) {
+  void init (const Int nlist, const Int* nlist_per_list, T* buf = nullptr) {
     slmm_assert(nlist >= 0);
     ptr_ = Array<Int>("ptr_", nlist+1);
     const auto ptr = ko::create_mirror_view(ptr_);
@@ -324,7 +265,11 @@ struct ListOfLists {
       ptr[i+1] = ptr[i] + nlist_per_list[i];
     }
     ko::deep_copy(ptr_, ptr);
-    d_ = Array<T>("d_", ptr[nlist]);
+    if (buf) {
+      d_ = Array<T>(buf, ptr[nlist]);
+    } else {
+      d_ = Array<T>("d_", ptr[nlist]);
+    }
   }
 
   SLMM_KIF Int n () const { return static_cast<Int>(ptr_.size()) - 1; }
@@ -486,9 +431,11 @@ struct IslMpi {
 
   bool horiz_openmp;
 #ifdef COMPOSE_HORIZ_OPENMP
-ListOfLists<omp_lock_t, HES> ri_lidi_locks;
+  ListOfLists<omp_lock_t, HES> ri_lidi_locks;
 #endif
 
+  // temporary work space
+  std::vector<Int> nlid_per_rank, sendsz, recvsz;
   Array<Real**,DES> rwork;
 
   IslMpi (const mpi::Parallel::Ptr& ip, const typename Advecter::ConstPtr& advecter,
@@ -535,6 +482,9 @@ inline int get_num_threads () {
   return 1;
 #endif
 }
+
+template <typename MT>
+void alloc_mpi_buffers (IslMpi<MT>& cm, Real* sendbuf = nullptr, Real* recvbuf = nullptr);
 
 template <typename MT>
 void setup_comm_pattern(IslMpi<MT>& cm, const Int* nbr_id_rank, const Int* nirptr);
