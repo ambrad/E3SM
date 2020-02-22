@@ -3,6 +3,9 @@
 namespace homme {
 namespace islmpi {
 
+// dep_points is const in principle, but if lev <=
+// semi_lagrange_nearest_point_lev, a departure point may be altered if the
+// winds take it outside of the comm halo.
 template <typename MT>
 void step (
   IslMpi<MT>& cm, const Int nets, const Int nete,
@@ -40,7 +43,7 @@ void step (
   // Compute the requested q for departure points from remotes.
   calc_rmt_q(cm);
   // Send q data.
-  isend(cm, false /* want_req */, true /* skip_if_empty */);
+  isend(cm, true /* want_req */, true /* skip_if_empty */);
   // Set up to receive q for each of my departure point requests sent to
   // remotes. We can't do this until the OpenMP barrier in isend assures that
   // all threads are done with the receive buffer's departure points.
@@ -51,9 +54,8 @@ void step (
   // Receive remote q data and use this to fill in the rest of my fields.
   recv(cm, true /* skip_if_empty */);
   copy_q(cm, nets, q_min, q_max);
-  // Don't need to wait on send buffer again because MPI-level synchronization
-  // outside of SL transport assures the send buffer is ready at the next call
-  // to step. But do need to dealloc the send requests.
+  // Wait on send buffer so it's free to be used by others.
+  wait_on_send(cm, true /* skip_if_empty */);
 }
 
 template void step(IslMpi<slmm::MachineTraits>&, const Int, const Int, Cartesian3D*, Real*, Real*);

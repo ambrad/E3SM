@@ -134,6 +134,16 @@ inline int waitall (int count, Request* reqs, MPI_Status* stats = nullptr) {
                      stats ? stats : MPI_STATUS_IGNORE);
 #endif
 }
+
+int wait (Request* req, MPI_Status* stat = nullptr) {
+#ifdef COMPOSE_DEBUG_MPI
+  const auto out = MPI_Wait(&req->request, stat ? stat : MPI_STATUS_IGNORE);
+  req->unfreed--;
+  return out;
+#else
+  return MPI_Wait(reinterpret_cast<MPI_Request*>(req), stat ? stat : MPI_STATUS_IGNORE);
+#endif
+}
 } // namespace mpi
 
 namespace islmpi {
@@ -548,6 +558,8 @@ template <typename MT>
 void isend(IslMpi<MT>& cm, const bool want_req = true, const bool skip_if_empty = false);
 template <typename MT>
 void recv_and_wait_on_send(IslMpi<MT>& cm);
+template <typename MT>
+void wait_on_send (IslMpi<MT>& cm, const bool skip_if_empty = false);
 template <typename MT>
 void recv(IslMpi<MT>& cm, const bool skip_if_empty = false);
 

@@ -87,6 +87,22 @@ void recv_and_wait_on_send (IslMpi<MT>& cm) {
 }
 
 template <typename MT>
+void wait_on_send (IslMpi<MT>& cm, const bool skip_if_empty) {
+#ifdef COMPOSE_HORIZ_OPENMP
+# pragma omp master
+#endif
+  {
+    for (Int ri = 0; ri < cm.sendreq.n(); ++ri) {
+      if (skip_if_empty && cm.sendcount(ri) == 0) continue;
+      mpi::wait(&cm.sendreq(ri));
+    }
+  }
+#ifdef COMPOSE_HORIZ_OPENMP
+# pragma omp barrier
+#endif
+}
+
+template <typename MT>
 void recv (IslMpi<MT>& cm, const bool skip_if_empty) {
 #ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp master

@@ -28,4 +28,7 @@
 # endif
 #endif
 
+// Uncomment this to look for MPI-related memory leaks.
+//#define COMPOSE_DEBUG_MPI
+
 #endif
