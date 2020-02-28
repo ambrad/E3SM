@@ -359,13 +359,18 @@ private:
 };
 
 // Qdp, dp, Q
-struct BulkData {
+template <typename MT>
+struct TracerArrays {
 #ifdef COMPOSE_PORT_DEV
   HommeFormatArray<const Real,4> qdp;
   HommeFormatArray<Real,3> dp;
   HommeFormatArray<Real,4> q;
 #else
 #endif
+
+  TracerArrays (Int nelemd, Int nlev, Int np2, Int qsize)
+    : qdp(nelemd, np2, nlev, qsize), dp(nelemd, np2, nlev), q(nelemd, np2, nlev, qsize)
+  {}
 };
 
 // Meta and bulk data for the interpolation SL MPI communication pattern.
@@ -429,6 +434,8 @@ struct IslMpi {
   ElemDataListH ed_h; // this rank's owned cells, indexed by LID
   ElemDataListD ed_d;
 
+  TracerArrays<MT> tracer_arrays;
+
   // IDs.
   FixedCapList<Int, HES> ranks, mylid_with_comm_h, mylid_with_comm_tid_ptr_h;
   FixedCapList<Int, DES> nx_in_rank, mylid_with_comm_d;
@@ -453,7 +460,7 @@ struct IslMpi {
           Int inp, Int inlev, Int iqsize, Int iqsized, Int inelemd, Int ihalo)
     : p(ip), advecter(advecter),
       np(inp), np2(np*np), nlev(inlev), qsize(iqsize), qsized(iqsized), nelemd(inelemd),
-      halo(ihalo)
+      halo(ihalo), tracer_arrays(nelemd, nlev, np2, qsize)
   {}
 
   ~IslMpi () {
