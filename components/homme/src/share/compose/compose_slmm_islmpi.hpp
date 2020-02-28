@@ -358,6 +358,10 @@ private:
   Int nlev_;
 };
 
+// Qdp, dp, Q
+struct BulkData {
+};
+
 // Meta and bulk data for the interpolation SL MPI communication pattern.
 template <typename MT = slmm::MachineTraits>
 struct IslMpi {
@@ -383,6 +387,7 @@ struct IslMpi {
       lid_on_rank,     // the local ID of the cell on the owning rank
       lid_on_rank_idx; // index into list of LIDs on the rank
   };
+
   // The comm and real data associated with an element patch, the set of
   // elements surrounding an owned cell.
   template <typename ES>

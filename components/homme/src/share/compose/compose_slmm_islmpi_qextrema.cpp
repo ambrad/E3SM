@@ -5,6 +5,11 @@ namespace islmpi {
 
 template <Int np, typename MT>
 void calc_q_extrema (IslMpi<MT>& cm, const Int& nets, const Int& nete) {
+#if 0 //def COMPOSE_PORT
+  const auto f = KOKKOS_LAMBDA (const Int& ki) {
+    
+  };
+#else
   for (Int tci = nets; tci <= nete; ++tci) {
     auto& ed = cm.ed_d(tci);
     const FA2<const Real> dp(ed.dp, cm.np2, cm.nlev);
@@ -26,7 +31,8 @@ void calc_q_extrema (IslMpi<MT>& cm, const Int& nets, const Int& nete) {
         ed.q_extrema(iq,lev,0) = q_min_s;
         ed.q_extrema(iq,lev,1) = q_max_s;
       }
-  }  
+  }
+#endif
 }
 
 template <typename MT>
@@ -37,8 +43,8 @@ void calc_q_extrema (IslMpi<MT>& cm, const Int& nets, const Int& nete) {
   }
 }
 
-template void calc_q_extrema (IslMpi<slmm::MachineTraits>& cm, const Int& nets,
-                              const Int& nete);
+template void calc_q_extrema(IslMpi<slmm::MachineTraits>& cm, const Int& nets,
+                             const Int& nete);
 
 } // namespace islmpi
 } // namespace homme

@@ -13,13 +13,9 @@
 #ifdef COMPOSE_PORT
 # pragma message "COMPOSE_PORT"
 #endif
-/*
-  x get COMPOSE_PORT stuff going
-  x get other containers in cm portable
-  x make ListOfLists::init and BufferLayoutArray::init portable
-  - kernelize analyze_dep_points, including use of atomics
-  - pull qdp, dp, q out of ElemData; use idx() routines for them
-*/
+#ifdef COMPOSE_WITH_HOMMEXX
+# pragma message "COMPOSE_WITH_HOMMEXX"
+#endif
 
 namespace slmm {
 template <typename ES>
