@@ -19,14 +19,13 @@ struct HommeFormatArray {
     ie_data_ptr[ie] = ptr;
   }
 
-  T& operator() (const Int& ie, const Int& lev, const Int& k,
-                 typename std::enable_if<rank == 3>::type* = 0) const {
+  T& operator() (const Int& ie, const Int& lev, const Int& k) const {
+    static_assert(rank == 3, "rank 3 array");
     check(ie, k, nlev);
     return *(ie_data_ptr[ie] + lev*np2 + k);
   }
-  T& operator() (const Int& q, const Int& ie, const Int& lev, const Int& k,
-                 typename std::enable_if<rank == 4>::type* = 0) const
-  {
+  T& operator() (const Int& q, const Int& ie, const Int& lev, const Int& k) const {
+    static_assert(rank == 4, "rank 4 array");
     check(ie, k, nlev, q);
     return *(ie_data_ptr[ie] + (q*nlev + lev)*np2 + k);
   }

@@ -4,6 +4,7 @@
 #include "compose.hpp"
 #include "compose_slmm.hpp"
 #include "compose_slmm_advecter.hpp"
+#include "compose_port_dev.hpp"
 
 #include <mpi.h>
 
@@ -359,6 +360,12 @@ private:
 
 // Qdp, dp, Q
 struct BulkData {
+#ifdef COMPOSE_PORT_DEV
+  HommeFormatArray<const Real,4> qdp;
+  HommeFormatArray<Real,3> dp;
+  HommeFormatArray<Real,4> q;
+#else
+#endif
 };
 
 // Meta and bulk data for the interpolation SL MPI communication pattern.
