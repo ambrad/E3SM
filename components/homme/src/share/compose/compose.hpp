@@ -7,14 +7,21 @@
 
 // Options
 
-// Uncomment this to look for MPI-related memory leaks.
+#ifdef NDEBUG
+# undef NDEBUG
+#endif
+
+#ifndef NDEBUG
+# define COMPOSE_BOUNDS_CHECK
+#endif
+
+// Look for MPI-related memory leaks.
 #define COMPOSE_DEBUG_MPI
 
-// Uncomment this to mimic GPU threading on host to debug race conditions on a
-// regular CPU.
+// Mimic GPU threading on host to debug race conditions on a regular CPU.
 #define COMPOSE_MIMIC_GPU
 
-// Optionally define this for testing.
+// Optionally define this for testing the port code.
 #define COMPOSE_PORT
 
 // Do not modify below here.
@@ -44,6 +51,15 @@
 # if defined COMPOSE_HORIZ_OPENMP || defined COMPOSE_COLUMN_OPENMP
 "This should not happen."
 # endif
+# if ! defined COMPOSE_WITH_HOMMEXX
+// Need to use utils from compose_port_dev.hpp to bridge Homme (ie, not Hommexx)
+// and COMPOSE_PORT code paths.
+#  define COMPOSE_PORT_DEV
+# endif
+#endif
+
+#if defined COMPOSE_BOUNDS_CHECK && defined NDEBUG
+# pragma message "NDEBUG but COMPOSE_BOUNDS_CHECK"
 #endif
 
 #endif

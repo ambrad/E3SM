@@ -62,7 +62,6 @@ void isend (IslMpi<MT>& cm, const bool want_req , const bool skip_if_empty) {
 # pragma omp master
 #endif
   {
-    slmm_assert( ! (skip_if_empty && want_req));
     const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
     for (Int ri = 0; ri < nrmtrank; ++ri) {
       if (skip_if_empty && cm.sendcount(ri) == 0) continue;

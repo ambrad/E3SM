@@ -90,8 +90,7 @@ int wait(Request* req, MPI_Status* stat = nullptr);
 namespace islmpi {
 // Meta and bulk data for the interpolation SL method with special comm pattern.
 
-#define SLMM_BOUNDS_CHECK
-#ifdef SLMM_BOUNDS_CHECK
+#ifdef COMPOSE_BOUNDS_CHECK
 # define slmm_assert_high(condition) slmm_assert(condition)
 # define slmm_kernel_assert_high(condition) slmm_kernel_assert(condition)
 #else
