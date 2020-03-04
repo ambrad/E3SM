@@ -263,6 +263,25 @@ template <Int np, typename MT>
 void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
                  const FA4<const Real>& dep_points,
                  const FA4<Real>& q_min, const FA4<Real>& q_max) {
+#ifdef COMPOSE_PORT
+  const int tid = get_tid();
+  const auto q_tgt = cm.tracer_arrays.q;
+  for (Int tci = nets; tci <= nete; ++tci) {
+    auto& ed = cm.ed_d(tci);
+    for (const auto& e: ed.own) {
+      const Int slid = ed.nbrs(ed.src(e.lev, e.k)).lid_on_rank;
+      const auto& sed = cm.ed_d(slid);
+      for (Int iq = 0; iq < cm.qsize; ++iq) {
+        q_min(e.k, e.lev, iq, tci) = sed.q_extrema(iq, e.lev, 0);
+        q_max(e.k, e.lev, iq, tci) = sed.q_extrema(iq, e.lev, 1);
+      }
+      Real* const qtmp = &cm.rwork(tid, 0);
+      calc_q<np>(cm, slid, e.lev, &dep_points(0, e.k, e.lev, tci), qtmp, false);
+      for (Int iq = 0; iq < cm.qsize; ++iq)
+        q_tgt(tci, iq, e.k, e.lev) = qtmp[iq];
+    }
+  }
+#else
   const int tid = get_tid();
   for (Int tci = nets; tci <= nete; ++tci) {
     auto& ed = cm.ed_d(tci);
@@ -280,6 +299,7 @@ void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
         q_tgt(e.k, e.lev, iq) = qtmp[iq];
     }
   }
+#endif
 }
 
 template <typename MT>
@@ -295,6 +315,30 @@ void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
 template <typename MT>
 void copy_q (IslMpi<MT>& cm, const Int& nets,
              const FA4<Real>& q_min, const FA4<Real>& q_max) {
+#ifdef COMPOSE_PORT
+  const auto myrank = cm.p->rank();
+  const int tid = get_tid();
+  const auto q_tgt = cm.tracer_arrays.q;
+  for (Int ptr = cm.mylid_with_comm_tid_ptr_h(tid),
+           end = cm.mylid_with_comm_tid_ptr_h(tid+1);
+       ptr < end; ++ptr) {
+    const Int tci = cm.mylid_with_comm_d(ptr);
+    auto& ed = cm.ed_d(tci);
+    for (const auto& e: ed.rmt) {
+      slmm_assert(ed.nbrs(ed.src(e.lev, e.k)).rank != myrank);
+      const Int ri = ed.nbrs(ed.src(e.lev, e.k)).rank_idx;
+      const auto&& recvbuf = cm.recvbuf(ri);
+      for (Int iq = 0; iq < cm.qsize; ++iq) {
+        q_min(e.k, e.lev, iq, tci) = recvbuf(e.q_extrema_ptr + 2*iq    );
+        q_max(e.k, e.lev, iq, tci) = recvbuf(e.q_extrema_ptr + 2*iq + 1);
+      }
+      for (Int iq = 0; iq < cm.qsize; ++iq) {
+        slmm_assert(recvbuf(e.q_ptr + iq) != -1);
+        q_tgt(tci, iq, e.k, e.lev) = recvbuf(e.q_ptr + iq);
+      }
+    }
+  }
+#else
   const auto myrank = cm.p->rank();
   const int tid = get_tid();
   for (Int ptr = cm.mylid_with_comm_tid_ptr_h(tid),
@@ -317,6 +361,7 @@ void copy_q (IslMpi<MT>& cm, const Int& nets,
       }
     }
   }
+#endif
 }
 
 template void calc_rmt_q(IslMpi<slmm::MachineTraits>& cm);
