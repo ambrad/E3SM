@@ -363,7 +363,7 @@ template <typename MT>
 struct TracerArrays {
 #ifdef COMPOSE_PORT_DEV
   HommeFormatArray<const Real,4> qdp;
-  HommeFormatArray<Real,3> dp;
+  HommeFormatArray<const Real,3> dp;
   HommeFormatArray<Real,4> q;
 #else
 #endif

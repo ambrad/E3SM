@@ -50,6 +50,12 @@ void set_elem_data (IslMpi<MT>& cm, const Int ie, const Real* qdp,
   slmm_assert(ie < cm.ed_d.size());
   slmm_assert(cm.halo > 1 || cm.ed_h(ie).nbrs.size() == nelem_in_patch);
   auto& e = cm.ed_d(ie);
+#ifdef COMPOSE_PORT_DEV
+  cm.tracer_arrays.qdp.set_ie_ptr(ie, qdp);
+  cm.tracer_arrays.dp.set_ie_ptr(ie, dp);
+  cm.tracer_arrays.q.set_ie_ptr(ie, q);
+#endif
+#pragma message "first goal: turn this into an #else block"
   e.qdp = qdp;
   e.dp = dp;
   e.q = q;
