@@ -19,14 +19,14 @@ struct HommeFormatArray {
     ie_data_ptr[ie] = ptr;
   }
 
-  T& operator() (const Int& ie, const Int& lev, const Int& k) const {
+  T& operator() (const Int& ie, const Int& k, const Int& lev) const {
     static_assert(rank == 3, "rank 3 array");
-    check(ie, k, nlev);
+    check(ie, k, lev);
     return *(ie_data_ptr[ie] + lev*np2 + k);
   }
-  T& operator() (const Int& q, const Int& ie, const Int& lev, const Int& k) const {
+  T& operator() (const Int& ie, const Int& q, const Int& k, const Int& lev) const {
     static_assert(rank == 4, "rank 4 array");
-    check(ie, k, nlev, q);
+    check(ie, k, lev, q);
     return *(ie_data_ptr[ie] + (q*nlev + lev)*np2 + k);
   }
 
@@ -34,7 +34,7 @@ private:
   std::vector<T*> ie_data_ptr;
   const Int nlev, np2, qsize;
 
-  bool check (Int ie, Int k = -1, Int lev = -1, Int q = -1) {
+  bool check (Int ie, Int k = -1, Int lev = -1, Int q = -1) const {
 #ifdef COMPOSE_BOUNDS_CHECK
     assert(ie >= 0 && ie < static_cast<Int>(ie_data_ptr.size()));
     if (k >= 0) assert(k < np2);

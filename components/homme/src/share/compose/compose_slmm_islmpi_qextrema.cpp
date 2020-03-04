@@ -5,10 +5,26 @@ namespace islmpi {
 
 template <Int np, typename MT>
 void calc_q_extrema (IslMpi<MT>& cm, const Int& nets, const Int& nete) {
-#if 0 //def COMPOSE_PORT
-  const auto f = KOKKOS_LAMBDA (const Int& ki) {
-    
-  };
+#ifdef COMPOSE_PORT
+  const auto qdp = cm.tracer_arrays.qdp;
+  const auto dp = cm.tracer_arrays.dp;
+  const auto q = cm.tracer_arrays.q;
+  for (Int tci = nets; tci <= nete; ++tci) {
+    auto& ed = cm.ed_d(tci);
+    for (Int iq = 0; iq < cm.qsize; ++iq)
+      for (Int lev = 0; lev < cm.nlev; ++lev) {
+        Real q_min_s, q_max_s;
+        q(tci,iq,0,lev) = qdp(tci,iq,0,lev)/dp(tci,0,lev);
+        q_min_s = q_max_s = q(tci,iq,0,lev);
+        for (Int k = 1; k < np*np; ++k) {
+          q(tci,iq,k,lev) = qdp(tci,iq,k,lev)/dp(tci,k,lev);
+          q_min_s = std::min(q_min_s, q(tci,iq,k,lev));
+          q_max_s = std::max(q_max_s, q(tci,iq,k,lev));
+        }
+        ed.q_extrema(iq,lev,0) = q_min_s;
+        ed.q_extrema(iq,lev,1) = q_max_s;
+      }
+  }
 #else
   for (Int tci = nets; tci <= nete; ++tci) {
     auto& ed = cm.ed_d(tci);
