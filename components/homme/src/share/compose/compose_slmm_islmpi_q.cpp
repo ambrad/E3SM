@@ -140,19 +140,11 @@ void gll_np4_subgrid_exp_eval (const Real& x, Real y[4]) {
 namespace homme {
 namespace islmpi {
 
-template <Int np, typename MT>
-void calc_q (const IslMpi<MT>& cm, const Int& src_lid, const Int& lev,
-             const Real* const dep_point, Real* const q_tgt, const bool use_q) {
-  Real ref_coord[2]; {
-    const auto& m = cm.advecter->local_mesh(src_lid);
-    cm.advecter->s2r().calc_sphere_to_ref(src_lid, m, dep_point,
-                                          ref_coord[0], ref_coord[1]);
-  }
-
-  // Interpolate.
-  Real rx[4], ry[4];
+template <typename MT>
+SLMM_KIF void interpolate (const typename IslMpi<MT>::Advecter::Alg::Enum& alg,
+                           const Real ref_coord[2], Real rx[4], Real ry[4]) {
   typedef typename IslMpi<MT>::Advecter::Alg Alg;
-  switch (cm.advecter->alg()) {
+  switch (alg) {
   case Alg::csl_gll:
     slmm::gll_np4_eval(ref_coord[0], rx);
     slmm::gll_np4_eval(ref_coord[1], ry);
@@ -167,7 +159,22 @@ void calc_q (const IslMpi<MT>& cm, const Int& src_lid, const Int& lev,
     break;
   default:
     slmm_assert(0);
+  }  
+}
+
+template <Int np, typename MT>
+void calc_q (const IslMpi<MT>& cm, const Int& src_lid, const Int& lev,
+             const Real* const dep_point, Real* const q_tgt, const bool use_q) {
+  static_assert(np == 4, "Only np 4 is supported.");
+
+  Real ref_coord[2]; {
+    const auto& m = cm.advecter->local_mesh(src_lid);
+    cm.advecter->s2r().calc_sphere_to_ref(src_lid, m, dep_point,
+                                          ref_coord[0], ref_coord[1]);
   }
+
+  Real rx[4], ry[4];
+  interpolate<MT>(cm.advecter->alg(), ref_coord, rx, ry);
 
   const auto& ed = cm.ed_d(src_lid);
   const Int levos = np*np*lev;
