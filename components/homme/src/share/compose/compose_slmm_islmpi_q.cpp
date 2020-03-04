@@ -162,6 +162,55 @@ SLMM_KIF void interpolate (const typename IslMpi<MT>::Advecter::Alg::Enum& alg,
   }  
 }
 
+#ifdef COMPOSE_PORT
+template <Int np, typename MT>
+void calc_q (const IslMpi<MT>& cm, const Int& src_lid, const Int& lev,
+             const Real* const dep_point, Real* const q_tgt, const bool use_q) {
+  static_assert(np == 4, "Only np 4 is supported.");
+
+  Real ref_coord[2]; {
+    const auto& m = cm.advecter->local_mesh(src_lid);
+    cm.advecter->s2r().calc_sphere_to_ref(src_lid, m, dep_point,
+                                          ref_coord[0], ref_coord[1]);
+  }
+
+  Real rx[4], ry[4];
+  interpolate<MT>(cm.advecter->alg(), ref_coord, rx, ry);
+
+  const auto& ed = cm.ed_d(src_lid);
+  if (use_q) {
+    // We can use q from calc_q_extrema.
+    const auto q_src = cm.tracer_arrays.q;
+    for (Int iq = 0; iq < cm.qsize; ++iq) {
+      Real qs[16];
+      for (Int k = 0; k < 16; ++k) qs[k] = q_src(src_lid, iq, k, lev);
+      q_tgt[iq] =
+        (ry[0]*(rx[0]*qs[ 0] + rx[1]*qs[ 1] + rx[2]*qs[ 2] + rx[3]*qs[ 3]) +
+         ry[1]*(rx[0]*qs[ 4] + rx[1]*qs[ 5] + rx[2]*qs[ 6] + rx[3]*qs[ 7]) +
+         ry[2]*(rx[0]*qs[ 8] + rx[1]*qs[ 9] + rx[2]*qs[10] + rx[3]*qs[11]) +
+         ry[3]*(rx[0]*qs[12] + rx[1]*qs[13] + rx[2]*qs[14] + rx[3]*qs[15]));
+    }
+  } else {
+    // q from calc_q_extrema is being overwritten, so have to use qdp/dp.
+    const auto dp_src = cm.tracer_arrays.dp;
+    const auto qdp_src = cm.tracer_arrays.qdp;
+    Real dp[16];
+    for (Int k = 0; k < 16; ++k) dp[k] = dp_src(src_lid, k, lev);
+    for (Int iq = 0; iq < cm.qsize; ++iq) {
+      Real qdp[16];
+      for (Int k = 0; k < 16; ++k) qdp[k] = qdp_src(src_lid, iq, k, lev);
+      q_tgt[iq] = (ry[0]*(rx[0]*(qdp[ 0]/dp[ 0]) + rx[1]*(qdp[ 1]/dp[ 1])  +
+                          rx[2]*(qdp[ 2]/dp[ 2]) + rx[3]*(qdp[ 3]/dp[ 3])) +
+                   ry[1]*(rx[0]*(qdp[ 4]/dp[ 4]) + rx[1]*(qdp[ 5]/dp[ 5])  +
+                          rx[2]*(qdp[ 6]/dp[ 6]) + rx[3]*(qdp[ 7]/dp[ 7])) +
+                   ry[2]*(rx[0]*(qdp[ 8]/dp[ 8]) + rx[1]*(qdp[ 9]/dp[ 9])  +
+                          rx[2]*(qdp[10]/dp[10]) + rx[3]*(qdp[11]/dp[11])) +
+                   ry[3]*(rx[0]*(qdp[12]/dp[12]) + rx[1]*(qdp[13]/dp[13])  +
+                          rx[2]*(qdp[14]/dp[14]) + rx[3]*(qdp[15]/dp[15])));
+    }
+  }
+}
+#else
 template <Int np, typename MT>
 void calc_q (const IslMpi<MT>& cm, const Int& src_lid, const Int& lev,
              const Real* const dep_point, Real* const q_tgt, const bool use_q) {
@@ -212,6 +261,7 @@ void calc_q (const IslMpi<MT>& cm, const Int& src_lid, const Int& lev,
     }
   }
 }
+#endif
 
 template <Int np, typename MT>
 void calc_rmt_q (IslMpi<MT>& cm) {
