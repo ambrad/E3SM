@@ -1,8 +1,6 @@
 #ifndef INCLUDE_COMPOSE_SLMM_HPP
 #define INCLUDE_COMPOSE_SLMM_HPP
 
-#include <Kokkos_Core.hpp>
-
 #include "compose_slmm_siqk.hpp"
 
 #ifndef NDEBUG
@@ -47,12 +45,12 @@ namespace ko = Kokkos;
 
 struct MachineTraits {
   // Host and device execution spaces.
-#if defined COMPOSE_HORIZ_OPENMP || defined COMPOSE_COLUMN_OPENMP
-  using HES = ko::Serial;
-  using DES = ko::Serial;
-#else
+#ifdef COMPOSE_PORT
   using HES = ko::DefaultHostExecutionSpace;
   using DES = ko::DefaultExecutionSpace;
+#else
+  using HES = ko::Serial;
+  using DES = ko::Serial;
 #endif
 };
 

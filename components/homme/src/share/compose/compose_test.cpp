@@ -3,12 +3,7 @@
 #include <memory>
 #include <vector>
 
-#include <Kokkos_Core.hpp>
-
-#ifdef _OPENMP
-# include <omp.h>
-#endif
-
+#include "compose.hpp"
 #include "compose_test.hpp"
 
 #define pr(m) do {                              \
@@ -405,11 +400,11 @@ struct StandaloneTracersTester {
   std::vector<Real> d_;
 
   void record_begin () {
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp master
 #endif
     d_.resize(3 * nelemd * np*np);
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
 #endif
   }
@@ -429,7 +424,7 @@ struct StandaloneTracersTester {
   }
 
   void record_end () {
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
 # pragma omp master
     {
@@ -439,7 +434,7 @@ struct StandaloneTracersTester {
         fprintf(fid, "%1.15e %1.15e %1.15e\n",
                 d_[3*i+0], d_[3*i+1], d_[3*i+2]);
       fclose(fid);
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
     }
 #endif
   }
@@ -449,7 +444,7 @@ struct StandaloneTracersTester {
 
   void record_begin () {
     int nthr = 1;
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
     nthr = omp_get_num_threads();
 # pragma omp master
 #endif
@@ -459,7 +454,7 @@ struct StandaloneTracersTester {
       mass0_.resize(qsize*nthr, 0);
       massf_.resize(qsize*nthr, 0);
     }
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
 #endif
   }
@@ -467,7 +462,7 @@ struct StandaloneTracersTester {
   void record (const Int ie, const Real* rp_elem, const Real* rspheremp,
                const Real* rdp, const Real* rqdp) {
     const int tid =
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
       omp_get_thread_num()
 #else
       0
@@ -500,7 +495,7 @@ struct StandaloneTracersTester {
   }
 
   void record_end (MPI_Comm comm, const Int root, const Int rank) {
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
 #endif
     // The way I've written this chunk probably looks funny. But if I put the
@@ -508,7 +503,7 @@ struct StandaloneTracersTester {
     // gives "internal error: assertion failed: find_assoc_pragma: pragma not
     // found (shared/cfe/edgcpfe/il.c, line 23535)".
     const int nr = 2*nlev*qsize;
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp master
     {
 #endif
@@ -541,7 +536,7 @@ struct StandaloneTracersTester {
           const Real mass0 = wrk_[q], massf = wrk_[qsize + q];
           printf(" mass0 %8.2e mass re %9.2e\n", mass0, (massf - mass0)/mass0);
         }
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
     }
 #endif
   }
@@ -558,13 +553,13 @@ extern "C" void compose_unittest () {
 extern "C" void compose_stt_init (
   Int np, Int nlev, Int qsize, Int qsize_d, Int nelemd)
 {
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
 # pragma omp master
 #endif
     g_stt = std::make_shared<StandaloneTracersTester>(
       np, nlev, qsize, qsize_d, nelemd);
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
 #endif
 }
@@ -605,7 +600,7 @@ extern "C" void compose_stt_record_q (
 
 extern "C" void compose_stt_finish (Int fcomm, Int root, Int rank) {
   g_stt->record_end(MPI_Comm_f2c(fcomm), root, rank);
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
 # pragma omp master
 #endif

@@ -1,6 +1,8 @@
 #ifndef INCLUDE_COMPOSE_HPP
 #define INCLUDE_COMPOSE_HPP
 
+#include <Kokkos_Core.hpp>
+
 #ifdef _OPENMP
 # include <omp.h>
 #endif
@@ -40,7 +42,7 @@
 #endif
 
 // Define COMPOSE_PORT if we're on or mimicking the GPU or being used by
-// Hommexx.
+// Hommexx. COMPOSE_PORT is used to provide separate code paths when necessary.
 #if ! defined COMPOSE_PORT
 # if defined COMPOSE_MIMIC_GPU || defined KOKKOS_ENABLE_CUDA || defined COMPOSE_WITH_HOMMEXX
 #  define COMPOSE_PORT

@@ -1,8 +1,6 @@
 #ifndef INCLUDE_COMPOSE_HOMME_HPP
 #define INCLUDE_COMPOSE_HOMME_HPP
 
-#include <Kokkos_Core.hpp>
-
 #include "compose.hpp"
 #include "compose_slmm.hpp"
 
