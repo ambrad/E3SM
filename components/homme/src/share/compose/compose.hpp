@@ -24,7 +24,9 @@
 #define COMPOSE_MIMIC_GPU
 
 // Optionally define this for testing the port code.
-#define COMPOSE_PORT
+#ifndef HORIZ_OPENMP
+# define COMPOSE_PORT
+#endif
 
 // Do not modify below here.
 
