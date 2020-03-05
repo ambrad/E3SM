@@ -162,6 +162,25 @@ SLMM_KIF void interpolate (const typename IslMpi<MT>::Advecter::Alg::Enum& alg,
   }  
 }
 
+SLMM_KIF Real calc_q_tgt (const Real rx[4], const Real ry[4], const Real qs[16]) {
+  return (ry[0]*(rx[0]*qs[ 0] + rx[1]*qs[ 1] + rx[2]*qs[ 2] + rx[3]*qs[ 3]) +
+          ry[1]*(rx[0]*qs[ 4] + rx[1]*qs[ 5] + rx[2]*qs[ 6] + rx[3]*qs[ 7]) +
+          ry[2]*(rx[0]*qs[ 8] + rx[1]*qs[ 9] + rx[2]*qs[10] + rx[3]*qs[11]) +
+          ry[3]*(rx[0]*qs[12] + rx[1]*qs[13] + rx[2]*qs[14] + rx[3]*qs[15]));
+}
+
+SLMM_KIF Real calc_q_tgt (const Real rx[4], const Real ry[4], const Real qdp[16],
+                          const Real dp[16]) {
+  return (ry[0]*(rx[0]*(qdp[ 0]/dp[ 0]) + rx[1]*(qdp[ 1]/dp[ 1])  +
+                 rx[2]*(qdp[ 2]/dp[ 2]) + rx[3]*(qdp[ 3]/dp[ 3])) +
+          ry[1]*(rx[0]*(qdp[ 4]/dp[ 4]) + rx[1]*(qdp[ 5]/dp[ 5])  +
+                 rx[2]*(qdp[ 6]/dp[ 6]) + rx[3]*(qdp[ 7]/dp[ 7])) +
+          ry[2]*(rx[0]*(qdp[ 8]/dp[ 8]) + rx[1]*(qdp[ 9]/dp[ 9])  +
+                 rx[2]*(qdp[10]/dp[10]) + rx[3]*(qdp[11]/dp[11])) +
+          ry[3]*(rx[0]*(qdp[12]/dp[12]) + rx[1]*(qdp[13]/dp[13])  +
+                 rx[2]*(qdp[14]/dp[14]) + rx[3]*(qdp[15]/dp[15])));
+}
+
 #ifdef COMPOSE_PORT
 template <Int np, typename MT>
 void calc_q (const IslMpi<MT>& cm, const Int& src_lid, const Int& lev,
@@ -184,11 +203,7 @@ void calc_q (const IslMpi<MT>& cm, const Int& src_lid, const Int& lev,
     for (Int iq = 0; iq < cm.qsize; ++iq) {
       Real qs[16];
       for (Int k = 0; k < 16; ++k) qs[k] = q_src(src_lid, iq, k, lev);
-      q_tgt[iq] =
-        (ry[0]*(rx[0]*qs[ 0] + rx[1]*qs[ 1] + rx[2]*qs[ 2] + rx[3]*qs[ 3]) +
-         ry[1]*(rx[0]*qs[ 4] + rx[1]*qs[ 5] + rx[2]*qs[ 6] + rx[3]*qs[ 7]) +
-         ry[2]*(rx[0]*qs[ 8] + rx[1]*qs[ 9] + rx[2]*qs[10] + rx[3]*qs[11]) +
-         ry[3]*(rx[0]*qs[12] + rx[1]*qs[13] + rx[2]*qs[14] + rx[3]*qs[15]));
+      q_tgt[iq] = calc_q_tgt(rx, ry, qs);
     }
   } else {
     // q from calc_q_extrema is being overwritten, so have to use qdp/dp.
@@ -199,14 +214,7 @@ void calc_q (const IslMpi<MT>& cm, const Int& src_lid, const Int& lev,
     for (Int iq = 0; iq < cm.qsize; ++iq) {
       Real qdp[16];
       for (Int k = 0; k < 16; ++k) qdp[k] = qdp_src(src_lid, iq, k, lev);
-      q_tgt[iq] = (ry[0]*(rx[0]*(qdp[ 0]/dp[ 0]) + rx[1]*(qdp[ 1]/dp[ 1])  +
-                          rx[2]*(qdp[ 2]/dp[ 2]) + rx[3]*(qdp[ 3]/dp[ 3])) +
-                   ry[1]*(rx[0]*(qdp[ 4]/dp[ 4]) + rx[1]*(qdp[ 5]/dp[ 5])  +
-                          rx[2]*(qdp[ 6]/dp[ 6]) + rx[3]*(qdp[ 7]/dp[ 7])) +
-                   ry[2]*(rx[0]*(qdp[ 8]/dp[ 8]) + rx[1]*(qdp[ 9]/dp[ 9])  +
-                          rx[2]*(qdp[10]/dp[10]) + rx[3]*(qdp[11]/dp[11])) +
-                   ry[3]*(rx[0]*(qdp[12]/dp[12]) + rx[1]*(qdp[13]/dp[13])  +
-                          rx[2]*(qdp[14]/dp[14]) + rx[3]*(qdp[15]/dp[15])));
+      q_tgt[iq] = calc_q_tgt(rx, ry, qdp, dp);
     }
   }
 }
@@ -236,11 +244,7 @@ void calc_q (const IslMpi<MT>& cm, const Int& src_lid, const Int& lev,
     //#pragma ivdep
     for (Int iq = 0; iq < cm.qsize; ++iq) {
       const Real* const qs = qs0 + iq*np2nlev;
-      q_tgt[iq] =
-        (ry[0]*(rx[0]*qs[ 0] + rx[1]*qs[ 1] + rx[2]*qs[ 2] + rx[3]*qs[ 3]) +
-         ry[1]*(rx[0]*qs[ 4] + rx[1]*qs[ 5] + rx[2]*qs[ 6] + rx[3]*qs[ 7]) +
-         ry[2]*(rx[0]*qs[ 8] + rx[1]*qs[ 9] + rx[2]*qs[10] + rx[3]*qs[11]) +
-         ry[3]*(rx[0]*qs[12] + rx[1]*qs[13] + rx[2]*qs[14] + rx[3]*qs[15]));
+      q_tgt[iq] = calc_q_tgt(rx, ry, qs);
     }
   } else {
     // q from calc_q_extrema is being overwritten, so have to use qdp/dp.
@@ -250,14 +254,7 @@ void calc_q (const IslMpi<MT>& cm, const Int& src_lid, const Int& lev,
     //#pragma ivdep
     for (Int iq = 0; iq < cm.qsize; ++iq) {
       const Real* const qdp = qdp0 + iq*np2nlev;
-      q_tgt[iq] = (ry[0]*(rx[0]*(qdp[ 0]/dp[ 0]) + rx[1]*(qdp[ 1]/dp[ 1])  +
-                          rx[2]*(qdp[ 2]/dp[ 2]) + rx[3]*(qdp[ 3]/dp[ 3])) +
-                   ry[1]*(rx[0]*(qdp[ 4]/dp[ 4]) + rx[1]*(qdp[ 5]/dp[ 5])  +
-                          rx[2]*(qdp[ 6]/dp[ 6]) + rx[3]*(qdp[ 7]/dp[ 7])) +
-                   ry[2]*(rx[0]*(qdp[ 8]/dp[ 8]) + rx[1]*(qdp[ 9]/dp[ 9])  +
-                          rx[2]*(qdp[10]/dp[10]) + rx[3]*(qdp[11]/dp[11])) +
-                   ry[3]*(rx[0]*(qdp[12]/dp[12]) + rx[1]*(qdp[13]/dp[13])  +
-                          rx[2]*(qdp[14]/dp[14]) + rx[3]*(qdp[15]/dp[15])));
+      q_tgt[iq] = calc_q_tgt(rx, ry, qdp, dp);
     }
   }
 }
