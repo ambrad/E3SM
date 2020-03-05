@@ -3,6 +3,7 @@
 #include "compose_slmm_departure_point.hpp"
 
 #include <set>
+#include <map>
 #include <memory>
 
 namespace homme {
