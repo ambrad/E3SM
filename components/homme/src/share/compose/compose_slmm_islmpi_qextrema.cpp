@@ -9,22 +9,25 @@ void calc_q_extrema (IslMpi<MT>& cm, const Int& nets, const Int& nete) {
   const auto qdp = cm.tracer_arrays.qdp;
   const auto dp = cm.tracer_arrays.dp;
   const auto q = cm.tracer_arrays.q;
-  for (Int tci = nets; tci <= nete; ++tci) {
+  const Int qsize = cm.qsize, nlev = cm.nlev;
+  const auto f = KOKKOS_LAMBDA (const Int& it) {
+    const Int tci = nets + it/(qsize*nlev);
+    const Int iq = (it/nlev) % qsize;
+    const Int lev = it % nlev;
     auto& ed = cm.ed_d(tci);
-    for (Int iq = 0; iq < cm.qsize; ++iq)
-      for (Int lev = 0; lev < cm.nlev; ++lev) {
-        Real q_min_s, q_max_s;
-        q(tci,iq,0,lev) = qdp(tci,iq,0,lev)/dp(tci,0,lev);
-        q_min_s = q_max_s = q(tci,iq,0,lev);
-        for (Int k = 1; k < np*np; ++k) {
-          q(tci,iq,k,lev) = qdp(tci,iq,k,lev)/dp(tci,k,lev);
-          q_min_s = std::min(q_min_s, q(tci,iq,k,lev));
-          q_max_s = std::max(q_max_s, q(tci,iq,k,lev));
-        }
-        ed.q_extrema(iq,lev,0) = q_min_s;
-        ed.q_extrema(iq,lev,1) = q_max_s;
-      }
-  }
+    Real q_min_s, q_max_s;
+    q(tci,iq,0,lev) = qdp(tci,iq,0,lev)/dp(tci,0,lev);
+    q_min_s = q_max_s = q(tci,iq,0,lev);
+    for (Int k = 1; k < np*np; ++k) {
+      q(tci,iq,k,lev) = qdp(tci,iq,k,lev)/dp(tci,k,lev);
+      q_min_s = slmm::min(q_min_s, q(tci,iq,k,lev));
+      q_max_s = slmm::max(q_max_s, q(tci,iq,k,lev));
+    }
+    ed.q_extrema(iq,lev,0) = q_min_s;
+    ed.q_extrema(iq,lev,1) = q_max_s;
+  };
+  ko::parallel_for(
+    ko::RangePolicy<typename MT::DES>(0, (nete - nets + 1)*qsize*nlev), f);
 #else
   for (Int tci = nets; tci <= nete; ++tci) {
     auto& ed = cm.ed_d(tci);
