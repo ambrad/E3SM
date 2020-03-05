@@ -13,7 +13,9 @@ void init_mylid_with_comm_threaded (IslMpi<MT>& cm, const Int& nets, const Int& 
 #endif
   {
     const int nthr = get_num_threads();
+#ifndef COMPOSE_PORT
     cm.rwork = typename IslMpi<MT>::template ArrayD<Real**>("rwork", nthr, cm.qsize);
+#endif
     cm.mylid_with_comm_tid_ptr_h.reset_capacity(nthr+1, true);
     cm.horiz_openmp = get_num_threads() > 1;
   }

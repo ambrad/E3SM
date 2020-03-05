@@ -278,47 +278,22 @@ void copy_q (IslMpi<MT>& cm, const Int& nets,
 // Hommexx computational pattern.
 
 template <Int np, typename MT>
-void calc_q (const IslMpi<MT>& cm, const Int& src_lid, const Int& lev,
-             const Real* const dep_point, Real* const q_tgt, const bool use_q) {
+void calc_coefs (const IslMpi<MT>& cm, const Int& src_lid, const Int& lev,
+                 const Real* const dep_point, Real rx[4], Real ry[4]) {
   static_assert(np == 4, "Only np 4 is supported.");
-
-  Real ref_coord[2]; {
-    const auto& m = cm.advecter->local_mesh(src_lid);
-    cm.advecter->s2r().calc_sphere_to_ref(src_lid, m, dep_point,
-                                          ref_coord[0], ref_coord[1]);
-  }
-
-  Real rx[4], ry[4];
+  Real ref_coord[2];
+  const auto& m = cm.advecter->local_mesh(src_lid);
+  cm.advecter->s2r().calc_sphere_to_ref(src_lid, m, dep_point,
+                                        ref_coord[0], ref_coord[1]);
   interpolate<MT>(cm.advecter->alg(), ref_coord, rx, ry);
-
-  const auto& ed = cm.ed_d(src_lid);
-  if (use_q) {
-    // We can use q from calc_q_extrema.
-    const auto q_src = cm.tracer_arrays.q;
-    for (Int iq = 0; iq < cm.qsize; ++iq) {
-      Real qs[16];
-      for (Int k = 0; k < 16; ++k) qs[k] = q_src(src_lid, iq, k, lev);
-      q_tgt[iq] = calc_q_tgt(rx, ry, qs);
-    }
-  } else {
-    // q from calc_q_extrema is being overwritten, so have to use qdp/dp.
-    const auto dp_src = cm.tracer_arrays.dp;
-    const auto qdp_src = cm.tracer_arrays.qdp;
-    Real dp[16];
-    for (Int k = 0; k < 16; ++k) dp[k] = dp_src(src_lid, k, lev);
-    for (Int iq = 0; iq < cm.qsize; ++iq) {
-      Real qdp[16];
-      for (Int k = 0; k < 16; ++k) qdp[k] = qdp_src(src_lid, iq, k, lev);
-      q_tgt[iq] = calc_q_tgt(rx, ry, qdp, dp);
-    }
-  }
 }
 
 template <Int np, typename MT>
 void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
                  const FA4<const Real>& dep_points,
                  const FA4<Real>& q_min, const FA4<Real>& q_max) {
-  const int tid = get_tid();
+  const auto dp_src = cm.tracer_arrays.dp;
+  const auto qdp_src = cm.tracer_arrays.qdp;
   const auto q_tgt = cm.tracer_arrays.q;
   for (Int tci = nets; tci <= nete; ++tci) {
     auto& ed = cm.ed_d(tci);
@@ -329,10 +304,18 @@ void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
         q_min(e.k, e.lev, iq, tci) = sed.q_extrema(iq, e.lev, 0);
         q_max(e.k, e.lev, iq, tci) = sed.q_extrema(iq, e.lev, 1);
       }
-      Real* const qtmp = &cm.rwork(tid, 0);
-      calc_q<np>(cm, slid, e.lev, &dep_points(0, e.k, e.lev, tci), qtmp, false);
-      for (Int iq = 0; iq < cm.qsize; ++iq)
-        q_tgt(tci, iq, e.k, e.lev) = qtmp[iq];
+      Real rx[4], ry[4];
+      calc_coefs<np>(cm, slid, e.lev, &dep_points(0, e.k, e.lev, tci), rx, ry);
+      for (Int iq = 0; iq < cm.qsize; ++iq) {
+        // q from calc_q_extrema is being overwritten, so have to use qdp/dp.
+        Real dp[16];
+        for (Int k = 0; k < 16; ++k) dp[k] = dp_src(slid, e.k, e.lev);
+        for (Int iq = 0; iq < cm.qsize; ++iq) {
+          Real qdp[16];
+          for (Int k = 0; k < 16; ++k) qdp[k] = qdp_src(slid, iq, k, e.lev);
+          q_tgt(tci, iq, e.k, e.lev) = calc_q_tgt(rx, ry, qdp, dp);
+        }
+      }
     }
   }
 }
@@ -369,6 +352,7 @@ void copy_q (IslMpi<MT>& cm, const Int& nets,
 template <Int np, typename MT>
 void calc_rmt_q (IslMpi<MT>& cm) {
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
+  const auto q_src = cm.tracer_arrays.q;
 #ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp for
 #endif
@@ -395,7 +379,14 @@ void calc_rmt_q (IslMpi<MT>& cm) {
             qs(qos + 2*iq + i) = ed.q_extrema(iq, lev, i);
         qos += 2*cm.qsize;
         for (Int ix = 0; ix < nx; ++ix) {
-          calc_q<np>(cm, lid, lev, &xs(xos), &qs(qos), true);
+          Real rx[4], ry[4];
+          calc_coefs<np>(cm, lid, lev, &xs(xos), rx, ry);
+          Real* const q_tgt = &qs(qos);
+          for (Int iq = 0; iq < cm.qsize; ++iq) {
+            Real qs[16];
+            for (Int k = 0; k < 16; ++k) qs[k] = q_src(lid, iq, k, lev);
+            q_tgt[iq] = calc_q_tgt(rx, ry, qs);
+          }
           xos += 3;
           qos += cm.qsize;
         }
