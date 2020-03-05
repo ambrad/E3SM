@@ -54,11 +54,12 @@ void set_elem_data (IslMpi<MT>& cm, const Int ie, const Real* qdp,
   cm.tracer_arrays.qdp.set_ie_ptr(ie, qdp);
   cm.tracer_arrays.dp.set_ie_ptr(ie, dp);
   cm.tracer_arrays.q.set_ie_ptr(ie, q);
-#endif
-#pragma message "first goal: turn this into an #else block"
+  e.qdp = e.dp = e.q = nullptr;
+#else
   e.qdp = qdp;
   e.dp = dp;
   e.q = q;
+#endif
 }
 } // namespace islmpi
 
