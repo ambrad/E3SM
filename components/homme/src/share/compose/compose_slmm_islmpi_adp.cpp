@@ -133,7 +133,7 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
       }
     };
     ko::parallel_for(
-      ko::RangePolicy<typename MT::DES>(0, (nete - nets +1)*nlev*np2), f);
+      ko::RangePolicy<typename MT::DES>(0, (nete - nets + 1)*nlev*np2), f);
   }
 #if ! defined COMPOSE_PORT
 # ifdef COMPOSE_HORIZ_OPENMP

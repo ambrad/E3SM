@@ -369,7 +369,9 @@ struct TracerArrays {
 #endif
 
   TracerArrays (Int nelemd, Int nlev, Int np2, Int qsize)
+#ifdef COMPOSE_PORT_DEV
     : qdp(nelemd, np2, nlev, qsize), dp(nelemd, np2, nlev), q(nelemd, np2, nlev, qsize)
+#endif
   {}
 };
 

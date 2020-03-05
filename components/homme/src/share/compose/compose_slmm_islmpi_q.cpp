@@ -181,44 +181,9 @@ SLMM_KIF Real calc_q_tgt (const Real rx[4], const Real ry[4], const Real qdp[16]
                  rx[2]*(qdp[14]/dp[14]) + rx[3]*(qdp[15]/dp[15])));
 }
 
-#ifdef COMPOSE_PORT
-template <Int np, typename MT>
-void calc_q (const IslMpi<MT>& cm, const Int& src_lid, const Int& lev,
-             const Real* const dep_point, Real* const q_tgt, const bool use_q) {
-  static_assert(np == 4, "Only np 4 is supported.");
+#ifndef COMPOSE_PORT
+// Homme computational pattern.
 
-  Real ref_coord[2]; {
-    const auto& m = cm.advecter->local_mesh(src_lid);
-    cm.advecter->s2r().calc_sphere_to_ref(src_lid, m, dep_point,
-                                          ref_coord[0], ref_coord[1]);
-  }
-
-  Real rx[4], ry[4];
-  interpolate<MT>(cm.advecter->alg(), ref_coord, rx, ry);
-
-  const auto& ed = cm.ed_d(src_lid);
-  if (use_q) {
-    // We can use q from calc_q_extrema.
-    const auto q_src = cm.tracer_arrays.q;
-    for (Int iq = 0; iq < cm.qsize; ++iq) {
-      Real qs[16];
-      for (Int k = 0; k < 16; ++k) qs[k] = q_src(src_lid, iq, k, lev);
-      q_tgt[iq] = calc_q_tgt(rx, ry, qs);
-    }
-  } else {
-    // q from calc_q_extrema is being overwritten, so have to use qdp/dp.
-    const auto dp_src = cm.tracer_arrays.dp;
-    const auto qdp_src = cm.tracer_arrays.qdp;
-    Real dp[16];
-    for (Int k = 0; k < 16; ++k) dp[k] = dp_src(src_lid, k, lev);
-    for (Int iq = 0; iq < cm.qsize; ++iq) {
-      Real qdp[16];
-      for (Int k = 0; k < 16; ++k) qdp[k] = qdp_src(src_lid, iq, k, lev);
-      q_tgt[iq] = calc_q_tgt(rx, ry, qdp, dp);
-    }
-  }
-}
-#else
 template <Int np, typename MT>
 void calc_q (const IslMpi<MT>& cm, const Int& src_lid, const Int& lev,
              const Real* const dep_point, Real* const q_tgt, const bool use_q) {
@@ -258,7 +223,148 @@ void calc_q (const IslMpi<MT>& cm, const Int& src_lid, const Int& lev,
     }
   }
 }
-#endif
+
+template <Int np, typename MT>
+void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
+                 const FA4<const Real>& dep_points,
+                 const FA4<Real>& q_min, const FA4<Real>& q_max) {
+  const int tid = get_tid();
+  for (Int tci = nets; tci <= nete; ++tci) {
+    auto& ed = cm.ed_d(tci);
+    const FA3<Real> q_tgt(ed.q, cm.np2, cm.nlev, cm.qsize);
+    for (const auto& e: ed.own) {
+      const Int slid = ed.nbrs(ed.src(e.lev, e.k)).lid_on_rank;
+      const auto& sed = cm.ed_d(slid);
+      for (Int iq = 0; iq < cm.qsize; ++iq) {
+        q_min(e.k, e.lev, iq, tci) = sed.q_extrema(iq, e.lev, 0);
+        q_max(e.k, e.lev, iq, tci) = sed.q_extrema(iq, e.lev, 1);
+      }
+      Real* const qtmp = &cm.rwork(tid, 0);
+      calc_q<np>(cm, slid, e.lev, &dep_points(0, e.k, e.lev, tci), qtmp, false);
+      for (Int iq = 0; iq < cm.qsize; ++iq)
+        q_tgt(e.k, e.lev, iq) = qtmp[iq];
+    }
+  }
+}
+
+template <typename MT>
+void copy_q (IslMpi<MT>& cm, const Int& nets,
+             const FA4<Real>& q_min, const FA4<Real>& q_max) {
+  const auto myrank = cm.p->rank();
+  const int tid = get_tid();
+  for (Int ptr = cm.mylid_with_comm_tid_ptr_h(tid),
+           end = cm.mylid_with_comm_tid_ptr_h(tid+1);
+       ptr < end; ++ptr) {
+    const Int tci = cm.mylid_with_comm_d(ptr);
+    auto& ed = cm.ed_d(tci);
+    const FA3<Real> q_tgt(ed.q, cm.np2, cm.nlev, cm.qsize);
+    for (const auto& e: ed.rmt) {
+      slmm_assert(ed.nbrs(ed.src(e.lev, e.k)).rank != myrank);
+      const Int ri = ed.nbrs(ed.src(e.lev, e.k)).rank_idx;
+      const auto&& recvbuf = cm.recvbuf(ri);
+      for (Int iq = 0; iq < cm.qsize; ++iq) {
+        q_min(e.k, e.lev, iq, tci) = recvbuf(e.q_extrema_ptr + 2*iq    );
+        q_max(e.k, e.lev, iq, tci) = recvbuf(e.q_extrema_ptr + 2*iq + 1);
+      }
+      for (Int iq = 0; iq < cm.qsize; ++iq) {
+        slmm_assert(recvbuf(e.q_ptr + iq) != -1);
+        q_tgt(e.k, e.lev, iq) = recvbuf(e.q_ptr + iq);
+      }
+    }
+  }
+}
+
+#else // COMPOSE_PORT
+// Hommexx computational pattern.
+
+template <Int np, typename MT>
+void calc_q (const IslMpi<MT>& cm, const Int& src_lid, const Int& lev,
+             const Real* const dep_point, Real* const q_tgt, const bool use_q) {
+  static_assert(np == 4, "Only np 4 is supported.");
+
+  Real ref_coord[2]; {
+    const auto& m = cm.advecter->local_mesh(src_lid);
+    cm.advecter->s2r().calc_sphere_to_ref(src_lid, m, dep_point,
+                                          ref_coord[0], ref_coord[1]);
+  }
+
+  Real rx[4], ry[4];
+  interpolate<MT>(cm.advecter->alg(), ref_coord, rx, ry);
+
+  const auto& ed = cm.ed_d(src_lid);
+  if (use_q) {
+    // We can use q from calc_q_extrema.
+    const auto q_src = cm.tracer_arrays.q;
+    for (Int iq = 0; iq < cm.qsize; ++iq) {
+      Real qs[16];
+      for (Int k = 0; k < 16; ++k) qs[k] = q_src(src_lid, iq, k, lev);
+      q_tgt[iq] = calc_q_tgt(rx, ry, qs);
+    }
+  } else {
+    // q from calc_q_extrema is being overwritten, so have to use qdp/dp.
+    const auto dp_src = cm.tracer_arrays.dp;
+    const auto qdp_src = cm.tracer_arrays.qdp;
+    Real dp[16];
+    for (Int k = 0; k < 16; ++k) dp[k] = dp_src(src_lid, k, lev);
+    for (Int iq = 0; iq < cm.qsize; ++iq) {
+      Real qdp[16];
+      for (Int k = 0; k < 16; ++k) qdp[k] = qdp_src(src_lid, iq, k, lev);
+      q_tgt[iq] = calc_q_tgt(rx, ry, qdp, dp);
+    }
+  }
+}
+
+template <Int np, typename MT>
+void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
+                 const FA4<const Real>& dep_points,
+                 const FA4<Real>& q_min, const FA4<Real>& q_max) {
+  const int tid = get_tid();
+  const auto q_tgt = cm.tracer_arrays.q;
+  for (Int tci = nets; tci <= nete; ++tci) {
+    auto& ed = cm.ed_d(tci);
+    for (const auto& e: ed.own) {
+      const Int slid = ed.nbrs(ed.src(e.lev, e.k)).lid_on_rank;
+      const auto& sed = cm.ed_d(slid);
+      for (Int iq = 0; iq < cm.qsize; ++iq) {
+        q_min(e.k, e.lev, iq, tci) = sed.q_extrema(iq, e.lev, 0);
+        q_max(e.k, e.lev, iq, tci) = sed.q_extrema(iq, e.lev, 1);
+      }
+      Real* const qtmp = &cm.rwork(tid, 0);
+      calc_q<np>(cm, slid, e.lev, &dep_points(0, e.k, e.lev, tci), qtmp, false);
+      for (Int iq = 0; iq < cm.qsize; ++iq)
+        q_tgt(tci, iq, e.k, e.lev) = qtmp[iq];
+    }
+  }
+}
+
+template <typename MT>
+void copy_q (IslMpi<MT>& cm, const Int& nets,
+             const FA4<Real>& q_min, const FA4<Real>& q_max) {
+  const auto myrank = cm.p->rank();
+  const int tid = get_tid();
+  const auto q_tgt = cm.tracer_arrays.q;
+  for (Int ptr = cm.mylid_with_comm_tid_ptr_h(tid),
+           end = cm.mylid_with_comm_tid_ptr_h(tid+1);
+       ptr < end; ++ptr) {
+    const Int tci = cm.mylid_with_comm_d(ptr);
+    auto& ed = cm.ed_d(tci);
+    for (const auto& e: ed.rmt) {
+      slmm_assert(ed.nbrs(ed.src(e.lev, e.k)).rank != myrank);
+      const Int ri = ed.nbrs(ed.src(e.lev, e.k)).rank_idx;
+      const auto&& recvbuf = cm.recvbuf(ri);
+      for (Int iq = 0; iq < cm.qsize; ++iq) {
+        q_min(e.k, e.lev, iq, tci) = recvbuf(e.q_extrema_ptr + 2*iq    );
+        q_max(e.k, e.lev, iq, tci) = recvbuf(e.q_extrema_ptr + 2*iq + 1);
+      }
+      for (Int iq = 0; iq < cm.qsize; ++iq) {
+        slmm_assert(recvbuf(e.q_ptr + iq) != -1);
+        q_tgt(tci, iq, e.k, e.lev) = recvbuf(e.q_ptr + iq);
+      }
+    }
+  }
+}
+
+#endif // COMPOSE_PORT
 
 template <Int np, typename MT>
 void calc_rmt_q (IslMpi<MT>& cm) {
@@ -306,57 +412,6 @@ void calc_rmt_q (IslMpi<MT>& cm) {
 }
 
 template <typename MT>
-void calc_rmt_q (IslMpi<MT>& cm) {
-  switch (cm.np) {
-  case 4: calc_rmt_q<4>(cm); break;
-  default: slmm_throw_if(true, "np " << cm.np << "not supported");
-  }
-}
-
-template <Int np, typename MT>
-void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
-                 const FA4<const Real>& dep_points,
-                 const FA4<Real>& q_min, const FA4<Real>& q_max) {
-#ifdef COMPOSE_PORT
-  const int tid = get_tid();
-  const auto q_tgt = cm.tracer_arrays.q;
-  for (Int tci = nets; tci <= nete; ++tci) {
-    auto& ed = cm.ed_d(tci);
-    for (const auto& e: ed.own) {
-      const Int slid = ed.nbrs(ed.src(e.lev, e.k)).lid_on_rank;
-      const auto& sed = cm.ed_d(slid);
-      for (Int iq = 0; iq < cm.qsize; ++iq) {
-        q_min(e.k, e.lev, iq, tci) = sed.q_extrema(iq, e.lev, 0);
-        q_max(e.k, e.lev, iq, tci) = sed.q_extrema(iq, e.lev, 1);
-      }
-      Real* const qtmp = &cm.rwork(tid, 0);
-      calc_q<np>(cm, slid, e.lev, &dep_points(0, e.k, e.lev, tci), qtmp, false);
-      for (Int iq = 0; iq < cm.qsize; ++iq)
-        q_tgt(tci, iq, e.k, e.lev) = qtmp[iq];
-    }
-  }
-#else
-  const int tid = get_tid();
-  for (Int tci = nets; tci <= nete; ++tci) {
-    auto& ed = cm.ed_d(tci);
-    const FA3<Real> q_tgt(ed.q, cm.np2, cm.nlev, cm.qsize);
-    for (const auto& e: ed.own) {
-      const Int slid = ed.nbrs(ed.src(e.lev, e.k)).lid_on_rank;
-      const auto& sed = cm.ed_d(slid);
-      for (Int iq = 0; iq < cm.qsize; ++iq) {
-        q_min(e.k, e.lev, iq, tci) = sed.q_extrema(iq, e.lev, 0);
-        q_max(e.k, e.lev, iq, tci) = sed.q_extrema(iq, e.lev, 1);
-      }
-      Real* const qtmp = &cm.rwork(tid, 0);
-      calc_q<np>(cm, slid, e.lev, &dep_points(0, e.k, e.lev, tci), qtmp, false);
-      for (Int iq = 0; iq < cm.qsize; ++iq)
-        q_tgt(e.k, e.lev, iq) = qtmp[iq];
-    }
-  }
-#endif
-}
-
-template <typename MT>
 void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
                  const FA4<const Real>& dep_points,
                  const FA4<Real>& q_min, const FA4<Real>& q_max) {
@@ -367,55 +422,11 @@ void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
 }
 
 template <typename MT>
-void copy_q (IslMpi<MT>& cm, const Int& nets,
-             const FA4<Real>& q_min, const FA4<Real>& q_max) {
-#ifdef COMPOSE_PORT
-  const auto myrank = cm.p->rank();
-  const int tid = get_tid();
-  const auto q_tgt = cm.tracer_arrays.q;
-  for (Int ptr = cm.mylid_with_comm_tid_ptr_h(tid),
-           end = cm.mylid_with_comm_tid_ptr_h(tid+1);
-       ptr < end; ++ptr) {
-    const Int tci = cm.mylid_with_comm_d(ptr);
-    auto& ed = cm.ed_d(tci);
-    for (const auto& e: ed.rmt) {
-      slmm_assert(ed.nbrs(ed.src(e.lev, e.k)).rank != myrank);
-      const Int ri = ed.nbrs(ed.src(e.lev, e.k)).rank_idx;
-      const auto&& recvbuf = cm.recvbuf(ri);
-      for (Int iq = 0; iq < cm.qsize; ++iq) {
-        q_min(e.k, e.lev, iq, tci) = recvbuf(e.q_extrema_ptr + 2*iq    );
-        q_max(e.k, e.lev, iq, tci) = recvbuf(e.q_extrema_ptr + 2*iq + 1);
-      }
-      for (Int iq = 0; iq < cm.qsize; ++iq) {
-        slmm_assert(recvbuf(e.q_ptr + iq) != -1);
-        q_tgt(tci, iq, e.k, e.lev) = recvbuf(e.q_ptr + iq);
-      }
-    }
+void calc_rmt_q (IslMpi<MT>& cm) {
+  switch (cm.np) {
+  case 4: calc_rmt_q<4>(cm); break;
+  default: slmm_throw_if(true, "np " << cm.np << "not supported");
   }
-#else
-  const auto myrank = cm.p->rank();
-  const int tid = get_tid();
-  for (Int ptr = cm.mylid_with_comm_tid_ptr_h(tid),
-           end = cm.mylid_with_comm_tid_ptr_h(tid+1);
-       ptr < end; ++ptr) {
-    const Int tci = cm.mylid_with_comm_d(ptr);
-    auto& ed = cm.ed_d(tci);
-    const FA3<Real> q_tgt(ed.q, cm.np2, cm.nlev, cm.qsize);
-    for (const auto& e: ed.rmt) {
-      slmm_assert(ed.nbrs(ed.src(e.lev, e.k)).rank != myrank);
-      const Int ri = ed.nbrs(ed.src(e.lev, e.k)).rank_idx;
-      const auto&& recvbuf = cm.recvbuf(ri);
-      for (Int iq = 0; iq < cm.qsize; ++iq) {
-        q_min(e.k, e.lev, iq, tci) = recvbuf(e.q_extrema_ptr + 2*iq    );
-        q_max(e.k, e.lev, iq, tci) = recvbuf(e.q_extrema_ptr + 2*iq + 1);
-      }
-      for (Int iq = 0; iq < cm.qsize; ++iq) {
-        slmm_assert(recvbuf(e.q_ptr + iq) != -1);
-        q_tgt(e.k, e.lev, iq) = recvbuf(e.q_ptr + iq);
-      }
-    }
-  }
-#endif
 }
 
 template void calc_rmt_q(IslMpi<slmm::MachineTraits>& cm);
