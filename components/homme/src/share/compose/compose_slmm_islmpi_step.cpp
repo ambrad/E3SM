@@ -13,6 +13,9 @@ void step (
   Real* q_min_r, Real* q_max_r) // q_{min,max}(1:np, 1:np, lev, 1:qsize, ie-nets+1)
 {
   slmm_assert(cm.np == 4);
+#ifdef COMPOSE_PORT
+  slmm_assert(nets == 0 && nete+1 == cm.nelemd);
+#endif
 
   const FA4<Real>
     dep_points(reinterpret_cast<Real*>(dep_points_r),

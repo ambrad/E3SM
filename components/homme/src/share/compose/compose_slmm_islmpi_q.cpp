@@ -277,7 +277,7 @@ void copy_q (IslMpi<MT>& cm, const Int& nets,
 #else // COMPOSE_PORT
 // Hommexx computational pattern.
 
-template <Int np, typename MT>
+template <Int np, typename MT> SLMM_KIF
 void calc_coefs (const IslMpi<MT>& cm, const Int& src_lid, const Int& lev,
                  const Real* const dep_point, Real rx[4], Real ry[4]) {
   static_assert(np == 4, "Only np 4 is supported.");
@@ -295,29 +295,34 @@ void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
   const auto dp_src = cm.tracer_arrays.dp;
   const auto qdp_src = cm.tracer_arrays.qdp;
   const auto q_tgt = cm.tracer_arrays.q;
-  for (Int tci = nets; tci <= nete; ++tci) {
+  const Int qsize = cm.qsize, nlev = cm.nlev, np2 = cm.np2;
+  const auto f = KOKKOS_LAMBDA (const Int& it) {
+    const Int tci = nets + it/(np2*nlev);
+    const Int own_id = it % (np2*nlev);
     auto& ed = cm.ed_d(tci);
-    for (const auto& e: ed.own) {
-      const Int slid = ed.nbrs(ed.src(e.lev, e.k)).lid_on_rank;
-      const auto& sed = cm.ed_d(slid);
+    if (own_id >= ed.own.size()) return;
+    const auto& e = ed.own(own_id);
+    const Int slid = ed.nbrs(ed.src(e.lev, e.k)).lid_on_rank;
+    const auto& sed = cm.ed_d(slid);
+    for (Int iq = 0; iq < cm.qsize; ++iq) {
+      q_min(e.k, e.lev, iq, tci) = sed.q_extrema(iq, e.lev, 0);
+      q_max(e.k, e.lev, iq, tci) = sed.q_extrema(iq, e.lev, 1);
+    }
+    Real rx[4], ry[4];
+    calc_coefs<np>(cm, slid, e.lev, &dep_points(0, e.k, e.lev, tci), rx, ry);
+    for (Int iq = 0; iq < cm.qsize; ++iq) {
+      // q from calc_q_extrema is being overwritten, so have to use qdp/dp.
+      Real dp[16];
+      for (Int k = 0; k < 16; ++k) dp[k] = dp_src(slid, e.k, e.lev);
       for (Int iq = 0; iq < cm.qsize; ++iq) {
-        q_min(e.k, e.lev, iq, tci) = sed.q_extrema(iq, e.lev, 0);
-        q_max(e.k, e.lev, iq, tci) = sed.q_extrema(iq, e.lev, 1);
-      }
-      Real rx[4], ry[4];
-      calc_coefs<np>(cm, slid, e.lev, &dep_points(0, e.k, e.lev, tci), rx, ry);
-      for (Int iq = 0; iq < cm.qsize; ++iq) {
-        // q from calc_q_extrema is being overwritten, so have to use qdp/dp.
-        Real dp[16];
-        for (Int k = 0; k < 16; ++k) dp[k] = dp_src(slid, e.k, e.lev);
-        for (Int iq = 0; iq < cm.qsize; ++iq) {
-          Real qdp[16];
-          for (Int k = 0; k < 16; ++k) qdp[k] = qdp_src(slid, iq, k, e.lev);
-          q_tgt(tci, iq, e.k, e.lev) = calc_q_tgt(rx, ry, qdp, dp);
-        }
+        Real qdp[16];
+        for (Int k = 0; k < 16; ++k) qdp[k] = qdp_src(slid, iq, k, e.lev);
+        q_tgt(tci, iq, e.k, e.lev) = calc_q_tgt(rx, ry, qdp, dp);
       }
     }
-  }
+  };
+  ko::parallel_for(
+    ko::RangePolicy<typename MT::DES>(0, (nete - nets + 1)*np2*nlev), f);
 }
 
 template <typename MT>
