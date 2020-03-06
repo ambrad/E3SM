@@ -304,17 +304,17 @@ void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
     const auto& e = ed.own(own_id);
     const Int slid = ed.nbrs(ed.src(e.lev, e.k)).lid_on_rank;
     const auto& sed = cm.ed_d(slid);
-    for (Int iq = 0; iq < cm.qsize; ++iq) {
+    for (Int iq = 0; iq < qsize; ++iq) {
       q_min(e.k, e.lev, iq, tci) = sed.q_extrema(iq, e.lev, 0);
       q_max(e.k, e.lev, iq, tci) = sed.q_extrema(iq, e.lev, 1);
     }
     Real rx[4], ry[4];
     calc_coefs<np>(cm, slid, e.lev, &dep_points(0, e.k, e.lev, tci), rx, ry);
-    for (Int iq = 0; iq < cm.qsize; ++iq) {
+    for (Int iq = 0; iq < qsize; ++iq) {
       // q from calc_q_extrema is being overwritten, so have to use qdp/dp.
       Real dp[16];
       for (Int k = 0; k < 16; ++k) dp[k] = dp_src(slid, e.k, e.lev);
-      for (Int iq = 0; iq < cm.qsize; ++iq) {
+      for (Int iq = 0; iq < qsize; ++iq) {
         Real qdp[16];
         for (Int k = 0; k < 16; ++k) qdp[k] = qdp_src(slid, iq, k, e.lev);
         q_tgt(tci, iq, e.k, e.lev) = calc_q_tgt(rx, ry, qdp, dp);
@@ -328,28 +328,32 @@ void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
 template <typename MT>
 void copy_q (IslMpi<MT>& cm, const Int& nets,
              const FA4<Real>& q_min, const FA4<Real>& q_max) {
+  slmm_assert(cm.mylid_with_comm_tid_ptr_h.size() == 2);
   const auto myrank = cm.p->rank();
-  const int tid = get_tid();
   const auto q_tgt = cm.tracer_arrays.q;
-  for (Int ptr = cm.mylid_with_comm_tid_ptr_h(tid),
-           end = cm.mylid_with_comm_tid_ptr_h(tid+1);
-       ptr < end; ++ptr) {
-    const Int tci = cm.mylid_with_comm_d(ptr);
+  const auto mylid_with_comm = cm.mylid_with_comm_d;
+  const Int nlid = mylid_with_comm.size();
+  const Int qsize = cm.qsize, nlev = cm.nlev, np2 = cm.np2;
+  const auto f = KOKKOS_LAMBDA (const Int& it) {
+    const Int tci = mylid_with_comm(it/(np2*nlev));
+    const Int rmt_id = it % (np2*nlev);
     auto& ed = cm.ed_d(tci);
-    for (const auto& e: ed.rmt) {
-      slmm_assert(ed.nbrs(ed.src(e.lev, e.k)).rank != myrank);
-      const Int ri = ed.nbrs(ed.src(e.lev, e.k)).rank_idx;
-      const auto&& recvbuf = cm.recvbuf(ri);
-      for (Int iq = 0; iq < cm.qsize; ++iq) {
-        q_min(e.k, e.lev, iq, tci) = recvbuf(e.q_extrema_ptr + 2*iq    );
-        q_max(e.k, e.lev, iq, tci) = recvbuf(e.q_extrema_ptr + 2*iq + 1);
-      }
-      for (Int iq = 0; iq < cm.qsize; ++iq) {
-        slmm_assert(recvbuf(e.q_ptr + iq) != -1);
-        q_tgt(tci, iq, e.k, e.lev) = recvbuf(e.q_ptr + iq);
-      }
+    if (rmt_id >= ed.rmt.size()) return;
+    const auto& e = ed.rmt(rmt_id);
+    slmm_kernel_assert(ed.nbrs(ed.src(e.lev, e.k)).rank != myrank);
+    const Int ri = ed.nbrs(ed.src(e.lev, e.k)).rank_idx;
+    const auto&& recvbuf = cm.recvbuf(ri);
+    for (Int iq = 0; iq < qsize; ++iq) {
+      q_min(e.k, e.lev, iq, tci) = recvbuf(e.q_extrema_ptr + 2*iq    );
+      q_max(e.k, e.lev, iq, tci) = recvbuf(e.q_extrema_ptr + 2*iq + 1);
     }
-  }
+    for (Int iq = 0; iq < qsize; ++iq) {
+      slmm_kernel_assert(recvbuf(e.q_ptr + iq) != -1);
+      q_tgt(tci, iq, e.k, e.lev) = recvbuf(e.q_ptr + iq);
+    }
+  };
+  ko::parallel_for(
+    ko::RangePolicy<typename MT::DES>(0, nlid*np2*nlev), f);
 }
 
 #endif // COMPOSE_PORT
