@@ -274,6 +274,50 @@ void copy_q (IslMpi<MT>& cm, const Int& nets,
   }
 }
 
+template <Int np, typename MT>
+void calc_rmt_q (IslMpi<MT>& cm) {
+  const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
+#ifdef COMPOSE_HORIZ_OPENMP
+# pragma omp for
+#endif
+  for (Int ri = 0; ri < nrmtrank; ++ri) {
+    const auto&& xs = cm.recvbuf(ri);
+    auto&& qs = cm.sendbuf(ri);
+    Int xos = 0, qos = 0, nx_in_rank, padding;
+    xos += getbuf(xs, xos, nx_in_rank, padding);
+    if (nx_in_rank == 0) {
+      cm.sendcount(ri) = 0;
+      continue; 
+    }
+    // The upper bound is to prevent an inf loop if the msg is corrupted.
+    for (Int lidi = 0; lidi < cm.nelemd; ++lidi) {
+      Int lid, nx_in_lid;
+      xos += getbuf(xs, xos, lid, nx_in_lid);
+      const auto& ed = cm.ed_d(lid);
+      for (Int levi = 0; levi < cm.nlev; ++levi) { // same re: inf loop
+        Int lev, nx;
+        xos += getbuf(xs, xos, lev, nx);
+        slmm_assert(nx > 0);
+        for (Int iq = 0; iq < cm.qsize; ++iq)
+          for (int i = 0; i < 2; ++i)
+            qs(qos + 2*iq + i) = ed.q_extrema(iq, lev, i);
+        qos += 2*cm.qsize;
+        for (Int ix = 0; ix < nx; ++ix) {
+          calc_q<np>(cm, lid, lev, &xs(xos), &qs(qos), true);
+          xos += 3;
+          qos += cm.qsize;
+        }
+        nx_in_lid -= nx;
+        nx_in_rank -= nx;
+        if (nx_in_lid == 0) break;
+      }
+      slmm_assert(nx_in_lid == 0);
+      if (nx_in_rank == 0) break;
+    }
+    slmm_assert(nx_in_rank == 0);
+    cm.sendcount(ri) = qos;
+  }
+}
 #else // COMPOSE_PORT
 // Hommexx computational pattern.
 
@@ -356,8 +400,6 @@ void copy_q (IslMpi<MT>& cm, const Int& nets,
     ko::RangePolicy<typename MT::DES>(0, nlid*np2*nlev), f);
 }
 
-#endif // COMPOSE_PORT
-
 template <Int np, typename MT>
 void calc_rmt_q (IslMpi<MT>& cm) {
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
@@ -410,6 +452,8 @@ void calc_rmt_q (IslMpi<MT>& cm) {
     cm.sendcount(ri) = qos;
   }
 }
+
+#endif // COMPOSE_PORT
 
 template <typename MT>
 void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,

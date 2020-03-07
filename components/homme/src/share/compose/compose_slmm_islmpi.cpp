@@ -709,7 +709,7 @@ void alloc_mpi_buffers (IslMpi<MT>& cm, Real* sendbuf, Real* recvbuf) {
   cm.nlid_per_rank.clear();
   cm.sendsz.clear();
   cm.recvsz.clear();
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
   cm.ri_lidi_locks.init(nrmtrank, cm.nlid_per_rank.data());
   for (Int ri = 0; ri < nrmtrank; ++ri) {
     auto&& locks = cm.ri_lidi_locks(ri);

@@ -1,6 +1,10 @@
 #ifndef INCLUDE_COMPOSE_HPP
 #define INCLUDE_COMPOSE_HPP
 
+#ifdef HAVE_CONFIG_H
+# include "config.h.c"
+#endif
+
 #include <Kokkos_Core.hpp>
 
 #ifdef _OPENMP
@@ -20,11 +24,10 @@
 // Look for MPI-related memory leaks.
 #define COMPOSE_DEBUG_MPI
 
-// Mimic GPU threading on host to debug race conditions on a regular CPU.
-#define COMPOSE_MIMIC_GPU
-
-// Optionally define this for testing the port code.
 #ifndef HORIZ_OPENMP
+// Mimic GPU threading on host to debug race conditions on a regular CPU.
+# define COMPOSE_MIMIC_GPU
+// Optionally define this for testing the port code.
 # define COMPOSE_PORT
 #endif
 
