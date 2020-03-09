@@ -283,8 +283,8 @@ void calc_rmt_q (IslMpi<MT>& cm) {
   for (Int ri = 0; ri < nrmtrank; ++ri) {
     const auto&& xs = cm.recvbuf(ri);
     auto&& qs = cm.sendbuf(ri);
-    Int xos = 0, qos = 0, nx_in_rank, padding;
-    xos += getbuf(xs, xos, nx_in_rank, padding);
+    Int mos = 0, qos = 0, nx_in_rank, xos;
+    mos += getbuf(xs, mos, nx_in_rank, xos);
     if (nx_in_rank == 0) {
       cm.sendcount(ri) = 0;
       continue; 
@@ -292,11 +292,11 @@ void calc_rmt_q (IslMpi<MT>& cm) {
     // The upper bound is to prevent an inf loop if the msg is corrupted.
     for (Int lidi = 0; lidi < cm.nelemd; ++lidi) {
       Int lid, nx_in_lid;
-      xos += getbuf(xs, xos, lid, nx_in_lid);
+      mos += getbuf(xs, mos, lid, nx_in_lid);
       const auto& ed = cm.ed_d(lid);
       for (Int levi = 0; levi < cm.nlev; ++levi) { // same re: inf loop
         Int lev, nx;
-        xos += getbuf(xs, xos, lev, nx);
+        mos += getbuf(xs, mos, lev, nx);
         slmm_assert(nx > 0);
         for (Int iq = 0; iq < cm.qsize; ++iq)
           for (int i = 0; i < 2; ++i)
