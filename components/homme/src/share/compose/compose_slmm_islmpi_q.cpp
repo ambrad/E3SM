@@ -401,7 +401,7 @@ void copy_q (IslMpi<MT>& cm, const Int& nets,
 }
 
 template <Int np, typename MT>
-void calc_rmt_q (IslMpi<MT>& cm) {
+void calc_rmt_q_pass1 (IslMpi<MT>& cm) {
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
   const auto q_src = cm.tracer_arrays.q;
 #ifdef COMPOSE_HORIZ_OPENMP
@@ -451,6 +451,16 @@ void calc_rmt_q (IslMpi<MT>& cm) {
     slmm_assert(nx_in_rank == 0);
     cm.sendcount(ri) = qos;
   }
+}
+
+template <Int np, typename MT>
+void calc_rmt_q_pass2 (IslMpi<MT>& cm) {
+}
+
+template <Int np, typename MT>
+void calc_rmt_q (IslMpi<MT>& cm) {
+  calc_rmt_q_pass1<np>(cm);
+  calc_rmt_q_pass2<np>(cm);
 }
 
 #endif // COMPOSE_PORT
