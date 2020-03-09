@@ -615,6 +615,7 @@ void set_idx2_maps (IslMpi<MT>& cm, const Rank2Gids& rank2rmtgids,
   for (const auto& e: ranks)
     cm.ranks(e.second) = e.first;
   cm.sendcount.reset_capacity(i, true);
+  cm.x_bulkdata_offset.reset_capacity(i, true);
   cm.sendreq.reset_capacity(i, true);
   cm.recvreq.reset_capacity(i, true);
 

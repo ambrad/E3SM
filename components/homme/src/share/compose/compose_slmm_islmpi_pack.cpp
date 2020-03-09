@@ -4,17 +4,18 @@ namespace homme {
 namespace islmpi {
 
 /* Pack the departure points (x). We use two passes. We also set up the q
-   metadata. Two passes lets us do some efficient tricks that are not available
+   metadata. Two passes let us do some efficient tricks that are not available
    with one pass. Departure point and q messages are formatted as follows:
-    xs: (#x-in-rank    int
-         pad           i
-         (lid-on-rank  i     only packed if #x in lid > 0
-          #x-in-lid    i     > 0
-          (lev         i     only packed if #x in (lid,lev) > 0
-           #x          i     > 0
-           x         3 real
-            *#x) *#lev) *#lid) *#rank
-    qs: (q-extrema    2 qsize r    (min, max) packed together
+    xs: (#x-in-rank         int                                     <-
+         x-bulk-data-offset i                                        |
+         (lid-on-rank       i     only packed if #x in lid > 0       |
+          #x-in-lid         i     > 0                                |- meta data
+          (lev              i     only packed if #x in (lid,lev) > 0 |
+           #x)              i     > 0                                |
+              *#lev) *#lid                                          <-
+         x                  3 real                                  <-- bulk data
+          *#x-in-rank) *#rank
+    qs: (q-extrema    2 qsize r   (min, max) packed together
          q              qsize r
           *#x) *#lev *#lid *#rank
  */
@@ -27,17 +28,23 @@ void pack_dep_points_sendbuf_pass1 (IslMpi<MT>& cm) {
   for (Int ri = 0; ri < nrmtrank; ++ri) {
     auto&& sendbuf = cm.sendbuf(ri);
     const auto&& lid_on_rank = cm.lid_on_rank(ri);
-    Int xos = 0, qos = 0;
-    xos += setbuf(sendbuf, xos, cm.nx_in_rank(ri), 0 /* empty space for alignment */);
+    // metadata offset, x bulk data offset, q bulk data offset
+    Int mos = 0, xos = 0, qos = 0, sendcount = 0, cnt;
+    cnt = setbuf(sendbuf, mos, 0, 0); // empty space for later
+    mos += cnt;
+    sendcount += cnt;
     if (cm.nx_in_rank(ri) == 0) {
-      cm.sendcount(ri) = xos;
+      setbuf(sendbuf, 0, 0, mos);
+      cm.sendcount(ri) = sendcount;
       continue;
     }
     auto&& bla = cm.bla(ri);
     for (Int lidi = 0, lidn = cm.lid_on_rank(ri).n(); lidi < lidn; ++lidi) {
       auto nx_in_lid = cm.nx_in_lid(ri,lidi);
       if (nx_in_lid == 0) continue;
-      xos += setbuf(sendbuf, xos, lid_on_rank(lidi), nx_in_lid);
+      cnt = setbuf(sendbuf, mos, lid_on_rank(lidi), nx_in_lid);
+      mos += cnt;
+      sendcount += cnt;
       for (Int lev = 0; lev < cm.nlev; ++lev) {
         auto& t = bla(lidi,lev);
         t.qptr = qos;
@@ -48,15 +55,19 @@ void pack_dep_points_sendbuf_pass1 (IslMpi<MT>& cm) {
           continue;
         }
         slmm_assert_high(nx > 0);
-        const auto dos = setbuf(sendbuf, xos, lev, nx);
-        t.xptr = xos + dos;
-        xos += dos + 3*nx;
+        const auto dos = setbuf(sendbuf, mos, lev, nx);
+        mos += dos;
+        sendcount += dos + 3*nx;
+        t.xptr = xos;
+        xos += 3*nx;
         qos += 2 + nx;
         nx_in_lid -= nx;
       }
       slmm_assert(nx_in_lid == 0);
     }
-    cm.sendcount(ri) = xos;
+    setbuf(sendbuf, 0, cm.nx_in_rank(ri), mos /* offset to x bulk data */);
+    cm.x_bulkdata_offset(ri) = mos;
+    cm.sendcount(ri) = sendcount;
   }
 }
 
@@ -114,7 +125,7 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const FA4<const Real>& dep_p
         ++t.cnt;
 #endif
         qptr = t.qptr;
-        xptr = t.xptr + 3*cnt;
+        xptr = cm.x_bulkdata_offset(ri) + t.xptr + 3*cnt;
       }
 #ifdef COMPOSE_HORIZ_OPENMP
       if (cm.horiz_openmp) omp_unset_lock(lock);
