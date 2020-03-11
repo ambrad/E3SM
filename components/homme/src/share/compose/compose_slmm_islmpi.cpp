@@ -688,6 +688,7 @@ void size_mpi_buffers (IslMpi<MT>& cm, const Rank2Gids& rank2rmtgids,
   cm.nlid_per_rank.resize(nrmtrank);
   cm.sendsz.resize(nrmtrank);
   cm.recvsz.resize(nrmtrank);
+  Int rmt_xs_sz = 0, rmt_qse_sz = 0;
   for (Int ri = 0; ri < nrmtrank; ++ri) {
     const auto& rmtgids = rank2rmtgids.at(cm.ranks(ri));
     const auto& owngids = rank2owngids.at(cm.ranks(ri));
@@ -696,7 +697,11 @@ void size_mpi_buffers (IslMpi<MT>& cm, const Rank2Gids& rank2rmtgids,
                                         qbufcnt(owngids, rmtgids)));
     cm.recvsz[ri] = bytes2real(std::max(xbufcnt(owngids, rmtgids),
                                         qbufcnt(rmtgids, owngids)));
+    rmt_xs_sz  += 5*cm.np2*cm.nlev*rmtgids.size();
+    rmt_qse_sz += 4       *cm.nlev*rmtgids.size();
   }
+  cm.rmt_xs.reset_capacity(rmt_xs_sz, true);
+  cm.rmt_qs_extrema.reset_capacity(rmt_qse_sz, true);
 }
 
 template <typename MT>

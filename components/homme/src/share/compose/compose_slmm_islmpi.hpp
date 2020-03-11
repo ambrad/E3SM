@@ -446,8 +446,10 @@ struct IslMpi {
 
   // MPI comm data.
   ListOfLists<Real, HES> sendbuf, recvbuf;
-  FixedCapList<Int, HES> sendcount, x_bulkdata_offset;
   FixedCapList<mpi::Request, HES> sendreq, recvreq;
+  FixedCapList<Int, HES> sendcount, x_bulkdata_offset;
+  FixedCapList<Int, HES> rmt_xs, rmt_qs_extrema;
+  Int nrmt_xs, nrmt_qs_extrema;
 
   bool horiz_openmp;
 #ifdef COMPOSE_HORIZ_OPENMP
