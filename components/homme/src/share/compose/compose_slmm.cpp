@@ -18,6 +18,48 @@
 namespace homme {
 namespace islmpi {
 
+#ifdef COMPOSE_PORT
+template <typename MT, typename ESD, typename ESS>
+void deep_copy (typename IslMpi<MT>::template ElemData<ESD>& d,
+                const typename IslMpi<MT>::template ElemData<ESS>& s) {
+  d.nbrs.copy(s.nbrs);
+  const ptrdiff_t me_os = s.me - s.nbrs.data();
+  d.me = d.nbrs.data() + me_os;
+  d.nin1halo = s.nin1halo;
+  d.own.copy(s.own);
+  d.rmt.copy(s.rmt);
+  siqk::resize_and_copy(d.src, s.src);
+  d.q_extrema = typename IslMpi<MT>::template Array<Real**[2], ESD>(
+    "q_extrema", s.q_extrema.extent_int(0), s.q_extrema.extent_int(1));
+  ko::deep_copy(d.q_extrema, s.q_extrema);
+  d.qdp = s.qdp;
+  d.dp = s.dp;
+  d.q = s.q;
+}
+#endif
+
+template <typename MT>
+void deep_copy (typename IslMpi<MT>::ElemDataListD& d,
+                const typename IslMpi<MT>::ElemDataListH& s) {
+#ifdef COMPOSE_PORT
+  const Int ned = s.size();
+  // device view of device views
+  d = typename IslMpi<MT>::ElemDataListD(ned);
+  d.inc(ned);
+  // host view of device views
+  auto m = d.mirror();
+  for (Int i = 0; i < ned; ++i)
+    deep_copy<MT>(m(i), s(i));
+  deep_copy(d, m);
+#endif
+}
+
+template <typename MT> slmm::EnableIfDiffSpace<MT>
+sync_to_device (IslMpi<MT>& cm) { deep_copy<MT>(cm.ed_d, cm.ed_h); }
+
+template <typename MT> slmm::EnableIfSameSpace<MT>
+sync_to_device (IslMpi<MT>& cm) { cm.ed_d = cm.ed_h; }
+
 template <typename MT>
 typename IslMpi<MT>::Ptr
 init (const typename IslMpi<MT>::Advecter::ConstPtr& advecter,

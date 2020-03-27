@@ -256,12 +256,12 @@ struct ListOfLists {
 
   SLMM_KIF Int n () const { return static_cast<Int>(ptr_.size()) - 1; }
   SLMM_KIF List operator() (const Int& i) const {
-    slmm_assert_high(i >= 0 && i < static_cast<Int>(ptr_.size()) - 1);
+    slmm_kernel_assert_high(i >= 0 && i < static_cast<Int>(ptr_.size()) - 1);
     return List(const_cast<T*>(&d_[ptr_[i]]), ptr_[i+1] - ptr_[i]);
   }
   SLMM_KIF T& operator() (const Int& i, const Int& j) const {
-    slmm_assert_high(i >= 0 && i < static_cast<Int>(ptr_.size()) - 1 &&
-                     j >= 0 && j < ptr_[i+1] - ptr_[i]);
+    slmm_kernel_assert_high(i >= 0 && i < static_cast<Int>(ptr_.size()) - 1 &&
+                            j >= 0 && j < ptr_[i+1] - ptr_[i]);
     return d_[ptr_[i] + j];
   }
 
@@ -357,6 +357,23 @@ struct TracerArrays {
   {}
 };
 
+struct GidRank {
+  Int
+  gid,      // cell global ID
+    rank,     // the rank that owns the cell
+    rank_idx, // index into list of ranks with whom I communicate, including me
+    lid_on_rank,     // the local ID of the cell on the owning rank
+    lid_on_rank_idx; // index into list of LIDs on the rank
+};
+struct OwnItem {
+  short lev;   // level index
+  short k;     // linearized GLL index
+};
+struct RemoteItem {
+  Int q_extrema_ptr, q_ptr; // pointers into recvbuf
+  short lev, k;
+};
+
 // Meta and bulk data for the interpolation SL MPI communication pattern.
 template <typename MT = slmm::MachineTraits>
 struct IslMpi {
@@ -374,27 +391,10 @@ struct IslMpi {
   template <typename Datatype>
   using ArrayD = ko::View<Datatype, siqk::Layout, DES>;
 
-  struct GidRank {
-    Int
-      gid,      // cell global ID
-      rank,     // the rank that owns the cell
-      rank_idx, // index into list of ranks with whom I communicate, including me
-      lid_on_rank,     // the local ID of the cell on the owning rank
-      lid_on_rank_idx; // index into list of LIDs on the rank
-  };
-
   // The comm and real data associated with an element patch, the set of
   // elements surrounding an owned cell.
   template <typename ES>
   struct ElemData {
-    struct OwnItem {
-      short lev;   // level index
-      short k;     // linearized GLL index
-    };
-    struct RemoteItem {
-      Int q_extrema_ptr, q_ptr; // pointers into recvbuf
-      short lev, k;
-    };
     GidRank* me;                      // the owned cell
     FixedCapList<GidRank, ES> nbrs;   // the cell's neighbors (but including me)
     Int nin1halo;                     // nbrs[0:n]
@@ -468,8 +468,6 @@ struct IslMpi {
 #endif
   }
 };
-
-template <typename MT> void sync_to_device(IslMpi<MT>& cm);
 
 inline int get_tid () {
 #ifdef COMPOSE_HORIZ_OPENMP
