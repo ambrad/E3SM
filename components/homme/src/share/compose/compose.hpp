@@ -25,8 +25,10 @@
 #define COMPOSE_DEBUG_MPI
 
 #ifndef HORIZ_OPENMP
+# ifndef KOKKOS_ENABLE_CUDA
 // Mimic GPU threading on host to debug race conditions on a regular CPU.
-# define COMPOSE_MIMIC_GPU
+#  define COMPOSE_MIMIC_GPU
+# endif
 // Optionally define this for testing the port code.
 # define COMPOSE_PORT
 #endif

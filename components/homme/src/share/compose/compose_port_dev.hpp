@@ -34,7 +34,7 @@ private:
   std::vector<T*> ie_data_ptr;
   const Int nlev, np2, qsize;
 
-  bool check (Int ie, Int k = -1, Int lev = -1, Int q = -1) const {
+  void check (Int ie, Int k = -1, Int lev = -1, Int q = -1) const {
 #ifdef COMPOSE_BOUNDS_CHECK
     assert(ie >= 0 && ie < static_cast<Int>(ie_data_ptr.size()));
     if (k >= 0) assert(k < np2);

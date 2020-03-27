@@ -5033,7 +5033,7 @@ class QLT : public cedr::qlt::QLT<ES> {
     for (Int pi = 0; pi < nprob; ++pi) {
       const Int bd_os_pi = bd_os + md.a_d.trcr2bl2r(md.a_d.bidx2trcr(bis + pi));
 #ifdef RV_DIAG
-      Real oob = 0;
+      Real oob = 0, tot_mass_slv = 0, oob_slv = 0;
 #endif
       Real tot_mass = 0;
       for (Int k = 0; k < nlev; ++k) {
@@ -5048,7 +5048,6 @@ class QLT : public cedr::qlt::QLT<ES> {
 #endif
       }
       solve(nlev, vld, tot_mass);
-      Real tot_mass_slv = 0, oob_slv = 0;
       for (Int k = 0; k < nlev; ++k) {
         const Int bd_os_k = bd_os_pi + nprob*4*k;
         bd.l2r_data(bd_os_k + 3) = vld.mass(k); // previous mass, not current one
@@ -5104,8 +5103,8 @@ class QLT : public cedr::qlt::QLT<ES> {
 
   static Int solve (const Int nlev, const VerticalLevelsData& vld,
                     const Real& tot_mass) {
-    solve(nlev, vld.ones.data(), tot_mass, vld.lo.data(), vld.hi.data(),
-          vld.mass.data(), vld.wrk.data());    
+    return solve(nlev, vld.ones.data(), tot_mass, vld.lo.data(), vld.hi.data(),
+                 vld.mass.data(), vld.wrk.data());    
   }
 
   static Int solve_unittest () {

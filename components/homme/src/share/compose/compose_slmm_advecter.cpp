@@ -7,7 +7,9 @@ void Advecter<MT>
 ::init_meta_data (const Int nelem_global, const Int* lid2facenum) {
   const auto nelemd = local_mesh_h_.extent_int(0);
   lid2facenum_ = Ints<DES>("Advecter::lid2facenum", nelemd);
-  std::copy(lid2facenum, lid2facenum + nelemd, lid2facenum_.data());
+  lid2facenum_h_ = ko::create_mirror_view(lid2facenum_);
+  std::copy(lid2facenum, lid2facenum + nelemd, lid2facenum_h_.data());
+  ko::deep_copy(lid2facenum_, lid2facenum_h_);
   s2r_.init(cubed_sphere_map_, nelem_global, lid2facenum_);
 }
 
@@ -16,8 +18,10 @@ void Advecter<MT>::check_ref2sphere (const Int ie, const Real* p_homme) {
   const auto& m = local_mesh_host(ie);
   Real ref_coord[2];
   siqk::sqr::Info info;
+  SphereToRef<typename MT::HES> s2r;
+  s2r.init(cubed_sphere_map_, s2r_.nelem_global(), lid2facenum_h_);
   const Real tol = s2r_.tol();
-  s2r_.calc_sphere_to_ref(ie, m, p_homme, ref_coord[0], ref_coord[1], &info);
+  s2r.calc_sphere_to_ref(ie, m, p_homme, ref_coord[0], ref_coord[1], &info);
   const slmm::Basis basis(4, 0);
   const slmm::GLL gll;
   const Real* x, * wt;
@@ -35,29 +39,36 @@ void Advecter<MT>::check_ref2sphere (const Int ie, const Real* p_homme) {
     printf("COMPOSE check_ref2sphere: %1.15e %1.15e (%1.2e %1.2e) %d %d\n",
            ref_coord[0], ref_coord[1], min[0], min[1],
            info.success, info.n_iterations);
-  if ( ! s2r_.check(ie, m))
+  if ( ! s2r.check(ie, m))
     printf("COMPOSE SphereToRef::check return false: ie = %d\n", ie);
 }
 
 template <typename MT>
 void deep_copy (typename Advecter<MT>::LocalMeshesD& d,
-                const typename Advecter<MT>::LocalMeshesH& s) {
-#ifdef COMPOSE_PORT
+                const typename Advecter<MT>::LocalMeshesH& s,
+                typename std::enable_if<
+                  ! std::is_same<typename Advecter<MT>::LocalMeshesD,
+                                 typename Advecter<MT>::LocalMeshesH>::value>::type* = 0) {
   const Int nlm = s.extent_int(0);
   d = typename Advecter<MT>::LocalMeshesD("LocalMeshes", nlm);
   const auto m = ko::create_mirror_view(d);
   for (Int i = 0; i < nlm; ++i)
     deep_copy(m(i), s(i));
   ko::deep_copy(d, m);
-#endif
+}
+
+template <typename MT>
+void deep_copy (typename Advecter<MT>::LocalMeshesD& d,
+                const typename Advecter<MT>::LocalMeshesH& s,
+                typename std::enable_if<
+                  std::is_same<typename Advecter<MT>::LocalMeshesD,
+                               typename Advecter<MT>::LocalMeshesH>::value>::type* = 0) {
+  d = s;
 }
 
 template <typename MT>
 void Advecter<MT>::sync_to_device() {
-  if (slmm::OnGpu<typename MT::DES>::value)
-    deep_copy<MT>(local_mesh_d_, local_mesh_h_);
-  else
-    local_mesh_d_ = local_mesh_h_;
+  deep_copy<MT>(local_mesh_d_, local_mesh_h_);
 }
 
 template class Advecter<>;

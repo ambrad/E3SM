@@ -174,7 +174,6 @@ inline Real calc_dist (const LocalMesh<ES>& m, const Int& i0, const Int& i1) {
 template <typename ES>
 void find_external_edges (const LocalMesh<ES>& m, std::vector<Int>& external_edges) {
   const Int ncell = nslices(m.e);
-  const Int nedge = 4*ncell;
   // Get the minimum edge length to normalize distance.
   Real min_edge_len = 10;
   for (Int ic = 0; ic < ncell; ++ic) {

@@ -21,12 +21,15 @@ struct SphereToRef {
   void init (const Int cubed_sphere_map, const Int nelem_global,
              const typename Ints<ES>::const_type& lid2facenum) {
     cubed_sphere_map_ = cubed_sphere_map;
+    lid2facenum_ = lid2facenum;
+    nelem_global_ = nelem_global;
     ne_ = static_cast<Int>(std::round(std::sqrt((nelem_global / 6))));
     slmm_throw_if( ! (cubed_sphere_map_ != 0 || 6*ne_*ne_ == nelem_global),
                   "If cubed_sphere_map = 0, then the mesh must be a "
                   "regular cubed-sphere.");
-    lid2facenum_ = lid2facenum;
   }
+
+  Int nelem_global () const { return nelem_global_; }
 
   Real tol () const {
     return 1e3 * ne_ * std::numeric_limits<Real>::epsilon();
@@ -66,7 +69,7 @@ struct SphereToRef {
   }
 
 private:
-  Int ne_, cubed_sphere_map_;
+  Int ne_, nelem_global_, cubed_sphere_map_;
   typename Ints<ES>::const_type lid2facenum_;
 
   // Follow the description given in
@@ -184,11 +187,11 @@ struct Advecter {
   // point on the sphere. Check that we map it to a GLL ref point.
   void check_ref2sphere(const Int ie, const Real* p_homme);
 
-  const LocalMesh<DES>& local_mesh_host (const Int ie) const {
+  const LocalMesh<HES>& local_mesh_host (const Int ie) const {
     slmm_assert(ie < static_cast<Int>(local_mesh_h_.size()));
     return local_mesh_h_(ie);
   }
-  LocalMesh<DES>& local_mesh_host (const Int ie) {
+  LocalMesh<HES>& local_mesh_host (const Int ie) {
     slmm_assert(ie < static_cast<Int>(local_mesh_h_.size()));
     return local_mesh_h_(ie);
   }
@@ -225,6 +228,7 @@ private:
   // For recovery from get_src_cell failure:
   Int nearest_point_permitted_lev_bdy_;
   // Meta data obtained at initialization that can be used later.
+  Ints<HES> lid2facenum_h_;
   Ints<DES> lid2facenum_;
   SphereToRef<DES> s2r_;
 };
@@ -242,7 +246,7 @@ void Advecter<MT>
     ncell = corners.extent_int(2),
     N = nvert*ncell;
   auto& m = local_mesh_h_(ie);
-  typedef LocalMesh<DES> LM;
+  typedef LocalMesh<HES> LM;
   m.p = typename LM::RealArray("p", N);
   m.e = typename LM::IntArray("e", ncell, nvert);
   for (Int ci = 0, k = 0; ci < ncell; ++ci)
