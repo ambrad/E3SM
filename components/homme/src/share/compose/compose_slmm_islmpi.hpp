@@ -106,19 +106,22 @@ struct FixedCapList {
   typedef ko::View<T*, ES> Array;
   typedef FixedCapList<T, typename Array::host_mirror_space> Mirror;
 
+  // Empty ctor b/c we need to permit view of view construction.
   SLMM_KIF FixedCapList () {}
+
   FixedCapList (const Int& cap) {
     slmm_assert_high(cap >= 0);
     reset_capacity(cap);
   }
 
-  SLMM_KIF Int capacity () const { return d_.size(); }
   void reset_capacity (const Int& cap, const bool also_size = false) {
     slmm_assert(cap >= 0);
     if (d_.size() == 0) init_n();
     ko::resize(d_, cap);
     set_n_from_host(also_size ? cap : 0);
   }
+
+  SLMM_KIF Int capacity () const { return d_.size(); }
 
   // If empty ctor was called, nothing below here is valid until reset_capacity
   // is called.
@@ -211,29 +214,6 @@ private:
   SLMM_KIF Int& get_n_ref () const { return n_; }
 #endif
 };
-
-template <typename T, typename ESD, typename ESS>
-void deep_copy (FixedCapList<T, ESD>& d, const FixedCapList<T, ESS>& s) {
-  slmm_assert_high(d.capacity() == s.capacity());
-  ko::deep_copy(d.view(), s.view());
-  ko::deep_copy(d.n_view(), s.n_view());
-}
-
-template <typename MT, typename T>
-slmm::EnableIfDiffSpace<MT>
-h2d (FixedCapList<T, typename MT::DES>& d,
-     const FixedCapList<T, typename MT::HES>& s) {
-  d.reset_capacity(s.capacity());
-  deep_copy(d, s);
-}
-
-template <typename MT, typename T>
-slmm::EnableIfSameSpace<MT>
-h2d (FixedCapList<T, typename MT::DES>& d,
-     const FixedCapList<T, typename MT::HES>& s) {
-  d.set_view(s.view());
-  d.set_n(s.n());
-}
 
 template <typename ES> struct BufferLayoutArray;
 

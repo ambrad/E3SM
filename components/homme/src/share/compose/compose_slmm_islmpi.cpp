@@ -70,6 +70,30 @@ int wait (Request* req, MPI_Status* stat) {
 } // namespace mpi
 
 namespace islmpi {
+template <typename T, typename ESD, typename ESS>
+void deep_copy (FixedCapList<T, ESD>& d, const FixedCapList<T, ESS>& s) {
+  slmm_assert_high(d.capacity() == s.capacity());
+  ko::deep_copy(d.view(), s.view());
+  ko::deep_copy(d.n_view(), s.n_view());
+}
+
+template <typename MT, typename T>
+slmm::EnableIfDiffSpace<MT>
+h2d (FixedCapList<T, typename MT::DES>& d,
+     const FixedCapList<T, typename MT::HES>& s) {
+  d.reset_capacity(s.capacity());
+  deep_copy(d, s);
+}
+
+template <typename MT, typename T>
+slmm::EnableIfSameSpace<MT>
+h2d (FixedCapList<T, typename MT::DES>& d,
+     const FixedCapList<T, typename MT::HES>& s) {
+  d.reset_capacity(0);
+  d.set_view(s.view());
+  d.set_n(s.n());
+}
+
 namespace extend_halo {
 // Extend halo by one layer. This has two parts: finding neighbor (gid, rank) in
 // collect_gid_rank, and extending the Advecter local mesh geometry in

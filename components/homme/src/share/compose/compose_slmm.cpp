@@ -115,6 +115,7 @@ void dev_fin_threads () {
 
 // Valid after slmm_init_local_mesh_ is called.
 int slmm_unittest () {
+  amb::dev_init_threads();
   int nerr = 0, ne;
   {
     ne = 0;
@@ -126,6 +127,7 @@ int slmm_unittest () {
       fprintf(stderr, "slmm_unittest: slmm::unittest returned %d\n", ne);
     nerr += ne;
   }
+  amb::dev_fin_threads();
   return nerr;
 }
 
@@ -140,9 +142,10 @@ void kokkos_init () {
   Kokkos::InitArguments args;
   args.disable_warnings = true;
   Kokkos::initialize(args);
+  // Test these initialize correctly.
   Kokkos::View<int> v("hi");
   Kokkos::deep_copy(v, 0);
-  homme::islmpi::FixedCapList<int,slmm::MachineTraits::DES> fcl;
+  homme::islmpi::FixedCapList<int,slmm::MachineTraits::DES> fcl, fcl1(2);
   amb::dev_fin_threads();
 }
 
@@ -164,8 +167,7 @@ void slmm_init_impl (
   amb::dev_init_threads();
   homme::slmm_init(np, nelem, nelemd, transport_alg, cubed_sphere_map,
                    sl_nearest_point_lev - 1, lid2facenum);
-  slmm_throw_if(homme::g_advecter->is_cisl(),
-                "CISL code was removed.");
+  slmm_throw_if(homme::g_advecter->is_cisl(), "CISL code was removed.");
   const auto p = homme::mpi::make_parallel(MPI_Comm_f2c(fcomm));
   g_csl_mpi = homme::islmpi::init<homme::HommeMachineTraits>(
     homme::g_advecter, p, np, nlev, qsize, qsized, nelemd,
@@ -184,8 +186,10 @@ void slmm_query_bufsz (homme::Int* sendsz, homme::Int* recvsz) {
 
 void slmm_set_bufs (homme::Real* sendbuf, homme::Real* recvbuf,
                     homme::Int, homme::Int) {
+  amb::dev_init_threads();
   slmm_assert(g_csl_mpi);
   homme::islmpi::alloc_mpi_buffers(*g_csl_mpi, sendbuf, recvbuf);
+  amb::dev_fin_threads();
 }
 
 void slmm_get_mpi_pattern (homme::Int* sl_mpi) {
@@ -201,7 +205,7 @@ void slmm_init_local_mesh (
     ie - 1, homme::FA3<const homme::Real>(
       reinterpret_cast<const homme::Real*>(neigh_corners), 3, 4, nnc),
     reinterpret_cast<const homme::Real*>(p_inside));
-    amb::dev_fin_threads();\
+  amb::dev_fin_threads();
 }
 
 void slmm_init_finalize () {
