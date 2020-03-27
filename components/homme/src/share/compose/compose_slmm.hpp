@@ -73,6 +73,14 @@ template <typename ES> struct OnGpu {
 template <> struct OnGpu<Kokkos::Cuda> { enum : bool { value = true }; };
 #endif
 
+template <typename MT> struct SameSpace {
+  enum { value = std::is_same<typename MT::HES, typename MT::DES>::value };
+};
+template <typename MT> using EnableIfSameSpace
+  = typename std::enable_if<SameSpace<MT>::value>::type;
+template <typename MT> using EnableIfDiffSpace
+  = typename std::enable_if< ! SameSpace<MT>::value>::type;
+
 // A 2D array A can be thought of as having nslices(A) rows and szslice(A)
 // columns. A slice can be obtained by
 //     auto ak = slice(A, k);
