@@ -70,13 +70,6 @@ int wait (Request* req, MPI_Status* stat) {
 } // namespace mpi
 
 namespace islmpi {
-template <typename T, typename ESD, typename ESS>
-void deep_copy (FixedCapList<T, ESD>& d, const FixedCapList<T, ESS>& s) {
-  slmm_assert_high(d.capacity() == s.capacity());
-  ko::deep_copy(d.view(), s.view());
-  ko::deep_copy(d.n_view(), s.n_view());
-}
-
 template <typename MT, typename T>
 slmm::EnableIfDiffSpace<MT>
 h2d (FixedCapList<T, typename MT::DES>& d,

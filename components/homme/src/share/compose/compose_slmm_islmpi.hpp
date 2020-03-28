@@ -164,7 +164,7 @@ struct FixedCapList {
 
   // Use everything that follows only for low-level host-device things.
 
-  void set_n (const Int& n0) const { get_n_ref() = n0; }
+  SLMM_KIF void set_n (const Int& n0) const { get_n_ref() = n0; }
   template <typename ESS> void set_n (const ESS& s) const { get_n_ref() = s.n(); }
 
 #ifdef COMPOSE_PORT
@@ -215,6 +215,13 @@ private:
 #endif
 };
 
+template <typename T, typename ESD, typename ESS>
+void deep_copy (FixedCapList<T, ESD>& d, const FixedCapList<T, ESS>& s) {
+  slmm_assert_high(d.capacity() == s.capacity());
+  ko::deep_copy(d.view(), s.view());
+  ko::deep_copy(d.n_view(), s.n_view());
+}
+
 template <typename ES> struct BufferLayoutArray;
 
 template <typename T, typename ES>
@@ -222,7 +229,9 @@ struct ListOfLists {
   struct List {
     SLMM_KIF Int n () const { return n_; }
 
-    SLMM_KIF T& operator() (const Int& i) const { slmm_assert_high(i >= 0 && i < n_); return d_[i]; }
+    SLMM_KIF T& operator() (const Int& i) const {
+      slmm_kernel_assert_high(i >= 0 && i < n_); return d_[i];
+    }
 
     SLMM_KIF T* data () const { return d_; }
     SLMM_KIF T* begin () const { return d_; }
@@ -230,7 +239,7 @@ struct ListOfLists {
 
   private:
     friend class ListOfLists<T, ES>;
-    SLMM_KIF List (T* d, const Int& n) : d_(d), n_(n) { slmm_assert_high(n_ >= 0); }
+    SLMM_KIF List (T* d, const Int& n) : d_(d), n_(n) { slmm_kernel_assert_high(n_ >= 0); }
     T* const d_;
     const Int n_;
   };
@@ -293,7 +302,7 @@ template <typename ES>
 struct BufferLayoutArray {
   struct BufferRankLayoutArray {
     SLMM_KIF LayoutTriple& operator() (const Int& lidi, const Int& lev) const {
-      slmm_assert_high(lidi >= 0 && lev >= 0 && lidi*nlev_ + lev < d_.n());
+      slmm_kernel_assert_high(lidi >= 0 && lev >= 0 && lidi*nlev_ + lev < d_.n());
       return d_(lidi*nlev_ + lev);
     }
 
@@ -324,14 +333,14 @@ struct BufferLayoutArray {
   void zero () { d_.zero(); }
 
   SLMM_KIF LayoutTriple& operator() (const Int& ri, const Int& lidi, const Int& lev) const {
-    slmm_assert_high(ri >= 0 && ri < d_.n() &&
-                     lidi >= 0 && lev >= 0 &&
-                     lidi*nlev_ + lev < d_(ri).n());
+    slmm_kernel_assert_high(ri >= 0 && ri < d_.n() &&
+                            lidi >= 0 && lev >= 0 &&
+                            lidi*nlev_ + lev < d_(ri).n());
     return d_.data()[d_.ptr_[ri] + lidi*nlev_ + lev];
   }
 
   SLMM_KIF BufferRankLayoutArray operator() (const Int& ri) const {
-    slmm_assert_high(ri >= 0 && ri < d_.n());
+    slmm_kernel_assert_high(ri >= 0 && ri < d_.n());
     return BufferRankLayoutArray(d_(ri), nlev_);
   }
 

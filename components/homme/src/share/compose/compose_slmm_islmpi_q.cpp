@@ -158,7 +158,7 @@ SLMM_KIF void interpolate (const typename IslMpi<MT>::Advecter::Alg::Enum& alg,
     slmm::gll_np4_subgrid_exp_eval(ref_coord[1], ry);
     break;
   default:
-    slmm_assert(0);
+    slmm_kernel_assert(0);
   }  
 }
 

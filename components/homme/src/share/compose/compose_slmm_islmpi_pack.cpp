@@ -130,7 +130,7 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const FA4<const Real>& dep_p
 #ifdef COMPOSE_HORIZ_OPENMP
       if (cm.horiz_openmp) omp_unset_lock(lock);
 #endif
-      slmm_assert_high(xptr > 0);
+      slmm_kernel_assert_high(xptr > 0);
       for (Int i = 0; i < 3; ++i)
         sb(xptr + i) = dep_points(i,k,lev,tci);
       auto& item = ed.rmt.atomic_inc_and_return_next();
