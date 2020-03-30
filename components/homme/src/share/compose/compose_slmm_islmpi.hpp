@@ -352,16 +352,32 @@ private:
 // Qdp, dp, Q
 template <typename MT>
 struct TracerArrays {
-#ifdef COMPOSE_PORT_DEV
-  HommeFormatArray<const Real,4> qdp;
-  HommeFormatArray<const Real,3> dp;
-  HommeFormatArray<Real,4> q;
+#if defined COMPOSE_PORT_DEV
+# if defined COMPOSE_PORT_DEV_VIEWS
+  template <typename Datatype>
+  using View = ko::View<Datatype, ko::LayoutRight, typename MT::DES>;
+  View<Real****> qdp;
+  View<Real***> dp;
+  View<Real****> q;
+  HommeFormatArray<const Real,4> pqdp;
+  HommeFormatArray<const Real,3> pdp;
+  HommeFormatArray<Real,4> pq;
+# else
+  HommeFormatArray<const Real,4> & qdp, pqdp;
+  HommeFormatArray<const Real,3> & dp, pdp;
+  HommeFormatArray<Real,4> & q, pq;
+# endif
 #else
 #endif
 
   TracerArrays (Int nelemd, Int nlev, Int np2, Int qsize)
-#ifdef COMPOSE_PORT_DEV
-    : qdp(nelemd, np2, nlev, qsize), dp(nelemd, np2, nlev), q(nelemd, np2, nlev, qsize)
+#if defined COMPOSE_PORT_DEV
+    : pqdp(nelemd, np2, nlev, qsize), pdp(nelemd, np2, nlev), pq(nelemd, np2, nlev, qsize),
+# if defined COMPOSE_PORT_DEV_VIEWS
+      qdp("qdp", nelemd, np2, nlev, qsize), dp("dp", nelemd, np2, nlev), q("q", nelemd, np2, nlev, qsize)
+# else
+      qdp(pqdp), dp(pdp), q(pq)
+# endif
 #endif
   {}
 };
