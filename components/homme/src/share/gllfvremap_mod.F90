@@ -240,14 +240,15 @@ contains
 
     if (nphys == 1 .and. gfr%boost_pg1) call gfr_pg1_init(gfr)
 
-    call study_area(par)
+    call study_area(par, elem)
   end subroutine gfr_init
 
-  subroutine study_area(par)
+  subroutine study_area(par, elem)
     use global_norms_mod, only: wrap_repro_sum
     use parallel_mod, only: global_shared_buf, global_shared_sum, parallel_t
 
     type (parallel_t), intent(in) :: par
+    type (element_t), intent(in) :: elem(:)
 
     integer :: ie, nf, nf2
     real(real_kind) :: true_area
@@ -258,14 +259,17 @@ contains
     do ie = 1,nelemd
        global_shared_buf(ie,1) = sum(gfr%raw_fv_area(:nf2,ie))
        global_shared_buf(ie,2) = sum(gfr%fv_metdet(:nf2,ie))*(4.0_real_kind/nf2)
+       global_shared_buf(ie,3) = sum(elem(ie)%spheremp)
     end do
-    call wrap_repro_sum(nvars=2, comm=par%comm)
+    call wrap_repro_sum(nvars=3, comm=par%comm)
     true_area = 4*3.141592653589793_real_kind
     if (par%masterproc) then
-       print *,'gfr> area raw', global_shared_sum(1), &
+       print *,'gfr> area fv raw', global_shared_sum(1), &
             abs(global_shared_sum(1) - true_area)/true_area
-       print *,'gfr> area adj', global_shared_sum(2), &
+       print *,'gfr> area fv adj', global_shared_sum(2), &
             abs(global_shared_sum(2) - true_area)/true_area
+       print *,'gfr> area gll   ', global_shared_sum(3), &
+            abs(global_shared_sum(3) - true_area)/true_area
     end if
   end subroutine study_area
 
