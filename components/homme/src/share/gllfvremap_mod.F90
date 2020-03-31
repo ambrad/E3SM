@@ -257,12 +257,15 @@ contains
     
     do ie = 1,nelemd
        global_shared_buf(ie,1) = sum(gfr%raw_fv_area(:nf2,ie))
+       global_shared_buf(ie,2) = sum(gfr%fv_metdet(:nf2,ie))*(4.0_real_kind/nf2)
     end do
-    call wrap_repro_sum(nvars=1, comm=par%comm)
+    call wrap_repro_sum(nvars=2, comm=par%comm)
     true_area = 4*3.141592653589793_real_kind
     if (par%masterproc) then
-       print *,'gfr> area', global_shared_sum(1), &
+       print *,'gfr> area raw', global_shared_sum(1), &
             abs(global_shared_sum(1) - true_area)/true_area
+       print *,'gfr> area adj', global_shared_sum(2), &
+            abs(global_shared_sum(2) - true_area)/true_area
     end if
   end subroutine study_area
 
