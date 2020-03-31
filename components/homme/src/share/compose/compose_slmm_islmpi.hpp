@@ -374,7 +374,7 @@ struct TracerArrays {
 #if defined COMPOSE_PORT_DEV
     : pqdp(nelemd, np2, nlev, qsize), pdp(nelemd, np2, nlev), pq(nelemd, np2, nlev, qsize),
 # if defined COMPOSE_PORT_DEV_VIEWS
-      qdp("qdp", nelemd, np2, nlev, qsize), dp("dp", nelemd, np2, nlev), q("q", nelemd, np2, nlev, qsize)
+      qdp("qdp", nelemd, qsize, np2, nlev), dp("dp", nelemd, np2, nlev), q("q", nelemd, qsize, np2, nlev)
 # else
       qdp(pqdp), dp(pdp), q(pq)
 # endif

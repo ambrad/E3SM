@@ -65,7 +65,7 @@
 // and COMPOSE_PORT code paths.
 #  define COMPOSE_PORT_DEV
 #  if defined COMPOSE_MIMIC_GPU || defined KOKKOS_ENABLE_CUDA
-//#   define COMPOSE_PORT_DEV_VIEWS
+#   define COMPOSE_PORT_DEV_VIEWS
 #  endif
 # endif
 #endif

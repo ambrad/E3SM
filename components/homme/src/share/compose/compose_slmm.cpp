@@ -103,6 +103,42 @@ void set_elem_data (IslMpi<MT>& cm, const Int ie, const Real* qdp,
   e.q = q;
 #endif
 }
+
+template <typename MT>
+void h2d (const TracerArrays<MT>& ta) {
+#if defined COMPOSE_PORT_DEV_VIEWS
+  const auto qdp_m = ko::create_mirror_view(ta.qdp);
+  const auto dp_m = ko::create_mirror_view(ta.dp);
+  const auto q_m = ko::create_mirror_view(ta.q);
+  for (Int ie = 0; ie < q_m.extent_int(0); ++ie)
+    for (Int iq = 0; iq < q_m.extent_int(1); ++iq)
+      for (Int k = 0; k < q_m.extent_int(2); ++k)
+        for (Int lev = 0; lev < q_m.extent_int(3); ++lev) {
+          qdp_m(ie,iq,k,lev) = ta.pqdp(ie,iq,k,lev);
+          q_m(ie,iq,k,lev) = ta.pq(ie,iq,k,lev);
+        }
+  for (Int ie = 0; ie < q_m.extent_int(0); ++ie)
+    for (Int k = 0; k < q_m.extent_int(2); ++k)
+      for (Int lev = 0; lev < q_m.extent_int(3); ++lev)
+        dp_m(ie,k,lev) = ta.pdp(ie,k,lev);
+  ko::deep_copy(ta.qdp, qdp_m);
+  ko::deep_copy(ta.dp, dp_m);
+  ko::deep_copy(ta.q, q_m);
+#endif
+}
+
+template <typename MT>
+void d2h (const TracerArrays<MT>& ta) {
+#if defined COMPOSE_PORT_DEV_VIEWS
+  const auto q_m = ko::create_mirror_view(ta.q);
+  ko::deep_copy(q_m, ta.q);
+  for (Int ie = 0; ie < q_m.extent_int(0); ++ie)
+    for (Int iq = 0; iq < q_m.extent_int(1); ++iq)
+      for (Int k = 0; k < q_m.extent_int(2); ++k)
+        for (Int lev = 0; lev < q_m.extent_int(3); ++lev)
+          ta.pq(ie,iq,k,lev) = q_m(ie,iq,k,lev);
+#endif  
+}
 } // namespace islmpi
 
 typedef slmm::MachineTraits HommeMachineTraits;
@@ -282,6 +318,7 @@ void slmm_csl (
   amb::dev_init_threads();
   slmm_assert(g_csl_mpi);
   slmm_assert(g_csl_mpi->sendsz.empty()); // alloc_mpi_buffers was called
+  homme::islmpi::h2d(g_csl_mpi->tracer_arrays);
   *info = 0;
   try {
     homme::islmpi::step(*g_csl_mpi, nets - 1, nete - 1, dep_points, minq, maxq);
@@ -289,6 +326,7 @@ void slmm_csl (
     std::cerr << e.what();
     *info = -1;
   }
+  homme::islmpi::d2h(g_csl_mpi->tracer_arrays);
   amb::dev_fin_threads();
 }
 
