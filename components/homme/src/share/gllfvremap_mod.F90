@@ -103,7 +103,8 @@ module gllfvremap_mod
           ! Inverse of D_f
           Dinv_f(:,:,:,:,:), &
           qmin(:,:,:), qmax(:,:,:), &
-          phis(:,:)
+          phis(:,:), &
+          raw_fv_area(:,:)
      type (spherical_polar_t), allocatable :: &
           spherep_f(:,:,:) ! (nphys,nphys,nelemd)
      type (Pg1SolverData_t) :: pg1sd
@@ -232,19 +233,45 @@ contains
     allocate(gfr%fv_metdet(nphys2,nelemd), &
          gfr%D_f(nphys,nphys,2,2,nelemd), gfr%Dinv_f(nphys,nphys,2,2,nelemd), &
          gfr%qmin(nlev,max(1,qsize),nelemd), gfr%qmax(nlev,max(1,qsize),nelemd), &
-         gfr%phis(nphys2,nelemd), gfr%spherep_f(nphys,nphys,nelemd))
+         gfr%phis(nphys2,nelemd), gfr%spherep_f(nphys,nphys,nelemd), &
+         gfr%raw_fv_area(nphys2,nelemd))
     call gfr_init_fv_metdet(elem, gfr)
     call gfr_init_geometry(elem, gfr)
 
     if (nphys == 1 .and. gfr%boost_pg1) call gfr_pg1_init(gfr)
+
+    call study_area(par)
   end subroutine gfr_init
+
+  subroutine study_area(par)
+    use global_norms_mod, only: wrap_repro_sum
+    use parallel_mod, only: global_shared_buf, global_shared_sum, parallel_t
+
+    type (parallel_t), intent(in) :: par
+
+    integer :: ie, nf, nf2
+    real(real_kind) :: true_area
+
+    nf = gfr%nphys
+    nf2 = nf*nf
+    
+    do ie = 1,nelemd
+       global_shared_buf(ie,1) = sum(gfr%raw_fv_area(:nf2,ie))
+    end do
+    call wrap_repro_sum(nvars=1, comm=par%comm)
+    true_area = 4*3.141592653589793_real_kind
+    if (par%masterproc) then
+       print *,'gfr> area', global_shared_sum(1), &
+            abs(global_shared_sum(1) - true_area)/true_area
+    end if
+  end subroutine study_area
 
   subroutine gfr_finish()
     ! Deallocate the internal gfr structure.
 
     if (.not. allocated(gfr%fv_metdet)) return
     deallocate(gfr%fv_metdet, gfr%D_f, gfr%Dinv_f, gfr%qmin, gfr%qmax, gfr%phis, &
-         gfr%spherep_f)
+         gfr%spherep_f, gfr%raw_fv_area)
   end subroutine gfr_finish
 
   subroutine gfr_dyn_to_fv_phys_hybrid(hybrid, nt, hvcoord, elem, nets, nete, &
@@ -1153,6 +1180,7 @@ contains
                 call sphere_tri_area(fv_corners_xyz(1,1), fv_corners_xyz(2,2), fv_corners_xyz(1,2), &
                      tmp)
                 spherical_area = spherical_area + tmp
+                gfr%raw_fv_area(k,ie) = spherical_area
                 gfr%fv_metdet(k,ie) = spherical_area/gfr%w_ff(k)
              end do
           end do
