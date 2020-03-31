@@ -165,7 +165,15 @@ struct FixedCapList {
   // Use everything that follows only for low-level host-device things.
 
   SLMM_KIF void set_n (const Int& n0) const { get_n_ref() = n0; }
-  template <typename ESS> void set_n (const ESS& s) const { get_n_ref() = s.n(); }
+
+  template <typename ESS>
+  void set_n (const ESS& s) const {
+#ifdef COMPOSE_PORT
+    ko::deep_copy(n_, s.n());
+#else
+    get_n_ref() = s.n();
+#endif
+  }
 
 #ifdef COMPOSE_PORT
   typedef ko::View<Int, ES> NT;

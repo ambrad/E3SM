@@ -45,9 +45,9 @@ void deep_copy (typename IslMpi<MT>::ElemDataListD& d,
   const Int ned = s.size();
   // device view of device views
   d = typename IslMpi<MT>::ElemDataListD(ned);
-  d.inc(ned);
   // host view of device views
   auto m = d.mirror();
+  m.inc(ned);
   for (Int i = 0; i < ned; ++i)
     deep_copy<MT>(m(i), s(i));
   deep_copy(d, m);
@@ -89,9 +89,9 @@ void finalize_init_phase (IslMpi<MT>& cm, typename IslMpi<MT>::Advecter& advecte
 template <typename MT>
 void set_elem_data (IslMpi<MT>& cm, const Int ie, const Real* qdp,
                     const Real* dp, Real* q, const Int nelem_in_patch) {
-  slmm_assert(ie < cm.ed_d.size());
+  slmm_assert(ie < cm.ed_h.size());
   slmm_assert(cm.halo > 1 || cm.ed_h(ie).nbrs.size() == nelem_in_patch);
-  auto& e = cm.ed_d(ie);
+  auto& e = cm.ed_h(ie);
 #if defined COMPOSE_PORT_DEV
   cm.tracer_arrays.pqdp.set_ie_ptr(ie, qdp);
   cm.tracer_arrays.pdp.set_ie_ptr(ie, dp);
