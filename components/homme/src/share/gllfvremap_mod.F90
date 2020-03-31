@@ -1213,17 +1213,10 @@ contains
                       endif
                    end do
                 end do
-                if (.false. .and. nf == 1) then
-                   call sphere_tri_area(elem(ie)%corners3D(1), elem(ie)%corners3D(2),&
-                        elem(ie)%corners3D(3), spherical_area)
-                   call sphere_tri_area(elem(ie)%corners3D(1), elem(ie)%corners3D(3),&
-                        elem(ie)%corners3D(4), tmp)
-                else
-                   call sphere_tri_area(fv_corners_xyz(1,1), fv_corners_xyz(2,1), fv_corners_xyz(1,2), &
-                        spherical_area)
-                   call sphere_tri_area(fv_corners_xyz(1,1), fv_corners_xyz(1,2), fv_corners_xyz(2,2), &
-                        tmp)
-                end if
+                call sphere_tri_area(fv_corners_xyz(1,1), fv_corners_xyz(2,1), fv_corners_xyz(2,2), &
+                     spherical_area)
+                call sphere_tri_area(fv_corners_xyz(1,1), fv_corners_xyz(2,2), fv_corners_xyz(1,2), &
+                     tmp)
                 spherical_area = spherical_area + tmp
                 gfr%raw_fv_area(k,ie) = spherical_area
                 gfr%fv_metdet(k,ie) = spherical_area/gfr%w_ff(k)
