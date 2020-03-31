@@ -320,12 +320,17 @@ void slmm_csl (
   slmm_assert(g_csl_mpi->sendsz.empty()); // alloc_mpi_buffers was called
   homme::islmpi::h2d(g_csl_mpi->tracer_arrays);
   *info = 0;
+#if 0
+#pragma message "RM TRY-CATCH WHILE DEV'ING"
   try {
     homme::islmpi::step(*g_csl_mpi, nets - 1, nete - 1, dep_points, minq, maxq);
   } catch (const std::exception& e) {
     std::cerr << e.what();
     *info = -1;
   }
+#else
+  homme::islmpi::step(*g_csl_mpi, nets - 1, nete - 1, dep_points, minq, maxq);
+#endif
   homme::islmpi::d2h(g_csl_mpi->tracer_arrays);
   amb::dev_fin_threads();
 }
