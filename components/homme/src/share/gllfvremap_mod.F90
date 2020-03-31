@@ -1159,7 +1159,7 @@ contains
     type (spherical_polar_t) :: p_sphere
     type (cartesian3D_t) :: fv_corners_xyz(2,2)
     real(kind=real_kind) :: wrk(2,2), det, a, b, ae(2), be(2), tmp, spherical_area
-    integer :: ie, nf, nf2, i, j, k, ai, bi
+    integer :: ie, nf, nf2, i, j, k, ai, bi, idx
 
     real(real_kind) :: q(4), c(3,4), xx(3), r
     integer :: d
@@ -1175,36 +1175,55 @@ contains
           do j = 1,nf
              do i = 1,nf
                 k = i+(j-1)*nf
-
                 call gfr_f_ref_edges(nf, i, ae)
                 call gfr_f_ref_edges(nf, j, be)
-                do ai = 1,2
-                   do bi = 1,2
+                do bi = 1,2
+                   do ai = 1,2
+                      if ( (i == 1  .and. ai == 1 .and. j == 1  .and. bi == 1) .or. &
+                           (i == 1  .and. ai == 1 .and. j == nf .and. bi == 2) .or. &
+                           (i == nf .and. ai == 2 .and. j == 1  .and. bi == 1) .or. &
+                           (i == nf .and. ai == 2 .and. j == nf .and. bi == 2)) then
+                         idx = 2*(bi-1)
+                         if (bi == 1) then
+                            idx = idx + ai
+                         else
+                            idx = idx + 3 - ai
+                         end if
+                         fv_corners_xyz(ai,bi) = elem(ie)%corners3D(idx)
+                      else
 #if 0
-                      p_sphere = ref2sphere(ae(ai), be(bi), elem(ie)%corners3D, cubed_sphere_map, &
-                           elem(ie)%corners, elem(ie)%facenum)
-                      fv_corners_xyz(ai,bi) = change_coordinates(p_sphere)
+                         p_sphere = ref2sphere(ae(ai), be(bi), elem(ie)%corners3D, cubed_sphere_map, &
+                              elem(ie)%corners, elem(ie)%facenum)
+                         fv_corners_xyz(ai,bi) = change_coordinates(p_sphere)
 #else
-                      a = ae(ai); b = be(bi)
-                      q(1)=(1-a)*(1-b); q(2)=(1+a)*(1-b); q(3)=(1+a)*(1+b); q(4)=(1-a)*(1+b)
-                      c(1,1)=elem(ie)%corners3D(1)%x; c(2,1)=elem(ie)%corners3D(1)%y; c(3,1)=elem(ie)%corners3D(1)%z 
-                      c(1,2)=elem(ie)%corners3D(2)%x; c(2,2)=elem(ie)%corners3D(2)%y; c(3,2)=elem(ie)%corners3D(2)%z 
-                      c(1,3)=elem(ie)%corners3D(3)%x; c(2,3)=elem(ie)%corners3D(3)%y; c(3,3)=elem(ie)%corners3D(3)%z 
-                      c(1,4)=elem(ie)%corners3D(4)%x; c(2,4)=elem(ie)%corners3D(4)%y; c(3,4)=elem(ie)%corners3D(4)%z
-                      do d = 1,3
-                         xx(d) = sum(c(d,:)*q(:))
-                      enddo
-                      r = sqrt(xx(1)**2+xx(2)**2+xx(3)**2)
-                      fv_corners_xyz(ai,bi)%x = xx(1)/r
-                      fv_corners_xyz(ai,bi)%y = xx(2)/r
-                      fv_corners_xyz(ai,bi)%z = xx(3)/r
+                         a = ae(ai); b = be(bi)
+                         q(1)=(1-a)*(1-b); q(2)=(1+a)*(1-b); q(3)=(1+a)*(1+b); q(4)=(1-a)*(1+b)
+                         c(1,1)=elem(ie)%corners3D(1)%x; c(2,1)=elem(ie)%corners3D(1)%y; c(3,1)=elem(ie)%corners3D(1)%z 
+                         c(1,2)=elem(ie)%corners3D(2)%x; c(2,2)=elem(ie)%corners3D(2)%y; c(3,2)=elem(ie)%corners3D(2)%z 
+                         c(1,3)=elem(ie)%corners3D(3)%x; c(2,3)=elem(ie)%corners3D(3)%y; c(3,3)=elem(ie)%corners3D(3)%z 
+                         c(1,4)=elem(ie)%corners3D(4)%x; c(2,4)=elem(ie)%corners3D(4)%y; c(3,4)=elem(ie)%corners3D(4)%z
+                         do d = 1,3
+                            xx(d) = sum(c(d,:)*q(:))
+                         enddo
+                         r = sqrt(xx(1)**2+xx(2)**2+xx(3)**2)
+                         fv_corners_xyz(ai,bi)%x = xx(1)/r
+                         fv_corners_xyz(ai,bi)%y = xx(2)/r
+                         fv_corners_xyz(ai,bi)%z = xx(3)/r
 #endif
+                      endif
                    end do
                 end do
-                call sphere_tri_area(fv_corners_xyz(1,1), fv_corners_xyz(2,1), fv_corners_xyz(2,2), &
-                     spherical_area)
-                call sphere_tri_area(fv_corners_xyz(1,1), fv_corners_xyz(2,2), fv_corners_xyz(1,2), &
-                     tmp)
+                if (.false. .and. nf == 1) then
+                   call sphere_tri_area(elem(ie)%corners3D(1), elem(ie)%corners3D(2),&
+                        elem(ie)%corners3D(3), spherical_area)
+                   call sphere_tri_area(elem(ie)%corners3D(1), elem(ie)%corners3D(3),&
+                        elem(ie)%corners3D(4), tmp)
+                else
+                   call sphere_tri_area(fv_corners_xyz(1,1), fv_corners_xyz(2,1), fv_corners_xyz(1,2), &
+                        spherical_area)
+                   call sphere_tri_area(fv_corners_xyz(1,1), fv_corners_xyz(1,2), fv_corners_xyz(2,2), &
+                        tmp)
+                end if
                 spherical_area = spherical_area + tmp
                 gfr%raw_fv_area(k,ie) = spherical_area
                 gfr%fv_metdet(k,ie) = spherical_area/gfr%w_ff(k)
