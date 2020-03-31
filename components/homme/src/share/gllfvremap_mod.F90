@@ -1161,6 +1161,9 @@ contains
     real(kind=real_kind) :: wrk(2,2), det, a, b, ae(2), be(2), tmp, spherical_area
     integer :: ie, nf, nf2, i, j, k, ai, bi
 
+    real(real_kind) :: q(4), c(3,4), xx(3), r
+    integer :: d
+
     nf = gfr%nphys
     nf2 = nf*nf
     
@@ -1177,9 +1180,25 @@ contains
                 call gfr_f_ref_edges(nf, j, be)
                 do ai = 1,2
                    do bi = 1,2
+#if 0
                       p_sphere = ref2sphere(ae(ai), be(bi), elem(ie)%corners3D, cubed_sphere_map, &
                            elem(ie)%corners, elem(ie)%facenum)
                       fv_corners_xyz(ai,bi) = change_coordinates(p_sphere)
+#else
+                      a = ae(ai); b = be(bi)
+                      q(1)=(1-a)*(1-b); q(2)=(1+a)*(1-b); q(3)=(1+a)*(1+b); q(4)=(1-a)*(1+b)
+                      c(1,1)=elem(ie)%corners3D(1)%x; c(2,1)=elem(ie)%corners3D(1)%y; c(3,1)=elem(ie)%corners3D(1)%z 
+                      c(1,2)=elem(ie)%corners3D(2)%x; c(2,2)=elem(ie)%corners3D(2)%y; c(3,2)=elem(ie)%corners3D(2)%z 
+                      c(1,3)=elem(ie)%corners3D(3)%x; c(2,3)=elem(ie)%corners3D(3)%y; c(3,3)=elem(ie)%corners3D(3)%z 
+                      c(1,4)=elem(ie)%corners3D(4)%x; c(2,4)=elem(ie)%corners3D(4)%y; c(3,4)=elem(ie)%corners3D(4)%z
+                      do d = 1,3
+                         xx(d) = sum(c(d,:)*q(:))
+                      enddo
+                      r = sqrt(xx(1)**2+xx(2)**2+xx(3)**2)
+                      fv_corners_xyz(ai,bi)%x = xx(1)/r
+                      fv_corners_xyz(ai,bi)%y = xx(2)/r
+                      fv_corners_xyz(ai,bi)%z = xx(3)/r
+#endif
                    end do
                 end do
                 call sphere_tri_area(fv_corners_xyz(1,1), fv_corners_xyz(2,1), fv_corners_xyz(2,2), &
