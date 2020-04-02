@@ -975,9 +975,9 @@
     </model_grid>
 
     <model_grid alias="northamericax4v1pg2_r0125_northamericax4v1pg2" compset="(DOCN|XOCN|SOCN|AQP1)">
-      <grid name="atm">ne0np4.pg2_northamericax4v1</grid>
+      <grid name="atm">ne0np4_northamericax4v1.pg2</grid>
       <grid name="lnd">r0125</grid>
-      <grid name="ocnice">ne0np4.pg2_northamericax4v1</grid>
+      <grid name="ocnice">ne0np4_northamericax4v1.pg2</grid>
       <grid name="rof">r0125</grid>
       <grid name="glc">null</grid>
       <grid name="wav">null</grid>
@@ -2462,7 +2462,7 @@
       <desc>1-deg with 1/4-deg over North America (version 1):</desc>
     </domain>
 
-    <domain name="ne0np4.pg2_northamericax4v1">
+    <domain name="ne0np4_northamericax4v1.pg2">
       <nx>130088</nx>
       <ny>1</ny>
       <file grid="atm|lnd" mask="oRRS15to5">$DIN_LOC_ROOT/share/domains/domain.lnd.northamericax4v1_oRRS15to5.191022.nc</file>
@@ -2955,7 +2955,7 @@
       <map name="ATM2ROF_SMAPNAME">cpl/gridmaps/northamericax4v1np4/map_northamericax4v1_to_r0125_mono.20191022.nc</map>
     </gridmap>
 
-    <gridmap atm_grid="ne0np4.pg2_northamericax4v1" ocn_grid="oRRS15to5">
+    <gridmap atm_grid="ne0np4_northamericax4v1.pg2" ocn_grid="oRRS15to5">
       <!--amb for locations see <gridmap atm_grid="ne30np4.pg2" ocn_grid="oEC60to30v3_ICG">-->
       <map name="ATM2OCN_FMAPNAME">/qfs/people/brad323/v2/rrm/map_northamericax4v1pg2_to_oRRS15to5_mono.20200401.nc</map>
       <map name="ATM2OCN_VMAPNAME">/qfs/people/brad323/v2/rrm/map_northamericax4v1pg2_to_oRRS15to5_bilin.20200401.nc</map>
@@ -2964,7 +2964,7 @@
       <map name="OCN2ATM_SMAPNAME">/qfs/people/brad323/v2/rrm/map_oRRS15to5_to_northamericax4v1pg2_mono.20200401.nc</map>
     </gridmap>
 
-    <gridmap atm_grid="ne0np4.pg2_northamericax4v1" lnd_grid="r0125">
+    <gridmap atm_grid="ne0np4_northamericax4v1.pg2" lnd_grid="r0125">
       <!--amb for locations see <gridmap atm_grid="ne30np4.pg2" lnd_grid="r05">-->
       <map name="ATM2LND_FMAPNAME">/qfs/people/brad323/v2/rrm/map_northamericax4v1pg2_to_r0125_mono.20200401.nc</map>
       <map name="ATM2LND_SMAPNAME">/qfs/people/brad323/v2/rrm/map_northamericax4v1pg2_to_r0125_bilin.20200401.nc</map>
@@ -2972,7 +2972,7 @@
       <map name="LND2ATM_SMAPNAME">/qfs/people/brad323/v2/rrm/map_r0125_to_northamericax4v1pg2_mono.20200401.nc</map>
     </gridmap>
 
-    <gridmap atm_grid="ne0np4.pg2_northamericax4v1" rof_grid="r0125">
+    <gridmap atm_grid="ne0np4_northamericax4v1.pg2" rof_grid="r0125">
       <map name="ATM2ROF_FMAPNAME">/qfs/people/brad323/v2/rrm/map_northamericax4v1pg2_to_r0125_mono.20200401.nc</map>
       <map name="ATM2ROF_SMAPNAME">/qfs/people/brad323/v2/rrm/map_northamericax4v1pg2_to_r0125_mono.20200401.nc</map>
     </gridmap>

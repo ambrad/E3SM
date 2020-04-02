@@ -25,7 +25,6 @@
 <dtime dyn="se"    hgrid="ne0np4_arm_x8v3_lowcon"  >600</dtime>
 <dtime dyn="se"    hgrid="ne0np4_conus_x4v1_lowcon"  >900</dtime>
 <dtime dyn="se"    hgrid="ne0np4_northamericax4v1"  >900</dtime>
-<dtime dyn="se"    hgrid="ne0np4.pg2_northamericax4v1"  >900</dtime>
 <dtime dyn="se"    hgrid="ne0np4_svalbard_x8v1_lowcon"  >600</dtime>
 <dtime dyn="se"    hgrid="ne0np4_sooberingoa_x4x8v1_lowcon"  >600</dtime>
 <dtime dyn="se"    hgrid="ne0np4_enax4v1">900</dtime>
@@ -1464,7 +1463,6 @@
 <se_ne hgrid="ne0np4_arm_x8v3_lowcon"  > 0 </se_ne>
 <se_ne hgrid="ne0np4_conus_x4v1_lowcon"  > 0 </se_ne>
 <se_ne hgrid="ne0np4_northamericax4v1"  > 0 </se_ne>
-<se_ne hgrid="ne0np4.pg2_northamericax4v1"  > 0 </se_ne>
 <se_ne hgrid="ne0np4_svalbard_x8v1_lowcon"  > 0 </se_ne>
 <se_ne hgrid="ne0np4_sooberingoa_x4x8v1_lowcon"  > 0 </se_ne>
 <se_ne hgrid="ne0np4_enax4v1">0</se_ne>
@@ -1474,7 +1472,7 @@
 <mesh_file hgrid="ne0np4_arm_x8v3_lowcon"  >atm/cam/inic/homme/arm_x8v3_lowcon.g</mesh_file>
 <mesh_file hgrid="ne0np4_conus_x4v1_lowcon"  >atm/cam/inic/homme/conusx4v1.g</mesh_file>
 <mesh_file hgrid="ne0np4_northamericax4v1"  >atm/cam/inic/homme/northamericax4v1.g</mesh_file>
-<mesh_file hgrid="ne0np4.pg2_northamericax4v1"  >/qfs/people/brad323/v2/rrm/northamericax4v1pg2.g</mesh_file>
+<mesh_file hgrid="ne0np4_northamericax4v1" npg="2" >atm/cam/inic/homme/northamericax4v1.g</mesh_file>
 <mesh_file hgrid="ne0np4_svalbard_x8v1_lowcon"  >atm/cam/inic/homme/svalbardx8v1.g</mesh_file>
 <mesh_file hgrid="ne0np4_sooberingoa_x4x8v1_lowcon"  >atm/cam/inic/homme/sooberingoax4x8v1.g</mesh_file>
 <mesh_file hgrid="ne0np4_enax4v1">atm/cam/inic/homme/enax4v1.g</mesh_file>
@@ -1490,7 +1488,7 @@
 <nu_top dyn_target="theta-l" hgrid="ne256np4"> 4e4 </nu_top>
 <nu_top dyn_target="theta-l" hgrid="ne512np4"> 2e4 </nu_top>
 <nu_top dyn_target="theta-l" hgrid="ne1024np4"> 1e4 </nu_top>
-<nu_top dyn_target="theta-l" hgrid="ne0np4.pg2_northamericax4v1"> 1e5 </nu_top>
+<nu_top dyn_target="theta-l" hgrid="ne0np4_northamericax4v1"> 1e5 </nu_top>
 
 
 <nu>                   1.0e15 </nu>
@@ -1508,7 +1506,7 @@
 <nu hgrid="ne0np4_arm_x8v3_lowcon"  > 8.0e-8</nu>
 <nu hgrid="ne0np4_conus_x4v1_lowcon"  > 8.0e-8</nu>
 <nu hgrid="ne0np4_northamericax4v1"  > 8.0e-8</nu>
-<nu dyn_target="theta-l" hgrid="ne0np4.pg2_northamericax4v1"  > 3.4e-8</nu>
+<nu dyn_target="theta-l" hgrid="ne0np4_northamericax4v1"  > 3.4e-8</nu>
 <nu hgrid="ne0np4_svalbard_x8v1_lowcon"  > 8.0e-8</nu>
 <nu hgrid="ne0np4_sooberingoa_x4x8v1_lowcon"  > 8.0e-8</nu>
 <nu hgrid="ne0np4_enax4v1">8.0e-8</nu>
@@ -1545,7 +1543,7 @@
 <hypervis_scaling  hgrid="ne0np4_arm_x8v3_lowcon"  > 3.2 </hypervis_scaling>
 <hypervis_scaling  hgrid="ne0np4_conus_x4v1_lowcon"  > 3.2 </hypervis_scaling>
 <hypervis_scaling  hgrid="ne0np4_northamericax4v1"  > 3.2 </hypervis_scaling>
-<hypervis_scaling dyn_target="theta-l" hgrid="ne0np4.pg2_northamericax4v1"  > 3.0 </hypervis_scaling>
+<hypervis_scaling dyn_target="theta-l" hgrid="ne0np4_northamericax4v1"  > 3.0 </hypervis_scaling>
 <hypervis_scaling  hgrid="ne0np4_svalbard_x8v1_lowcon"  > 3.2 </hypervis_scaling>
 <hypervis_scaling  hgrid="ne0np4_sooberingoa_x4x8v1_lowcon"  > 3.2 </hypervis_scaling>
 <hypervis_scaling  hgrid="ne0np4_enax4v1">3.2</hypervis_scaling>
@@ -1580,7 +1578,7 @@
 <se_tstep dyn_target="theta-l" hgrid="ne256np4">  40 </se_tstep>
 <se_tstep dyn_target="theta-l" hgrid="ne512np4">  20 </se_tstep>
 <se_tstep dyn_target="theta-l" hgrid="ne1024np4"> 10 </se_tstep>
-<se_tstep dyn_target="theta-l" hgrid="ne0np4.pg2_northamericax4v1"> 75 </se_tstep>
+<se_tstep dyn_target="theta-l" hgrid="ne0np4_northamericax4v1"> 75 </se_tstep>
 
 
 <!-- old interface, used by preqx.  timesteps controlled by se_nsplit, rsplit, qsplit -->
@@ -1626,7 +1624,7 @@
 <hypervis_subcycle hgrid="ne0np4_arm_x8v3_lowcon" dyn_target="preqx" > 8 </hypervis_subcycle>
 <hypervis_subcycle hgrid="ne0np4_conus_x4v1_lowcon" dyn_target="preqx" > 7 </hypervis_subcycle>
 <hypervis_subcycle hgrid="ne0np4_northamericax4v1" dyn_target="preqx"  > 7 </hypervis_subcycle>
-<hypervis_subcycle hgrid="ne0np4.pg2_northamericax4v1" dyn_target="theta-l"> 7 </hypervis_subcycle>
+<hypervis_subcycle hgrid="ne0np4_northamericax4v1" dyn_target="theta-l"> 7 </hypervis_subcycle>
 <hypervis_subcycle hgrid="ne0np4_svalbard_x8v1_lowcon" dyn_target="preqx" > 8 </hypervis_subcycle>
 <hypervis_subcycle hgrid="ne0np4_sooberingoa_x4x8v1_lowcon" dyn_target="preqx"  > 8 </hypervis_subcycle>
 <hypervis_subcycle hgrid="ne0np4_enax4v1" dyn_target="preqx">7</hypervis_subcycle>
