@@ -2474,7 +2474,7 @@
     </domain>
 
     <domain name="ne0np4_northamericax4v1.pg2">
-      <nx>57824</nx>
+      <nx>57816</nx>
       <ny>1</ny>
       <file grid="atm|lnd" mask="oRRS15to5">/qfs/people/brad323/v2/rrm/domain.lnd.northamericax4v1pg2_oRRS15to5.200401.nc</file>
       <file grid="ice|ocn" mask="oRRS15to5">/qfs/people/brad323/v2/rrm/domain.ocn.northamericax4v1pg2_oRRS15to5.200401.nc</file>
