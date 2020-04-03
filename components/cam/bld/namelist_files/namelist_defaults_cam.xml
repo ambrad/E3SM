@@ -1624,14 +1624,14 @@
 <hypervis_subcycle hgrid="ne0np4_arm_x8v3_lowcon" dyn_target="preqx" > 8 </hypervis_subcycle>
 <hypervis_subcycle hgrid="ne0np4_conus_x4v1_lowcon" dyn_target="preqx" > 7 </hypervis_subcycle>
 <hypervis_subcycle hgrid="ne0np4_northamericax4v1" dyn_target="preqx"  > 7 </hypervis_subcycle>
-<hypervis_subcycle hgrid="ne0np4_northamericax4v1" dyn_target="theta-l"> 7 </hypervis_subcycle>
+<hypervis_subcycle hgrid="ne0np4_northamericax4v1" dyn_target="theta-l"> 2 </hypervis_subcycle>
 <hypervis_subcycle hgrid="ne0np4_svalbard_x8v1_lowcon" dyn_target="preqx" > 8 </hypervis_subcycle>
 <hypervis_subcycle hgrid="ne0np4_sooberingoa_x4x8v1_lowcon" dyn_target="preqx"  > 8 </hypervis_subcycle>
 <hypervis_subcycle hgrid="ne0np4_enax4v1" dyn_target="preqx">7</hypervis_subcycle>
 <hypervis_subcycle hgrid="ne0np4_twpx4v1" dyn_target="preqx"> 7 </hypervis_subcycle>
 
 
-
+<hypervis_subcycle_tom dyn_target="theta-l" hgrid="ne0np4_northamericax4v1"> 3 </hypervis_subcycle_tom>
 
 
 <!-- ================================================================== -->
