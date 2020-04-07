@@ -99,11 +99,13 @@ module gllfvremap_mod
           ! FV subcell areas; FV analogue of GLL elem(ie)%metdet arrays
           fv_metdet(:,:), & ! (nphys*nphys,nelemd)
           ! Vector on ref elem -> vector on sphere
-          D_f(:,:,:,:,:), &   ! (nphys,nphys,2,2,nelemd)
+          D_f(:,:,:,:,:), & ! (nphys,nphys,2,2,nelemd)
           ! Inverse of D_f
           Dinv_f(:,:,:,:,:), &
           qmin(:,:,:), qmax(:,:,:), &
-          phis(:,:)
+          phis(:,:), &
+          ! For 'check', when it's on
+          check_areas(:,:)
      type (spherical_polar_t), allocatable :: &
           spherep_f(:,:,:) ! (nphys,nphys,nelemd)
      type (Pg1SolverData_t) :: pg1sd
@@ -233,7 +235,7 @@ contains
          gfr%D_f(nphys,nphys,2,2,nelemd), gfr%Dinv_f(nphys,nphys,2,2,nelemd), &
          gfr%qmin(nlev,max(1,qsize),nelemd), gfr%qmax(nlev,max(1,qsize),nelemd), &
          gfr%phis(nphys2,nelemd), gfr%spherep_f(nphys,nphys,nelemd))
-    call gfr_init_fv_metdet(elem, gfr, par) ! par is used only if gfr%check
+    call gfr_init_fv_metdet(elem, gfr)
     call gfr_init_geometry(elem, gfr)
 
     if (nphys == 1 .and. gfr%boost_pg1) call gfr_pg1_init(gfr)
@@ -245,6 +247,7 @@ contains
     if (.not. allocated(gfr%fv_metdet)) return
     deallocate(gfr%fv_metdet, gfr%D_f, gfr%Dinv_f, gfr%qmin, gfr%qmax, gfr%phis, &
          gfr%spherep_f)
+    if (gfr%check) deallocate(gfr%check_areas)
   end subroutine gfr_finish
 
   subroutine gfr_dyn_to_fv_phys_hybrid(hybrid, nt, hvcoord, elem, nets, nete, &
@@ -1070,21 +1073,17 @@ contains
     end if
   end subroutine gfr_f2g_remapd_op
 
-  subroutine gfr_init_fv_metdet(elem, gfr, par)
+  subroutine gfr_init_fv_metdet(elem, gfr)
     ! Compute the reference-element-to-sphere Jacobian (metdet) for FV
     ! subcells consistent with those for GLL nodes.
 
     use kinds, only: iulog
     use control_mod, only: cubed_sphere_map
     use coordinate_systems_mod, only: cartesian3D_t, sphere_tri_area
-    use cube_mod, only: Dmap, ref2sphere
-    use global_norms_mod, only: wrap_repro_sum
-    use parallel_mod, only: global_shared_buf, global_shared_sum, parallel_t
-    use physical_constants, only: dd_pi
+    use cube_mod, only: ref2sphere
 
     type (element_t), intent(in) :: elem(:)
     type (GllFvRemap_t), intent(inout) :: gfr
-    type (parallel_t), intent(in) :: par
 
     type (spherical_polar_t) :: p_sphere
     type (cartesian3D_t) :: fv_corners_xyz(2,2)
@@ -1144,24 +1143,12 @@ contains
 
     ! Make the spherical area of the element according to FV and GLL agree to
     ! machine precision.
+    if (gfr%check) allocate(gfr%check_areas(1,nelemd))
     do ie = 1,nelemd
-       if (gfr%check) then
-          global_shared_buf(ie,1) = sum(gfr%w_ff(:nf2)*gfr%fv_metdet(:nf2,ie))
-          global_shared_buf(ie,2) = sum(elem(ie)%spheremp)
-       end if
+       if (gfr%check) gfr%check_areas(1,ie) = sum(gfr%w_ff(:nf2)*gfr%fv_metdet(:nf2,ie))
        gfr%fv_metdet(:nf2,ie) = gfr%fv_metdet(:nf2,ie)* &
             (sum(elem(ie)%spheremp)/sum(gfr%w_ff(:nf2)*gfr%fv_metdet(:nf2,ie)))
     end do
-    if (gfr%check) then
-       call wrap_repro_sum(nvars=2, comm=par%comm)
-       spherical_area = 4*dd_pi
-       if (par%masterproc) then
-          write(iulog,*) 'gfr> area fv raw', global_shared_sum(1), &
-               abs(global_shared_sum(1) - spherical_area)/spherical_area
-          write(iulog,*) 'gfr> area gll   ', global_shared_sum(2), &
-               abs(global_shared_sum(2) - spherical_area)/spherical_area
-       end if
-    end if
   end subroutine gfr_init_fv_metdet
 
   subroutine gfr_f_ref_center(nphys, i, a)
@@ -2257,6 +2244,7 @@ contains
     use global_norms_mod, only: wrap_repro_sum
     use reduction_mod, only: ParallelMin, ParallelMax
     use prim_advection_base, only: edgeAdvQminmax
+    use physical_constants, only: dd_pi
 
     type (parallel_t), intent(in) :: par
     type (domain1d_t), intent(in) :: dom_mt(:)
@@ -2265,7 +2253,7 @@ contains
     logical, intent(in) :: verbose
 
     real(kind=real_kind) :: a, b, rd, x, y, f0(np,np), f1(np,np), g(np,np), &
-         wrk(np,np), qmin, qmax, qmin1, qmax1, wr1(np,np,1)
+         wrk(np,np), qmin, qmax, qmin1, qmax1, wr1(np,np,1), sphere_area
     integer :: nf, nf2, ie, i, j, iremap, info, ilimit, it
     real(kind=real_kind), allocatable :: Qdp_fv(:,:,:), ps_v_fv(:,:,:), &
          qmins(:,:,:), qmaxs(:,:,:)
@@ -2293,6 +2281,26 @@ contains
           write(iulog,*) 'gfr> M_sgf', gfr%npi, nf, gfr%M_sgf(:gfr%npi, :gfr%npi, :nf, :nf)
           write(iulog,*) 'gfr> interp', gfr%npi, np, gfr%interp(:gfr%npi, :gfr%npi, :np, :np)
           write(iulog,*) 'gfr> f2g_remapd', np, nf, gfr%f2g_remapd(:nf*nf,:,:)
+       end if
+    end if
+
+    ! Check global area
+    if (gfr%check) then
+       do ie = nets,nete
+          global_shared_buf(ie,1) = gfr%check_areas(1,ie)
+          global_shared_buf(ie,2) = sum(gfr%fv_metdet(:nf2,ie))*(4.0_real_kind/nf2)
+          global_shared_buf(ie,3) = sum(elem(ie)%spheremp)
+       end do
+       call wrap_repro_sum(nvars=3, comm=par%comm)
+       sphere_area = 4*dd_pi
+       if (hybrid%masterthread) then
+          write(iulog,*) 'gfr> area fv raw', global_shared_sum(1), &
+               abs(global_shared_sum(1) - sphere_area)/sphere_area
+          write(iulog,*) 'gfr> area fv adj', global_shared_sum(2), &
+               abs(global_shared_sum(2) - sphere_area)/sphere_area, &
+               abs(global_shared_sum(2) - global_shared_sum(3))/global_shared_sum(3)
+          write(iulog,*) 'gfr> area gll   ', global_shared_sum(3), &
+               abs(global_shared_sum(3) - sphere_area)/sphere_area
        end if
     end if
 
