@@ -1094,8 +1094,6 @@ contains
 
     nf = gfr%nphys
     nf2 = nf*nf
-    ones = one
-    ones2 = one
     if (cubed_sphere_map == 2) then
        do ie = 1,nelemd
           do j = 1,nf
@@ -1126,19 +1124,21 @@ contains
                       end if
                    end do
                 end do
+                call sphere_tri_area(fv_corners_xyz(1,1), fv_corners_xyz(2,1), &
+                     fv_corners_xyz(2,2), spherical_area)
+                call sphere_tri_area(fv_corners_xyz(1,1), fv_corners_xyz(2,2), &
+                     fv_corners_xyz(1,2), tmp)
+                spherical_area = spherical_area + tmp
+                gfr%fv_metdet(k,ie) = spherical_area/gfr%w_ff(k)
              end do
-             call sphere_tri_area(fv_corners_xyz(1,1), fv_corners_xyz(2,1), &
-                  fv_corners_xyz(2,2), spherical_area)
-             call sphere_tri_area(fv_corners_xyz(1,1), fv_corners_xyz(2,2), &
-                  fv_corners_xyz(1,2), tmp)
-             spherical_area = spherical_area + tmp
-             gfr%fv_metdet(k,ie) = spherical_area/gfr%w_ff(k)
           end do
        end do
     else
+       ones = one
+       ones2 = one
        do ie = 1,nelemd
           call gfr_g2f_remapd(gfr, elem(ie)%metdet, ones, ones2, wrk)
-          gfr%fv_metdet(:,ie) = reshape(wrk(:nf,:nf), (/nf2/))
+          gfr%fv_metdet(:nf2,ie) = reshape(wrk(:nf,:nf), (/nf2/))
        end do
     end if
 
