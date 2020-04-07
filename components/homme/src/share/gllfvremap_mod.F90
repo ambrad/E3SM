@@ -2296,10 +2296,10 @@ contains
        if (hybrid%masterthread) then
           write(iulog,*) 'gfr> area fv raw', global_shared_sum(1), &
                abs(global_shared_sum(1) - sphere_area)/sphere_area
-          write(iulog,*) 'gfr> area fv adj', global_shared_sum(2), &
+          write(iulog,*) 'gfr> area fv adj', &
                abs(global_shared_sum(2) - sphere_area)/sphere_area, &
                abs(global_shared_sum(2) - global_shared_sum(3))/global_shared_sum(3)
-          write(iulog,*) 'gfr> area gll   ', global_shared_sum(3), &
+          write(iulog,*) 'gfr> area gll   ', &
                abs(global_shared_sum(3) - sphere_area)/sphere_area
        end if
     end if
