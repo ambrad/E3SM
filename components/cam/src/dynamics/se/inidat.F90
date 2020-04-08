@@ -59,8 +59,6 @@ contains
     use scamMod,                 only: setiopupdate, readiopdata
     use se_single_column_mod,    only: scm_setinitial
     use element_ops,             only: set_thermostate
-    use fv_physics_coupling_mod, only: fv_phys_to_dyn_topo
-    use control_mod,             only: se_fv_phys_remap_alg
     use gllfvremap_mod,          only: gfr_fv_phys_to_dyn_topo
     implicit none
     type(file_desc_t),intent(inout) :: ncid_ini, ncid_topo
@@ -459,40 +457,31 @@ contains
     else    
       fieldname = 'PHIS'
       tmp(:,1,:) = 0.0_r8
-      read_pg_grid = fv_nphys > 0 .and. se_fv_phys_remap_alg == 0
-      if (read_pg_grid) then
-         ! Load phis field to physics grid
-         call infld(fieldname, ncid_topo, 'ncol', 1, nphys_sq, &
-                    1, nelemd, phis_tmp, found, gridname='physgrid_d')
-         ! Copy phis data to dyn element state
-         call fv_phys_to_dyn_topo(elem,phis_tmp)
+      if (fv_nphys == 0) then
+         call infld(fieldname, ncid_topo, ncol_name,      &
+              1, npsq, 1, nelemd, tmp(:,1,:), found, gridname=grid_name)
       else
-         if (fv_nphys == 0) then
-            call infld(fieldname, ncid_topo, ncol_name,      &
-                 1, npsq, 1, nelemd, tmp(:,1,:), found, gridname=grid_name)
-         else
-            ! Attempt to read a mixed GLL-FV topo file, which contains PHIS_d in
-            ! addition to PHIS.
-            call infld(trim(fieldname) // '_d', ncid_topo, ncol_name, &
-                 1, npsq, 1, nelemd, tmp(:,1,:), found, gridname=grid_name)
-            if (found) then
-               if (masterproc) then
-                  write(iulog,*) 'reading GLL ', trim(fieldname) // '_d', &
-                       ' on gridname ', trim(grid_name)
-               end if
-            else
-               ! Pure-FV topo file, so read FV PHIS and map it to GLL.
-               if (masterproc) then
-                  write(iulog,*) 'reading FV ', trim(fieldname), &
-                       ' on gridname physgrid_d'
-               end if
-               read_pg_grid = .true.
-               call infld(fieldname, ncid_topo, 'ncol', 1, nphys_sq, &
-                    1, nelemd, phis_tmp, found, gridname='physgrid_d')
-               call gfr_fv_phys_to_dyn_topo(par, dom_mt, elem, phis_tmp)
+         ! Attempt to read a mixed GLL-FV topo file, which contains PHIS_d in
+         ! addition to PHIS.
+         call infld(trim(fieldname) // '_d', ncid_topo, ncol_name, &
+              1, npsq, 1, nelemd, tmp(:,1,:), found, gridname=grid_name)
+         if (found) then
+            if (masterproc) then
+               write(iulog,*) 'reading GLL ', trim(fieldname) // '_d', &
+                    ' on gridname ', trim(grid_name)
             end if
+         else
+            ! Pure-FV topo file, so read FV PHIS and map it to GLL.
+            if (masterproc) then
+               write(iulog,*) 'reading FV ', trim(fieldname), &
+                    ' on gridname physgrid_d'
+            end if
+            read_pg_grid = .true.
+            call infld(fieldname, ncid_topo, 'ncol', 1, nphys_sq, &
+                 1, nelemd, phis_tmp, found, gridname='physgrid_d')
+            call gfr_fv_phys_to_dyn_topo(par, dom_mt, elem, phis_tmp)
          end if
-      endif
+      end if
       if(.not. found) then
          call endrun('Could not find PHIS field on input datafile')
       end if
