@@ -236,8 +236,8 @@ contains
          gfr%D_f(nphys,nphys,2,2,nelemd), gfr%Dinv_f(nphys,nphys,2,2,nelemd), &
          gfr%qmin(nlev,max(1,qsize),nelemd), gfr%qmax(nlev,max(1,qsize),nelemd), &
          gfr%phis(nphys2,nelemd), gfr%spherep_f(nphys,nphys,nelemd))
-    call gfr_init_fv_metdet(elem, gfr)
     call gfr_init_geometry(elem, gfr)
+    call gfr_init_Dmap(elem, gfr)
 
     if (nphys == 1 .and. gfr%boost_pg1) call gfr_pg1_init(gfr)
   end subroutine gfr_init
@@ -1074,22 +1074,19 @@ contains
     end if
   end subroutine gfr_f2g_remapd_op
 
-  subroutine gfr_init_fv_metdet(elem, gfr)
-    ! Compute the reference-element-to-sphere Jacobian (metdet) for FV
-    ! subcells consistent with those for GLL nodes.
-
+  subroutine gfr_init_geometry(elem, gfr)
     use kinds, only: iulog
     use control_mod, only: cubed_sphere_map
-    use coordinate_systems_mod, only: cartesian3D_t, sphere_tri_area
+    use coordinate_systems_mod, only: cartesian3D_t, sphere_tri_area, change_coordinates
     use cube_mod, only: ref2sphere
 
     type (element_t), intent(in) :: elem(:)
     type (GllFvRemap_t), intent(inout) :: gfr
 
     type (spherical_polar_t) :: p_sphere
-    type (cartesian3D_t) :: fv_corners_xyz(2,2)
+    type (cartesian3D_t) :: fv_corners_xyz(2,2), ctr
     real(kind=real_kind) :: ones(np*np), ones2(np,np), wrk(np,np), ae(2), be(2), &
-         spherical_area, tmp
+         spherical_area, tmp, wrk2(2,2), ac, bc
     integer :: nf, nf2, ie, i, j, k, ai, bi, idx
 
     nf = gfr%nphys
@@ -1097,10 +1094,13 @@ contains
     if (cubed_sphere_map == 2) then
        do ie = 1,nelemd
           do j = 1,nf
+             call gfr_f_ref_edges(nf, j, be)
+             call gfr_f_ref_center(nf, j, bc)
              do i = 1,nf
-                k = i+(j-1)*nf
                 call gfr_f_ref_edges(nf, i, ae)
-                call gfr_f_ref_edges(nf, j, be)
+                call gfr_f_ref_center(nf, i, ac)
+                k = i+(j-1)*nf
+                ctr%x = zero; ctr%y = zero; ctr%z = zero
                 do bi = 1,2
                    do ai = 1,2
                       if ( (i == 1  .and. ai == 1 .and. j == 1  .and. bi == 1) .or. &
@@ -1122,14 +1122,22 @@ contains
                               cubed_sphere_map, elem(ie)%corners, elem(ie)%facenum, &
                               fv_corners_xyz(ai,bi))
                       end if
+                      ctr%x = ctr%x + fv_corners_xyz(ai,bi)%x
+                      ctr%y = ctr%y + fv_corners_xyz(ai,bi)%y
+                      ctr%z = ctr%z + fv_corners_xyz(ai,bi)%z
                    end do
                 end do
+
                 call sphere_tri_area(fv_corners_xyz(1,1), fv_corners_xyz(2,1), &
                      fv_corners_xyz(2,2), spherical_area)
                 call sphere_tri_area(fv_corners_xyz(1,1), fv_corners_xyz(2,2), &
                      fv_corners_xyz(1,2), tmp)
                 spherical_area = spherical_area + tmp
                 gfr%fv_metdet(k,ie) = spherical_area/gfr%w_ff(k)
+
+                ! Center is average of 4 corner points projected to sphere.
+                ctr%x = ctr%x/four; ctr%y = ctr%y/four; ctr%z = ctr%z/four
+                gfr%spherep_f(i,j,ie) = change_coordinates(ctr)
              end do
           end do
        end do
@@ -1139,6 +1147,14 @@ contains
        do ie = 1,nelemd
           call gfr_g2f_remapd(gfr, elem(ie)%metdet, ones, ones2, wrk)
           gfr%fv_metdet(:nf2,ie) = reshape(wrk(:nf,:nf), (/nf2/))
+          do j = 1,nf
+             call gfr_f_ref_center(nf, j, bc)
+             do i = 1,nf
+                call gfr_f_ref_center(nf, i, ac)
+                gfr%spherep_f(i,j,ie) = ref2sphere(ac, bc, elem(ie)%corners3D, cubed_sphere_map, &
+                     elem(ie)%corners, elem(ie)%facenum)
+             end do
+          end do
        end do
     end if
 
@@ -1150,7 +1166,7 @@ contains
        gfr%fv_metdet(:nf2,ie) = gfr%fv_metdet(:nf2,ie)* &
             (sum(elem(ie)%spheremp)/sum(gfr%w_ff(:nf2)*gfr%fv_metdet(:nf2,ie)))
     end do
-  end subroutine gfr_init_fv_metdet
+  end subroutine gfr_init_geometry
 
   subroutine gfr_f_ref_center(nphys, i, a)
     ! FV subcell center in ref [-1,1]^2 coord.
@@ -1174,9 +1190,7 @@ contains
     end do
   end subroutine gfr_f_ref_edges
 
-  subroutine gfr_init_geometry(elem, gfr)
-    ! Compute various geometric quantities, described below.
-
+  subroutine gfr_init_Dmap(elem, gfr)
     use control_mod, only: cubed_sphere_map
     use cube_mod, only: Dmap, ref2sphere
 
@@ -1195,9 +1209,6 @@ contains
           call gfr_f_ref_center(nf, j, b)
           do i = 1,nf
              call gfr_f_ref_center(nf, i, a)
-
-             gfr%spherep_f(i,j,ie) = ref2sphere(a, b, elem(ie)%corners3D, cubed_sphere_map, &
-                  elem(ie)%corners, elem(ie)%facenum)
 
              call Dmap(wrk, a, b, elem(ie)%corners3D, cubed_sphere_map, elem(ie)%cartp, &
                   elem(ie)%facenum)
@@ -1220,7 +1231,7 @@ contains
           end do
        end do
     end do
-  end subroutine gfr_init_geometry
+  end subroutine gfr_init_Dmap
 
   ! ----------------------------------------------------------------------
   ! Time stepping routines called by the GLL <-> FV remap API routines.

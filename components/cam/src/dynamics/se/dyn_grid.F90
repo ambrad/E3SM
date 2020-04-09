@@ -620,7 +620,7 @@ contains
   subroutine define_cam_grids()
     use cam_grid_support, only: horiz_coord_t, horiz_coord_create
     use cam_grid_support, only: cam_grid_register, cam_grid_attribute_register
-    use gllfvremap_mod,   only: gfr_f_get_area
+    use gllfvremap_mod,   only: gfr_f_get_area, gfr_f_get_latlon
     !----------------------------Local-Variables--------------------------------
     character(len=16)            :: gridname, latname, lonname, ncolname, areaname
     type(horiz_coord_t), pointer :: lat_coord
@@ -628,7 +628,7 @@ contains
     integer(iMap),       pointer :: grid_map_d(:,:)
     integer(iMap),       pointer :: grid_map_p(:,:)
     integer                      :: ie, i, j, k, mapind ! Loop variables
-    real(r8)                     :: area_scm(1)
+    real(r8)                     :: area_scm(1), lat, lon
     integer                      :: ncols_p_lcl         ! local column count
     integer                      :: ncols_p_gbl         ! global column count
     integer(iMap),       pointer :: physgrid_map(:)
@@ -730,10 +730,17 @@ contains
             mapind = k + (ie-1)*fv_nphys*fv_nphys
             physgrid_map(mapind) = k + (elem(ie)%GlobalId-1)*fv_nphys*fv_nphys
             physgrid_area(mapind)= fv_physgrid(ie)%area(i,j)
-            area_scm(1) = abs(fv_physgrid(ie)%area(i,j) - gfr_f_get_area(ie, i, j))/fv_physgrid(ie)%area(i,j)
-            if (area_scm(1) > 1e-14) print *'amb>',ie,i,j,fv_physgrid(ie)%area(i,j),gfr_f_get_area(ie, i, j),area_scm(1)
             physgrid_lat(mapind) = fv_physgrid(ie)%lat(i,j)*rad2deg
             physgrid_lon(mapind) = fv_physgrid(ie)%lon(i,j)*rad2deg
+
+            area_scm(1) = abs(fv_physgrid(ie)%area(i,j) - gfr_f_get_area(ie, i, j))/fv_physgrid(ie)%area(i,j)
+            if (area_scm(1) > 1e-11) print *,'amb> area',ie,i,j,area_scm(1),fv_physgrid(ie)%area(i,j),gfr_f_get_area(ie, i, j)
+            call gfr_f_get_latlon(ie, i, j, lat, lon)
+            area_scm(1) = abs(fv_physgrid(ie)%lat(i,j) - lat)
+            if (area_scm(1) > 1e-14) print *,'amb> lat',ie,i,j,area_scm(1),fv_physgrid(ie)%lat(i,j),lat
+            area_scm(1) = abs(fv_physgrid(ie)%lon(i,j) - lon)
+            if (area_scm(1) > 1e-14) print *,'amb> lon',ie,i,j,area_scm(1),fv_physgrid(ie)%lon(i,j),lon
+
             k = k + 1
           end do ! i
         end do ! j
