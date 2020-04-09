@@ -867,6 +867,7 @@ contains
   !
   subroutine compute_global_area(area_d)
     use dof_mod,                only: UniqueCoords, UniquePoints
+    use gllfvremap_mod,         only: gfr_f_get_area
     !------------------------------Arguments------------------------------------
     real(r8), pointer :: area_d(:)
     !----------------------------Local-Variables--------------------------------
@@ -901,7 +902,7 @@ contains
       do ie = 1,nelemd
         do j = 1,fv_nphys
           do i = 1,fv_nphys
-            area_local(icol) = fv_physgrid(ie)%area(i,j)
+            area_local(icol) = gfr_f_get_area(ie, i, j)
             icol = icol+1
           end do ! i
         end do ! j
@@ -987,6 +988,7 @@ contains
   !
   subroutine compute_global_coords(clat, clon, lat_out, lon_out, corner_lat_out, corner_lon_out)
     use dof_mod,                only: UniqueCoords, UniquePoints
+    use gllfvremap_mod,         only: gfr_f_get_latlon
     !------------------------------Arguments------------------------------------
     real(r8),           intent(out) :: clat(:)                ! radians
     real(r8),           intent(out) :: clon(:)                ! radians
@@ -1008,6 +1010,7 @@ contains
     integer  :: ie, sb, eb, j, i, ip, fv_cnt, icol, c
     integer  :: ierr
     integer  :: ibuf
+    real(r8) :: lat, lon
     !---------------------------------------------------------------------------
     if (masterproc) then
       write(iulog,*) 'INFO: Non-scalable action: Computing global coords in SE dycore.'
@@ -1028,8 +1031,9 @@ contains
       do ie = 1,nelemd
         do j = 1,fv_nphys
           do i = 1,fv_nphys
-            lat_rad_local(icol) = fv_physgrid(ie)%lat(i,j)
-            lon_rad_local(icol) = fv_physgrid(ie)%lon(i,j)
+            call gfr_f_get_latlon(ie, i, j, lat, lon)
+            lat_rad_local(icol) = lat
+            lon_rad_local(icol) = lon
             icol = icol+1
           end do ! i
         end do ! j
