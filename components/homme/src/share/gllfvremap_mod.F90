@@ -116,7 +116,8 @@ module gllfvremap_mod
   ! For testing.
   public :: &
        gfr_test, &
-       gfr_g2f_scalar, gfr_f2g_scalar, gfr_f_get_latlon, gfr_f_get_cartesian3d, &
+       gfr_g2f_scalar, gfr_f2g_scalar, &
+       gfr_f_get_area, gfr_f_get_latlon, gfr_f_get_cartesian3d, &
        gfr_g_make_nonnegative, gfr_dyn_to_fv_phys_topo_elem, gfr_f2g_dss
 
   ! Interfaces to support calling inside or outside a horizontally
@@ -804,7 +805,7 @@ contains
     integer, intent(in) :: nphys
     real(kind=real_kind), intent(out) :: w_ff(:)
 
-    w_ff(:nphys*nphys) = two*two/real(nphys*nphys, real_kind)
+    w_ff(:nphys*nphys) = four/real(nphys*nphys, real_kind)
   end subroutine gfr_init_w_ff
 
   subroutine gll_cleanup(gll)
@@ -1188,8 +1189,7 @@ contains
     nf = gfr%nphys
     nf2 = nf*nf
     
-    ! Jacobian matrices to map a vector between reference element and
-    ! sphere.
+    ! Jacobian matrices to map a vector between reference element and sphere.
     do ie = 1,nelemd
        do j = 1,nf
           call gfr_f_ref_center(nf, j, b)
@@ -1204,9 +1204,10 @@ contains
 
              det = wrk(1,1)*wrk(2,2) - wrk(1,2)*wrk(2,1)
 
-             ! fv_metdet was obtained by remapping metdet. Make det(D)
-             ! = fv_metdet.
-             k = i+(j-1)*nf
+             ! Make det(D) = fv_metdet. The two should be equal, and fv_metdet
+             ! must be consistent with spherep. Thus, D must be adjusted by a
+             ! scalar.
+             k = i + (j-1)*nf
              wrk = wrk*sqrt(gfr%fv_metdet(k,ie)/abs(det))
              det = gfr%fv_metdet(k,ie)
 
@@ -2018,6 +2019,18 @@ contains
     end do
   end subroutine gfr_g_make_nonnegative
 
+  function gfr_f_get_area(ie, i, j) result(area)
+    ! Get (lat,lon) of FV point i,j.
+
+    integer, intent(in) :: ie, i, j
+    real(kind=real_kind) :: area
+    
+    integer :: k
+
+    k = gfr%nphys*(j-1) + i
+    area = gfr%w_ff(k)*gfr%fv_metdet(k,ie)
+  end function gfr_f_get_area
+
   subroutine gfr_f_get_latlon(ie, i, j, lat, lon)
     ! Get (lat,lon) of FV point i,j.
 
@@ -2253,7 +2266,7 @@ contains
     logical, intent(in) :: verbose
 
     real(kind=real_kind) :: a, b, rd, x, y, f0(np,np), f1(np,np), g(np,np), &
-         wrk(np,np), qmin, qmax, qmin1, qmax1, wr1(np,np,1), sphere_area
+         wrk(np,np), qmin, qmax, qmin1, qmax1, wr1(np,np,1), sphere_area, area
     integer :: nf, nf2, ie, i, j, iremap, info, ilimit, it
     real(kind=real_kind), allocatable :: Qdp_fv(:,:,:), ps_v_fv(:,:,:), &
          qmins(:,:,:), qmaxs(:,:,:)
@@ -2288,7 +2301,13 @@ contains
     if (gfr%check) then
        do ie = nets,nete
           global_shared_buf(ie,1) = gfr%check_areas(1,ie)
-          global_shared_buf(ie,2) = sum(gfr%fv_metdet(:nf2,ie))*(4.0_real_kind/nf2)
+          area = zero
+          do j = 1,nf
+             do i = 1,nf
+                area = area + gfr_f_get_area(ie, i, j)
+             end do
+          end do
+          global_shared_buf(ie,2) = area
           global_shared_buf(ie,3) = sum(elem(ie)%spheremp)
        end do
        call wrap_repro_sum(nvars=3, comm=par%comm)

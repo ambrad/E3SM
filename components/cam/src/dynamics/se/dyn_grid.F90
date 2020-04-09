@@ -621,6 +621,7 @@ contains
   subroutine define_cam_grids()
     use cam_grid_support, only: horiz_coord_t, horiz_coord_create
     use cam_grid_support, only: cam_grid_register, cam_grid_attribute_register
+    use gllfvremap_mod,   only: gfr_f_get_area
     !----------------------------Local-Variables--------------------------------
     character(len=16)            :: gridname, latname, lonname, ncolname, areaname
     type(horiz_coord_t), pointer :: lat_coord
@@ -730,6 +731,8 @@ contains
             mapind = k + (ie-1)*fv_nphys*fv_nphys
             physgrid_map(mapind) = k + (elem(ie)%GlobalId-1)*fv_nphys*fv_nphys
             physgrid_area(mapind)= fv_physgrid(ie)%area(i,j)
+            area_scm(1) = abs(fv_physgrid(ie)%area(i,j) - gfr_f_get_area(ie, i, j))/fv_physgrid(ie)%area(i,j)
+            if (area_scm(1) > 1e-14) print *'amb>',ie,i,j,fv_physgrid(ie)%area(i,j),gfr_f_get_area(ie, i, j),area_scm(1)
             physgrid_lat(mapind) = fv_physgrid(ie)%lat(i,j)*rad2deg
             physgrid_lon(mapind) = fv_physgrid(ie)%lon(i,j)*rad2deg
             k = k + 1
