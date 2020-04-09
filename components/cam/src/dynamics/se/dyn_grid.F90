@@ -79,9 +79,6 @@ module dyn_grid
 
   ! FV physics grid stucture
   type, public :: fv_physgrid_struct
-    real(kind=r8), allocatable :: area(:,:)   ! spherical area of fv cell
-    real(kind=r8), allocatable :: lon(:,:)    ! longitude
-    real(kind=r8), allocatable :: lat(:,:)    ! latitude
     real(kind=r8), allocatable :: corner_lon(:,:,:)    ! longitude
     real(kind=r8), allocatable :: corner_lat(:,:,:)    ! latitude
   end type fv_physgrid_struct
@@ -729,20 +726,12 @@ contains
           do i = 1,fv_nphys
             mapind = k + (ie-1)*fv_nphys*fv_nphys
             physgrid_map(mapind) = k + (elem(ie)%GlobalId-1)*fv_nphys*fv_nphys
-            physgrid_area(mapind)= fv_physgrid(ie)%area(i,j)
-            physgrid_lat(mapind) = fv_physgrid(ie)%lat(i,j)*rad2deg
-            physgrid_lon(mapind) = fv_physgrid(ie)%lon(i,j)*rad2deg
-
-            area_scm(1) = abs(physgrid_area(mapind) - gfr_f_get_area(ie, i, j))/physgrid_area(mapind)
-            if (area_scm(1) > 1e-11) print *,'amb> area',ie,i,j,area_scm(1),physgrid_area(mapind),gfr_f_get_area(ie, i, j)
+            physgrid_area(mapind)= gfr_f_get_area(ie, i, j)
             call gfr_f_get_latlon(ie, i, j, lat, lon)
             lat = lat*rad2deg
             lon = lon*rad2deg
-            area_scm(1) = abs(physgrid_lat(mapind) - lat)
-            if (area_scm(1) > 1e-13) print *,'amb> lat',ie,i,j,area_scm(1),physgrid_lat(mapind),lat
-            area_scm(1) = abs(physgrid_lon(mapind) - lon)
-            if (area_scm(1) > 1e-13) print *,'amb> lon',ie,i,j,area_scm(1),physgrid_lon(mapind),lon
-
+            physgrid_lat(mapind) = lat
+            physgrid_lon(mapind) = lon
             k = k + 1
           end do ! i
         end do ! j
@@ -1547,9 +1536,6 @@ contains
     ! Allocate stuff
     allocate(fv_physgrid(nelemd))
     do ie = 1,nelemd
-      allocate( fv_physgrid(ie)%lat        (fv_nphys,fv_nphys) )
-      allocate( fv_physgrid(ie)%lon        (fv_nphys,fv_nphys) )
-      allocate( fv_physgrid(ie)%area       (fv_nphys,fv_nphys) )
       allocate( fv_physgrid(ie)%corner_lat(fv_nphys,fv_nphys,4) )
       allocate( fv_physgrid(ie)%corner_lon(fv_nphys,fv_nphys,4) )
     end do ! ie
@@ -1592,9 +1578,6 @@ contains
           !---------------------------------------------------------------------
           ! cell corner locations
           !---------------------------------------------------------------------
-          center_tmp%x = 0.0_lng_dbl
-          center_tmp%y = 0.0_lng_dbl
-          center_tmp%z = 0.0_lng_dbl
           do c = 1,4
             ref_corner_i = ref_i + corner_offset_i(c)/real(max(1,fv_nphys),lng_dbl)
             ref_corner_j = ref_j + corner_offset_j(c)/real(max(1,fv_nphys),lng_dbl)
@@ -1606,32 +1589,7 @@ contains
 
             fv_physgrid(ie)%corner_lat(i,j,c) = sphere_coord%lat
             fv_physgrid(ie)%corner_lon(i,j,c) = sphere_coord%lon
-
-            ! change spherical to cartesian
-            corner_tmp(c) = change_coordinates(sphere_coord)
-
-            ! average corner coordinates to find center
-            center_tmp%x = center_tmp%x + corner_tmp(c)%x/4._lng_dbl
-            center_tmp%y = center_tmp%y + corner_tmp(c)%y/4._lng_dbl
-            center_tmp%z = center_tmp%z + corner_tmp(c)%z/4._lng_dbl
-
           end do ! c
-          !---------------------------------------------------------------------
-          ! define cell centers by converting cartesian to spherical coords
-          !---------------------------------------------------------------------
-          sphere_coord = change_coordinates(center_tmp)
-          fv_physgrid(ie)%lat(i,j) = sphere_coord%lat
-          fv_physgrid(ie)%lon(i,j) = sphere_coord%lon
-          !---------------------------------------------------------------------
-          ! define cell area as the sum of two spherical triangle areas
-          !---------------------------------------------------------------------
-          call sphere_tri_area( corner_tmp(1), &
-                                corner_tmp(2), &
-                                corner_tmp(3), area1 )
-          call sphere_tri_area( corner_tmp(3), &
-                                corner_tmp(4), &
-                                corner_tmp(1), area2 )
-          fv_physgrid(ie)%area(i,j) = area1 + area2 
           !---------------------------------------------------------------------
           !---------------------------------------------------------------------
         end do ! i
@@ -1651,9 +1609,6 @@ contains
     integer :: ie
     !---------------------------------------------------------------------------  
     do ie = 1,nelemd
-      deallocate( fv_physgrid(ie)%lat  )
-      deallocate( fv_physgrid(ie)%lon  )
-      deallocate( fv_physgrid(ie)%area )
       deallocate( fv_physgrid(ie)%corner_lat )
       deallocate( fv_physgrid(ie)%corner_lon )
     end do ! ie
