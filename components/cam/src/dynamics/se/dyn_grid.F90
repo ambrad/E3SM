@@ -733,13 +733,15 @@ contains
             physgrid_lat(mapind) = fv_physgrid(ie)%lat(i,j)*rad2deg
             physgrid_lon(mapind) = fv_physgrid(ie)%lon(i,j)*rad2deg
 
-            area_scm(1) = abs(fv_physgrid(ie)%area(i,j) - gfr_f_get_area(ie, i, j))/fv_physgrid(ie)%area(i,j)
-            if (area_scm(1) > 1e-11) print *,'amb> area',ie,i,j,area_scm(1),fv_physgrid(ie)%area(i,j),gfr_f_get_area(ie, i, j)
+            area_scm(1) = abs(physgrid_area(mapind) - gfr_f_get_area(ie, i, j))/physgrid_area(mapind)
+            if (area_scm(1) > 1e-11) print *,'amb> area',ie,i,j,area_scm(1),physgrid_area(mapind),gfr_f_get_area(ie, i, j)
             call gfr_f_get_latlon(ie, i, j, lat, lon)
-            area_scm(1) = abs(fv_physgrid(ie)%lat(i,j) - lat)
-            if (area_scm(1) > 1e-14) print *,'amb> lat',ie,i,j,area_scm(1),fv_physgrid(ie)%lat(i,j),lat
-            area_scm(1) = abs(fv_physgrid(ie)%lon(i,j) - lon)
-            if (area_scm(1) > 1e-14) print *,'amb> lon',ie,i,j,area_scm(1),fv_physgrid(ie)%lon(i,j),lon
+            lat = lat*rad2deg
+            lon = lon*rad2deg
+            area_scm(1) = abs(physgrid_lat(mapind) - lat)
+            if (area_scm(1) > 1e-15) print *,'amb> lat',ie,i,j,area_scm(1),physgrid_lat(mapind),lat
+            area_scm(1) = abs(physgrid_lon(mapind) - lon)
+            if (area_scm(1) > 1e-15) print *,'amb> lon',ie,i,j,area_scm(1),physgrid_lon(mapind),lon
 
             k = k + 1
           end do ! i

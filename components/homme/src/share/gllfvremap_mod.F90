@@ -1193,10 +1193,12 @@ contains
   subroutine gfr_init_Dmap(elem, gfr)
     use control_mod, only: cubed_sphere_map
     use cube_mod, only: Dmap, ref2sphere
+    use coordinate_systems_mod, only: cartesian3D_t, change_coordinates
 
     type (element_t), intent(in) :: elem(:)
     type (GllFvRemap_t), intent(inout) :: gfr
 
+    type (cartesian3D_t) :: sphere
     real(kind=real_kind) :: wrk(2,2), det, a, b
     integer :: ie, nf, nf2, i, j, k
 
@@ -1206,9 +1208,14 @@ contains
     ! Jacobian matrices to map a vector between reference element and sphere.
     do ie = 1,nelemd
        do j = 1,nf
-          call gfr_f_ref_center(nf, j, b)
           do i = 1,nf
-             call gfr_f_ref_center(nf, i, a)
+             if (cubed_sphere_map == 2) then
+                call gfr_f_get_cartesian3d(ie, i, j, sphere)
+                call sphere2ref(elem(ie)%corners3D, sphere, a, b)
+             else
+                call gfr_f_ref_center(nf, i, a)
+                call gfr_f_ref_center(nf, j, b)
+             end if
 
              call Dmap(wrk, a, b, elem(ie)%corners3D, cubed_sphere_map, elem(ie)%cartp, &
                   elem(ie)%facenum)
@@ -2120,6 +2127,84 @@ contains
     q(:n,:n) = reshape(x, (/n,n/))
   end subroutine limiter_clip_and_sum
 
+  subroutine ref2spherea_deriv(c, a, b, s_ab, s)
+    ! For cubed_sphere_map = 2.
+
+    real(real_kind), intent(in) :: c(4,3), a, b
+    real(real_kind), intent(out) :: s_ab(3,2), s(3)
+
+    real(real_kind) :: q(4), q_ab(4,2), r2
+    integer :: i, j
+
+    q(1) = (1-a)*(1-b); q(2) = (1+a)*(1-b); q(3) = (1+a)*(1+b); q(4) = (1-a)*(1+b)
+    q = q/four
+    s = zero
+    do i = 1,3
+       s(i) = sum(c(:,i)*q)
+    end do
+    r2 = sum(s**2)
+    q_ab(1,1) = -(1-b); q_ab(2,1) =  (1-b); q_ab(3,1) = (1+b); q_ab(4,1) = -(1+b)
+    q_ab(1,2) = -(1-a); q_ab(2,2) = -(1+a); q_ab(3,2) = (1+a); q_ab(4,2) =  (1-a)
+    q_ab = q_ab/four
+    s_ab = zero
+    do j = 1,2
+       do i = 1,3
+          s_ab(i,j) = sum(c(:,i)*q_ab(:,j))
+       end do
+       s_ab(:,j) = s_ab(:,j)/sqrt(r2) - (sum(s*s_ab(:,j))/sqrt(r2**3))*s
+    end do
+    s = s/sqrt(r2)
+  end subroutine ref2spherea_deriv
+
+  subroutine sphere2ref(corners, sphere, a, b, tol_in, maxit_in)
+    ! For cubed_sphere_map = 2.
+
+    use coordinate_systems_mod, only: cartesian3D_t
+
+    type (cartesian3D_t), intent(in) :: corners(4), sphere
+    real(real_kind), intent(out) :: a, b
+    real(real_kind), intent(in), optional :: tol_in
+    integer, intent(in), optional :: maxit_in
+
+    real(real_kind) :: tol, c(4,3), s_in(3), s_ab(3,2), s(3), r(3), fac(3), x(2)
+    integer :: maxit, i, it
+
+    tol = eps
+    maxit = 10
+    if (present(tol_in)) tol = tol_in
+    if (present(maxit_in)) maxit = maxit_in
+    tol = tol**2
+
+    do i = 1,4
+       c(i,1) = corners(i)%x; c(i,2) = corners(i)%y; c(i,3) = corners(i)%z
+    end do
+    s_in(1) = sphere%x; s_in(2) = sphere%y; s_in(3) = sphere%z
+
+    a = zero; b = zero
+    do it = 1,maxit
+       call ref2spherea_deriv(c, a, b, s_ab, s)
+       r = s - s_in
+       if (sum(r**2) <= tol) exit
+       !! QR for s_ab d_ab = r
+       ! Q
+       fac(1) = sqrt(sum(s_ab(:,1)**2))
+       s_ab(:,1) = s_ab(:,1)/fac(1)
+       fac(2) = sum(s_ab(:,2)*s_ab(:,1))
+       s_ab(:,2) = s_ab(:,2) - fac(2)*s_ab(:,1)
+       fac(3) = sqrt(sum(s_ab(:,2)**2))
+       s_ab(:,2) = s_ab(:,2)/fac(3)
+       ! x = Q'r
+       x(1) = sum(s_ab(:,1)*r)
+       x(2) = sum(s_ab(:,2)*r)
+       ! x = R \ x
+       x(2) = x(2) / fac(3)
+       x(1) = (x(1) - fac(2)*x(2)) / fac(1)
+       !! Newton update
+       a = a - x(1)
+       b = b - x(2)
+    end do
+  end subroutine sphere2ref
+
   ! ----------------------------------------------------------------------
   ! Everything below is for internal unit testing of this module. For
   ! integration-level testing, see gllfvremap_util_mod and
@@ -2507,6 +2592,80 @@ contains
     deallocate(Qdp_fv, ps_v_fv, qmins, qmaxs)
   end subroutine check
 
+  subroutine test_sphere2ref()
+    use coordinate_systems_mod, only: cartesian3D_t
+    use kinds, only: iulog
+
+    type (cartesian3D_t) :: corners(4), sphere
+    real (real_kind) :: refin(2), refout(2), err
+    integer :: i, j, n, nerr
+
+    corners(1)%x =  0.24; corners(1)%y = -0.7; corners(1)%z = 0.3; call normalizecart(corners(1))
+    corners(2)%x =  0.44; corners(2)%y =  0.5; corners(2)%z = 0.4; call normalizecart(corners(2))
+    corners(3)%x = -0.34; corners(3)%y =  0.6; corners(3)%z = 0.1; call normalizecart(corners(3))
+    corners(4)%x = -0.14; corners(4)%y = -0.5; corners(4)%z = 0.2; call normalizecart(corners(4))
+
+    n = 77
+    nerr = 0
+    do i = 1,n
+       refin(1) = -1 + (1.0_real_kind/(n-1))*(i-1)
+       do j = 1,n
+          refin(2) = -1 + (1.0_real_kind/(n-1))*(j-1)
+          call ref2sphere(corners, refin(1), refin(2), sphere)
+          call sphere2ref(corners, sphere, refout(1), refout(2))
+          err = abs(refin(1) - refout(1)) + abs(refin(2) - refout(2))
+          if (err > 10*eps .or. &
+               maxval(abs(refout)) > 1 + 5*eps .or. &
+               any(refout /= refout)) then
+             write(iulog,*) refin(1), refin(2)
+             write(iulog,*) refout(1), refout(2)
+             write(iulog,*) err
+             nerr = nerr + 1
+          end if
+       end do
+    end do
+    if (nerr /= 0) write(iulog,*) 'test_sphere2ref FAILED'
+
+  contains
+    subroutine normalizecart(sphere)
+      type (cartesian3D_t), intent(inout) :: sphere
+      real(real_kind) :: r
+      r = sqrt(sphere%x**2 + sphere%y**2 + sphere%z**2)
+      sphere%x = sphere%x/r; sphere%y = sphere%y/r; sphere%z = sphere%z/r
+    end subroutine normalizecart
+
+    subroutine ref2sphere(corners, a, b, sphere)
+      type (cartesian3D_t), intent(in) :: corners(4)
+      real(real_kind), intent(in) :: a, b
+      type (cartesian3D_t), intent(out) :: sphere
+
+      real(real_kind) :: c(4,3), s(3)
+      integer :: i
+
+      do i = 1,4
+         c(i,1) = corners(i)%x; c(i,2) = corners(i)%y; c(i,3) = corners(i)%z
+      end do
+      call ref2spherea(c, a, b, s)
+      sphere%x = s(1); sphere%y = s(2); sphere%z = s(3)
+    end subroutine ref2sphere
+
+    subroutine ref2spherea(c, a, b, s)
+      real(real_kind), intent(in) :: c(4,3), a, b
+      real(real_kind), intent(out) :: s(3)
+
+      real(real_kind) :: q(4)
+      integer :: i
+
+      q(1) = (1-a)*(1-b); q(2) = (1+a)*(1-b); q(3) = (1+a)*(1+b); q(4) = (1-a)*(1+b)
+      q = q/four
+      s = zero
+      do i = 1,3
+         s(i) = sum(c(:,i)*q)
+      end do
+      s = s/sqrt(sum(s**2))
+    end subroutine ref2spherea
+  end subroutine test_sphere2ref
+
   subroutine gfr_test(hybrid, dom_mt, hvcoord, deriv, elem)
     ! Driver for check subroutine.
 
@@ -2522,6 +2681,8 @@ contains
 
     integer :: nphys, bi
     logical :: boost_pg1
+
+    if (hybrid%masterthread) call test_sphere2ref()
 
     do nphys = 1, np
        do bi = 1,2
