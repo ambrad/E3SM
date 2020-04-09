@@ -739,9 +739,9 @@ contains
             lat = lat*rad2deg
             lon = lon*rad2deg
             area_scm(1) = abs(physgrid_lat(mapind) - lat)
-            if (area_scm(1) > 1e-15) print *,'amb> lat',ie,i,j,area_scm(1),physgrid_lat(mapind),lat
+            if (area_scm(1) > 1e-13) print *,'amb> lat',ie,i,j,area_scm(1),physgrid_lat(mapind),lat
             area_scm(1) = abs(physgrid_lon(mapind) - lon)
-            if (area_scm(1) > 1e-15) print *,'amb> lon',ie,i,j,area_scm(1),physgrid_lon(mapind),lon
+            if (area_scm(1) > 1e-13) print *,'amb> lon',ie,i,j,area_scm(1),physgrid_lon(mapind),lon
 
             k = k + 1
           end do ! i

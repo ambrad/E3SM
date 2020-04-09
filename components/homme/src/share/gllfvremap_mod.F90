@@ -39,7 +39,7 @@ module gllfvremap_mod
   use kinds, only: real_kind
   use dimensions_mod, only: np, npsq, qsize, nelemd
   use element_mod, only: element_t
-  use coordinate_systems_mod, only: spherical_polar_t
+  use coordinate_systems_mod, only: cartesian3D_t
 
   implicit none
 
@@ -106,7 +106,7 @@ module gllfvremap_mod
           phis(:,:), &
           ! For 'check', when it's on
           check_areas(:,:)
-     type (spherical_polar_t), allocatable :: &
+     type (cartesian3D_t), allocatable :: &
           spherep_f(:,:,:) ! (nphys,nphys,nelemd)
      type (Pg1SolverData_t) :: pg1sd
   end type GllFvRemap_t
@@ -1077,7 +1077,8 @@ contains
   subroutine gfr_init_geometry(elem, gfr)
     use kinds, only: iulog
     use control_mod, only: cubed_sphere_map
-    use coordinate_systems_mod, only: cartesian3D_t, sphere_tri_area, change_coordinates
+    use coordinate_systems_mod, only: cartesian3D_t, spherical_polar_t, &
+         sphere_tri_area, change_coordinates
     use cube_mod, only: ref2sphere
 
     type (element_t), intent(in) :: elem(:)
@@ -1137,7 +1138,7 @@ contains
 
                 ! Center is average of 4 corner points projected to sphere.
                 ctr%x = ctr%x/four; ctr%y = ctr%y/four; ctr%z = ctr%z/four
-                gfr%spherep_f(i,j,ie) = change_coordinates(ctr)
+                gfr%spherep_f(i,j,ie) = ctr
              end do
           end do
        end do
@@ -1151,8 +1152,9 @@ contains
              call gfr_f_ref_center(nf, j, bc)
              do i = 1,nf
                 call gfr_f_ref_center(nf, i, ac)
-                gfr%spherep_f(i,j,ie) = ref2sphere(ac, bc, elem(ie)%corners3D, cubed_sphere_map, &
+                p_sphere = ref2sphere(ac, bc, elem(ie)%corners3D, cubed_sphere_map, &
                      elem(ie)%corners, elem(ie)%facenum)
+                gfr%spherep_f(i,j,ie) = change_coordinates(p_sphere)
              end do
           end do
        end do
@@ -2052,22 +2054,25 @@ contains
   subroutine gfr_f_get_latlon(ie, i, j, lat, lon)
     ! Get (lat,lon) of FV point i,j.
 
+    use coordinate_systems_mod, only: spherical_polar_t, change_coordinates
+
     integer, intent(in) :: ie, i, j
     real(kind=real_kind), intent(out) :: lat, lon
 
-    lat = gfr%spherep_f(i,j,ie)%lat
-    lon = gfr%spherep_f(i,j,ie)%lon
+    type (spherical_polar_t) :: p
+
+    p = change_coordinates(gfr%spherep_f(i,j,ie))
+    lat = p%lat
+    lon = p%lon
   end subroutine gfr_f_get_latlon
 
   subroutine gfr_f_get_cartesian3d(ie, i, j, p)
     ! Get (x,y,z) of FV point i,j.
 
-    use coordinate_systems_mod, only: cartesian3D_t, change_coordinates
-
     integer, intent(in) :: ie, i, j
     type (cartesian3D_t), intent(out) :: p
 
-    p = change_coordinates(gfr%spherep_f(i,j,ie))
+    p = gfr%spherep_f(i,j,ie)
   end subroutine gfr_f_get_cartesian3d
 
   subroutine limiter_clip_and_sum(n, spheremp, qmin, qmax, dp, q)
