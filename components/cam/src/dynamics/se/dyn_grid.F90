@@ -1010,7 +1010,6 @@ contains
     integer  :: ie, sb, eb, j, i, ip, fv_cnt, icol, c
     integer  :: ierr
     integer  :: ibuf
-    real(r8) :: lat, lon
     !---------------------------------------------------------------------------
     if (masterproc) then
       write(iulog,*) 'INFO: Non-scalable action: Computing global coords in SE dycore.'
@@ -1031,9 +1030,7 @@ contains
       do ie = 1,nelemd
         do j = 1,fv_nphys
           do i = 1,fv_nphys
-            call gfr_f_get_latlon(ie, i, j, lat, lon)
-            lat_rad_local(icol) = lat
-            lon_rad_local(icol) = lon
+            call gfr_f_get_latlon(ie, i, j, lat_rad_local(icol), lon_rad_local(icol))
             icol = icol+1
           end do ! i
         end do ! j
@@ -1105,11 +1102,8 @@ contains
           do j = 1,fv_nphys
             do i = 1,fv_nphys
               do c = 1,4
-                corner_lat_rad_local(icol,c) = fv_physgrid(ie)%corner_lat(i,j,c)
-                corner_lon_rad_local(icol,c) = fv_physgrid(ie)%corner_lon(i,j,c)
-                call gfr_f_get_corner_latlon(ie, i, j, c, lat, lon)
-                if (abs(fv_physgrid(ie)%corner_lat(i,j,c) - lat) > 1e-14) print *,'amb> lat',ie,i,j,c,fv_physgrid(ie)%corner_lat(i,j,c),abs(fv_physgrid(ie)%corner_lat(i,j,c) - lat)
-                if (abs(fv_physgrid(ie)%corner_lon(i,j,c) - lon) > 1e-14) print *,'amb> lon',ie,i,j,c,fv_physgrid(ie)%corner_lon(i,j,c),abs(fv_physgrid(ie)%corner_lon(i,j,c) - lon)
+                call gfr_f_get_corner_latlon(ie, i, j, c, &
+                     corner_lat_rad_local(icol,c), corner_lon_rad_local(icol,c))
               end do
               icol = icol+1
             end do ! i
@@ -1520,7 +1514,7 @@ contains
     use coordinate_systems_mod, only: spherical_polar_t, cartesian3D_t
     use coordinate_systems_mod, only: sphere_tri_area, change_coordinates 
     use derivative_mod,         only: allocate_subcell_integration_matrix
-    use gllfvremap_mod,         only: gfr_init
+    use gllfvremap_mod,         only: gfr_init, gfr_f_get_corner_latlon
     !------------------------------Arguments------------------------------------
     ! type(element_t)         , intent(in   ) :: elem(:)
     ! type(fv_physgrid_struct), intent(inout) :: fv_physgrid(nelemd)
@@ -1539,6 +1533,8 @@ contains
     integer  :: ibuf
     real(r8) :: area1, area2
     !---------------------------------------------------------------------------  
+
+    call gfr_init(par, elem, fv_nphys)
     
     ! Allocate stuff
     allocate(fv_physgrid(nelemd))
@@ -1596,14 +1592,17 @@ contains
 
             fv_physgrid(ie)%corner_lat(i,j,c) = sphere_coord%lat
             fv_physgrid(ie)%corner_lon(i,j,c) = sphere_coord%lon
+
+            gfr_f_get_corner_latlon(ie, i, j, c, area1, area2)
+            if (abs(fv_physgrid(ie)%corner_lat(i,j,c) - area1) > 1e-14) print *,'amb> lat',ie,i,j,c,fv_physgrid(ie)%corner_lat(i,j,c),abs(fv_physgrid(ie)%corner_lat(i,j,c) - area1)
+                if (abs(fv_physgrid(ie)%corner_lon(i,j,c) - area2) > 1e-14) print *,'amb> lon',ie,i,j,c,fv_physgrid(ie)%corner_lon(i,j,c),abs(fv_physgrid(ie)%corner_lon(i,j,c) - area2)
+
           end do ! c
           !---------------------------------------------------------------------
           !---------------------------------------------------------------------
         end do ! i
       end do ! j
     end do ! ie
-
-    call gfr_init(par, elem, fv_nphys)
   end subroutine fv_physgrid_init
   !
   !=================================================================================================
