@@ -988,7 +988,7 @@ contains
   !
   subroutine compute_global_coords(clat, clon, lat_out, lon_out, corner_lat_out, corner_lon_out)
     use dof_mod,                only: UniqueCoords, UniquePoints
-    use gllfvremap_mod,         only: gfr_f_get_latlon
+    use gllfvremap_mod,         only: gfr_f_get_latlon, gfr_f_get_corner_latlon
     !------------------------------Arguments------------------------------------
     real(r8),           intent(out) :: clat(:)                ! radians
     real(r8),           intent(out) :: clon(:)                ! radians
@@ -1107,6 +1107,9 @@ contains
               do c = 1,4
                 corner_lat_rad_local(icol,c) = fv_physgrid(ie)%corner_lat(i,j,c)
                 corner_lon_rad_local(icol,c) = fv_physgrid(ie)%corner_lon(i,j,c)
+                call gfr_f_get_corner_latlon(ie, i, j, c, lat, lon)
+                if (abs(fv_physgrid(ie)%corner_lat(i,j,c) - lat) > 1e-14) print *,'amb> lat',ie,i,j,c,fv_physgrid(ie)%corner_lat(i,j,c),abs(fv_physgrid(ie)%corner_lat(i,j,c) - lat)
+                if (abs(fv_physgrid(ie)%corner_lon(i,j,c) - lon) > 1e-14) print *,'amb> lon',ie,i,j,c,fv_physgrid(ie)%corner_lon(i,j,c),abs(fv_physgrid(ie)%corner_lon(i,j,c) - lon)
               end do
               icol = icol+1
             end do ! i

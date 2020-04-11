@@ -107,7 +107,8 @@ module gllfvremap_mod
           ! For 'check', when it's on
           check_areas(:,:)
      type (cartesian3D_t), allocatable :: &
-          spherep_f(:,:,:) ! (nphys,nphys,nelemd)
+          center_f(:,:,:), & ! (nphys,nphys,nelemd)
+          corners_f(:,:,:,:) ! (4,nphys,nphys,nelemd)
      type (Pg1SolverData_t) :: pg1sd
   end type GllFvRemap_t
 
@@ -117,7 +118,7 @@ module gllfvremap_mod
   public :: &
        gfr_test, &
        gfr_g2f_scalar, gfr_f2g_scalar, &
-       gfr_f_get_area, gfr_f_get_latlon, gfr_f_get_cartesian3d, &
+       gfr_f_get_area, gfr_f_get_latlon, gfr_f_get_corner_latlon, gfr_f_get_cartesian3d, &
        gfr_g_make_nonnegative, gfr_dyn_to_fv_phys_topo_elem, gfr_f2g_dss
 
   ! Interfaces to support calling inside or outside a horizontally
@@ -235,7 +236,8 @@ contains
     allocate(gfr%fv_metdet(nphys2,nelemd), &
          gfr%D_f(nphys,nphys,2,2,nelemd), gfr%Dinv_f(nphys,nphys,2,2,nelemd), &
          gfr%qmin(nlev,max(1,qsize),nelemd), gfr%qmax(nlev,max(1,qsize),nelemd), &
-         gfr%phis(nphys2,nelemd), gfr%spherep_f(nphys,nphys,nelemd))
+         gfr%phis(nphys2,nelemd), gfr%center_f(nphys,nphys,nelemd), &
+         gfr%corners_f(4,nphys,nphys,nelemd))
     call gfr_init_geometry(elem, gfr)
     call gfr_init_Dmap(elem, gfr)
 
@@ -247,7 +249,7 @@ contains
 
     if (.not. allocated(gfr%fv_metdet)) return
     deallocate(gfr%fv_metdet, gfr%D_f, gfr%Dinv_f, gfr%qmin, gfr%qmax, gfr%phis, &
-         gfr%spherep_f)
+         gfr%center_f, gfr%corners_f)
     if (gfr%check) deallocate(gfr%check_areas)
   end subroutine gfr_finish
 
@@ -1088,47 +1090,51 @@ contains
     type (cartesian3D_t) :: fv_corners_xyz(2,2), ctr
     real(kind=real_kind) :: ones(np*np), ones2(np,np), wrk(np,np), ae(2), be(2), &
          spherical_area, tmp, wrk2(2,2), ac, bc
-    integer :: nf, nf2, ie, i, j, k, ai, bi, idx
+    integer :: nf, nf2, ie, i, j, k, ai, bi, idx, c
 
     nf = gfr%nphys
     nf2 = nf*nf
-    if (cubed_sphere_map == 2) then
-       do ie = 1,nelemd
-          do j = 1,nf
-             call gfr_f_ref_edges(nf, j, be)
-             call gfr_f_ref_center(nf, j, bc)
-             do i = 1,nf
-                call gfr_f_ref_edges(nf, i, ae)
-                call gfr_f_ref_center(nf, i, ac)
-                k = i+(j-1)*nf
-                ctr%x = zero; ctr%y = zero; ctr%z = zero
-                do bi = 1,2
-                   do ai = 1,2
-                      if ( (i == 1  .and. ai == 1 .and. j == 1  .and. bi == 1) .or. &
-                           (i == 1  .and. ai == 1 .and. j == nf .and. bi == 2) .or. &
-                           (i == nf .and. ai == 2 .and. j == 1  .and. bi == 1) .or. &
-                           (i == nf .and. ai == 2 .and. j == nf .and. bi == 2)) then
-                         ! Use the element corner if we are at it.
-                         idx = 2*(bi-1)
-                         if (bi == 1) then
-                            idx = idx + ai
-                         else
-                            idx = idx + 3 - ai
-                         end if
-                         fv_corners_xyz(ai,bi) = elem(ie)%corners3D(idx)
+    do ie = 1,nelemd
+       do j = 1,nf
+          call gfr_f_ref_edges(nf, j, be)
+          call gfr_f_ref_center(nf, j, bc)
+          do i = 1,nf
+             call gfr_f_ref_edges(nf, i, ae)
+             call gfr_f_ref_center(nf, i, ac)
+             k = i+(j-1)*nf
+             ctr%x = zero; ctr%y = zero; ctr%z = zero
+             do bi = 1,2
+                do ai = 1,2
+                   if ( (i == 1  .and. ai == 1 .and. j == 1  .and. bi == 1) .or. &
+                        (i == 1  .and. ai == 1 .and. j == nf .and. bi == 2) .or. &
+                        (i == nf .and. ai == 2 .and. j == 1  .and. bi == 1) .or. &
+                        (i == nf .and. ai == 2 .and. j == nf .and. bi == 2)) then
+                      ! Use the element corner if we are at it.
+                      idx = 2*(bi-1)
+                      if (bi == 1) then
+                         idx = idx + ai
                       else
-                         ! p_sphere is unused. fv_corners_xyz(ai,bi) contains
-                         ! the cartesian point before it's converted to lat-lon.
-                         p_sphere = ref2sphere(ae(ai), be(bi), elem(ie)%corners3D, &
-                              cubed_sphere_map, elem(ie)%corners, elem(ie)%facenum, &
-                              fv_corners_xyz(ai,bi))
+                         idx = idx + 3 - ai
                       end if
-                      ctr%x = ctr%x + fv_corners_xyz(ai,bi)%x
-                      ctr%y = ctr%y + fv_corners_xyz(ai,bi)%y
-                      ctr%z = ctr%z + fv_corners_xyz(ai,bi)%z
-                   end do
+                      fv_corners_xyz(ai,bi) = elem(ie)%corners3D(idx)
+                   else
+                      ! p_sphere is unused. fv_corners_xyz(ai,bi) contains
+                      ! the cartesian point before it's converted to lat-lon.
+                      p_sphere = ref2sphere(ae(ai), be(bi), elem(ie)%corners3D, &
+                           cubed_sphere_map, elem(ie)%corners, elem(ie)%facenum, &
+                           fv_corners_xyz(ai,bi))
+                      if (cubed_sphere_map == 0) then
+                         ! In this case, fv_corners_xyz above is not set.
+                         fv_corners_xyz(ai,bi) = change_coordinates(p_sphere)
+                      end if
+                   end if
+                   ctr%x = ctr%x + fv_corners_xyz(ai,bi)%x
+                   ctr%y = ctr%y + fv_corners_xyz(ai,bi)%y
+                   ctr%z = ctr%z + fv_corners_xyz(ai,bi)%z
                 end do
+             end do
 
+             if (cubed_sphere_map == 2) then
                 call sphere_tri_area(fv_corners_xyz(1,1), fv_corners_xyz(2,1), &
                      fv_corners_xyz(2,2), spherical_area)
                 call sphere_tri_area(fv_corners_xyz(1,1), fv_corners_xyz(2,2), &
@@ -1138,11 +1144,25 @@ contains
 
                 ! Center is average of 4 corner points projected to sphere.
                 ctr%x = ctr%x/four; ctr%y = ctr%y/four; ctr%z = ctr%z/four
-                gfr%spherep_f(i,j,ie) = ctr
+                gfr%center_f(i,j,ie) = ctr
+             end if
+
+             do bi = 1,2
+                do ai = 1,2
+                   c = 2*(bi-1) + ai
+                   gfr%corners_f(c,i,j,ie) = fv_corners_xyz(ai,bi)
+                end do
              end do
           end do
        end do
-    else
+    end do
+
+    if (cubed_sphere_map == 0) then
+       ! For cubed_sphere_map == 0, we set the center so that it maps to the ref
+       ! element center and set fv_metdet so that it corresponds to the integral
+       ! of metdet over the FV subcell. TempestRemap establishes the
+       ! cubed_sphere_map == 2 convention, but for cubed_sphere_map == 0 there
+       ! is no external convention.
        ones = one
        ones2 = one
        do ie = 1,nelemd
@@ -1154,7 +1174,7 @@ contains
                 call gfr_f_ref_center(nf, i, ac)
                 p_sphere = ref2sphere(ac, bc, elem(ie)%corners3D, cubed_sphere_map, &
                      elem(ie)%corners, elem(ie)%facenum)
-                gfr%spherep_f(i,j,ie) = change_coordinates(p_sphere)
+                gfr%center_f(i,j,ie) = change_coordinates(p_sphere)
              end do
           end do
        end do
@@ -2061,10 +2081,25 @@ contains
 
     type (spherical_polar_t) :: p
 
-    p = change_coordinates(gfr%spherep_f(i,j,ie))
+    p = change_coordinates(gfr%center_f(i,j,ie))
     lat = p%lat
     lon = p%lon
   end subroutine gfr_f_get_latlon
+
+  subroutine gfr_f_get_corner_latlon(ie, i, j, c, lat, lon)
+    ! Get (lat,lon) of FV point i,j.
+
+    use coordinate_systems_mod, only: spherical_polar_t, change_coordinates
+
+    integer, intent(in) :: ie, i, j, c
+    real(kind=real_kind), intent(out) :: lat, lon
+
+    type (spherical_polar_t) :: p
+
+    p = change_coordinates(gfr%corners_f(i,j,c,ie))
+    lat = p%lat
+    lon = p%lon
+  end subroutine gfr_f_get_corner_latlon
 
   subroutine gfr_f_get_cartesian3d(ie, i, j, p)
     ! Get (x,y,z) of FV point i,j.
@@ -2072,7 +2107,7 @@ contains
     integer, intent(in) :: ie, i, j
     type (cartesian3D_t), intent(out) :: p
 
-    p = gfr%spherep_f(i,j,ie)
+    p = gfr%center_f(i,j,ie)
   end subroutine gfr_f_get_cartesian3d
 
   subroutine limiter_clip_and_sum(n, spheremp, qmin, qmax, dp, q)
