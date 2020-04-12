@@ -2096,7 +2096,7 @@ contains
 
     type (spherical_polar_t) :: p
 
-    p = change_coordinates(gfr%corners_f(i,j,c,ie))
+    p = change_coordinates(gfr%corners_f(c,i,j,ie))
     lat = p%lat
     lon = p%lon
   end subroutine gfr_f_get_corner_latlon
