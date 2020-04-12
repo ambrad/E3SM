@@ -5,7 +5,7 @@
 # include "config.h.c"
 #endif
 
-#include <Kokkos_Core.hpp>
+#include "compose_kokkos.hpp"
 
 #ifdef _OPENMP
 # include <omp.h>

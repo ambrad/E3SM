@@ -20,8 +20,8 @@ void calc_q_extrema (IslMpi<MT>& cm, const Int& nets, const Int& nete) {
     q_min_s = q_max_s = q(tci,iq,0,lev);
     for (Int k = 1; k < np*np; ++k) {
       q(tci,iq,k,lev) = qdp(tci,iq,k,lev)/dp(tci,k,lev);
-      q_min_s = slmm::min(q_min_s, q(tci,iq,k,lev));
-      q_max_s = slmm::max(q_max_s, q(tci,iq,k,lev));
+      q_min_s = ko::min(q_min_s, q(tci,iq,k,lev));
+      q_max_s = ko::max(q_max_s, q(tci,iq,k,lev));
     }
     ed.q_extrema(iq,lev,0) = q_min_s;
     ed.q_extrema(iq,lev,1) = q_max_s;

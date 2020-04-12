@@ -82,7 +82,7 @@ void deep_copy (LocalMesh<ESD>& d, const LocalMesh<ESS>& s) {
 }
 
 // Is v inside, including on, the quad ic?
-template <typename ES>
+template <typename ES> SLMM_KF
 inline bool is_inside (const LocalMesh<ES>& m,
                        const Real* v, const Real& atol, const Int& ic) {
   using slmm::slice;
@@ -108,7 +108,7 @@ inline bool is_inside (const LocalMesh<ES>& m,
 // supported in Homme only for regular cubed-sphere meshes, not RRM; in that
 // case, edges are great arcs, so again this impl works. In contrast,
 // calc_sphere_to_ref has to be specialized on cubed_sphere_map.
-template <typename ES>
+template <typename ES> SLMM_KF
 int get_src_cell (const LocalMesh<ES>& m, // Local mesh.
                   const Real* v, // 3D Cartesian point.
                   const Int my_ic = -1) { // Target cell in the local mesh.
@@ -133,12 +133,12 @@ int get_src_cell (const LocalMesh<ES>& m, // Local mesh.
         // We can expect to lose approx. -log10(L) digits due to cancellation in
         // the formation of the edge normal and in dot_c_amb. Multiply by 100
         // for a little extra padding.
-        atol = 1e2 * std::numeric_limits<Real>::epsilon() / L;
+        atol = 1e2 * ko::NumericTraits<Real>::epsilon() / L;
       } else {
         // Ok, we really didn't do that very well. We're still failing to find
         // the element. Ramp up the atol even more.
-        atol = std::max(1e3*atol,
-                        std::sqrt(std::numeric_limits<Real>::epsilon()));
+        atol = ko::max(1e3*atol,
+                       std::sqrt(ko::NumericTraits<Real>::epsilon()));
       }
     }
     if (my_ic != -1 && is_inside(m, v, atol, my_ic)) return my_ic;
