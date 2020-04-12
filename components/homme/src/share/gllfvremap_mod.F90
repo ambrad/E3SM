@@ -1090,7 +1090,7 @@ contains
     type (cartesian3D_t) :: fv_corners_xyz(2,2), ctr
     real(kind=real_kind) :: ones(np*np), ones2(np,np), wrk(np,np), ae(2), be(2), &
          spherical_area, tmp, wrk2(2,2), ac, bc
-    integer :: nf, nf2, ie, i, j, k, ai, bi, idx, c
+    integer :: nf, nf2, ie, i, j, k, ai, bi, idx
 
     nf = gfr%nphys
     nf2 = nf*nf
@@ -1149,8 +1149,14 @@ contains
 
              do bi = 1,2
                 do ai = 1,2
-                   c = 2*(bi-1) + ai
-                   gfr%corners_f(c,i,j,ie) = fv_corners_xyz(ai,bi)
+                   ! CCW with ai the fast direction.
+                   idx = 2*(bi-1)
+                   if (bi == 1) then
+                      idx = idx + ai
+                   else
+                      idx = idx + 3 - ai
+                   end if
+                   gfr%corners_f(idx,i,j,ie) = fv_corners_xyz(ai,bi)
                 end do
              end do
           end do
