@@ -37,17 +37,18 @@ namespace islmpi {
 
 template <typename MT>
 SLMM_KF slmm::EnableIfNotOnGpu<MT> throw_on_sci_error (
-  const IslMpi<MT>& cm, const DepPoints<MT>& dep_points, Int k, Int lev, Int tci)
+  const slmm::LocalMesh<typename MT::DES>& mesh,
+  const typename IslMpi<MT>::ElemDataD& ed,
+  const bool nearest_point_permitted, const DepPoints<MT>& dep_points,
+  Int k, Int lev, Int tci)
 {
-  const auto& mesh = cm.advecter->local_mesh(tci);
   const auto tgt_idx = mesh.tgt_elem;
-  auto& ed = cm.ed_d(tci);
   std::stringstream ss;
   ss.precision(17);
   const auto* v = &dep_points(tci,lev,k,0);
   ss << "Departure point is outside of halo:\n"
      << "  nearest point permitted: "
-     << cm.advecter->nearest_point_permitted(lev)
+     << nearest_point_permitted
      << "\n  elem LID " << tci
      << " elem GID " << ed.me->gid
      << " (lev, k) (" << lev << ", " << k << ")"
@@ -59,7 +60,10 @@ SLMM_KF slmm::EnableIfNotOnGpu<MT> throw_on_sci_error (
 
 template <typename MT>
 SLMM_KF slmm::EnableIfOnGpu<MT> throw_on_sci_error (
-  const IslMpi<MT>& cm, const DepPoints<MT>& dep_points, Int k, Int lev, Int tci)
+  const slmm::LocalMesh<typename MT::DES>& mesh,
+  const typename IslMpi<MT>::ElemDataD& ed,
+  const bool nearest_point_permitted, const DepPoints<MT>& dep_points,
+  Int k, Int lev, Int tci)
 {
   ko::abort("throw_on_sci_error");
 }
@@ -97,12 +101,12 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
       const auto tgt_idx = mesh.tgt_elem;
       auto& ed = ed_d(tci);
       Int sci = slmm::get_src_cell(mesh, &dep_points(tci,lev,k,0), tgt_idx);
-      if (sci == -1 &&
-          slmm::Advecter<MT>::nearest_point_permitted(
-            nearest_point_permitted_lev_bdy, lev))
-        sci = slmm::get_nearest_point(mesh, &dep_points(tci,lev,k,0), tgt_idx);
-      if (sci == -1)
-        throw_on_sci_error(cm, dep_points, k, lev, tci);
+      if (sci == -1) {
+        const bool npp = slmm::Advecter<MT>::nearest_point_permitted(
+          nearest_point_permitted_lev_bdy, lev);
+        if (npp) sci = slmm::get_nearest_point(mesh, &dep_points(tci,lev,k,0), tgt_idx);
+        if (sci == -1) throw_on_sci_error<MT>(mesh, ed, npp, dep_points, k, lev, tci);
+      }
       ed.src(lev,k) = sci;
       if (ed.nbrs(sci).rank == myrank) {
         auto& t = ed.own.atomic_inc_and_return_next();
