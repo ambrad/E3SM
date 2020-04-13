@@ -67,6 +67,11 @@ template <typename ES> struct OnGpu {
 template <> struct OnGpu<Kokkos::Cuda> { enum : bool { value = true }; };
 #endif
 
+template <typename MT> using EnableIfOnGpu
+  = typename std::enable_if<slmm::OnGpu<typename MT::DES>::value>::type;
+template <typename MT> using EnableIfNotOnGpu
+  = typename std::enable_if< ! slmm::OnGpu<typename MT::DES>::value>::type;
+
 template <typename MT> struct SameSpace {
   enum { value = std::is_same<typename MT::HES, typename MT::DES>::value };
 };

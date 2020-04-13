@@ -36,9 +36,8 @@ namespace homme {
 namespace islmpi {
 
 template <typename MT>
-SLMM_KF void throw_on_sci_error (
-  const IslMpi<MT>& cm, const DepPoints<MT>& dep_points, Int k, Int lev, Int tci,
-  typename std::enable_if< ! slmm::OnGpu<typename MT::DES>::value>::type* = 0)
+SLMM_KF slmm::EnableIfNotOnGpu<MT> throw_on_sci_error (
+  const IslMpi<MT>& cm, const DepPoints<MT>& dep_points, Int k, Int lev, Int tci)
 {
   const auto& mesh = cm.advecter->local_mesh(tci);
   const auto tgt_idx = mesh.tgt_elem;
@@ -59,9 +58,8 @@ SLMM_KF void throw_on_sci_error (
 }
 
 template <typename MT>
-SLMM_KF void throw_on_sci_error (
-  const IslMpi<MT>& cm, const DepPoints<MT>& dep_points, Int k, Int lev, Int tci,
-  typename std::enable_if<slmm::OnGpu<typename MT::DES>::value>::type* = 0)
+SLMM_KF slmm::EnableIfOnGpu<MT> throw_on_sci_error (
+  const IslMpi<MT>& cm, const DepPoints<MT>& dep_points, Int k, Int lev, Int tci)
 {
   ko::abort("throw_on_sci_error");
 }
