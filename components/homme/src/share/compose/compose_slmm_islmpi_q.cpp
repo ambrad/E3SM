@@ -226,7 +226,7 @@ void calc_q (const IslMpi<MT>& cm, const Int& src_lid, const Int& lev,
 
 template <Int np, typename MT>
 void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
-                 const FA4<const Real>& dep_points,
+                 const DepPoints<MT>& dep_points,
                  const FA4<Real>& q_min, const FA4<Real>& q_max) {
   const int tid = get_tid();
   for (Int tci = nets; tci <= nete; ++tci) {
@@ -240,7 +240,7 @@ void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
         q_max(e.k, e.lev, iq, tci) = sed.q_extrema(iq, e.lev, 1);
       }
       Real* const qtmp = &cm.rwork(tid, 0);
-      calc_q<np>(cm, slid, e.lev, &dep_points(0, e.k, e.lev, tci), qtmp, false);
+      calc_q<np>(cm, slid, e.lev, &dep_points(tci, e.lev, e.k, 0), qtmp, false);
       for (Int iq = 0; iq < cm.qsize; ++iq)
         q_tgt(e.k, e.lev, iq) = qtmp[iq];
     }
@@ -334,7 +334,7 @@ void calc_coefs (const IslMpi<MT>& cm, const Int& src_lid, const Int& lev,
 
 template <Int np, typename MT>
 void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
-                 const FA4<const Real>& dep_points,
+                 const DepPoints<MT>& dep_points,
                  const FA4<Real>& q_min, const FA4<Real>& q_max) {
   const auto dp_src = cm.tracer_arrays.dp;
   const auto qdp_src = cm.tracer_arrays.qdp;
@@ -353,7 +353,7 @@ void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
       q_max(e.k, e.lev, iq, tci) = sed.q_extrema(iq, e.lev, 1);
     }
     Real rx[4], ry[4];
-    calc_coefs<np>(cm, slid, e.lev, &dep_points(0, e.k, e.lev, tci), rx, ry);
+    calc_coefs<np>(cm, slid, e.lev, &dep_points(tci, e.lev, e.k, 0), rx, ry);
     for (Int iq = 0; iq < qsize; ++iq) {
       // q from calc_q_extrema is being overwritten, so have to use qdp/dp.
       Real dp[16];
@@ -498,7 +498,7 @@ void calc_rmt_q (IslMpi<MT>& cm) {
 
 template <typename MT>
 void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
-                 const FA4<const Real>& dep_points,
+                 const DepPoints<MT>& dep_points,
                  const FA4<Real>& q_min, const FA4<Real>& q_max) {
   switch (cm.np) {
   case 4: calc_own_q<4>(cm, nets, nete, dep_points, q_min, q_max); break;
@@ -515,8 +515,9 @@ void calc_rmt_q (IslMpi<MT>& cm) {
 }
 
 template void calc_rmt_q(IslMpi<slmm::MachineTraits>& cm);
-template void calc_own_q(IslMpi<slmm::MachineTraits>& cm, const Int& nets,
-                         const Int& nete, const FA4<const Real>& dep_points,
+template void calc_own_q(IslMpi<slmm::MachineTraits>& cm,
+                         const Int& nets, const Int& nete,
+                         const DepPoints<slmm::MachineTraits>& dep_points,
                          const FA4<Real>& q_min, const FA4<Real>& q_max);
 template void copy_q(IslMpi<slmm::MachineTraits>& cm, const Int& nets,
                      const FA4<Real>& q_min, const FA4<Real>& q_max);

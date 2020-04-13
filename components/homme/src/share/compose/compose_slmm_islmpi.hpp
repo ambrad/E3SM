@@ -532,8 +532,13 @@ void extend_local_meshes(const mpi::Parallel& p,
 } // namespace extend_halo
 
 template <typename MT>
+using DepPoints = ko::View<Real***[3], ko::LayoutRight, typename MT::DES>;
+template <typename MT>
+using DepPointsH = ko::View<Real***[3], ko::LayoutRight, typename MT::HES>;
+
+template <typename MT>
 void analyze_dep_points(IslMpi<MT>& cm, const Int& nets, const Int& nete,
-                        const FA4<Real>& dep_points);
+                        const DepPoints<MT>& dep_points);
 
 template <typename MT>
 void init_mylid_with_comm_threaded(IslMpi<MT>& cm, const Int& nets, const Int& nete);
@@ -569,7 +574,7 @@ Int getbuf (Buffer& buf, const Int& os, Int& i1, Int& i2) {
 template <typename MT>
 void pack_dep_points_sendbuf_pass1(IslMpi<MT>& cm);
 template <typename MT>
-void pack_dep_points_sendbuf_pass2(IslMpi<MT>& cm, const FA4<const Real>& dep_points);
+void pack_dep_points_sendbuf_pass2(IslMpi<MT>& cm, const DepPoints<MT>& dep_points);
 
 template <typename MT>
 void calc_q_extrema(IslMpi<MT>& cm, const Int& nets, const Int& nete);
@@ -578,7 +583,7 @@ template <typename MT>
 void calc_rmt_q(IslMpi<MT>& cm);
 template <typename MT>
 void calc_own_q(IslMpi<MT>& cm, const Int& nets, const Int& nete,
-                const FA4<const Real>& dep_points,
+                const DepPoints<MT>& dep_points,
                 const FA4<Real>& q_min, const FA4<Real>& q_max);
 template <typename MT>
 void copy_q(IslMpi<MT>& cm, const Int& nets,
@@ -591,7 +596,7 @@ void copy_q(IslMpi<MT>& cm, const Int& nets,
 template <typename MT = slmm::MachineTraits>
 void step(
   IslMpi<MT>& cm, const Int nets, const Int nete,
-  Cartesian3D* dep_points_r,    // dep_points(1:3, 1:np, 1:np)
+  Real* dep_points_r,            // dep_points(1:3, 1:np, 1:np)
   Real* q_min_r, Real* q_max_r); // q_{min,max}(1:np, 1:np, lev, 1:qsize, ie-nets+1)
 
 } // namespace islmpi

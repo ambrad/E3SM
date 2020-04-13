@@ -323,13 +323,15 @@ void slmm_csl (
 #if 0
 #pragma message "RM TRY-CATCH WHILE DEV'ING"
   try {
-    homme::islmpi::step(*g_csl_mpi, nets - 1, nete - 1, dep_points, minq, maxq);
+    homme::islmpi::step(*g_csl_mpi, nets - 1, nete - 1,
+                        reinterpret_cast<homme::Real*>(dep_points), minq, maxq);
   } catch (const std::exception& e) {
     std::cerr << e.what();
     *info = -1;
   }
 #else
-  homme::islmpi::step(*g_csl_mpi, nets - 1, nete - 1, dep_points, minq, maxq);
+  homme::islmpi::step(*g_csl_mpi, nets - 1, nete - 1,
+                      reinterpret_cast<homme::Real*>(dep_points), minq, maxq);
 #endif
   homme::islmpi::d2h(g_csl_mpi->tracer_arrays);
   amb::dev_fin_threads();

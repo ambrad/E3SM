@@ -9,7 +9,7 @@ namespace islmpi {
 template <typename MT>
 void step (
   IslMpi<MT>& cm, const Int nets, const Int nete,
-  Cartesian3D* dep_points_r,    // dep_points(1:3, 1:np, 1:np)
+  Real* dep_points_r,           // dep_points(1:3, 1:np, 1:np)
   Real* q_min_r, Real* q_max_r) // q_{min,max}(1:np, 1:np, lev, 1:qsize, ie-nets+1)
 {
   slmm_assert(cm.np == 4);
@@ -17,9 +17,14 @@ void step (
   slmm_assert(nets == 0 && nete+1 == cm.nelemd);
 #endif
 
-  const FA4<Real>
-    dep_points(reinterpret_cast<Real*>(dep_points_r),
-               3, cm.np2, cm.nlev, cm.nelemd);
+  const DepPointsH<MT> dep_points_h(dep_points_r, cm.nelemd, cm.nlev, cm.np2, 3);
+#ifdef COMPOSE_PORT_DEV_VIEWS
+  const DepPoints<MT> dep_points("dep_points", cm.nelemd, cm.nlev, cm.np2, 3);
+  ko::deep_copy(dep_points, dep_points_h);
+#else
+  const DepPoints dep_points = dep_points_h;
+#endif
+
   const Int nelem = nete - nets + 1;
   const FA4<Real>
     q_min(q_min_r, cm.np2, cm.nlev, cm.qsize, nelem),
@@ -59,9 +64,13 @@ void step (
   copy_q(cm, nets, q_min, q_max);
   // Wait on send buffer so it's free to be used by others.
   wait_on_send(cm, true /* skip_if_empty */);
+
+#ifdef COMPOSE_PORT_DEV_VIEWS
+  ko::deep_copy(dep_points_h, dep_points);
+#endif
 }
 
-template void step(IslMpi<slmm::MachineTraits>&, const Int, const Int, Cartesian3D*, Real*, Real*);
+template void step(IslMpi<slmm::MachineTraits>&, const Int, const Int, Real*, Real*, Real*);
 
 } // namespace islmpi
 } // namespace homme

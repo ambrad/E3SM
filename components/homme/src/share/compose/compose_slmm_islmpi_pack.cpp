@@ -72,7 +72,7 @@ void pack_dep_points_sendbuf_pass1 (IslMpi<MT>& cm) {
 }
 
 template <typename MT>
-void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const FA4<const Real>& dep_points) {
+void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const DepPoints<MT>& dep_points) {
   const auto myrank = cm.p->rank();
 #ifdef COMPOSE_PORT
   const Int start = 0, end = cm.mylid_with_comm_d.n();
@@ -132,7 +132,7 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const FA4<const Real>& dep_p
 #endif
       slmm_kernel_assert_high(xptr > 0);
       for (Int i = 0; i < 3; ++i)
-        sb(xptr + i) = dep_points(i,k,lev,tci);
+        sb(xptr + i) = dep_points(tci,lev,k,i);
       auto& item = ed.rmt.atomic_inc_and_return_next();
       item.q_extrema_ptr = qsize * qptr;
       item.q_ptr = item.q_extrema_ptr + qsize*(2 + cnt);
@@ -146,7 +146,7 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const FA4<const Real>& dep_p
 
 template void pack_dep_points_sendbuf_pass1(IslMpi<slmm::MachineTraits>& cm);
 template void pack_dep_points_sendbuf_pass2(IslMpi<slmm::MachineTraits>& cm,
-                                            const FA4<const Real>& dep_points);
+                                            const DepPoints<slmm::MachineTraits>& dep_points);
 
 } // namespace islmpi
 } // namespace homme

@@ -37,7 +37,7 @@ namespace islmpi {
 
 template <typename MT>
 SLMM_KF void throw_on_sci_error (
-  const IslMpi<MT>& cm, const FA4<Real>& dep_points, Int k, Int lev, Int tci,
+  const IslMpi<MT>& cm, const DepPoints<MT>& dep_points, Int k, Int lev, Int tci,
   typename std::enable_if< ! slmm::OnGpu<typename MT::DES>::value>::type* = 0)
 {
   const auto& mesh = cm.advecter->local_mesh(tci);
@@ -45,7 +45,7 @@ SLMM_KF void throw_on_sci_error (
   auto& ed = cm.ed_d(tci);
   std::stringstream ss;
   ss.precision(17);
-  const auto* v = &dep_points(0,k,lev,tci);
+  const auto* v = &dep_points(tci,lev,k,0);
   ss << "Departure point is outside of halo:\n"
      << "  nearest point permitted: "
      << cm.advecter->nearest_point_permitted(lev)
@@ -60,7 +60,7 @@ SLMM_KF void throw_on_sci_error (
 
 template <typename MT>
 SLMM_KF void throw_on_sci_error (
-  const IslMpi<MT>& cm, const FA4<Real>& dep_points, Int k, Int lev, Int tci,
+  const IslMpi<MT>& cm, const DepPoints<MT>& dep_points, Int k, Int lev, Int tci,
   typename std::enable_if<slmm::OnGpu<typename MT::DES>::value>::type* = 0)
 {
   ko::abort("throw_on_sci_error");
@@ -69,7 +69,7 @@ SLMM_KF void throw_on_sci_error (
 // Find where each departure point is.
 template <typename MT>
 void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
-                         const FA4<Real>& dep_points) {
+                         const DepPoints<MT>& dep_points) {
   const auto myrank = cm.p->rank();
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
   cm.bla.zero();
@@ -98,11 +98,11 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
       const auto& mesh = local_meshes(tci);
       const auto tgt_idx = mesh.tgt_elem;
       auto& ed = ed_d(tci);
-      Int sci = slmm::get_src_cell(mesh, &dep_points(0,k,lev,tci), tgt_idx);
+      Int sci = slmm::get_src_cell(mesh, &dep_points(tci,lev,k,0), tgt_idx);
       if (sci == -1 &&
           slmm::Advecter<MT>::nearest_point_permitted(
             nearest_point_permitted_lev_bdy, lev))
-        sci = slmm::get_nearest_point(mesh, &dep_points(0,k,lev,tci), tgt_idx);
+        sci = slmm::get_nearest_point(mesh, &dep_points(tci,lev,k,0), tgt_idx);
       if (sci == -1)
         throw_on_sci_error(cm, dep_points, k, lev, tci);
       ed.src(lev,k) = sci;
@@ -152,8 +152,9 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
 #endif
 }
 
-template void analyze_dep_points(IslMpi<slmm::MachineTraits>& cm, const Int& nets,
-                                 const Int& nete, const FA4<Real>& dep_points);
+template void
+analyze_dep_points(IslMpi<slmm::MachineTraits>& cm, const Int& nets,
+                   const Int& nete, const DepPoints<slmm::MachineTraits>& dep_points);
 
 } // namespace islmpi
 } // namespace homme
