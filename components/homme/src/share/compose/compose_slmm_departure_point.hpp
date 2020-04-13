@@ -82,9 +82,9 @@ void deep_copy (LocalMesh<ESD>& d, const LocalMesh<ESS>& s) {
 }
 
 // Is v inside, including on, the quad ic?
-template <typename ES> SLMM_KF
-inline bool is_inside (const LocalMesh<ES>& m,
-                       const Real* v, const Real& atol, const Int& ic) {
+template <typename ES> SLMM_KIF
+bool is_inside (const LocalMesh<ES>& m,
+                const Real* v, const Real& atol, const Int& ic) {
   using slmm::slice;
   const auto cell = slice(m.e, ic);
   const auto celln = slice(m.en, ic);

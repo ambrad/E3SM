@@ -90,7 +90,7 @@ using siqk::nslices;
 using siqk::szslice;
 using siqk::slice;
 
-template<typename V> inline Int len (const V& v)
+template<typename V> SLMM_KIF Int len (const V& v)
 { return static_cast<Int>(v.extent_int(0)); }
 
 template<typename T> inline Int len (const std::vector<T>& v)

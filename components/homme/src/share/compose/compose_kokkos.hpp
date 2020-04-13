@@ -16,7 +16,7 @@ const T& max (const T& a, const T& b) { return a > b ? a : b; }
 template <typename Real> struct NumericTraits;
 
 template <> struct NumericTraits<double> {
-  static double epsilon () {
+  KOKKOS_INLINE_FUNCTION static double epsilon () {
     return
 #ifdef KOKKOS_ENABLE_CUDA
       2.2204460492503131e-16
@@ -28,7 +28,7 @@ template <> struct NumericTraits<double> {
 };
 
 template <> struct NumericTraits<float> {
-  static float epsilon () {
+  KOKKOS_INLINE_FUNCTION static float epsilon () {
     return
 #ifdef KOKKOS_ENABLE_CUDA
       1.1920928955078125e-07
