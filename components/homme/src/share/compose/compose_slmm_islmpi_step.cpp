@@ -22,7 +22,7 @@ void step (
   const DepPoints<MT> dep_points("dep_points", cm.nelemd, cm.nlev, cm.np2, 3);
   ko::deep_copy(dep_points, dep_points_h);
 #else
-  const DepPoints dep_points = dep_points_h;
+  const DepPoints<MT> dep_points = dep_points_h;
 #endif
 
   const Int nelem = nete - nets + 1;
