@@ -253,7 +253,7 @@ void fill_perim (LocalMesh<ES>& m) {
   }
 }
 
-template <typename V3>
+template <typename V3> SLMM_KF
 void calc_approx_nearest_point_on_arc (
   const V3& p0, const V3& p1, const V3& nml, const Real* point, Real* nearest)
 {
@@ -277,7 +277,7 @@ void calc_approx_nearest_point_on_arc (
   else if (alpha >= 1) for (Int d = 0; d < 3; ++d) nearest[d] = p0[d];
 }
 
-template <typename ES>
+template <typename ES> SLMM_KF
 void calc (const LocalMesh<ES>& m, Real* v) {
   using geo = siqk::SphereGeometry;
   const Int nedge = m.perimp.size();

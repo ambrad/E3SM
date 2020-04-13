@@ -24,9 +24,8 @@
 #endif
 
 namespace slmm {
-template <typename ES>
-int get_nearest_point (const LocalMesh<ES>& m,
-                       Real* v, const Int my_ic) {
+template <typename ES> SLMM_KIF
+int get_nearest_point (const LocalMesh<ES>& m, Real* v, const Int my_ic) {
   nearest_point::calc(m, v);
   return get_src_cell(m, v, my_ic);
 }
