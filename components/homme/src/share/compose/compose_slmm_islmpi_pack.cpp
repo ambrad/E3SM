@@ -26,7 +26,7 @@ void pack_dep_points_sendbuf_pass1 (IslMpi<MT>& cm) {
 # pragma omp for
 #endif
   for (Int ri = 0; ri < nrmtrank; ++ri) {
-    auto&& sendbuf = cm.sendbuf(ri);
+    auto&& sendbuf = cm.sendbuf_meta_h(ri);
     const auto&& lid_on_rank = cm.lid_on_rank(ri);
     // metadata offset, x bulk data offset, q bulk data offset
     Int mos = 0, xos = 0, qos = 0, sendcount = 0, cnt;
@@ -35,7 +35,7 @@ void pack_dep_points_sendbuf_pass1 (IslMpi<MT>& cm) {
     sendcount += cnt;
     if (cm.nx_in_rank(ri) == 0) {
       setbuf(sendbuf, 0, 0, mos);
-      cm.sendcount(ri) = sendcount;
+      cm.sendcount_h(ri) = sendcount;
       continue;
     }
     auto&& bla = cm.bla(ri);
@@ -66,9 +66,21 @@ void pack_dep_points_sendbuf_pass1 (IslMpi<MT>& cm) {
       slmm_assert(nx_in_lid == 0);
     }
     setbuf(sendbuf, 0, cm.nx_in_rank(ri), mos /* offset to x bulk data */);
-    cm.x_bulkdata_offset(ri) = mos;
-    cm.sendcount(ri) = sendcount;
+    cm.x_bulkdata_offset_h(ri) = mos;
+    cm.sendcount_h(ri) = sendcount;
   }
+#ifdef COMPOSE_PORT_SEPARATE_VIEWS
+  // Copy metadata chunks to device sendbuf.
+  deep_copy(cm.x_bulkdata_offset, cm.x_bulkdata_offset_h);
+  deep_copy(cm.sendcount, cm.sendcount_h);
+  Int os = 0;
+  for (Int ri = 0; ri < nrmtrank; ++ri) {
+    const auto n = cm.x_bulkdata_offset_h(ri);
+    ko::deep_copy(ko::View<Real*, typename MT::DES>(cm.sendbuf.data() + os, n),
+                  ko::View<Real*, typename MT::HES>(cm.sendbuf_meta_h(ri).data(), n));
+    os += cm.sendsz[ri];
+  }
+#endif
 }
 
 template <typename MT>
@@ -96,6 +108,7 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const DepPoints<MT>& dep_poi
     const auto ed_d = cm.ed_d;
     const auto mylid_with_comm_d = cm.mylid_with_comm_d;
     const auto sendbuf = cm.sendbuf;
+    const auto x_bulkdata_offset = cm.x_bulkdata_offset;
     const auto bla = cm.bla;
     const auto f = KOKKOS_LAMBDA (const Int& ki) {
       const Int ptr = start + ki/(nlev*np2);
@@ -125,7 +138,7 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const DepPoints<MT>& dep_poi
         ++t.cnt;
 #endif
         qptr = t.qptr;
-        xptr = cm.x_bulkdata_offset(ri) + t.xptr + 3*cnt;
+        xptr = x_bulkdata_offset(ri) + t.xptr + 3*cnt;
       }
 #ifdef COMPOSE_HORIZ_OPENMP
       if (cm.horiz_openmp) omp_unset_lock(lock);

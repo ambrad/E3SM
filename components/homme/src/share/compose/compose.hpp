@@ -60,6 +60,10 @@
 # if defined COMPOSE_HORIZ_OPENMP || defined COMPOSE_COLUMN_OPENMP
 "This should not happen."
 # endif
+# if defined COMPOSE_MIMIC_GPU || defined KOKKOS_ENABLE_CUDA
+// If defined, then certain buffers need explicit mirroring and copying.
+#  define COMPOSE_PORT_SEPARATE_VIEWS
+# endif
 # if ! defined COMPOSE_WITH_HOMMEXX
 // Need to use utils from compose_port_dev.hpp to bridge Homme (ie, not Hommexx)
 // and COMPOSE_PORT code paths.

@@ -686,9 +686,10 @@ void size_mpi_buffers (IslMpi<MT>& cm, const Rank2Gids& rank2rmtgids,
   static_assert(sizeof(Real) >= sizeof(Int),
                 "For buffer packing, we require sizeof(Real) >= sizeof(Int)");
   const auto xbufcnt = [&] (const std::set<Int>& rmtgids,
-                            const std::set<Int>& owngids) -> Int {
-    return (sosi + (2*soi + (2*soi)*cm.nlev)*rmtgids.size() + // meta data
-            owngids.size()*cm.nlev*cm.np2*3*sor);             // bulk data
+                            const std::set<Int>& owngids,
+                            const bool include_bulk = true) -> Int {
+    return (sosi + (2*soi + (2*soi)*cm.nlev)*rmtgids.size() +            // meta data
+            (include_bulk ? 1 : 0)*owngids.size()*cm.nlev*cm.np2*3*sor); // bulk data
   };
   const auto qbufcnt = [&] (const std::set<Int>& rmtgids,
                             const std::set<Int>& owngids) -> Int {
@@ -705,6 +706,7 @@ void size_mpi_buffers (IslMpi<MT>& cm, const Rank2Gids& rank2rmtgids,
   cm.nlid_per_rank.resize(nrmtrank);
   cm.sendsz.resize(nrmtrank);
   cm.recvsz.resize(nrmtrank);
+  cm.sendmetasz.resize(nrmtrank);
   Int rmt_xs_sz = 0, rmt_qse_sz = 0;
   for (Int ri = 0; ri < nrmtrank; ++ri) {
     const auto& rmtgids = rank2rmtgids.at(cm.ranks(ri));
@@ -716,6 +718,9 @@ void size_mpi_buffers (IslMpi<MT>& cm, const Rank2Gids& rank2rmtgids,
                                         qbufcnt(rmtgids, owngids)));
     rmt_xs_sz  += 5*cm.np2*cm.nlev*rmtgids.size();
     rmt_qse_sz += 4       *cm.nlev*rmtgids.size();
+#ifdef COMPOSE_PORT_SEPARATE_VIEWS
+    cm.sendmetasz[ri] = bytes2real(xbufcnt(rmtgids, owngids));
+#endif
   }
 #ifdef COMPOSE_PORT
   cm.rmt_xs.reset_capacity(rmt_xs_sz, true);
@@ -734,6 +739,15 @@ void alloc_mpi_buffers (IslMpi<MT>& cm, Real* sendbuf, Real* recvbuf) {
   cm.nlid_per_rank.clear();
   cm.sendsz.clear();
   cm.recvsz.clear();
+#ifdef COMPOSE_PORT_SEPARATE_VIEWS
+  cm.sendbuf_meta_h.init(nrmtrank, cm.sendmetasz.data());
+  cm.sendcount_h.reset_capacity(cm.sendcount.size(), true);
+  cm.x_bulkdata_offset_h.reset_capacity(cm.x_bulkdata_offset.size(), true);
+#else
+  cm.sendbuf_meta_h = cm.sendbuf;
+  cm.sendcount_h = cm.sendcount;
+  cm.x_bulkdata_offset_h = cm.x_bulkdata_offset;
+#endif
 #ifdef COMPOSE_HORIZ_OPENMP
   cm.ri_lidi_locks.init(nrmtrank, cm.nlid_per_rank.data());
   for (Int ri = 0; ri < nrmtrank; ++ri) {

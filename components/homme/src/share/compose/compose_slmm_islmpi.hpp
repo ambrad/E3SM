@@ -292,12 +292,13 @@ struct ListOfLists {
 #endif
   }
 
+  SLMM_KIF T* data () const { return d_.data(); }
+
 private:
   template <typename T1> using Array = ko::View<T1*, ES>;
   friend class BufferLayoutArray<ES>;
   Array<T> d_;
   Array<Int> ptr_;
-  SLMM_KIF T* data () const { return d_.data(); }
 };
 
 struct LayoutTriple {
@@ -460,9 +461,13 @@ struct IslMpi {
   BufferLayoutArray<DES> bla;
 
   // MPI comm data.
-  ListOfLists<Real, HES> sendbuf, recvbuf;
   FixedCapList<mpi::Request, HES> sendreq, recvreq;
-  FixedCapList<Int, HES> sendcount, x_bulkdata_offset;
+  ListOfLists<Real, DES> sendbuf, recvbuf;
+  FixedCapList<Int, DES> sendcount, x_bulkdata_offset;
+#ifdef COMPOSE_PORT
+  ListOfLists<Real, HES> sendbuf_meta_h;
+  FixedCapList<Int, HES> sendcount_h, x_bulkdata_offset_h;
+#endif
   FixedCapList<Int, HES> rmt_xs, rmt_qs_extrema;
   Int nrmt_xs, nrmt_qs_extrema;
 
@@ -472,7 +477,7 @@ struct IslMpi {
 #endif
 
   // temporary work space
-  std::vector<Int> nlid_per_rank, sendsz, recvsz;
+  std::vector<Int> nlid_per_rank, sendsz, recvsz, sendmetasz;
   Array<Real**,DES> rwork;
 
   IslMpi (const mpi::Parallel::Ptr& ip, const typename Advecter::ConstPtr& advecter,
