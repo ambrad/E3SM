@@ -35,6 +35,7 @@ void pack_dep_points_sendbuf_pass1 (IslMpi<MT>& cm) {
     sendcount += cnt;
     if (cm.nx_in_rank(ri) == 0) {
       setbuf(sendbuf, 0, 0, mos);
+      cm.x_bulkdata_offset_h(ri) = mos;
       cm.sendcount_h(ri) = sendcount;
       continue;
     }
@@ -73,11 +74,14 @@ void pack_dep_points_sendbuf_pass1 (IslMpi<MT>& cm) {
   // Copy metadata chunks to device sendbuf.
   deep_copy(cm.x_bulkdata_offset, cm.x_bulkdata_offset_h);
   deep_copy(cm.sendcount, cm.sendcount_h);
+  assert(cm.sendbuf.n() == nrmtrank);
   Int os = 0;
   for (Int ri = 0; ri < nrmtrank; ++ri) {
     const auto n = cm.x_bulkdata_offset_h(ri);
-    ko::deep_copy(ko::View<Real*, typename MT::DES>(cm.sendbuf.data() + os, n),
-                  ko::View<Real*, typename MT::HES>(cm.sendbuf_meta_h(ri).data(), n));
+    assert(n <= cm.sendmetasz[ri]);
+    if (n > 0)
+      ko::deep_copy(ko::View<Real*, typename MT::DES>(cm.sendbuf.data() + os, n),
+                    ko::View<Real*, typename MT::HES>(cm.sendbuf_meta_h(ri).data(), n));
     os += cm.sendsz[ri];
   }
 #endif
