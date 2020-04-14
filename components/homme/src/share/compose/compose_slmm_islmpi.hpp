@@ -464,10 +464,8 @@ struct IslMpi {
   FixedCapList<mpi::Request, HES> sendreq, recvreq;
   ListOfLists<Real, DES> sendbuf, recvbuf;
   FixedCapList<Int, DES> sendcount, x_bulkdata_offset;
-#ifdef COMPOSE_PORT
   ListOfLists<Real, HES> sendbuf_meta_h;
   FixedCapList<Int, HES> sendcount_h, x_bulkdata_offset_h;
-#endif
   FixedCapList<Int, HES> rmt_xs, rmt_qs_extrema;
   Int nrmt_xs, nrmt_qs_extrema;
 
