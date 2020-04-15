@@ -19,6 +19,27 @@ namespace homme {
 namespace islmpi {
 
 #ifdef COMPOSE_PORT
+template <typename ES> SLMM_KF
+void print (const IslMpi<slmm::MachineTraits>::ElemData<ES>& ed) {
+  printf("me %p\n", ed.me);
+  printf("nbrs %d:", ed.nbrs.size());
+  for (int i = 0; i < ed.nbrs.size(); ++i)
+    printf(" %d", ed.nbrs(i));
+  printf("\nninhalo %d\n", ed.nin1halo);
+  printf("own %d %d:", ed.own.capacity(), ed.own.size());
+  for (int i = 0; i < ed.own.size(); ++i) {
+    const auto& o = ed.own(i);
+    printf(" %d %d,", (int) o.lev, (int) o.k);
+  }
+  printf("\nrmt %d %d:", ed.rmt.capacity(), ed.rmt.size());
+  for (int i = 0; i < ed.rmt.size(); ++i) {
+    const auto& r = ed.rmt(i);
+    printf(" %d %d %d %d,", r.q_extrema_ptr, r.q_ptr, (int) r.lev, (int) r.k);
+  }
+  printf("\nsrc %d %d\n", ed.src.extent_int(0), ed.src.extent_int(1));
+  printf("q_extrema %d %d\n", ed.q_extrema.extent_int(0), ed.q_extrema.extent_int(1));
+}
+
 template <typename MT, typename ESD, typename ESS>
 void deep_copy (typename IslMpi<MT>::template ElemData<ESD>& d,
                 const typename IslMpi<MT>::template ElemData<ESS>& s) {
@@ -51,6 +72,15 @@ void deep_copy (typename IslMpi<MT>::ElemDataListD& d,
   for (Int i = 0; i < ned; ++i)
     deep_copy<MT>(m(i), s(i));
   deep_copy(d, m);
+# if 0
+  for (int i = 0; i < ned; ++i) {
+    printf(">> %d host\n", i);
+    print(s(i));
+    printf(">> %d device\n", i);
+    ko::parallel_for(1, KOKKOS_LAMBDA (int) { print(d(i)); });
+    ko::fence();
+  }
+# endif
 #endif
 }
 
