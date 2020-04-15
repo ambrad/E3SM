@@ -741,8 +741,8 @@ void alloc_mpi_buffers (IslMpi<MT>& cm, Real* sendbuf, Real* recvbuf) {
   cm.recvsz.clear();
 #ifdef COMPOSE_PORT_SEPARATE_VIEWS
   cm.sendbuf_meta_h.init(nrmtrank, cm.sendmetasz.data());
-  cm.sendcount_h.reset_capacity(cm.sendcount.size(), true);
-  cm.x_bulkdata_offset_h.reset_capacity(cm.x_bulkdata_offset.size(), true);
+  cm.sendcount_h.reset_capacity(nrmtrank, true);
+  cm.x_bulkdata_offset_h.reset_capacity(nrmtrank, true);
 #else
   cm.sendbuf_meta_h = cm.sendbuf;
   cm.sendcount_h = cm.sendcount;

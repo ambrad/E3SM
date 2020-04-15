@@ -13,6 +13,9 @@
 #ifdef COMPOSE_PORT
 # pragma message "COMPOSE_PORT"
 #endif
+#ifdef COMPOSE_PORT_SEPARATE_VIEWS
+# pragma message "COMPOSE_PORT_SEPARATE_VIEWS"
+#endif
 #ifdef COMPOSE_PORT_DEV
 # pragma message "COMPOSE_PORT_DEV"
 #endif

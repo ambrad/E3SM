@@ -226,7 +226,7 @@ private:
 template <typename T, typename ESD, typename ESS>
 void deep_copy (FixedCapList<T, ESD>& d, const FixedCapList<T, ESS>& s) {
   slmm_assert_high(d.capacity() == s.capacity());
-  ko::deep_copy(d.view(), s.view());
+  if (d.view().size() > 0) ko::deep_copy(d.view(), s.view());
   ko::deep_copy(d.n_view(), s.n_view());
 }
 
