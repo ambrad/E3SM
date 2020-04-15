@@ -91,7 +91,7 @@ template <typename MT>
 void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const DepPoints<MT>& dep_points) {
   const auto myrank = cm.p->rank();
 #ifdef COMPOSE_PORT
-  const Int start = 0, end = cm.mylid_with_comm_d.n();
+  const Int start = 0, end = cm.mylid_with_comm_h.n();
 #else
   const int tid = get_tid();
   const Int
