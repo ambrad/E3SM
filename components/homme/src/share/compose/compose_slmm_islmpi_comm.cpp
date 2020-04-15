@@ -58,7 +58,7 @@ void setup_irecv (IslMpi<MT>& cm, const bool skip_if_empty) {
 }
 
 template <typename MT>
-void isend (IslMpi<MT>& cm, const bool want_req , const bool skip_if_empty) {
+void isend (IslMpi<MT>& cm, const bool want_req, const bool skip_if_empty) {
 #ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
 # pragma omp master
@@ -66,8 +66,8 @@ void isend (IslMpi<MT>& cm, const bool want_req , const bool skip_if_empty) {
   {
     const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
     for (Int ri = 0; ri < nrmtrank; ++ri) {
-      if (skip_if_empty && cm.sendcount(ri) == 0) continue;
-      mpi::isend(*cm.p, cm.sendbuf(ri).data(), cm.sendcount(ri),
+      if (skip_if_empty && cm.sendcount_h(ri) == 0) continue;
+      mpi::isend(*cm.p, cm.sendbuf.get_h(ri).data(), cm.sendcount_h(ri),
                  cm.ranks(ri), 42, want_req ? &cm.sendreq(ri) : nullptr);
     }
   }

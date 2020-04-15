@@ -257,17 +257,17 @@ struct ListOfLists {
   void init (const Int nlist, const Int* nlist_per_list, T* buf = nullptr) {
     slmm_assert(nlist >= 0);
     ptr_ = Array<Int>("ptr_", nlist+1);
-    const auto ptr = ko::create_mirror_view(ptr_);
-    ptr[0] = 0;
+    ptr_h_ = ko::create_mirror_view(ptr_);
+    ptr_h_[0] = 0;
     for (Int i = 0; i < nlist; ++i) {
       slmm_assert(nlist_per_list[i] >= 0);
-      ptr[i+1] = ptr[i] + nlist_per_list[i];
+      ptr_h_[i+1] = ptr_h_[i] + nlist_per_list[i];
     }
-    ko::deep_copy(ptr_, ptr);
+    ko::deep_copy(ptr_, ptr_h_);
     if (buf) {
-      d_ = Array<T>(buf, ptr[nlist]);
+      d_ = Array<T>(buf, ptr_h_[nlist]);
     } else {
-      d_ = Array<T>("d_", ptr[nlist]);
+      d_ = Array<T>("d_", ptr_h_[nlist]);
     }
   }
 
@@ -275,6 +275,10 @@ struct ListOfLists {
   SLMM_KIF List operator() (const Int& i) const {
     slmm_kernel_assert_high(i >= 0 && i < static_cast<Int>(ptr_.size()) - 1);
     return List(const_cast<T*>(&d_[ptr_[i]]), ptr_[i+1] - ptr_[i]);
+  }
+  List get_h (const Int& i) const {
+    slmm_kernel_assert_high(i >= 0 && i < static_cast<Int>(ptr_h_.size()) - 1);
+    return List(const_cast<T*>(d_.data() + ptr_h_[i]), ptr_h_[i+1] - ptr_h_[i]);
   }
   SLMM_KIF T& operator() (const Int& i, const Int& j) const {
     slmm_kernel_assert_high(i >= 0 && i < static_cast<Int>(ptr_.size()) - 1 &&
@@ -299,6 +303,7 @@ private:
   friend class BufferLayoutArray<ES>;
   Array<T> d_;
   Array<Int> ptr_;
+  typename Array<Int>::HostMirror ptr_h_;
 };
 
 struct LayoutTriple {
