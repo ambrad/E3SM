@@ -61,13 +61,14 @@ void deep_copy (typename IslMpi<MT>::template ElemData<ESD>& d,
 
 template <typename MT>
 void deep_copy (typename IslMpi<MT>::ElemDataListD& d,
+                typename IslMpi<MT>::ElemDataListD::Mirror& m,
                 const typename IslMpi<MT>::ElemDataListH& s) {
 #ifdef COMPOSE_PORT
   const Int ned = s.size();
   // device view of device views
   d = typename IslMpi<MT>::ElemDataListD(ned);
   // host view of device views
-  auto m = d.mirror();
+  m = d.mirror();
   m.inc(ned);
   for (Int i = 0; i < ned; ++i)
     deep_copy<MT>(m(i), s(i));
@@ -85,7 +86,7 @@ void deep_copy (typename IslMpi<MT>::ElemDataListD& d,
 }
 
 template <typename MT> slmm::EnableIfDiffSpace<MT>
-sync_to_device (IslMpi<MT>& cm) { deep_copy<MT>(cm.ed_d, cm.ed_h); }
+sync_to_device (IslMpi<MT>& cm) { deep_copy<MT>(cm.ed_d, cm.ed_m, cm.ed_h); }
 
 template <typename MT> slmm::EnableIfSameSpace<MT>
 sync_to_device (IslMpi<MT>& cm) { cm.ed_d = cm.ed_h; }

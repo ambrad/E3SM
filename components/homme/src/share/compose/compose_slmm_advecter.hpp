@@ -223,6 +223,7 @@ private:
   const Int np_, np2_, np4_, cubed_sphere_map_;
   LocalMeshesH local_mesh_h_;
   LocalMeshesD local_mesh_d_;
+  typename LocalMeshesD::HostMirror local_mesh_m_; // handle managed allocs
   // For CISL:
   const Int tq_order_;
   // For recovery from get_src_cell failure:

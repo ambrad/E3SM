@@ -451,6 +451,7 @@ struct IslMpi {
 
   ElemDataListH ed_h; // this rank's owned cells, indexed by LID
   ElemDataListD ed_d;
+  typename ElemDataListD::Mirror ed_m; // handle managed allocs
 
   TracerArrays<MT> tracer_arrays;
 
