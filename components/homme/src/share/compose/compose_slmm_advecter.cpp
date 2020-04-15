@@ -59,6 +59,7 @@ deep_copy (typename Advecter<MT>::LocalMeshesD& d,
 template <typename MT>
 EnableIfSameSpace<MT>
 deep_copy (typename Advecter<MT>::LocalMeshesD& d,
+           typename Advecter<MT>::LocalMeshesD::HostMirror& m,
            const typename Advecter<MT>::LocalMeshesH& s) {
   d = s;
 }
