@@ -94,7 +94,7 @@ void wait_on_send (IslMpi<MT>& cm, const bool skip_if_empty) {
 #endif
   {
     for (Int ri = 0; ri < cm.sendreq.n(); ++ri) {
-      if (skip_if_empty && cm.sendcount(ri) == 0) continue;
+      if (skip_if_empty && cm.sendcount_h(ri) == 0) continue;
       mpi::wait(&cm.sendreq(ri));
     }
   }
