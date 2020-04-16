@@ -110,7 +110,6 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
         if (sci == -1) throw_on_sci_error<MT>(mesh, ed, npp, dep_points, k, lev, tci);
       }
       ed.src(lev,k) = sci;
-      return;
       if (ed.nbrs(sci).rank == myrank) {
         auto& t = ed.own.atomic_inc_and_return_next();
         t.lev = lev;
@@ -144,7 +143,7 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
       ko::RangePolicy<typename MT::DES>(0, (nete - nets + 1)*nlev*np2), f);
   }
 #if defined COMPOSE_PORT
-  deep_copy(cm.nx_in_rank, cm.nx_in_rank_h);
+  deep_copy(cm.nx_in_rank_h, cm.nx_in_rank);
 #else
 # ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
