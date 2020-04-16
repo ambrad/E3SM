@@ -732,6 +732,7 @@ template <typename MT>
 void alloc_mpi_buffers (IslMpi<MT>& cm, Real* sendbuf, Real* recvbuf) {
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
   cm.nx_in_rank.reset_capacity(nrmtrank, true);
+  cm.nx_in_rank_h = cm.nx_in_rank.mirror();
   cm.nx_in_lid.init(nrmtrank, cm.nlid_per_rank.data());
   cm.bla.init(nrmtrank, cm.nlid_per_rank.data(), cm.nlev);
   cm.sendbuf.init(nrmtrank, cm.sendsz.data(), sendbuf);

@@ -33,7 +33,7 @@ void pack_dep_points_sendbuf_pass1 (IslMpi<MT>& cm) {
     cnt = setbuf(sendbuf, mos, 0, 0); // empty space for later
     mos += cnt;
     sendcount += cnt;
-    if (cm.nx_in_rank(ri) == 0) {
+    if (cm.nx_in_rank_h(ri) == 0) {
       setbuf(sendbuf, 0, 0, mos);
       cm.x_bulkdata_offset_h(ri) = mos;
       cm.sendcount_h(ri) = sendcount;
@@ -66,7 +66,7 @@ void pack_dep_points_sendbuf_pass1 (IslMpi<MT>& cm) {
       }
       slmm_assert(nx_in_lid == 0);
     }
-    setbuf(sendbuf, 0, cm.nx_in_rank(ri), mos /* offset to x bulk data */);
+    setbuf(sendbuf, 0, cm.nx_in_rank_h(ri), mos /* offset to x bulk data */);
     cm.x_bulkdata_offset_h(ri) = mos;
     cm.sendcount_h(ri) = sendcount;
   }

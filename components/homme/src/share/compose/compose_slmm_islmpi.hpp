@@ -463,6 +463,7 @@ struct IslMpi {
   // IDs.
   FixedCapList<Int, HES> ranks, mylid_with_comm_h, mylid_with_comm_tid_ptr_h;
   FixedCapList<Int, DES> nx_in_rank, mylid_with_comm_d;
+  typename FixedCapList<Int, DES>::Mirror nx_in_rank_h;
   ListOfLists <Int, HES> nx_in_lid, lid_on_rank;
   BufferLayoutArray<DES> bla;
 

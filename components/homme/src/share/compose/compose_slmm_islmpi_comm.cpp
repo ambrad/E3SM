@@ -46,8 +46,8 @@ void setup_irecv (IslMpi<MT>& cm, const bool skip_if_empty) {
     const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
     cm.recvreq.clear();
     for (Int ri = 0; ri < nrmtrank; ++ri) {
-      if (skip_if_empty && cm.nx_in_rank(ri) == 0) continue;
-      auto&& recvbuf = cm.recvbuf(ri);
+      if (skip_if_empty && cm.nx_in_rank_h(ri) == 0) continue;
+      auto&& recvbuf = cm.recvbuf.get_h(ri);
       // The count is just the number of slots available, which can be larger
       // than what is actually being received.
       cm.recvreq.inc();
