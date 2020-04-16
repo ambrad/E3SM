@@ -312,11 +312,16 @@ struct ListOfLists {
 
   SLMM_KIF T* data () const { return d_.data(); }
 
+  // For device-host stuff:
+
+  void set_views (const Array<T>& d, const Array<Int>& ptr,
+                  const typename Array<Int>::HostMirror& ptr_h) {
+    d_ = d; ptr_ = ptr; ptr_h_ = ptr_h;
+  }
+
   Mirror mirror () const {
     Mirror v;
-    v.d_ = ko::create_mirror_view(d_);
-    v.ptr_ = ko::create_mirror_view(ptr_);
-    v.ptr_h_ = ptr_h_;
+    v.set_views(ko::create_mirror_view(d_), ko::create_mirror_view(ptr_), ptr_h_);
     return v;
   }
 
@@ -495,10 +500,10 @@ struct IslMpi {
   // IDs.
   FixedCapList<Int, HES> ranks, mylid_with_comm_h, mylid_with_comm_tid_ptr_h;
   FixedCapList<Int, DES> nx_in_rank, mylid_with_comm_d;
-  typename FixedCapList<Int, DES>::Mirror nx_in_rank_h;
   ListOfLists <Int, DES> nx_in_lid, lid_on_rank;
-  ListOfLists <Int, HES> nx_in_lid_h, lid_on_rank_h;
   BufferLayoutArray<DES> bla;
+  typename FixedCapList<Int, DES>::Mirror nx_in_rank_h;
+  typename ListOfLists <Int, DES>::Mirror nx_in_lid_h, lid_on_rank_h;
 
   // MPI comm data.
   FixedCapList<mpi::Request, HES> sendreq, recvreq;
