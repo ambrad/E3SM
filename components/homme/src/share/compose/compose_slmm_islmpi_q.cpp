@@ -286,7 +286,7 @@ void calc_rmt_q (IslMpi<MT>& cm) {
     Int mos = 0, qos = 0, nx_in_rank, xos;
     mos += getbuf(xs, mos, nx_in_rank, xos);
     if (nx_in_rank == 0) {
-      cm.sendcount(ri) = 0;
+      cm.sendcount_h(ri) = 0;
       continue; 
     }
     // The upper bound is to prevent an inf loop if the msg is corrupted.
@@ -315,7 +315,7 @@ void calc_rmt_q (IslMpi<MT>& cm) {
       if (nx_in_rank == 0) break;
     }
     slmm_assert(nx_in_rank == 0);
-    cm.sendcount(ri) = qos;
+    cm.sendcount_h(ri) = qos;
   }
 }
 #else // COMPOSE_PORT
@@ -408,7 +408,7 @@ void calc_rmt_q_pass1 (IslMpi<MT>& cm) {
     Int mos = 0, qos = 0, nx_in_rank, xos;
     mos += getbuf(xs, mos, nx_in_rank, xos);
     if (nx_in_rank == 0) {
-      cm.sendcount(ri) = 0;
+      cm.sendcount_h(ri) = 0;
       continue; 
     }
     // The upper bound is to prevent an inf loop if the msg is corrupted.
@@ -445,7 +445,7 @@ void calc_rmt_q_pass1 (IslMpi<MT>& cm) {
       if (nx_in_rank == 0) break;
     }
     slmm_assert(nx_in_rank == 0);
-    cm.sendcount(ri) = cm.qsize*qos;
+    cm.sendcount_h(ri) = cm.qsize*qos;
   }
   cm.nrmt_xs = cnt;
   cm.nrmt_qs_extrema = qcnt;
