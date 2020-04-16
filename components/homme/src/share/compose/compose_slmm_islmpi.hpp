@@ -321,7 +321,9 @@ struct ListOfLists {
 
   Mirror mirror () const {
     Mirror v;
-    v.set_views(ko::create_mirror_view(d_), ko::create_mirror_view(ptr_), ptr_h_);
+    const auto ptr = ko::create_mirror_view(ptr_);
+    ko::deep_copy(ptr, ptr_h_);
+    v.set_views(ko::create_mirror_view(d_), ptr, ptr_h_);
     return v;
   }
 
