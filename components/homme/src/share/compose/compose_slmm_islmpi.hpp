@@ -201,6 +201,13 @@ struct FixedCapList {
 
   void init_n () {}
   void set_n_from_host (const Int& n0) { set_n(n0); }
+
+  Mirror mirror () const {
+    Mirror v;
+    v.set_view(ko::create_mirror_view(d_));
+    v.set_n(n_);
+    return v;
+  }
 #endif
 
   const Array& view () const { return d_; }
@@ -227,7 +234,11 @@ template <typename T, typename ESD, typename ESS>
 void deep_copy (FixedCapList<T, ESD>& d, const FixedCapList<T, ESS>& s) {
   slmm_assert_high(d.capacity() == s.capacity());
   if (d.view().size() > 0) ko::deep_copy(d.view(), s.view());
+#ifdef COMPOSE_PORT
   ko::deep_copy(d.n_view(), s.n_view());
+#else
+  d.set_n(s.n());
+#endif
 }
 
 template <typename ES> struct BufferLayoutArray;
