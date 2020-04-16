@@ -144,6 +144,7 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
   }
 #if defined COMPOSE_PORT
   deep_copy(cm.nx_in_rank_h, cm.nx_in_rank);
+  deep_copy(cm.nx_in_lid_h, cm.nx_in_lid);
 #else
 # ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
@@ -152,7 +153,7 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
   for (Int ri = 0; ri < nrmtrank; ++ri) {
     auto& nx_in_rank = cm.nx_in_rank(ri);
     nx_in_rank = 0;
-    for (Int i = 0, n = cm.lid_on_rank(ri).n(); i < n; ++i)
+    for (Int i = 0, n = cm.lid_on_rank_h(ri).n(); i < n; ++i)
       nx_in_rank += cm.nx_in_lid(ri,i);
   }
 #endif

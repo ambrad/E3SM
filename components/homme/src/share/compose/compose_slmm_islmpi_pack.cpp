@@ -27,7 +27,7 @@ void pack_dep_points_sendbuf_pass1 (IslMpi<MT>& cm) {
 #endif
   for (Int ri = 0; ri < nrmtrank; ++ri) {
     auto&& sendbuf = cm.sendbuf_meta_h(ri);
-    const auto&& lid_on_rank = cm.lid_on_rank(ri);
+    const auto&& lid_on_rank = cm.lid_on_rank_h(ri);
     // metadata offset, x bulk data offset, q bulk data offset
     Int mos = 0, xos = 0, qos = 0, sendcount = 0, cnt;
     cnt = setbuf(sendbuf, mos, 0, 0); // empty space for later
@@ -40,8 +40,8 @@ void pack_dep_points_sendbuf_pass1 (IslMpi<MT>& cm) {
       continue;
     }
     auto&& bla = cm.bla(ri);
-    for (Int lidi = 0, lidn = cm.lid_on_rank(ri).n(); lidi < lidn; ++lidi) {
-      auto nx_in_lid = cm.nx_in_lid(ri,lidi);
+    for (Int lidi = 0, lidn = lid_on_rank.n(); lidi < lidn; ++lidi) {
+      auto nx_in_lid = cm.nx_in_lid_h(ri,lidi);
       if (nx_in_lid == 0) continue;
       cnt = setbuf(sendbuf, mos, lid_on_rank(lidi), nx_in_lid);
       mos += cnt;

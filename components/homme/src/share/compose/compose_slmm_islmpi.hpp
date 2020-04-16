@@ -245,6 +245,9 @@ template <typename ES> struct BufferLayoutArray;
 
 template <typename T, typename ES>
 struct ListOfLists {
+  template <typename T1> using Array = ko::View<T1*, ES>;
+  typedef ListOfLists<T, typename Array<T>::host_mirror_space> Mirror;
+
   struct List {
     SLMM_KIF Int n () const { return n_; }
 
@@ -309,8 +312,19 @@ struct ListOfLists {
 
   SLMM_KIF T* data () const { return d_.data(); }
 
+  Mirror mirror () const {
+    Mirror v;
+    v.d_ = ko::create_mirror_view(d_);
+    v.ptr_ = ko::create_mirror_view(ptr_);
+    v.ptr_h_ = ptr_h_;
+    return v;
+  }
+
+  const Array<T>& d_view () const { return d_; }
+  const Array<Int>& ptr_view () const { return ptr_; }
+  const typename Array<Int>::HostMirror& ptr_h_view () const { return ptr_h_; }
+
 private:
-  template <typename T1> using Array = ko::View<T1*, ES>;
   friend class BufferLayoutArray<ES>;
   Array<T> d_;
   Array<Int> ptr_;
@@ -322,6 +336,13 @@ struct LayoutTriple {
   SLMM_KIF LayoutTriple () : LayoutTriple(0) {}
   SLMM_KIF LayoutTriple (const Int& val) { xptr = qptr = cnt = 0; }
 };
+
+template <typename T, typename ESD, typename ESS>
+void deep_copy (ListOfLists<T, ESD>& d, const ListOfLists<T, ESS>& s) {
+  ko::deep_copy(d.d_view(), s.d_view());
+  ko::deep_copy(d.ptr_view(), s.ptr_view());
+  ko::deep_copy(d.ptr_h_view(), s.ptr_h_view());
+}
 
 template <typename ES>
 struct BufferLayoutArray {
@@ -475,7 +496,8 @@ struct IslMpi {
   FixedCapList<Int, HES> ranks, mylid_with_comm_h, mylid_with_comm_tid_ptr_h;
   FixedCapList<Int, DES> nx_in_rank, mylid_with_comm_d;
   typename FixedCapList<Int, DES>::Mirror nx_in_rank_h;
-  ListOfLists <Int, HES> nx_in_lid, lid_on_rank;
+  ListOfLists <Int, DES> nx_in_lid, lid_on_rank;
+  ListOfLists <Int, HES> nx_in_lid_h, lid_on_rank_h;
   BufferLayoutArray<DES> bla;
 
   // MPI comm data.

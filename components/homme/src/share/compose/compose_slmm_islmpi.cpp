@@ -644,6 +644,7 @@ void set_idx2_maps (IslMpi<MT>& cm, const Rank2Gids& rank2rmtgids,
     nlid_on_rank[ri] = rmtgids.size();
   }
   cm.lid_on_rank.init(nrmtrank, nlid_on_rank.data());
+  cm.lid_on_rank_h = cm.lid_on_rank.mirror();
   for (Int ri = 0; ri < nrmtrank; ++ri) {
     const auto& rmtgids = rank2rmtgids.at(cm.ranks(ri));
     auto& lor2idxri = lor2idx[ri];
@@ -651,11 +652,12 @@ void set_idx2_maps (IslMpi<MT>& cm, const Rank2Gids& rank2rmtgids,
     for (const auto& gid: rmtgids) {
       const auto lid = gid2rmt_owning_lid.at(gid);
       lor2idxri[lid] = idx;
-      cm.lid_on_rank(ri,idx) = lid;
+      cm.lid_on_rank_h(ri,idx) = lid;
       ++idx;
     }
     slmm_assert(idx == nlid_on_rank[ri]);
   }
+  deep_copy(cm.lid_on_rank, cm.lid_on_rank_h);
 
   for (i = 0; i < cm.nelemd; ++i) {
     auto& ed = cm.ed_h(i);
@@ -734,6 +736,7 @@ void alloc_mpi_buffers (IslMpi<MT>& cm, Real* sendbuf, Real* recvbuf) {
   cm.nx_in_rank.reset_capacity(nrmtrank, true);
   cm.nx_in_rank_h = cm.nx_in_rank.mirror();
   cm.nx_in_lid.init(nrmtrank, cm.nlid_per_rank.data());
+  cm.nx_in_lid_h = cm.nx_in_lid.mirror();
   cm.bla.init(nrmtrank, cm.nlid_per_rank.data(), cm.nlev);
   cm.sendbuf.init(nrmtrank, cm.sendsz.data(), sendbuf);
   cm.recvbuf.init(nrmtrank, cm.recvsz.data(), recvbuf);
