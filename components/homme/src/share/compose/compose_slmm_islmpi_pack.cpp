@@ -82,15 +82,13 @@ void pack_dep_points_sendbuf_pass1 (IslMpi<MT>& cm) {
 #endif
 #ifdef COMPOSE_PORT_SEPARATE_VIEWS
   // Copy metadata chunks to device sendbuf.
-  assert(cm.sendbuf.n() == nrmtrank);
-  Int os = 0;
+  slmm_assert(cm.sendbuf.n() == nrmtrank);
   for (Int ri = 0; ri < nrmtrank; ++ri) {
     const auto n = cm.x_bulkdata_offset_h(ri);
     assert(n <= cm.sendmetasz[ri]);
     if (n > 0)
-      ko::deep_copy(ko::View<Real*, typename MT::DES>(cm.sendbuf.data() + os, n),
+      ko::deep_copy(ko::View<Real*, typename MT::DES>(cm.sendbuf.get_h(ri).data(), n),
                     ko::View<Real*, typename MT::HES>(cm.sendbuf_meta_h(ri).data(), n));
-    os += cm.sendsz[ri];
   }
 #endif
 }

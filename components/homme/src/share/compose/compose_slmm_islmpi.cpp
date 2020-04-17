@@ -711,6 +711,7 @@ void size_mpi_buffers (IslMpi<MT>& cm, const Rank2Gids& rank2rmtgids,
   cm.sendsz.resize(nrmtrank);
   cm.recvsz.resize(nrmtrank);
   cm.sendmetasz.resize(nrmtrank);
+  cm.recvmetasz.resize(nrmtrank);
   Int rmt_xs_sz = 0, rmt_qse_sz = 0;
   for (Int ri = 0; ri < nrmtrank; ++ri) {
     const auto& rmtgids = rank2rmtgids.at(cm.ranks(ri));
@@ -724,6 +725,7 @@ void size_mpi_buffers (IslMpi<MT>& cm, const Rank2Gids& rank2rmtgids,
     rmt_qse_sz += 4       *cm.nlev*rmtgids.size();
 #ifdef COMPOSE_PORT_SEPARATE_VIEWS
     cm.sendmetasz[ri] = bytes2real(xbufcnt(rmtgids, owngids));
+    cm.recvmetasz[ri] = bytes2real(xbufcnt(owngids, rmtgids));
 #endif
   }
 #ifdef COMPOSE_PORT
@@ -748,8 +750,10 @@ void alloc_mpi_buffers (IslMpi<MT>& cm, Real* sendbuf, Real* recvbuf) {
   cm.recvsz.clear();
 #ifdef COMPOSE_PORT_SEPARATE_VIEWS
   cm.sendbuf_meta_h.init(nrmtrank, cm.sendmetasz.data());
+  cm.recvbuf_meta_h.init(nrmtrank, cm.recvmetasz.data());
 #else
   cm.sendbuf_meta_h = cm.sendbuf;
+  cm.recvbuf_meta_h = cm.recvbuf;
 #endif
 #ifdef COMPOSE_HORIZ_OPENMP
   cm.ri_lidi_locks.init(nrmtrank, cm.nlid_per_rank.data());

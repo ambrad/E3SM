@@ -534,7 +534,7 @@ struct IslMpi {
   FixedCapList<mpi::Request, HES> sendreq, recvreq;
   ListOfLists<Real, DES> sendbuf, recvbuf;
   FixedCapList<Int, DES> sendcount, x_bulkdata_offset;
-  ListOfLists<Real, HES> sendbuf_meta_h; // not a mirror of sendbuf
+  ListOfLists<Real, HES> sendbuf_meta_h, recvbuf_meta_h; // not mirrors
   FixedCapList<Int, HES> rmt_xs, rmt_qs_extrema;
   Int nrmt_xs, nrmt_qs_extrema;
 
@@ -549,7 +549,7 @@ struct IslMpi {
 #endif
 
   // temporary work space
-  std::vector<Int> nlid_per_rank, sendsz, recvsz, sendmetasz;
+  std::vector<Int> nlid_per_rank, sendsz, recvsz, sendmetasz, recvmetasz;
   Array<Real**,DES> rwork;
 
   IslMpi (const mpi::Parallel::Ptr& ip, const typename Advecter::ConstPtr& advecter,
