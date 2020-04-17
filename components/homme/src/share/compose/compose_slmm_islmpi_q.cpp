@@ -284,7 +284,7 @@ void calc_rmt_q (IslMpi<MT>& cm) {
     const auto&& xs = cm.recvbuf(ri);
     auto&& qs = cm.sendbuf(ri);
     Int mos = 0, qos = 0, nx_in_rank, xos;
-    mos += getbuf(xs, mos, nx_in_rank, xos);
+    mos += getbuf(xs, mos, xos, nx_in_rank);
     if (nx_in_rank == 0) {
       cm.sendcount_h(ri) = 0;
       continue; 
@@ -403,13 +403,15 @@ template <Int np, typename MT>
 void calc_rmt_q_pass1 (IslMpi<MT>& cm) {
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
 #ifdef COMPOSE_PORT_SEPARATE_VIEWS
-
+  for (Int ri = 0; ri < nrmtrank; ++ri) {
+    
+  }
 #endif
   Int cnt = 0, qcnt = 0;
   for (Int ri = 0; ri < nrmtrank; ++ri) {
     const auto&& xs = cm.recvbuf(ri);
     Int mos = 0, qos = 0, nx_in_rank, xos;
-    mos += getbuf(xs, mos, nx_in_rank, xos);
+    mos += getbuf(xs, mos, xos, nx_in_rank);
     if (nx_in_rank == 0) {
       cm.sendcount_h(ri) = 0;
       continue; 
