@@ -820,14 +820,6 @@ contains
     ! end, in each term of the expression (p1r - pref), there is a
     ! missing B(eta) dps/dt term, and these missing terms cancel in
     ! the subtraction.
-    ! Approximate
-    !   p1 - p0 a= v(p1,t1) dt
-    !   v(p0,t0) a= v(p1,t0) + gradv(p1,t0) (p0 - p1)
-    ! Then
-    !   (p1 - p0)/dt = 1/2 (v(p0,t0) + v(p1,t1))
-    !                = 1/2 (v(p1,t0) + gradv(p1,t0) (p0 - p1) + v(p1,t1))
-    !   => p0 := p1 - dt/2 (v(p1,t0) + v(p1,t1) - gradv(p1,t0) v(p1,t1) dt)
-    ! where the final line gives the departure point at time 0.
 
     call calc_p(hvcoord, elem%derived%dp, pref)
 
@@ -853,18 +845,28 @@ contains
        v1 = half*(elem%derived%vn0(:,:,1,k1) + elem%derived%vn0(:,:,1,k2))
        v2 = half*(elem%derived%vn0(:,:,2,k1) + elem%derived%vn0(:,:,2,k2))
 
+#define FWD
+#ifdef FWD
+       ! Reconstruct departure level coordinate at final time.
+       p1r(:,:,k) = pref(:,:,k) + &
+            half*dt*(eta_dot_dpdn(:,:,k,1) + eta_dot_dpdn(:,:,k,2) + &
+                     dt*(ptp0*eta_dot_dpdn(:,:,k,2) - grad(:,:,1)*v1 - grad(:,:,2)*v2))
+#else
        ! Reconstruct departure level coordinate at initial time.
        p0r(:,:,k) = pref(:,:,k) - &
             half*dt*(eta_dot_dpdn(:,:,k,1) + eta_dot_dpdn(:,:,k,2) - &
                      dt*(ptp0*eta_dot_dpdn(:,:,k,2) + grad(:,:,1)*v1 + grad(:,:,2)*v2))
+#endif
     end do
 
+#ifndef FWD
     ! Interpolate Lagrangian level in p coord to final time.
     do j = 1,np
        do i = 1,np
           call interp(nlevp, p0r(i,j,:), pref(i,j,:), pref(i,j,:), p1r(i,j,:))
        end do
     end do
+#endif
 
     ! Reconstruct eta_dot_dpdn over the time interval.
     eta_dot_dpdn(:,:,:,1) = (p1r - pref)/dt
@@ -872,8 +874,6 @@ contains
     eta_dot_dpdn(:,:,1,1) = zero
     eta_dot_dpdn(:,:,nlevp,1) = zero
 
-    ! Limit dp to be > 0 and store update in eta_dot_dpdn rather
-    ! than true eta_dot_dpdn. See comments below for more.
     dp_neg_min = reconstruct_and_limit_dp(elem%state%dp3d(:,:,:,tl%np1), &
          dt, dp_tol, eta_dot_dpdn(:,:,:,1), dprecon)
 #ifndef NDEBUG
