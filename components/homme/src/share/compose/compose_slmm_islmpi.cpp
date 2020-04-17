@@ -738,6 +738,7 @@ void alloc_mpi_buffers (IslMpi<MT>& cm, Real* sendbuf, Real* recvbuf) {
   cm.nx_in_lid.init(nrmtrank, cm.nlid_per_rank.data());
   cm.nx_in_lid_h = cm.nx_in_lid.mirror();
   cm.bla.init(nrmtrank, cm.nlid_per_rank.data(), cm.nlev);
+  cm.bla_h = cm.bla.mirror();
   cm.sendbuf.init(nrmtrank, cm.sendsz.data(), sendbuf);
   cm.recvbuf.init(nrmtrank, cm.recvsz.data(), recvbuf);
   cm.nlid_per_rank.clear();

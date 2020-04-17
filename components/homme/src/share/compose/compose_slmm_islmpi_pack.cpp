@@ -39,7 +39,7 @@ void pack_dep_points_sendbuf_pass1 (IslMpi<MT>& cm) {
       cm.sendcount_h(ri) = sendcount;
       continue;
     }
-    auto&& bla = cm.bla(ri);
+    auto&& bla = cm.bla_h(ri);
     for (Int lidi = 0, lidn = lid_on_rank.n(); lidi < lidn; ++lidi) {
       auto nx_in_lid = cm.nx_in_lid_h(ri,lidi);
       if (nx_in_lid == 0) continue;
@@ -74,6 +74,7 @@ void pack_dep_points_sendbuf_pass1 (IslMpi<MT>& cm) {
   // Copy metadata chunks to device sendbuf.
   deep_copy(cm.x_bulkdata_offset, cm.x_bulkdata_offset_h);
   deep_copy(cm.sendcount, cm.sendcount_h);
+  deep_copy(cm.bla, cm.bla_h);
   assert(cm.sendbuf.n() == nrmtrank);
   Int os = 0;
   for (Int ri = 0; ri < nrmtrank; ++ri) {

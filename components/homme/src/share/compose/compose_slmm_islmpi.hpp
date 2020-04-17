@@ -383,6 +383,8 @@ struct BufferLayoutArray {
     d_.init(nrank, ns.data());
   }
 
+  Int nlev () const { return nlev_; }
+
   void zero () { d_.zero(); }
 
   SLMM_KIF LayoutTriple& operator() (const Int& ri, const Int& lidi, const Int& lev) const {
@@ -397,10 +399,33 @@ struct BufferLayoutArray {
     return BufferRankLayoutArray(d_(ri), nlev_);
   }
 
+  // For device-host stuff:
+
+  typedef BufferLayoutArray<typename ko::View<Int,ES>::host_mirror_space> Mirror;
+
+  ListOfLists<LayoutTriple, ES>& get_lol () { return d_; }
+  const ListOfLists<LayoutTriple, ES>& get_lol () const { return d_; }
+  void set_lol (const ListOfLists<LayoutTriple, ES>& d) { d_ = d; }
+  void set_nlev (const Int& nlev) { nlev_ = nlev; }
+
+  Mirror mirror () const {
+    Mirror v;
+    const auto m = d_.mirror();
+    v.set_lol(m);
+    v.set_nlev(nlev_);
+    return v;
+  }
+
 private:
   ListOfLists<LayoutTriple, ES> d_;
   Int nlev_;
 };
+
+template <typename ESD, typename ESS>
+void deep_copy (BufferLayoutArray<ESD>& d, const BufferLayoutArray<ESS>& s) {
+  slmm_assert(d.nlev() == s.nlev());
+  deep_copy(d.get_lol(), s.get_lol());
+}
 
 // Qdp, dp, Q
 template <typename MT>
@@ -506,6 +531,7 @@ struct IslMpi {
   BufferLayoutArray<DES> bla;
   typename FixedCapList<Int, DES>::Mirror nx_in_rank_h;
   typename ListOfLists <Int, DES>::Mirror nx_in_lid_h, lid_on_rank_h;
+  typename BufferLayoutArray<DES>::Mirror bla_h;
 
   // MPI comm data.
   FixedCapList<mpi::Request, HES> sendreq, recvreq;
