@@ -403,13 +403,19 @@ template <Int np, typename MT>
 void calc_rmt_q_pass1 (IslMpi<MT>& cm) {
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
 #ifdef COMPOSE_PORT_SEPARATE_VIEWS
+  for (Int ri = 0; ri < nrmtrank; ++ri)
+    ko::deep_copy(ko::View<Real*, typename MT::HES>(cm.recvbuf_meta_h(ri).data(), 1),
+                  ko::View<Real*, typename MT::HES>(cm.recvbuf.get_h(ri).data(), 1));
   for (Int ri = 0; ri < nrmtrank; ++ri) {
-    
+    const Int n = cm.recvbuf_meta_h(ri,0);
+    slmm_assert(n <= cm.recvmetasz[ri]);
+    ko::deep_copy(ko::View<Real*, typename MT::HES>(cm.recvbuf_meta_h(ri).data(), n),
+                  ko::View<Real*, typename MT::HES>(cm.recvbuf.get_h(ri).data(), n));
   }
 #endif
   Int cnt = 0, qcnt = 0;
   for (Int ri = 0; ri < nrmtrank; ++ri) {
-    const auto&& xs = cm.recvbuf(ri);
+    const auto&& xs = cm.recvbuf_meta_h(ri);
     Int mos = 0, qos = 0, nx_in_rank, xos;
     mos += getbuf(xs, mos, xos, nx_in_rank);
     if (nx_in_rank == 0) {
