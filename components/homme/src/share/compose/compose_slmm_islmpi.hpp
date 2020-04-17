@@ -529,18 +529,19 @@ struct IslMpi {
   FixedCapList<Int, DES> nx_in_rank, mylid_with_comm_d;
   ListOfLists <Int, DES> nx_in_lid, lid_on_rank;
   BufferLayoutArray<DES> bla;
-  typename FixedCapList<Int, DES>::Mirror nx_in_rank_h;
-  typename ListOfLists <Int, DES>::Mirror nx_in_lid_h, lid_on_rank_h;
-  typename BufferLayoutArray<DES>::Mirror bla_h;
 
   // MPI comm data.
   FixedCapList<mpi::Request, HES> sendreq, recvreq;
   ListOfLists<Real, DES> sendbuf, recvbuf;
   FixedCapList<Int, DES> sendcount, x_bulkdata_offset;
-  ListOfLists<Real, HES> sendbuf_meta_h;
-  FixedCapList<Int, HES> sendcount_h, x_bulkdata_offset_h;
+  ListOfLists<Real, HES> sendbuf_meta_h; // not a mirror of sendbuf
   FixedCapList<Int, HES> rmt_xs, rmt_qs_extrema;
   Int nrmt_xs, nrmt_qs_extrema;
+
+  // Mirror views.
+  typename FixedCapList<Int, DES>::Mirror nx_in_rank_h, sendcount_h, x_bulkdata_offset_h;
+  typename ListOfLists <Int, DES>::Mirror nx_in_lid_h, lid_on_rank_h;
+  typename BufferLayoutArray<DES>::Mirror bla_h;
 
   bool horiz_openmp;
 #ifdef COMPOSE_HORIZ_OPENMP
