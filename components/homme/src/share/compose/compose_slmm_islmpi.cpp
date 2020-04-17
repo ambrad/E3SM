@@ -632,7 +632,9 @@ void set_idx2_maps (IslMpi<MT>& cm, const Rank2Gids& rank2rmtgids,
   for (const auto& e: ranks)
     cm.ranks(e.second) = e.first;
   cm.sendcount.reset_capacity(i, true);
+  cm.sendcount_h = cm.sendcount.mirror();
   cm.x_bulkdata_offset.reset_capacity(i, true);
+  cm.x_bulkdata_offset_h = cm.x_bulkdata_offset.mirror();
   cm.sendreq.reset_capacity(i, true);
   cm.recvreq.reset_capacity(i, true);
 
@@ -746,12 +748,8 @@ void alloc_mpi_buffers (IslMpi<MT>& cm, Real* sendbuf, Real* recvbuf) {
   cm.recvsz.clear();
 #ifdef COMPOSE_PORT_SEPARATE_VIEWS
   cm.sendbuf_meta_h.init(nrmtrank, cm.sendmetasz.data());
-  cm.sendcount_h.reset_capacity(nrmtrank, true);
-  cm.x_bulkdata_offset_h.reset_capacity(nrmtrank, true);
 #else
   cm.sendbuf_meta_h = cm.sendbuf;
-  cm.sendcount_h = cm.sendcount;
-  cm.x_bulkdata_offset_h = cm.x_bulkdata_offset;
 #endif
 #ifdef COMPOSE_HORIZ_OPENMP
   cm.ri_lidi_locks.init(nrmtrank, cm.nlid_per_rank.data());

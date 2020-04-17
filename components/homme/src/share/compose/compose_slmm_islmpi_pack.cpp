@@ -21,6 +21,11 @@ namespace islmpi {
  */
 template <typename MT>
 void pack_dep_points_sendbuf_pass1 (IslMpi<MT>& cm) {
+#ifdef COMPOSE_PORT
+  deep_copy(cm.nx_in_rank_h, cm.nx_in_rank);
+  deep_copy(cm.nx_in_lid_h, cm.nx_in_lid);
+  deep_copy(cm.bla_h, cm.bla);
+#endif
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
 #ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp for
@@ -70,11 +75,13 @@ void pack_dep_points_sendbuf_pass1 (IslMpi<MT>& cm) {
     cm.x_bulkdata_offset_h(ri) = mos;
     cm.sendcount_h(ri) = sendcount;
   }
+#ifdef COMPOSE_PORT
+  deep_copy(cm.sendcount, cm.sendcount_h);
+  deep_copy(cm.x_bulkdata_offset, cm.x_bulkdata_offset_h);
+  deep_copy(cm.bla, cm.bla_h);  
+#endif
 #ifdef COMPOSE_PORT_SEPARATE_VIEWS
   // Copy metadata chunks to device sendbuf.
-  deep_copy(cm.x_bulkdata_offset, cm.x_bulkdata_offset_h);
-  deep_copy(cm.sendcount, cm.sendcount_h);
-  deep_copy(cm.bla, cm.bla_h);
   assert(cm.sendbuf.n() == nrmtrank);
   Int os = 0;
   for (Int ri = 0; ri < nrmtrank; ++ri) {

@@ -142,10 +142,7 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
     ko::parallel_for(
       ko::RangePolicy<typename MT::DES>(0, (nete - nets + 1)*nlev*np2), f);
   }
-#if defined COMPOSE_PORT
-  deep_copy(cm.nx_in_rank_h, cm.nx_in_rank);
-  deep_copy(cm.nx_in_lid_h, cm.nx_in_lid);
-#else
+#ifndef COMPOSE_PORT
 # ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
 # pragma omp for
