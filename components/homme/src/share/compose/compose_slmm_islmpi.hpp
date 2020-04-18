@@ -535,11 +535,12 @@ struct IslMpi {
   ListOfLists<Real, DES> sendbuf, recvbuf;
   FixedCapList<Int, DES> sendcount, x_bulkdata_offset;
   ListOfLists<Real, HES> sendbuf_meta_h, recvbuf_meta_h; // not mirrors
-  FixedCapList<Int, HES> rmt_xs, rmt_qs_extrema;
+  FixedCapList<Int, DES> rmt_xs, rmt_qs_extrema;
   Int nrmt_xs, nrmt_qs_extrema;
 
   // Mirror views.
-  typename FixedCapList<Int, DES>::Mirror nx_in_rank_h, sendcount_h, x_bulkdata_offset_h;
+  typename FixedCapList<Int, DES>::Mirror nx_in_rank_h, sendcount_h,
+    x_bulkdata_offset_h, rmt_xs_h, rmt_qs_extrema_h;
   typename ListOfLists <Int, DES>::Mirror nx_in_lid_h, lid_on_rank_h;
   typename BufferLayoutArray<DES>::Mirror bla_h;
 

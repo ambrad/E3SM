@@ -434,19 +434,19 @@ void calc_rmt_q_pass1 (IslMpi<MT>& cm) {
         mos += getbuf(xs, mos, lev, nx);
         slmm_assert(nx > 0);
         {
-          cm.rmt_qs_extrema(4*qcnt + 0) = ri;
-          cm.rmt_qs_extrema(4*qcnt + 1) = lid;
-          cm.rmt_qs_extrema(4*qcnt + 2) = lev;
-          cm.rmt_qs_extrema(4*qcnt + 3) = qos;
+          cm.rmt_qs_extrema_h(4*qcnt + 0) = ri;
+          cm.rmt_qs_extrema_h(4*qcnt + 1) = lid;
+          cm.rmt_qs_extrema_h(4*qcnt + 2) = lev;
+          cm.rmt_qs_extrema_h(4*qcnt + 3) = qos;
           ++qcnt;
           qos += 2;
         }
         for (Int xi = 0; xi < nx; ++xi) {
-          cm.rmt_xs(5*cnt + 0) = ri;
-          cm.rmt_xs(5*cnt + 1) = lid;
-          cm.rmt_xs(5*cnt + 2) = lev;
-          cm.rmt_xs(5*cnt + 3) = xos;
-          cm.rmt_xs(5*cnt + 4) = qos;
+          cm.rmt_xs_h(5*cnt + 0) = ri;
+          cm.rmt_xs_h(5*cnt + 1) = lid;
+          cm.rmt_xs_h(5*cnt + 2) = lev;
+          cm.rmt_xs_h(5*cnt + 3) = xos;
+          cm.rmt_xs_h(5*cnt + 4) = qos;
           ++cnt;
           xos += 3;
           ++qos;
@@ -463,6 +463,8 @@ void calc_rmt_q_pass1 (IslMpi<MT>& cm) {
   }
   cm.nrmt_xs = cnt;
   cm.nrmt_qs_extrema = qcnt;
+  deep_copy(cm.rmt_xs, cm.rmt_xs_h);
+  deep_copy(cm.rmt_qs_extrema, cm.rmt_qs_extrema_h);
 }
 
 template <Int np, typename MT>
@@ -470,14 +472,17 @@ void calc_rmt_q_pass2 (IslMpi<MT>& cm) {
   const auto q_src = cm.tracer_arrays.q;
   const auto rmt_qs_extrema = cm.rmt_qs_extrema;
   const auto rmt_xs = cm.rmt_xs;
+  const auto ed_d = cm.ed_d;
+  const auto sendbuf = cm.sendbuf;
+  const auto recvbuf = cm.recvbuf;
   const Int qsize = cm.qsize;
 
   const auto fqe = KOKKOS_LAMBDA (const Int& it) {
     const Int
     ri = rmt_qs_extrema(4*it), lid = rmt_qs_extrema(4*it + 1),
     lev = rmt_qs_extrema(4*it + 2), qos = qsize*rmt_qs_extrema(4*it + 3);  
-    auto&& qs = cm.sendbuf(ri);
-    const auto& ed = cm.ed_d(lid);
+    auto&& qs = sendbuf(ri);
+    const auto& ed = ed_d(lid);
     for (Int iq = 0; iq < qsize; ++iq)
       for (int i = 0; i < 2; ++i)
         qs(qos + 2*iq + i) = ed.q_extrema(iq, lev, i);
@@ -488,8 +493,8 @@ void calc_rmt_q_pass2 (IslMpi<MT>& cm) {
     const Int
     ri = rmt_xs(5*it), lid = rmt_xs(5*it + 1), lev = rmt_xs(5*it + 2),
     xos = rmt_xs(5*it + 3), qos = qsize*rmt_xs(5*it + 4);
-    const auto&& xs = cm.recvbuf(ri);
-    auto&& qs = cm.sendbuf(ri);
+    const auto&& xs = recvbuf(ri);
+    auto&& qs = sendbuf(ri);
     Real rx[4], ry[4];
     calc_coefs<np>(cm, lid, lev, &xs(xos), rx, ry);
     Real* const q_tgt = &qs(qos);

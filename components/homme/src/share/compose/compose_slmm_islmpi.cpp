@@ -731,6 +731,8 @@ void size_mpi_buffers (IslMpi<MT>& cm, const Rank2Gids& rank2rmtgids,
 #ifdef COMPOSE_PORT
   cm.rmt_xs.reset_capacity(rmt_xs_sz, true);
   cm.rmt_qs_extrema.reset_capacity(rmt_qse_sz, true);
+  cm.rmt_xs_h = cm.rmt_xs.mirror();
+  cm.rmt_qs_extrema_h = cm.rmt_qs_extrema.mirror();
 #endif
 }
 
