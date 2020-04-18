@@ -39,7 +39,7 @@ void pack_dep_points_sendbuf_pass1 (IslMpi<MT>& cm) {
     mos += cnt;
     sendcount += cnt;
     if (cm.nx_in_rank_h(ri) == 0) {
-      setbuf(sendbuf, 0, 0, mos);
+      setbuf(sendbuf, 0, mos, 0);
       cm.x_bulkdata_offset_h(ri) = mos;
       cm.sendcount_h(ri) = sendcount;
       continue;

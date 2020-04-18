@@ -410,6 +410,7 @@ void calc_rmt_q_pass1 (IslMpi<MT>& cm) {
     const auto&& xs = cm.recvbuf_meta_h(ri);
     Int n, unused;
     getbuf(xs, 0, n, unused);
+    if (n == 0) continue;
     slmm_assert(n <= cm.recvmetasz[ri]);
     ko::deep_copy(ko::View<Real*, typename MT::HES>(cm.recvbuf_meta_h(ri).data(), n),
                   ko::View<Real*, typename MT::HES>(cm.recvbuf.get_h(ri).data(), n));
