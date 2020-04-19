@@ -384,7 +384,7 @@ void copy_q (IslMpi<MT>& cm, const Int& nets,
   const auto mylid_with_comm = cm.mylid_with_comm_d;
   const auto ed_d = cm.ed_d;
   const auto recvbufs = cm.recvbuf;
-  const Int nlid = mylid_with_comm.size();
+  const Int nlid = cm.mylid_with_comm_h.size();
   const Int qsize = cm.qsize, nlev = cm.nlev, np2 = cm.np2;
   const auto f = KOKKOS_LAMBDA (const Int& it) {
     const Int tci = mylid_with_comm(it/(np2*nlev));
