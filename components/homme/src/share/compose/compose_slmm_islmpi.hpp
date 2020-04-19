@@ -609,10 +609,12 @@ void extend_local_meshes(const mpi::Parallel& p,
                          typename IslMpi<MT>::Advecter& advecter);
 } // namespace extend_halo
 
-template <typename MT>
-using DepPoints = ko::View<Real***[3], ko::LayoutRight, typename MT::DES>;
-template <typename MT>
-using DepPointsH = ko::View<Real***[3], ko::LayoutRight, typename MT::HES>;
+template <typename MT> using DepPoints =
+  ko::View<Real***[3], ko::LayoutRight, typename MT::DES>;
+template <typename MT> using QExtrema =
+  ko::View<Real****, ko::LayoutRight, typename MT::DES>;
+template <typename MT> using DepPointsH = typename DepPoints<MT>::HostMirror;
+template <typename MT> using QExtremaH = typename QExtrema<MT>::HostMirror;
 
 template <typename MT>
 void analyze_dep_points(IslMpi<MT>& cm, const Int& nets, const Int& nete,
@@ -662,10 +664,10 @@ void calc_rmt_q(IslMpi<MT>& cm);
 template <typename MT>
 void calc_own_q(IslMpi<MT>& cm, const Int& nets, const Int& nete,
                 const DepPoints<MT>& dep_points,
-                const FA4<Real>& q_min, const FA4<Real>& q_max);
+                const QExtrema<MT>& q_min, const QExtrema<MT>& q_max);
 template <typename MT>
 void copy_q(IslMpi<MT>& cm, const Int& nets,
-            const FA4<Real>& q_min, const FA4<Real>& q_max);
+            const QExtrema<MT>& q_min, const QExtrema<MT>& q_max);
 
 /* dep_points is const in principle, but if lev <=
    semi_lagrange_nearest_point_lev, a departure point may be altered if the

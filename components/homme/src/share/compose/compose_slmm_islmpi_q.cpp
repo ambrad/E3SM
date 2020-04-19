@@ -227,7 +227,7 @@ void calc_q (const IslMpi<MT>& cm, const Int& src_lid, const Int& lev,
 template <Int np, typename MT>
 void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
                  const DepPoints<MT>& dep_points,
-                 const FA4<Real>& q_min, const FA4<Real>& q_max) {
+                 const QExtrema<MT>& q_min, const QExtrema<MT>& q_max) {
   const int tid = get_tid();
   for (Int tci = nets; tci <= nete; ++tci) {
     auto& ed = cm.ed_d(tci);
@@ -236,8 +236,8 @@ void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
       const Int slid = ed.nbrs(ed.src(e.lev, e.k)).lid_on_rank;
       const auto& sed = cm.ed_d(slid);
       for (Int iq = 0; iq < cm.qsize; ++iq) {
-        q_min(e.k, e.lev, iq, tci) = sed.q_extrema(iq, e.lev, 0);
-        q_max(e.k, e.lev, iq, tci) = sed.q_extrema(iq, e.lev, 1);
+        q_min(tci, iq, e.lev, e.k) = sed.q_extrema(iq, e.lev, 0);
+        q_max(tci, iq, e.lev, e.k) = sed.q_extrema(iq, e.lev, 1);
       }
       Real* const qtmp = &cm.rwork(tid, 0);
       calc_q<np>(cm, slid, e.lev, &dep_points(tci, e.lev, e.k, 0), qtmp, false);
@@ -249,7 +249,7 @@ void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
 
 template <typename MT>
 void copy_q (IslMpi<MT>& cm, const Int& nets,
-             const FA4<Real>& q_min, const FA4<Real>& q_max) {
+             const QExtrema<MT>& q_min, const QExtrema<MT>& q_max) {
   const auto myrank = cm.p->rank();
   const int tid = get_tid();
   for (Int ptr = cm.mylid_with_comm_tid_ptr_h(tid),
@@ -263,8 +263,8 @@ void copy_q (IslMpi<MT>& cm, const Int& nets,
       const Int ri = ed.nbrs(ed.src(e.lev, e.k)).rank_idx;
       const auto&& recvbuf = cm.recvbuf(ri);
       for (Int iq = 0; iq < cm.qsize; ++iq) {
-        q_min(e.k, e.lev, iq, tci) = recvbuf(e.q_extrema_ptr + 2*iq    );
-        q_max(e.k, e.lev, iq, tci) = recvbuf(e.q_extrema_ptr + 2*iq + 1);
+        q_min(tci, iq, e.lev, e.k) = recvbuf(e.q_extrema_ptr + 2*iq    );
+        q_max(tci, iq, e.lev, e.k) = recvbuf(e.q_extrema_ptr + 2*iq + 1);
       }
       for (Int iq = 0; iq < cm.qsize; ++iq) {
         slmm_assert(recvbuf(e.q_ptr + iq) != -1);
@@ -335,22 +335,23 @@ void calc_coefs (const IslMpi<MT>& cm, const Int& src_lid, const Int& lev,
 template <Int np, typename MT>
 void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
                  const DepPoints<MT>& dep_points,
-                 const FA4<Real>& q_min, const FA4<Real>& q_max) {
+                 const QExtrema<MT>& q_min, const QExtrema<MT>& q_max) {
   const auto dp_src = cm.tracer_arrays.dp;
   const auto qdp_src = cm.tracer_arrays.qdp;
   const auto q_tgt = cm.tracer_arrays.q;
+  const auto ed_d = cm.ed_d;
   const Int qsize = cm.qsize, nlev = cm.nlev, np2 = cm.np2;
   const auto f = KOKKOS_LAMBDA (const Int& it) {
     const Int tci = nets + it/(np2*nlev);
     const Int own_id = it % (np2*nlev);
-    auto& ed = cm.ed_d(tci);
+    auto& ed = ed_d(tci);
     if (own_id >= ed.own.size()) return;
     const auto& e = ed.own(own_id);
     const Int slid = ed.nbrs(ed.src(e.lev, e.k)).lid_on_rank;
     const auto& sed = cm.ed_d(slid);
     for (Int iq = 0; iq < qsize; ++iq) {
-      q_min(e.k, e.lev, iq, tci) = sed.q_extrema(iq, e.lev, 0);
-      q_max(e.k, e.lev, iq, tci) = sed.q_extrema(iq, e.lev, 1);
+      q_min(tci, iq, e.lev, e.k) = sed.q_extrema(iq, e.lev, 0);
+      q_max(tci, iq, e.lev, e.k) = sed.q_extrema(iq, e.lev, 1);
     }
     Real rx[4], ry[4];
     calc_coefs<np>(cm, slid, e.lev, &dep_points(tci, e.lev, e.k, 0), rx, ry);
@@ -371,25 +372,27 @@ void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
 
 template <typename MT>
 void copy_q (IslMpi<MT>& cm, const Int& nets,
-             const FA4<Real>& q_min, const FA4<Real>& q_max) {
+             const QExtrema<MT>& q_min, const QExtrema<MT>& q_max) {
   slmm_assert(cm.mylid_with_comm_tid_ptr_h.size() == 2);
   const auto myrank = cm.p->rank();
   const auto q_tgt = cm.tracer_arrays.q;
   const auto mylid_with_comm = cm.mylid_with_comm_d;
+  const auto ed_d = cm.ed_d;
+  const auto recvbufs = cm.recvbuf;
   const Int nlid = mylid_with_comm.size();
   const Int qsize = cm.qsize, nlev = cm.nlev, np2 = cm.np2;
   const auto f = KOKKOS_LAMBDA (const Int& it) {
     const Int tci = mylid_with_comm(it/(np2*nlev));
     const Int rmt_id = it % (np2*nlev);
-    auto& ed = cm.ed_d(tci);
+    auto& ed = ed_d(tci);
     if (rmt_id >= ed.rmt.size()) return;
     const auto& e = ed.rmt(rmt_id);
     slmm_kernel_assert(ed.nbrs(ed.src(e.lev, e.k)).rank != myrank);
     const Int ri = ed.nbrs(ed.src(e.lev, e.k)).rank_idx;
-    const auto&& recvbuf = cm.recvbuf(ri);
+    const auto&& recvbuf = recvbufs(ri);
     for (Int iq = 0; iq < qsize; ++iq) {
-      q_min(e.k, e.lev, iq, tci) = recvbuf(e.q_extrema_ptr + 2*iq    );
-      q_max(e.k, e.lev, iq, tci) = recvbuf(e.q_extrema_ptr + 2*iq + 1);
+      q_min(tci, iq, e.lev, e.k) = recvbuf(e.q_extrema_ptr + 2*iq    );
+      q_max(tci, iq, e.lev, e.k) = recvbuf(e.q_extrema_ptr + 2*iq + 1);
     }
     for (Int iq = 0; iq < qsize; ++iq) {
       slmm_kernel_assert(recvbuf(e.q_ptr + iq) != -1);
@@ -518,7 +521,7 @@ void calc_rmt_q (IslMpi<MT>& cm) {
 template <typename MT>
 void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
                  const DepPoints<MT>& dep_points,
-                 const FA4<Real>& q_min, const FA4<Real>& q_max) {
+                 const QExtrema<MT>& q_min, const QExtrema<MT>& q_max) {
   switch (cm.np) {
   case 4: calc_own_q<4>(cm, nets, nete, dep_points, q_min, q_max); break;
   default: slmm_throw_if(true, "np " << cm.np << "not supported");
@@ -537,9 +540,11 @@ template void calc_rmt_q(IslMpi<slmm::MachineTraits>& cm);
 template void calc_own_q(IslMpi<slmm::MachineTraits>& cm,
                          const Int& nets, const Int& nete,
                          const DepPoints<slmm::MachineTraits>& dep_points,
-                         const FA4<Real>& q_min, const FA4<Real>& q_max);
+                         const QExtrema<slmm::MachineTraits>& q_min,
+                         const QExtrema<slmm::MachineTraits>& q_max);
 template void copy_q(IslMpi<slmm::MachineTraits>& cm, const Int& nets,
-                     const FA4<Real>& q_min, const FA4<Real>& q_max);
+                     const QExtrema<slmm::MachineTraits>& q_min,
+                     const QExtrema<slmm::MachineTraits>& q_max);
 
 } // namespace islmpi
 } // namespace homme
