@@ -36,7 +36,7 @@ struct SphereToRef {
   }
 
   // See siqk::sqr::calc_sphere_to_ref for docs.
-  void calc_sphere_to_ref (
+  SLMM_KF void calc_sphere_to_ref (
     const Int& ie, const LocalMesh<ES>& m,
     const Real q[3],
     Real& a, Real& b,
@@ -74,7 +74,7 @@ private:
 
   // Follow the description given in
   //     coordinate_systems_mod::unit_face_based_cube_to_unit_sphere.
-  static Int get_cube_face_idx (const Real& x, const Real& y, const Real& z) {
+  SLMM_KF static Int get_cube_face_idx (const Real& x, const Real& y, const Real& z) {
     const Real ax = std::abs(x), ay = std::abs(y), az = std::abs(z);
     if (ax >= ay) {
       if (ax >= az) return x > 0 ? 0 : 2;
@@ -85,7 +85,7 @@ private:
     }
   }
 
-  static void map_sphere_coord_to_face_coord (
+  SLMM_KF static void map_sphere_coord_to_face_coord (
     const Int& face_idx, const Real& x, const Real& y, const Real& z,
     Real& fx, Real& fy)
   {
@@ -103,7 +103,7 @@ private:
     fy = std::atan(fy) / theta_max;
   }
 
-  Real map_face_coord_to_cell_ref_coord (Real a) const {
+  SLMM_KF Real map_face_coord_to_cell_ref_coord (Real a) const {
     a = (0.5*(1 + a))*ne_;
     a = 2*(a - std::floor(a)) - 1;
     return a;
