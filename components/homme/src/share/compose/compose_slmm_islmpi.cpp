@@ -70,23 +70,6 @@ int wait (Request* req, MPI_Status* stat) {
 } // namespace mpi
 
 namespace islmpi {
-template <typename MT, typename T>
-slmm::EnableIfDiffSpace<MT>
-h2d (FixedCapList<T, typename MT::DES>& d,
-     const FixedCapList<T, typename MT::HES>& s) {
-  d.reset_capacity(s.capacity());
-  deep_copy(d, s);
-}
-
-template <typename MT, typename T>
-slmm::EnableIfSameSpace<MT>
-h2d (FixedCapList<T, typename MT::DES>& d,
-     const FixedCapList<T, typename MT::HES>& s) {
-  d.reset_capacity(0);
-  d.set_view(s.view());
-  d.set_n(s.n());
-}
-
 namespace extend_halo {
 // Extend halo by one layer. This has two parts: finding neighbor (gid, rank) in
 // collect_gid_rank, and extending the Advecter local mesh geometry in
@@ -605,10 +588,11 @@ void comm_lid_on_rank (IslMpi<MT>& cm, const Rank2Gids& rank2rmtgids,
     if (has_comm)
       mylid_with_comm.push_back(i);
   }
-  cm.mylid_with_comm_h.reset_capacity(mylid_with_comm.size(), true);
+  cm.mylid_with_comm_d.reset_capacity(mylid_with_comm.size(), true);
+  cm.mylid_with_comm_h = cm.mylid_with_comm_d.mirror();
   for (Int i = 0; i < cm.mylid_with_comm_h.n(); ++i)
     cm.mylid_with_comm_h(i) = mylid_with_comm[i];
-  h2d<MT>(cm.mylid_with_comm_d, cm.mylid_with_comm_h);
+  deep_copy(cm.mylid_with_comm_d, cm.mylid_with_comm_h);
 
   mpi::waitall(sendreqs.size(), sendreqs.data());
 }
