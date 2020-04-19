@@ -17,12 +17,12 @@ void step (
   slmm_assert(nets == 0 && nete+1 == cm.nelemd);
 #endif
 
-  const DepPointsH<MT> dep_points_h(dep_points_r, cm.nelemd, cm.nlev, cm.np2, 3);
+  const DepPointsH<MT> dep_points_h(dep_points_r, cm.nelemd, cm.nlev, cm.np2);
   const QExtremaH<MT>
     q_min_h(q_min_r, cm.nelemd, cm.qsize, cm.nlev, cm.np2),
     q_max_h(q_max_r, cm.nelemd, cm.qsize, cm.nlev, cm.np2);
 #ifdef COMPOSE_PORT_DEV_VIEWS
-  const DepPoints<MT> dep_points("dep_points", cm.nelemd, cm.nlev, cm.np2, 3);
+  const DepPoints<MT> dep_points("dep_points", cm.nelemd, cm.nlev, cm.np2);
   const QExtrema<MT>
     q_min("q_min", cm.nelemd, cm.qsize, cm.nlev, cm.np2),
     q_max("q_max", cm.nelemd, cm.qsize, cm.nlev, cm.np2);

@@ -57,10 +57,10 @@ int unittest () {
   return nerr;
 }
 
-static const Real sqrt5 = std::sqrt(5.0);
-static const Real oosqrt5 = 1.0 / sqrt5;
+static constexpr Real sqrt5 = 2.23606797749978969641; // std::sqrt(5.0);
+static constexpr Real oosqrt5 = 1.0 / sqrt5;
 
-void gll_np4_eval (const Real x, Real y[4]) {
+SLMM_KF void gll_np4_eval (const Real x, Real y[4]) {
   static constexpr Real oo8 = 1.0/8.0;
   const Real x2 = x*x;
   y[0] = (1.0 - x)*(5.0*x2 - 1.0)*oo8;
@@ -70,7 +70,7 @@ void gll_np4_eval (const Real x, Real y[4]) {
 }
 
 // Linear interp in each region.
-void gll_np4_subgrid_eval (const Real& x, Real y[4]) {
+SLMM_KF void gll_np4_subgrid_eval (const Real& x, Real y[4]) {
   if (x > 0) {
     gll_np4_subgrid_eval(-x, y);
     std::swap(y[0], y[3]);
@@ -94,8 +94,8 @@ void gll_np4_subgrid_eval (const Real& x, Real y[4]) {
 
 // Quadratic interpolant across nodes 1,2,3 -- i.e., excluding node 0 -- of the
 // np=4 reference element.
-void outer_eval (const Real& x, Real v[4]) {
-  static const Real
+SLMM_KF void outer_eval (const Real& x, Real v[4]) {
+  static constexpr Real
     xbar = (2*oosqrt5) / (1 + oosqrt5),
     ooxbar = 1 / xbar,
     ybar = 1 / (xbar - 1);
@@ -108,7 +108,7 @@ void outer_eval (const Real& x, Real v[4]) {
 
 // In the middle region, use the standard GLL np=4 interpolant; in the two outer
 // regions, use an order-reduced interpolant that stabilizes the method.
-void gll_np4_subgrid_exp_eval (const Real& x, Real y[4]) {
+SLMM_KF void gll_np4_subgrid_exp_eval (const Real& x, Real y[4]) {
   static constexpr Real
     alpha = 0.5527864045000416708,
     v = 0.427*(1 + alpha),
