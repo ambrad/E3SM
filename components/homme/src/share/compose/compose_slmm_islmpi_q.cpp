@@ -73,8 +73,8 @@ SLMM_KF void gll_np4_eval (const Real x, Real y[4]) {
 SLMM_KF void gll_np4_subgrid_eval (const Real& x, Real y[4]) {
   if (x > 0) {
     gll_np4_subgrid_eval(-x, y);
-    std::swap(y[0], y[3]);
-    std::swap(y[1], y[2]);    
+    ko::swap(y[0], y[3]);
+    ko::swap(y[1], y[2]);    
     return;
   }
   if (x < -oosqrt5) {
@@ -122,8 +122,8 @@ SLMM_KF void gll_np4_subgrid_exp_eval (const Real& x, Real y[4]) {
   if (x < -oosqrt5 || x > oosqrt5) {
     if (x < -oosqrt5) {
       outer_eval(-x, y);
-      std::swap(y[0], y[3]);
-      std::swap(y[1], y[2]);
+      ko::swap(y[0], y[3]);
+      ko::swap(y[1], y[2]);
     } else
       outer_eval(x, y);
     Real y4[4];

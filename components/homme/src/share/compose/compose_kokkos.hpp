@@ -12,6 +12,8 @@ template <typename T> KOKKOS_INLINE_FUNCTION
 const T& min (const T& a, const T& b) { return a < b ? a : b; }
 template <typename T> KOKKOS_INLINE_FUNCTION
 const T& max (const T& a, const T& b) { return a > b ? a : b; }
+template <typename T> KOKKOS_INLINE_FUNCTION
+void swap (T& a, T& b) { const auto tmp = a; a = b; b = tmp; }
 
 template <typename Real> struct NumericTraits;
 
