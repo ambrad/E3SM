@@ -322,14 +322,15 @@ void calc_rmt_q (IslMpi<MT>& cm) {
 // Hommexx computational pattern.
 
 template <Int np, typename MT> SLMM_KIF
-void calc_coefs (const IslMpi<MT>& cm, const Int& src_lid, const Int& lev,
+void calc_coefs (const slmm::SphereToRef<typename MT::DES>& s2r,
+                 const slmm::LocalMesh<typename MT::DES>& m,
+                 const typename slmm::Advecter<MT>::Alg::Enum& alg,
+                 const Int& src_lid, const Int& lev,
                  const Real* const dep_point, Real rx[4], Real ry[4]) {
   static_assert(np == 4, "Only np 4 is supported.");
   Real ref_coord[2];
-  const auto& m = cm.advecter->local_mesh(src_lid);
-  cm.advecter->s2r().calc_sphere_to_ref(src_lid, m, dep_point,
-                                        ref_coord[0], ref_coord[1]);
-  interpolate<MT>(cm.advecter->alg(), ref_coord, rx, ry);
+  s2r.calc_sphere_to_ref(src_lid, m, dep_point, ref_coord[0], ref_coord[1]);
+  interpolate<MT>(alg, ref_coord, rx, ry);
 }
 
 template <Int np, typename MT>
@@ -340,6 +341,9 @@ void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
   const auto qdp_src = cm.tracer_arrays.qdp;
   const auto q_tgt = cm.tracer_arrays.q;
   const auto ed_d = cm.ed_d;
+  const auto s2r = cm.advecter->s2r();
+  const auto local_meshes = cm.advecter->local_meshes();
+  const auto alg = cm.advecter->alg();
   const Int qsize = cm.qsize, nlev = cm.nlev, np2 = cm.np2;
   const auto f = KOKKOS_LAMBDA (const Int& it) {
     const Int tci = nets + it/(np2*nlev);
@@ -348,13 +352,14 @@ void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
     if (own_id >= ed.own.size()) return;
     const auto& e = ed.own(own_id);
     const Int slid = ed.nbrs(ed.src(e.lev, e.k)).lid_on_rank;
-    const auto& sed = cm.ed_d(slid);
+    const auto& sed = ed_d(slid);
     for (Int iq = 0; iq < qsize; ++iq) {
       q_min(tci, iq, e.lev, e.k) = sed.q_extrema(iq, e.lev, 0);
       q_max(tci, iq, e.lev, e.k) = sed.q_extrema(iq, e.lev, 1);
     }
     Real rx[4], ry[4];
-    calc_coefs<np>(cm, slid, e.lev, &dep_points(tci, e.lev, e.k, 0), rx, ry);
+    calc_coefs<np,MT>(s2r, local_meshes(slid), alg, slid, e.lev,
+                      &dep_points(tci, e.lev, e.k, 0), rx, ry);
     for (Int iq = 0; iq < qsize; ++iq) {
       // q from calc_q_extrema is being overwritten, so have to use qdp/dp.
       Real dp[16];
@@ -492,6 +497,10 @@ void calc_rmt_q_pass2 (IslMpi<MT>& cm) {
   };
   ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, cm.nrmt_qs_extrema), fqe);
 
+  const auto s2r = cm.advecter->s2r();
+  const auto local_meshes = cm.advecter->local_meshes();
+  const auto alg = cm.advecter->alg();
+
   const auto fx = KOKKOS_LAMBDA (const Int& it) {
     const Int
     ri = rmt_xs(5*it), lid = rmt_xs(5*it + 1), lev = rmt_xs(5*it + 2),
@@ -499,7 +508,7 @@ void calc_rmt_q_pass2 (IslMpi<MT>& cm) {
     const auto&& xs = recvbuf(ri);
     auto&& qs = sendbuf(ri);
     Real rx[4], ry[4];
-    calc_coefs<np>(cm, lid, lev, &xs(xos), rx, ry);
+    calc_coefs<np,MT>(s2r, local_meshes(lid), alg, lid, lev, &xs(xos), rx, ry);
     Real* const q_tgt = &qs(qos);
     for (Int iq = 0; iq < qsize; ++iq) {
       Real qsrc[16];
