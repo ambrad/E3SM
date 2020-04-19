@@ -70,13 +70,7 @@ SLMM_KF void gll_np4_eval (const Real x, Real y[4]) {
 }
 
 // Linear interp in each region.
-SLMM_KF void gll_np4_subgrid_eval (const Real& x, Real y[4]) {
-  if (x > 0) {
-    gll_np4_subgrid_eval(-x, y);
-    ko::swap(y[0], y[3]);
-    ko::swap(y[1], y[2]);    
-    return;
-  }
+SLMM_KF void gll_np4_subgrid_eval_impl (const Real& x, Real y[4]) {
   if (x < -oosqrt5) {
     const Real alpha = (x + 1)/(1 - oosqrt5);
     y[0] = 1 - alpha;
@@ -90,6 +84,16 @@ SLMM_KF void gll_np4_subgrid_eval (const Real& x, Real y[4]) {
     y[2] = alpha;
     y[3] = 0;
   }
+}
+
+SLMM_KF void gll_np4_subgrid_eval (const Real& x, Real y[4]) {
+  if (x > 0) {
+    gll_np4_subgrid_eval_impl(-x, y);
+    ko::swap(y[0], y[3]);
+    ko::swap(y[1], y[2]);    
+    return;
+  }
+  gll_np4_subgrid_eval_impl(x, y);
 }
 
 // Quadratic interpolant across nodes 1,2,3 -- i.e., excluding node 0 -- of the
