@@ -22,6 +22,7 @@ namespace islmpi {
 template <typename MT>
 void pack_dep_points_sendbuf_pass1 (IslMpi<MT>& cm) {
 #ifdef COMPOSE_PORT
+  ko::fence();
   deep_copy(cm.nx_in_rank_h, cm.nx_in_rank);
   deep_copy(cm.nx_in_lid_h, cm.nx_in_lid);
   deep_copy(cm.bla_h, cm.bla);
@@ -162,8 +163,10 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const DepPoints<MT>& dep_poi
       item.lev = lev;
       item.k = k;
     };
+    ko::fence();
     ko::parallel_for(
       ko::RangePolicy<typename MT::DES>(0, (end - start)*nlev*np2), f);
+    ko::fence();
   }
 }
 

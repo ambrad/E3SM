@@ -415,6 +415,7 @@ template <Int np, typename MT>
 void calc_rmt_q_pass1 (IslMpi<MT>& cm) {
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
 #ifdef COMPOSE_PORT_SEPARATE_VIEWS
+  ko::fence();
   for (Int ri = 0; ri < nrmtrank; ++ri)
     ko::deep_copy(ko::View<Real*, typename MT::HES>(cm.recvbuf_meta_h(ri).data(), 1),
                   ko::View<Real*, typename MT::HES>(cm.recvbuf.get_h(ri).data(), 1));
@@ -499,6 +500,7 @@ void calc_rmt_q_pass2 (IslMpi<MT>& cm) {
       for (int i = 0; i < 2; ++i)
         qs(qos + 2*iq + i) = ed.q_extrema(iq, lev, i);
   };
+  ko::fence();
   ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, cm.nrmt_qs_extrema), fqe);
 
   const auto s2r = cm.advecter->s2r();
@@ -521,6 +523,7 @@ void calc_rmt_q_pass2 (IslMpi<MT>& cm) {
     }
   };
   ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, cm.nrmt_xs), fx);
+  ko::fence();
 }
 
 template <Int np, typename MT>

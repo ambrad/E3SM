@@ -69,6 +69,7 @@ void step (
   wait_on_send(cm, true /* skip_if_empty */);
 
 #ifdef COMPOSE_PORT_DEV_VIEWS
+  ko::fence();
   ko::deep_copy(dep_points_h, dep_points);
   ko::deep_copy(q_min_h, q_min);
   ko::deep_copy(q_max_h, q_max);

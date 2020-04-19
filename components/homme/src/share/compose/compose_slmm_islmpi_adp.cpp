@@ -139,6 +139,7 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
 #endif
       }
     };
+    ko::fence();
     ko::parallel_for(
       ko::RangePolicy<typename MT::DES>(0, (nete - nets + 1)*nlev*np2), f);
   }
