@@ -774,7 +774,7 @@ contains
     type (derivative_t), intent(in) :: deriv
     real(kind=real_kind), intent(out) :: dprecon(np,np,nlev)
 
-    real(real_kind), dimension(np,np,nlevp) :: pref, p0r, p1r
+    real(real_kind), dimension(np,np,nlevp) :: pref, p0r, p1r, p1
     real(real_kind), dimension(np,np,nlevp,2) :: eta_dot_dpdn
     real(real_kind), dimension(np,np) :: dps, ptp0, v1, v2, divdp
     real(real_kind), dimension(np,np,2) :: grad, vdp
@@ -813,11 +813,37 @@ contains
     end do
 
     call calc_p(hvcoord, elem%derived%dp, pref)
+    call calc_p(hvcoord, elem%state%dp3d(:,:,:,tl%np1), p1)
 
     p0r(:,:,1) = pref(:,:,1)
     p0r(:,:,nlevp) = pref(:,:,nlevp)
 
+#define SLMM_FWD
     do k = 2, nlev
+#ifdef SLMM_FWD
+       ! Gradient of eta_dot_dpdn = p_eta deta/dt at final
+       ! time w.r.t. horizontal sphere coords.
+       grad = gradient_sphere(eta_dot_dpdn(:,:,k,2), deriv, elem%Dinv)
+
+       ! Gradient of eta_dot_dpdn = p_eta deta/dt at final
+       ! time w.r.t. p at initial time.
+       k1 = k-1
+       k2 = k+1
+       call eval_lagrange_poly_derivative(k2-k1+1, pref(:,:,k1:k2), &
+            eta_dot_dpdn(:,:,k1:k2,2), &
+            pref(:,:,k), ptp0)
+
+       ! Horizontal velocity at initial time.
+       k1 = k-1
+       k2 = k
+       v1 = half*(elem%derived%vstar(:,:,1,k1) + elem%derived%vstar(:,:,1,k2))
+       v2 = half*(elem%derived%vstar(:,:,2,k1) + elem%derived%vstar(:,:,2,k2))
+
+       ! Reconstruct departure level coordinate at final time.
+       p1r(:,:,k) = pref(:,:,k) + &
+            half*dt*(eta_dot_dpdn(:,:,k,1) + eta_dot_dpdn(:,:,k,2) + &
+                     dt*(ptp0*eta_dot_dpdn(:,:,k,1) - grad(:,:,1)*v1 - grad(:,:,2)*v2))
+#else
        ! Gradient of eta_dot_dpdn = p_eta deta/dt at initial
        ! time w.r.t. horizontal sphere coords.
        grad = gradient_sphere(eta_dot_dpdn(:,:,k,1), deriv, elem%Dinv)
@@ -836,13 +862,6 @@ contains
        v1 = half*(elem%derived%vn0(:,:,1,k1) + elem%derived%vn0(:,:,1,k2))
        v2 = half*(elem%derived%vn0(:,:,2,k1) + elem%derived%vn0(:,:,2,k2))
 
-#define SLMM_FWD
-#ifdef SLMM_FWD
-       ! Reconstruct departure level coordinate at final time.
-       p1r(:,:,k) = pref(:,:,k) + &
-            half*dt*(eta_dot_dpdn(:,:,k,1) + eta_dot_dpdn(:,:,k,2) + &
-                     dt*(ptp0*eta_dot_dpdn(:,:,k,2) - grad(:,:,1)*v1 - grad(:,:,2)*v2))
-#else
        ! Reconstruct departure level coordinate at initial time.
        p0r(:,:,k) = pref(:,:,k) - &
             half*dt*(eta_dot_dpdn(:,:,k,1) + eta_dot_dpdn(:,:,k,2) - &
