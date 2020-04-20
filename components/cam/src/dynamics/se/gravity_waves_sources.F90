@@ -115,7 +115,6 @@ CONTAINS
     use parallel_mod,       only: par 
     use element_ops,        only : get_temperature
     use dyn_grid,           only: fv_nphys
-    use derivative_mod,     only: subcell_integration
     use prim_driver_mod, only     : deriv1
     use element_ops,        only : get_temperature
     use gllfvremap_mod, only  : gfr_g2f_scalar, gfr_g2f_vector
