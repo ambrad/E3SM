@@ -824,24 +824,25 @@ contains
        ! time w.r.t. horizontal sphere coords.
        grad = gradient_sphere(eta_dot_dpdn(:,:,k,2), deriv, elem%Dinv)
 
-       ! Gradient of eta_dot_dpdn = p_eta deta/dt at final
-       ! time w.r.t. p at initial time.
+       ! Gradient of eta_dot_dpdn = p_eta deta/dt at final time w.r.t. p at
+       ! initial time.
        k1 = k-1
        k2 = k+1
        call eval_lagrange_poly_derivative(k2-k1+1, pref(:,:,k1:k2), &
             eta_dot_dpdn(:,:,k1:k2,2), &
             pref(:,:,k), ptp0)
 
-       ! Horizontal velocity at initial time.
+       ! Horizontal velocity at final time. In these and the eta_dot_dpdn
+       ! velocity, we can use either the initial or final.
        k1 = k-1
        k2 = k
-       v1 = half*(elem%derived%vstar(:,:,1,k1) + elem%derived%vstar(:,:,1,k2))
-       v2 = half*(elem%derived%vstar(:,:,2,k1) + elem%derived%vstar(:,:,2,k2))
+       v1 = half*(elem%derived%vn0(:,:,1,k1) + elem%derived%vn0(:,:,1,k2))
+       v2 = half*(elem%derived%vn0(:,:,2,k1) + elem%derived%vn0(:,:,2,k2))
 
        ! Reconstruct departure level coordinate at final time.
        p1r(:,:,k) = pref(:,:,k) + &
             half*dt*(eta_dot_dpdn(:,:,k,1) + eta_dot_dpdn(:,:,k,2) + &
-                     dt*(ptp0*eta_dot_dpdn(:,:,k,1) - grad(:,:,1)*v1 - grad(:,:,2)*v2))
+                     dt*(ptp0*eta_dot_dpdn(:,:,k,2) - grad(:,:,1)*v1 - grad(:,:,2)*v2))
 #else
        ! Gradient of eta_dot_dpdn = p_eta deta/dt at initial
        ! time w.r.t. horizontal sphere coords.
