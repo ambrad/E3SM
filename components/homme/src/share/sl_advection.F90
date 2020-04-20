@@ -774,7 +774,7 @@ contains
     type (derivative_t), intent(in) :: deriv
     real(kind=real_kind), intent(out) :: dprecon(np,np,nlev)
 
-    real(real_kind), dimension(np,np,nlevp) :: pref, p0r, p1r, p1
+    real(real_kind), dimension(np,np,nlevp) :: pref, p0r, p1r
     real(real_kind), dimension(np,np,nlevp,2) :: eta_dot_dpdn
     real(real_kind), dimension(np,np) :: dps, ptp0, v1, v2, divdp
     real(real_kind), dimension(np,np,2) :: grad, vdp
@@ -813,7 +813,6 @@ contains
     end do
 
     call calc_p(hvcoord, elem%derived%dp, pref)
-    call calc_p(hvcoord, elem%state%dp3d(:,:,:,tl%np1), p1)
 
     p0r(:,:,1) = pref(:,:,1)
     p0r(:,:,nlevp) = pref(:,:,nlevp)
