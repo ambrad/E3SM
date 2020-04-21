@@ -755,6 +755,168 @@ contains
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   end subroutine biharmonic_wk_scalar
 
+#if 1
+  subroutine calc_vertically_lagrangian_levels( &
+       hybrid, elem, ie, hvcoord, tl, dt, deriv, dp_tol, dprecon)
+
+    ! Reconstruct the vertically Lagrangian levels, thus permitting the dynamics
+    ! vertical remap time step to be shorter than the tracer time step.
+    !   Recall
+    !     p(eta,ps) = A(eta) p0 + B(eta) ps
+    !     => dp/dt = p_eta deta/dt + p_ps dps/dt
+    !              = (A_eta p0 + B_eta ps) deta/dt + B(eta) dps/dt
+    ! dp3d already accounts for B(eta) dps/dt, so it does not appear in what
+    ! follows. We use eta as the vertical coordinate in these calculations. But
+    ! here, to focus on the key ideas, consider a p = (x,z) system with
+    ! velocities v = (u,w). Let 0, h, 1, suffixes denote start, middle, and end
+    ! of the time step. The algorithm is as follows.
+    !   The trajectory is computed forward in time, so the departure 0 points
+    ! are on the grid. We need to compute z(x0,t1), the floating height at
+    ! horizontal grid point x0 at time t1. We start by computing z1 = z(x1,t1),
+    ! the floating height at the non-grid point x1 at time t1 or, in other
+    ! words, the non-grid arrival point:
+    !     z1 = z0 + dt w(ph,th) + O(dt^3)
+    !     xh - x0 = dt/2 u(p0,th) + O(dt^2)
+    !     zh - z0 = dt/2 w(p0,th) + O(dt^2)
+    !     w(ph,th) = w(p0,th) + w_x(p0,th) (xh - x0) + O(|xh - x0|^2)
+    !                         + w_z(p0,th) (zh - z0) + O(|zh - z0|^2)
+    !              = w(p0,th) + dt/2 (  w_x(p0,th) u(p0,th)
+    !                                 + w_z(p0,th) w(p0,th)) + O(dt^2)
+    !     z1 = z0 + dt (w(p0,th) + dt/2 (  w_x(p0,th) u(p0,th)
+    !                                    + w_z(p0,th) w(p0,th))) + O(dt^3)   (*)
+    ! Now we compute z(x0,t1). First, we need
+    !     x0 - x1 = -dt u(ph,th) + O(dt^3)
+    ! and
+    !     z_x(x1,t1) = z0_x + dt w_x(p0,th) + O(dt^2)
+    !                = dt w_x(p0,th) + O(dt^2).
+    !     z_xx(x1,t1) = z0_xx + dt w_xx(p0,th) + O(dt^2)
+    !                 = dt w_xx(p0,th) + O(dt^2).
+    ! Then we expand z(x0,t1) in Taylor series and substitute:
+    !     z(x0,t1) = z(x1,t1) + z_x(x1,t1) (x0 - x1) + z_xx(x1,t1) (x0 - x1)^2
+    !                + O(|x0 - x1|^3)
+    !              = z(x1,t1) - dt z_x(x1,t1) u(ph,th)
+    !                + dt^2 z_xx(x1,t1) u(ph,th)^2
+    !                + O(dt^3) + O(|x0 - x1|^3)
+    !              = z(x1,t1) - dt^2 w_x(p0,th) u(ph,th)
+    !                + dt^3 w_xx(x1,t1) u(ph,th)^2
+    !                + O(dt^3) + O(|x0 - x1|^3).
+    ! Gather all O(dt^3) terms, with O(|x0 - x1|^p) = O(dt^p):
+    !     z(x0,t1) = z(x1,t1) - dt^2 w_x(p0,th) u(ph,th) + O(dt^3).
+    ! Now substitute (*) for z(x1,t1):
+    !     z(x0,t1) = z0 + dt (w(p0,th) + dt/2 (  w_x(p0,th) u(p0,th)
+    !                                          + w_z(p0,th) w(p0,th)))
+    !                - dt^2 w_x(p0,th) u(ph,th) + O(dt^3)
+    !              = z0 + dt (w(p0,th) + dt/2 ( -w_x(p0,th) u(p0,th)
+    !                                          + w_z(p0,th) w(p0,th))) + O(dt^3).
+    ! This is locally accurate to O(dt^3) and so globally 2nd-order
+    ! accurate. Notably, compared with (*), this formula differs only in a
+    ! sign. Note also that a straightforward first-order accurate formula is
+    !     z(x0,t1) = z0 + dt w(p0,th) + O(dt^2).
+    
+    use control_mod, only: dt_remap_factor
+    use derivative_mod, only: derivative_t, gradient_sphere
+    use kinds, only: iulog
+
+    type (hybrid_t), intent(in) :: hybrid
+    type (element_t), intent(in) :: elem
+    integer, intent(in) :: ie
+    type (hvcoord_t), intent(in) :: hvcoord
+    type (TimeLevel_t), intent(in) :: tl
+    real(kind=real_kind), intent(in) :: dt, dp_tol
+    type (derivative_t), intent(in) :: deriv
+    real(kind=real_kind), intent(out) :: dprecon(np,np,nlev)
+
+    real(real_kind), dimension(np,np,nlevp) :: pref, p1r, eta_dot_dpdn
+    real(real_kind), dimension(np,np) :: dpi, ps_t, divdp
+    real(real_kind), dimension(np,np,2) :: vdp, v
+    real(real_kind), dimension(np,np,3) :: grad
+    real(real_kind) :: dp_neg_min
+    integer :: i, j, k, k1, k2, d
+
+#ifndef NDEBUG
+    if (abs(hvcoord%hybi(1)) > 10*eps .or. hvcoord%hyai(nlevp) > 10*eps) then
+       if (hybrid%masterthread) &
+            print *, 'calc_vertically_lagrangian_levels: bi(1)', hvcoord%hybi(1), 'ai(nlevp)', &
+            hvcoord%hyai(nlevp)
+       call abortmp('hvcoord has unexpected non-0 entries at the bottom and/or top')
+    end if
+#endif
+
+    if (dt_remap_factor == 0) then
+       eta_dot_dpdn = elem%derived%eta_dot_dpdn
+    else
+       ! Reconstruct an approximation to the midpoint eta_dot_dpdn on
+       ! Eulerian levels.
+       eta_dot_dpdn(:,:,1) = zero
+       do k = 1,nlev
+          do d = 1,2
+             vdp(:,:,d) = half*(elem%derived%vstar(:,:,d,k)*elem%derived%dp(:,:,k       ) + &
+                                elem%derived%vn0  (:,:,d,k)*elem%state%dp3d(:,:,k,tl%np1))
+          end do
+          divdp = divergence_sphere(vdp, deriv, elem)
+          eta_dot_dpdn(:,:,k+1) = eta_dot_dpdn(:,:,k) + divdp
+       end do
+       ps_t = -eta_dot_dpdn(:,:,nlevp)
+       eta_dot_dpdn(:,:,nlevp) = zero
+       do k = 2,nlev
+          ! eta_dot_dpdn
+          eta_dot_dpdn(:,:,k) = -hvcoord%hybi(k)*ps_t - eta_dot_dpdn(:,:,k)
+       end do
+    end if
+
+    ! Use p0 as the reference coordinate system. p0 differs from p1 by B(eta)
+    ! (ps1 - ps0); dp3d already accounts for this term
+    ! w.r.t. derived%dp. Recall
+    !     eta_dot_dpdn = p_eta eta_dot = (A_eta p0 + B_eta ps) deta/dt,
+    ! except that in the code eta_dot_dpdn is actually dp deta/dt rather than
+    ! dp/deta deta/dt. eta_dot_dpdn is the motion of a pressure level excluding
+    ! its motion due to dps/dt.
+    call calc_p(hvcoord, elem%derived%dp, pref)
+
+    do k = 2, nlev
+       ! Gradient of eta_dot at midpoint time w.r.t. horizontal sphere coords.
+       grad(:,:,1:2) = gradient_sphere(eta_dot_dpdn(:,:,k), deriv, elem%Dinv)
+
+       ! Gradient of eta_dot at midpoint time w.r.t. vertical ref coords.
+       k1 = k-1
+       k2 = k+1
+       call eval_lagrange_poly_derivative(k2-k1+1, &
+            pref(:,:,k1:k2), eta_dot_dpdn(:,:,k1:k2), &
+            pref(:,:,k), grad(:,:,3))
+
+       ! Horizontal velocity at time midpoint.
+       do d = 1,2
+          v(:,:,d) = fourth*(elem%derived%vstar(:,:,d,k-1) + elem%derived%vstar(:,:,d,k) + &
+                             elem%derived%vn0  (:,:,d,k-1) + elem%derived%vn0  (:,:,d,k))
+       end do
+
+       ! Reconstruct departure level coordinate at final time.
+       p1r(:,:,k) = pref(:,:,k) + dt*( &
+            eta_dot_dpdn(:,:,k) + &
+            half*dt*(-grad(:,:,1)*v(:,:,1) - grad(:,:,2)*v(:,:,2) + grad(:,:,3)*eta_dot_dpdn(:,:,k)))
+    end do
+    p1r(:,:,1) = pref(:,:,1)
+    p1r(:,:,nlevp) = pref(:,:,nlevp)
+    
+    ! Reconstruct eta_dot_dpdn over the time interval.
+    eta_dot_dpdn = (p1r - pref)/dt
+    ! Boundary points are always 0.
+    eta_dot_dpdn(:,:,1) = zero
+    eta_dot_dpdn(:,:,nlevp) = zero
+
+    ! Limit dp to be > 0 and store update in eta_dot_dpdn rather than true
+    ! eta_dot_dpdn. See comments below for more.
+    dp_neg_min = reconstruct_and_limit_dp(elem%state%dp3d(:,:,:,tl%np1), &
+         dt, dp_tol, eta_dot_dpdn, dprecon)
+#ifndef NDEBUG
+    if (dp_neg_min < dp_tol) then
+       write(iulog, '(a,i7,i7,es11.4)') &
+            'sl_advection: reconstruct_and_limit_dp (rank,ie) returned', &
+            hybrid%par%rank, ie, dp_neg_min
+    end if
+#endif
+  end subroutine calc_vertically_lagrangian_levels
+#else
   subroutine calc_vertically_lagrangian_levels( &
        hybrid, elem, ie, hvcoord, tl, dt, deriv, dp_tol, dprecon)
     ! Reconstruct the vertically Lagrangian levels, thus permitting
@@ -895,6 +1057,7 @@ contains
     end if
 #endif
   end subroutine calc_vertically_lagrangian_levels
+#endif
 
   subroutine eval_lagrange_poly_derivative(n, xs, ys, xi, yp)
     integer, intent(in) :: n
