@@ -3,6 +3,91 @@
 namespace homme {
 namespace islmpi {
 
+#ifdef COMPOSE_PORT
+namespace {
+struct Accum {
+  Int mos, sendcount, xos, qos;
+  Accum () : mos(0), sendcount(0), xos(0), qos(0) {}
+  void operator+= (const volatile Accum& o) volatile {
+    mos += o.mos; sendcount += o.sendcount; xos += o.xos; qos += o.qos;
+  }
+};
+
+template <typename Buffer> SLMM_KIF
+Int setbuf (Buffer& buf, const Int& os, const Int& i1, const Int& i2,
+            const bool final) {
+  if (final) setbuf(buf, os, i1, i2);
+  return nreal_per_2int;
+}
+} // namespace
+
+template <typename MT>
+void pack_dep_points_sendbuf_pass1_scan (IslMpi<MT>& cm) {
+  ko::fence();
+  const auto sendbufs = cm.sendbuf;
+  const auto lid_on_ranks = cm.lid_on_rank;
+  const auto nx_in_rank = cm.nx_in_rank;
+  const auto nx_in_lids = cm.nx_in_lid;
+  const auto x_bulkdata_offset = cm.x_bulkdata_offset;
+  const auto sendcounts = cm.sendcount;
+  const auto blas = cm.bla;
+  const auto nlev = cm.nlev;
+  const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
+  for (Int ri = 0; ri < nrmtrank; ++ri) {
+    const Int lid_on_rank_n = cm.lid_on_rank_h(ri).n();
+    const auto f = KOKKOS_LAMBDA (const int idx, Accum& a, const bool fin) {
+      auto&& sendbuf = sendbufs(ri);
+      if (idx == 0) {
+        const auto cnt = setbuf(sendbuf, 0, 0, 0, fin);
+        a.mos += cnt;
+        a.sendcount += cnt;
+      }
+      if (nx_in_rank(ri) == 0) return;
+      const auto&& lid_on_rank = lid_on_ranks(ri);
+      const Int lidi = idx / nlev;
+      const Int lev = idx % nlev;
+      const auto nx_in_lid = nx_in_lids(ri,lidi);
+      if (nx_in_lid == 0) return;
+      auto&& bla = blas(ri);
+      if (lev == 0) {
+        const auto cnt = setbuf(sendbuf, a.mos, lid_on_rank(lidi), nx_in_lid, fin);
+        a.mos += cnt;
+        a.sendcount += cnt;
+      }
+      auto& t = bla(lidi,lev);
+      slmm_kernel_assert_high(t.cnt == 0);
+      const Int nx = t.xptr;
+      if (fin) {
+        t.qptr = a.qos;
+        if (nx == 0) {
+          t.xptr = -1;
+          return;
+        }
+      }
+      if (nx > 0) {
+        const auto dos = setbuf(sendbuf, a.mos, lev, nx, fin);
+        a.mos += dos;
+        a.sendcount += dos + 3*nx;
+        if (fin) t.xptr = a.xos;
+        a.xos += 3*nx;
+        a.qos += 2 + nx;
+      }
+    };
+    Accum a;
+    ko::parallel_scan(ko::RangePolicy<typename MT::DES>(0, lid_on_rank_n*nlev), f, a);
+    const auto g = KOKKOS_LAMBDA (const int) {
+      auto&& sendbuf = sendbufs(ri);
+      setbuf(sendbuf, 0, a.mos /* offset to x bulk data */, nx_in_rank(ri));
+      x_bulkdata_offset(ri) = a.mos;
+      sendcounts(ri) = a.sendcount;
+    };
+    ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, 1), g);
+  }
+  ko::fence();
+  deep_copy(cm.sendcount_h, cm.sendcount);
+}
+#endif
+
 /* Pack the departure points (x). We use two passes. We also set up the q
    metadata. Two passes let us do some efficient tricks that are not available
    with one pass. Departure point and q messages are formatted as follows:
@@ -22,6 +107,10 @@ namespace islmpi {
 template <typename MT>
 void pack_dep_points_sendbuf_pass1 (IslMpi<MT>& cm) {
 #ifdef COMPOSE_PORT
+  if (slmm::OnGpu<MT>::value) {
+    pack_dep_points_sendbuf_pass1_scan(cm);
+    return;
+  }
   ko::fence();
   deep_copy(cm.nx_in_rank_h, cm.nx_in_rank);
   deep_copy(cm.nx_in_lid_h, cm.nx_in_lid);
