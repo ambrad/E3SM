@@ -429,15 +429,16 @@ Int getbuf (Buffer& buf, const Int& os, Int& i1, short& i2, short& i3) {
   return nreal_per_2int;
 }
 
+struct Accum {
+  Int cnt, qcnt, qos, xos;
+  Accum () : cnt(0), qcnt(0), qos(0), xos(0) {}
+  void operator+= (const volatile Accum& o) volatile {
+    cnt += o.cnt; qcnt += o.qcnt; qos += o.qos; xos += o.xos;
+  }
+};
+
 template <Int np, typename MT>
 void calc_rmt_q_pass1_scan (IslMpi<MT>& cm) {
-  struct Accum {
-    Int cnt, qcnt, qos, xos;
-    Accum () : cnt(0), qcnt(0), qos(0), xos(0) {}
-    void operator+= (const volatile Accum& o) volatile {
-      cnt += o.cnt; qcnt += o.qcnt; qos += o.qos; xos += o.xos;
-    }
-  };
   const auto recvbuf = cm.recvbuf;
   const auto rmt_xs = cm.rmt_xs;
   const auto rmt_qs_extrema = cm.rmt_qs_extrema;
