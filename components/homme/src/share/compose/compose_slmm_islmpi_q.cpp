@@ -431,49 +431,72 @@ Int getbuf (Buffer& buf, const Int& os, Int& i1, short& i2, short& i3) {
 
 template <Int np, typename MT>
 void calc_rmt_q_pass1_scan (IslMpi<MT>& cm) {
+  struct Accum {
+    Int cnt, qcnt, qos, xos;
+    Accum () : cnt(0), qcnt(0), qos(0), xos(0) {}
+    void operator+= (const volatile Accum& o) volatile {
+      cnt += o.cnt; qcnt += o.qcnt; qos += o.qos; xos += o.xos;
+    }
+  };
+  const auto recvbuf = cm.recvbuf;
+  const auto rmt_xs = cm.rmt_xs;
+  const auto rmt_qs_extrema = cm.rmt_qs_extrema;
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
   Int cnt = 0, qcnt = 0;
   for (Int ri = 0; ri < nrmtrank; ++ri) {
-    const auto&& xs = cm.recvbuf(ri);
-    Int mos = 0, qos = 0, nx_in_rank, xos;
-    mos += getbuf(xs, mos, xos, nx_in_rank);
-    if (nx_in_rank == 0) {
+    const auto get_xos = KOKKOS_LAMBDA (const Int, Int& xos) {
+      const auto&& xs = recvbuf(ri);
+      Int nx_in_rank;
+      getbuf(xs, 0, xos, nx_in_rank);
+      if (nx_in_rank == 0) xos = 0;
+    };
+    Int xos;
+    ko::parallel_reduce(ko::RangePolicy<typename MT::DES>(0, 1), get_xos, xos);
+    if (xos == 0) {
       cm.sendcount_h(ri) = 0;
-      continue; 
+      continue;
     }
-    const Int data_os = xos;
-    while (mos < data_os) {
+    const auto f = KOKKOS_LAMBDA (const Int& idx, Accum& a, const bool fin) {
+      const auto&& xs = recvbuf(ri);
       Int lid;
       short lev, nx;
-      mos += getbuf(xs, mos, lid, lev, nx);
-      slmm_assert(nx > 0);
-      nx_in_rank -= nx;
-      {
-        cm.rmt_qs_extrema_h(4*qcnt + 0) = ri;
-        cm.rmt_qs_extrema_h(4*qcnt + 1) = lid;
-        cm.rmt_qs_extrema_h(4*qcnt + 2) = lev;
-        cm.rmt_qs_extrema_h(4*qcnt + 3) = qos;
-        ++qcnt;
-        qos += 2;
+      getbuf(xs, (idx + 1)*nreal_per_2int, lid, lev, nx);
+      slmm_kernel_assert(nx > 0);
+      if (fin) {
+        const auto qcnt_tot = qcnt + a.qcnt;
+        rmt_qs_extrema(4*qcnt_tot + 0) = ri;
+        rmt_qs_extrema(4*qcnt_tot + 1) = lid;
+        rmt_qs_extrema(4*qcnt_tot + 2) = lev;
+        rmt_qs_extrema(4*qcnt_tot + 3) = a.qos;
       }
-      for (Int xi = 0; xi < nx; ++xi) {
-        cm.rmt_xs_h(5*cnt + 0) = ri;
-        cm.rmt_xs_h(5*cnt + 1) = lid;
-        cm.rmt_xs_h(5*cnt + 2) = lev;
-        cm.rmt_xs_h(5*cnt + 3) = xos;
-        cm.rmt_xs_h(5*cnt + 4) = qos;
-        ++cnt;
-        xos += 3;
-        ++qos;
+      a.qcnt += 1;
+      a.qos += 2;
+      if (fin) {
+        for (Int xi = 0; xi < nx; ++xi) {
+          const auto cnt_tot = cnt + a.cnt;
+          rmt_xs(5*cnt_tot + 0) = ri;
+          rmt_xs(5*cnt_tot + 1) = lid;
+          rmt_xs(5*cnt_tot + 2) = lev;
+          rmt_xs(5*cnt_tot + 3) = xos + a.xos;
+          rmt_xs(5*cnt_tot + 4) = a.qos;
+          a.cnt += 1;
+          a.xos += 3;
+          a.qos += 1;
+        }
+      } else {
+        a.cnt += nx;
+        a.xos += 3*nx;
+        a.qos += nx;        
       }
-    }
-    slmm_assert(nx_in_rank == 0);
-    cm.sendcount_h(ri) = cm.qsize*qos;
+    };
+    Accum a;
+    ko::parallel_scan(ko::RangePolicy<typename MT::DES>(0, xos/nreal_per_2int - 1), f, a);
+    cm.sendcount_h(ri) = cm.qsize*a.qos;
+    cnt += a.cnt;
+    qcnt += a.qcnt;
   }
   cm.nrmt_xs = cnt;
   cm.nrmt_qs_extrema = qcnt;
-  deep_copy(cm.rmt_xs, cm.rmt_xs_h);
-  deep_copy(cm.rmt_qs_extrema, cm.rmt_qs_extrema_h);
 }
 
 template <Int np, typename MT>

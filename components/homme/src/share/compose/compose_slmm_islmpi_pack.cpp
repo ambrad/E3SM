@@ -37,16 +37,6 @@ Int setbuf (Buffer& buf, const Int& os, const Int& i1, const short& i2, const sh
 }
 
 #ifdef COMPOSE_PORT
-namespace {
-struct Accum {
-  Int mos, sendcount, xos, qos;
-  Accum () : mos(0), sendcount(0), xos(0), qos(0) {}
-  void operator+= (const volatile Accum& o) volatile {
-    mos += o.mos; sendcount += o.sendcount; xos += o.xos; qos += o.qos;
-  }
-};
-} // namespace
-
 /* GPU metadata are arranged differently than described below. The scheme is the
    following:
         (#x-in-rank         int
@@ -55,9 +45,16 @@ struct Accum {
           lev               short
           #x)               s
              *#x-in-rank)
-*/
+             */
 template <typename MT>
 void pack_dep_points_sendbuf_pass1_scan (IslMpi<MT>& cm) {
+  struct Accum {
+    Int mos, sendcount, xos, qos;
+    Accum () : mos(0), sendcount(0), xos(0), qos(0) {}
+    void operator+= (const volatile Accum& o) volatile {
+      mos += o.mos; sendcount += o.sendcount; xos += o.xos; qos += o.qos;
+    }
+  };
   ko::fence();
   const auto sendbufs = cm.sendbuf;
   const auto lid_on_ranks = cm.lid_on_rank;
