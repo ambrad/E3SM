@@ -502,10 +502,12 @@ void calc_rmt_q_pass1_scan (IslMpi<MT>& cm) {
 
 template <Int np, typename MT>
 void calc_rmt_q_pass1 (IslMpi<MT>& cm) {
+#ifndef COMPOSE_PACK_NOSCAN
   if (slmm::OnGpu<MT>::value) {
     calc_rmt_q_pass1_scan<np>(cm);
     return;
   }
+#endif
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
 #ifdef COMPOSE_PORT_SEPARATE_VIEWS
   for (Int ri = 0; ri < nrmtrank; ++ri)

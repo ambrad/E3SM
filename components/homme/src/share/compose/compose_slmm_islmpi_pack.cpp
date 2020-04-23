@@ -136,10 +136,12 @@ void pack_dep_points_sendbuf_pass1_scan (IslMpi<MT>& cm) {
 template <typename MT>
 void pack_dep_points_sendbuf_pass1 (IslMpi<MT>& cm) {
 #ifdef COMPOSE_PORT
+# ifndef COMPOSE_PACK_NOSCAN
   if (slmm::OnGpu<MT>::value) {
     pack_dep_points_sendbuf_pass1_scan(cm);
     return;
   }
+# endif
   ko::fence();
   deep_copy(cm.nx_in_rank_h, cm.nx_in_rank);
   deep_copy(cm.nx_in_lid_h, cm.nx_in_lid);

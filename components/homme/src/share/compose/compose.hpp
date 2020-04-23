@@ -63,6 +63,8 @@
 # if defined COMPOSE_MIMIC_GPU || defined KOKKOS_ENABLE_CUDA
 // If defined, then certain buffers need explicit mirroring and copying.
 #  define COMPOSE_PORT_SEPARATE_VIEWS
+// If defined, do pass1 routines on host. This is for performance checking.
+//#  define COMPOSE_PACK_NOSCAN
 # endif
 # if ! defined COMPOSE_WITH_HOMMEXX
 // Need to use utils from compose_port_dev.hpp to bridge Homme (ie, not Hommexx)
