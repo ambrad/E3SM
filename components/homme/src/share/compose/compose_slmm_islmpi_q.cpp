@@ -419,11 +419,71 @@ void copy_q (IslMpi<MT>& cm, const Int& nets,
   ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, nlid*np2*nlev), f);
 }
 
+template <typename Buffer> SLMM_KIF
+Int getbuf (Buffer& buf, const Int& os, Int& i1, short& i2, short& i3) {
+  const Int* const b = reinterpret_cast<const Int*>(&buf(os));
+  i1 = b[0];
+  const short* const b2 = reinterpret_cast<const short*>(b+1);
+  i2 = b2[0];
+  i3 = b2[1];
+  return nreal_per_2int;
+}
+
+template <Int np, typename MT>
+void calc_rmt_q_pass1_scan (IslMpi<MT>& cm) {
+  const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
+  Int cnt = 0, qcnt = 0;
+  for (Int ri = 0; ri < nrmtrank; ++ri) {
+    const auto&& xs = cm.recvbuf(ri);
+    Int mos = 0, qos = 0, nx_in_rank, xos;
+    mos += getbuf(xs, mos, xos, nx_in_rank);
+    if (nx_in_rank == 0) {
+      cm.sendcount_h(ri) = 0;
+      continue; 
+    }
+    const Int data_os = xos;
+    while (mos < data_os) {
+      Int lid;
+      short lev, nx;
+      mos += getbuf(xs, mos, lid, lev, nx);
+      slmm_assert(nx > 0);
+      nx_in_rank -= nx;
+      {
+        cm.rmt_qs_extrema_h(4*qcnt + 0) = ri;
+        cm.rmt_qs_extrema_h(4*qcnt + 1) = lid;
+        cm.rmt_qs_extrema_h(4*qcnt + 2) = lev;
+        cm.rmt_qs_extrema_h(4*qcnt + 3) = qos;
+        ++qcnt;
+        qos += 2;
+      }
+      for (Int xi = 0; xi < nx; ++xi) {
+        cm.rmt_xs_h(5*cnt + 0) = ri;
+        cm.rmt_xs_h(5*cnt + 1) = lid;
+        cm.rmt_xs_h(5*cnt + 2) = lev;
+        cm.rmt_xs_h(5*cnt + 3) = xos;
+        cm.rmt_xs_h(5*cnt + 4) = qos;
+        ++cnt;
+        xos += 3;
+        ++qos;
+      }
+    }
+    slmm_assert(nx_in_rank == 0);
+    cm.sendcount_h(ri) = cm.qsize*qos;
+  }
+  cm.nrmt_xs = cnt;
+  cm.nrmt_qs_extrema = qcnt;
+  deep_copy(cm.rmt_xs, cm.rmt_xs_h);
+  deep_copy(cm.rmt_qs_extrema, cm.rmt_qs_extrema_h);
+}
+
 template <Int np, typename MT>
 void calc_rmt_q_pass1 (IslMpi<MT>& cm) {
+  if (slmm::OnGpu<MT>::value) {
+    calc_rmt_q_pass1_scan<np>(cm);
+    return;
+  }
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
 #ifdef COMPOSE_PORT_SEPARATE_VIEWS
-  ko::fence();
   for (Int ri = 0; ri < nrmtrank; ++ri)
     ko::deep_copy(ko::View<Real*, typename MT::HES>(cm.recvbuf_meta_h(ri).data(), 1),
                   ko::View<Real*, typename MT::HES>(cm.recvbuf.get_h(ri).data(), 1));

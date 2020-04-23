@@ -12,13 +12,30 @@ Int setbuf (Buffer& buf, const Int& os, const Int& i1, const Int& i2) {
 }
 
 template <typename Buffer> SLMM_KIF
+Int setbuf (Buffer& buf, const Int& os, const Int& i1, const short& i2, const short& i3) {
+  static_assert(sizeof(Int) >= 2*sizeof(short), "Need >= 2 shorts per Int");
+  Int* const b = reinterpret_cast<Int*>(&buf(os));
+  b[0] = i1;
+  short* const b2 = reinterpret_cast<short*>(b+1);
+  b2[0] = i2;
+  b2[1] = i3;
+  return nreal_per_2int;
+}
+
+template <typename Buffer> SLMM_KIF
 Int setbuf (Buffer& buf, const Int& os, const Int& i1, const Int& i2,
             const bool final) {
   if (final) setbuf(buf, os, i1, i2);
   return nreal_per_2int;
 }
 
-// See non-pack version below for documentation.
+template <typename Buffer> SLMM_KIF
+Int setbuf (Buffer& buf, const Int& os, const Int& i1, const short& i2, const short& i3,
+            const bool final) {
+  if (final) setbuf(buf, os, i1, i2, i3);
+  return nreal_per_2int;
+}
+
 #ifdef COMPOSE_PORT
 namespace {
 struct Accum {
@@ -30,6 +47,15 @@ struct Accum {
 };
 } // namespace
 
+/* GPU metadata are arranged differently than described below. The scheme is the
+   following:
+        (#x-in-rank         int
+         x-bulk-data-offset i 
+         (lid-on-rank       i     only packed if #x in lid > 0
+          lev               short
+          #x)               s
+             *#x-in-rank)
+*/
 template <typename MT>
 void pack_dep_points_sendbuf_pass1_scan (IslMpi<MT>& cm) {
   ko::fence();
@@ -58,11 +84,6 @@ void pack_dep_points_sendbuf_pass1_scan (IslMpi<MT>& cm) {
       const auto nx_in_lid = nx_in_lids(ri,lidi);
       if (nx_in_lid == 0) return;
       auto&& bla = blas(ri);
-      if (lev == 0) {
-        const auto cnt = setbuf(sendbuf, a.mos, lid_on_rank(lidi), nx_in_lid, fin);
-        a.mos += cnt;
-        a.sendcount += cnt;
-      }
       auto& t = bla(lidi,lev);
       slmm_kernel_assert_high(t.cnt == 0);
       const Int nx = t.xptr;
@@ -74,7 +95,7 @@ void pack_dep_points_sendbuf_pass1_scan (IslMpi<MT>& cm) {
         }
       }
       if (nx > 0) {
-        const auto dos = setbuf(sendbuf, a.mos, lev, nx, fin);
+        const auto dos = setbuf(sendbuf, a.mos, lid_on_rank(lidi), lev, nx, fin);
         a.mos += dos;
         a.sendcount += dos + 3*nx;
         if (fin) t.xptr = a.xos;
