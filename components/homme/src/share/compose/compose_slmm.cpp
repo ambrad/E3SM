@@ -244,13 +244,36 @@ int slmm_unittest () {
 
 static homme::HommeIslMpi::Ptr g_csl_mpi;
 
+static void initialize_kokkos () {
+  std::vector<char*> args;
+#ifdef KOKKOS_ENABLE_CUDA
+  int nd;
+  const auto ret = cudaGetDeviceCount(&nd);
+  if (ret != cudaSuccess) {
+    // It isn't a big deal if we can't get the device count.
+    nd = 1;
+  }
+  std::stringstream ss;
+  ss << "--kokkos-ndevices=" << nd;
+  const auto key = ss.str();
+  std::vector<char> str(key.size()+1);
+  std::copy(key.begin(), key.end(), str.begin());
+  str.back() = 0;
+  args.push_back(const_cast<char*>(str.data()));
+#endif
+  const char* silence = "--kokkos-disable-warnings";
+  args.push_back(const_cast<char*>(silence));
+  int narg = args.size();
+  Kokkos::initialize(narg, args.data());
+}
+
 extern "C" {
 // Interface for Homme, through compose_mod.F90.
 void kokkos_init () {
   amb::dev_init_threads();
   Kokkos::InitArguments args;
   args.disable_warnings = true;
-  Kokkos::initialize(args);
+  initialize_kokkos();
   // Test these initialize correctly.
   Kokkos::View<int> v("hi");
   Kokkos::deep_copy(v, 0);
