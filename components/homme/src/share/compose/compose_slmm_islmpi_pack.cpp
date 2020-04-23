@@ -3,6 +3,22 @@
 namespace homme {
 namespace islmpi {
 
+template <typename Buffer> SLMM_KIF
+Int setbuf (Buffer& buf, const Int& os, const Int& i1, const Int& i2) {
+  Int* const b = reinterpret_cast<Int*>(&buf(os));
+  b[0] = i1;
+  b[1] = i2;
+  return nreal_per_2int;
+}
+
+template <typename Buffer> SLMM_KIF
+Int setbuf (Buffer& buf, const Int& os, const Int& i1, const Int& i2,
+            const bool final) {
+  if (final) setbuf(buf, os, i1, i2);
+  return nreal_per_2int;
+}
+
+// See non-pack version below for documentation.
 #ifdef COMPOSE_PORT
 namespace {
 struct Accum {
@@ -12,13 +28,6 @@ struct Accum {
     mos += o.mos; sendcount += o.sendcount; xos += o.xos; qos += o.qos;
   }
 };
-
-template <typename Buffer> SLMM_KIF
-Int setbuf (Buffer& buf, const Int& os, const Int& i1, const Int& i2,
-            const bool final) {
-  if (final) setbuf(buf, os, i1, i2);
-  return nreal_per_2int;
-}
 } // namespace
 
 template <typename MT>

@@ -185,6 +185,14 @@ SLMM_KIF Real calc_q_tgt (const Real rx[4], const Real ry[4], const Real qdp[16]
                  rx[2]*(qdp[14]/dp[14]) + rx[3]*(qdp[15]/dp[15])));
 }
 
+template <typename Buffer> SLMM_KIF
+Int getbuf (Buffer& buf, const Int& os, Int& i1, Int& i2) {
+  const Int* const b = reinterpret_cast<const Int*>(&buf(os));
+  i1 = b[0];
+  i2 = b[1];
+  return nreal_per_2int;
+}
+
 #ifndef COMPOSE_PORT
 // Homme computational pattern.
 
