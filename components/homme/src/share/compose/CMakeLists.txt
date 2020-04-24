@@ -20,5 +20,11 @@ add_library (${COMPOSE_LIBRARY}
   compose_slmm_islmpi_pack.cpp
   compose_slmm_islmpi_q.cpp
   compose_slmm_islmpi_qextrema.cpp
-  compose_slmm_islmpi_step.cpp)
+  compose_slmm_islmpi_step.cpp
+  cedr_util.cpp
+  cedr_test_randomized.cpp
+  cedr_qlt.cpp
+  cedr_mpi.cpp
+  cedr_local.cpp
+  cedr_caas.cpp)
 link_to_kokkos(${COMPOSE_LIBRARY})
