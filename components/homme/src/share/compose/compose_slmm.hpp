@@ -83,7 +83,7 @@ template <typename MT> using EnableIfDiffSpace
 #ifdef COMPOSE_TIMERS
 struct Timer {
   Timer (const std::string& name_) : name("SLMM_csl_" + name_) { GPTLstart(name.c_str()); }
-  ~Timer () { GPTLstop(name.c_str()); }
+  ~Timer () { ko::fence(); GPTLstop(name.c_str()); }
 private:
   const std::string name;
 };
