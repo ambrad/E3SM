@@ -80,6 +80,19 @@ template <typename MT> using EnableIfSameSpace
 template <typename MT> using EnableIfDiffSpace
   = typename std::enable_if< ! SameSpace<MT>::value>::type;
 
+#ifdef COMPOSE_TIMERS
+struct Timer {
+  Timer (const std::string& name_) : name("SLMM_csl_" + name_) { GPTLstart(name.c_str()); }
+  ~Timer () { GPTLstop(name.c_str()); }
+private:
+  const std::string name;
+};
+#else
+struct Timer {
+  Timer (const std::string&) {}
+};
+#endif
+
 // A 2D array A can be thought of as having nslices(A) rows and szslice(A)
 // columns. A slice can be obtained by
 //     auto ak = slice(A, k);

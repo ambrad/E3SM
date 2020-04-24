@@ -21,6 +21,11 @@
 # define COMPOSE_BOUNDS_CHECK
 #endif
 
+#define COMPOSE_TIMERS
+#ifdef COMPOSE_TIMERS
+# include "gptl.h"
+#endif
+
 // Look for MPI-related memory leaks.
 //#define COMPOSE_DEBUG_MPI
 

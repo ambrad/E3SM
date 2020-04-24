@@ -622,8 +622,10 @@ void calc_rmt_q_pass2 (IslMpi<MT>& cm) {
 
 template <Int np, typename MT>
 void calc_rmt_q (IslMpi<MT>& cm) {
-  calc_rmt_q_pass1<np>(cm);
-  calc_rmt_q_pass2<np>(cm);
+  { slmm::Timer t("09a_rmt_q_pass1");
+    calc_rmt_q_pass1<np>(cm); }
+  { slmm::Timer t("09b_rmt_q_pass2");
+    calc_rmt_q_pass2<np>(cm); }
 }
 
 #endif // COMPOSE_PORT

@@ -1,14 +1,5 @@
 #include "compose_slmm_islmpi.hpp"
 
-#include "gptl.h"
-
-struct Timer {
-  Timer (const std::string& name_) : name("SLMM_csl_" + name_) { GPTLstart(name.c_str()); }
-  ~Timer () { GPTLstop(name.c_str()); }
-private:
-  const std::string name;
-};
-
 namespace homme {
 namespace islmpi {
 
@@ -21,6 +12,8 @@ void step (
   Real* dep_points_r,           // dep_points(1:3, 1:np, 1:np)
   Real* q_min_r, Real* q_max_r) // q_{min,max}(1:np, 1:np, lev, 1:qsize, ie-nets+1)
 {
+  using slmm::Timer;
+
   slmm_assert(cm.np == 4);
 #ifdef COMPOSE_PORT
   slmm_assert(nets == 0 && nete+1 == cm.nelemd);
@@ -69,8 +62,7 @@ void step (
   { Timer t("08_recv_and_wait");
     recv_and_wait_on_send(cm); }
   // Compute the requested q for departure points from remotes.
-  { Timer t("09_rmt_q");
-    calc_rmt_q(cm); }
+  calc_rmt_q(cm);
   // Send q data.
   { Timer t("10_isend");
     isend(cm, true /* want_req */, true /* skip_if_empty */); }
