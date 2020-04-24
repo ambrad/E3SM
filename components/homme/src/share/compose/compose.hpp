@@ -14,7 +14,7 @@
 // Options
 
 #ifdef NDEBUG
-# undef NDEBUG
+//# undef NDEBUG
 #endif
 
 #ifndef NDEBUG
@@ -22,7 +22,7 @@
 #endif
 
 // Look for MPI-related memory leaks.
-#define COMPOSE_DEBUG_MPI
+//#define COMPOSE_DEBUG_MPI
 
 #ifndef HORIZ_OPENMP
 # ifndef KOKKOS_ENABLE_CUDA
