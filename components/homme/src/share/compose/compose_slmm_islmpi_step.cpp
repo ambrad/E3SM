@@ -1,5 +1,14 @@
 #include "compose_slmm_islmpi.hpp"
 
+#include "gptl.h"
+
+struct Timer {
+  Timer (const std::string& name_) : name("SLMM_csl_" + name_) { GPTLstart(name.c_str()); }
+  ~Timer () { GPTLstop(name.c_str()); }
+private:
+  const std::string name;
+};
+
 namespace homme {
 namespace islmpi {
 
@@ -35,38 +44,53 @@ void step (
 
   // Partition my elements that communicate with remotes among threads, if I
   // haven't done that yet.
-  if (cm.mylid_with_comm_tid_ptr_h.capacity() == 0)
-    init_mylid_with_comm_threaded(cm, nets, nete);
+  { Timer t("01_mylid");
+    if (cm.mylid_with_comm_tid_ptr_h.capacity() == 0)
+      init_mylid_with_comm_threaded(cm, nets, nete); }
   // Set up to receive departure point requests from remotes.
-  setup_irecv(cm);
+  { Timer t("02_setup_irecv");
+    setup_irecv(cm); }
   // Determine where my departure points are, and set up requests to remotes as
   // well as to myself to fulfill these.
-  analyze_dep_points(cm, nets, nete, dep_points);
-  pack_dep_points_sendbuf_pass1(cm);
-  pack_dep_points_sendbuf_pass2(cm, dep_points);
+  { Timer t("03_adp");
+    analyze_dep_points(cm, nets, nete, dep_points); }
+  { Timer t("04_pack_pass1");
+    pack_dep_points_sendbuf_pass1(cm); }
+  { Timer t("05_pack_pass2");
+    pack_dep_points_sendbuf_pass2(cm, dep_points); }
   // Send requests.
-  isend(cm);
+  { Timer t("06_isend");
+    isend(cm); }
   // While waiting, compute q extrema in each of my elements.
-  calc_q_extrema(cm, nets, nete);
+  { Timer t("07_q_extrema");
+    calc_q_extrema(cm, nets, nete); }
   // Wait for the departure point requests. Since this requires a thread
   // barrier, at the same time make sure the send buffer is free for use.
-  recv_and_wait_on_send(cm);
+  { Timer t("08_recv_and_wait");
+    recv_and_wait_on_send(cm); }
   // Compute the requested q for departure points from remotes.
-  calc_rmt_q(cm);
+  { Timer t("09_rmt_q");
+    calc_rmt_q(cm); }
   // Send q data.
-  isend(cm, true /* want_req */, true /* skip_if_empty */);
+  { Timer t("10_isend");
+    isend(cm, true /* want_req */, true /* skip_if_empty */); }
   // Set up to receive q for each of my departure point requests sent to
   // remotes. We can't do this until the OpenMP barrier in isend assures that
   // all threads are done with the receive buffer's departure points.
-  setup_irecv(cm, true /* skip_if_empty */);
+  { Timer t("11_setup_irecv");
+    setup_irecv(cm, true /* skip_if_empty */); }
   // While waiting to get my data from remotes, compute q for departure points
   // that have remained in my elements.
-  calc_own_q(cm, nets, nete, dep_points, q_min, q_max);
+  { Timer t("12_own_q");
+    calc_own_q(cm, nets, nete, dep_points, q_min, q_max); }
   // Receive remote q data and use this to fill in the rest of my fields.
-  recv(cm, true /* skip_if_empty */);
-  copy_q(cm, nets, q_min, q_max);
+  { Timer t("13_recv");
+    recv(cm, true /* skip_if_empty */); }
+  { Timer t("14_copy_q");
+    copy_q(cm, nets, q_min, q_max); }
   // Wait on send buffer so it's free to be used by others.
-  wait_on_send(cm, true /* skip_if_empty */);
+  { Timer t("15_wait_on_send");
+    wait_on_send(cm, true /* skip_if_empty */); }
 
 #ifdef COMPOSE_PORT_DEV_VIEWS
   ko::fence();
