@@ -431,8 +431,8 @@ Int getbuf (Buffer& buf, const Int& os, Int& i1, short& i2, short& i3) {
 
 struct Accum {
   Int cnt, qcnt, qos, xos;
-  Accum () : cnt(0), qcnt(0), qos(0), xos(0) {}
-  void operator+= (const volatile Accum& o) volatile {
+  SLMM_KIF  Accum () : cnt(0), qcnt(0), qos(0), xos(0) {}
+  SLMM_KIF void operator+= (const volatile Accum& o) volatile {
     cnt += o.cnt; qcnt += o.qcnt; qos += o.qos; xos += o.xos;
   }
 };

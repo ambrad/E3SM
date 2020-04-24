@@ -49,8 +49,8 @@ Int setbuf (Buffer& buf, const Int& os, const Int& i1, const short& i2, const sh
 
 struct Accum {
   Int mos, sendcount, xos, qos;
-  Accum () : mos(0), sendcount(0), xos(0), qos(0) {}
-  void operator+= (const volatile Accum& o) volatile {
+  SLMM_KIF Accum () : mos(0), sendcount(0), xos(0), qos(0) {}
+  SLMM_KIF void operator+= (const volatile Accum& o) volatile {
     mos += o.mos; sendcount += o.sendcount; xos += o.xos; qos += o.qos;
   }
 };
