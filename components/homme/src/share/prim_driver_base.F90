@@ -1320,7 +1320,7 @@ contains
           ! diagnostics will be incorrect
           call ApplyCAMforcing_dynamics(elem,hvcoord,tl%n0,dt,nets,nete)
           if (compute_diagnostics_it) call run_diagnostics(elem,hvcoord,tl,1,.true.,nets,nete)
-       else if (ftype == 2) then
+       else if (ftype == 2 .or. ftype == 0) then
           ! Apply dynamics forcing over the dynamics (vertically Eulerian) or
           ! vertical remap time step if we're at reference levels.
           if (dt_remap_factor > 0) then
