@@ -1039,8 +1039,8 @@ contains
        nstep_end = tl%nstep + dt_tracer_factor
     else
        ! dt_remap_factor = 0 means use eulerian code, not vert. lagrange
+       dt_remap  = dt*dt_remap_factor
        step_factor = max(dt_remap_factor, dt_tracer_factor)
-       dt_remap  = dt*step_factor
        nstep_end = tl%nstep + step_factor ! nstep at end of this routine
     endif
 
@@ -1278,7 +1278,7 @@ contains
 
     real(kind=real_kind) :: dt_q, dt_remap, dp(np,np,nlev)
     integer :: ie, q, k, n, n0_qdp, np1_qdp
-    logical :: compute_diagnostics_it
+    logical :: compute_diagnostics_it, apply_forcing
 
     dt_q = dt*dt_tracer_factor
     if (dt_remap_factor == 0) then
@@ -1300,6 +1300,21 @@ contains
           ! diagnostics will be incorrect
           call ApplyCAMforcing_dynamics(elem,hvcoord,tl%n0,dt,nets,nete)
           if (compute_diagnostics_it) call run_diagnostics(elem,hvcoord,tl,1,.true.,nets,nete)
+       else if (ftype == 2) then
+          ! Apply forcing if nt > 1 and dt_remap_factor == 0 or we're
+          ! at reference levels.
+          apply_forcing = n > 1
+          if (apply_forcing) then
+             if (dt_remap_factor > 0) apply_forcing = modulo(n, dt_remap_factor) == 0
+          end if
+          if (apply_forcing) then
+#ifndef CAM
+             call TimeLevel_Qdp(tl, dt_tracer_factor, n0_qdp, np1_qdp)
+             call compute_test_forcing(elem,hybrid,hvcoord,tl%n0,n0_qdp,dt_remap,nets,nete,tl)
+#endif
+             call ApplyCAMforcing_dynamics(elem,hvcoord,tl%n0,dt_remap,nets,nete)
+             call run_diagnostics(elem,hvcoord,tl,1,.true.,nets,nete)
+          end if
        end if
 
        call prim_advance_exp(elem, deriv1, hvcoord, hybrid, dt, tl, nets, nete, &
