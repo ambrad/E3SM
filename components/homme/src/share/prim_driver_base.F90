@@ -1054,27 +1054,28 @@ contains
     ! compute scalar diagnostics if currently active
     if (compute_diagnostics) call run_diagnostics(elem,hvcoord,tl,3,.true.,nets,nete)
 
-    call TimeLevel_Qdp(tl, dt_tracer_factor, n0_qdp, np1_qdp)
+    if (.not. independent_time_steps) then
+       call TimeLevel_Qdp(tl, dt_tracer_factor, n0_qdp, np1_qdp)
+
 #ifndef CAM
-    ! compute HOMME test case forcing
-    ! by calling it here, it mimics eam forcings computations in standalone
-    ! homme.
-    call compute_test_forcing(elem,hybrid,hvcoord,tl%n0,n0_qdp,dt_remap,nets,nete,tl)
+       ! compute HOMME test case forcing
+       ! by calling it here, it mimics eam forcings computations in standalone
+       ! homme.
+       call compute_test_forcing(elem,hybrid,hvcoord,tl%n0,n0_qdp,dt_remap,nets,nete,tl)
 #endif
 
-    call applyCAMforcing_remap(elem,hvcoord,tl%n0,n0_qdp,dt_remap,nets,nete)
+       call applyCAMforcing_remap(elem,hvcoord,tl%n0,n0_qdp,dt_remap,nets,nete)
 
-    ! E(1) Energy after CAM forcing
-    if (compute_diagnostics) call run_diagnostics(elem,hvcoord,tl,1,.true.,nets,nete)
+       ! E(1) Energy after CAM forcing
+       if (compute_diagnostics) call run_diagnostics(elem,hvcoord,tl,1,.true.,nets,nete)
 
 #if (USE_OPENACC)
-!    call TimeLevel_Qdp( tl, qsplit, n0_qdp, np1_qdp)
-    call t_startf("copy_qdp_h2d")
-    call copy_qdp_h2d( elem , n0_qdp )
-    call t_stopf("copy_qdp_h2d")
+       !    call TimeLevel_Qdp( tl, qsplit, n0_qdp, np1_qdp)
+       call t_startf("copy_qdp_h2d")
+       call copy_qdp_h2d( elem , n0_qdp )
+       call t_stopf("copy_qdp_h2d")
 #endif
 
-    if (.not. independent_time_steps) then
       if (.not. single_column) then 
 
         ! Loop over rsplit vertically lagrangian timesiteps
@@ -1287,6 +1288,25 @@ contains
        dt_remap = dt*dt_remap_factor
     end if
 
+    call TimeLevel_Qdp(tl, dt_tracer_factor, n0_qdp, np1_qdp)
+
+#ifndef CAM
+    ! Compute test forcing over tracer time step.
+    call compute_test_forcing(elem,hybrid,hvcoord,tl%n0,n0_qdp,dt_q,nets,nete,tl)
+#endif
+
+#ifdef CAM
+    apply_forcing = ftype == 0
+#else
+    apply_forcing = ftype == 0 .or. ftype == 2 .or. ftype == 4
+#endif
+    if (apply_forcing) then
+       ! Apply tracer forcings over tracer time step.
+       do ie = nets,nete
+          call ApplyCAMForcing_tracers(elem(ie),hvcoord,tl%n0,n0_qdp,dt_q,.false.)
+       enddo
+    end if
+
     call set_tracer_transport_derived_values(elem, nets, nete, tl)
 
     call t_startf("prim_step_dyn")
@@ -1300,20 +1320,17 @@ contains
           ! diagnostics will be incorrect
           call ApplyCAMforcing_dynamics(elem,hvcoord,tl%n0,dt,nets,nete)
           if (compute_diagnostics_it) call run_diagnostics(elem,hvcoord,tl,1,.true.,nets,nete)
-       else if (ftype == 2 .or. ftype == 0) then
-          ! Apply forcing if n > 1 and dt_remap_factor == 0 or we're
-          ! at reference levels.
-          apply_forcing = n > 1
-          if (apply_forcing) then
-             if (dt_remap_factor > 0) apply_forcing = modulo(n, dt_remap_factor) == 0
+       else if (ftype == 2) then
+          ! Apply dynamics forcing over the dynamics (vertically Eulerian) or
+          ! vertical remap time step if we're at reference levels.
+          if (dt_remap_factor > 0) then
+             apply_forcing = modulo(n, dt_remap_factor) == 0
+          else
+             apply_forcing = .true.
           end if
           if (apply_forcing) then
-#ifndef CAM
-             call TimeLevel_Qdp(tl, dt_tracer_factor, n0_qdp, np1_qdp)
-             call compute_test_forcing(elem,hybrid,hvcoord,tl%n0,n0_qdp,dt_remap,nets,nete,tl)
-#endif
              call ApplyCAMforcing_dynamics(elem,hvcoord,tl%n0,dt_remap,nets,nete)
-             call run_diagnostics(elem,hvcoord,tl,1,.true.,nets,nete)
+             if (compute_diagnostics_it) call run_diagnostics(elem,hvcoord,tl,1,.true.,nets,nete)
           end if
        end if
 
