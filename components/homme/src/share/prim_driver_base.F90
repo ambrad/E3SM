@@ -1324,7 +1324,7 @@ contains
           ! Apply dynamics forcing over the dynamics (vertically Eulerian) or
           ! vertical remap time step if we're at reference levels.
           if (dt_remap_factor > 0) then
-             apply_forcing = modulo(n, dt_remap_factor) == 0
+             apply_forcing = modulo(n-1, dt_remap_factor) == 0
           else
              apply_forcing = .true.
           end if
