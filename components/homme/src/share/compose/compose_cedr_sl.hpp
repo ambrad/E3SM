@@ -4,6 +4,9 @@
 namespace homme {
 namespace sl {
 
+typedef cedr::Int Int;
+typedef cedr::Real Real;
+
 // Fortran array wrappers.
 template <typename T> using FA2 =
   Kokkos::View<T**,    Kokkos::LayoutLeft, Kokkos::HostSpace>;
@@ -24,9 +27,6 @@ template <typename T> using FA5 =
 //   In the code that follows, _p is previous and _c is current time step. Q is
 // renamed to q, and Q is tracer mass at a GLL point.
 struct Data {
-  typedef cedr::Int Int;
-  typedef cedr::Real Real;
-
   typedef std::shared_ptr<Data> Ptr;
   const Int np, nlev, qsize, qsize_d, timelevels;
   Int n0_qdp, n1_qdp, tl_np1;
@@ -54,6 +54,17 @@ struct Data {
       qdp_pc(lcl_ncell, nullptr)
   {}
 };
+
+void accum_values(const Int ie, const Int k, const Int q, const Int tl_np1,
+                  const Int n0_qdp, const Int np, const bool nonneg,
+                  const FA2<const Real>& spheremp, const FA4<const Real>& dp3d_c,
+                  const FA5<Real>& q_min, const FA5<const Real>& q_max,
+                  const FA5<const Real>& qdp_p, const FA4<const Real>& q_c,
+                  Real& volume, Real& rhom, Real& Qm, Real& Qm_prev,
+                  Real& Qm_min, Real& Qm_max);
+
+void run(CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
+         const Int nets, const Int nete);
 
 } // namespace sl
 } // namespace homme
