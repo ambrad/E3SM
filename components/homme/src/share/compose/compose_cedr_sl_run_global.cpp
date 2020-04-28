@@ -35,8 +35,8 @@ void accum_values (const Int ie, const Int k, const Int q, const Int tl_np1,
   }
 }
 
-void run (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
-          const Int nets, const Int nete) {
+void run_global (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
+                 const Int nets, const Int nete) {
   static constexpr Int max_np = 4;
   const Int np = d.np, nlev = d.nlev, qsize = d.qsize,
     nlevwrem = cdr.nsuplev*cdr.nsublev;

@@ -63,8 +63,15 @@ void accum_values(const Int ie, const Int k, const Int q, const Int tl_np1,
                   Real& volume, Real& rhom, Real& Qm, Real& Qm_prev,
                   Real& Qm_min, Real& Qm_max);
 
-void run(CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
-         const Int nets, const Int nete);
+void run_global(CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
+                const Int nets, const Int nete);
+
+void run_local(CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
+               const Int nets, const Int nete, const bool scalar_bounds,
+               const Int limiter_option);
+
+void check(CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
+           const Int nets, const Int nete);
 
 } // namespace sl
 } // namespace homme
