@@ -1,81 +1,8 @@
 #include "compose_cedr.hpp"
-// Use these when rewriting each CDR's run() function to interact nicely with
-// Homme's nested OpenMP and top-level horizontal threading scheme.
-#include "cedr_caas.hpp"
 
 //todo rm after refactor
 #include "compose_cedr_qlt.hpp"
-
-namespace homme {
-namespace compose {
-
-// We explicitly use Kokkos::Serial here so we can run the Kokkos kernels in the
-// super class w/o triggering an expecution-space initialization error in
-// Kokkos. This complication results from the interaction of Homme's
-// COMPOSE_HORIZ_OPENMP threading with Kokkos kernels.
-struct CAAS : public cedr::caas::CAAS<Kokkos::Serial> {
-  typedef cedr::caas::CAAS<Kokkos::Serial> Super;
-
-  CAAS (const cedr::mpi::Parallel::Ptr& p, const cedr::Int nlclcells,
-        const typename Super::UserAllReducer::Ptr& uar)
-    : Super(p, nlclcells, uar)
-  {}
-
-  void run () override {
-#if defined COMPOSE_HORIZ_OPENMP
-#   pragma omp master
-#endif
-    {
-      Super::run();
-    }
-  }
-};
-
-} // namespace compose
-} // namespace homme
-
-#ifdef QLT_MAIN
-int main (int argc, char** argv) {
-  int nerr = 0, retval = 0;
-  MPI_Init(&argc, &argv);
-  auto p = cedr::mpi::make_parallel(MPI_COMM_WORLD);
-  srand(p->rank());
-  Kokkos::initialize(argc, argv);
-#if 0
-  try
-#endif
-  {
-    cedr::InputParser inp(argc, argv, p);
-    if (p->amroot()) inp.print(std::cout);
-    if (inp.qin.unittest) {
-      nerr += cedr::local::unittest();
-      nerr += cedr::caas::test::unittest(p);
-    }
-    if (inp.qin.unittest || inp.qin.perftest)
-      nerr += cedr::qlt::test::run_unit_and_randomized_tests(p, inp.qin);
-    if (inp.tin.ncells > 0)
-      nerr += cedr::test::transport1d::run(p, inp.tin);
-    {
-      int gnerr;
-      cedr::mpi::all_reduce(*p, &nerr, &gnerr, 1, MPI_SUM);
-      retval = gnerr != 0 ? -1 : 0;
-      if (p->amroot())
-        std::cout << (gnerr != 0 ? "FAIL" : "PASS") << "\n";
-    }
-  }
-#if 0
-  catch (const std::exception& e) {
-    if (p->amroot())
-      std::cerr << e.what();
-    retval = -1;
-  }
-#endif
-  Kokkos::finalize();
-  if (nerr) prc(nerr);
-  MPI_Finalize();
-  return retval;
-}
-#endif
+#include "compose_cedr_caas.hpp"
 
 namespace homme {
 namespace qlt = cedr::qlt;

@@ -1,8 +1,6 @@
 #ifndef INCLUDE_COMPOSE_CEDR_QLT_HPP
 #define INCLUDE_COMPOSE_CEDR_QLT_HPP
 
-// Use these when rewriting each CDR's run() function to interact nicely with
-// Homme's nested OpenMP and top-level horizontal threading scheme.
 #include "cedr_qlt.hpp"
 
 namespace homme {
