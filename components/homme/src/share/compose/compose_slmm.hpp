@@ -1,7 +1,10 @@
 #ifndef INCLUDE_COMPOSE_SLMM_HPP
 #define INCLUDE_COMPOSE_SLMM_HPP
 
+#include "compose_kokkos.hpp"
 #include "compose_slmm_siqk.hpp"
+
+namespace ko = Kokkos;
 
 #ifndef NDEBUG
 # define slmm_assert(condition) do {                                    \
@@ -40,45 +43,6 @@ namespace slmm {
 using siqk::Int;
 using siqk::Real;
 typedef Int Size;
-
-namespace ko = Kokkos;
-
-struct MachineTraits {
-  // Host and device execution spaces.
-#ifdef COMPOSE_PORT
-  using HES = ko::DefaultHostExecutionSpace;
-  using DES = ko::DefaultExecutionSpace;
-#else
-  using HES = ko::Serial;
-  using DES = ko::Serial;
-#endif
-};
-
-template <typename ES> struct OnGpu {
-  enum : bool { value =
-#ifdef COMPOSE_MIMIC_GPU
-                true
-#else
-                false
-#endif
-  };
-};
-#ifdef KOKKOS_ENABLE_CUDA
-template <> struct OnGpu<Kokkos::Cuda> { enum : bool { value = true }; };
-#endif
-
-template <typename MT> using EnableIfOnGpu
-  = typename std::enable_if<slmm::OnGpu<typename MT::DES>::value>::type;
-template <typename MT> using EnableIfNotOnGpu
-  = typename std::enable_if< ! slmm::OnGpu<typename MT::DES>::value>::type;
-
-template <typename MT> struct SameSpace {
-  enum { value = std::is_same<typename MT::HES, typename MT::DES>::value };
-};
-template <typename MT> using EnableIfSameSpace
-  = typename std::enable_if<SameSpace<MT>::value>::type;
-template <typename MT> using EnableIfDiffSpace
-  = typename std::enable_if< ! SameSpace<MT>::value>::type;
 
 #ifdef COMPOSE_TIMERS
 struct Timer {

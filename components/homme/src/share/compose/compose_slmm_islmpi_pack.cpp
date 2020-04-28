@@ -137,7 +137,7 @@ template <typename MT>
 void pack_dep_points_sendbuf_pass1 (IslMpi<MT>& cm) {
 #ifdef COMPOSE_PORT
 # ifndef COMPOSE_PACK_NOSCAN
-  if (slmm::OnGpu<MT>::value) {
+  if (ko::OnGpu<MT>::value) {
     pack_dep_points_sendbuf_pass1_scan(cm);
     return;
   }
@@ -290,9 +290,9 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const DepPoints<MT>& dep_poi
   }
 }
 
-template void pack_dep_points_sendbuf_pass1(IslMpi<slmm::MachineTraits>& cm);
-template void pack_dep_points_sendbuf_pass2(IslMpi<slmm::MachineTraits>& cm,
-                                            const DepPoints<slmm::MachineTraits>& dep_points);
+template void pack_dep_points_sendbuf_pass1(IslMpi<ko::MachineTraits>& cm);
+template void pack_dep_points_sendbuf_pass2(IslMpi<ko::MachineTraits>& cm,
+                                            const DepPoints<ko::MachineTraits>& dep_points);
 
 } // namespace islmpi
 } // namespace homme

@@ -1,7 +1,8 @@
+#include "compose.hpp"
+#include "compose_homme.hpp"
 #include "compose_slmm.hpp"
 #include "compose_slmm_siqk.hpp"
 #include "compose_slmm_advecter.hpp"
-#include "compose.hpp"
 #include "compose_slmm_islmpi.hpp"
 
 #include <sys/time.h>
@@ -20,7 +21,7 @@ namespace islmpi {
 
 #ifdef COMPOSE_PORT
 template <typename ES> SLMM_KF
-void print (const IslMpi<slmm::MachineTraits>::ElemData<ES>& ed) {
+void print (const IslMpi<ko::MachineTraits>::ElemData<ES>& ed) {
   printf("me %p\n", ed.me);
   printf("nbrs %d:", ed.nbrs.size());
   for (int i = 0; i < ed.nbrs.size(); ++i)
@@ -85,10 +86,10 @@ void deep_copy (typename IslMpi<MT>::ElemDataListD& d,
 #endif
 }
 
-template <typename MT> slmm::EnableIfDiffSpace<MT>
+template <typename MT> ko::EnableIfDiffSpace<MT>
 sync_to_device (IslMpi<MT>& cm) { deep_copy<MT>(cm.ed_d, cm.ed_m, cm.ed_h); }
 
-template <typename MT> slmm::EnableIfSameSpace<MT>
+template <typename MT> ko::EnableIfSameSpace<MT>
 sync_to_device (IslMpi<MT>& cm) { cm.ed_d = cm.ed_h; }
 
 template <typename MT>
@@ -172,7 +173,7 @@ void d2h (const TracerArrays<MT>& ta) {
 }
 } // namespace islmpi
 
-typedef slmm::MachineTraits HommeMachineTraits;
+typedef ko::MachineTraits HommeMachineTraits;
 typedef islmpi::IslMpi<HommeMachineTraits> HommeIslMpi;
 
 static HommeIslMpi::Advecter::Ptr g_advecter;
@@ -210,7 +211,7 @@ void dev_init_threads () {
     getenv("OMP_NUM_THREADS", nthr);
   }
   omp_set_num_threads(nthr);
-  static_assert(std::is_same<slmm::MachineTraits::DES, Kokkos::OpenMP>::value,
+  static_assert(std::is_same<ko::MachineTraits::DES, ko::OpenMP>::value,
                 "in this dev code, should have OpenMP exe space on");
 #endif
 }
@@ -277,7 +278,7 @@ void kokkos_init () {
   // Test these initialize correctly.
   Kokkos::View<int> v("hi");
   Kokkos::deep_copy(v, 0);
-  homme::islmpi::FixedCapList<int,slmm::MachineTraits::DES> fcl, fcl1(2);
+  homme::islmpi::FixedCapList<int,ko::MachineTraits::DES> fcl, fcl1(2);
   amb::dev_fin_threads();
 }
 

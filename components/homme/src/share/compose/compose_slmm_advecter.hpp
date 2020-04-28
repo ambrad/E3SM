@@ -111,7 +111,7 @@ private:
 };
 
 // Advecter has purely mesh-local knowledge, with once exception noted below.
-template <typename MT = MachineTraits>
+template <typename MT = ko::MachineTraits>
 struct Advecter {
   typedef typename MT::HES HES;
   typedef typename MT::DES DES;

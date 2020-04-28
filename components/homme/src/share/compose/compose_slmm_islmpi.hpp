@@ -2,21 +2,17 @@
 #define INCLUDE_COMPOSE_SLMM_ISLMPI_HPP
 
 #include "compose.hpp"
+#include "compose_homme.hpp"
 #include "compose_slmm.hpp"
 #include "compose_slmm_advecter.hpp"
-#include "compose_port_dev.hpp"
 
 #include <mpi.h>
 
 #include <memory>
 
 namespace homme {
-typedef slmm::Int Int;
-typedef slmm::Real Real;
-
-namespace ko = Kokkos;
-
 namespace mpi { //todo Share with cedr.
+
 class Parallel {
   MPI_Comm comm_;
 public:
@@ -427,39 +423,6 @@ void deep_copy (BufferLayoutArray<ESD>& d, const BufferLayoutArray<ESS>& s) {
   deep_copy(d.get_lol(), s.get_lol());
 }
 
-// Qdp, dp, Q
-template <typename MT>
-struct TracerArrays {
-#if defined COMPOSE_PORT_DEV
-# if defined COMPOSE_PORT_DEV_VIEWS
-  template <typename Datatype>
-  using View = ko::View<Datatype, ko::LayoutRight, typename MT::DES>;
-  View<Real****> qdp;
-  View<Real***> dp;
-  View<Real****> q;
-  HommeFormatArray<const Real,4> pqdp;
-  HommeFormatArray<const Real,3> pdp;
-  HommeFormatArray<Real,4> pq;
-# else
-  HommeFormatArray<const Real,4> & qdp, pqdp;
-  HommeFormatArray<const Real,3> & dp, pdp;
-  HommeFormatArray<Real,4> & q, pq;
-# endif
-#else
-#endif
-
-  TracerArrays (Int nelemd, Int nlev, Int np2, Int qsize)
-#if defined COMPOSE_PORT_DEV
-    : pqdp(nelemd, np2, nlev, qsize), pdp(nelemd, np2, nlev), pq(nelemd, np2, nlev, qsize),
-# if defined COMPOSE_PORT_DEV_VIEWS
-      qdp("qdp", nelemd, qsize, np2, nlev), dp("dp", nelemd, np2, nlev), q("q", nelemd, qsize, np2, nlev)
-# else
-      qdp(pqdp), dp(pdp), q(pq)
-# endif
-#endif
-  {}
-};
-
 struct GidRank {
   Int
   gid,      // cell global ID
@@ -478,7 +441,7 @@ struct RemoteItem {
 };
 
 // Meta and bulk data for the interpolation SL MPI communication pattern.
-template <typename MT = slmm::MachineTraits>
+template <typename MT = ko::MachineTraits>
 struct IslMpi {
   typedef typename MT::HES HES;
   typedef typename MT::DES DES;
@@ -657,7 +620,7 @@ void copy_q(IslMpi<MT>& cm, const Int& nets,
    semi_lagrange_nearest_point_lev, a departure point may be altered if the
    winds take it outside of the comm halo.
 */
-template <typename MT = slmm::MachineTraits>
+template <typename MT = ko::MachineTraits>
 void step(
   IslMpi<MT>& cm, const Int nets, const Int nete,
   Real* dep_points_r,            // dep_points(1:3, 1:np, 1:np)

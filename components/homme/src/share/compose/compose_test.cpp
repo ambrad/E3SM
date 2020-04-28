@@ -27,6 +27,8 @@ typedef double Real;
 typedef int Int;
 typedef Int Size;
 
+namespace ko = Kokkos;
+
 template <typename T> inline constexpr T square (const T& x) { return x*x; }
 template<typename T> inline constexpr T cube (const T& x) { return x*x*x; }
 
@@ -327,8 +329,6 @@ public:
 
 const char* WindFieldType::inputs[] =
   {"nondivergent", "divergent"};
-
-namespace ko = Kokkos;
 
 // Fortran array wrappers.
 template <typename T> using FA2 = ko::View<T**,   ko::LayoutLeft,ko::HostSpace>;

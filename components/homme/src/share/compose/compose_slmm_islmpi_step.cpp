@@ -92,7 +92,7 @@ void step (
 #endif
 }
 
-template void step(IslMpi<slmm::MachineTraits>&, const Int, const Int, Real*, Real*, Real*);
+template void step(IslMpi<ko::MachineTraits>&, const Int, const Int, Real*, Real*, Real*);
 
 } // namespace islmpi
 } // namespace homme

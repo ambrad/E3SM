@@ -503,7 +503,7 @@ void calc_rmt_q_pass1_scan (IslMpi<MT>& cm) {
 template <Int np, typename MT>
 void calc_rmt_q_pass1 (IslMpi<MT>& cm) {
 #ifndef COMPOSE_PACK_NOSCAN
-  if (slmm::OnGpu<MT>::value) {
+  if (ko::OnGpu<MT>::value) {
     calc_rmt_q_pass1_scan<np>(cm);
     return;
   }
@@ -648,15 +648,15 @@ void calc_rmt_q (IslMpi<MT>& cm) {
   }
 }
 
-template void calc_rmt_q(IslMpi<slmm::MachineTraits>& cm);
-template void calc_own_q(IslMpi<slmm::MachineTraits>& cm,
+template void calc_rmt_q(IslMpi<ko::MachineTraits>& cm);
+template void calc_own_q(IslMpi<ko::MachineTraits>& cm,
                          const Int& nets, const Int& nete,
-                         const DepPoints<slmm::MachineTraits>& dep_points,
-                         const QExtrema<slmm::MachineTraits>& q_min,
-                         const QExtrema<slmm::MachineTraits>& q_max);
-template void copy_q(IslMpi<slmm::MachineTraits>& cm, const Int& nets,
-                     const QExtrema<slmm::MachineTraits>& q_min,
-                     const QExtrema<slmm::MachineTraits>& q_max);
+                         const DepPoints<ko::MachineTraits>& dep_points,
+                         const QExtrema<ko::MachineTraits>& q_min,
+                         const QExtrema<ko::MachineTraits>& q_max);
+template void copy_q(IslMpi<ko::MachineTraits>& cm, const Int& nets,
+                     const QExtrema<ko::MachineTraits>& q_min,
+                     const QExtrema<ko::MachineTraits>& q_max);
 
 } // namespace islmpi
 } // namespace homme

@@ -3,6 +3,8 @@
 
 #define THREAD_QLT_RUN
 
+namespace ko = Kokkos;
+
 namespace homme {
 namespace compose {
 

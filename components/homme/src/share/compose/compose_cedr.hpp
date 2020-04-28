@@ -7,8 +7,6 @@
 namespace homme {
 namespace compose {
 
-namespace ko = Kokkos;
-
 } // namespace compose
 } // namespace homme
 

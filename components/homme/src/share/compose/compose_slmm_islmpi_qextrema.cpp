@@ -62,7 +62,7 @@ void calc_q_extrema (IslMpi<MT>& cm, const Int& nets, const Int& nete) {
   }
 }
 
-template void calc_q_extrema(IslMpi<slmm::MachineTraits>& cm, const Int& nets,
+template void calc_q_extrema(IslMpi<ko::MachineTraits>& cm, const Int& nets,
                              const Int& nete);
 
 } // namespace islmpi

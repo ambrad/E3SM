@@ -42,7 +42,7 @@ struct LocalMesh {
 // using information about the cubed-sphere mesh. This is a low-quality
 // brute-force calculation.
 template <typename geo>
-void fill_normals (LocalMesh<MachineTraits::HES>& m) {
+void fill_normals (LocalMesh<ko::MachineTraits::HES>& m) {
   // Count number of edges.
   Int ne = 0;
   for (Int ip = 0; ip < nslices(m.e); ++ip)
@@ -308,9 +308,9 @@ void calc (const LocalMesh<ES>& m, Real* v) {
 }
 } // namespace nearest_point
 
-Int unittest(LocalMesh<slmm::MachineTraits::HES>& m, const Int tgt_elem);
+Int unittest(LocalMesh<ko::MachineTraits::HES>& m, const Int tgt_elem);
 
-std::string to_string(const LocalMesh<slmm::MachineTraits::HES>& m);
+std::string to_string(const LocalMesh<ko::MachineTraits::HES>& m);
 
 } // namespace slmm
 

@@ -44,7 +44,7 @@ void Advecter<MT>::check_ref2sphere (const Int ie, const Real* p_homme) {
 }
 
 template <typename MT>
-EnableIfDiffSpace<MT>
+ko::EnableIfDiffSpace<MT>
 deep_copy (typename Advecter<MT>::LocalMeshesD& d,
            typename Advecter<MT>::LocalMeshesD::HostMirror& m,
            const typename Advecter<MT>::LocalMeshesH& s) {
@@ -57,7 +57,7 @@ deep_copy (typename Advecter<MT>::LocalMeshesD& d,
 }
 
 template <typename MT>
-EnableIfSameSpace<MT>
+ko::EnableIfSameSpace<MT>
 deep_copy (typename Advecter<MT>::LocalMeshesD& d,
            typename Advecter<MT>::LocalMeshesD::HostMirror& m,
            const typename Advecter<MT>::LocalMeshesH& s) {

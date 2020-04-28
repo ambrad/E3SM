@@ -41,7 +41,7 @@ namespace homme {
 namespace islmpi {
 
 template <typename MT>
-SLMM_KF slmm::EnableIfNotOnGpu<MT> throw_on_sci_error (
+SLMM_KF ko::EnableIfNotOnGpu<MT> throw_on_sci_error (
   const slmm::LocalMesh<typename MT::DES>& mesh,
   const typename IslMpi<MT>::ElemDataD& ed,
   const bool nearest_point_permitted, const DepPoints<MT>& dep_points,
@@ -64,7 +64,7 @@ SLMM_KF slmm::EnableIfNotOnGpu<MT> throw_on_sci_error (
 }
 
 template <typename MT>
-SLMM_KF slmm::EnableIfOnGpu<MT> throw_on_sci_error (
+SLMM_KF ko::EnableIfOnGpu<MT> throw_on_sci_error (
   const slmm::LocalMesh<typename MT::DES>& mesh,
   const typename IslMpi<MT>::ElemDataD& ed,
   const bool nearest_point_permitted, const DepPoints<MT>& dep_points,
@@ -161,8 +161,8 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
 }
 
 template void
-analyze_dep_points(IslMpi<slmm::MachineTraits>& cm, const Int& nets,
-                   const Int& nete, const DepPoints<slmm::MachineTraits>& dep_points);
+analyze_dep_points(IslMpi<ko::MachineTraits>& cm, const Int& nets,
+                   const Int& nete, const DepPoints<ko::MachineTraits>& dep_points);
 
 } // namespace islmpi
 } // namespace homme

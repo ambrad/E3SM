@@ -441,10 +441,10 @@ void extend_local_meshes (const mpi::Parallel& p,
 }
 
 template void
-extend_local_meshes<slmm::MachineTraits>(
+extend_local_meshes<ko::MachineTraits>(
   const mpi::Parallel& p,
-  const typename IslMpi<slmm::MachineTraits>::ElemDataListH& eds,
-  IslMpi<slmm::MachineTraits>::Advecter& advecter);
+  const typename IslMpi<ko::MachineTraits>::ElemDataListH& eds,
+  IslMpi<ko::MachineTraits>::Advecter& advecter);
 
 } // namespace extend_halo
 
@@ -767,9 +767,9 @@ void setup_comm_pattern (IslMpi<MT>& cm, const Int* nbr_id_rank, const Int* nirp
 }
 
 template void
-alloc_mpi_buffers(IslMpi<slmm::MachineTraits>& cm, Real* sendbuf, Real* recvbuf);
+alloc_mpi_buffers(IslMpi<ko::MachineTraits>& cm, Real* sendbuf, Real* recvbuf);
 template void
-setup_comm_pattern(IslMpi<slmm::MachineTraits>& cm, const Int* nbr_id_rank,
+setup_comm_pattern(IslMpi<ko::MachineTraits>& cm, const Int* nbr_id_rank,
                    const Int* nirptr);
 
 } // namespace islmpi

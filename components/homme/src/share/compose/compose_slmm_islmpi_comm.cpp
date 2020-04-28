@@ -117,13 +117,13 @@ void recv (IslMpi<MT>& cm, const bool skip_if_empty) {
 }
 
 template void init_mylid_with_comm_threaded(
-  IslMpi<slmm::MachineTraits>& cm, const Int& nets, const Int& nete);
-template void setup_irecv(IslMpi<slmm::MachineTraits>& cm, const bool skip_if_empty);
-template void isend(IslMpi<slmm::MachineTraits>& cm, const bool want_req,
+  IslMpi<ko::MachineTraits>& cm, const Int& nets, const Int& nete);
+template void setup_irecv(IslMpi<ko::MachineTraits>& cm, const bool skip_if_empty);
+template void isend(IslMpi<ko::MachineTraits>& cm, const bool want_req,
                     const bool skip_if_empty);
-template void recv_and_wait_on_send(IslMpi<slmm::MachineTraits>& cm);
-template void wait_on_send(IslMpi<slmm::MachineTraits>& cm, const bool skip_if_empty);
-template void recv(IslMpi<slmm::MachineTraits>& cm, const bool skip_if_empty);
+template void recv_and_wait_on_send(IslMpi<ko::MachineTraits>& cm);
+template void wait_on_send(IslMpi<ko::MachineTraits>& cm, const bool skip_if_empty);
+template void recv(IslMpi<ko::MachineTraits>& cm, const bool skip_if_empty);
 
 } // namespace islmpi
 } // namespace homme
