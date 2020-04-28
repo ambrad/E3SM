@@ -1,8 +1,4 @@
-#include "compose_cedr.hpp"
-
-//todo rm after refactor
-#include "compose_cedr_qlt.hpp"
-#include "compose_cedr_caas.hpp"
+#include "compose_cedr_cdr.hpp"
 
 namespace homme {
 namespace qlt = cedr::qlt;
@@ -352,106 +348,59 @@ private:
   const Int fcomm_;
 };
 
-struct CDR {
-  typedef std::shared_ptr<CDR> Ptr;
-  typedef compose::QLT<Kokkos::DefaultExecutionSpace> QLTT;
-  typedef compose::CAAS CAAST;
-
-  struct Alg {
-    enum Enum { qlt, qlt_super_level, qlt_super_level_local_caas, caas, caas_super_level };
-    static Enum convert (Int cdr_alg) {
-      switch (cdr_alg) {
-      case 2:  return qlt;
-      case 20: return qlt_super_level;
-      case 21: return qlt_super_level_local_caas;
-      case 3:  return caas;
-      case 30: return caas_super_level;
-      case 42: return caas_super_level; // actually none
-      default: cedr_throw_if(true,  "cdr_alg " << cdr_alg << " is invalid.");
-      }
-    }
-    static bool is_qlt (Enum e) {
-      return (e == qlt || e == qlt_super_level ||
-              e == qlt_super_level_local_caas);
-    }
-    static bool is_caas (Enum e) {
-      return e == caas || e == caas_super_level;
-    }
-    static bool is_suplev (Enum e) {
-      return (e == qlt_super_level || e == caas_super_level ||
-              e == qlt_super_level_local_caas);
-    }
-  };
-
-  enum { nsublev_per_suplev = 8 };
-  
-  const Alg::Enum alg;
-  const Int ncell, nlclcell, nlev, nsublev, nsuplev;
-  const bool threed, cdr_over_super_levels, caas_in_suplev, hard_zero;
-  const cedr::mpi::Parallel::Ptr p;
-  qlt::tree::Node::Ptr tree; // Don't need this except for unit testing.
-  cedr::CDR::Ptr cdr;
-  std::vector<Int> ie2gci; // Map Homme ie to Homme global cell index.
-  std::vector<Int> ie2lci; // Map Homme ie to CDR local cell index (lclcellidx).
-  std::vector<char> nonneg;
-
-  CDR (Int cdr_alg_, Int ngblcell_, Int nlclcell_, Int nlev_, bool use_sgi,
-       bool independent_time_steps, const bool hard_zero_, const Int* gid_data,
-       const Int* rank_data, const cedr::mpi::Parallel::Ptr& p_, Int fcomm)
-    : alg(Alg::convert(cdr_alg_)),
-      ncell(ngblcell_), nlclcell(nlclcell_), nlev(nlev_),
-      nsublev(Alg::is_suplev(alg) ? nsublev_per_suplev : 1),
-      nsuplev((nlev + nsublev - 1) / nsublev),
-      threed(independent_time_steps),
-      cdr_over_super_levels(threed && Alg::is_caas(alg)),
-      caas_in_suplev(alg == Alg::qlt_super_level_local_caas && nsublev > 1),
-      hard_zero(hard_zero_),
-      p(p_), inited_tracers_(false)
-  {
-    const Int n_id_in_suplev = caas_in_suplev ? 1 : nsublev;
-    if (Alg::is_qlt(alg)) {
-      tree = make_tree(p, ncell, gid_data, rank_data, n_id_in_suplev, use_sgi,
-                       cdr_over_super_levels, nsuplev);
-      cedr::CDR::Options options;
-      options.prefer_numerical_mass_conservation_to_numerical_bounds = true;
-      Int nleaf = ncell*n_id_in_suplev;
-      if (cdr_over_super_levels) nleaf *= nsuplev;
-      cdr = std::make_shared<QLTT>(p, nleaf, tree, options,
-                                   threed ? nsuplev : 0);
-      tree = nullptr;
-    } else if (Alg::is_caas(alg)) {
-      const auto caas = std::make_shared<CAAST>(
-        p, nlclcell*n_id_in_suplev*(cdr_over_super_levels ? nsuplev : 1),
-        std::make_shared<ReproSumReducer>(fcomm));
-      cdr = caas;
-    } else {
-      cedr_throw_if(true, "Invalid semi_lagrange_cdr_alg " << alg);
-    }
-    ie2gci.resize(nlclcell);
+CDR::CDR (Int cdr_alg_, Int ngblcell_, Int nlclcell_, Int nlev_, bool use_sgi,
+          bool independent_time_steps, const bool hard_zero_, const Int* gid_data,
+          const Int* rank_data, const cedr::mpi::Parallel::Ptr& p_, Int fcomm)
+  : alg(Alg::convert(cdr_alg_)),
+    ncell(ngblcell_), nlclcell(nlclcell_), nlev(nlev_),
+    nsublev(Alg::is_suplev(alg) ? nsublev_per_suplev : 1),
+    nsuplev((nlev + nsublev - 1) / nsublev),
+    threed(independent_time_steps),
+    cdr_over_super_levels(threed && Alg::is_caas(alg)),
+    caas_in_suplev(alg == Alg::qlt_super_level_local_caas && nsublev > 1),
+    hard_zero(hard_zero_),
+    p(p_), inited_tracers_(false)
+{
+  const Int n_id_in_suplev = caas_in_suplev ? 1 : nsublev;
+  if (Alg::is_qlt(alg)) {
+    tree = make_tree(p, ncell, gid_data, rank_data, n_id_in_suplev, use_sgi,
+                     cdr_over_super_levels, nsuplev);
+    cedr::CDR::Options options;
+    options.prefer_numerical_mass_conservation_to_numerical_bounds = true;
+    Int nleaf = ncell*n_id_in_suplev;
+    if (cdr_over_super_levels) nleaf *= nsuplev;
+    cdr = std::make_shared<QLTT>(p, nleaf, tree, options,
+                                 threed ? nsuplev : 0);
+    tree = nullptr;
+  } else if (Alg::is_caas(alg)) {
+    const auto caas = std::make_shared<CAAST>(
+      p, nlclcell*n_id_in_suplev*(cdr_over_super_levels ? nsuplev : 1),
+      std::make_shared<ReproSumReducer>(fcomm));
+    cdr = caas;
+  } else {
+    cedr_throw_if(true, "Invalid semi_lagrange_cdr_alg " << alg);
   }
+  ie2gci.resize(nlclcell);
+}
 
-  void init_tracers (const Int qsize, const bool need_conservation) {
-    nonneg.resize(qsize, hard_zero);
-    typedef cedr::ProblemType PT;
-    const Int nt = cdr_over_super_levels ? qsize : nsuplev*qsize;
-    for (Int ti = 0; ti < nt; ++ti)
-      cdr->declare_tracer(PT::shapepreserve |
-                          (need_conservation ? PT::conserve : 0), 0);
-    cdr->end_tracer_declarations();
-  }
+void CDR::init_tracers (const Int qsize, const bool need_conservation) {
+  nonneg.resize(qsize, hard_zero);
+  typedef cedr::ProblemType PT;
+  const Int nt = cdr_over_super_levels ? qsize : nsuplev*qsize;
+  for (Int ti = 0; ti < nt; ++ti)
+    cdr->declare_tracer(PT::shapepreserve |
+                        (need_conservation ? PT::conserve : 0), 0);
+  cdr->end_tracer_declarations();
+}
 
-  void get_buffers_sizes (size_t& s1, size_t &s2) {
-    cdr->get_buffers_sizes(s1, s2);
-  }
+void CDR::get_buffers_sizes (size_t& s1, size_t &s2) {
+  cdr->get_buffers_sizes(s1, s2);
+}
 
-  void set_buffers (Real* b1, Real* b2) {
-    cdr->set_buffers(b1, b2);
-    cdr->finish_setup();
-  }
-
-private:
-  bool inited_tracers_;
-};
+void CDR::set_buffers (Real* b1, Real* b2) {
+  cdr->set_buffers(b1, b2);
+  cdr->finish_setup();
+}
 
 void set_ie2gci (CDR& q, const Int ie, const Int gci) { q.ie2gci[ie] = gci; }
 
