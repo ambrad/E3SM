@@ -2,7 +2,6 @@
 #define INCLUDE_COMPOSE_HOMME_HPP
 
 #include "compose.hpp"
-#include "compose_slmm.hpp"
 
 namespace homme {
 typedef int Int;

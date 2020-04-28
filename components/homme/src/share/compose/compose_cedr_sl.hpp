@@ -1,19 +1,16 @@
 #ifndef INCLUDE_COMPOSE_CEDR_SL_HPP
 #define INCLUDE_COMPOSE_CEDR_SL_HPP
 
+#include "compose_homme.hpp"
+
 namespace homme {
 namespace sl {
 
-typedef cedr::Int Int;
-typedef cedr::Real Real;
-
-// Fortran array wrappers.
-template <typename T> using FA2 =
-  Kokkos::View<T**,    Kokkos::LayoutLeft, Kokkos::HostSpace>;
-template <typename T> using FA4 =
-  Kokkos::View<T****,  Kokkos::LayoutLeft, Kokkos::HostSpace>;
-template <typename T> using FA5 =
-  Kokkos::View<T*****, Kokkos::LayoutLeft, Kokkos::HostSpace>;
+using homme::Int;
+using homme::Real;
+using homme::FA2;
+using homme::FA4;
+using homme::FA5;
 
 // Following are naming conventions in element_state and sl_advection:
 //     elem(ie)%state%Q(:,:,k,q) is tracer mixing ratio.
