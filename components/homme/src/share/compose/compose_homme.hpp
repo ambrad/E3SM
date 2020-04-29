@@ -2,6 +2,7 @@
 #define INCLUDE_COMPOSE_HOMME_HPP
 
 #include "compose.hpp"
+#include "compose_kokkos.hpp"
 
 #include <memory>
 
@@ -99,6 +100,10 @@ void sl_h2d(const TracerArrays<MT>& ta, Cartesian3D* dep_points);
 
 template <typename MT>
 void sl_d2h(const TracerArrays<MT>& ta, Cartesian3D* dep_points, Real* minq, Real* maxq);
+
+TracerArrays<ko::MachineTraits>::Ptr init_tracer_arrays(Int nelemd, Int nlev, Int np2, Int qsize);
+TracerArrays<ko::MachineTraits>::Ptr get_tracer_arrays();
+void delete_tracer_arrays();
 
 } // namespace homme
 

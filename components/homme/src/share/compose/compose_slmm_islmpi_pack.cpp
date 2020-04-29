@@ -227,10 +227,11 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const DepPoints<MT>& dep_poi
 #endif
   {
     auto ed = cm.ed_d;
+    const auto mylid_with_comm = cm.mylid_with_comm_d;
     ko::parallel_for(
       ko::RangePolicy<typename MT::DES>(start, end),
       KOKKOS_LAMBDA (const Int& ptr) {
-        const Int tci = cm.mylid_with_comm_d(ptr);
+        const Int tci = mylid_with_comm(ptr);
         ed(tci).rmt.clear();
       });
   }

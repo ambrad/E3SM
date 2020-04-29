@@ -1,5 +1,4 @@
 #include "compose_homme.hpp"
-#include "compose_kokkos.hpp"
 
 namespace homme {
 
@@ -67,6 +66,26 @@ void sl_d2h (const TracerArrays<MT>& ta, Cartesian3D* dep_points, Real* minq, Re
   ko::deep_copy(q_min_h, ta.q_min);
   ko::deep_copy(q_max_h, ta.q_max);
 #endif  
+}
+
+TracerArrays<ko::MachineTraits>::Ptr& get_instance () {
+  static typename TracerArrays<ko::MachineTraits>::Ptr p;
+  return p;
+}
+
+TracerArrays<ko::MachineTraits>::Ptr init_tracer_arrays (Int nelemd, Int nlev, Int np2, Int qsize) {
+  auto& p = get_instance();
+  p = std::make_shared<TracerArrays<ko::MachineTraits> >(nelemd, nlev, np2, qsize);
+  return p;
+}
+
+TracerArrays<ko::MachineTraits>::Ptr get_tracer_arrays () {
+  return get_instance();
+}
+
+void delete_tracer_arrays () {
+  auto& p = get_instance();
+  p = nullptr;
 }
 
 template struct TracerArrays<ko::MachineTraits>;

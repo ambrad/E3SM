@@ -267,6 +267,7 @@ void slmm_init_impl (
                    sl_nearest_point_lev - 1, lid2facenum);
   slmm_throw_if(homme::g_advecter->is_cisl(), "CISL code was removed.");
   const auto p = homme::mpi::make_parallel(MPI_Comm_f2c(fcomm));
+  auto tracer_arrays = homme::init_tracer_arrays(nelemd, nlev, np*np, qsize);
   g_csl_mpi = homme::islmpi::init<homme::HommeMachineTraits>(
     homme::g_advecter, p, np, nlev, qsize, qsized, nelemd,
     nbr_id_rank, nirptr, 2 /* halo */);
@@ -360,5 +361,6 @@ void slmm_csl (
 void slmm_finalize () {
   g_csl_mpi = nullptr;
   homme::g_advecter = nullptr;
+  homme::delete_tracer_arrays();
 }
 } // extern "C"
