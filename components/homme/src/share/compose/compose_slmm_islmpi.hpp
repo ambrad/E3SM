@@ -572,13 +572,6 @@ void extend_local_meshes(const mpi::Parallel& p,
                          typename IslMpi<MT>::Advecter& advecter);
 } // namespace extend_halo
 
-template <typename MT> using DepPoints =
-  ko::View<Real***[3], ko::LayoutRight, typename MT::DES>;
-template <typename MT> using QExtrema =
-  ko::View<Real****, ko::LayoutRight, typename MT::DES>;
-template <typename MT> using DepPointsH = typename DepPoints<MT>::HostMirror;
-template <typename MT> using QExtremaH = typename QExtrema<MT>::HostMirror;
-
 template <typename MT>
 void analyze_dep_points(IslMpi<MT>& cm, const Int& nets, const Int& nete,
                         const DepPoints<MT>& dep_points);

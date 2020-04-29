@@ -19,20 +19,15 @@ void step (
   slmm_assert(nets == 0 && nete+1 == cm.nelemd);
 #endif
 
-  const DepPointsH<MT> dep_points_h(dep_points_r, cm.nelemd, cm.nlev, cm.np2);
-  const QExtremaH<MT>
-    q_min_h(q_min_r, cm.nelemd, cm.qsize, cm.nlev, cm.np2),
-    q_max_h(q_max_r, cm.nelemd, cm.qsize, cm.nlev, cm.np2);
 #ifdef COMPOSE_PORT_DEV_VIEWS
-  const DepPoints<MT> dep_points("dep_points", cm.nelemd, cm.nlev, cm.np2);
-  const QExtrema<MT>
-    q_min("q_min", cm.nelemd, cm.qsize, cm.nlev, cm.np2),
-    q_max("q_max", cm.nelemd, cm.qsize, cm.nlev, cm.np2);
-  ko::deep_copy(dep_points, dep_points_h);
+  const auto& dep_points = cm.tracer_arrays.dep_points;
+  const auto& q_min = cm.tracer_arrays.q_min;
+  const auto& q_max = cm.tracer_arrays.q_max;
 #else
-  const auto dep_points = dep_points_h;
-  const auto q_min = q_min_h;
-  const auto q_max = q_max_h;
+  const DepPointsH<MT> dep_points(dep_points_r, cm.nelemd, cm.nlev, cm.np2);
+  const QExtremaH<MT>
+    q_min(q_min_r, cm.nelemd, cm.qsize, cm.nlev, cm.np2),
+    q_max(q_max_r, cm.nelemd, cm.qsize, cm.nlev, cm.np2);
 #endif
 
   // Partition my elements that communicate with remotes among threads, if I
@@ -83,13 +78,6 @@ void step (
   // Wait on send buffer so it's free to be used by others.
   { Timer t("15_wait_on_send");
     wait_on_send(cm, true /* skip_if_empty */); }
-
-#ifdef COMPOSE_PORT_DEV_VIEWS
-  ko::fence();
-  ko::deep_copy(dep_points_h, dep_points);
-  ko::deep_copy(q_min_h, q_min);
-  ko::deep_copy(q_max_h, q_max);
-#endif
 }
 
 template void step(IslMpi<ko::MachineTraits>&, const Int, const Int, Real*, Real*, Real*);
