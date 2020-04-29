@@ -517,10 +517,11 @@ struct IslMpi {
   Array<Real**,DES> rwork;
 
   IslMpi (const mpi::Parallel::Ptr& ip, const typename Advecter::ConstPtr& advecter,
+          const typename TracerArrays<MT>::Ptr& tracer_arrays_,
           Int inp, Int inlev, Int iqsize, Int iqsized, Int inelemd, Int ihalo)
     : p(ip), advecter(advecter),
       np(inp), np2(np*np), nlev(inlev), qsize(iqsize), qsized(iqsized), nelemd(inelemd),
-      halo(ihalo), tracer_arrays(std::make_shared<TracerArrays<MT> >(nelemd, nlev, np2, qsize))
+      halo(ihalo), tracer_arrays(tracer_arrays_)
   {}
 
   IslMpi(const IslMpi&) = delete;

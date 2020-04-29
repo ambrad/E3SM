@@ -75,7 +75,8 @@ TracerArrays<ko::MachineTraits>::Ptr& get_instance () {
 
 TracerArrays<ko::MachineTraits>::Ptr init_tracer_arrays (Int nelemd, Int nlev, Int np2, Int qsize) {
   auto& p = get_instance();
-  p = std::make_shared<TracerArrays<ko::MachineTraits> >(nelemd, nlev, np2, qsize);
+  if (p == nullptr)
+    p = std::make_shared<TracerArrays<ko::MachineTraits> >(nelemd, nlev, np2, qsize);
   return p;
 }
 

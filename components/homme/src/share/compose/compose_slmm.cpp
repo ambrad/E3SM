@@ -100,8 +100,9 @@ init (const typename IslMpi<MT>::Advecter::ConstPtr& advecter,
       const Int* nbr_id_rank, const Int* nirptr,
       Int halo) {
   slmm_throw_if(halo < 1 || halo > 2, "halo must be 1 (default) or 2.");
-  auto cm = std::make_shared<IslMpi<MT> >(p, advecter, np, nlev, qsize, qsized,
-                                          nelemd, halo);
+  auto tracer_arrays = homme::init_tracer_arrays(nelemd, nlev, np*np, qsize);
+  auto cm = std::make_shared<IslMpi<MT> >(p, advecter, tracer_arrays, np, nlev,
+                                          qsize, qsized, nelemd, halo);
   setup_comm_pattern(*cm, nbr_id_rank, nirptr);
   return cm;
 }
@@ -267,7 +268,6 @@ void slmm_init_impl (
                    sl_nearest_point_lev - 1, lid2facenum);
   slmm_throw_if(homme::g_advecter->is_cisl(), "CISL code was removed.");
   const auto p = homme::mpi::make_parallel(MPI_Comm_f2c(fcomm));
-  auto tracer_arrays = homme::init_tracer_arrays(nelemd, nlev, np*np, qsize);
   g_csl_mpi = homme::islmpi::init<homme::HommeMachineTraits>(
     homme::g_advecter, p, np, nlev, qsize, qsized, nelemd,
     nbr_id_rank, nirptr, 2 /* halo */);
