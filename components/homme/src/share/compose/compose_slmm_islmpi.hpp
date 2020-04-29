@@ -485,8 +485,7 @@ struct IslMpi {
   ElemDataListD ed_d;
   typename ElemDataListD::Mirror ed_m; // handle managed allocs
 
-  //typename TracerArrays<MT>::Ptr tracer_arrays;
-  TracerArrays<MT> tracer_arrays;
+  typename TracerArrays<MT>::Ptr tracer_arrays;
 
   // IDs.
   FixedCapList<Int, HES> ranks, mylid_with_comm_tid_ptr_h;
@@ -521,7 +520,7 @@ struct IslMpi {
           Int inp, Int inlev, Int iqsize, Int iqsized, Int inelemd, Int ihalo)
     : p(ip), advecter(advecter),
       np(inp), np2(np*np), nlev(inlev), qsize(iqsize), qsized(iqsized), nelemd(inelemd),
-      halo(ihalo), tracer_arrays(nelemd, nlev, np2, qsize)
+      halo(ihalo), tracer_arrays(std::make_shared<TracerArrays<MT> >(nelemd, nlev, np2, qsize))
   {}
 
   IslMpi(const IslMpi&) = delete;

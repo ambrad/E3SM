@@ -349,9 +349,9 @@ template <Int np, typename MT>
 void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
                  const DepPoints<MT>& dep_points,
                  const QExtrema<MT>& q_min, const QExtrema<MT>& q_max) {
-  const auto dp_src = cm.tracer_arrays.dp;
-  const auto qdp_src = cm.tracer_arrays.qdp;
-  const auto q_tgt = cm.tracer_arrays.q;
+  const auto dp_src = cm.tracer_arrays->dp;
+  const auto qdp_src = cm.tracer_arrays->qdp;
+  const auto q_tgt = cm.tracer_arrays->q;
   const auto ed_d = cm.ed_d;
   const auto s2r = cm.advecter->s2r();
   const auto local_meshes = cm.advecter->local_meshes();
@@ -392,7 +392,7 @@ void copy_q (IslMpi<MT>& cm, const Int& nets,
              const QExtrema<MT>& q_min, const QExtrema<MT>& q_max) {
   slmm_assert(cm.mylid_with_comm_tid_ptr_h.size() == 2);
   const auto myrank = cm.p->rank();
-  const auto q_tgt = cm.tracer_arrays.q;
+  const auto q_tgt = cm.tracer_arrays->q;
   const auto mylid_with_comm = cm.mylid_with_comm_d;
   const auto ed_d = cm.ed_d;
   const auto recvbufs = cm.recvbuf;
@@ -576,7 +576,7 @@ void calc_rmt_q_pass1 (IslMpi<MT>& cm) {
 
 template <Int np, typename MT>
 void calc_rmt_q_pass2 (IslMpi<MT>& cm) {
-  const auto q_src = cm.tracer_arrays.q;
+  const auto q_src = cm.tracer_arrays->q;
   const auto rmt_qs_extrema = cm.rmt_qs_extrema;
   const auto rmt_xs = cm.rmt_xs;
   const auto ed_d = cm.ed_d;

@@ -20,9 +20,9 @@ void step (
 #endif
 
 #ifdef COMPOSE_PORT_DEV_VIEWS
-  const auto& dep_points = cm.tracer_arrays.dep_points;
-  const auto& q_min = cm.tracer_arrays.q_min;
-  const auto& q_max = cm.tracer_arrays.q_max;
+  const auto& dep_points = cm.tracer_arrays->dep_points;
+  const auto& q_min = cm.tracer_arrays->q_min;
+  const auto& q_max = cm.tracer_arrays->q_max;
 #else
   const DepPointsH<MT> dep_points(dep_points_r, cm.nelemd, cm.nlev, cm.np2);
   const QExtremaH<MT>

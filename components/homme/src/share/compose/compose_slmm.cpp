@@ -125,9 +125,9 @@ void set_elem_data (IslMpi<MT>& cm, const Int ie, const Real* qdp,
   slmm_assert(cm.halo > 1 || cm.ed_h(ie).nbrs.size() == nelem_in_patch);
   auto& e = cm.ed_h(ie);
 #if defined COMPOSE_PORT_DEV
-  cm.tracer_arrays.pqdp.set_ie_ptr(ie, qdp);
-  cm.tracer_arrays.pdp.set_ie_ptr(ie, dp);
-  cm.tracer_arrays.pq.set_ie_ptr(ie, q);
+  cm.tracer_arrays->pqdp.set_ie_ptr(ie, qdp);
+  cm.tracer_arrays->pdp.set_ie_ptr(ie, dp);
+  cm.tracer_arrays->pq.set_ie_ptr(ie, q);
   e.qdp = e.dp = e.q = nullptr;
 #else
   e.qdp = qdp;
@@ -339,7 +339,7 @@ void slmm_csl (
   amb::dev_init_threads();
   slmm_assert(g_csl_mpi);
   slmm_assert(g_csl_mpi->sendsz.empty()); // alloc_mpi_buffers was called
-  homme::sl_h2d(g_csl_mpi->tracer_arrays, dep_points);
+  homme::sl_h2d(*g_csl_mpi->tracer_arrays, dep_points);
   *info = 0;
 #if 0
 #pragma message "RM TRY-CATCH WHILE DEV'ING"
@@ -354,7 +354,7 @@ void slmm_csl (
   homme::islmpi::step(*g_csl_mpi, nets - 1, nete - 1,
                       reinterpret_cast<homme::Real*>(dep_points), minq, maxq);
 #endif
-  homme::sl_d2h(g_csl_mpi->tracer_arrays, dep_points, minq, maxq);
+  homme::sl_d2h(*g_csl_mpi->tracer_arrays, dep_points, minq, maxq);
   amb::dev_fin_threads();
 }
 
