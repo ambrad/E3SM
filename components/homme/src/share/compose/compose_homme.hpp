@@ -81,13 +81,13 @@ struct TracerArrays {
   View<Real***>   dp;   // elem%derived%dp
   View<Real***>   dp3d; // elem%state%dp3d or the sl3d equivalent
   HommeFormatArray<const Real,4> pqdp;
-  HommeFormatArray<const Real,3> pdp;
+  HommeFormatArray<const Real,3> pdp, pdp3d;
   HommeFormatArray<Real,4> pq;
   DepPoints<MT> dep_points;
   QExtrema<MT> q_min, q_max;
 # else
   HommeFormatArray<const Real,4> & qdp, pqdp;
-  HommeFormatArray<const Real,3> & dp, pdp;
+  HommeFormatArray<const Real,3> & dp, pdp, & dp3d, pdp3d;
   HommeFormatArray<Real,4> & q, pq;
 # endif
 #endif

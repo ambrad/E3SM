@@ -485,7 +485,7 @@ struct IslMpi {
   ElemDataListD ed_d;
   typename ElemDataListD::Mirror ed_m; // handle managed allocs
 
-  typename TracerArrays<MT>::Ptr tracer_arrays;
+  const typename TracerArrays<MT>::Ptr tracer_arrays;
 
   // IDs.
   FixedCapList<Int, HES> ranks, mylid_with_comm_tid_ptr_h;

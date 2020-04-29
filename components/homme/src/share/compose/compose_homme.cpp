@@ -5,7 +5,8 @@ namespace homme {
 template <typename MT>
 TracerArrays<MT>::TracerArrays (Int nelemd, Int nlev, Int np2, Int qsize)
 #if defined COMPOSE_PORT_DEV
-  : pqdp(nelemd, np2, nlev, qsize), pdp(nelemd, np2, nlev), pq(nelemd, np2, nlev, qsize),
+  : pqdp(nelemd, np2, nlev, qsize), pdp(nelemd, np2, nlev), pdp3d(nelemd, np2, nlev),
+    pq(nelemd, np2, nlev, qsize),
 # if defined COMPOSE_PORT_DEV_VIEWS
     qdps("qdps", 2, nelemd, qsize, np2, nlev), qdp(qdps.data(), nelemd, qsize, np2, nlev),
     q("q", nelemd, qsize, np2, nlev),
@@ -13,7 +14,7 @@ TracerArrays<MT>::TracerArrays (Int nelemd, Int nlev, Int np2, Int qsize)
     dep_points("dep_points", nelemd, nlev, np2),
     q_min("q_min", nelemd, qsize, nlev, np2), q_max("q_max", nelemd, qsize, nlev, np2)
 # else
-    qdp(pqdp), dp(pdp), q(pq)
+    qdp(pqdp), dp(pdp), pdp3d(dp3d), q(pq)
 # endif
 #endif
 {}

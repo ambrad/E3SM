@@ -25,6 +25,9 @@ using homme::FA5;
 // renamed to q, and Q is tracer mass at a GLL point.
 struct Data {
   typedef std::shared_ptr<Data> Ptr;
+
+  const TracerArrays<ko::MachineTraits>::Ptr tracer_arrays;
+
   const Int np, nlev, qsize, qsize_d, timelevels;
   Int n0_qdp, n1_qdp, tl_np1;
   std::vector<const Real*> spheremp, dp3d_c;
@@ -45,8 +48,10 @@ struct Data {
   };
   std::shared_ptr<Check> check;
 
-  Data (Int lcl_ncell, Int np_, Int nlev_, Int qsize_, Int qsize_d_, Int timelevels_)
-    : np(np_), nlev(nlev_), qsize(qsize_), qsize_d(qsize_d_), timelevels(timelevels_),
+  Data (Int lcl_ncell, Int np_, Int nlev_, Int qsize_, Int qsize_d_, Int timelevels_,
+        const TracerArrays<ko::MachineTraits>::Ptr& tracer_arrays_)
+    : tracer_arrays(tracer_arrays_),
+      np(np_), nlev(nlev_), qsize(qsize_), qsize_d(qsize_d_), timelevels(timelevels_),
       spheremp(lcl_ncell, nullptr), dp3d_c(lcl_ncell, nullptr), q_c(lcl_ncell, nullptr),
       qdp_pc(lcl_ncell, nullptr)
   {}
