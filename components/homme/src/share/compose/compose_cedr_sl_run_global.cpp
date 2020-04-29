@@ -16,13 +16,13 @@ static void run_cdr (CDR& q) {
 
 void run_global (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
                  const Int nets, const Int nete) {
-  static constexpr Int max_np = 4;
   const Int np = d.np, nlev = d.nlev, qsize = d.qsize,
     nlevwrem = cdr.nsuplev*cdr.nsublev;
-  cedr_assert(np <= max_np);
+  cedr_assert(np <= 4);
   
   FA5<      Real> q_min(q_min_r, np, np, nlev, qsize, nete+1);
   FA5<const Real> q_max(q_max_r, np, np, nlev, qsize, nete+1);
+  //const auto& dp3d_c = cdr.ta->qp3d;
 
   for (Int ie = nets; ie <= nete; ++ie) {
     FA2<const Real> spheremp(d.spheremp[ie], np, np);
