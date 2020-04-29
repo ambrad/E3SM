@@ -338,7 +338,7 @@ void slmm_csl (
   amb::dev_init_threads();
   slmm_assert(g_csl_mpi);
   slmm_assert(g_csl_mpi->sendsz.empty()); // alloc_mpi_buffers was called
-  homme::h2d(g_csl_mpi->tracer_arrays, dep_points);
+  homme::sl_h2d(g_csl_mpi->tracer_arrays, dep_points);
   *info = 0;
 #if 0
 #pragma message "RM TRY-CATCH WHILE DEV'ING"
@@ -353,7 +353,7 @@ void slmm_csl (
   homme::islmpi::step(*g_csl_mpi, nets - 1, nete - 1,
                       reinterpret_cast<homme::Real*>(dep_points), minq, maxq);
 #endif
-  homme::d2h(g_csl_mpi->tracer_arrays, dep_points, minq, maxq);
+  homme::sl_d2h(g_csl_mpi->tracer_arrays, dep_points, minq, maxq);
   amb::dev_fin_threads();
 }
 

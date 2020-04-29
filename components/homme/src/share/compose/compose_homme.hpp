@@ -70,9 +70,11 @@ struct TracerArrays {
 # if defined COMPOSE_PORT_DEV_VIEWS
   template <typename Datatype>
   using View = ko::View<Datatype, ko::LayoutRight, typename MT::DES>;
-  View<Real****> qdp;
-  View<Real***> dp;
-  View<Real****> q;
+  View<Real*****> qdps; // elem%state%Qdp(:,:,:,:,:)
+  View<Real****>  qdp;  // elem%state%Qdp(:,:,:,:,n0_qdp)
+  View<Real****>  q;    // elem%state%Q
+  View<Real***>   dp;   // elem%derived%dp
+  View<Real***>   dp3d; // elem%state%dp3d or the sl3d equivalent
   HommeFormatArray<const Real,4> pqdp;
   HommeFormatArray<const Real,3> pdp;
   HommeFormatArray<Real,4> pq;
@@ -89,8 +91,10 @@ struct TracerArrays {
 #if defined COMPOSE_PORT_DEV
     : pqdp(nelemd, np2, nlev, qsize), pdp(nelemd, np2, nlev), pq(nelemd, np2, nlev, qsize),
 # if defined COMPOSE_PORT_DEV_VIEWS
-      qdp("qdp", nelemd, qsize, np2, nlev), dp("dp", nelemd, np2, nlev),
-      q("q", nelemd, qsize, np2, nlev), dep_points("dep_points", nelemd, nlev, np2),
+      qdps("qdps", 2, nelemd, qsize, np2, nlev), qdp(qdps.data(), nelemd, qsize, np2, nlev),
+      q("q", nelemd, qsize, np2, nlev),
+      dp("dp", nelemd, np2, nlev), dp3d("dp3d", nelemd, np2, nlev),
+      dep_points("dep_points", nelemd, nlev, np2),
       q_min("q_min", nelemd, qsize, nlev, np2), q_max("q_max", nelemd, qsize, nlev, np2)
 # else
       qdp(pqdp), dp(pdp), q(pq)
@@ -100,7 +104,7 @@ struct TracerArrays {
 };
 
 template <typename MT>
-void h2d (const TracerArrays<MT>& ta, Cartesian3D* dep_points) {
+void sl_h2d (const TracerArrays<MT>& ta, Cartesian3D* dep_points) {
 #if defined COMPOSE_PORT_DEV_VIEWS
   const auto qdp_m = ko::create_mirror_view(ta.qdp);
   const auto dp_m = ko::create_mirror_view(ta.dp);
@@ -127,7 +131,7 @@ void h2d (const TracerArrays<MT>& ta, Cartesian3D* dep_points) {
 }
 
 template <typename MT>
-void d2h (const TracerArrays<MT>& ta, Cartesian3D* dep_points, Real* minq, Real* maxq) {
+void sl_d2h (const TracerArrays<MT>& ta, Cartesian3D* dep_points, Real* minq, Real* maxq) {
 #if defined COMPOSE_PORT_DEV_VIEWS
   ko::fence();
   const auto q_m = ko::create_mirror_view(ta.q);
