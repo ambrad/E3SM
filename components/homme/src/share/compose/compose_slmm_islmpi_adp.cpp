@@ -94,6 +94,10 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
     const auto ed_d = cm.ed_d;
     const auto nx_in_lid = cm.nx_in_lid;
     const auto bla = cm.bla;
+#ifdef COMPOSE_HORIZ_OPENMP
+    const auto horiz_openmp = cm.horiz_openmp;
+    const auto& ri_lidi_locks = cm.ri_lidi_locks;
+#endif
 #ifdef COMPOSE_PORT
     auto nx_in_rank = cm.nx_in_rank;
     nx_in_rank.zero();
@@ -122,8 +126,8 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
         const auto lidi = ed.nbrs(sci).lid_on_rank_idx;
 #ifdef COMPOSE_HORIZ_OPENMP
         omp_lock_t* lock;
-        if (cm.horiz_openmp) {
-          lock = &cm.ri_lidi_locks(ri,lidi);
+        if (horiz_openmp) {
+          lock = &ri_lidi_locks(ri,lidi);
           omp_set_lock(lock);
         }
 #endif
@@ -138,7 +142,7 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
 #endif
         }
 #ifdef COMPOSE_HORIZ_OPENMP
-        if (cm.horiz_openmp) omp_unset_lock(lock);
+        if (horiz_openmp) omp_unset_lock(lock);
 #endif
       }
     };

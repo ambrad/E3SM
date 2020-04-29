@@ -242,6 +242,10 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const DepPoints<MT>& dep_poi
     const auto sendbuf = cm.sendbuf;
     const auto x_bulkdata_offset = cm.x_bulkdata_offset;
     const auto bla = cm.bla;
+#ifdef COMPOSE_HORIZ_OPENMP
+    const auto horiz_openmp = cm.horiz_openmp;
+    const auto& ri_lidi_locks = cm.ri_lidi_locks;
+#endif
     const auto f = KOKKOS_LAMBDA (const Int& ki) {
       const Int ptr = start + ki/(nlev*np2);
       const Int lev = (ki/np2) % nlev;
@@ -256,8 +260,8 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const DepPoints<MT>& dep_poi
       auto&& sb = sendbuf(ri);
 #ifdef COMPOSE_HORIZ_OPENMP
       omp_lock_t* lock;
-      if (cm.horiz_openmp) {
-        lock = &cm.ri_lidi_locks(ri,lidi);
+      if (horiz_openmp) {
+        lock = &ri_lidi_locks(ri,lidi);
         omp_set_lock(lock);
       }
 #endif
@@ -273,7 +277,7 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const DepPoints<MT>& dep_poi
         xptr = x_bulkdata_offset(ri) + t.xptr + 3*cnt;
       }
 #ifdef COMPOSE_HORIZ_OPENMP
-      if (cm.horiz_openmp) omp_unset_lock(lock);
+      if (horiz_openmp) omp_unset_lock(lock);
 #endif
       slmm_kernel_assert_high(xptr > 0);
       for (Int i = 0; i < 3; ++i)
