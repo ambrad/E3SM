@@ -170,12 +170,15 @@ void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
               break;
             }
             rhom[sbli] = 0; Qm[sbli] = 0; Qm_min[sbli] = 0; Qm_max[sbli] = 0;
-            Real Qm_prev = 0, volume = 0;
-            accum_values(ie, k, q, d.tl_np1, d.n0_qdp, np,
-                         false /* nonneg already applied */,
-                         spheremp, dp3d_c, q_min, q_max, qdp_c, q_c,
-                         volume, rhom[sbli], Qm[sbli], Qm_prev,
-                         Qm_min[sbli], Qm_max[sbli]);
+            for (Int j = 0; j < np; ++j) {
+              for (Int i = 0; i < np; ++i) {
+                const Real rhomij = dp3d_c(i,j,k,d.tl_np1) * spheremp(i,j);
+                rhom[sbli] += rhomij;
+                Qm[sbli] += q_c(i,j,k,q) * rhomij;
+                Qm_min[sbli] += q_min(i,j,k,q,ie) * rhomij;
+                Qm_max[sbli] += q_max(i,j,k,q,ie) * rhomij;
+              }
+            }
             Qm_min_tot += Qm_min[sbli];
             Qm_max_tot += Qm_max[sbli];
           }

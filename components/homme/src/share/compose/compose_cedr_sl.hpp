@@ -26,7 +26,7 @@ using homme::FA5;
 struct Data {
   typedef std::shared_ptr<Data> Ptr;
 
-  const TracerArrays<ko::MachineTraits>::Ptr tracer_arrays;
+  const TracerArrays<ko::MachineTraits>::Ptr ta;
 
   const Int np, nlev, qsize, qsize_d, timelevels;
   Int n0_qdp, n1_qdp, tl_np1;
@@ -49,21 +49,13 @@ struct Data {
   std::shared_ptr<Check> check;
 
   Data (Int lcl_ncell, Int np_, Int nlev_, Int qsize_, Int qsize_d_, Int timelevels_,
-        const TracerArrays<ko::MachineTraits>::Ptr& tracer_arrays_)
-    : tracer_arrays(tracer_arrays_),
+        const TracerArrays<ko::MachineTraits>::Ptr& tracer_arrays)
+    : ta(tracer_arrays),
       np(np_), nlev(nlev_), qsize(qsize_), qsize_d(qsize_d_), timelevels(timelevels_),
       spheremp(lcl_ncell, nullptr), dp3d_c(lcl_ncell, nullptr), q_c(lcl_ncell, nullptr),
       qdp_pc(lcl_ncell, nullptr)
   {}
 };
-
-void accum_values(const Int ie, const Int k, const Int q, const Int tl_np1,
-                  const Int n0_qdp, const Int np, const bool nonneg,
-                  const FA2<const Real>& spheremp, const FA4<const Real>& dp3d_c,
-                  const FA5<Real>& q_min, const FA5<const Real>& q_max,
-                  const FA5<const Real>& qdp_p, const FA4<const Real>& q_c,
-                  Real& volume, Real& rhom, Real& Qm, Real& Qm_prev,
-                  Real& Qm_min, Real& Qm_max);
 
 void run_global(CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
                 const Int nets, const Int nete);

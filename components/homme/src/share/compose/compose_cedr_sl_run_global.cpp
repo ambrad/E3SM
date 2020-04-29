@@ -14,27 +14,6 @@ static void run_cdr (CDR& q) {
 #endif
 }
 
-void accum_values (const Int ie, const Int k, const Int q, const Int tl_np1,
-                   const Int n0_qdp, const Int np, const bool nonneg,
-                   const FA2<const Real>& spheremp, const FA4<const Real>& dp3d_c,
-                   const FA5<Real>& q_min, const FA5<const Real>& q_max,
-                   const FA5<const Real>& qdp_p, const FA4<const Real>& q_c,
-                   Real& volume, Real& rhom, Real& Qm, Real& Qm_prev,
-                   Real& Qm_min, Real& Qm_max) {
-  for (Int j = 0; j < np; ++j) {
-    for (Int i = 0; i < np; ++i) {
-      volume += spheremp(i,j); // * dp0[k];
-      const Real rhomij = dp3d_c(i,j,k,tl_np1) * spheremp(i,j);
-      rhom += rhomij;
-      Qm += q_c(i,j,k,q) * rhomij;
-      if (nonneg) q_min(i,j,k,q,ie) = std::max<Real>(q_min(i,j,k,q,ie), 0);
-      Qm_min += q_min(i,j,k,q,ie) * rhomij;
-      Qm_max += q_max(i,j,k,q,ie) * rhomij;
-      Qm_prev += qdp_p(i,j,k,q,n0_qdp) * spheremp(i,j);
-    }
-  }
-}
-
 void run_global (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
                  const Int nets, const Int nete) {
   static constexpr Int max_np = 4;
@@ -76,10 +55,20 @@ void run_global (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
             rhom = 0;
             volume = 0;
           }
-          if (k < nlev)
-            accum_values(ie, k, q, d.tl_np1, d.n0_qdp, np, nonneg,
-                         spheremp, dp3d_c, q_min, q_max, qdp_p, q_c,
-                         volume, rhom, Qm, Qm_prev, Qm_min, Qm_max);
+          if (k < nlev) {
+            for (Int j = 0; j < np; ++j) {
+              for (Int i = 0; i < np; ++i) {
+                volume += spheremp(i,j); // * dp0[k];
+                const Real rhomij = dp3d_c(i,j,k,d.tl_np1) * spheremp(i,j);
+                rhom += rhomij;
+                Qm += q_c(i,j,k,q) * rhomij;
+                if (nonneg) q_min(i,j,k,q,ie) = std::max<Real>(q_min(i,j,k,q,ie), 0);
+                Qm_min += q_min(i,j,k,q,ie) * rhomij;
+                Qm_max += q_max(i,j,k,q,ie) * rhomij;
+                Qm_prev += qdp_p(i,j,k,q,d.n0_qdp) * spheremp(i,j);
+              }
+            }
+          }
           const bool write = ! cdr.caas_in_suplev || sbli == cdr.nsublev-1;
           if (write) {
             // For now, handle just one rhom. For feasible global problems,
