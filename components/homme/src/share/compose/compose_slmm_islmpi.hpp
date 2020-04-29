@@ -485,6 +485,7 @@ struct IslMpi {
   ElemDataListD ed_d;
   typename ElemDataListD::Mirror ed_m; // handle managed allocs
 
+  //typename TracerArrays<MT>::Ptr tracer_arrays;
   TracerArrays<MT> tracer_arrays;
 
   // IDs.
