@@ -524,6 +524,9 @@ struct IslMpi {
       halo(ihalo), tracer_arrays(nelemd, nlev, np2, qsize)
   {}
 
+  IslMpi(const IslMpi&) = delete;
+  IslMpi& operator=(const IslMpi&) = delete;
+
   ~IslMpi () {
 #ifdef COMPOSE_HORIZ_OPENMP
     const Int nrmtrank = static_cast<Int>(ranks.n()) - 1;

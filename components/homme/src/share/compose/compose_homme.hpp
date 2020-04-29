@@ -93,6 +93,8 @@ struct TracerArrays {
 #endif
 
   TracerArrays(Int nelemd, Int nlev, Int np2, Int qsize);
+  TracerArrays(const TracerArrays<MT>&) = delete;
+  TracerArrays& operator=(const TracerArrays<MT>&) = delete;
 };
 
 template <typename MT>

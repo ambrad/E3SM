@@ -57,6 +57,9 @@ struct CDR {
       bool independent_time_steps, const bool hard_zero_, const Int* gid_data,
       const Int* rank_data, const cedr::mpi::Parallel::Ptr& p_, Int fcomm);
 
+  CDR(const CDR&) = delete;
+  CDR& operator=(const CDR&) = delete;
+
   void init_tracers(const Int qsize, const bool need_conservation);
 
   void get_buffers_sizes(size_t& s1, size_t &s2);
