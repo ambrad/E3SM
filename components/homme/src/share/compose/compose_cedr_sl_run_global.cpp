@@ -22,7 +22,7 @@ void run_global (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
   
   FA5<      Real> q_min(q_min_r, np, np, nlev, qsize, nete+1);
   FA5<const Real> q_max(q_max_r, np, np, nlev, qsize, nete+1);
-  //const auto& dp3d_c = cdr.ta->qp3d;
+  //const auto& dp3d_c = d.ta->dp3d;
 
   for (Int ie = nets; ie <= nete; ++ie) {
     FA2<const Real> spheremp(d.spheremp[ie], np, np);

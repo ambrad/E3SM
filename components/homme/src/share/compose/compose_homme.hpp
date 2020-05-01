@@ -32,8 +32,8 @@ struct HommeFormatArray {
   enum : int { rank = rank_ };
   typedef T value_type;
 
-  HommeFormatArray (Int nelemd, Int np2_, Int nlev_, Int qsize_ = -1)
-    : nlev(nlev_), np2(np2_), qsize(qsize_)
+  HommeFormatArray (Int nelemd, Int np2_, Int nlev_, Int qsize_ = -1, Int ntimelev_ = -1)
+    : nlev(nlev_), np2(np2_), qsize(qsize_), ntimelev(ntimelev_)
   { ie_data_ptr.resize(nelemd); }
 
   void set_ie_ptr (const Int ie, T* ptr) {
@@ -46,22 +46,31 @@ struct HommeFormatArray {
     check(ie, k, lev);
     return *(ie_data_ptr[ie] + lev*np2 + k);
   }
-  T& operator() (const Int& ie, const Int& q, const Int& k, const Int& lev) const {
+  T& operator() (const Int& ie, const Int& q_or_timelev, const Int& k, const Int& lev) const {
     static_assert(rank == 4, "rank 4 array");
-    check(ie, k, lev, q);
-    return *(ie_data_ptr[ie] + (q*nlev + lev)*np2 + k);
+    check(ie, k, lev, q_or_timelev);
+    return *(ie_data_ptr[ie] + (q_or_timelev*nlev + lev)*np2 + k);
+  }
+  T& operator() (const Int& ie, const Int& timelev, const Int& q, const Int& k, const Int& lev) const {
+    static_assert(rank == 4, "rank 4 array");
+    check(ie, k, lev, q, timelev);
+    return *(ie_data_ptr[ie] + ((timelev*qsize + q)*nlev + lev)*np2 + k);
   }
 
 private:
   std::vector<T*> ie_data_ptr;
-  const Int nlev, np2, qsize;
+  const Int nlev, np2, qsize, ntimelev;
 
-  void check (Int ie, Int k = -1, Int lev = -1, Int q = -1) const {
+  void check (Int ie, Int k = -1, Int lev = -1, Int q_or_timelev = -1, Int timelev = -1) const {
 #ifdef COMPOSE_BOUNDS_CHECK
     assert(ie >= 0 && ie < static_cast<Int>(ie_data_ptr.size()));
     if (k >= 0) assert(k < np2);
     if (lev >= 0) assert(lev < nlev);
-    if (q >= 0) assert(q < qsize);
+    if (q_or_timelev >= 0) {
+      if (qsize < 0)
+        assert(q_or_timelev < ntimelev);
+    }
+    if (timelev >= 0) assert(timelev < ntimelev);
 #endif    
   }
 };
