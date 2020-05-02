@@ -3,14 +3,14 @@
 namespace homme {
 
 template <typename MT>
-TracerArrays<MT>::TracerArrays (Int nelemd, Int nlev, Int np2, Int qsize)
+TracerArrays<MT>::TracerArrays (Int nelemd, Int nlev, Int np2, Int qsize, Int qsized)
 #if defined COMPOSE_PORT_DEV
-  : pqdp(nelemd, np2, nlev, qsize, 2), pdp(nelemd, np2, nlev), pdp3d(nelemd, np2, nlev, 3),
-    pq(nelemd, np2, nlev, qsize),
+  : pqdp(nelemd, np2, nlev, qsized, 2), pdp(nelemd, np2, nlev),
+    pdp3d(nelemd, np2, nlev, -1, 3), pq(nelemd, np2, nlev, qsized),
 # if defined COMPOSE_PORT_DEV_VIEWS
-    qdps("qdps", 2, nelemd, qsize, np2, nlev), qdp(qdps.data(), nelemd, qsize, np2, nlev),
+    qdp("qdp", nelemd, 2, qsize, np2, nlev),
     q("q", nelemd, qsize, np2, nlev),
-    dp("dp", nelemd, np2, nlev), dp3d("dp3d", nelemd, np2, nlev),
+    dp("dp", nelemd, np2, nlev), dp3d("dp3d", nelemd, 3, np2, nlev),
     dep_points("dep_points", nelemd, nlev, np2),
     q_min("q_min", nelemd, qsize, nlev, np2), q_max("q_max", nelemd, qsize, nlev, np2)
 # else
@@ -26,12 +26,12 @@ void sl_h2d (const TracerArrays<MT>& ta, Cartesian3D* dep_points) {
   const auto dp_m = ko::create_mirror_view(ta.dp);
   const auto q_m = ko::create_mirror_view(ta.q);
   const Int nelemd = q_m.extent_int(0), qsize = q_m.extent_int(1), np2 = q_m.extent_int(2),
-    nlev = q_m.extent_int(3);
+    nlev = q_m.extent_int(3), qtl = ta.n0_qdp;
   for (Int ie = 0; ie < nelemd; ++ie)
     for (Int iq = 0; iq < qsize; ++iq)
       for (Int k = 0; k < np2; ++k)
         for (Int lev = 0; lev < nlev; ++lev) {
-          qdp_m(ie,iq,k,lev) = ta.pqdp(ie,iq,k,lev);
+          qdp_m(ie,qtl,iq,k,lev) = ta.pqdp(ie,qtl,iq,k,lev);
           q_m(ie,iq,k,lev) = ta.pq(ie,iq,k,lev);
         }
   for (Int ie = 0; ie < q_m.extent_int(0); ++ie)
@@ -74,10 +74,11 @@ TracerArrays<ko::MachineTraits>::Ptr& get_instance () {
   return p;
 }
 
-TracerArrays<ko::MachineTraits>::Ptr init_tracer_arrays (Int nelemd, Int nlev, Int np2, Int qsize) {
+TracerArrays<ko::MachineTraits>::Ptr
+init_tracer_arrays (Int nelemd, Int nlev, Int np2, Int qsize, Int qsized) {
   auto& p = get_instance();
   if (p == nullptr)
-    p = std::make_shared<TracerArrays<ko::MachineTraits> >(nelemd, nlev, np2, qsize);
+    p = std::make_shared<TracerArrays<ko::MachineTraits> >(nelemd, nlev, np2, qsize, qsized);
   return p;
 }
 

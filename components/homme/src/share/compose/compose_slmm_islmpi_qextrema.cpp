@@ -7,6 +7,7 @@ template <Int np, typename MT>
 void calc_q_extrema (IslMpi<MT>& cm, const Int& nets, const Int& nete) {
 #ifdef COMPOSE_PORT
   const auto qdp = cm.tracer_arrays->qdp;
+  const auto qtl = cm.tracer_arrays->n0_qdp;
   const auto dp = cm.tracer_arrays->dp;
   const auto q = cm.tracer_arrays->q;
   const auto ed_d = cm.ed_d;
@@ -17,10 +18,10 @@ void calc_q_extrema (IslMpi<MT>& cm, const Int& nets, const Int& nete) {
     const Int lev = it % nlev;
     auto& ed = ed_d(tci);
     Real q_min_s, q_max_s;
-    q(tci,iq,0,lev) = qdp(tci,iq,0,lev)/dp(tci,0,lev);
+    q(tci,iq,0,lev) = qdp(tci,qtl,iq,0,lev)/dp(tci,0,lev);
     q_min_s = q_max_s = q(tci,iq,0,lev);
     for (Int k = 1; k < np*np; ++k) {
-      q(tci,iq,k,lev) = qdp(tci,iq,k,lev)/dp(tci,k,lev);
+      q(tci,iq,k,lev) = qdp(tci,qtl,iq,k,lev)/dp(tci,k,lev);
       q_min_s = ko::min(q_min_s, q(tci,iq,k,lev));
       q_max_s = ko::max(q_max_s, q(tci,iq,k,lev));
     }

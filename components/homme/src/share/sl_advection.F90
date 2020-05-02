@@ -193,7 +193,7 @@ contains
     !todo Here and in the set-pointer loop for CEDR, do just in the first call.
     do ie = nets, nete
        call slmm_csl_set_elem_data(ie, elem(ie)%metdet, &
-            elem(ie)%state%Qdp(:,:,:,:,n0_qdp), &
+            elem(ie)%state%Qdp, n0_qdp, &
             elem(ie)%derived%dp, elem(ie)%state%Q, &
             elem(ie)%desc%actual_neigh_edges + 1)
     end do

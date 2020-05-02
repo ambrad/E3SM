@@ -351,6 +351,7 @@ void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
                  const QExtrema<MT>& q_min, const QExtrema<MT>& q_max) {
   const auto dp_src = cm.tracer_arrays->dp;
   const auto qdp_src = cm.tracer_arrays->qdp;
+  const auto qtl = cm.tracer_arrays->n0_qdp;
   const auto q_tgt = cm.tracer_arrays->q;
   const auto ed_d = cm.ed_d;
   const auto s2r = cm.advecter->s2r();
@@ -378,7 +379,7 @@ void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
       for (Int k = 0; k < 16; ++k) dp[k] = dp_src(slid, e.k, e.lev);
       for (Int iq = 0; iq < qsize; ++iq) {
         Real qdp[16];
-        for (Int k = 0; k < 16; ++k) qdp[k] = qdp_src(slid, iq, k, e.lev);
+        for (Int k = 0; k < 16; ++k) qdp[k] = qdp_src(slid, qtl, iq, k, e.lev);
         q_tgt(tci, iq, e.k, e.lev) = calc_q_tgt(rx, ry, qdp, dp);
       }
     }

@@ -100,7 +100,7 @@ init (const typename IslMpi<MT>::Advecter::ConstPtr& advecter,
       const Int* nbr_id_rank, const Int* nirptr,
       Int halo) {
   slmm_throw_if(halo < 1 || halo > 2, "halo must be 1 (default) or 2.");
-  auto tracer_arrays = homme::init_tracer_arrays(nelemd, nlev, np*np, qsize);
+  auto tracer_arrays = homme::init_tracer_arrays(nelemd, nlev, np*np, qsize, qsized);
   auto cm = std::make_shared<IslMpi<MT> >(p, advecter, tracer_arrays, np, nlev,
                                           qsize, qsized, nelemd, halo);
   setup_comm_pattern(*cm, nbr_id_rank, nirptr);
@@ -120,18 +120,19 @@ void finalize_init_phase (IslMpi<MT>& cm, typename IslMpi<MT>::Advecter& advecte
 
 // Set pointers to HOMME data arrays.
 template <typename MT>
-void set_elem_data (IslMpi<MT>& cm, const Int ie, const Real* qdp,
+void set_elem_data (IslMpi<MT>& cm, const Int ie, const Real* qdp, const Int n0_qdp,
                     const Real* dp, Real* q, const Int nelem_in_patch) {
   slmm_assert(ie < cm.ed_h.size());
   slmm_assert(cm.halo > 1 || cm.ed_h(ie).nbrs.size() == nelem_in_patch);
   auto& e = cm.ed_h(ie);
 #if defined COMPOSE_PORT_DEV
   cm.tracer_arrays->pqdp.set_ie_ptr(ie, qdp);
+  cm.tracer_arrays->n0_qdp = n0_qdp;
   cm.tracer_arrays->pdp.set_ie_ptr(ie, dp);
   cm.tracer_arrays->pq.set_ie_ptr(ie, q);
   e.qdp = e.dp = e.q = nullptr;
 #else
-  e.qdp = qdp;
+  e.qdp = qdp + cm.nlev*cm.np2*cm.qsized*n0_qdp;
   e.dp = dp;
   e.q = q;
 #endif
@@ -322,12 +323,12 @@ void slmm_check_ref2sphere (homme::Int ie, homme::Cartesian3D* p) {
 }
 
 void slmm_csl_set_elem_data (
-  homme::Int ie, homme::Real* metdet, homme::Real* qdp, homme::Real* dp,
-  homme::Real* q, homme::Int nelem_in_patch)
+  homme::Int ie, homme::Real* metdet, homme::Real* qdp, homme::Int n0_qdp,
+  homme::Real* dp, homme::Real* q, homme::Int nelem_in_patch)
 {
   amb::dev_init_threads();
   slmm_assert(g_csl_mpi);
-  homme::islmpi::set_elem_data(*g_csl_mpi, ie - 1, qdp, dp, q,
+  homme::islmpi::set_elem_data(*g_csl_mpi, ie - 1, qdp, n0_qdp - 1, dp, q,
                                nelem_in_patch);
   amb::dev_fin_threads();
 }

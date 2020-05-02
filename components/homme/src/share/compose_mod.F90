@@ -165,12 +165,12 @@ module compose_mod
        type(cartesian3D_t), intent(in) :: sphere_cart_coord
      end subroutine slmm_check_ref2sphere
 
-     subroutine slmm_csl_set_elem_data(ie, metdet, qdp, dp, q, nelem_in_patch) bind(c)
+     subroutine slmm_csl_set_elem_data(ie, metdet, qdp, n0_qdp, dp, q, nelem_in_patch) bind(c)
        use iso_c_binding, only: c_int, c_double
        use dimensions_mod, only : nlev, np, qsize
-       real(kind=c_double), intent(in) :: metdet(np,np), qdp(np,np,nlev,qsize), &
+       real(kind=c_double), intent(in) :: metdet(np,np), qdp(np,np,nlev,qsize,2), &
             dp(np,np,nlev), q(np,np,nlev,qsize)
-       integer(kind=c_int), value, intent(in) :: ie, nelem_in_patch
+       integer(kind=c_int), value, intent(in) :: ie, n0_qdp, nelem_in_patch
      end subroutine slmm_csl_set_elem_data
 
      subroutine slmm_csl(nets, nete, dep_points, minq, maxq, info) bind(c)
