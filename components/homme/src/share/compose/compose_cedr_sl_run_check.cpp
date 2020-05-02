@@ -49,7 +49,7 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
           }
         }
         for (Int q = 0; q < qsize; ++q) {
-          Real qlo_s = q_min(0,0,k,q,ie), qhi_s = q_max(0,0,k,q,ie);
+          Real qlo_s = q_min(0,k,q,ie), qhi_s = q_max(0,k,q,ie);
           for (Int g = 0; g < np2; ++g) {
             qlo_s = std::min(qlo_s, q_min(g,k,q,ie));
             qhi_s = std::max(qhi_s, q_max(g,k,q,ie));

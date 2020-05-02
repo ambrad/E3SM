@@ -26,8 +26,8 @@ void solve_local (const Int ie, const Int k, const Int q,
 
   //todo Replace with ReconstructSafely.
   if (scalar_bounds) {
-    qlo[0] = q_min(0,0,k,q,ie);
-    qhi[0] = q_max(0,0,k,q,ie);
+    qlo[0] = q_min(0,k,q,ie);
+    qhi[0] = q_max(0,k,q,ie);
     const Int N = std::min(max_np2, np2);
     for (Int i = 1; i < N; ++i) qlo[i] = qlo[0];
     for (Int i = 1; i < N; ++i) qhi[i] = qhi[0];
@@ -167,7 +167,7 @@ void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
               break;
             }
             rhom[sbli] = 0; Qm[sbli] = 0; Qm_min[sbli] = 0; Qm_max[sbli] = 0;
-            for (Int g = 0; g < np; ++g) {
+            for (Int g = 0; g < np2; ++g) {
               const Real rhomij = dp3d_c(g,k,d.tl_np1) * spheremp(g);
               rhom[sbli] += rhomij;
               Qm[sbli] += q_c(g,k,q) * rhomij;
@@ -185,7 +185,7 @@ void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
             bool first = true;
             for (Int sbli = 0; sbli < n; ++sbli) {
               const Int k = k0 + sbli;
-              for (Int g = 0; g < np; ++g) {
+              for (Int g = 0; g < np2; ++g) {
                 if (first) {
                   q_min_s = q_min(g,k,q,ie);
                   q_max_s = q_max(g,k,q,ie);

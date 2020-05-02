@@ -28,7 +28,6 @@ void run_global (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
   for (Int ie = nets; ie <= nete; ++ie) {
     FA1<const Real> spheremp(d.spheremp[ie], np2);
     FA4<const Real> qdp_p(d.qdp_pc[ie], np2, nlev, d.qsize_d, 2);
-    //FA3<const Real> dp3d_c(d.dp3d_c[ie], np2, nlev, d.timelevels);
     FA3<const Real> q_c(d.q_c[ie], np2, nlev, d.qsize_d);
 #ifdef COMPOSE_COLUMN_OPENMP
 #   pragma omp parallel for
