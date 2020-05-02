@@ -13,6 +13,7 @@ typedef double Real;
 namespace ko = Kokkos;
 
 // Fortran array wrappers with Fortran index order.
+template <typename T> using FA1 = ko::View<T*,     ko::LayoutLeft, ko::HostSpace>;
 template <typename T> using FA2 = ko::View<T**,    ko::LayoutLeft, ko::HostSpace>;
 template <typename T> using FA3 = ko::View<T***,   ko::LayoutLeft, ko::HostSpace>;
 template <typename T> using FA4 = ko::View<T****,  ko::LayoutLeft, ko::HostSpace>;
@@ -109,7 +110,7 @@ struct TracerArrays {
   HommeFormatArray<const Real,3> & dp, pdp, & dp3d, pdp3d;
   HommeFormatArray<Real,4> & q, pq;
 # endif
-  Int n0_qdp, np1;
+  Int n0_qdp, n1_qdp, np1;
 #endif
 
   TracerArrays(Int nelemd, Int nlev, Int np2, Int qsize, Int qsized);

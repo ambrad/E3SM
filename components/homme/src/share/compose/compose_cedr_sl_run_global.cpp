@@ -16,19 +16,19 @@ static void run_cdr (CDR& q) {
 
 void run_global (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
                  const Int nets, const Int nete) {
-  const Int np = d.np, nlev = d.nlev, qsize = d.qsize,
+  const Int np = d.np, np2 = np*np, nlev = d.nlev, qsize = d.qsize,
     nlevwrem = cdr.nsuplev*cdr.nsublev;
   cedr_assert(np <= 4);
   
-  FA5<      Real> q_min(q_min_r, np, np, nlev, qsize, nete+1);
-  FA5<const Real> q_max(q_max_r, np, np, nlev, qsize, nete+1);
+  FA4<      Real> q_min(q_min_r, np2, nlev, qsize, nete+1);
+  FA4<const Real> q_max(q_max_r, np2, nlev, qsize, nete+1);
   //const auto& dp3d_c = d.ta->dp3d;
 
   for (Int ie = nets; ie <= nete; ++ie) {
-    FA2<const Real> spheremp(d.spheremp[ie], np, np);
-    FA5<const Real> qdp_p(d.qdp_pc[ie], np, np, nlev, d.qsize_d, 2);
-    FA4<const Real> dp3d_c(d.dp3d_c[ie], np, np, nlev, d.timelevels);
-    FA4<const Real> q_c(d.q_c[ie], np, np, nlev, d.qsize_d);
+    FA1<const Real> spheremp(d.spheremp[ie], np2);
+    FA4<const Real> qdp_p(d.qdp_pc[ie], np2, nlev, d.qsize_d, 2);
+    FA3<const Real> dp3d_c(d.dp3d_c[ie], np2, nlev, d.timelevels);
+    FA3<const Real> q_c(d.q_c[ie], np2, nlev, d.qsize_d);
 #ifdef COMPOSE_COLUMN_OPENMP
 #   pragma omp parallel for
 #endif
@@ -56,17 +56,15 @@ void run_global (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
             volume = 0;
           }
           if (k < nlev) {
-            for (Int j = 0; j < np; ++j) {
-              for (Int i = 0; i < np; ++i) {
-                volume += spheremp(i,j); // * dp0[k];
-                const Real rhomij = dp3d_c(i,j,k,d.tl_np1) * spheremp(i,j);
-                rhom += rhomij;
-                Qm += q_c(i,j,k,q) * rhomij;
-                if (nonneg) q_min(i,j,k,q,ie) = std::max<Real>(q_min(i,j,k,q,ie), 0);
-                Qm_min += q_min(i,j,k,q,ie) * rhomij;
-                Qm_max += q_max(i,j,k,q,ie) * rhomij;
-                Qm_prev += qdp_p(i,j,k,q,d.n0_qdp) * spheremp(i,j);
-              }
+            for (Int g = 0; g < np2; ++g) {
+              volume += spheremp(g); // * dp0[k];
+              const Real rhomij = dp3d_c(g,k,d.tl_np1) * spheremp(g);
+              rhom += rhomij;
+              Qm += q_c(g,k,q) * rhomij;
+              if (nonneg) q_min(g,k,q,ie) = std::max<Real>(q_min(g,k,q,ie), 0);
+              Qm_min += q_min(g,k,q,ie) * rhomij;
+              Qm_max += q_max(g,k,q,ie) * rhomij;
+              Qm_prev += qdp_p(g,k,q,d.n0_qdp) * spheremp(g);
             }
           }
           const bool write = ! cdr.caas_in_suplev || sbli == cdr.nsublev-1;
@@ -91,14 +89,12 @@ void run_global (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
                    << q << "," << ti << "," << sbli << "," << lci << "," << k << ","
                    << d.n0_qdp << "," << d.tl_np1 << ")\n";
                 ss << "Qdp(:,:,k,q,n0_qdp) = [";
-                for (Int j = 0; j < np; ++j)
-                  for (Int i = 0; i < np; ++i)
-                    ss << " " << qdp_p(i,j,k,q,d.n0_qdp);
+                for (Int g = 0; g < np2; ++g)
+                  ss << " " << qdp_p(g,k,q,d.n0_qdp);
                 ss << "]\n";
                 ss << "dp3d(:,:,k,tl_np1) = [";
-                for (Int j = 0; j < np; ++j)
-                  for (Int i = 0; i < np; ++i)
-                    ss << " " << dp3d_c(i,j,k,d.tl_np1);
+                for (Int g = 0; g < np2; ++g)
+                  ss << " " << dp3d_c(g,k,d.tl_np1);
                 ss << "]\n";
                 pr(ss.str());
               }
