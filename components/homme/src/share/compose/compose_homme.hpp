@@ -58,7 +58,7 @@ struct HommeFormatArray {
     return *(ie_data_ptr[ie] + (q_or_timelev*nlev + lev)*np2 + k);
   }
   T& operator() (const Int& ie, const Int& timelev, const Int& q, const Int& k, const Int& lev) const {
-    static_assert(rank == 4, "rank 4 array");
+    static_assert(rank == 5, "rank 4 array");
     assert(timelev >= 0);
     assert(q >= 0);
     assert(k >= 0);
@@ -100,14 +100,16 @@ struct TracerArrays {
   View<Real****>  q;    // elem%state%Q
   View<Real***>   dp;   // elem%derived%dp
   View<Real****>  dp3d; // elem%state%dp3d or the sl3d equivalent
-  HommeFormatArray<const Real,4> pqdp;
-  HommeFormatArray<const Real,3> pdp, pdp3d;
+  HommeFormatArray<const Real,5> pqdp;
+  HommeFormatArray<const Real,3> pdp;
+  HommeFormatArray<const Real,4> pdp3d;
   HommeFormatArray<Real,4> pq;
   DepPoints<MT> dep_points;
   QExtrema<MT> q_min, q_max;
 # else
-  HommeFormatArray<const Real,4> & qdp, pqdp;
-  HommeFormatArray<const Real,3> & dp, pdp, & dp3d, pdp3d;
+  HommeFormatArray<const Real,5> & qdp, pqdp;
+  HommeFormatArray<const Real,3> & dp, pdp;
+  HommeFormatArray<const Real,4> & dp3d, pdp3d;
   HommeFormatArray<Real,4> & q, pq;
 # endif
   Int n0_qdp, n1_qdp, np1;
