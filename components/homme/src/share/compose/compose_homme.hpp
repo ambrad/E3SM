@@ -92,6 +92,12 @@ template <typename MT>
 struct TracerArrays {
   typedef std::shared_ptr<TracerArrays<MT> > Ptr;
 
+  HommeFormatArray<const Real,5> pqdp;
+  HommeFormatArray<const Real,3> pdp;
+  HommeFormatArray<const Real,4> pdp3d;
+  HommeFormatArray<Real,4> pq;
+  Int n0_qdp, n1_qdp, np1;
+
 #if defined COMPOSE_PORT_DEV
 # if defined COMPOSE_PORT_DEV_VIEWS
   template <typename Datatype>
@@ -100,19 +106,14 @@ struct TracerArrays {
   View<Real****>  q;    // elem%state%Q
   View<Real***>   dp;   // elem%derived%dp
   View<Real****>  dp3d; // elem%state%dp3d or the sl3d equivalent
-  HommeFormatArray<const Real,5> pqdp;
-  HommeFormatArray<const Real,3> pdp;
-  HommeFormatArray<const Real,4> pdp3d;
-  HommeFormatArray<Real,4> pq;
   DepPoints<MT> dep_points;
   QExtrema<MT> q_min, q_max;
 # else
-  HommeFormatArray<const Real,5> & qdp, pqdp;
-  HommeFormatArray<const Real,3> & dp, pdp;
-  HommeFormatArray<const Real,4> & dp3d, pdp3d;
-  HommeFormatArray<Real,4> & q, pq;
+  HommeFormatArray<const Real,5> & qdp;
+  HommeFormatArray<const Real,3> & dp;
+  HommeFormatArray<const Real,4> & dp3d;
+  HommeFormatArray<Real,4> & q;
 # endif
-  Int n0_qdp, n1_qdp, np1;
 #endif
 
   TracerArrays(Int nelemd, Int nlev, Int np2, Int qsize, Int qsized);
