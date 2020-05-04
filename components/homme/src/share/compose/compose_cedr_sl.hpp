@@ -29,7 +29,6 @@ struct Data {
   const TracerArrays<ko::MachineTraits>::Ptr ta;
 
   const Int np, nlev, qsize, qsize_d, timelevels;
-  const Real* dp0;
 
   struct Check {
     Kokkos::View<Real**, Kokkos::Serial>

@@ -469,7 +469,7 @@ void insert (const Data::Ptr& d, const Int ie, const Int ptridx, Real* array,
   case 1: d->ta->pqdp.set_ie_ptr(ie, array); d->ta->n0_qdp = i0; d->ta->n1_qdp = i1; break;
   case 2: d->ta->pdp3d.set_ie_ptr(ie, array); d->ta->np1 = i0; break;
   case 3: d->ta->pq.set_ie_ptr(ie, array); break;
-  case 4: d->dp0 = array; break;
+  case 4: /* unused */; break;
   default: cedr_throw_if(true, "Invalid pointer index " << ptridx);
   }
 }
