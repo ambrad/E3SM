@@ -21,7 +21,7 @@ void solve_local (const Int ie, const Int k, const Int q,
     const Real rhomij = dp3d_c(ie,np1,g,k) * spheremp(g);
     rhom += rhomij;
     wa[g] = rhomij;
-    y[g] = q_c(g,k,q);
+    y[g] = q_c(ie,q,g,k);
     x[g] = y[g];
   }
 
@@ -90,8 +90,8 @@ void solve_local (const Int ie, const Int k, const Int q,
   }
         
   for (Int g = 0; g < np2; ++g) {
-    q_c(g,k,q) = x[g];
-    qdp_c(ie,n1_qdp,q,g,k) = q_c(g,k,q) * dp3d_c(ie,np1,g,k);
+    q_c(ie,q,g,k) = x[g];
+    qdp_c(ie,n1_qdp,q,g,k) = q_c(ie,q,g,k) * dp3d_c(ie,np1,g,k);
   }
 }
 
@@ -149,10 +149,10 @@ void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
   const auto np1 = ta.np1;
   const auto& qdp_c = ta.pqdp;
   const auto n1_qdp = ta.n1_qdp;
+  const auto& q_c = ta.pq;
 
   for (Int ie = nets; ie <= nete; ++ie) {
     FA1<const Real> spheremp(d.spheremp[ie], np2);
-    FA3<      Real> q_c(d.q_c[ie], np2, nlev, d.qsize_d);
 #ifdef COMPOSE_COLUMN_OPENMP
 #   pragma omp parallel for
 #endif
@@ -181,7 +181,7 @@ void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
             for (Int g = 0; g < np2; ++g) {
               const Real rhomij = dp3d_c(ie,np1,g,k) * spheremp(g);
               rhom[sbli] += rhomij;
-              Qm[sbli] += q_c(g,k,q) * rhomij;
+              Qm[sbli] += q_c(ie,q,g,k) * rhomij;
               Qm_min[sbli] += q_min(ie,q,k,g) * rhomij;
               Qm_max[sbli] += q_max(ie,q,k,g) * rhomij;
             }
