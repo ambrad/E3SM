@@ -38,7 +38,7 @@ struct HommeFormatArray {
   enum : int { rank = rank_ };
   typedef T value_type;
 
-  HommeFormatArray (Int nelemd, Int np2_, Int nlev_, Int qsized_ = -1, Int ntimelev_ = -1)
+  HommeFormatArray (Int nelemd, Int np2_, Int nlev_ = -1, Int qsized_ = -1, Int ntimelev_ = -1)
     : nlev(nlev_), np2(np2_), qsized(qsized_), ntimelev(ntimelev_)
   { ie_data_ptr.resize(nelemd); }
 
@@ -47,6 +47,11 @@ struct HommeFormatArray {
     ie_data_ptr[ie] = ptr;
   }
 
+  T& operator() (const Int& ie, const Int& i) const {
+    static_assert(rank == 2, "rank 2 array");
+    assert(i >= 0);
+    return *(ie_data_ptr[ie] + i);
+  }
   T& operator() (const Int& ie, const Int& k, const Int& lev) const {
     static_assert(rank == 3, "rank 3 array");
     assert(k >= 0);
@@ -98,9 +103,10 @@ struct TracerArrays {
   typedef std::shared_ptr<TracerArrays<MT> > Ptr;
 
   const Int nelemd, nlev, np2, qsize, qsized;
-  HommeFormatArray<Real,5> pqdp;
+  HommeFormatArray<const Real,2> pspheremp;
   HommeFormatArray<const Real,3> pdp;
   HommeFormatArray<const Real,4> pdp3d;
+  HommeFormatArray<Real,5> pqdp;
   HommeFormatArray<Real,4> pq;
   Int n0_qdp, n1_qdp, np1;
 
@@ -108,17 +114,19 @@ struct TracerArrays {
 # if defined COMPOSE_PORT_DEV_VIEWS
   template <typename Datatype>
   using View = ko::View<Datatype, ko::LayoutRight, typename MT::DDT>;
-  View<Real*****> qdp;  // elem%state%Qdp(:,:,:,:,:)
-  View<Real****>  q;    // elem%state%Q
+  View<Real**> spheremp;
   View<Real***>   dp;   // elem%derived%dp
   View<Real****>  dp3d; // elem%state%dp3d or the sl3d equivalent
+  View<Real*****> qdp;  // elem%state%Qdp(:,:,:,:,:)
+  View<Real****>  q;    // elem%state%Q
   DepPoints<MT> dep_points;
   QExtrema<MT> q_min, q_max;
 # else
-  HommeFormatArray<Real,5> & qdp;
-  HommeFormatArray<const Real,3> & dp;
-  HommeFormatArray<const Real,4> & dp3d;
-  HommeFormatArray<Real,4> & q;
+  HommeFormatArray<const Real,2>& spheremp;
+  HommeFormatArray<const Real,3>& dp;
+  HommeFormatArray<const Real,4>& dp3d;
+  HommeFormatArray<Real,5>& qdp;
+  HommeFormatArray<Real,4>& q;
 # endif
 #endif
 

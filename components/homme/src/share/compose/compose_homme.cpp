@@ -5,18 +5,20 @@ namespace homme {
 template <typename MT>
 TracerArrays<MT>::TracerArrays (Int nelemd_, Int nlev_, Int np2_, Int qsize_, Int qsized_)
   : nelemd(nelemd_), nlev(nlev_), np2(np2_), qsize(qsize_), qsized(qsized_),
-    pqdp(nelemd, np2, nlev, qsized, 2), pdp(nelemd, np2, nlev),
-    pdp3d(nelemd, np2, nlev, -1, 3), pq(nelemd, np2, nlev, qsized)
+    pspheremp(nelemd, np2),
+    pdp(nelemd, np2, nlev), pdp3d(nelemd, np2, nlev, -1, 3),
+    pqdp(nelemd, np2, nlev, qsized, 2), pq(nelemd, np2, nlev, qsized)
 #if defined COMPOSE_PORT_DEV
     ,
 # if defined COMPOSE_PORT_DEV_VIEWS
+    spheremp("spheremp", nelemd, np2),
+    dp("dp", nelemd, np2, nlev), dp3d("dp3d", nelemd, 3, np2, nlev),
     qdp("qdp", nelemd, 2, qsize, np2, nlev),
     q("q", nelemd, qsize, np2, nlev),
-    dp("dp", nelemd, np2, nlev), dp3d("dp3d", nelemd, 3, np2, nlev),
     dep_points("dep_points", nelemd, nlev, np2),
     q_min("q_min", nelemd, qsize, nlev, np2), q_max("q_max", nelemd, qsize, nlev, np2)
 # else
-    qdp(pqdp), dp(pdp), pdp3d(dp3d), q(pq)
+    spheremp(pspheremp), dp(pdp), pdp3d(dp3d), qdp(pqdp), q(pq)
 # endif
 #endif
 {}
