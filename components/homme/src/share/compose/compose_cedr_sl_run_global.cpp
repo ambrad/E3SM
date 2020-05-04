@@ -96,7 +96,7 @@ void run_global (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
                    << " at (ie,gid,spli,k0,q,ti,sbli,lci,k,n0_qdp,tl_np1) = ("
                    << ie << "," << cdr.ie2gci[ie] << "," << spli << "," << k0 << ","
                    << q << "," << ti << "," << sbli << "," << lci << "," << k << ","
-                   << d.n0_qdp << "," << d.tl_np1 << ")\n";
+                   << n0_qdp << "," << np1 << ")\n";
                 ss << "Qdp(:,:,k,q,n0_qdp) = [";
                 for (Int g = 0; g < np2; ++g)
                   ss << " " << qdp_p(ie,n0_qdp,q,g,k);

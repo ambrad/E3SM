@@ -455,10 +455,6 @@ void init_tracers (CDR& q, const Int nlev, const Int qsize,
 
 namespace sl { // For sl_advection.F90
 
-static void check (const CDR& q, const Data& d) {
-  cedr_assert(q.nlclcell == static_cast<Int>(d.spheremp.size()));
-}
-
 template <typename T>
 void insert (std::vector<T*>& r, const Int i, T* v) {
   cedr_assert(i >= 0 && i < static_cast<int>(r.size()));
@@ -469,14 +465,10 @@ void insert (const Data::Ptr& d, const Int ie, const Int ptridx, Real* array,
              const Int i0 = 0, const Int i1 = 0) {
   cedr_assert(d);
   switch (ptridx) {
-  case 0: d->ta->pspheremp.set_ie_ptr(ie, array); //break;
-  /*case 0:*/ insert<const double>(d->spheremp, ie, array); break;
-  case 1: d->ta->pqdp.set_ie_ptr(ie, array); d->ta->n0_qdp = i0; d->ta->n1_qdp = i1; //break;
-  /*case 1:*/ insert<double>(d->qdp_pc, ie, array); d->n0_qdp = i0; d->n1_qdp = i1; break;
-  case 2: d->ta->pdp3d.set_ie_ptr(ie, array); d->ta->np1 = i0; //break;
-  /*case 2:*/ insert<const double>(d->dp3d_c, ie, array); d->tl_np1 = i0; break;
-  case 3: d->ta->pq.set_ie_ptr(ie, array); //break;
-  /*case 3:*/ insert<double>(d->q_c, ie, array); break;
+  case 0: d->ta->pspheremp.set_ie_ptr(ie, array); break;
+  case 1: d->ta->pqdp.set_ie_ptr(ie, array); d->ta->n0_qdp = i0; d->ta->n1_qdp = i1; break;
+  case 2: d->ta->pdp3d.set_ie_ptr(ie, array); d->ta->np1 = i0; break;
+  case 3: d->ta->pq.set_ie_ptr(ie, array); break;
   case 4: d->dp0 = array; break;
   default: cedr_throw_if(true, "Invalid pointer index " << ptridx);
   }
@@ -548,7 +540,6 @@ extern "C" homme::Int cedr_sl_init (
                                            qsized, timelevels, tracer_arrays);
   homme::init_ie2lci(*g_cdr);
   homme::init_tracers(*g_cdr, nlev, qsize, need_conservation);
-  homme::sl::check(*g_cdr, *g_sl);
   return 1;
 }
 

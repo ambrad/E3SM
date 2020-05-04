@@ -29,9 +29,6 @@ struct Data {
   const TracerArrays<ko::MachineTraits>::Ptr ta;
 
   const Int np, nlev, qsize, qsize_d, timelevels;
-  Int n0_qdp, n1_qdp, tl_np1;
-  std::vector<const Real*> spheremp, dp3d_c;
-  std::vector<Real*> q_c, qdp_pc;
   const Real* dp0;
 
   struct Check {
@@ -51,9 +48,7 @@ struct Data {
   Data (Int lcl_ncell, Int np_, Int nlev_, Int qsize_, Int qsize_d_, Int timelevels_,
         const TracerArrays<ko::MachineTraits>::Ptr& tracer_arrays)
     : ta(tracer_arrays),
-      np(np_), nlev(nlev_), qsize(qsize_), qsize_d(qsize_d_), timelevels(timelevels_),
-      spheremp(lcl_ncell, nullptr), dp3d_c(lcl_ncell, nullptr), q_c(lcl_ncell, nullptr),
-      qdp_pc(lcl_ncell, nullptr)
+      np(np_), nlev(nlev_), qsize(qsize_), qsize_d(qsize_d_), timelevels(timelevels_)
   {}
 };
 

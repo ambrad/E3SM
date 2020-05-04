@@ -69,7 +69,7 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
             // FP issues.
             if ( ! fp_issue) {
               for (Int i_qdp : {0, 1}) {
-                const Int n_qdp = i_qdp == 0 ? d.n0_qdp : d.n1_qdp;
+                const Int n_qdp = i_qdp == 0 ? n0_qdp : n1_qdp;
                 if (std::isnan(qdp_pc(ie,n_qdp,q,g,k)))
                 { pr("qdp NaN:" puf(i_qdp) pu(q) pu(k) pu(g)); fp_issue = true; }
                 if (std::isinf(qdp_pc(ie,n_qdp,q,g,k)))
