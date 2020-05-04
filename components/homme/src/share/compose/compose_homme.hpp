@@ -23,8 +23,12 @@ template <typename MT> using DepPoints =
   ko::View<Real***[3], ko::LayoutRight, typename MT::DES>;
 template <typename MT> using QExtrema =
   ko::View<Real****, ko::LayoutRight, typename MT::DES>;
+  
 template <typename MT> using DepPointsH = typename DepPoints<MT>::HostMirror;
 template <typename MT> using QExtremaH = typename QExtrema<MT>::HostMirror;
+
+template <typename MT> using QExtremaHConst = ko::Const<QExtremaH<MT> >;
+template <typename MT> using QExtremaConst = ko::Const<QExtrema<MT> >;
 
 struct Cartesian3D { Real x, y, z; };
 
@@ -92,6 +96,7 @@ template <typename MT>
 struct TracerArrays {
   typedef std::shared_ptr<TracerArrays<MT> > Ptr;
 
+  const Int nelemd, nlev, np2, qsize, qsized;
   HommeFormatArray<const Real,5> pqdp;
   HommeFormatArray<const Real,3> pdp;
   HommeFormatArray<const Real,4> pdp3d;

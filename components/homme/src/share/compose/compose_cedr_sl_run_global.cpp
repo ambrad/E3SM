@@ -20,13 +20,19 @@ void run_global (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
     nlevwrem = cdr.nsuplev*cdr.nsublev;
   cedr_assert(np <= 4);
   
-  FA4<      Real> q_min(q_min_r, np2, nlev, qsize, nete+1);
-  FA4<const Real> q_max(q_max_r, np2, nlev, qsize, nete+1);
-  const auto& dp3d_c = d.ta->pdp3d;
-  const auto np1 = d.ta->np1;
-  const auto& qdp_p = d.ta->pqdp;
-  const auto n0_qdp = d.ta->n0_qdp;
-  const auto& q_c = d.ta->pq;
+  const auto& ta = *d.ta;
+#ifdef COMPOSE_PORT_DEV_VIEWS
+  const auto& q_min = ta.q_min;
+  const auto& q_max = ta.q_max;
+#else
+  const QExtremaH<ko::MachineTraits> q_min(q_min_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2);
+  const QExtremaHConst<ko::MachineTraits> q_max(q_max_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2);
+#endif
+  const auto& dp3d_c = ta.pdp3d;
+  const auto np1 = ta.np1;
+  const auto& qdp_p = ta.pqdp;
+  const auto n0_qdp = ta.n0_qdp;
+  const auto& q_c = ta.pq;
 
   for (Int ie = nets; ie <= nete; ++ie) {
     FA1<const Real> spheremp(d.spheremp[ie], np2);
@@ -62,9 +68,9 @@ void run_global (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
               const Real rhomij = dp3d_c(ie,np1,g,k) * spheremp(g);
               rhom += rhomij;
               Qm += q_c(ie,q,g,k) * rhomij;
-              if (nonneg) q_min(g,k,q,ie) = std::max<Real>(q_min(g,k,q,ie), 0);
-              Qm_min += q_min(g,k,q,ie) * rhomij;
-              Qm_max += q_max(g,k,q,ie) * rhomij;
+              if (nonneg) q_min(ie,q,k,g) = std::max<Real>(q_min(ie,q,k,g), 0);
+              Qm_min += q_min(ie,q,k,g) * rhomij;
+              Qm_max += q_max(ie,q,k,g) * rhomij;
               Qm_prev += qdp_p(ie,n0_qdp,q,g,k) * spheremp(g);
             }
           }

@@ -7,6 +7,9 @@
 
 namespace Kokkos {
 
+template <typename View>
+using Const = typename View::const_type;
+
 // GPU-friendly replacements for std::*.
 template <typename T> KOKKOS_INLINE_FUNCTION
 const T& min (const T& a, const T& b) { return a < b ? a : b; }
