@@ -34,22 +34,18 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
   const QExtremaHConst<ko::MachineTraits>
     q_max(q_max_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2);
 #endif
-#if 0
   const auto& dp3d_c = ta.pdp3d;
   const auto np1 = ta.np1;
   const auto& qdp_pc = ta.pqdp;
   const auto n0_qdp = ta.n0_qdp;
+  const auto n1_qdp = ta.n1_qdp;
   const auto& q_c = ta.pq;
-#endif
 
   Int iprob = 0;
 
   bool fp_issue = false; // Limit output once the first issue is seen.
   for (Int ie = nets; ie <= nete; ++ie) {
     FA1<const Real> spheremp(d.spheremp[ie], np2);
-    FA4<const Real> qdp_pc(d.qdp_pc[ie], np2, nlev, d.qsize_d, 2);
-    FA3<const Real> dp3d_c(d.dp3d_c[ie], np2, nlev, d.timelevels);
-    FA3<const Real> q_c(d.q_c[ie], np2, nlev, d.qsize_d);
     for (Int spli = 0; spli < nsuplev; ++spli) {
       if (nprob > 1) iprob = spli;
       for (Int k = spli*cdr.nsublev; k < (spli+1)*cdr.nsublev; ++k) {
@@ -57,9 +53,9 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
         if ( ! fp_issue) {
           for (Int g = 0; g < np2; ++g) {
             // FP issues.
-            if (std::isnan(dp3d_c(g,k,d.tl_np1)))
+            if (std::isnan(dp3d_c(ie,np1,g,k)))
             { pr("dp3d NaN:" pu(k) pu(g)); fp_issue = true; }
-            if (std::isinf(dp3d_c(g,k,d.tl_np1)))
+            if (std::isinf(dp3d_c(ie,np1,g,k)))
             { pr("dp3d Inf:" pu(k) pu(g)); fp_issue = true; }
           }
         }
@@ -74,28 +70,28 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
             if ( ! fp_issue) {
               for (Int i_qdp : {0, 1}) {
                 const Int n_qdp = i_qdp == 0 ? d.n0_qdp : d.n1_qdp;
-                if (std::isnan(qdp_pc(g,k,q,n_qdp)))
+                if (std::isnan(qdp_pc(ie,n_qdp,q,g,k)))
                 { pr("qdp NaN:" puf(i_qdp) pu(q) pu(k) pu(g)); fp_issue = true; }
-                if (std::isinf(qdp_pc(g,k,q,n_qdp)))
+                if (std::isinf(qdp_pc(ie,n_qdp,q,g,k)))
                 { pr("qdp Inf:" puf(i_qdp) pu(q) pu(k) pu(g)); fp_issue = true; }
               }
-              if (std::isnan(q_c(g,k,q)))
+              if (std::isnan(q_c(ie,q,g,k)))
               { pr("q NaN:" pu(q) pu(k) pu(g)); fp_issue = true; }
-              if (std::isinf(q_c(g,k,q)))
+              if (std::isinf(q_c(ie,q,g,k)))
               { pr("q Inf:" pu(q) pu(k) pu(g)); fp_issue = true; }
             }
             // Mass conservation.
-            mass_p(iprob,q) += qdp_pc(g,k,q,d.n0_qdp) * spheremp(g);
-            mass_c(iprob,q) += qdp_pc(g,k,q,d.n1_qdp) * spheremp(g);
+            mass_p(iprob,q) += qdp_pc(ie,n0_qdp,q,g,k) * spheremp(g);
+            mass_c(iprob,q) += qdp_pc(ie,n1_qdp,q,g,k) * spheremp(g);
             // Local bound constraints w.r.t. cell-local extrema.
-            if (q_c(g,k,q) < qlo_s)
-              qd_lo(iprob,q) = std::max(qd_lo(iprob,q), qlo_s - q_c(g,k,q));
-            if (q_c(g,k,q) > qhi_s)
-              qd_hi(iprob,q) = std::max(qd_hi(iprob,q), q_c(g,k,q) - qhi_s);
+            if (q_c(ie,q,g,k) < qlo_s)
+              qd_lo(iprob,q) = std::max(qd_lo(iprob,q), qlo_s - q_c(ie,q,g,k));
+            if (q_c(ie,q,g,k) > qhi_s)
+              qd_hi(iprob,q) = std::max(qd_hi(iprob,q), q_c(ie,q,g,k) - qhi_s);
             // Safety problem bound constraints.
-            mass_lo(iprob,q) += (q_min(ie,q,k,g) * dp3d_c(g,k,d.tl_np1) *
+            mass_lo(iprob,q) += (q_min(ie,q,k,g) * dp3d_c(ie,np1,g,k) *
                                  spheremp(g));
-            mass_hi(iprob,q) += (q_max(ie,q,k,g) * dp3d_c(g,k,d.tl_np1) *
+            mass_hi(iprob,q) += (q_max(ie,q,k,g) * dp3d_c(ie,np1,g,k) *
                                  spheremp(g));
             q_lo(iprob,q) = std::min(q_lo(iprob,q), q_min(ie,q,k,g));
             q_hi(iprob,q) = std::max(q_hi(iprob,q), q_max(ie,q,k,g));
