@@ -30,6 +30,7 @@ void run_global (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
   const QExtremaHConst<ko::MachineTraits>
     q_max(q_max_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2);
 #endif
+  const auto& spheremp = ta.pspheremp;
   const auto& dp3d_c = ta.pdp3d;
   const auto np1 = ta.np1;
   const auto& qdp_p = ta.pqdp;
@@ -37,7 +38,6 @@ void run_global (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
   const auto& q_c = ta.pq;
 
   for (Int ie = nets; ie <= nete; ++ie) {
-    FA1<const Real> spheremp(d.spheremp[ie], np2);
 #ifdef COMPOSE_COLUMN_OPENMP
 #   pragma omp parallel for
 #endif
@@ -66,14 +66,14 @@ void run_global (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
           }
           if (k < nlev) {
             for (Int g = 0; g < np2; ++g) {
-              volume += spheremp(g); // * dp0[k];
-              const Real rhomij = dp3d_c(ie,np1,g,k) * spheremp(g);
+              volume += spheremp(ie,g); // * dp0[k];
+              const Real rhomij = dp3d_c(ie,np1,g,k) * spheremp(ie,g);
               rhom += rhomij;
               Qm += q_c(ie,q,g,k) * rhomij;
               if (nonneg) q_min(ie,q,k,g) = std::max<Real>(q_min(ie,q,k,g), 0);
               Qm_min += q_min(ie,q,k,g) * rhomij;
               Qm_max += q_max(ie,q,k,g) * rhomij;
-              Qm_prev += qdp_p(ie,n0_qdp,q,g,k) * spheremp(g);
+              Qm_prev += qdp_p(ie,n0_qdp,q,g,k) * spheremp(ie,g);
             }
           }
           const bool write = ! cdr.caas_in_suplev || sbli == cdr.nsublev-1;

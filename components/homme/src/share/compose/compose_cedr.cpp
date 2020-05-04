@@ -469,7 +469,8 @@ void insert (const Data::Ptr& d, const Int ie, const Int ptridx, Real* array,
              const Int i0 = 0, const Int i1 = 0) {
   cedr_assert(d);
   switch (ptridx) {
-  case 0: insert<const double>(d->spheremp, ie, array); break;
+  case 0: d->ta->pspheremp.set_ie_ptr(ie, array); //break;
+  /*case 0:*/ insert<const double>(d->spheremp, ie, array); break;
   case 1: d->ta->pqdp.set_ie_ptr(ie, array); d->ta->n0_qdp = i0; d->ta->n1_qdp = i1; //break;
   /*case 1:*/ insert<double>(d->qdp_pc, ie, array); d->n0_qdp = i0; d->n1_qdp = i1; break;
   case 2: d->ta->pdp3d.set_ie_ptr(ie, array); d->ta->np1 = i0; //break;

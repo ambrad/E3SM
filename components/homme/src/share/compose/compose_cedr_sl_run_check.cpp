@@ -34,6 +34,7 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
   const QExtremaHConst<ko::MachineTraits>
     q_max(q_max_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2);
 #endif
+  const auto& spheremp = ta.pspheremp;
   const auto& dp3d_c = ta.pdp3d;
   const auto np1 = ta.np1;
   const auto& qdp_pc = ta.pqdp;
@@ -45,7 +46,6 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
 
   bool fp_issue = false; // Limit output once the first issue is seen.
   for (Int ie = nets; ie <= nete; ++ie) {
-    FA1<const Real> spheremp(d.spheremp[ie], np2);
     for (Int spli = 0; spli < nsuplev; ++spli) {
       if (nprob > 1) iprob = spli;
       for (Int k = spli*cdr.nsublev; k < (spli+1)*cdr.nsublev; ++k) {
@@ -81,8 +81,8 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
               { pr("q Inf:" pu(q) pu(k) pu(g)); fp_issue = true; }
             }
             // Mass conservation.
-            mass_p(iprob,q) += qdp_pc(ie,n0_qdp,q,g,k) * spheremp(g);
-            mass_c(iprob,q) += qdp_pc(ie,n1_qdp,q,g,k) * spheremp(g);
+            mass_p(iprob,q) += qdp_pc(ie,n0_qdp,q,g,k) * spheremp(ie,g);
+            mass_c(iprob,q) += qdp_pc(ie,n1_qdp,q,g,k) * spheremp(ie,g);
             // Local bound constraints w.r.t. cell-local extrema.
             if (q_c(ie,q,g,k) < qlo_s)
               qd_lo(iprob,q) = std::max(qd_lo(iprob,q), qlo_s - q_c(ie,q,g,k));
@@ -90,9 +90,9 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
               qd_hi(iprob,q) = std::max(qd_hi(iprob,q), q_c(ie,q,g,k) - qhi_s);
             // Safety problem bound constraints.
             mass_lo(iprob,q) += (q_min(ie,q,k,g) * dp3d_c(ie,np1,g,k) *
-                                 spheremp(g));
+                                 spheremp(ie,g));
             mass_hi(iprob,q) += (q_max(ie,q,k,g) * dp3d_c(ie,np1,g,k) *
-                                 spheremp(g));
+                                 spheremp(ie,g));
             q_lo(iprob,q) = std::min(q_lo(iprob,q), q_min(ie,q,k,g));
             q_hi(iprob,q) = std::max(q_hi(iprob,q), q_max(ie,q,k,g));
             q_min_l(iprob,q) = std::min(q_min_l(iprob,q), q_min(ie,q,k,g));

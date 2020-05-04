@@ -4,11 +4,11 @@
 namespace homme {
 namespace sl {
 
-template <typename CV1, typename CV4, typename CV5, typename QV5, typename V4, typename V5>
+template <typename CV2, typename CV4, typename CV5, typename QV5, typename V4, typename V5>
 void solve_local (const Int ie, const Int k, const Int q,
                   const Int np1, const Int n1_qdp, const Int np,
                   const bool scalar_bounds, const Int limiter_option,
-                  const CV1& spheremp, const CV4& dp3d_c,
+                  const CV2& spheremp, const CV4& dp3d_c,
                   const QV5& q_min, const CV5& q_max,
                   const Real Qm, V5& qdp_c, V4& q_c) {
   static constexpr Int max_np = 4, max_np2 = max_np*max_np;
@@ -18,7 +18,7 @@ void solve_local (const Int ie, const Int k, const Int q,
   Real wa[max_np2], qlo[max_np2], qhi[max_np2], y[max_np2], x[max_np2];
   Real rhom = 0;
   for (Int g = 0; g < np2; ++g) {
-    const Real rhomij = dp3d_c(ie,np1,g,k) * spheremp(g);
+    const Real rhomij = dp3d_c(ie,np1,g,k) * spheremp(ie,g);
     rhom += rhomij;
     wa[g] = rhomij;
     y[g] = q_c(ie,q,g,k);
@@ -145,6 +145,7 @@ void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
   const QExtremaHConst<ko::MachineTraits>
     q_max(q_max_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2);
 #endif
+  const auto& spheremp = ta.pspheremp;
   const auto& dp3d_c = ta.pdp3d;
   const auto np1 = ta.np1;
   const auto& qdp_c = ta.pqdp;
@@ -152,7 +153,6 @@ void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
   const auto& q_c = ta.pq;
 
   for (Int ie = nets; ie <= nete; ++ie) {
-    FA1<const Real> spheremp(d.spheremp[ie], np2);
 #ifdef COMPOSE_COLUMN_OPENMP
 #   pragma omp parallel for
 #endif
@@ -179,7 +179,7 @@ void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
             }
             rhom[sbli] = 0; Qm[sbli] = 0; Qm_min[sbli] = 0; Qm_max[sbli] = 0;
             for (Int g = 0; g < np2; ++g) {
-              const Real rhomij = dp3d_c(ie,np1,g,k) * spheremp(g);
+              const Real rhomij = dp3d_c(ie,np1,g,k) * spheremp(ie,g);
               rhom[sbli] += rhomij;
               Qm[sbli] += q_c(ie,q,g,k) * rhomij;
               Qm_min[sbli] += q_min(ie,q,k,g) * rhomij;
