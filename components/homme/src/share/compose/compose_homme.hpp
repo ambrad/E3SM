@@ -102,7 +102,7 @@ template <typename MT>
 struct TracerArrays {
   typedef std::shared_ptr<TracerArrays<MT> > Ptr;
 
-  const Int nelemd, nlev, np2, qsize, qsized;
+  const Int nelemd, nlev, np, np2, qsize, qsized;
   HommeFormatArray<const Real,2> pspheremp;
   HommeFormatArray<const Real,3> pdp;
   HommeFormatArray<const Real,4> pdp3d;
@@ -130,7 +130,7 @@ struct TracerArrays {
 # endif
 #endif
 
-  TracerArrays(Int nelemd, Int nlev, Int np2, Int qsize, Int qsized);
+  TracerArrays(Int nelemd, Int nlev, Int np, Int qsize, Int qsized);
   TracerArrays(const TracerArrays<MT>&) = delete;
   TracerArrays& operator=(const TracerArrays<MT>&) = delete;
 };
@@ -142,7 +142,7 @@ template <typename MT>
 void sl_d2h(const TracerArrays<MT>& ta, Cartesian3D* dep_points, Real* minq, Real* maxq);
 
 TracerArrays<ko::MachineTraits>::Ptr
-init_tracer_arrays(Int nelemd, Int nlev, Int np2, Int qsize, Int qsize_d);
+init_tracer_arrays(Int nelemd, Int nlev, Int np, Int qsize, Int qsize_d);
 
 TracerArrays<ko::MachineTraits>::Ptr get_tracer_arrays();
 

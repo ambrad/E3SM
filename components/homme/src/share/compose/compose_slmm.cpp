@@ -100,7 +100,7 @@ init (const typename IslMpi<MT>::Advecter::ConstPtr& advecter,
       const Int* nbr_id_rank, const Int* nirptr,
       Int halo) {
   slmm_throw_if(halo < 1 || halo > 2, "halo must be 1 (default) or 2.");
-  auto tracer_arrays = homme::init_tracer_arrays(nelemd, nlev, np*np, qsize, qsized);
+  auto tracer_arrays = homme::init_tracer_arrays(nelemd, nlev, np, qsize, qsized);
   auto cm = std::make_shared<IslMpi<MT> >(p, advecter, tracer_arrays, np, nlev,
                                           qsize, qsized, nelemd, halo);
   setup_comm_pattern(*cm, nbr_id_rank, nirptr);

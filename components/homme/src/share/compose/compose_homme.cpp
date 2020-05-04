@@ -3,8 +3,8 @@
 namespace homme {
 
 template <typename MT>
-TracerArrays<MT>::TracerArrays (Int nelemd_, Int nlev_, Int np2_, Int qsize_, Int qsized_)
-  : nelemd(nelemd_), nlev(nlev_), np2(np2_), qsize(qsize_), qsized(qsized_),
+TracerArrays<MT>::TracerArrays (Int nelemd_, Int nlev_, Int np_, Int qsize_, Int qsized_)
+  : nelemd(nelemd_), nlev(nlev_), np(np_), np2(np*np), qsize(qsize_), qsized(qsized_),
     pspheremp(nelemd, np2),
     pdp(nelemd, np2, nlev), pdp3d(nelemd, np2, nlev, -1, 3),
     pqdp(nelemd, np2, nlev, qsized, 2), pq(nelemd, np2, nlev, qsized)

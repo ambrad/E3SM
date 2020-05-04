@@ -8,8 +8,9 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
             const Int nets, const Int nete) {
   using cedr::mpi::reduce;
 
-  const Int np = d.np, np2 = np*np, nlev = d.nlev, nsuplev = cdr.nsuplev,
-    qsize = d.qsize, nprob = cdr.threed ? 1 : nsuplev;
+  const auto& ta = *d.ta;
+  const Int np = ta.np, np2 = np*np, nlev = ta.nlev, nsuplev = cdr.nsuplev,
+    qsize = ta.qsize, nprob = cdr.threed ? 1 : nsuplev;
 
   Kokkos::View<Real**, Kokkos::Serial>
     mass_p("mass_p", nprob, qsize), mass_c("mass_c", nprob, qsize),
@@ -24,7 +25,6 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
   Kokkos::deep_copy(qd_lo, 0);
   Kokkos::deep_copy(qd_hi, 0);
 
-  const auto& ta = *d.ta;
 #ifdef COMPOSE_PORT_DEV_VIEWS_notyet
   const auto& q_min = ta.q_min;
   const auto& q_max = ta.q_max;

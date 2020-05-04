@@ -536,8 +536,7 @@ extern "C" homme::Int cedr_sl_init (
 {
   cedr_assert(g_cdr);
   const auto tracer_arrays = homme::get_tracer_arrays();
-  g_sl = std::make_shared<homme::sl::Data>(g_cdr->nlclcell, np, nlev, qsize,
-                                           qsized, timelevels, tracer_arrays);
+  g_sl = std::make_shared<homme::sl::Data>(tracer_arrays);
   homme::init_ie2lci(*g_cdr);
   homme::init_tracers(*g_cdr, nlev, qsize, need_conservation);
   return 1;

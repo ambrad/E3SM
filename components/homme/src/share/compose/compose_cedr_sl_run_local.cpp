@@ -132,10 +132,10 @@ Int vertical_caas_backup (const Int n, Real* rhom,
 void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
                 const Int nets, const Int nete, const bool scalar_bounds,
                 const Int limiter_option) {
-  const Int np = d.np, np2 = np*np, nlev = d.nlev, qsize = d.qsize,
+  const auto& ta = *d.ta;
+  const Int np = ta.np, np2 = np*np, nlev = ta.nlev, qsize = ta.qsize,
     nlevwrem = cdr.nsuplev*cdr.nsublev;
 
-  const auto& ta = *d.ta;
 #ifdef COMPOSE_PORT_DEV_VIEWS_notyet
   const auto& q_min = ta.q_min;
   const auto& q_max = ta.q_max;
