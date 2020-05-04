@@ -20,9 +20,9 @@ template <typename T> using FA4 = ko::View<T****,  ko::LayoutLeft, ko::HostSpace
 template <typename T> using FA5 = ko::View<T*****, ko::LayoutLeft, ko::HostSpace>;
 
 template <typename MT> using DepPoints =
-  ko::View<Real***[3], ko::LayoutRight, typename MT::DES>;
+  ko::View<Real***[3], ko::LayoutRight, typename MT::DDT>;
 template <typename MT> using QExtrema =
-  ko::View<Real****, ko::LayoutRight, typename MT::DES>;
+  ko::View<Real****, ko::LayoutRight, typename MT::DDT>;
   
 template <typename MT> using DepPointsH = typename DepPoints<MT>::HostMirror;
 template <typename MT> using QExtremaH = typename QExtrema<MT>::HostMirror;
@@ -106,7 +106,7 @@ struct TracerArrays {
 #if defined COMPOSE_PORT_DEV
 # if defined COMPOSE_PORT_DEV_VIEWS
   template <typename Datatype>
-  using View = ko::View<Datatype, ko::LayoutRight, typename MT::DES>;
+  using View = ko::View<Datatype, ko::LayoutRight, typename MT::DDT>;
   View<Real*****> qdp;  // elem%state%Qdp(:,:,:,:,:)
   View<Real****>  q;    // elem%state%Q
   View<Real***>   dp;   // elem%derived%dp

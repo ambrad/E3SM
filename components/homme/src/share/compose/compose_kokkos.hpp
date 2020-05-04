@@ -44,6 +44,24 @@ template <> struct NumericTraits<float> {
   }
 };
 
+template <typename ExeSpace>
+struct DeviceType {
+  typedef Kokkos::Device<typename ExeSpace::execution_space,
+                         typename ExeSpace::memory_space> type;
+};
+
+#ifdef KOKKOS_HAVE_CUDA
+typedef Kokkos::Device<Kokkos::CudaSpace::execution_space,
+                       Kokkos::CudaSpace::memory_space> DefaultDeviceType;
+
+template <> struct DeviceType<Kokkos::Cuda> {
+  typedef DefaultDeviceType type;
+};
+#else
+typedef Kokkos::Device<Kokkos::DefaultExecutionSpace::execution_space,
+                       Kokkos::DefaultExecutionSpace::memory_space> DefaultDeviceType;
+#endif
+
 struct MachineTraits {
   // Host and device execution spaces.
 #ifdef COMPOSE_PORT
@@ -53,6 +71,8 @@ struct MachineTraits {
   using HES = Kokkos::Serial;
   using DES = Kokkos::Serial;
 #endif
+  using HDT = DeviceType<HES>::type;
+  using DDT = DeviceType<HDT>::type;
 };
 
 template <typename ES> struct OnGpu {

@@ -97,9 +97,9 @@ namespace islmpi {
 
 // FixedCapList, ListOfLists, and BufferLayoutArray are simple and somewhat
 // problem-specific array data structures for use in IslMpi.
-template <typename T, typename ES>
+template <typename T, typename DT>
 struct FixedCapList {
-  typedef ko::View<T*, ES> Array;
+  typedef ko::View<T*, DT> Array;
   typedef FixedCapList<T, typename Array::host_mirror_space> Mirror;
 
   // Empty ctor b/c we need to permit view of view construction.
@@ -151,8 +151,8 @@ struct FixedCapList {
   void zero () { if (d_.size()) ko::deep_copy(d_, 0); }
 
   // Copy from s to this.
-  template <typename ESS>
-  void copy (const FixedCapList<T, ESS>& s) {
+  template <typename DTS>
+  void copy (const FixedCapList<T, DTS>& s) {
     siqk::resize_and_copy(d_, s.view());
     init_n();
     set_n(s);
@@ -162,8 +162,8 @@ struct FixedCapList {
 
   SLMM_KIF void set_n (const Int& n0) const { get_n_ref() = n0; }
 
-  template <typename ESS>
-  void set_n (const ESS& s) const {
+  template <typename DTS>
+  void set_n (const DTS& s) const {
 #ifdef COMPOSE_PORT
     ko::deep_copy(n_, s.n());
 #else
@@ -172,7 +172,7 @@ struct FixedCapList {
   }
 
 #ifdef COMPOSE_PORT
-  typedef ko::View<Int, ES> NT;
+  typedef ko::View<Int, DT> NT;
 
   SLMM_KIF Int n () const { return n_(); }
 
@@ -188,7 +188,7 @@ struct FixedCapList {
     return v;
   }
 
-  const ko::View<Int, ES>& n_view () const { return n_; }
+  const ko::View<Int, DT>& n_view () const { return n_; }
   void set_n_view (const NT& v) { n_ = v; }
 #else
   typedef Int NT;
@@ -226,8 +226,8 @@ private:
 #endif
 };
 
-template <typename T, typename ESD, typename ESS>
-void deep_copy (FixedCapList<T, ESD>& d, const FixedCapList<T, ESS>& s) {
+template <typename T, typename DTD, typename DTS>
+void deep_copy (FixedCapList<T, DTD>& d, const FixedCapList<T, DTS>& s) {
   slmm_assert_high(d.capacity() == s.capacity());
   if (d.view().size() > 0) ko::deep_copy(d.view(), s.view());
 #ifdef COMPOSE_PORT
@@ -237,11 +237,11 @@ void deep_copy (FixedCapList<T, ESD>& d, const FixedCapList<T, ESS>& s) {
 #endif
 }
 
-template <typename ES> struct BufferLayoutArray;
+template <typename DT> struct BufferLayoutArray;
 
-template <typename T, typename ES>
+template <typename T, typename DT>
 struct ListOfLists {
-  template <typename T1> using Array = ko::View<T1*, ES>;
+  template <typename T1> using Array = ko::View<T1*, DT>;
   typedef ListOfLists<T, typename Array<T>::host_mirror_space> Mirror;
 
   struct List {
@@ -256,7 +256,7 @@ struct ListOfLists {
     SLMM_KIF T* end () const { return d_ + n_; }
 
   private:
-    friend class ListOfLists<T, ES>;
+    friend class ListOfLists<T, DT>;
     SLMM_KIF List (T* d, const Int& n) : d_(d), n_(n) { slmm_kernel_assert_high(n_ >= 0); }
     T* const d_;
     const Int n_;
@@ -328,7 +328,7 @@ struct ListOfLists {
   const typename Array<Int>::HostMirror& ptr_h_view () const { return ptr_h_; }
 
 private:
-  friend class BufferLayoutArray<ES>;
+  friend class BufferLayoutArray<DT>;
   Array<T> d_;
   Array<Int> ptr_;
   typename Array<Int>::HostMirror ptr_h_;
@@ -340,14 +340,14 @@ struct LayoutTriple {
   SLMM_KIF LayoutTriple (const Int& val) { xptr = qptr = cnt = 0; }
 };
 
-template <typename T, typename ESD, typename ESS>
-void deep_copy (ListOfLists<T, ESD>& d, const ListOfLists<T, ESS>& s) {
+template <typename T, typename DTD, typename DTS>
+void deep_copy (ListOfLists<T, DTD>& d, const ListOfLists<T, DTS>& s) {
   ko::deep_copy(d.d_view(), s.d_view());
   ko::deep_copy(d.ptr_view(), s.ptr_view());
   ko::deep_copy(d.ptr_h_view(), s.ptr_h_view());
 }
 
-template <typename ES>
+template <typename DT>
 struct BufferLayoutArray {
   struct BufferRankLayoutArray {
     SLMM_KIF LayoutTriple& operator() (const Int& lidi, const Int& lev) const {
@@ -357,10 +357,10 @@ struct BufferLayoutArray {
 
   private:
     friend class BufferLayoutArray;
-    SLMM_KIF BufferRankLayoutArray (const typename ListOfLists<LayoutTriple, ES>::List& d,
+    SLMM_KIF BufferRankLayoutArray (const typename ListOfLists<LayoutTriple, DT>::List& d,
                                     const Int& nlev)
       : d_(d), nlev_(nlev) {}
-    typename ListOfLists<LayoutTriple, ES>::List d_;
+    typename ListOfLists<LayoutTriple, DT>::List d_;
     Int nlev_;
   };
 
@@ -397,11 +397,11 @@ struct BufferLayoutArray {
 
   // For device-host stuff:
 
-  typedef BufferLayoutArray<typename ko::View<Int,ES>::host_mirror_space> Mirror;
+  typedef BufferLayoutArray<typename ko::View<Int,DT>::host_mirror_space> Mirror;
 
-  ListOfLists<LayoutTriple, ES>& get_lol () { return d_; }
-  const ListOfLists<LayoutTriple, ES>& get_lol () const { return d_; }
-  void set_lol (const ListOfLists<LayoutTriple, ES>& d) { d_ = d; }
+  ListOfLists<LayoutTriple, DT>& get_lol () { return d_; }
+  const ListOfLists<LayoutTriple, DT>& get_lol () const { return d_; }
+  void set_lol (const ListOfLists<LayoutTriple, DT>& d) { d_ = d; }
   void set_nlev (const Int& nlev) { nlev_ = nlev; }
 
   Mirror mirror () const {
@@ -413,12 +413,12 @@ struct BufferLayoutArray {
   }
 
 private:
-  ListOfLists<LayoutTriple, ES> d_;
+  ListOfLists<LayoutTriple, DT> d_;
   Int nlev_;
 };
 
-template <typename ESD, typename ESS>
-void deep_copy (BufferLayoutArray<ESD>& d, const BufferLayoutArray<ESS>& s) {
+template <typename DTD, typename DTS>
+void deep_copy (BufferLayoutArray<DTD>& d, const BufferLayoutArray<DTS>& s) {
   slmm_assert(d.nlev() == s.nlev());
   deep_copy(d.get_lol(), s.get_lol());
 }
@@ -445,37 +445,39 @@ template <typename MT = ko::MachineTraits>
 struct IslMpi {
   typedef typename MT::HES HES;
   typedef typename MT::DES DES;
+  typedef typename MT::HDT HDT;
+  typedef typename MT::DDT DDT;
 
   using Advecter = slmm::Advecter<MT>;
 
   typedef std::shared_ptr<IslMpi> Ptr;
 
-  template <typename Datatype, typename ES>
-  using Array = ko::View<Datatype, siqk::Layout, ES>;
+  template <typename Datatype, typename DT>
+  using Array = ko::View<Datatype, siqk::Layout, DT>;
   template <typename Datatype>
-  using ArrayH = ko::View<Datatype, siqk::Layout, HES>;
+  using ArrayH = ko::View<Datatype, siqk::Layout, HDT>;
   template <typename Datatype>
-  using ArrayD = ko::View<Datatype, siqk::Layout, DES>;
+  using ArrayD = ko::View<Datatype, siqk::Layout, DDT>;
 
   // The comm and real data associated with an element patch, the set of
   // elements surrounding an owned cell.
-  template <typename ES>
+  template <typename DT>
   struct ElemData {
     GidRank* me;                      // the owned cell
-    FixedCapList<GidRank, ES> nbrs;   // the cell's neighbors (but including me)
+    FixedCapList<GidRank, DT> nbrs;   // the cell's neighbors (but including me)
     Int nin1halo;                     // nbrs[0:n]
-    FixedCapList<OwnItem, ES> own;    // points whose q are computed with own rank's data
-    FixedCapList<RemoteItem, ES> rmt; // points computed by a remote rank's data
-    Array<Int**, ES> src;             // src(lev,k) = get_src_cell
-    Array<Real**[2], ES> q_extrema;
+    FixedCapList<OwnItem, DT> own;    // points whose q are computed with own rank's data
+    FixedCapList<RemoteItem, DT> rmt; // points computed by a remote rank's data
+    Array<Int**, DT> src;             // src(lev,k) = get_src_cell
+    Array<Real**[2], DT> q_extrema;
     const Real* qdp, * dp;  // the owned cell's data
     Real* q;
   };
 
-  typedef ElemData<HES> ElemDataH;
-  typedef ElemData<DES> ElemDataD;
-  typedef FixedCapList<ElemDataH, HES> ElemDataListH;
-  typedef FixedCapList<ElemDataD, DES> ElemDataListD;
+  typedef ElemData<HDT> ElemDataH;
+  typedef ElemData<DDT> ElemDataD;
+  typedef FixedCapList<ElemDataH, HDT> ElemDataListH;
+  typedef FixedCapList<ElemDataD, DDT> ElemDataListD;
 
   const mpi::Parallel::Ptr p;
   const typename Advecter::ConstPtr advecter;
@@ -488,33 +490,33 @@ struct IslMpi {
   const typename TracerArrays<MT>::Ptr tracer_arrays;
 
   // IDs.
-  FixedCapList<Int, HES> ranks, mylid_with_comm_tid_ptr_h;
-  FixedCapList<Int, DES> nx_in_rank, mylid_with_comm_d;
-  ListOfLists <Int, DES> nx_in_lid, lid_on_rank;
-  BufferLayoutArray<DES> bla;
+  FixedCapList<Int, HDT> ranks, mylid_with_comm_tid_ptr_h;
+  FixedCapList<Int, DDT> nx_in_rank, mylid_with_comm_d;
+  ListOfLists <Int, DDT> nx_in_lid, lid_on_rank;
+  BufferLayoutArray<DDT> bla;
 
   // MPI comm data.
-  FixedCapList<mpi::Request, HES> sendreq, recvreq;
-  ListOfLists<Real, DES> sendbuf, recvbuf;
-  FixedCapList<Int, DES> sendcount, x_bulkdata_offset;
-  ListOfLists<Real, HES> sendbuf_meta_h, recvbuf_meta_h; // not mirrors
-  FixedCapList<Int, DES> rmt_xs, rmt_qs_extrema;
+  FixedCapList<mpi::Request, HDT> sendreq, recvreq;
+  ListOfLists<Real, DDT> sendbuf, recvbuf;
+  FixedCapList<Int, DDT> sendcount, x_bulkdata_offset;
+  ListOfLists<Real, HDT> sendbuf_meta_h, recvbuf_meta_h; // not mirrors
+  FixedCapList<Int, DDT> rmt_xs, rmt_qs_extrema;
   Int nrmt_xs, nrmt_qs_extrema;
 
   // Mirror views.
-  typename FixedCapList<Int, DES>::Mirror nx_in_rank_h, sendcount_h,
+  typename FixedCapList<Int, DDT>::Mirror nx_in_rank_h, sendcount_h,
     x_bulkdata_offset_h, rmt_xs_h, rmt_qs_extrema_h, mylid_with_comm_h;
-  typename ListOfLists <Int, DES>::Mirror nx_in_lid_h, lid_on_rank_h;
-  typename BufferLayoutArray<DES>::Mirror bla_h;
+  typename ListOfLists <Int, DDT>::Mirror nx_in_lid_h, lid_on_rank_h;
+  typename BufferLayoutArray<DDT>::Mirror bla_h;
 
   bool horiz_openmp;
 #ifdef COMPOSE_HORIZ_OPENMP
-  ListOfLists<omp_lock_t, HES> ri_lidi_locks;
+  ListOfLists<omp_lock_t, HDT> ri_lidi_locks;
 #endif
 
   // temporary work space
   std::vector<Int> nlid_per_rank, sendsz, recvsz, sendmetasz, recvmetasz;
-  Array<Real**,DES> rwork;
+  Array<Real**,DDT> rwork;
 
   IslMpi (const mpi::Parallel::Ptr& ip, const typename Advecter::ConstPtr& advecter,
           const typename TracerArrays<MT>::Ptr& tracer_arrays_,
