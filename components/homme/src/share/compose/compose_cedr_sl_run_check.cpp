@@ -17,15 +17,30 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
     q_lo("q_lo", nprob, qsize), q_hi("q_hi", nprob, qsize),
     q_min_l("q_min_l", nprob, qsize), q_max_l("q_max_l", nprob, qsize),
     qd_lo("qd_lo", nprob, qsize), qd_hi("qd_hi", nprob, qsize);
-  FA4<const Real>
-    q_min(q_min_r, np2, nlev, qsize, nete+1),
-    q_max(q_max_r, np2, nlev, qsize, nete+1);
   Kokkos::deep_copy(q_lo,  1e200);
   Kokkos::deep_copy(q_hi, -1e200);
   Kokkos::deep_copy(q_min_l,  1e200);
   Kokkos::deep_copy(q_max_l, -1e200);
   Kokkos::deep_copy(qd_lo, 0);
   Kokkos::deep_copy(qd_hi, 0);
+
+  const auto& ta = *d.ta;
+#ifdef COMPOSE_PORT_DEV_VIEWS_notyet
+  const auto& q_min = ta.q_min;
+  const auto& q_max = ta.q_max;
+#else
+  const QExtremaHConst<ko::MachineTraits>
+    q_min(q_min_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2);
+  const QExtremaHConst<ko::MachineTraits>
+    q_max(q_max_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2);
+#endif
+#if 0
+  const auto& dp3d_c = ta.pdp3d;
+  const auto np1 = ta.np1;
+  const auto& qdp_pc = ta.pqdp;
+  const auto n0_qdp = ta.n0_qdp;
+  const auto& q_c = ta.pq;
+#endif
 
   Int iprob = 0;
 
@@ -49,10 +64,10 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
           }
         }
         for (Int q = 0; q < qsize; ++q) {
-          Real qlo_s = q_min(0,k,q,ie), qhi_s = q_max(0,k,q,ie);
+          Real qlo_s = q_min(ie,q,k,0), qhi_s = q_max(ie,q,k,0);
           for (Int g = 0; g < np2; ++g) {
-            qlo_s = std::min(qlo_s, q_min(g,k,q,ie));
-            qhi_s = std::max(qhi_s, q_max(g,k,q,ie));
+            qlo_s = std::min(qlo_s, q_min(ie,q,k,g));
+            qhi_s = std::max(qhi_s, q_max(ie,q,k,g));
           }
           for (Int g = 0; g < np2; ++g) {
             // FP issues.
@@ -78,14 +93,14 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
             if (q_c(g,k,q) > qhi_s)
               qd_hi(iprob,q) = std::max(qd_hi(iprob,q), q_c(g,k,q) - qhi_s);
             // Safety problem bound constraints.
-            mass_lo(iprob,q) += (q_min(g,k,q,ie) * dp3d_c(g,k,d.tl_np1) *
+            mass_lo(iprob,q) += (q_min(ie,q,k,g) * dp3d_c(g,k,d.tl_np1) *
                                  spheremp(g));
-            mass_hi(iprob,q) += (q_max(g,k,q,ie) * dp3d_c(g,k,d.tl_np1) *
+            mass_hi(iprob,q) += (q_max(ie,q,k,g) * dp3d_c(g,k,d.tl_np1) *
                                  spheremp(g));
-            q_lo(iprob,q) = std::min(q_lo(iprob,q), q_min(g,k,q,ie));
-            q_hi(iprob,q) = std::max(q_hi(iprob,q), q_max(g,k,q,ie));
-            q_min_l(iprob,q) = std::min(q_min_l(iprob,q), q_min(g,k,q,ie));
-            q_max_l(iprob,q) = std::max(q_max_l(iprob,q), q_max(g,k,q,ie));
+            q_lo(iprob,q) = std::min(q_lo(iprob,q), q_min(ie,q,k,g));
+            q_hi(iprob,q) = std::max(q_hi(iprob,q), q_max(ie,q,k,g));
+            q_min_l(iprob,q) = std::min(q_min_l(iprob,q), q_min(ie,q,k,g));
+            q_max_l(iprob,q) = std::max(q_max_l(iprob,q), q_max(ie,q,k,g));
           }
         }
       }
