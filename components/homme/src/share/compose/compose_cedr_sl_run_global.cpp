@@ -21,12 +21,14 @@ void run_global (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
   cedr_assert(np <= 4);
   
   const auto& ta = *d.ta;
-#ifdef COMPOSE_PORT_DEV_VIEWS
+#ifdef COMPOSE_PORT_DEV_VIEWS_notyet
   const auto& q_min = ta.q_min;
   const auto& q_max = ta.q_max;
 #else
-  const QExtremaH<ko::MachineTraits> q_min(q_min_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2);
-  const QExtremaHConst<ko::MachineTraits> q_max(q_max_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2);
+  const QExtremaH<ko::MachineTraits>
+    q_min(q_min_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2);
+  const QExtremaHConst<ko::MachineTraits>
+    q_max(q_max_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2);
 #endif
   const auto& dp3d_c = ta.pdp3d;
   const auto np1 = ta.np1;

@@ -4,6 +4,7 @@
 #include "compose.hpp"
 #include "compose_kokkos.hpp"
 
+#include <cassert>
 #include <memory>
 
 namespace homme {

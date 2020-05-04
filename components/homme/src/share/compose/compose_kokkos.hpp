@@ -72,7 +72,7 @@ struct MachineTraits {
   using DES = Kokkos::Serial;
 #endif
   using HDT = DeviceType<HES>::type;
-  using DDT = DeviceType<HDT>::type;
+  using DDT = DeviceType<DES>::type;
 };
 
 template <typename ES> struct OnGpu {
