@@ -98,7 +98,7 @@ struct TracerArrays {
   typedef std::shared_ptr<TracerArrays<MT> > Ptr;
 
   const Int nelemd, nlev, np2, qsize, qsized;
-  HommeFormatArray<const Real,5> pqdp;
+  HommeFormatArray<Real,5> pqdp;
   HommeFormatArray<const Real,3> pdp;
   HommeFormatArray<const Real,4> pdp3d;
   HommeFormatArray<Real,4> pq;
@@ -115,7 +115,7 @@ struct TracerArrays {
   DepPoints<MT> dep_points;
   QExtrema<MT> q_min, q_max;
 # else
-  HommeFormatArray<const Real,5> & qdp;
+  HommeFormatArray<Real,5> & qdp;
   HommeFormatArray<const Real,3> & dp;
   HommeFormatArray<const Real,4> & dp3d;
   HommeFormatArray<Real,4> & q;

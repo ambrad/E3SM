@@ -120,7 +120,7 @@ void finalize_init_phase (IslMpi<MT>& cm, typename IslMpi<MT>::Advecter& advecte
 
 // Set pointers to HOMME data arrays.
 template <typename MT>
-void set_elem_data (IslMpi<MT>& cm, const Int ie, const Real* qdp, const Int n0_qdp,
+void set_elem_data (IslMpi<MT>& cm, const Int ie, Real* qdp, const Int n0_qdp,
                     const Real* dp, Real* q, const Int nelem_in_patch) {
   slmm_assert(ie < cm.ed_h.size());
   slmm_assert(cm.halo > 1 || cm.ed_h(ie).nbrs.size() == nelem_in_patch);

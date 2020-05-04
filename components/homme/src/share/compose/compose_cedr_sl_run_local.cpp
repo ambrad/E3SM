@@ -91,7 +91,7 @@ void solve_local (const Int ie, const Int k, const Int q,
         
   for (Int g = 0; g < np2; ++g) {
     q_c(g,k,q) = x[g];
-    qdp_c(g,k,q,n1_qdp) = q_c(g,k,q) * dp3d_c(ie,np1,g,k);
+    qdp_c(ie,n1_qdp,q,g,k) = q_c(g,k,q) * dp3d_c(ie,np1,g,k);
   }
 }
 
@@ -147,10 +147,11 @@ void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
 #endif
   const auto& dp3d_c = ta.pdp3d;
   const auto np1 = ta.np1;
+  const auto& qdp_c = ta.pqdp;
+  const auto n1_qdp = ta.n1_qdp;
 
   for (Int ie = nets; ie <= nete; ++ie) {
     FA1<const Real> spheremp(d.spheremp[ie], np2);
-    FA4<      Real> qdp_c(d.qdp_pc[ie], np2, nlev, d.qsize_d, 2);
     FA3<      Real> q_c(d.q_c[ie], np2, nlev, d.qsize_d);
 #ifdef COMPOSE_COLUMN_OPENMP
 #   pragma omp parallel for
@@ -213,7 +214,7 @@ void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
           // Redistribute mass in the horizontal direction of each level.
           for (Int i = 0; i < n; ++i) {
             const Int k = k0 + i;
-            solve_local(ie, k, q, d.tl_np1, d.n1_qdp, np,
+            solve_local(ie, k, q, np1, n1_qdp, np,
                         scalar_bounds, limiter_option,
                         spheremp, dp3d_c, q_min, q_max, Qm[i], qdp_c, q_c);
           }
@@ -226,7 +227,7 @@ void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
               cdr.nsublev*ie + sbli;
             const auto lci = cdr.ie2lci[ie_idx];
             const Real Qm = cdr.cdr->get_Qm(lci, ti);
-            solve_local(ie, k, q, d.tl_np1, d.n1_qdp, np,
+            solve_local(ie, k, q, np1, n1_qdp, np,
                         scalar_bounds, limiter_option,
                         spheremp, dp3d_c, q_min, q_max, Qm, qdp_c, q_c);
           }
