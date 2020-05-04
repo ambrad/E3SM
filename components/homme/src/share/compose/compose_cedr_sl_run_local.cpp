@@ -4,12 +4,13 @@
 namespace homme {
 namespace sl {
 
+template <typename CV1, typename CV4, typename CV5, typename QV5, typename V4, typename V5>
 void solve_local (const Int ie, const Int k, const Int q,
-                  const Int tl_np1, const Int n1_qdp, const Int np, 
+                  const Int tl_np1, const Int n1_qdp, const Int np,
                   const bool scalar_bounds, const Int limiter_option,
-                  const FA1<const Real>& spheremp, const FA3<const Real>& dp3d_c,
-                  const FA4<const Real>& q_min, const FA4<const Real>& q_max,
-                  const Real Qm, FA4<Real>& qdp_c, FA3<Real>& q_c) {
+                  const CV1& spheremp, const CV4& dp3d_c,
+                  const QV5& q_min, const CV5& q_max,
+                  const Real Qm, V5& qdp_c, V4& q_c) {
   static constexpr Int max_np = 4, max_np2 = max_np*max_np;
   const Int np2 = np*np;
   cedr_assert(np <= max_np);
@@ -26,8 +27,8 @@ void solve_local (const Int ie, const Int k, const Int q,
 
   //todo Replace with ReconstructSafely.
   if (scalar_bounds) {
-    qlo[0] = q_min(0,k,q,ie);
-    qhi[0] = q_max(0,k,q,ie);
+    qlo[0] = q_min(ie,q,k,0);
+    qhi[0] = q_max(ie,q,k,0);
     const Int N = std::min(max_np2, np2);
     for (Int i = 1; i < N; ++i) qlo[i] = qlo[0];
     for (Int i = 1; i < N; ++i) qhi[i] = qhi[0];
@@ -46,8 +47,8 @@ void solve_local (const Int ie, const Int k, const Int q,
   } else {
     const Int N = std::min(max_np2, np2);
     for (Int g = 0; g < np2; ++g) {
-      qlo[g] = q_min(g,k,q,ie);
-      qhi[g] = q_max(g,k,q,ie);
+      qlo[g] = q_min(ie,q,k,g);
+      qhi[g] = q_max(ie,q,k,g);
     }
     for (Int trial = 0; trial < 3; ++trial) {
       int info;
@@ -134,8 +135,16 @@ void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
   const Int np = d.np, np2 = np*np, nlev = d.nlev, qsize = d.qsize,
     nlevwrem = cdr.nsuplev*cdr.nsublev;
 
-  FA4<      Real> q_min(q_min_r, np2, nlev, qsize, nete+1);
-  FA4<const Real> q_max(q_max_r, np2, nlev, qsize, nete+1);
+  const auto& ta = *d.ta;
+#ifdef COMPOSE_PORT_DEV_VIEWS_notyet
+  const auto& q_min = ta.q_min;
+  const auto& q_max = ta.q_max;
+#else
+  const QExtremaH<ko::MachineTraits>
+    q_min(q_min_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2);
+  const QExtremaHConst<ko::MachineTraits>
+    q_max(q_max_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2);
+#endif
 
   for (Int ie = nets; ie <= nete; ++ie) {
     FA1<const Real> spheremp(d.spheremp[ie], np2);
@@ -171,8 +180,8 @@ void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
               const Real rhomij = dp3d_c(g,k,d.tl_np1) * spheremp(g);
               rhom[sbli] += rhomij;
               Qm[sbli] += q_c(g,k,q) * rhomij;
-              Qm_min[sbli] += q_min(g,k,q,ie) * rhomij;
-              Qm_max[sbli] += q_max(g,k,q,ie) * rhomij;
+              Qm_min[sbli] += q_min(ie,q,k,g) * rhomij;
+              Qm_max[sbli] += q_max(ie,q,k,g) * rhomij;
             }
             Qm_min_tot += Qm_min[sbli];
             Qm_max_tot += Qm_max[sbli];
@@ -187,12 +196,12 @@ void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
               const Int k = k0 + sbli;
               for (Int g = 0; g < np2; ++g) {
                 if (first) {
-                  q_min_s = q_min(g,k,q,ie);
-                  q_max_s = q_max(g,k,q,ie);
+                  q_min_s = q_min(ie,q,k,g);
+                  q_max_s = q_max(ie,q,k,g);
                   first = false;
                 } else {
-                  q_min_s = std::min(q_min_s, q_min(g,k,q,ie));
-                  q_max_s = std::max(q_max_s, q_max(g,k,q,ie));
+                  q_min_s = std::min(q_min_s, q_min(ie,q,k,g));
+                  q_max_s = std::max(q_max_s, q_max(ie,q,k,g));
                 }
               }
             }
