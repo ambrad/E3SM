@@ -6,7 +6,7 @@ namespace sl {
 
 template <typename CV1, typename CV4, typename CV5, typename QV5, typename V4, typename V5>
 void solve_local (const Int ie, const Int k, const Int q,
-                  const Int tl_np1, const Int n1_qdp, const Int np,
+                  const Int np1, const Int n1_qdp, const Int np,
                   const bool scalar_bounds, const Int limiter_option,
                   const CV1& spheremp, const CV4& dp3d_c,
                   const QV5& q_min, const CV5& q_max,
@@ -18,7 +18,7 @@ void solve_local (const Int ie, const Int k, const Int q,
   Real wa[max_np2], qlo[max_np2], qhi[max_np2], y[max_np2], x[max_np2];
   Real rhom = 0;
   for (Int g = 0; g < np2; ++g) {
-    const Real rhomij = dp3d_c(g,k,tl_np1) * spheremp(g);
+    const Real rhomij = dp3d_c(ie,np1,g,k) * spheremp(g);
     rhom += rhomij;
     wa[g] = rhomij;
     y[g] = q_c(g,k,q);
@@ -91,7 +91,7 @@ void solve_local (const Int ie, const Int k, const Int q,
         
   for (Int g = 0; g < np2; ++g) {
     q_c(g,k,q) = x[g];
-    qdp_c(g,k,q,n1_qdp) = q_c(g,k,q) * dp3d_c(g,k,tl_np1);
+    qdp_c(g,k,q,n1_qdp) = q_c(g,k,q) * dp3d_c(ie,np1,g,k);
   }
 }
 
@@ -145,11 +145,12 @@ void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
   const QExtremaHConst<ko::MachineTraits>
     q_max(q_max_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2);
 #endif
+  const auto& dp3d_c = ta.pdp3d;
+  const auto np1 = ta.np1;
 
   for (Int ie = nets; ie <= nete; ++ie) {
     FA1<const Real> spheremp(d.spheremp[ie], np2);
     FA4<      Real> qdp_c(d.qdp_pc[ie], np2, nlev, d.qsize_d, 2);
-    FA3<const Real> dp3d_c(d.dp3d_c[ie], np2, nlev, d.timelevels);
     FA3<      Real> q_c(d.q_c[ie], np2, nlev, d.qsize_d);
 #ifdef COMPOSE_COLUMN_OPENMP
 #   pragma omp parallel for
@@ -177,7 +178,7 @@ void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
             }
             rhom[sbli] = 0; Qm[sbli] = 0; Qm_min[sbli] = 0; Qm_max[sbli] = 0;
             for (Int g = 0; g < np2; ++g) {
-              const Real rhomij = dp3d_c(g,k,d.tl_np1) * spheremp(g);
+              const Real rhomij = dp3d_c(ie,np1,g,k) * spheremp(g);
               rhom[sbli] += rhomij;
               Qm[sbli] += q_c(g,k,q) * rhomij;
               Qm_min[sbli] += q_min(ie,q,k,g) * rhomij;
