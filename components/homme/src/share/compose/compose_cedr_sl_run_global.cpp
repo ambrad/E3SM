@@ -46,7 +46,7 @@ void run_global (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
   const auto& ie2gci = cdr.ie2gci;
   const auto& p = cdr.p;
   const auto& cedr_cdr = cdr.cdr;
-  const auto f = KOKKOS_LAMBDA (const Int& idx) {
+  const auto f = /*KOKKOS_LAMBDA*/[=] (const Int& idx) {
     const Int ie = nets + idx/(nsuplev*qsize);
     const Int spli = (idx / qsize) % nsuplev;
     const Int q = idx % qsize;
