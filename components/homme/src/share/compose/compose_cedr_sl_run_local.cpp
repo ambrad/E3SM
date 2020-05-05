@@ -152,89 +152,93 @@ void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
   const auto n1_qdp = ta.n1_qdp;
   const auto& q_c = ta.pq;
 
-  for (Int ie = nets; ie <= nete; ++ie) {
-#ifdef COMPOSE_COLUMN_OPENMP
-#   pragma omp parallel for
-#endif
-    for (Int spli = 0; spli < cdr.nsuplev; ++spli) {
-      const Int k0 = cdr.nsublev*spli;
-      for (Int q = 0; q < qsize; ++q) {
-        const Int ti = cdr.cdr_over_super_levels ? q : spli*qsize + q;
-        if (cdr.caas_in_suplev) {
-          const auto ie_idx = cdr.cdr_over_super_levels ?
-            cdr.nsuplev*ie + spli :
-            ie;
-          const auto lci = cdr.ie2lci[ie_idx];
-          const Real Qm_tot = cdr.cdr->get_Qm(lci, ti);
-          Real Qm_min_tot = 0, Qm_max_tot = 0;
-          Real rhom[CDR::nsublev_per_suplev], Qm[CDR::nsublev_per_suplev],
-            Qm_min[CDR::nsublev_per_suplev], Qm_max[CDR::nsublev_per_suplev];
-          // Redistribute mass in the vertical direction of the super level.
-          Int n = cdr.nsublev;
-          for (Int sbli = 0; sbli < cdr.nsublev; ++sbli) {
-            const Int k = k0 + sbli;
-            if (k >= nlev) {
-              n = sbli;
-              break;
+  const Int nsublev = cdr.nsublev;
+  const Int nsuplev = cdr.nsuplev;
+  const auto cdr_over_super_levels = cdr.cdr_over_super_levels;
+  const auto caas_in_suplev = cdr.caas_in_suplev;
+  const auto& ie2lci = cdr.ie2lci;
+  const auto& cedr_cdr = cdr.cdr;
+  const auto f = /*KOKKOS_LAMBDA*/[=] (const Int& idx) {
+    const Int ie = nets + idx/(nsuplev*qsize);
+    const Int spli = (idx / qsize) % nsuplev;
+    const Int q = idx % qsize;
+    const Int k0 = nsublev*spli;
+    const Int ti = cdr_over_super_levels ? q : spli*qsize + q;
+    if (caas_in_suplev) {
+      const auto ie_idx = cdr_over_super_levels ?
+        nsuplev*ie + spli :
+        ie;
+      const auto lci = ie2lci[ie_idx];
+      const Real Qm_tot = cedr_cdr->get_Qm(lci, ti);
+      Real Qm_min_tot = 0, Qm_max_tot = 0;
+      Real rhom[CDR::nsublev_per_suplev], Qm[CDR::nsublev_per_suplev],
+        Qm_min[CDR::nsublev_per_suplev], Qm_max[CDR::nsublev_per_suplev];
+      // Redistribute mass in the vertical direction of the super level.
+      Int n = nsublev;
+      for (Int sbli = 0; sbli < nsublev; ++sbli) {
+        const Int k = k0 + sbli;
+        if (k >= nlev) {
+          n = sbli;
+          break;
+        }
+        rhom[sbli] = 0; Qm[sbli] = 0; Qm_min[sbli] = 0; Qm_max[sbli] = 0;
+        for (Int g = 0; g < np2; ++g) {
+          const Real rhomij = dp3d_c(ie,np1,g,k) * spheremp(ie,g);
+          rhom[sbli] += rhomij;
+          Qm[sbli] += q_c(ie,q,g,k) * rhomij;
+          Qm_min[sbli] += q_min(ie,q,k,g) * rhomij;
+          Qm_max[sbli] += q_max(ie,q,k,g) * rhomij;
+        }
+        Qm_min_tot += Qm_min[sbli];
+        Qm_max_tot += Qm_max[sbli];
+      }
+      if (Qm_tot >= Qm_min_tot && Qm_tot <= Qm_max_tot) {
+        for (Int i = 0; i < n; ++i) rhom[i] = 1;
+        cedr::local::caas(n, rhom, Qm_tot, Qm_min, Qm_max, Qm, Qm, false);
+      } else {
+        Real q_min_s, q_max_s;
+        bool first = true;
+        for (Int sbli = 0; sbli < n; ++sbli) {
+          const Int k = k0 + sbli;
+          for (Int g = 0; g < np2; ++g) {
+            if (first) {
+              q_min_s = q_min(ie,q,k,g);
+              q_max_s = q_max(ie,q,k,g);
+              first = false;
+            } else {
+              q_min_s = std::min(q_min_s, q_min(ie,q,k,g));
+              q_max_s = std::max(q_max_s, q_max(ie,q,k,g));
             }
-            rhom[sbli] = 0; Qm[sbli] = 0; Qm_min[sbli] = 0; Qm_max[sbli] = 0;
-            for (Int g = 0; g < np2; ++g) {
-              const Real rhomij = dp3d_c(ie,np1,g,k) * spheremp(ie,g);
-              rhom[sbli] += rhomij;
-              Qm[sbli] += q_c(ie,q,g,k) * rhomij;
-              Qm_min[sbli] += q_min(ie,q,k,g) * rhomij;
-              Qm_max[sbli] += q_max(ie,q,k,g) * rhomij;
-            }
-            Qm_min_tot += Qm_min[sbli];
-            Qm_max_tot += Qm_max[sbli];
-          }
-          if (Qm_tot >= Qm_min_tot && Qm_tot <= Qm_max_tot) {
-            for (Int i = 0; i < n; ++i) rhom[i] = 1;
-            cedr::local::caas(n, rhom, Qm_tot, Qm_min, Qm_max, Qm, Qm, false);
-          } else {
-            Real q_min_s, q_max_s;
-            bool first = true;
-            for (Int sbli = 0; sbli < n; ++sbli) {
-              const Int k = k0 + sbli;
-              for (Int g = 0; g < np2; ++g) {
-                if (first) {
-                  q_min_s = q_min(ie,q,k,g);
-                  q_max_s = q_max(ie,q,k,g);
-                  first = false;
-                } else {
-                  q_min_s = std::min(q_min_s, q_min(ie,q,k,g));
-                  q_max_s = std::max(q_max_s, q_max(ie,q,k,g));
-                }
-              }
-            }
-            vertical_caas_backup(n, rhom, q_min_s, q_max_s,
-                                 Qm_min_tot, Qm_max_tot, Qm_tot,
-                                 Qm_min, Qm_max, Qm);
-          }
-          // Redistribute mass in the horizontal direction of each level.
-          for (Int i = 0; i < n; ++i) {
-            const Int k = k0 + i;
-            solve_local(ie, k, q, np1, n1_qdp, np,
-                        scalar_bounds, limiter_option,
-                        spheremp, dp3d_c, q_min, q_max, Qm[i], qdp_c, q_c);
-          }
-        } else {
-          for (Int sbli = 0; sbli < cdr.nsublev; ++sbli) {
-            const Int k = k0 + sbli;
-            if (k >= nlev) break;
-            const auto ie_idx = cdr.cdr_over_super_levels ?
-              nlevwrem*ie + k :
-              cdr.nsublev*ie + sbli;
-            const auto lci = cdr.ie2lci[ie_idx];
-            const Real Qm = cdr.cdr->get_Qm(lci, ti);
-            solve_local(ie, k, q, np1, n1_qdp, np,
-                        scalar_bounds, limiter_option,
-                        spheremp, dp3d_c, q_min, q_max, Qm, qdp_c, q_c);
           }
         }
+        vertical_caas_backup(n, rhom, q_min_s, q_max_s,
+                             Qm_min_tot, Qm_max_tot, Qm_tot,
+                             Qm_min, Qm_max, Qm);
+      }
+      // Redistribute mass in the horizontal direction of each level.
+      for (Int i = 0; i < n; ++i) {
+        const Int k = k0 + i;
+        solve_local(ie, k, q, np1, n1_qdp, np,
+                    scalar_bounds, limiter_option,
+                    spheremp, dp3d_c, q_min, q_max, Qm[i], qdp_c, q_c);
+      }
+    } else {
+      for (Int sbli = 0; sbli < nsublev; ++sbli) {
+        const Int k = k0 + sbli;
+        if (k >= nlev) break;
+        const auto ie_idx = cdr_over_super_levels ?
+        nlevwrem*ie + k :
+        nsublev*ie + sbli;
+        const auto lci = ie2lci[ie_idx];
+        const Real Qm = cedr_cdr->get_Qm(lci, ti);
+        solve_local(ie, k, q, np1, n1_qdp, np,
+                    scalar_bounds, limiter_option,
+                    spheremp, dp3d_c, q_min, q_max, Qm, qdp_c, q_c);
       }
     }
-  }
+  };
+  ko::parallel_for(
+    ko::RangePolicy<typename ko::MachineTraits::HES>(0, (nete - nets + 1)*nsuplev*qsize), f);
 }
 
 } // namespace sl
