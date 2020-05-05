@@ -37,82 +37,89 @@ void run_global (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
   const auto n0_qdp = ta.n0_qdp;
   const auto& q_c = ta.pq;
 
-  for (Int ie = nets; ie <= nete; ++ie) {
-#ifdef COMPOSE_COLUMN_OPENMP
-#   pragma omp parallel for
-#endif
-    for (Int spli = 0; spli < cdr.nsuplev; ++spli) {
-      const Int k0 = cdr.nsublev*spli;
-      for (Int q = 0; q < qsize; ++q) {
-        const bool nonneg = cdr.nonneg[q];
-        const Int ti = cdr.cdr_over_super_levels ? q : spli*qsize + q;
-        Real Qm = 0, Qm_min = 0, Qm_max = 0, Qm_prev = 0, rhom = 0, volume = 0;
-        Int ie_idx;
-        if (cdr.caas_in_suplev)
-          ie_idx = cdr.cdr_over_super_levels ?
-            cdr.nsuplev*ie + spli :
-            ie;
-        for (Int sbli = 0; sbli < cdr.nsublev; ++sbli) {
-          const auto k = k0 + sbli;
-          if ( ! cdr.caas_in_suplev)
-            ie_idx = cdr.cdr_over_super_levels ?
-              nlevwrem*ie + k :
-              cdr.nsublev*ie + sbli;
-          const auto lci = cdr.ie2lci[ie_idx];
-          if ( ! cdr.caas_in_suplev) {
-            Qm = 0; Qm_min = 0; Qm_max = 0; Qm_prev = 0;
-            rhom = 0;
-            volume = 0;
-          }
-          if (k < nlev) {
-            for (Int g = 0; g < np2; ++g) {
-              volume += spheremp(ie,g); // * dp0[k];
-              const Real rhomij = dp3d_c(ie,np1,g,k) * spheremp(ie,g);
-              rhom += rhomij;
-              Qm += q_c(ie,q,g,k) * rhomij;
-              if (nonneg) q_min(ie,q,k,g) = std::max<Real>(q_min(ie,q,k,g), 0);
-              Qm_min += q_min(ie,q,k,g) * rhomij;
-              Qm_max += q_max(ie,q,k,g) * rhomij;
-              Qm_prev += qdp_p(ie,n0_qdp,q,g,k) * spheremp(ie,g);
-            }
-          }
-          const bool write = ! cdr.caas_in_suplev || sbli == cdr.nsublev-1;
-          if (write) {
-            // For now, handle just one rhom. For feasible global problems,
-            // it's used only as a weight vector in QLT, so it's fine. In fact,
-            // use just the cell geometry, rather than total density, since in QLT
-            // this field is used as a weight vector.
-            //todo Generalize to one rhom field per level. Until then, we're not
-            // getting QLT's safety benefit.
-            if (ti == 0) cdr.cdr->set_rhom(lci, 0, volume);
-            cdr.cdr->set_Qm(lci, ti, Qm, Qm_min, Qm_max, Qm_prev);
-            if (Qm_prev < -0.5) {
-              static bool first = true;
-              if (first) {
-                first = false;
-                std::stringstream ss;
-                ss << "Qm_prev < -0.5: Qm_prev = " << Qm_prev
-                   << " on rank " << cdr.p->rank()
-                   << " at (ie,gid,spli,k0,q,ti,sbli,lci,k,n0_qdp,tl_np1) = ("
-                   << ie << "," << cdr.ie2gci[ie] << "," << spli << "," << k0 << ","
-                   << q << "," << ti << "," << sbli << "," << lci << "," << k << ","
-                   << n0_qdp << "," << np1 << ")\n";
-                ss << "Qdp(:,:,k,q,n0_qdp) = [";
-                for (Int g = 0; g < np2; ++g)
-                  ss << " " << qdp_p(ie,n0_qdp,q,g,k);
-                ss << "]\n";
-                ss << "dp3d(:,:,k,tl_np1) = [";
-                for (Int g = 0; g < np2; ++g)
-                  ss << " " << dp3d_c(ie,np1,g,k);
-                ss << "]\n";
-                pr(ss.str());
-              }
-            }
+  const Int nsublev = cdr.nsublev;
+  const Int nsuplev = cdr.nsuplev;
+  const auto& nonnegs = cdr.nonneg;
+  const auto cdr_over_super_levels = cdr.cdr_over_super_levels;
+  const auto caas_in_suplev = cdr.caas_in_suplev;
+  const auto& ie2lci = cdr.ie2lci;
+  const auto& ie2gci = cdr.ie2gci;
+  const auto& p = cdr.p;
+  const auto& cedr_cdr = cdr.cdr;
+  const auto f = KOKKOS_LAMBDA (const Int& idx) {
+    const Int ie = nets + idx/(nsuplev*qsize);
+    const Int spli = (idx / qsize) % nsuplev;
+    const Int q = idx % qsize;
+    const Int k0 = nsublev*spli;
+    const bool nonneg = nonnegs[q];
+    const Int ti = cdr_over_super_levels ? q : spli*qsize + q;
+    Real Qm = 0, Qm_min = 0, Qm_max = 0, Qm_prev = 0, rhom = 0, volume = 0;
+    Int ie_idx;
+    if (caas_in_suplev)
+      ie_idx = cdr_over_super_levels ?
+        nsuplev*ie + spli :
+        ie;
+    for (Int sbli = 0; sbli < nsublev; ++sbli) {
+      const auto k = k0 + sbli;
+      if ( ! caas_in_suplev)
+        ie_idx = cdr_over_super_levels ?
+          nlevwrem*ie + k :
+          nsublev*ie + sbli;
+      const auto lci = ie2lci[ie_idx];
+      if ( ! caas_in_suplev) {
+        Qm = 0; Qm_min = 0; Qm_max = 0; Qm_prev = 0;
+        rhom = 0;
+        volume = 0;
+      }
+      if (k < nlev) {
+        for (Int g = 0; g < np2; ++g) {
+          volume += spheremp(ie,g); // * dp0[k];
+          const Real rhomij = dp3d_c(ie,np1,g,k) * spheremp(ie,g);
+          rhom += rhomij;
+          Qm += q_c(ie,q,g,k) * rhomij;
+          if (nonneg) q_min(ie,q,k,g) = std::max<Real>(q_min(ie,q,k,g), 0);
+          Qm_min += q_min(ie,q,k,g) * rhomij;
+          Qm_max += q_max(ie,q,k,g) * rhomij;
+          Qm_prev += qdp_p(ie,n0_qdp,q,g,k) * spheremp(ie,g);
+        }
+      }
+      const bool write = ! caas_in_suplev || sbli == nsublev-1;
+      if (write) {
+        // For now, handle just one rhom. For feasible global problems,
+        // it's used only as a weight vector in QLT, so it's fine. In fact,
+        // use just the cell geometry, rather than total density, since in QLT
+        // this field is used as a weight vector.
+        //todo Generalize to one rhom field per level. Until then, we're not
+        // getting QLT's safety benefit.
+        if (ti == 0) cedr_cdr->set_rhom(lci, 0, volume);
+        cedr_cdr->set_Qm(lci, ti, Qm, Qm_min, Qm_max, Qm_prev);
+        if (Qm_prev < -0.5) {
+          static bool first = true;
+          if (first) {
+            first = false;
+            std::stringstream ss;
+            ss << "Qm_prev < -0.5: Qm_prev = " << Qm_prev
+               << " on rank " << p->rank()
+               << " at (ie,gid,spli,k0,q,ti,sbli,lci,k,n0_qdp,tl_np1) = ("
+               << ie << "," << ie2gci[ie] << "," << spli << "," << k0 << ","
+               << q << "," << ti << "," << sbli << "," << lci << "," << k << ","
+               << n0_qdp << "," << np1 << ")\n";
+            ss << "Qdp(:,:,k,q,n0_qdp) = [";
+            for (Int g = 0; g < np2; ++g)
+              ss << " " << qdp_p(ie,n0_qdp,q,g,k);
+            ss << "]\n";
+            ss << "dp3d(:,:,k,tl_np1) = [";
+            for (Int g = 0; g < np2; ++g)
+              ss << " " << dp3d_c(ie,np1,g,k);
+            ss << "]\n";
+            pr(ss.str());
           }
         }
       }
-    }
-  }
+    }    
+  };
+  ko::parallel_for(
+    ko::RangePolicy<typename ko::MachineTraits::HES>(0, (nete - nets + 1)*nsuplev*qsize), f);
 
   run_cdr(cdr);
 }
