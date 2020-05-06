@@ -110,8 +110,7 @@ struct TracerArrays {
   HommeFormatArray<Real,4> pq;
   Int n0_qdp, n1_qdp, np1;
 
-#if defined COMPOSE_PORT_DEV
-# if defined COMPOSE_PORT_DEV_VIEWS
+#if defined COMPOSE_PORT_DEV_VIEWS
   template <typename Datatype>
   using View = ko::View<Datatype, ko::LayoutRight, typename MT::DDT>;
   View<Real**> spheremp;
@@ -121,13 +120,12 @@ struct TracerArrays {
   View<Real****>  q;    // elem%state%Q
   DepPoints<MT> dep_points;
   QExtrema<MT> q_min, q_max;
-# else
+#else
   HommeFormatArray<const Real,2>& spheremp;
   HommeFormatArray<const Real,3>& dp;
   HommeFormatArray<const Real,4>& dp3d;
   HommeFormatArray<Real,5>& qdp;
   HommeFormatArray<Real,4>& q;
-# endif
 #endif
 
   TracerArrays(Int nelemd, Int nlev, Int np, Int qsize, Int qsized);
@@ -140,6 +138,12 @@ void sl_h2d(const TracerArrays<MT>& ta, Cartesian3D* dep_points);
 
 template <typename MT>
 void sl_d2h(const TracerArrays<MT>& ta, Cartesian3D* dep_points, Real* minq, Real* maxq);
+
+template <typename MT>
+void cedr_h2d(const TracerArrays<MT>& ta);
+
+template <typename MT>
+void cedr_d2h(const TracerArrays<MT>& ta);
 
 TracerArrays<ko::MachineTraits>::Ptr
 init_tracer_arrays(Int nelemd, Int nlev, Int np, Int qsize, Int qsize_d);

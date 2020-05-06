@@ -112,13 +112,13 @@ module compose_mod
      subroutine cedr_sl_set_pointers_end() bind(c)
      end subroutine cedr_sl_set_pointers_end
 
-     subroutine cedr_sl_run(minq, maxq, nets, nete) bind(c)
+     subroutine cedr_sl_run_global(minq, maxq, nets, nete) bind(c)
        use iso_c_binding, only: c_int, c_double
        use dimensions_mod, only : nlev, np, qsize
        real(kind=c_double), intent(in) :: minq(np,np,nlev,qsize,nets:nete)
        real(kind=c_double), intent(in) :: maxq(np,np,nlev,qsize,nets:nete)
        integer(kind=c_int), value, intent(in) :: nets, nete
-     end subroutine cedr_sl_run
+     end subroutine cedr_sl_run_global
 
      subroutine cedr_sl_run_local(minq, maxq, nets, nete, use_ir, limiter_option) bind(c)
        use iso_c_binding, only: c_int, c_double

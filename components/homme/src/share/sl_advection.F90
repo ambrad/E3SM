@@ -235,7 +235,7 @@ contains
        call cedr_sl_set_pointers_end()
        call t_startf('CEDR')
        ! No barrier needed: A barrier was already called.
-       call cedr_sl_run(minq, maxq, nets, nete)
+       call cedr_sl_run_global(minq, maxq, nets, nete)
        ! No barrier needed: run_cdr has a horiz thread barrier at the end.
        if (barrier) call perf_barrier(hybrid)
        call t_stopf('CEDR')

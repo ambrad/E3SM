@@ -21,21 +21,21 @@ void run_global (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
     nlevwrem = cdr.nsuplev*cdr.nsublev;
   cedr_assert(np <= 4);
   
-#ifdef COMPOSE_PORT_DEV_VIEWS_notyet
-  const auto& q_min = ta.q_min;
-  const auto& q_max = ta.q_max;
+#ifdef COMPOSE_PORT_DEV_VIEWS
+  const auto q_min = ta.q_min;
+  const auto q_max = ta.q_max;
 #else
   const QExtremaH<ko::MachineTraits>
     q_min(q_min_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2);
   const QExtremaHConst<ko::MachineTraits>
     q_max(q_max_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2);
 #endif
-  const auto& spheremp = ta.pspheremp;
-  const auto& dp3d_c = ta.pdp3d;
   const auto np1 = ta.np1;
-  const auto& qdp_p = ta.pqdp;
   const auto n0_qdp = ta.n0_qdp;
-  const auto& q_c = ta.pq;
+  const auto spheremp = ta.spheremp;
+  const auto dp3d_c = ta.dp3d;
+  const auto qdp_p = ta.qdp;
+  const auto q_c = ta.q;
 
   const Int nsublev = cdr.nsublev;
   const Int nsuplev = cdr.nsuplev;

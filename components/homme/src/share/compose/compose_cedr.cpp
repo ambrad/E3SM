@@ -559,11 +559,12 @@ extern "C" void cedr_sl_set_dp0 (homme::Real* v)
 extern "C" void cedr_sl_set_pointers_end () {}
 
 // Run QLT.
-extern "C" void cedr_sl_run (homme::Real* minq, const homme::Real* maxq,
-                             homme::Int nets, homme::Int nete) {
+extern "C" void cedr_sl_run_global (homme::Real* minq, const homme::Real* maxq,
+                                    homme::Int nets, homme::Int nete) {
   cedr_assert(minq != maxq);
   cedr_assert(g_cdr);
   cedr_assert(g_sl);
+  homme::cedr_h2d(*g_sl->ta);
   homme::sl::run_global(*g_cdr, *g_sl, minq, maxq, nets-1, nete-1);
 }
 
@@ -576,6 +577,7 @@ extern "C" void cedr_sl_run_local (homme::Real* minq, const homme::Real* maxq,
   cedr_assert(g_sl);
   homme::sl::run_local(*g_cdr, *g_sl, minq, maxq, nets-1, nete-1, use_ir,
                        limiter_option);
+  homme::cedr_d2h(*g_sl->ta);
 }
 
 // Check properties for this transport step.
