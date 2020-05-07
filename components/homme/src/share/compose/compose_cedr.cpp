@@ -431,30 +431,30 @@ void init_ie2lci (CDR<MT>& q) {
     auto qlt = std::static_pointer_cast<typename CDR<MT>::QLTT>(q.cdr);
     if (q.cdr_over_super_levels) {
       const auto nlevwrem = q.nsuplev*n_id_in_suplev;
-      for (size_t ie = 0; ie < q.ie2gci.size(); ++ie)
+      for (size_t ie = 0; ie < q.ie2gci_h.size(); ++ie)
         for (Int spli = 0; spli < q.nsuplev; ++spli)
           for (Int sbli = 0; sbli < n_id_in_suplev; ++sbli)
             //       local indexing is fastest over the whole column
             q.ie2lci_h[nlevwrem*ie + n_id_in_suplev*spli + sbli] =
               //           but global indexing is organized according to the tree
-              qlt->gci2lci(n_id_in_suplev*(q.ncell*spli + q.ie2gci[ie]) + sbli);
+              qlt->gci2lci(n_id_in_suplev*(q.ncell*spli + q.ie2gci_h[ie]) + sbli);
     } else {
-      for (size_t ie = 0; ie < q.ie2gci.size(); ++ie)
+      for (size_t ie = 0; ie < q.ie2gci_h.size(); ++ie)
         for (Int sbli = 0; sbli < n_id_in_suplev; ++sbli)
           q.ie2lci_h[n_id_in_suplev*ie + sbli] =
-            qlt->gci2lci(n_id_in_suplev*q.ie2gci[ie] + sbli);
+            qlt->gci2lci(n_id_in_suplev*q.ie2gci_h[ie] + sbli);
     }
   } else {
     if (q.cdr_over_super_levels) {
       const auto nlevwrem = q.nsuplev*n_id_in_suplev;
-      for (size_t ie = 0; ie < q.ie2gci.size(); ++ie)
+      for (size_t ie = 0; ie < q.ie2gci_h.size(); ++ie)
         for (Int spli = 0; spli < q.nsuplev; ++spli)
           for (Int sbli = 0; sbli < n_id_in_suplev; ++sbli) {
             const Int id = nlevwrem*ie + n_id_in_suplev*spli + sbli;
             q.ie2lci_h[id] = id;
           }
     } else {
-      for (size_t ie = 0; ie < q.ie2gci.size(); ++ie)
+      for (size_t ie = 0; ie < q.ie2gci_h.size(); ++ie)
         for (Int sbli = 0; sbli < n_id_in_suplev; ++sbli) {
           const Int id = n_id_in_suplev*ie + sbli;
           q.ie2lci_h[id] = id;
