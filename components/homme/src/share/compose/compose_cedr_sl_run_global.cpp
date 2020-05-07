@@ -112,7 +112,7 @@ void run_global (CDR<MT>& cdr, CDRT* cedr_cdr,
           const Real rhomij = dp3d_c(ie,np1,g,k) * spheremp(ie,g);
           rhom += rhomij;
           Qm += q_c(ie,q,g,k) * rhomij;
-          if (nonneg) q_min(ie,q,k,g) = std::max<Real>(q_min(ie,q,k,g), 0);
+          if (nonneg) q_min(ie,q,k,g) = ko::max<Real>(q_min(ie,q,k,g), 0);
           Qm_min += q_min(ie,q,k,g) * rhomij;
           Qm_max += q_max(ie,q,k,g) * rhomij;
           Qm_prev += qdp_p(ie,n0_qdp,q,g,k) * spheremp(ie,g);

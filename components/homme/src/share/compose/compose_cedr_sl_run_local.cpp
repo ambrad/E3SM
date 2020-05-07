@@ -4,7 +4,9 @@
 namespace homme {
 namespace sl {
 
-template <typename CV2, typename CV4, typename CV5, typename QV5, typename V4, typename V5>
+template <typename CV2, typename CV4, typename CV5, typename QV5,
+          typename V4, typename V5>
+KOKKOS_FUNCTION
 void solve_local (const Int ie, const Int k, const Int q,
                   const Int np1, const Int n1_qdp, const Int np,
                   const bool scalar_bounds, const Int limiter_option,
@@ -29,7 +31,7 @@ void solve_local (const Int ie, const Int k, const Int q,
   if (scalar_bounds) {
     qlo[0] = q_min(ie,q,k,0);
     qhi[0] = q_max(ie,q,k,0);
-    const Int N = std::min(max_np2, np2);
+    const Int N = ko::min(max_np2, np2);
     for (Int i = 1; i < N; ++i) qlo[i] = qlo[0];
     for (Int i = 1; i < N; ++i) qhi[i] = qhi[0];
     // We can use either 2-norm minimization or ClipAndAssuredSum for
@@ -45,7 +47,7 @@ void solve_local (const Int ie, const Int k, const Int q,
       cedr::local::caas(np2, wa, Qm, qlo, qhi, y, x);
     }
   } else {
-    const Int N = std::min(max_np2, np2);
+    const Int N = ko::min(max_np2, np2);
     for (Int g = 0; g < np2; ++g) {
       qlo[g] = q_min(ie,q,k,g);
       qhi[g] = q_max(ie,q,k,g);
@@ -62,8 +64,8 @@ void solve_local (const Int ie, const Int k, const Int q,
         // Clip for numerics against the cell extrema.
         Real qlo_s = qlo[0], qhi_s = qhi[0];
         for (Int i = 1; i < N; ++i) {
-          qlo_s = std::min(qlo_s, qlo[i]);
-          qhi_s = std::max(qhi_s, qhi[i]);
+          qlo_s = ko::min(qlo_s, qlo[i]);
+          qhi_s = ko::max(qhi_s, qhi[i]);
         }
         for (Int i = 0; i < N; ++i)
           x[i] = cedr::impl::max(qlo_s, cedr::impl::min(qhi_s, x[i]));
@@ -73,17 +75,17 @@ void solve_local (const Int ie, const Int k, const Int q,
       case 0: {
         Real qlo_s = qlo[0], qhi_s = qhi[0];
         for (Int i = 1; i < N; ++i) {
-          qlo_s = std::min(qlo_s, qlo[i]);
-          qhi_s = std::max(qhi_s, qhi[i]);
+          qlo_s = ko::min(qlo_s, qlo[i]);
+          qhi_s = ko::max(qhi_s, qhi[i]);
         }
-        const Int N = std::min(max_np2, np2);
+        const Int N = ko::min(max_np2, np2);
         for (Int i = 0; i < N; ++i) qlo[i] = qlo_s;
         for (Int i = 0; i < N; ++i) qhi[i] = qhi_s;
       } break;
       case 1: {
         const Real q = Qm / rhom;
-        for (Int i = 0; i < N; ++i) qlo[i] = std::min(qlo[i], q);
-        for (Int i = 0; i < N; ++i) qhi[i] = std::max(qhi[i], q);                
+        for (Int i = 0; i < N; ++i) qlo[i] = ko::min(qlo[i], q);
+        for (Int i = 0; i < N; ++i) qhi[i] = ko::max(qhi[i], q);                
       } break;
       }
     }
@@ -95,6 +97,7 @@ void solve_local (const Int ie, const Int k, const Int q,
   }
 }
 
+KOKKOS_FUNCTION
 Int vertical_caas_backup (const Int n, Real* rhom,
                           const Real q_min, const Real q_max,
                           Real Qmlo_tot, Real Qmhi_tot, const Real Qm_tot,
@@ -207,8 +210,8 @@ void run_local (CDR<MT>& cdr, CDRT* cedr_cdr,
               q_max_s = q_max(ie,q,k,g);
               first = false;
             } else {
-              q_min_s = std::min(q_min_s, q_min(ie,q,k,g));
-              q_max_s = std::max(q_max_s, q_max(ie,q,k,g));
+              q_min_s = ko::min(q_min_s, q_min(ie,q,k,g));
+              q_max_s = ko::max(q_max_s, q_max(ie,q,k,g));
             }
           }
         }
