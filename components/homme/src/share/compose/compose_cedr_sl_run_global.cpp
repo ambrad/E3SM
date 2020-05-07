@@ -50,8 +50,9 @@ static void run_cdr (CDR<MT>& q) {
 #endif
 }
 
-template <typename MT>
-void run_global (CDR<MT>& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
+template <typename MT, typename CDRT>
+void run_global (CDR<MT>& cdr, CDRT* cedr_cdr,
+                 const Data& d, Real* q_min_r, const Real* q_max_r,
                  const Int nets, const Int nete) {
   const auto& ta = *d.ta;
   const Int np = ta.np, np2 = np*np, nlev = ta.nlev, qsize = ta.qsize,
@@ -80,7 +81,6 @@ void run_global (CDR<MT>& cdr, const Data& d, Real* q_min_r, const Real* q_max_r
   const auto ie2lci = cdr.ie2lci;
   const auto ie2gci = cdr.ie2gci;
   const auto rank = cdr.p->rank();
-  const auto cedr_cdr = cdr.cdr;
   const auto f = KOKKOS_LAMBDA (const Int& idx) {
     const Int ie = nets + idx/(nsuplev*qsize);
     const Int spli = (idx / qsize) % nsuplev;
@@ -135,7 +135,21 @@ void run_global (CDR<MT>& cdr, const Data& d, Real* q_min_r, const Real* q_max_r
     }    
   };
   ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, (nete - nets + 1)*nsuplev*qsize), f);
+}
 
+template <typename MT>
+void run_global (CDR<MT>& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
+                 const Int nets, const Int nete) {
+  if (dynamic_cast<typename CDR<MT>::QLTT*>(cdr.cdr.get()))
+    run_global<MT, typename CDR<MT>::QLTT>(
+      cdr, dynamic_cast<typename CDR<MT>::QLTT*>(cdr.cdr.get()),
+      d, q_min_r, q_max_r, nets, nete);
+  else if (dynamic_cast<typename CDR<MT>::CAAST*>(cdr.cdr.get()))
+    run_global<MT, typename CDR<MT>::CAAST>(
+      cdr, dynamic_cast<typename CDR<MT>::CAAST*>(cdr.cdr.get()),
+      d, q_min_r, q_max_r, nets, nete);
+  else
+    cedr_throw_if(true, "run_global: could not cast cdr.");
   run_cdr(cdr);
 }
 

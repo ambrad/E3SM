@@ -129,8 +129,9 @@ Int vertical_caas_backup (const Int n, Real* rhom,
   return status;
 }
 
-template <typename MT>
-void run_local (CDR<MT>& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
+template <typename MT, typename CDRT>
+void run_local (CDR<MT>& cdr, CDRT* cedr_cdr,
+                const Data& d, Real* q_min_r, const Real* q_max_r,
                 const Int nets, const Int nete, const bool scalar_bounds,
                 const Int limiter_option) {
   const auto& ta = *d.ta;
@@ -158,7 +159,6 @@ void run_local (CDR<MT>& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
   const auto cdr_over_super_levels = cdr.cdr_over_super_levels;
   const auto caas_in_suplev = cdr.caas_in_suplev;
   const auto ie2lci = cdr.ie2lci;
-  const auto cedr_cdr = cdr.cdr;
   const auto f = KOKKOS_LAMBDA (const Int& idx) {
     const Int ie = nets + idx/(nsuplev*qsize);
     const Int spli = (idx / qsize) % nsuplev;
@@ -239,6 +239,22 @@ void run_local (CDR<MT>& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
     }
   };
   ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, (nete - nets + 1)*nsuplev*qsize), f);
+}
+
+template <typename MT>
+void run_local (CDR<MT>& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
+                const Int nets, const Int nete, const bool scalar_bounds,
+                const Int limiter_option) {
+  if (dynamic_cast<typename CDR<MT>::QLTT*>(cdr.cdr.get()))
+    run_local<MT, typename CDR<MT>::QLTT>(
+      cdr, dynamic_cast<typename CDR<MT>::QLTT*>(cdr.cdr.get()),
+      d, q_min_r, q_max_r, nets, nete, scalar_bounds, limiter_option);
+  else if (dynamic_cast<typename CDR<MT>::CAAST*>(cdr.cdr.get()))
+    run_local<MT, typename CDR<MT>::CAAST>(
+      cdr, dynamic_cast<typename CDR<MT>::CAAST*>(cdr.cdr.get()),
+      d, q_min_r, q_max_r, nets, nete, scalar_bounds, limiter_option);
+  else
+    cedr_throw_if(true, "run_local: could not cast cdr.");
 }
 
 template void
