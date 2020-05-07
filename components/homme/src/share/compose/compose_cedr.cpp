@@ -385,12 +385,16 @@ CDR<MT>::CDR (Int cdr_alg_, Int ngblcell_, Int nlclcell_, Int nlev_, bool use_sg
   } else {
     cedr_throw_if(true, "Invalid semi_lagrange_cdr_alg " << alg);
   }
-  ie2gci.resize(nlclcell);
+  ie2gci = Idxs("ie2gci", nlclcell);
+  ie2gci_h = Kokkos::create_mirror_view(ie2gci);
 }
 
 template <typename MT>
 void CDR<MT>::init_tracers (const Int qsize, const bool need_conservation) {
-  nonneg.resize(qsize, hard_zero);
+  nonneg = Bools("nonneg", qsize);
+  nonneg_h = Kokkos::create_mirror_view(nonneg);
+  Kokkos::deep_copy(nonneg_h, hard_zero);
+  Kokkos::deep_copy(nonneg, nonneg_h);
   typedef cedr::ProblemType PT;
   const Int nt = cdr_over_super_levels ? qsize : nsuplev*qsize;
   for (Int ti = 0; ti < nt; ++ti)
@@ -411,7 +415,7 @@ void CDR<MT>::set_buffers (Real* b1, Real* b2) {
 }
 
 template <typename MT>
-void set_ie2gci (CDR<MT>& q, const Int ie, const Int gci) { q.ie2gci[ie] = gci; }
+void set_ie2gci (CDR<MT>& q, const Int ie, const Int gci) { q.ie2gci_h[ie] = gci; }
 
 template <typename MT>
 void init_ie2lci (CDR<MT>& q) {
@@ -420,7 +424,8 @@ void init_ie2lci (CDR<MT>& q) {
     n_id_in_suplev*
     q.ie2gci.size()*
     (q.cdr_over_super_levels ? q.nsuplev : 1);
-  q.ie2lci.resize(nleaf);
+  q.ie2lci = typename CDR<MT>::Idxs("ie2lci", nleaf);
+  q.ie2lci_h = Kokkos::create_mirror_view(q.ie2lci);
   if (Alg::is_qlt(q.alg)) {
     auto qlt = std::static_pointer_cast<typename CDR<MT>::QLTT>(q.cdr);
     if (q.cdr_over_super_levels) {
@@ -429,13 +434,13 @@ void init_ie2lci (CDR<MT>& q) {
         for (Int spli = 0; spli < q.nsuplev; ++spli)
           for (Int sbli = 0; sbli < n_id_in_suplev; ++sbli)
             //       local indexing is fastest over the whole column
-            q.ie2lci[nlevwrem*ie + n_id_in_suplev*spli + sbli] =
+            q.ie2lci_h[nlevwrem*ie + n_id_in_suplev*spli + sbli] =
               //           but global indexing is organized according to the tree
               qlt->gci2lci(n_id_in_suplev*(q.ncell*spli + q.ie2gci[ie]) + sbli);
     } else {
       for (size_t ie = 0; ie < q.ie2gci.size(); ++ie)
         for (Int sbli = 0; sbli < n_id_in_suplev; ++sbli)
-          q.ie2lci[n_id_in_suplev*ie + sbli] =
+          q.ie2lci_h[n_id_in_suplev*ie + sbli] =
             qlt->gci2lci(n_id_in_suplev*q.ie2gci[ie] + sbli);
     }
   } else {
@@ -445,16 +450,18 @@ void init_ie2lci (CDR<MT>& q) {
         for (Int spli = 0; spli < q.nsuplev; ++spli)
           for (Int sbli = 0; sbli < n_id_in_suplev; ++sbli) {
             const Int id = nlevwrem*ie + n_id_in_suplev*spli + sbli;
-            q.ie2lci[id] = id;
+            q.ie2lci_h[id] = id;
           }
     } else {
       for (size_t ie = 0; ie < q.ie2gci.size(); ++ie)
         for (Int sbli = 0; sbli < n_id_in_suplev; ++sbli) {
           const Int id = n_id_in_suplev*ie + sbli;
-          q.ie2lci[id] = id;
+          q.ie2lci_h[id] = id;
         }
     }
   }
+  Kokkos::deep_copy(q.ie2lci, q.ie2lci_h);
+  Kokkos::deep_copy(q.ie2gci, q.ie2gci_h);
 }
 
 template <typename MT>

@@ -42,6 +42,12 @@ struct CDR {
   typedef compose::QLT<Kokkos::DefaultExecutionSpace> QLTT;
   typedef compose::CAAS CAAST;
 
+  typedef Kokkos::View<Int*, typename MT::DES> Idxs;
+  typedef typename Idxs::HostMirror IdxsH;
+
+  typedef Kokkos::View<char*, typename MT::DES> Bools;
+  typedef typename Bools::HostMirror BoolsH;
+
   enum { nsublev_per_suplev = 8 };
   
   const Alg::Enum alg;
@@ -50,9 +56,11 @@ struct CDR {
   const cedr::mpi::Parallel::Ptr p;
   cedr::qlt::tree::Node::Ptr tree; // Don't need this except for unit testing.
   cedr::CDR::Ptr cdr;
-  std::vector<Int> ie2gci; // Map Homme ie to Homme global cell index.
-  std::vector<Int> ie2lci; // Map Homme ie to CDR local cell index (lclcellidx).
-  std::vector<char> nonneg;
+  Idxs ie2gci; // Map Homme ie to Homme global cell index.
+  Idxs ie2lci; // Map Homme ie to CDR local cell index (lclcellidx).
+  IdxsH ie2lci_h, ie2gci_h;
+  Bools nonneg;
+  Bools nonneg_h;
 
   CDR(Int cdr_alg_, Int ngblcell_, Int nlclcell_, Int nlev_, bool use_sgi,
       bool independent_time_steps, const bool hard_zero_, const Int* gid_data,
