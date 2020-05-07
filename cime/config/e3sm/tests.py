@@ -43,14 +43,12 @@ _TESTS = {
             "SMS.ne4_ne4.FC5AV1C-L.cam-cosplite",
             "SMS_R_Ld5.ne4_ne4.FSCM5A97",
             "SMS_D_Ln5.ne4_ne4.FC5AV1C-L",
-            "SMS_Ln5.ne4pg2_ne4pg2.FC5AV1C-L",
-            "SMS_Ln5.ne4pg2_ne4pg2.FC5AV1C-L.cam-thetahy_pg2",
-            "SMS_Ln5.ne4pg2_ne4pg2.FC5AV1C-L.cam-thetahy_sl_pg2",
+            "SMS_Ln5.ne4pg2_ne4pg2.FC5AV1C-L"
             )
         },
 
     "e3sm_atm_integration" : {
-        "inherit" : ("eam_preqx", "eam_theta"),
+        "inherit" : ("eam_preqx", "eam_theta", "eam_theta_pg2"),
         "tests" : (
             "ERP_Ln9.ne4_ne4.F-EAMv1-AQP1",
             "SMS_Ld1.ne4_ne4.F-EAMv1-AQP1.cam-clubb_only",
@@ -236,6 +234,15 @@ _TESTS = {
                  "SMS.ne4_ne4.FC5AV1C-L.cam-thetahy_sl",
                  "ERS.ne4_ne4.FC5AV1C-L.cam-thetahy_ftype2",
                  "ERS.ne4_ne4.FC5AV1C-L.cam-thetanh_ftype2",
+                 )
+    },
+    "eam_theta_pg2" : {
+        "share"    : True,
+        "time"     : "02:00:00",
+        "tests"    : (
+                 "SMS_Ln5.ne4pg2_ne4pg2.FC5AV1C-L.cam-thetahy_pg2",
+                 "SMS_Ln5.ne4pg2_ne4pg2.FC5AV1C-L.cam-thetahy_sl_pg2",
+                 "ERS_Ln5.ne4pg2_ne4pg2.FC5AV1C-L.cam-thetahy_sl_pg2"
                  )
     },
     "e3sm_bench_hires_g" : {
