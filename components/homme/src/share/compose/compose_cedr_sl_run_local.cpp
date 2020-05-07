@@ -129,7 +129,8 @@ Int vertical_caas_backup (const Int n, Real* rhom,
   return status;
 }
 
-void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
+template <typename MT>
+void run_local (CDR<MT>& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
                 const Int nets, const Int nete, const bool scalar_bounds,
                 const Int limiter_option) {
   const auto& ta = *d.ta;
@@ -171,8 +172,8 @@ void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
       const auto lci = ie2lci[ie_idx];
       const Real Qm_tot = cedr_cdr->get_Qm(lci, ti);
       Real Qm_min_tot = 0, Qm_max_tot = 0;
-      Real rhom[CDR::nsublev_per_suplev], Qm[CDR::nsublev_per_suplev],
-        Qm_min[CDR::nsublev_per_suplev], Qm_max[CDR::nsublev_per_suplev];
+      Real rhom[CDR<MT>::nsublev_per_suplev], Qm[CDR<MT>::nsublev_per_suplev],
+        Qm_min[CDR<MT>::nsublev_per_suplev], Qm_max[CDR<MT>::nsublev_per_suplev];
       // Redistribute mass in the vertical direction of the super level.
       Int n = nsublev;
       for (Int sbli = 0; sbli < nsublev; ++sbli) {
@@ -237,9 +238,13 @@ void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
       }
     }
   };
-  ko::parallel_for(
-    ko::RangePolicy<typename ko::MachineTraits::HES>(0, (nete - nets + 1)*nsuplev*qsize), f);
+  ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, (nete - nets + 1)*nsuplev*qsize), f);
 }
+
+template void
+run_local(CDR<ko::MachineTraits>& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
+          const Int nets, const Int nete, const bool scalar_bounds,
+          const Int limiter_option);
 
 } // namespace sl
 } // namespace homme

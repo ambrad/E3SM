@@ -22,10 +22,10 @@ add_library (${COMPOSE_LIBRARY}
   compose_slmm_islmpi_q.cpp
   compose_slmm_islmpi_qextrema.cpp
   compose_slmm_islmpi_step.cpp
-  compose_cedr_qlt.cpp
   compose_cedr_sl_run_global.cpp
   compose_cedr_sl_run_local.cpp
   compose_cedr_sl_run_check.cpp
+  compose_cedr_qlt.cpp
   cedr_util.cpp
   cedr_test_randomized.cpp
   cedr_qlt.cpp

@@ -48,14 +48,16 @@ struct Data {
 };
 
 template <typename MT>
-void run_global(CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
+void run_global(CDR<MT>& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
                 const Int nets, const Int nete);
 
-void run_local(CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
+template <typename MT>
+void run_local(CDR<MT>& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
                const Int nets, const Int nete, const bool scalar_bounds,
                const Int limiter_option);
 
-void check(CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
+template <typename MT>
+void check(CDR<MT>& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
            const Int nets, const Int nete);
 
 } // namespace sl

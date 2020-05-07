@@ -4,7 +4,8 @@
 namespace homme {
 namespace sl {
 
-void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
+template <typename MT>
+void check (CDR<MT>& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
             const Int nets, const Int nete) {
   using cedr::mpi::reduce;
 
@@ -199,6 +200,10 @@ void check (CDR& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
     }
   }
 }
+
+template void
+check(CDR<ko::MachineTraits>& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
+      const Int nets, const Int nete);
 
 } // namespace sl
 } // namespace homme

@@ -7,6 +7,33 @@
 
 namespace homme {
 
+struct Alg {
+  enum Enum { qlt, qlt_super_level, qlt_super_level_local_caas, caas, caas_super_level };
+  static Enum convert (int cdr_alg) {
+    switch (cdr_alg) {
+    case 2:  return qlt;
+    case 20: return qlt_super_level;
+    case 21: return qlt_super_level_local_caas;
+    case 3:  return caas;
+    case 30: return caas_super_level;
+    case 42: return caas_super_level; // actually none
+    default: cedr_throw_if(true,  "cdr_alg " << cdr_alg << " is invalid.");
+    }
+  }
+  static bool is_qlt (Enum e) {
+    return (e == qlt || e == qlt_super_level ||
+            e == qlt_super_level_local_caas);
+  }
+  static bool is_caas (Enum e) {
+    return e == caas || e == caas_super_level;
+  }
+  static bool is_suplev (Enum e) {
+    return (e == qlt_super_level || e == caas_super_level ||
+            e == qlt_super_level_local_caas);
+  }
+};
+
+template <typename MT>
 struct CDR {
   typedef cedr::Int Int;
   typedef cedr::Real Real;
@@ -14,32 +41,6 @@ struct CDR {
   typedef std::shared_ptr<CDR> Ptr;
   typedef compose::QLT<Kokkos::DefaultExecutionSpace> QLTT;
   typedef compose::CAAS CAAST;
-
-  struct Alg {
-    enum Enum { qlt, qlt_super_level, qlt_super_level_local_caas, caas, caas_super_level };
-    static Enum convert (Int cdr_alg) {
-      switch (cdr_alg) {
-      case 2:  return qlt;
-      case 20: return qlt_super_level;
-      case 21: return qlt_super_level_local_caas;
-      case 3:  return caas;
-      case 30: return caas_super_level;
-      case 42: return caas_super_level; // actually none
-      default: cedr_throw_if(true,  "cdr_alg " << cdr_alg << " is invalid.");
-      }
-    }
-    static bool is_qlt (Enum e) {
-      return (e == qlt || e == qlt_super_level ||
-              e == qlt_super_level_local_caas);
-    }
-    static bool is_caas (Enum e) {
-      return e == caas || e == caas_super_level;
-    }
-    static bool is_suplev (Enum e) {
-      return (e == qlt_super_level || e == caas_super_level ||
-              e == qlt_super_level_local_caas);
-    }
-  };
 
   enum { nsublev_per_suplev = 8 };
   

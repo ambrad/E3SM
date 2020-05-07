@@ -352,9 +352,10 @@ private:
   const Int fcomm_;
 };
 
-CDR::CDR (Int cdr_alg_, Int ngblcell_, Int nlclcell_, Int nlev_, bool use_sgi,
-          bool independent_time_steps, const bool hard_zero_, const Int* gid_data,
-          const Int* rank_data, const cedr::mpi::Parallel::Ptr& p_, Int fcomm)
+template <typename MT>
+CDR<MT>::CDR (Int cdr_alg_, Int ngblcell_, Int nlclcell_, Int nlev_, bool use_sgi,
+              bool independent_time_steps, const bool hard_zero_, const Int* gid_data,
+              const Int* rank_data, const cedr::mpi::Parallel::Ptr& p_, Int fcomm)
   : alg(Alg::convert(cdr_alg_)),
     ncell(ngblcell_), nlclcell(nlclcell_), nlev(nlev_),
     nsublev(Alg::is_suplev(alg) ? nsublev_per_suplev : 1),
@@ -387,7 +388,8 @@ CDR::CDR (Int cdr_alg_, Int ngblcell_, Int nlclcell_, Int nlev_, bool use_sgi,
   ie2gci.resize(nlclcell);
 }
 
-void CDR::init_tracers (const Int qsize, const bool need_conservation) {
+template <typename MT>
+void CDR<MT>::init_tracers (const Int qsize, const bool need_conservation) {
   nonneg.resize(qsize, hard_zero);
   typedef cedr::ProblemType PT;
   const Int nt = cdr_over_super_levels ? qsize : nsuplev*qsize;
@@ -397,26 +399,30 @@ void CDR::init_tracers (const Int qsize, const bool need_conservation) {
   cdr->end_tracer_declarations();
 }
 
-void CDR::get_buffers_sizes (size_t& s1, size_t &s2) {
+template <typename MT>
+void CDR<MT>::get_buffers_sizes (size_t& s1, size_t &s2) {
   cdr->get_buffers_sizes(s1, s2);
 }
 
-void CDR::set_buffers (Real* b1, Real* b2) {
+template <typename MT>
+void CDR<MT>::set_buffers (Real* b1, Real* b2) {
   cdr->set_buffers(b1, b2);
   cdr->finish_setup();
 }
 
-void set_ie2gci (CDR& q, const Int ie, const Int gci) { q.ie2gci[ie] = gci; }
+template <typename MT>
+void set_ie2gci (CDR<MT>& q, const Int ie, const Int gci) { q.ie2gci[ie] = gci; }
 
-void init_ie2lci (CDR& q) {
+template <typename MT>
+void init_ie2lci (CDR<MT>& q) {
   const Int n_id_in_suplev = q.caas_in_suplev ? 1 : q.nsublev;
   const Int nleaf =
     n_id_in_suplev*
     q.ie2gci.size()*
     (q.cdr_over_super_levels ? q.nsuplev : 1);
   q.ie2lci.resize(nleaf);
-  if (CDR::Alg::is_qlt(q.alg)) {
-    auto qlt = std::static_pointer_cast<CDR::QLTT>(q.cdr);
+  if (Alg::is_qlt(q.alg)) {
+    auto qlt = std::static_pointer_cast<typename CDR<MT>::QLTT>(q.cdr);
     if (q.cdr_over_super_levels) {
       const auto nlevwrem = q.nsuplev*n_id_in_suplev;
       for (size_t ie = 0; ie < q.ie2gci.size(); ++ie)
@@ -451,7 +457,8 @@ void init_ie2lci (CDR& q) {
   }
 }
 
-void init_tracers (CDR& q, const Int nlev, const Int qsize,
+template <typename MT>
+void init_tracers (CDR<MT>& q, const Int nlev, const Int qsize,
                    const bool need_conservation) {
   q.init_tracers(qsize, need_conservation);
 }
@@ -480,7 +487,7 @@ void insert (const Data::Ptr& d, const Int ie, const Int ptridx, Real* array,
 } // namespace sl
 } // namespace homme
 
-static homme::CDR::Ptr g_cdr;
+static homme::CDR<ko::MachineTraits>::Ptr g_cdr;
 
 extern "C" void
 cedr_init_impl (const homme::Int fcomm, const homme::Int cdr_alg, const bool use_sgi,
@@ -489,7 +496,7 @@ cedr_init_impl (const homme::Int fcomm, const homme::Int cdr_alg, const bool use
                 const homme::Int nlev, const bool independent_time_steps, const bool hard_zero,
                 const homme::Int, const homme::Int) {
   const auto p = cedr::mpi::make_parallel(MPI_Comm_f2c(fcomm));
-  g_cdr = std::make_shared<homme::CDR>(
+  g_cdr = std::make_shared<homme::CDR<ko::MachineTraits> >(
     cdr_alg, gbl_ncell, lcl_ncell, nlev, use_sgi, independent_time_steps, hard_zero,
     gid_data, rank_data, p, fcomm);
 }
@@ -519,7 +526,7 @@ extern "C" void cedr_unittest (const homme::Int fcomm, homme::Int* nerrp) {
     *nerrp = cedr::caas::test::unittest(p);
 #endif
   *nerrp += homme::test_tree_maker();
-  *nerrp += homme::CDR::QLTT::unittest();
+  *nerrp += homme::CDR<ko::MachineTraits>::QLTT::unittest();
 }
 
 extern "C" void cedr_set_ie2gci (const homme::Int ie, const homme::Int gci) {
@@ -595,3 +602,7 @@ extern "C" void cedr_finalize () {
   g_sl = nullptr;
   g_cdr = nullptr;
 }
+
+namespace homme {
+template class CDR<Kokkos::MachineTraits>;
+} // namespace homme
