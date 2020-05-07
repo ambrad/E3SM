@@ -1,5 +1,8 @@
 #include "compose_cedr_cdr.hpp"
 #include "compose_cedr_sl.hpp"
+#include "compose_kokkos.hpp"
+
+namespace ko = Kokkos;
 
 namespace homme {
 namespace qlt = cedr::qlt;
@@ -565,7 +568,7 @@ extern "C" void cedr_sl_run_global (homme::Real* minq, const homme::Real* maxq,
   cedr_assert(g_cdr);
   cedr_assert(g_sl);
   homme::cedr_h2d(*g_sl->ta);
-  homme::sl::run_global(*g_cdr, *g_sl, minq, maxq, nets-1, nete-1);
+  homme::sl::run_global<ko::MachineTraits>(*g_cdr, *g_sl, minq, maxq, nets-1, nete-1);
 }
 
 // Run the cell-local limiter problem.

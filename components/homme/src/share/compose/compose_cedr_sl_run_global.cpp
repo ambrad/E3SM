@@ -4,6 +4,41 @@
 namespace homme {
 namespace sl {
 
+template <typename MT, typename Ie2gci, typename Qdp, typename Dp3d>
+KOKKOS_FUNCTION ko::EnableIfNotOnGpu<MT> warn_on_Qm_prev_negative (
+  Real Qm_prev, const cedr::mpi::Parallel::Ptr& p, Int ie, const Ie2gci& ie2gci,
+  Int np2, Int spli, Int k0, Int q, Int ti, Int sbli, Int lci, Int k, Int n0_qdp, Int np1,
+  const Qdp& qdp_p, const Dp3d& dp3d_c)
+{
+  static bool first = true;
+  if (first) {
+    first = false;
+    std::stringstream ss;
+    ss << "Qm_prev < -0.5: Qm_prev = " << Qm_prev
+       << " on rank " << p->rank()
+       << " at (ie,gid,spli,k0,q,ti,sbli,lci,k,n0_qdp,tl_np1) = ("
+       << ie << "," << ie2gci[ie] << "," << spli << "," << k0 << ","
+       << q << "," << ti << "," << sbli << "," << lci << "," << k << ","
+       << n0_qdp << "," << np1 << ")\n";
+    ss << "Qdp(:,:,k,q,n0_qdp) = [";
+    for (Int g = 0; g < np2; ++g)
+      ss << " " << qdp_p(ie,n0_qdp,q,g,k);
+    ss << "]\n";
+    ss << "dp3d(:,:,k,tl_np1) = [";
+    for (Int g = 0; g < np2; ++g)
+      ss << " " << dp3d_c(ie,np1,g,k);
+    ss << "]\n";
+    pr(ss.str());
+  }
+}
+
+template <typename MT, typename Ie2gci, typename Qdp, typename Dp3d>
+KOKKOS_FUNCTION ko::EnableIfOnGpu<MT> warn_on_Qm_prev_negative (
+  Real Qm_prev, const cedr::mpi::Parallel::Ptr& p, Int ie, const Ie2gci& ie2gci,
+  Int np2, Int spli, Int k0, Int q, Int ti, Int sbli, Int lci, Int k, Int n0_qdp, Int np1,
+  const Qdp& qdp_p, const Dp3d& dp3d_c)
+{}
+
 static void run_cdr (CDR& q) {
 #ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
@@ -14,6 +49,7 @@ static void run_cdr (CDR& q) {
 #endif
 }
 
+template <typename MT>
 void run_global (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
                  const Int nets, const Int nete) {
   const auto& ta = *d.ta;
@@ -25,10 +61,8 @@ void run_global (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
   const auto q_min = ta.q_min;
   const auto q_max = ta.q_max;
 #else
-  const QExtremaH<ko::MachineTraits>
-    q_min(q_min_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2);
-  const QExtremaHConst<ko::MachineTraits>
-    q_max(q_max_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2);
+  const QExtremaH<MT>      q_min(q_min_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2);
+  const QExtremaHConst<MT> q_max(q_max_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2);
 #endif
   const auto np1 = ta.np1;
   const auto n0_qdp = ta.n0_qdp;
@@ -93,36 +127,19 @@ void run_global (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
         // getting QLT's safety benefit.
         if (ti == 0) cedr_cdr->set_rhom(lci, 0, volume);
         cedr_cdr->set_Qm(lci, ti, Qm, Qm_min, Qm_max, Qm_prev);
-        if (Qm_prev < -0.5) {
-          static bool first = true;
-          if (first) {
-            first = false;
-            std::stringstream ss;
-            ss << "Qm_prev < -0.5: Qm_prev = " << Qm_prev
-               << " on rank " << p->rank()
-               << " at (ie,gid,spli,k0,q,ti,sbli,lci,k,n0_qdp,tl_np1) = ("
-               << ie << "," << ie2gci[ie] << "," << spli << "," << k0 << ","
-               << q << "," << ti << "," << sbli << "," << lci << "," << k << ","
-               << n0_qdp << "," << np1 << ")\n";
-            ss << "Qdp(:,:,k,q,n0_qdp) = [";
-            for (Int g = 0; g < np2; ++g)
-              ss << " " << qdp_p(ie,n0_qdp,q,g,k);
-            ss << "]\n";
-            ss << "dp3d(:,:,k,tl_np1) = [";
-            for (Int g = 0; g < np2; ++g)
-              ss << " " << dp3d_c(ie,np1,g,k);
-            ss << "]\n";
-            pr(ss.str());
-          }
-        }
+        if (Qm_prev < -0.5)
+          warn_on_Qm_prev_negative<MT>(Qm_prev, p, ie, ie2gci, np2, spli, k0, q,
+                                       ti, sbli, lci, k, n0_qdp, np1, qdp_p, dp3d_c);
       }
     }    
   };
-  ko::parallel_for(
-    ko::RangePolicy<typename ko::MachineTraits::HES>(0, (nete - nets + 1)*nsuplev*qsize), f);
+  ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, (nete - nets + 1)*nsuplev*qsize), f);
 
   run_cdr(cdr);
 }
+
+template void run_global<ko::MachineTraits> (
+  CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r, const Int nets, const Int nete);
 
 } // namespace sl
 } // namespace homme

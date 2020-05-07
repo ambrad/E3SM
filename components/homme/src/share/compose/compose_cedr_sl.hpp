@@ -47,6 +47,7 @@ struct Data {
   {}
 };
 
+template <typename MT>
 void run_global(CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
                 const Int nets, const Int nete);
 
