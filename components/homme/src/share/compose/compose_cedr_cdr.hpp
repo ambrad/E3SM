@@ -39,8 +39,8 @@ struct CDR {
   typedef cedr::Real Real;
 
   typedef std::shared_ptr<CDR> Ptr;
-  typedef compose::QLT<Kokkos::DefaultExecutionSpace> QLTT;
-  typedef compose::CAAS CAAST;
+  typedef compose::QLT<typename MT::DES> QLTT;
+  typedef compose::CAAS<typename MT::DES> CAAST;
 
   typedef Kokkos::View<Int*, typename MT::DES> Idxs;
   typedef typename Idxs::HostMirror IdxsH;

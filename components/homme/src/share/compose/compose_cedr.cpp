@@ -337,8 +337,9 @@ extern "C"
 void compose_repro_sum(const Real* send, Real* recv,
                        Int nlocal, Int nfld, Int fcomm);
 
+template <typename MT>
 struct ReproSumReducer :
-    public compose::CAAS::UserAllReducer {
+    public compose::CAAS<typename MT::DES>::UserAllReducer {
   ReproSumReducer (Int fcomm) : fcomm_(fcomm) {}
 
   int operator() (const cedr::mpi::Parallel& p, Real* sendbuf, Real* rcvbuf,
@@ -380,7 +381,7 @@ CDR<MT>::CDR (Int cdr_alg_, Int ngblcell_, Int nlclcell_, Int nlev_, bool use_sg
   } else if (Alg::is_caas(alg)) {
     const auto caas = std::make_shared<CAAST>(
       p, nlclcell*n_id_in_suplev*(cdr_over_super_levels ? nsuplev : 1),
-      std::make_shared<ReproSumReducer>(fcomm));
+      std::make_shared<ReproSumReducer<MT> >(fcomm));
     cdr = caas;
   } else {
     cedr_throw_if(true, "Invalid semi_lagrange_cdr_alg " << alg);

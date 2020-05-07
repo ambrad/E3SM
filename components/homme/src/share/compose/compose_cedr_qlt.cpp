@@ -1,5 +1,6 @@
 #include "compose_cedr_qlt.hpp"
 #include "compose_cedr.hpp"
+#include "compose_kokkos.hpp"
 
 #define THREAD_QLT_RUN
 
@@ -421,7 +422,7 @@ Int QLT<ES>::unittest () {
   return solve_unittest();
 }
 
-template class QLT<ko::DefaultExecutionSpace>;
+template class QLT<ko::MachineTraits::DES>;
 
 } // namespace compose
 } // namespace homme
