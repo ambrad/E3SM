@@ -6,8 +6,8 @@ namespace sl {
 
 template <typename MT, typename Ie2gci, typename Qdp, typename Dp3d>
 KOKKOS_FUNCTION ko::EnableIfNotOnGpu<MT> warn_on_Qm_prev_negative (
-  Real Qm_prev, const cedr::mpi::Parallel::Ptr& p, Int ie, const Ie2gci& ie2gci,
-  Int np2, Int spli, Int k0, Int q, Int ti, Int sbli, Int lci, Int k, Int n0_qdp, Int np1,
+  Real Qm_prev, Int rank, Int ie, const Ie2gci& ie2gci, Int np2, Int spli,
+  Int k0, Int q, Int ti, Int sbli, Int lci, Int k, Int n0_qdp, Int np1,
   const Qdp& qdp_p, const Dp3d& dp3d_c)
 {
   static bool first = true;
@@ -15,7 +15,7 @@ KOKKOS_FUNCTION ko::EnableIfNotOnGpu<MT> warn_on_Qm_prev_negative (
     first = false;
     std::stringstream ss;
     ss << "Qm_prev < -0.5: Qm_prev = " << Qm_prev
-       << " on rank " << p->rank()
+       << " on rank " << rank
        << " at (ie,gid,spli,k0,q,ti,sbli,lci,k,n0_qdp,tl_np1) = ("
        << ie << "," << ie2gci[ie] << "," << spli << "," << k0 << ","
        << q << "," << ti << "," << sbli << "," << lci << "," << k << ","
@@ -34,8 +34,8 @@ KOKKOS_FUNCTION ko::EnableIfNotOnGpu<MT> warn_on_Qm_prev_negative (
 
 template <typename MT, typename Ie2gci, typename Qdp, typename Dp3d>
 KOKKOS_FUNCTION ko::EnableIfOnGpu<MT> warn_on_Qm_prev_negative (
-  Real Qm_prev, const cedr::mpi::Parallel::Ptr& p, Int ie, const Ie2gci& ie2gci,
-  Int np2, Int spli, Int k0, Int q, Int ti, Int sbli, Int lci, Int k, Int n0_qdp, Int np1,
+  Real Qm_prev, Int rank, Int ie, const Ie2gci& ie2gci, Int np2, Int spli,
+  Int k0, Int q, Int ti, Int sbli, Int lci, Int k, Int n0_qdp, Int np1,
   const Qdp& qdp_p, const Dp3d& dp3d_c)
 {}
 
@@ -77,10 +77,10 @@ void run_global (CDR<MT>& cdr, const Data& d, Real* q_min_r, const Real* q_max_r
   const auto& nonnegs = cdr.nonneg;
   const auto cdr_over_super_levels = cdr.cdr_over_super_levels;
   const auto caas_in_suplev = cdr.caas_in_suplev;
-  const auto& ie2lci = cdr.ie2lci;
-  const auto& ie2gci = cdr.ie2gci;
-  const auto& p = cdr.p;
-  const auto& cedr_cdr = cdr.cdr;
+  const auto ie2lci = cdr.ie2lci;
+  const auto ie2gci = cdr.ie2gci;
+  const auto rank = cdr.p->rank();
+  const auto cedr_cdr = cdr.cdr;
   const auto f = KOKKOS_LAMBDA (const Int& idx) {
     const Int ie = nets + idx/(nsuplev*qsize);
     const Int spli = (idx / qsize) % nsuplev;
@@ -129,7 +129,7 @@ void run_global (CDR<MT>& cdr, const Data& d, Real* q_min_r, const Real* q_max_r
         if (ti == 0) cedr_cdr->set_rhom(lci, 0, volume);
         cedr_cdr->set_Qm(lci, ti, Qm, Qm_min, Qm_max, Qm_prev);
         if (Qm_prev < -0.5)
-          warn_on_Qm_prev_negative<MT>(Qm_prev, p, ie, ie2gci, np2, spli, k0, q,
+          warn_on_Qm_prev_negative<MT>(Qm_prev, rank, ie, ie2gci, np2, spli, k0, q,
                                        ti, sbli, lci, k, n0_qdp, np1, qdp_p, dp3d_c);
       }
     }    

@@ -157,8 +157,8 @@ void run_local (CDR<MT>& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
   const Int nsuplev = cdr.nsuplev;
   const auto cdr_over_super_levels = cdr.cdr_over_super_levels;
   const auto caas_in_suplev = cdr.caas_in_suplev;
-  const auto& ie2lci = cdr.ie2lci;
-  const auto& cedr_cdr = cdr.cdr;
+  const auto ie2lci = cdr.ie2lci;
+  const auto cedr_cdr = cdr.cdr;
   const auto f = KOKKOS_LAMBDA (const Int& idx) {
     const Int ie = nets + idx/(nsuplev*qsize);
     const Int spli = (idx / qsize) % nsuplev;
