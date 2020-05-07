@@ -10,6 +10,7 @@ class VerticalLevelsData;
 
 template <typename ES>
 class QLT : public cedr::qlt::QLT<ES> {
+  typedef cedr::qlt::QLT<ES> Super;
   typedef cedr::Int Int;
 
   std::shared_ptr<VerticalLevelsData> vld_;
