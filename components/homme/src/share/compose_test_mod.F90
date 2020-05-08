@@ -180,6 +180,9 @@ contains
     use sl_advection
     use gllfvremap_mod
     use gllfvremap_util_mod
+#ifdef HOMME_ENABLE_COMPOSE
+    use compose_mod, only: compose_h2d, compose_d2h
+#endif
 
     type (hybrid_t), intent(in) :: hybrid
     type (domain1d_t), pointer, intent(in) :: dom_mt(:)
@@ -224,7 +227,9 @@ contains
     end if
     dt = twelve_days / nsteps
     call t_startf('compose_stt_step')
+    compose_h2d = .true.
     do i = 1, nsteps
+       compose_d2h = i == nsteps
        tprev = dt*(i-1)
        t = dt*i
        do ie = nets, nete
@@ -238,7 +243,9 @@ contains
        if (mod(i,statefreq) == 0) then
           call print_software_statistics(hybrid, nets, nete)
        end if
+       compose_h2d = .false.
     end do
+    compose_d2h = .false.
     call t_stopf('compose_stt_step')
     ! Record final q values.
     call compose_stt_begin_record()

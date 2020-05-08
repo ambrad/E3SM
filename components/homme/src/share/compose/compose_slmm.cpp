@@ -324,7 +324,7 @@ void slmm_check_ref2sphere (homme::Int ie, homme::Cartesian3D* p) {
 
 void slmm_csl_set_elem_data (
   homme::Int ie, homme::Real* metdet, homme::Real* qdp, homme::Int n0_qdp,
-  homme::Real* dp, homme::Real* q, homme::Int nelem_in_patch)
+  homme::Real* dp, homme::Real* q, homme::Int nelem_in_patch, bool h2d, bool d2h)
 {
   amb::dev_init_threads();
   slmm_assert(g_csl_mpi);

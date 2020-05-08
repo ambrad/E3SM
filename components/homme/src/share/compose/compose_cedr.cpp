@@ -574,7 +574,7 @@ extern "C" void cedr_sl_set_q (homme::Int ie, homme::Real* v)
 { homme::sl::insert(g_sl, ie - 1, 3, v); }
 extern "C" void cedr_sl_set_dp0 (homme::Real* v)
 { homme::sl::insert(g_sl, 0, 4, v); }
-extern "C" void cedr_sl_set_pointers_end () {}
+extern "C" void cedr_sl_set_pointers_end (bool h2d, bool d2h) {}
 
 // Run QLT.
 extern "C" void cedr_sl_run_global (homme::Real* minq, const homme::Real* maxq,

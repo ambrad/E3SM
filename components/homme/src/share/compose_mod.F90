@@ -1,6 +1,8 @@
 module compose_mod
-
+  use iso_c_binding, only: c_bool
   implicit none
+
+  logical(kind=c_bool) :: compose_h2d = .false., compose_d2h = .false.
 
   interface
 
@@ -109,7 +111,9 @@ module compose_mod
        real(kind=c_double), intent(in) :: Q(np,np,nlev,qsize_d)
      end subroutine cedr_sl_set_Q
 
-     subroutine cedr_sl_set_pointers_end() bind(c)
+     subroutine cedr_sl_set_pointers_end(h2d, d2h) bind(c)
+       use iso_c_binding, only: c_bool
+       logical(kind=c_bool), value, intent(in) :: h2d, d2h
      end subroutine cedr_sl_set_pointers_end
 
      subroutine cedr_sl_run_global(minq, maxq, nets, nete) bind(c)
@@ -165,12 +169,13 @@ module compose_mod
        type(cartesian3D_t), intent(in) :: sphere_cart_coord
      end subroutine slmm_check_ref2sphere
 
-     subroutine slmm_csl_set_elem_data(ie, metdet, qdp, n0_qdp, dp, q, nelem_in_patch) bind(c)
-       use iso_c_binding, only: c_int, c_double
+     subroutine slmm_csl_set_elem_data(ie, metdet, qdp, n0_qdp, dp, q, nelem_in_patch, h2d, d2h) bind(c)
+       use iso_c_binding, only: c_int, c_double, c_bool
        use dimensions_mod, only : nlev, np, qsize
        real(kind=c_double), intent(in) :: metdet(np,np), qdp(np,np,nlev,qsize,2), &
             dp(np,np,nlev), q(np,np,nlev,qsize)
        integer(kind=c_int), value, intent(in) :: ie, n0_qdp, nelem_in_patch
+       logical(kind=c_bool), value, intent(in) :: h2d, d2h
      end subroutine slmm_csl_set_elem_data
 
      subroutine slmm_csl(nets, nete, dep_points, minq, maxq, info) bind(c)

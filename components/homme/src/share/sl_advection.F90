@@ -125,6 +125,7 @@ contains
     use control_mod,            only : dcmip16_mu_q
     use prim_advection_base,    only : advance_physical_vis
     use vertremap_base,         only : remap1
+    use compose_mod,            only : compose_h2d, compose_d2h
 
     implicit none
     type (element_t)     , intent(inout) :: elem(:)
@@ -195,7 +196,8 @@ contains
        call slmm_csl_set_elem_data(ie, elem(ie)%metdet, &
             elem(ie)%state%Qdp, n0_qdp, &
             elem(ie)%derived%dp, elem(ie)%state%Q, &
-            elem(ie)%desc%actual_neigh_edges + 1)
+            elem(ie)%desc%actual_neigh_edges + 1, &
+            compose_h2d, compose_d2h)
     end do
     ! edge_g buffers are shared by SLMM, CEDR, other places in HOMME, and
     ! dp_coupling in EAM. Thus, we must take care to protected threaded
@@ -232,7 +234,7 @@ contains
           end if
           call cedr_sl_set_Q(ie, elem(ie)%state%Q)
        end do
-       call cedr_sl_set_pointers_end()
+       call cedr_sl_set_pointers_end(compose_h2d, compose_d2h)
        call t_startf('CEDR')
        ! No barrier needed: A barrier was already called.
        call cedr_sl_run_global(minq, maxq, nets, nete)
