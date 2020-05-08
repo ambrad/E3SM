@@ -68,7 +68,7 @@ void solve_local (const Int ie, const Int k, const Int q,
           qhi_s = ko::max(qhi_s, qhi[i]);
         }
         for (Int i = 0; i < N; ++i)
-          x[i] = cedr::impl::max(qlo_s, cedr::impl::min(qhi_s, x[i]));
+          x[i] = ko::max(qlo_s, cedr::impl::min(qhi_s, x[i]));
       }
       if (info == 0 || trial == 1) break;
       switch (trial) {
