@@ -23,6 +23,7 @@ TracerArrays<MT>::TracerArrays (Int nelemd_, Int nlev_, Int np_, Int qsize_, Int
 template <typename MT>
 void sl_h2d (const TracerArrays<MT>& ta, Cartesian3D* dep_points) {
 #if defined COMPOSE_PORT_DEV_VIEWS
+  ko::fence();
   const auto qdp_m = ko::create_mirror_view(ta.qdp);
   const auto dp_m = ko::create_mirror_view(ta.dp);
   const auto q_m = ko::create_mirror_view(ta.q);
@@ -74,7 +75,7 @@ void sl_d2h (const TracerArrays<MT>& ta, Cartesian3D* dep_points, Real* minq, Re
 template <typename MT>
 void cedr_h2d (const TracerArrays<MT>& ta) {
 #if defined COMPOSE_PORT_DEV_VIEWS
-  //const auto qdp_m = ko::create_mirror_view(ta.qdp);
+  ko::fence();
   const auto dp3d_m = ko::create_mirror_view(ta.dp3d);
   const auto q_m = ko::create_mirror_view(ta.q);
   const auto spheremp_m = ko::create_mirror_view(ta.spheremp);

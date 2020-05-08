@@ -75,7 +75,7 @@ void run_global (CDR<MT>& cdr, CDRT* cedr_cdr,
 
   const Int nsublev = cdr.nsublev;
   const Int nsuplev = cdr.nsuplev;
-  const auto& nonnegs = cdr.nonneg;
+  const auto nonnegs = cdr.nonneg;
   const auto cdr_over_super_levels = cdr.cdr_over_super_levels;
   const auto caas_in_suplev = cdr.caas_in_suplev;
   const auto ie2lci = cdr.ie2lci;
