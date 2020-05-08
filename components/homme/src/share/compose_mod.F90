@@ -1,8 +1,8 @@
 module compose_mod
-  use iso_c_binding, only: c_bool
+
   implicit none
 
-  logical(kind=c_bool) :: compose_h2d = .false., compose_d2h = .false.
+  logical :: compose_h2d = .false., compose_d2h = .false.
 
   interface
 

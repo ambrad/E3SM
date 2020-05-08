@@ -126,6 +126,7 @@ contains
     use prim_advection_base,    only : advance_physical_vis
     use vertremap_base,         only : remap1
     use compose_mod,            only : compose_h2d, compose_d2h
+    use iso_c_binding,          only : c_bool
 
     implicit none
     type (element_t)     , intent(inout) :: elem(:)
@@ -143,12 +144,15 @@ contains
     integer :: num_neighbors, scalar_q_bounds, info
     logical :: slmm, cisl, qos, sl_test, independent_time_steps
     real(kind=real_kind) :: wr(np,np,nlev,2)
+    logical(kind=c_bool) :: h2d, d2h
 
 #ifdef HOMME_ENABLE_COMPOSE
     call t_barrierf('Prim_Advec_Tracers_remap_ALE', hybrid%par%comm)
     call t_startf('Prim_Advec_Tracers_remap_ALE')
 
     call sl_parse_transport_alg(transport_alg, slmm, cisl, qos, sl_test, independent_time_steps)
+    h2d = compose_h2d .or. (semi_lagrange_hv_q > 0 .and. nu_q > 0)
+    d2h = compose_d2h .or. semi_lagrange_cdr_check .or. (semi_lagrange_hv_q > 0 .and. nu_q > 0)
 
     call TimeLevel_Qdp(tl, dt_tracer_factor, n0_qdp, np1_qdp)
 
@@ -197,7 +201,7 @@ contains
             elem(ie)%state%Qdp, n0_qdp, &
             elem(ie)%derived%dp, elem(ie)%state%Q, &
             elem(ie)%desc%actual_neigh_edges + 1, &
-            compose_h2d, compose_d2h)
+            h2d, d2h)
     end do
     ! edge_g buffers are shared by SLMM, CEDR, other places in HOMME, and
     ! dp_coupling in EAM. Thus, we must take care to protected threaded
@@ -234,7 +238,7 @@ contains
           end if
           call cedr_sl_set_Q(ie, elem(ie)%state%Q)
        end do
-       call cedr_sl_set_pointers_end(compose_h2d, compose_d2h)
+       call cedr_sl_set_pointers_end(h2d, d2h)
        call t_startf('CEDR')
        ! No barrier needed: A barrier was already called.
        call cedr_sl_run_global(minq, maxq, nets, nete)
