@@ -1,3 +1,4 @@
+#include "compose_cedr.hpp"
 #include "compose_cedr_cdr.hpp"
 #include "compose_cedr_sl.hpp"
 
@@ -135,7 +136,8 @@ void run_global (CDR<MT>& cdr, CDRT* cedr_cdr_p,
       }
     }    
   };
-  ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, (nete - nets + 1)*nsuplev*qsize), f);
+  { Timer t("01_write_global");
+    ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, (nete - nets + 1)*nsuplev*qsize), f); }
 }
 
 template <typename MT>
@@ -152,7 +154,8 @@ void run_global (CDR<MT>& cdr, const Data& d, Real* q_min_r, const Real* q_max_r
   else
     cedr_throw_if(true, "run_global: could not cast cdr.");
   ko::fence();
-  run_cdr(cdr);
+  { Timer t("02_run_cdr");
+    run_cdr(cdr); }
 }
 
 template void

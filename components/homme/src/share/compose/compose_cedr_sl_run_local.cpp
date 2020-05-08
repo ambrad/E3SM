@@ -1,3 +1,4 @@
+#include "compose_cedr.hpp"
 #include "compose_cedr_cdr.hpp"
 #include "compose_cedr_sl.hpp"
 
@@ -243,7 +244,8 @@ void run_local (CDR<MT>& cdr, CDRT* cedr_cdr_p,
     }
   };
   ko::fence();
-  ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, (nete - nets + 1)*nsuplev*qsize), f);
+  { Timer t("03_run_local");
+    ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, (nete - nets + 1)*nsuplev*qsize), f); }
 }
 
 template <typename MT>
