@@ -134,16 +134,17 @@ struct TracerArrays {
 };
 
 template <typename MT>
-void sl_h2d(const TracerArrays<MT>& ta, Cartesian3D* dep_points);
+void sl_h2d(const TracerArrays<MT>& ta, bool transfer, Cartesian3D* dep_points);
 
 template <typename MT>
-void sl_d2h(const TracerArrays<MT>& ta, Cartesian3D* dep_points, Real* minq, Real* maxq);
+void sl_d2h(const TracerArrays<MT>& ta, bool transfer, Cartesian3D* dep_points,
+            Real* minq, Real* maxq);
 
 template <typename MT>
-void cedr_h2d(const TracerArrays<MT>& ta);
+void cedr_h2d(const TracerArrays<MT>& ta, bool transfer);
 
 template <typename MT>
-void cedr_d2h(const TracerArrays<MT>& ta);
+void cedr_d2h(const TracerArrays<MT>& ta, bool transfer);
 
 TracerArrays<ko::MachineTraits>::Ptr
 init_tracer_arrays(Int nelemd, Int nlev, Int np, Int qsize, Int qsize_d);

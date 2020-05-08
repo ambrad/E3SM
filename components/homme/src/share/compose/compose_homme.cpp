@@ -21,14 +21,17 @@ TracerArrays<MT>::TracerArrays (Int nelemd_, Int nlev_, Int np_, Int qsize_, Int
 {}
 
 template <typename MT>
-void sl_h2d (const TracerArrays<MT>& ta, Cartesian3D* dep_points) {
+void sl_h2d (const TracerArrays<MT>& ta, bool transfer, Cartesian3D* dep_points) {
 #if defined COMPOSE_PORT_DEV_VIEWS
   ko::fence();
+  const Int nelemd = ta.q.extent_int(0), qsize = ta.q.extent_int(1), np2 = ta.q.extent_int(2),
+    nlev = ta.q.extent_int(3);
+  const DepPointsH<MT> dep_points_h(reinterpret_cast<Real*>(dep_points), nelemd, nlev, np2);
+  ko::deep_copy(ta.dep_points, dep_points_h);
+  if ( ! transfer) return;
   const auto qdp_m = ko::create_mirror_view(ta.qdp);
   const auto dp_m = ko::create_mirror_view(ta.dp);
   const auto q_m = ko::create_mirror_view(ta.q);
-  const Int nelemd = q_m.extent_int(0), qsize = q_m.extent_int(1), np2 = q_m.extent_int(2),
-    nlev = q_m.extent_int(3);
   for (Int ie = 0; ie < nelemd; ++ie)
     for (Int iq = 0; iq < qsize; ++iq)
       for (Int k = 0; k < np2; ++k)
@@ -44,14 +47,14 @@ void sl_h2d (const TracerArrays<MT>& ta, Cartesian3D* dep_points) {
   ko::deep_copy(ta.qdp, qdp_m);
   ko::deep_copy(ta.dp, dp_m);
   ko::deep_copy(ta.q, q_m);
-  const DepPointsH<MT> dep_points_h(reinterpret_cast<Real*>(dep_points), nelemd, nlev, np2);
-  ko::deep_copy(ta.dep_points, dep_points_h);
 #endif
 }
 
 template <typename MT>
-void sl_d2h (const TracerArrays<MT>& ta, Cartesian3D* dep_points, Real* minq, Real* maxq) {
+void sl_d2h (const TracerArrays<MT>& ta, bool transfer, Cartesian3D* dep_points,
+             Real* minq, Real* maxq) {
 #if defined COMPOSE_PORT_DEV_VIEWS
+  if ( ! transfer) return;
   ko::fence();
   const auto q_m = ko::create_mirror_view(ta.q);
   const Int nelemd = q_m.extent_int(0), qsize = q_m.extent_int(1), np2 = q_m.extent_int(2),
@@ -73,8 +76,9 @@ void sl_d2h (const TracerArrays<MT>& ta, Cartesian3D* dep_points, Real* minq, Re
 }
 
 template <typename MT>
-void cedr_h2d (const TracerArrays<MT>& ta) {
+void cedr_h2d (const TracerArrays<MT>& ta, bool transfer) {
 #if defined COMPOSE_PORT_DEV_VIEWS
+  if ( ! transfer) return;
   ko::fence();
   const auto dp3d_m = ko::create_mirror_view(ta.dp3d);
   const auto q_m = ko::create_mirror_view(ta.q);
@@ -100,8 +104,9 @@ void cedr_h2d (const TracerArrays<MT>& ta) {
 }
 
 template <typename MT>
-void cedr_d2h (const TracerArrays<MT>& ta) {
+void cedr_d2h (const TracerArrays<MT>& ta, bool transfer) {
 #if defined COMPOSE_PORT_DEV_VIEWS
+  if ( ! transfer) return;
   ko::fence();
   const auto q_m = ko::create_mirror_view(ta.q);
   const auto qdp_m = ko::create_mirror_view(ta.qdp);
@@ -142,10 +147,11 @@ void delete_tracer_arrays () {
 }
 
 template struct TracerArrays<ko::MachineTraits>;
-template void sl_h2d(const TracerArrays<ko::MachineTraits>& ta, Cartesian3D* dep_points);
-template void sl_d2h(const TracerArrays<ko::MachineTraits>& ta, Cartesian3D* dep_points,
-                     Real* minq, Real* maxq);
-template void cedr_h2d(const TracerArrays<ko::MachineTraits>& ta);
-template void cedr_d2h(const TracerArrays<ko::MachineTraits>& ta);
+template void sl_h2d(const TracerArrays<ko::MachineTraits>& ta, bool transfer,
+                     Cartesian3D* dep_points);
+template void sl_d2h(const TracerArrays<ko::MachineTraits>& ta, bool transfer,
+                     Cartesian3D* dep_points, Real* minq, Real* maxq);
+template void cedr_h2d(const TracerArrays<ko::MachineTraits>& ta, bool transfer);
+template void cedr_d2h(const TracerArrays<ko::MachineTraits>& ta, bool transfer);
 
 } // namespace homme

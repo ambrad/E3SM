@@ -574,7 +574,13 @@ extern "C" void cedr_sl_set_q (homme::Int ie, homme::Real* v)
 { homme::sl::insert(g_sl, ie - 1, 3, v); }
 extern "C" void cedr_sl_set_dp0 (homme::Real* v)
 { homme::sl::insert(g_sl, 0, 4, v); }
-extern "C" void cedr_sl_set_pointers_end (bool h2d, bool d2h) {}
+
+static bool s_h2d, s_d2h;
+
+extern "C" void cedr_sl_set_pointers_end (bool h2d, bool d2h) {
+  s_h2d = h2d;
+  s_d2h = d2h;
+}
 
 // Run QLT.
 extern "C" void cedr_sl_run_global (homme::Real* minq, const homme::Real* maxq,
@@ -582,7 +588,7 @@ extern "C" void cedr_sl_run_global (homme::Real* minq, const homme::Real* maxq,
   cedr_assert(minq != maxq);
   cedr_assert(g_cdr);
   cedr_assert(g_sl);
-  homme::cedr_h2d(*g_sl->ta);
+  homme::cedr_h2d(*g_sl->ta, s_h2d);
   homme::sl::run_global<ko::MachineTraits>(*g_cdr, *g_sl, minq, maxq, nets-1, nete-1);
 }
 
@@ -595,7 +601,7 @@ extern "C" void cedr_sl_run_local (homme::Real* minq, const homme::Real* maxq,
   cedr_assert(g_sl);
   homme::sl::run_local(*g_cdr, *g_sl, minq, maxq, nets-1, nete-1, use_ir,
                        limiter_option);
-  homme::cedr_d2h(*g_sl->ta);
+  homme::cedr_d2h(*g_sl->ta, s_d2h);
 }
 
 // Check properties for this transport step.
