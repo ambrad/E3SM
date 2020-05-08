@@ -227,9 +227,9 @@ contains
     end if
     dt = twelve_days / nsteps
     call t_startf('compose_stt_step')
-    compose_h2d = .true.
     do i = 1, nsteps
-       compose_d2h = i == nsteps
+       compose_h2d = i == 1
+       compose_d2h = i == 1 .or. i == nsteps
        tprev = dt*(i-1)
        t = dt*i
        do ie = nets, nete
@@ -243,9 +243,7 @@ contains
        if (mod(i,statefreq) == 0) then
           call print_software_statistics(hybrid, nets, nete)
        end if
-       compose_h2d = .false.
     end do
-    compose_d2h = .false.
     call t_stopf('compose_stt_step')
     ! Record final q values.
     call compose_stt_begin_record()

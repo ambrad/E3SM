@@ -151,8 +151,10 @@ contains
     call t_startf('Prim_Advec_Tracers_remap_ALE')
 
     call sl_parse_transport_alg(transport_alg, slmm, cisl, qos, sl_test, independent_time_steps)
-    h2d = compose_h2d .or. (semi_lagrange_hv_q > 0 .and. nu_q > 0)
-    d2h = compose_d2h .or. semi_lagrange_cdr_check .or. (semi_lagrange_hv_q > 0 .and. nu_q > 0)
+    h2d = hybrid%par%nprocs > 1 .or. semi_lagrange_cdr_check .or. &
+         (semi_lagrange_hv_q > 0 .and. nu_q > 0)
+    d2h = compose_d2h .or. h2d
+    h2d = compose_h2d .or. h2d
 
     call TimeLevel_Qdp(tl, dt_tracer_factor, n0_qdp, np1_qdp)
 
