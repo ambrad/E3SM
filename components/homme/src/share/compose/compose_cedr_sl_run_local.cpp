@@ -133,7 +133,7 @@ Int vertical_caas_backup (const Int n, Real* rhom,
 }
 
 template <typename MT, typename CDRT>
-void run_local (CDR<MT>& cdr, CDRT* cedr_cdr,
+void run_local (CDR<MT>& cdr, CDRT* cedr_cdr_p,
                 const Data& d, Real* q_min_r, const Real* q_max_r,
                 const Int nets, const Int nete, const bool scalar_bounds,
                 const Int limiter_option) {
@@ -162,6 +162,7 @@ void run_local (CDR<MT>& cdr, CDRT* cedr_cdr,
   const auto cdr_over_super_levels = cdr.cdr_over_super_levels;
   const auto caas_in_suplev = cdr.caas_in_suplev;
   const auto ie2lci = cdr.ie2lci;
+  const auto cedr_cdr = *cedr_cdr_p;
   const auto f = KOKKOS_LAMBDA (const Int& idx) {
     const Int ie = nets + idx/(nsuplev*qsize);
     const Int spli = (idx / qsize) % nsuplev;
@@ -173,7 +174,7 @@ void run_local (CDR<MT>& cdr, CDRT* cedr_cdr,
         nsuplev*ie + spli :
         ie;
       const auto lci = ie2lci[ie_idx];
-      const Real Qm_tot = cedr_cdr->get_Qm(lci, ti);
+      const Real Qm_tot = cedr_cdr.get_Qm(lci, ti);
       Real Qm_min_tot = 0, Qm_max_tot = 0;
       Real rhom[CDR<MT>::nsublev_per_suplev], Qm[CDR<MT>::nsublev_per_suplev],
         Qm_min[CDR<MT>::nsublev_per_suplev], Qm_max[CDR<MT>::nsublev_per_suplev];
@@ -234,7 +235,7 @@ void run_local (CDR<MT>& cdr, CDRT* cedr_cdr,
         nlevwrem*ie + k :
         nsublev*ie + sbli;
         const auto lci = ie2lci[ie_idx];
-        const Real Qm = cedr_cdr->get_Qm(lci, ti);
+        const Real Qm = cedr_cdr.get_Qm(lci, ti);
         solve_local(ie, k, q, np1, n1_qdp, np,
                     scalar_bounds, limiter_option,
                     spheremp, dp3d_c, q_min, q_max, Qm, qdp_c, q_c);
