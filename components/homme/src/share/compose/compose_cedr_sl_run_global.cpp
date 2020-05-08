@@ -150,6 +150,7 @@ void run_global (CDR<MT>& cdr, const Data& d, Real* q_min_r, const Real* q_max_r
       d, q_min_r, q_max_r, nets, nete);
   else
     cedr_throw_if(true, "run_global: could not cast cdr.");
+  ko::fence();
   run_cdr(cdr);
 }
 

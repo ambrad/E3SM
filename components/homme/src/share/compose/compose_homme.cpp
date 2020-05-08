@@ -115,7 +115,7 @@ void cedr_d2h (const TracerArrays<MT>& ta) {
           ta.pqdp(ie,n1_qdp,iq,k,lev) = qdp_m(ie,n1_qdp,iq,k,lev);
           ta.pq(ie,iq,k,lev) = q_m(ie,iq,k,lev);
         }
-#endif    
+#endif
 }
 
 TracerArrays<ko::MachineTraits>::Ptr& get_instance () {

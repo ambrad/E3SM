@@ -15,7 +15,7 @@ void solve_local (const Int ie, const Int k, const Int q,
                   const Real Qm, V5& qdp_c, V4& q_c) {
   static constexpr Int max_np = 4, max_np2 = max_np*max_np;
   const Int np2 = np*np;
-  cedr_assert(np <= max_np);
+  cedr_kernel_assert(np <= max_np);
 
   Real wa[max_np2], qlo[max_np2], qhi[max_np2], y[max_np2], x[max_np2];
   Real rhom = 0;
@@ -241,6 +241,7 @@ void run_local (CDR<MT>& cdr, CDRT* cedr_cdr,
       }
     }
   };
+  ko::fence();
   ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, (nete - nets + 1)*nsuplev*qsize), f);
 }
 
