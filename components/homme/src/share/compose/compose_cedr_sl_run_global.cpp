@@ -93,15 +93,15 @@ void run_global (CDR<MT>& cdr, CDRT* cedr_cdr_p,
     Real Qm = 0, Qm_min = 0, Qm_max = 0, Qm_prev = 0, rhom = 0, volume = 0;
     Int ie_idx;
     if (caas_in_suplev)
-      ie_idx = cdr_over_super_levels ?
-        nsuplev*ie + spli :
-        ie;
+      ie_idx = (cdr_over_super_levels ?
+                nsuplev*ie + spli :
+                ie);
     for (Int sbli = 0; sbli < nsublev; ++sbli) {
       const auto k = k0 + sbli;
       if ( ! caas_in_suplev)
-        ie_idx = cdr_over_super_levels ?
-          nlevwrem*ie + k :
-          nsublev*ie + sbli;
+        ie_idx = (cdr_over_super_levels ?
+                  nlevwrem*ie + k :
+                  nsublev*ie + sbli);
       const auto lci = ie2lci[ie_idx];
       if ( ! caas_in_suplev) {
         Qm = 0; Qm_min = 0; Qm_max = 0; Qm_prev = 0;

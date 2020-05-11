@@ -171,9 +171,9 @@ void run_local (CDR<MT>& cdr, CDRT* cedr_cdr_p,
     const Int k0 = nsublev*spli;
     const Int ti = cdr_over_super_levels ? q : spli*qsize + q;
     if (caas_in_suplev) {
-      const auto ie_idx = cdr_over_super_levels ?
-        nsuplev*ie + spli :
-        ie;
+      const auto ie_idx = (cdr_over_super_levels ?
+                           nsuplev*ie + spli :
+                           ie);
       const auto lci = ie2lci[ie_idx];
       const Real Qm_tot = cedr_cdr.get_Qm(lci, ti);
       Real Qm_min_tot = 0, Qm_max_tot = 0;
@@ -232,9 +232,9 @@ void run_local (CDR<MT>& cdr, CDRT* cedr_cdr_p,
       for (Int sbli = 0; sbli < nsublev; ++sbli) {
         const Int k = k0 + sbli;
         if (k >= nlev) break;
-        const auto ie_idx = cdr_over_super_levels ?
-        nlevwrem*ie + k :
-        nsublev*ie + sbli;
+        const auto ie_idx = (cdr_over_super_levels ?
+                             nlevwrem*ie + k :
+                             nsublev*ie + sbli);
         const auto lci = ie2lci[ie_idx];
         const Real Qm = cedr_cdr.get_Qm(lci, ti);
         solve_local(ie, k, q, np1, n1_qdp, np,
