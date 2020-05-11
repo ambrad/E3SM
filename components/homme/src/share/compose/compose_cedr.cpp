@@ -5863,6 +5863,7 @@ struct CDR {
                                    threed ? nsuplev : 0);
       tree = nullptr;
     } else if (Alg::is_caas(alg)) {
+      if (p_->amroot()) pr("amb>" pu(nlclcell) pu(n_id_in_suplev) pu(cdr_over_super_levels) pu(nsuplev) pu(nlclcell*n_id_in_suplev*(cdr_over_super_levels ? nsuplev : 1)));
       const auto caas = std::make_shared<CAAST>(
         p, nlclcell*n_id_in_suplev*(cdr_over_super_levels ? nsuplev : 1),
         std::make_shared<ReproSumReducer>(fcomm));
@@ -6281,9 +6282,9 @@ void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
 #ifdef COLUMN_OPENMP
 #   pragma omp parallel for
 #endif
-    for (Int spli = 0; spli < cdr.nsuplev; ++spli) {
-      const Int k0 = cdr.nsublev*spli;
-      for (Int q = 0; q < qsize; ++q) {
+    for (Int q = 0; q < qsize; ++q) {
+      for (Int spli = 0; spli < cdr.nsuplev; ++spli) {
+        const Int k0 = cdr.nsublev*spli;
         const Int ti = cdr.cdr_over_super_levels ? q : spli*qsize + q;
         if (cdr.caas_in_suplev) {
           const auto ie_idx = cdr.cdr_over_super_levels ?
