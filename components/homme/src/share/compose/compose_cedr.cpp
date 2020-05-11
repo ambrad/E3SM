@@ -6068,9 +6068,9 @@ void run (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
 #ifdef COLUMN_OPENMP
 #   pragma omp parallel for
 #endif
-    for (Int spli = 0; spli < cdr.nsuplev; ++spli) {
-      const Int k0 = cdr.nsublev*spli;
-      for (Int q = 0; q < qsize; ++q) {
+    for (Int q = 0; q < qsize; ++q) {
+      for (Int spli = 0; spli < cdr.nsuplev; ++spli) {
+        const Int k0 = cdr.nsublev*spli;
         const bool nonneg = cdr.nonneg[q];
         const Int ti = cdr.cdr_over_super_levels ? q : spli*qsize + q;
         Real Qm = 0, Qm_min = 0, Qm_max = 0, Qm_prev = 0, rhom = 0, volume = 0;
