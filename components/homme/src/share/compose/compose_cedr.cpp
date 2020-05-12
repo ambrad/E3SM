@@ -5798,7 +5798,11 @@ void compose_repro_sum(const Real* send, Real* recv,
 
 struct ReproSumReducer :
     public compose::CAAS::UserAllReducer {
-  ReproSumReducer (Int fcomm) : fcomm_(fcomm) {}
+  ReproSumReducer (Int fcomm, Int n_accum_in_place)
+    : fcomm_(fcomm), n_accum_in_place_(n_accum_in_place)
+  {}
+
+  int n_accum_in_place () const override { return n_accum_in_place_; }
 
   int operator() (const cedr::mpi::Parallel& p, Real* sendbuf, Real* rcvbuf,
                   int nlocal, int count, MPI_Op op) const override {
@@ -5808,7 +5812,7 @@ struct ReproSumReducer :
   }
 
 private:
-  const Int fcomm_;
+  const Int fcomm_, n_accum_in_place_;
 };
 
 struct CDR {
@@ -5879,9 +5883,11 @@ struct CDR {
                                    threed ? nsuplev : 0);
       tree = nullptr;
     } else if (Alg::is_caas(alg)) {
+      const Int n_accum_in_place = n_id_in_suplev*(cdr_over_super_levels ?
+                                                   nsuplev : 1);
       const auto caas = std::make_shared<CAAST>(
-        p, nlclcell*n_id_in_suplev*(cdr_over_super_levels ? nsuplev : 1),
-        std::make_shared<ReproSumReducer>(fcomm));
+        p, nlclcell*n_accum_in_place,
+        std::make_shared<ReproSumReducer>(fcomm, n_accum_in_place));
       cdr = caas;
     } else {
       cedr_throw_if(true, "Invalid semi_lagrange_cdr_alg " << alg);
