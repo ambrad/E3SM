@@ -904,6 +904,7 @@ public:
 public:
   struct UserAllReducer {
     typedef std::shared_ptr<const UserAllReducer> Ptr;
+    virtual int n_accum_in_place () const { return 1; }
     virtual int operator()(const mpi::Parallel& p,
                            // In Fortran, these are formatted as
                            //   sendbuf(nlocal, nfld)
@@ -971,7 +972,7 @@ protected:
 
   void reduce_globally();
 
-PRIVATE_CUDA:
+PROTECTED_CUDA:
   void reduce_locally();
   void finish_locally();
 
@@ -3811,7 +3812,8 @@ void CAAS<ES>::get_buffers_sizes (size_t& buf1, size_t& buf2, size_t& buf3) {
   const Int e = need_conserve_ ? 1 : 0;
   const auto nslots = 4*probs_.size();
   buf1 = nlclcells_ * ((3+e)*probs_.size() + 1);
-  buf2 = nslots*(user_reducer_ ? nlclcells_ : 1);
+  cedr_assert(nlclcells_ % user_reducer_->n_accum_in_place() == 0);
+  buf2 = nslots*(user_reducer_ ? (nlclcells_ / user_reducer_->n_accum_in_place()) : 1);
   buf3 = nslots;
 }
 
@@ -3882,24 +3884,37 @@ void CAAS<ES>::reduce_locally () {
   const auto send = send_;
   const auto d = d_;
   if (user_reduces) {
+    const Int n_accum_in_place = user_reducer_->n_accum_in_place();
+    const Int nlclaccum = nlclcells / n_accum_in_place;
     const auto calc_Qm_clip = KOKKOS_LAMBDA (const Int& j) {
-      const auto k = j / nlclcells;
-      const auto i = j % nlclcells;
+      const auto k = j / nlclaccum;
+      const auto bi = j % nlclaccum;
       const auto os = (k+1)*nlclcells;
-      Real Qm_clip, Qm_term;
-      calc_Qm_scalars(d, probs, nt, nlclcells, k, os, i, Qm_clip, Qm_term);
-      d(os+i) = Qm_clip;
-      send(nlclcells*      k  + i) = Qm_clip;
-      send(nlclcells*(nt + k) + i) = Qm_term;
+      Real accum_clip = 0, accum_term = 0;
+      for (Int ai = 0; ai < n_accum_in_place; ++ai) {
+        const Int i = n_accum_in_place*bi + ai;
+        Real Qm_clip, Qm_term;
+        calc_Qm_scalars(d, probs, nt, nlclcells, k, os, i, Qm_clip, Qm_term);
+        d(os + i) = Qm_clip;
+        accum_clip += Qm_clip;
+        accum_term += Qm_term;
+      }
+      send(nlclaccum*      k  + bi) = accum_clip;
+      send(nlclaccum*(nt + k) + bi) = accum_term;
     };
-    Kokkos::parallel_for(Kokkos::RangePolicy<ES>(0, nt*nlclcells), calc_Qm_clip);
+    Kokkos::parallel_for(Kokkos::RangePolicy<ES>(0, nt*nlclaccum), calc_Qm_clip);
     const auto set_Qm_minmax = KOKKOS_LAMBDA (const Int& j) {
-      const auto k = 2*nt + j / nlclcells;
-      const auto i = j % nlclcells;
+      const auto k = 2*nt + j / nlclaccum;
+      const auto bi = j % nlclaccum;
       const auto os = (k-nt+1)*nlclcells;
-      send(nlclcells*k + i) = d(os+i);
+      Real accum_ext = 0;
+      for (Int ai = 0; ai < n_accum_in_place; ++ai) {
+        const Int i = n_accum_in_place*bi + ai;
+        accum_ext += d(os + i);
+      }
+      send(nlclaccum*k + bi) = accum_ext;
     };
-    Kokkos::parallel_for(Kokkos::RangePolicy<ES>(0, 2*nt*nlclcells), set_Qm_minmax);
+    Kokkos::parallel_for(Kokkos::RangePolicy<ES>(0, 2*nt*nlclaccum), set_Qm_minmax);
   } else {
     using ESU = cedr::impl::ExeSpaceUtils<ES>;
     const auto calc_Qm_clip = KOKKOS_LAMBDA (const typename ESU::Member& t) {
@@ -3993,7 +4008,8 @@ void CAAS<ES>::run () {
   const bool user_reduces = user_reducer_ != nullptr;
   if (user_reduces)
     (*user_reducer_)(*p_, send_.data(), recv_.data(),
-                     nlclcells_, recv_.size(), MPI_SUM);
+                     nlclcells_ / user_reducer_->n_accum_in_place(),
+                     recv_.size(), MPI_SUM);
   else
     reduce_globally();
   finish_locally();
@@ -5863,7 +5879,6 @@ struct CDR {
                                    threed ? nsuplev : 0);
       tree = nullptr;
     } else if (Alg::is_caas(alg)) {
-      if (p_->amroot()) pr("amb>" pu(nlclcell) pu(n_id_in_suplev) pu(cdr_over_super_levels) pu(nsuplev) pu(nlclcell*n_id_in_suplev*(cdr_over_super_levels ? nsuplev : 1)));
       const auto caas = std::make_shared<CAAST>(
         p, nlclcell*n_id_in_suplev*(cdr_over_super_levels ? nsuplev : 1),
         std::make_shared<ReproSumReducer>(fcomm));
@@ -6050,8 +6065,8 @@ void accum_values (const Int ie, const Int k, const Int q, const Int tl_np1,
   }
 }
 
-void run (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
-          const Int nets, const Int nete) {
+void run_global (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
+                 const Int nets, const Int nete) {
   static constexpr Int max_np = 4;
   const Int np = d.np, nlev = d.nlev, qsize = d.qsize,
     nlevwrem = cdr.nsuplev*cdr.nsublev;
@@ -6654,7 +6669,7 @@ extern "C" void cedr_sl_run (homme::Real* minq, const homme::Real* maxq,
   cedr_assert(minq != maxq);
   cedr_assert(g_cdr);
   cedr_assert(g_sl);
-  homme::sl::run(*g_cdr, *g_sl, minq, maxq, nets-1, nete-1);
+  homme::sl::run_global(*g_cdr, *g_sl, minq, maxq, nets-1, nete-1);
 }
 
 // Run the cell-local limiter problem.
