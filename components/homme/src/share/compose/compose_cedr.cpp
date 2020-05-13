@@ -972,7 +972,7 @@ protected:
 
   void reduce_globally();
 
-PROTECTED_CUDA:
+PRIVATE_CUDA:
   void reduce_locally();
   void finish_locally();
 
