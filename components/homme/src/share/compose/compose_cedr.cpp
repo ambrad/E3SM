@@ -6163,17 +6163,17 @@ void run_global (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
   run_cdr(cdr);
 }
 
+template <int NP>
 void solve_local (const Int ie, const Int k, const Int q,
                   const Int tl_np1, const Int n1_qdp, const Int np, 
                   const bool scalar_bounds, const Int limiter_option,
                   const FA1<const Real>& spheremp, const FA3<const Real>& dp3d_c,
                   const FA4<const Real>& q_min, const FA4<const Real>& q_max,
                   const Real Qm, FA4<Real>& qdp_c, FA3<Real>& q_c) {
-  static constexpr Int max_np = 4, max_np2 = max_np*max_np;
-  const Int np2 = np*np;
-  cedr_assert(np <= max_np);
+  cedr_assert(np == NP);
+  static const Int np2 = NP*NP;
 
-  Real wa[max_np2], qlo[max_np2], qhi[max_np2], y[max_np2], x[max_np2];
+  Real wa[np2], qlo[np2], qhi[np2], y[np2], x[np2];
   Real rhom = 0;
   for (Int g = 0; g < np2; ++g) {
     const Real rhomij = dp3d_c(g,k,tl_np1) * spheremp(g);
@@ -6187,9 +6187,8 @@ void solve_local (const Int ie, const Int k, const Int q,
   if (scalar_bounds) {
     qlo[0] = q_min(0,k,q,ie);
     qhi[0] = q_max(0,k,q,ie);
-    const Int N = std::min(max_np2, np2);
-    for (Int i = 1; i < N; ++i) qlo[i] = qlo[0];
-    for (Int i = 1; i < N; ++i) qhi[i] = qhi[0];
+    for (Int i = 1; i < np2; ++i) qlo[i] = qlo[0];
+    for (Int i = 1; i < np2; ++i) qhi[i] = qhi[0];
     // We can use either 2-norm minimization or ClipAndAssuredSum for
     // the local filter. CAAS is the faster. It corresponds to limiter
     // = 0. 2-norm minimization is the same in spirit as limiter = 8,
@@ -6203,7 +6202,6 @@ void solve_local (const Int ie, const Int k, const Int q,
       cedr::local::caas(np2, wa, Qm, qlo, qhi, y, x);
     }
   } else {
-    const Int N = std::min(max_np2, np2);
     for (Int g = 0; g < np2; ++g) {
       qlo[g] = q_min(g,k,q,ie);
       qhi[g] = q_max(g,k,q,ie);
@@ -6219,29 +6217,28 @@ void solve_local (const Int ie, const Int k, const Int q,
         cedr::local::caas(np2, wa, Qm, qlo, qhi, y, x, false /* clip */);
         // Clip for numerics against the cell extrema.
         Real qlo_s = qlo[0], qhi_s = qhi[0];
-        for (Int i = 1; i < N; ++i) {
+        for (Int i = 1; i < np2; ++i) {
           qlo_s = std::min(qlo_s, qlo[i]);
           qhi_s = std::max(qhi_s, qhi[i]);
         }
-        for (Int i = 0; i < N; ++i)
+        for (Int i = 0; i < np2; ++i)
           x[i] = cedr::impl::max(qlo_s, cedr::impl::min(qhi_s, x[i]));
       }
       if (info == 0 || trial == 1) break;
       switch (trial) {
       case 0: {
         Real qlo_s = qlo[0], qhi_s = qhi[0];
-        for (Int i = 1; i < N; ++i) {
+        for (Int i = 1; i < np2; ++i) {
           qlo_s = std::min(qlo_s, qlo[i]);
           qhi_s = std::max(qhi_s, qhi[i]);
         }
-        const Int N = std::min(max_np2, np2);
-        for (Int i = 0; i < N; ++i) qlo[i] = qlo_s;
-        for (Int i = 0; i < N; ++i) qhi[i] = qhi_s;
+        for (Int i = 0; i < np2; ++i) qlo[i] = qlo_s;
+        for (Int i = 0; i < np2; ++i) qhi[i] = qhi_s;
       } break;
       case 1: {
         const Real q = Qm / rhom;
-        for (Int i = 0; i < N; ++i) qlo[i] = std::min(qlo[i], q);
-        for (Int i = 0; i < N; ++i) qhi[i] = std::max(qhi[i], q);                
+        for (Int i = 0; i < np2; ++i) qlo[i] = std::min(qlo[i], q);
+        for (Int i = 0; i < np2; ++i) qhi[i] = std::max(qhi[i], q);                
       } break;
       }
     }
@@ -6302,11 +6299,14 @@ void accum_values (const Int ie, const Int k, const Int q, const Int tl_np1,
   }
 }
 
+template <int NP>
 void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
                 const Int nets, const Int nete, const bool scalar_bounds,
                 const Int limiter_option) {
-  const Int np = d.np, np2 = np*np, nlev = d.nlev, qsize = d.qsize,
+  static const Int np2 = NP*NP;
+  const Int np = d.np, nlev = d.nlev, qsize = d.qsize,
     nlevwrem = cdr.nsuplev*cdr.nsublev;
+  cedr_assert(np == NP);
 
   FA4<      Real> q_min(q_min_r, np2, nlev, qsize, nete+1);
   FA4<const Real> q_max(q_max_r, np2, nlev, qsize, nete+1);
@@ -6373,9 +6373,9 @@ void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
           // Redistribute mass in the horizontal direction of each level.
           for (Int i = 0; i < n; ++i) {
             const Int k = k0 + i;
-            solve_local(ie, k, q, d.tl_np1, d.n1_qdp, np,
-                        scalar_bounds, limiter_option,
-                        spheremp, dp3d_c, q_min, q_max, Qm[i], qdp_c, q_c);
+            solve_local<NP>(ie, k, q, d.tl_np1, d.n1_qdp, np,
+                            scalar_bounds, limiter_option,
+                            spheremp, dp3d_c, q_min, q_max, Qm[i], qdp_c, q_c);
           }
         } else {
           for (Int sbli = 0; sbli < cdr.nsublev; ++sbli) {
@@ -6386,9 +6386,9 @@ void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
               cdr.nsublev*ie + sbli;
             const auto lci = cdr.ie2lci[ie_idx];
             const Real Qm = cdr.cdr->get_Qm(lci, ti);
-            solve_local(ie, k, q, d.tl_np1, d.n1_qdp, np,
-                        scalar_bounds, limiter_option,
-                        spheremp, dp3d_c, q_min, q_max, Qm, qdp_c, q_c);
+            solve_local<NP>(ie, k, q, d.tl_np1, d.n1_qdp, np,
+                            scalar_bounds, limiter_option,
+                            spheremp, dp3d_c, q_min, q_max, Qm, qdp_c, q_c);
           }
         }
       }
@@ -6696,8 +6696,8 @@ extern "C" void cedr_sl_run_local (homme::Real* minq, const homme::Real* maxq,
   cedr_assert(minq != maxq);
   cedr_assert(g_cdr);
   cedr_assert(g_sl);
-  homme::sl::run_local(*g_cdr, *g_sl, minq, maxq, nets-1, nete-1, use_ir,
-                       limiter_option);
+  homme::sl::run_local<4>(*g_cdr, *g_sl, minq, maxq, nets-1, nete-1, use_ir,
+                          limiter_option);
 }
 
 // Check properties for this transport step.
