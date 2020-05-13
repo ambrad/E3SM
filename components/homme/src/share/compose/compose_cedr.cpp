@@ -5970,8 +5970,12 @@ void init_tracers (CDR& q, const Int nlev, const Int qsize,
 
 namespace sl { // For sl_advection.F90
 // Fortran array wrappers.
+template <typename T> using FA1 =
+  Kokkos::View<T*,     Kokkos::LayoutLeft, Kokkos::HostSpace>;
 template <typename T> using FA2 =
   Kokkos::View<T**,    Kokkos::LayoutLeft, Kokkos::HostSpace>;
+template <typename T> using FA3 =
+  Kokkos::View<T***,   Kokkos::LayoutLeft, Kokkos::HostSpace>;
 template <typename T> using FA4 =
   Kokkos::View<T****,  Kokkos::LayoutLeft, Kokkos::HostSpace>;
 template <typename T> using FA5 =
@@ -6162,28 +6166,27 @@ void run_global (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
 void solve_local (const Int ie, const Int k, const Int q,
                   const Int tl_np1, const Int n1_qdp, const Int np, 
                   const bool scalar_bounds, const Int limiter_option,
-                  const FA2<const Real>& spheremp, const FA4<const Real>& dp3d_c,
-                  const FA5<const Real>& q_min, const FA5<const Real>& q_max,
-                  const Real Qm, FA5<Real>& qdp_c, FA4<Real>& q_c) {
+                  const FA1<const Real>& spheremp, const FA3<const Real>& dp3d_c,
+                  const FA4<const Real>& q_min, const FA4<const Real>& q_max,
+                  const Real Qm, FA4<Real>& qdp_c, FA3<Real>& q_c) {
   static constexpr Int max_np = 4, max_np2 = max_np*max_np;
   const Int np2 = np*np;
   cedr_assert(np <= max_np);
 
   Real wa[max_np2], qlo[max_np2], qhi[max_np2], y[max_np2], x[max_np2];
   Real rhom = 0;
-  for (Int j = 0, cnt = 0; j < np; ++j)
-    for (Int i = 0; i < np; ++i, ++cnt) {
-      const Real rhomij = dp3d_c(i,j,k,tl_np1) * spheremp(i,j);
-      rhom += rhomij;
-      wa[cnt] = rhomij;
-      y[cnt] = q_c(i,j,k,q);
-      x[cnt] = y[cnt];
-    }
+  for (Int g = 0; g < np2; ++g) {
+    const Real rhomij = dp3d_c(g,k,tl_np1) * spheremp(g);
+    rhom += rhomij;
+    wa[g] = rhomij;
+    y[g] = q_c(g,k,q);
+    x[g] = y[g];
+  }
 
   //todo Replace with ReconstructSafely.
   if (scalar_bounds) {
-    qlo[0] = q_min(0,0,k,q,ie);
-    qhi[0] = q_max(0,0,k,q,ie);
+    qlo[0] = q_min(0,k,q,ie);
+    qhi[0] = q_max(0,k,q,ie);
     const Int N = std::min(max_np2, np2);
     for (Int i = 1; i < N; ++i) qlo[i] = qlo[0];
     for (Int i = 1; i < N; ++i) qhi[i] = qhi[0];
@@ -6201,11 +6204,10 @@ void solve_local (const Int ie, const Int k, const Int q,
     }
   } else {
     const Int N = std::min(max_np2, np2);
-    for (Int j = 0, cnt = 0; j < np; ++j)
-      for (Int i = 0; i < np; ++i, ++cnt) {
-        qlo[cnt] = q_min(i,j,k,q,ie);
-        qhi[cnt] = q_max(i,j,k,q,ie);
-      }
+    for (Int g = 0; g < np2; ++g) {
+      qlo[g] = q_min(g,k,q,ie);
+      qhi[g] = q_max(g,k,q,ie);
+    }
     for (Int trial = 0; trial < 3; ++trial) {
       int info;
       if (limiter_option == 8) {
@@ -6245,11 +6247,10 @@ void solve_local (const Int ie, const Int k, const Int q,
     }
   }
         
-  for (Int j = 0, cnt = 0; j < np; ++j)
-    for (Int i = 0; i < np; ++i, ++cnt) {
-      q_c(i,j,k,q) = x[cnt];
-      qdp_c(i,j,k,q,n1_qdp) = q_c(i,j,k,q) * dp3d_c(i,j,k,tl_np1);
-    }
+  for (Int g = 0; g < np2; ++g) {
+    q_c(g,k,q) = x[g];
+    qdp_c(g,k,q,n1_qdp) = q_c(g,k,q) * dp3d_c(g,k,tl_np1);
+  }
 }
 
 Int vertical_caas_backup (const Int n, Real* rhom,
@@ -6286,20 +6287,35 @@ Int vertical_caas_backup (const Int n, Real* rhom,
   return status;
 }
 
+void accum_values (const Int ie, const Int k, const Int q, const Int tl_np1,
+                   const Int n0_qdp, const Int np2,
+                   const FA1<const Real>& spheremp, const FA3<const Real>& dp3d_c,
+                   const FA4<Real>& q_min, const FA4<const Real>& q_max,
+                   const FA4<const Real>& qdp_p, const FA3<const Real>& q_c,
+                   Real& rhom, Real& Qm, Real& Qm_min, Real& Qm_max) {
+  for (Int g = 0; g < np2; ++g) {
+    const Real rhomij = dp3d_c(g,k,tl_np1) * spheremp(g);
+    rhom += rhomij;
+    Qm += q_c(g,k,q) * rhomij;
+    Qm_min += q_min(g,k,q,ie) * rhomij;
+    Qm_max += q_max(g,k,q,ie) * rhomij;
+  }
+}
+
 void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
                 const Int nets, const Int nete, const bool scalar_bounds,
                 const Int limiter_option) {
-  const Int np = d.np, nlev = d.nlev, qsize = d.qsize,
+  const Int np = d.np, np2 = np*np, nlev = d.nlev, qsize = d.qsize,
     nlevwrem = cdr.nsuplev*cdr.nsublev;
 
-  FA5<      Real> q_min(q_min_r, np, np, nlev, qsize, nete+1);
-  FA5<const Real> q_max(q_max_r, np, np, nlev, qsize, nete+1);
+  FA4<      Real> q_min(q_min_r, np2, nlev, qsize, nete+1);
+  FA4<const Real> q_max(q_max_r, np2, nlev, qsize, nete+1);
 
   for (Int ie = nets; ie <= nete; ++ie) {
-    FA2<const Real> spheremp(d.spheremp[ie], np, np);
-    FA5<      Real> qdp_c(d.qdp_pc[ie], np, np, nlev, d.qsize_d, 2);
-    FA4<const Real> dp3d_c(d.dp3d_c[ie], np, np, nlev, d.timelevels);
-    FA4<      Real> q_c(d.q_c[ie], np, np, nlev, d.qsize_d);
+    FA1<const Real> spheremp(d.spheremp[ie], np2);
+    FA4<      Real> qdp_c(d.qdp_pc[ie], np2, nlev, d.qsize_d, 2);
+    FA3<const Real> dp3d_c(d.dp3d_c[ie], np2, nlev, d.timelevels);
+    FA3<      Real> q_c(d.q_c[ie], np2, nlev, d.qsize_d);
 #ifdef COLUMN_OPENMP
 #   pragma omp parallel for
 #endif
@@ -6325,12 +6341,9 @@ void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
               break;
             }
             rhom[sbli] = 0; Qm[sbli] = 0; Qm_min[sbli] = 0; Qm_max[sbli] = 0;
-            Real Qm_prev = 0, volume = 0;
-            accum_values(ie, k, q, d.tl_np1, d.n0_qdp, np,
-                         false /* nonneg already applied */,
+            accum_values(ie, k, q, d.tl_np1, d.n0_qdp, np2,
                          spheremp, dp3d_c, q_min, q_max, qdp_c, q_c,
-                         volume, rhom[sbli], Qm[sbli], Qm_prev,
-                         Qm_min[sbli], Qm_max[sbli]);
+                         rhom[sbli], Qm[sbli], Qm_min[sbli], Qm_max[sbli]);
             Qm_min_tot += Qm_min[sbli];
             Qm_max_tot += Qm_max[sbli];
           }
@@ -6342,16 +6355,14 @@ void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
             bool first = true;
             for (Int sbli = 0; sbli < n; ++sbli) {
               const Int k = k0 + sbli;
-              for (Int j = 0; j < np; ++j) {
-                for (Int i = 0; i < np; ++i) {
-                  if (first) {
-                    q_min_s = q_min(i,j,k,q,ie);
-                    q_max_s = q_max(i,j,k,q,ie);
-                    first = false;
-                  } else {
-                    q_min_s = std::min(q_min_s, q_min(i,j,k,q,ie));
-                    q_max_s = std::max(q_max_s, q_max(i,j,k,q,ie));
-                  }
+              for (Int g = 0; g < np2; ++g) {
+                if (first) {
+                  q_min_s = q_min(g,k,q,ie);
+                  q_max_s = q_max(g,k,q,ie);
+                  first = false;
+                } else {
+                  q_min_s = std::min(q_min_s, q_min(g,k,q,ie));
+                  q_max_s = std::max(q_max_s, q_max(g,k,q,ie));
                 }
               }
             }
