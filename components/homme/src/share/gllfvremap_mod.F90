@@ -270,10 +270,11 @@ contains
     type (hvcoord_t), intent(in) :: hvcoord
     type (element_t), intent(in) :: elem(:)
     integer, intent(in) :: nets, nete
-    real(kind=real_kind), intent(inout) :: ps(:,:), phis(:,:), T(:,:,:), &
+    real(kind=real_kind), intent(out) :: ps(:,:), phis(:,:), T(:,:,:), &
          uv(:,:,:,:), omega_p(:,:,:), q(:,:,:,:)
 
-    real(kind=real_kind), dimension(np,np,nlev) :: dp, dp_fv, wr1, wr2, p, p_fv
+    real(kind=real_kind), dimension(np,np,nlev) :: wg1, dp, p
+    real(kind=real_kind), dimension(np*np,nlev) :: wf1, dp_fv, p_fv
     real(kind=real_kind) :: qmin, qmax, ones(np,np)
     integer :: ie, nf, nf2, qi, qsize
 
@@ -284,48 +285,45 @@ contains
     qsize = size(q,3)
     
     do ie = nets,nete
-       call gfr_g2f_scalar(ie, elem(ie)%metdet, elem(ie)%state%ps_v(:,:,nt:nt), &
-            wr1(:,:,:1))
-       ps(:nf2,ie) = reshape(wr1(:nf,:nf,1), (/nf2/))
+       call gfr1_g2f_scalar(ie, elem(ie)%metdet, elem(ie)%state%ps_v(:,:,nt:nt), wf1(:,:1))
+       ps(:nf2,ie) = wf1(:nf2,1)
        
        if (gfr%have_fv_topo_file_phis) then
           phis(:nf2,ie) = gfr%phis(:,ie)
        else
-          call gfr_g2f_scalar_and_limit(gfr, ie, elem(ie)%metdet, elem(ie)%state%phis, phis(:,ie))
+          call gfr1_g2f_scalar_and_limit(gfr, ie, elem(ie)%metdet, elem(ie)%state%phis, &
+               phis(:,ie))
        end if
 
        dp = elem(ie)%state%dp3d(:,:,:,nt)
-       call gfr_g2f_scalar(ie, elem(ie)%metdet, dp, dp_fv)
+       call gfr1_g2f_scalar(ie, elem(ie)%metdet, dp, dp_fv)
 
-       call get_temperature(elem(ie), wr2, hvcoord, nt)
+       call get_temperature(elem(ie), wg1, hvcoord, nt)
        call get_field(elem(ie), 'p', p, hvcoord, nt, -1)
-       call gfr_g2f_scalar(ie, elem(ie)%metdet, p, p_fv)
-       wr2 = wr2*(p0/p)**kappa
-       call gfr_g2f_scalar_dp(gfr, ie, elem(ie)%metdet, dp, dp_fv, wr2, wr1)
-       wr1(:nf,:nf,:) = wr1(:nf,:nf,:)*(p_fv(:nf,:nf,:)/p0)**kappa
-       T(:nf2,:,ie) = reshape(wr1(:nf,:nf,:), (/nf2,nlev/))
+       call gfr1_g2f_scalar(ie, elem(ie)%metdet, p, p_fv)
+       wg1 = wg1*(p0/p)**kappa
+       call gfr1_g2f_scalar_dp(gfr, ie, elem(ie)%metdet, dp, dp_fv, wg1, wf1)
+       T(:nf2,:,ie) = wf1(:nf2,:)*(p_fv(:nf2,:)/p0)**kappa
 
-       call gfr_g2f_vector(ie, elem, &
+       call gfr1_g2f_vector(ie, elem, &
             elem(ie)%state%v(:,:,1,:,nt), elem(ie)%state%v(:,:,2,:,nt), &
-            wr1, wr2)
-       uv(:nf2,1,:,ie) = reshape(wr1(:nf,:nf,:), (/nf2,nlev/))
-       uv(:nf2,2,:,ie) = reshape(wr2(:nf,:nf,:), (/nf2,nlev/))
+            uv(:,1,:,ie), uv(:,2,:,ie))
 
-       call get_field(elem(ie), 'omega', wr2, hvcoord, nt, -1)
-       call gfr_g2f_scalar(ie, elem(ie)%metdet, wr2, wr1)
+       call get_field(elem(ie), 'omega', wg1, hvcoord, nt, -1)
+       call gfr1_g2f_scalar(ie, elem(ie)%metdet, wg1, wf1)
 #ifdef MODEL_THETA_L
-       omega_p(:nf2,:,ie) = reshape(wr1(:nf,:nf,:), (/nf2,nlev/))
+       omega_p(:nf2,:,ie) = wf1(:nf2,:)
 #else
        ! for preqx, omega_p = omega/p
-       omega_p(:nf2,:,ie) = reshape(wr1(:nf,:nf,:)/p_fv(:nf,:nf,:), (/nf2,nlev/))
+       omega_p(:nf2,:,ie) = wf1(:nf2,:)/p_fv(:nf2,:)
 #endif
        do qi = 1,qsize
-          call gfr_g2f_mixing_ratio(gfr, ie, elem(ie)%metdet, dp, dp_fv, &
-               dp*elem(ie)%state%Q(:,:,:,qi), wr1)
-          q(:nf2,:,qi,ie) = reshape(wr1(:nf,:nf,:), (/nf2,nlev/))
+          call gfr1_g2f_mixing_ratio(gfr, ie, elem(ie)%metdet, dp, dp_fv, &
+               dp*elem(ie)%state%Q(:,:,:,qi), wf1)
+          q(:nf2,:,qi,ie) = wf1(:nf2,:)
           if (gfr%check) then
-             call check_g2f_mixing_ratio(gfr, hybrid, ie, qi, elem, dp, dp_fv, &
-                  elem(ie)%state%Q(:,:,:,qi), wr1)
+             call check1_g2f_mixing_ratio(gfr, hybrid, ie, qi, elem, dp, dp_fv, &
+                  elem(ie)%state%Q(:,:,:,qi), wf1)
           end if
        end do
     end do
@@ -639,7 +637,7 @@ contains
     integer, intent(in) :: nt
     type (hvcoord_t), intent(in) :: hvcoord
     type (element_t), intent(in) :: elem(:)
-    real(kind=real_kind), intent(inout) :: ps(:,:), phis(:,:), T(:,:,:), &
+    real(kind=real_kind), intent(out) :: ps(:,:), phis(:,:), T(:,:,:), &
          uv(:,:,:,:), omega_p(:,:,:), q(:,:,:,:)
 
     type (hybrid_t) :: hybrid
@@ -1310,17 +1308,14 @@ contains
     real(kind=real_kind), intent(in) :: gll_metdet(:,:), fv_metdet(:), g(:,:)
     real(kind=real_kind), intent(out) :: f(:)
 
-    integer :: nf, nf2, gi, gj, fi, fj, k
+    integer :: nf, nf2, gi, gj, k
     real(kind=real_kind) :: gw(np,np)
 
     nf = gfr%nphys
     nf2 = nf*nf
     gw = g*gll_metdet
-    do fj = 1,nf
-       do fi = 1,nf
-          k = fi + (fj-1)*nf
-          f(k) = sum(gfr%g2f_remapd(:,:,k)*gw)/(gfr%w_ff(k)*fv_metdet(k))
-       end do
+    do k = 1,nf2
+       f(k) = sum(gfr%g2f_remapd(:,:,k)*gw)/(gfr%w_ff(k)*fv_metdet(k))
     end do
   end subroutine gfr1_g2f_remapd
 
@@ -1420,6 +1415,38 @@ contains
     end do
   end subroutine gfr_g2f_vector
 
+  subroutine gfr1_g2f_vector(ie, elem, u_g, v_g, u_f, v_f) ! no gfr b/c public
+    ! Remap a vector on the sphere by doing the actual remap on the
+    ! reference element, thus avoiding steep gradients at the poles.
+
+    integer, intent(in) :: ie
+    type (element_t), intent(in) :: elem(:)
+    real(kind=real_kind), intent(in) :: u_g(:,:,:), v_g(:,:,:)
+    real(kind=real_kind), intent(out) :: u_f(:,:), v_f(:,:)
+
+    real(kind=real_kind) :: wg(np,np,2), wf(np*np,2), ones(np*np), ones2(np,np)
+    integer :: k, d, nf, nf2, nlev
+
+    nf = gfr%nphys
+    nf2 = nf*nf
+    ones = one
+    ones2 = one
+
+    nlev = size(u_g,3)
+    do k = 1, nlev
+       ! sphere -> GLL ref
+       do d = 1,2
+          wg(:,:,d) = elem(ie)%Dinv(:,:,d,1)*u_g(:,:,k) + elem(ie)%Dinv(:,:,d,2)*v_g(:,:,k)
+       end do
+       do d = 1,2
+          call gfr1_g2f_remapd(gfr, ones2, ones, wg(:,:,d), wf(:,d))
+       end do
+       ! FV ref -> sphere
+       u_f(:nf2,k) = gfr%D1_f(:nf2,1,1,ie)*wf(:nf2,1) + gfr%D1_f(:nf2,1,2,ie)*wf(:nf2,2)
+       v_f(:nf2,k) = gfr%D1_f(:nf2,2,1,ie)*wf(:nf2,1) + gfr%D1_f(:nf2,2,2,ie)*wf(:nf2,2)
+    end do
+  end subroutine gfr1_g2f_vector
+
   subroutine gfr_g2f_vector_dp(gfr, ie, elem, dp_g, dp_f, u_g, v_g, u_f, v_f)
     ! Remap dp_g*(u_g,v_g).
 
@@ -1471,19 +1498,21 @@ contains
          qdp_g(:,:,:)
     real(kind=real_kind), intent(out) :: q_f(:,:)
 
-    real(kind=real_kind) :: qmin, qmax, wg(np,np), wf(np*np)
-    integer :: q, k, nf, nf2
+    real(kind=real_kind) :: qmin, qmax, wg(np,np), wf1(np*np), wf2(np*np)
+    integer :: q, k, nf, nf2, nlev
 
     nf = gfr%nphys
     nf2 = nf*nf
-    do k = 1, size(qdp_g,3)
-       call gfr1_g2f_remapd(gfr, gll_metdet, gfr%fv_metdet(:,ie), qdp_g(:,:,k), q_f(:,k))
-       q_f(:nf2,k) = q_f(:nf2,k)/dp_f(:nf2,k)
+    nlev = size(qdp_g,3)
+    do k = 1,nlev
        wg = qdp_g(:,:,k)/dp_g(:,:,k)
        qmin = minval(wg)
        qmax = maxval(wg)
-       wf(:nf2) = gfr%w_ff(:nf2)*gfr%fv_metdet(:nf2,ie)
-       call limiter1_clip_and_sum(gfr%nphys, wf, qmin, qmax, dp_f(:,k), q_f(:,k))
+       call gfr1_g2f_remapd(gfr, gll_metdet, gfr%fv_metdet(:,ie), qdp_g(:,:,k), wf1)
+       wf1(:nf2) = wf1(:nf2)/dp_f(:nf2,k)
+       wf2(:nf2) = gfr%w_ff(:nf2)*gfr%fv_metdet(:nf2,ie)
+       call limiter1_clip_and_sum(nf, wf2, qmin, qmax, dp_f(:,k), wf1)
+       q_f(:nf2,k) = wf1(:nf2)
     end do
   end subroutine gfr1_g2f_mixing_ratio
 
@@ -1510,6 +1539,30 @@ contains
     call limiter_clip_and_sum(gfr%nphys, wr(:,:,1), qmin, qmax, ones, wr(:nf,:nf,2))
     f(:nf2) = reshape(wr(:nf,:nf,2), (/nf2/))
   end subroutine gfr_g2f_scalar_and_limit
+
+  subroutine gfr1_g2f_scalar_and_limit(gfr, ie, gll_metdet, g, f)
+    ! After remap, limit using extremal values from g.
+
+    type (GllFvRemap_t), intent(in) :: gfr
+    integer, intent(in) :: ie
+    real(kind=real_kind), intent(in) :: gll_metdet(:,:), g(:,:)
+    real(kind=real_kind), intent(out) :: f(:)
+
+    real(kind=real_kind) :: wg(np,np,1), wf(np*np,1), ones(np*np), qmin, qmax
+    integer :: nf, nf2
+
+    ones = one
+    nf = gfr%nphys
+    nf2 = nf*nf
+
+    qmin = minval(g(:np,:np))
+    qmax = maxval(g(:np,:np))
+    wg(:np,:np,1) = g
+    call gfr1_g2f_scalar(ie, gll_metdet, wg(:,:,:1), wf(:,:1))
+    f(:nf2) = wf(:nf2,1)
+    wf(:nf2,1) = gfr%w_ff(:nf2)*gfr%fv_metdet(:nf2,ie)
+    call limiter1_clip_and_sum(gfr%nphys, wf(:,1), qmin, qmax, ones, f)
+  end subroutine gfr1_g2f_scalar_and_limit
 
   ! FV -> GLL (f2g)
 
@@ -2527,6 +2580,42 @@ contains
        end if
     end do
   end subroutine check_g2f_mixing_ratio
+
+  subroutine check1_g2f_mixing_ratio(gfr, hybrid, ie, qi, elem, dp, dp_fv, q_g, q_f)
+    ! Check that gfr_g2f_mixing_ratio found a property-preserving
+    ! solution.
+
+    use kinds, only: iulog
+
+    type (GllFvRemap_t), intent(in) :: gfr
+    type (hybrid_t), intent(in) :: hybrid
+    integer, intent(in) :: ie, qi
+    type (element_t), intent(in) :: elem(:)
+    real(kind=real_kind), intent(in) :: dp(:,:,:), dp_fv(:,:), q_g(:,:,:), q_f(:,:)
+
+    real(kind=real_kind) :: qmin_f, qmin_g, qmax_f, qmax_g, mass_f, mass_g, den
+    integer :: q, k, nf, nf2
+
+    nf = gfr%nphys
+    nf2 = nf*nf
+    do k = 1,size(dp,3)
+       qmin_f = minval(q_f(:nf2,k))
+       qmax_f = maxval(q_f(:nf2,k))
+       qmin_g = minval(elem(ie)%state%Q(:,:,k,qi))
+       qmax_g = maxval(elem(ie)%state%Q(:,:,k,qi))
+       den = gfr%tolfac*max(1e-10_real_kind, maxval(abs(elem(ie)%state%Q(:,:,k,qi))))
+       mass_f = sum((gfr%w_ff(:nf2)*gfr%fv_metdet(:nf2,ie))*dp_fv(:nf2,k)*q_f(:nf2,k))
+       mass_g = sum(elem(ie)%spheremp*dp(:,:,k)*q_g(:,:,k))
+       if (qmin_f < qmin_g - 10*eps*den .or. qmax_f > qmax_g + 10*eps*den) then
+          write(iulog,*) 'gfr> g2f mixing ratio limits:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
+               qmin_g, qmin_f-qmin_g, qmax_f-qmax_g, qmax_g, mass_f, mass_g, 'ERROR'
+       end if
+       if (abs(mass_f - mass_g) > gfr%tolfac*20*eps*max(mass_f, mass_g)) then
+          write(iulog,*) 'gfr> g2f mixing ratio mass:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
+               qmin_g, qmax_g, mass_f, mass_g, 'ERROR'
+       end if
+    end do
+  end subroutine check1_g2f_mixing_ratio
 
   subroutine check_f2g_mixing_ratio(gfr, hybrid, ie, qi, elem, qmin, qmax, dp, q0_g, q1_g)
     ! Check that a property-preserving solution was found in the FV ->
