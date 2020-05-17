@@ -272,22 +272,21 @@ contains
 
     real(kind=real_kind), dimension(np,np,nlev) :: dp, dp_fv, wr1, wr2, p, p_fv
     real(kind=real_kind) :: qmin, qmax, ones(np,np)
-    integer :: ie, nf, nf2, ncol, qi, qsize
+    integer :: ie, nf, nf2, qi, qsize
 
     ones = one
     nf = gfr%nphys
     nf2 = nf*nf
-    ncol = nf*nf
 
     qsize = size(q,3)
     
     do ie = nets,nete
        call gfr_g2f_scalar(ie, elem(ie)%metdet, elem(ie)%state%ps_v(:,:,nt:nt), &
             wr1(:,:,:1))
-       ps(:ncol,ie) = reshape(wr1(:nf,:nf,1), (/ncol/))
+       ps(:nf2,ie) = reshape(wr1(:nf,:nf,1), (/nf2/))
        
        if (gfr%have_fv_topo_file_phis) then
-          phis(:ncol,ie) = gfr%phis(:,ie)
+          phis(:nf2,ie) = gfr%phis(:,ie)
        else
           call gfr_g2f_scalar_and_limit(gfr, ie, elem(ie)%metdet, elem(ie)%state%phis, phis(:,ie))
        end if
@@ -301,26 +300,26 @@ contains
        wr2 = wr2*(p0/p)**kappa
        call gfr_g2f_scalar_dp(gfr, ie, elem(ie)%metdet, dp, dp_fv, wr2, wr1)
        wr1(:nf,:nf,:) = wr1(:nf,:nf,:)*(p_fv(:nf,:nf,:)/p0)**kappa
-       T(:ncol,:,ie) = reshape(wr1(:nf,:nf,:), (/ncol,nlev/))
+       T(:nf2,:,ie) = reshape(wr1(:nf,:nf,:), (/nf2,nlev/))
 
        call gfr_g2f_vector(ie, elem, &
             elem(ie)%state%v(:,:,1,:,nt), elem(ie)%state%v(:,:,2,:,nt), &
             wr1, wr2)
-       uv(:ncol,1,:,ie) = reshape(wr1(:nf,:nf,:), (/ncol,nlev/))
-       uv(:ncol,2,:,ie) = reshape(wr2(:nf,:nf,:), (/ncol,nlev/))
+       uv(:nf2,1,:,ie) = reshape(wr1(:nf,:nf,:), (/nf2,nlev/))
+       uv(:nf2,2,:,ie) = reshape(wr2(:nf,:nf,:), (/nf2,nlev/))
 
        call get_field(elem(ie), 'omega', wr2, hvcoord, nt, -1)
        call gfr_g2f_scalar(ie, elem(ie)%metdet, wr2, wr1)
 #ifdef MODEL_THETA_L
-       omega_p(:ncol,:,ie) = reshape(wr1(:nf,:nf,:), (/ncol,nlev/))
+       omega_p(:nf2,:,ie) = reshape(wr1(:nf,:nf,:), (/nf2,nlev/))
 #else
        ! for preqx, omega_p = omega/p
-       omega_p(:ncol,:,ie) = reshape(wr1(:nf,:nf,:)/p_fv(:nf,:nf,:), (/ncol,nlev/))
+       omega_p(:nf2,:,ie) = reshape(wr1(:nf,:nf,:)/p_fv(:nf,:nf,:), (/nf2,nlev/))
 #endif
        do qi = 1,qsize
           call gfr_g2f_mixing_ratio(gfr, ie, elem(ie)%metdet, dp, dp_fv, &
                dp*elem(ie)%state%Q(:,:,:,qi), wr1)
-          q(:ncol,:,qi,ie) = reshape(wr1(:nf,:nf,:), (/ncol,nlev/))
+          q(:nf2,:,qi,ie) = reshape(wr1(:nf,:nf,:), (/nf2,nlev/))
           if (gfr%check) then
              call check_g2f_mixing_ratio(gfr, hybrid, ie, qi, elem, dp, dp_fv, &
                   elem(ie)%state%Q(:,:,:,qi), wr1)
@@ -351,11 +350,11 @@ contains
 
     real(kind=real_kind), dimension(np,np,nlev) :: dp, dp_fv, wr1, wr2, p, p_fv
     real(kind=real_kind) :: qmin, qmax
-    integer :: ie, nf, ncol, k, qsize, qi
+    integer :: ie, nf, nf2, k, qsize, qi
     logical :: q_adjustment
 
     nf = gfr%nphys
-    ncol = nf*nf
+    nf2 = nf*nf
     q_adjustment = ftype >= 1 .and. ftype <= 4
     qsize = size(q,3)
 
@@ -363,14 +362,14 @@ contains
        dp = elem(ie)%state%dp3d(:,:,:,nt)
        call gfr_g2f_scalar(ie, elem(ie)%metdet, dp, dp_fv)
 
-       wr1(:nf,:nf,:) = reshape(uv(:ncol,1,:,ie), (/nf,nf,nlev/))
-       wr2(:nf,:nf,:) = reshape(uv(:ncol,2,:,ie), (/nf,nf,nlev/))
+       wr1(:nf,:nf,:) = reshape(uv(:nf2,1,:,ie), (/nf,nf,nlev/))
+       wr2(:nf,:nf,:) = reshape(uv(:nf2,2,:,ie), (/nf,nf,nlev/))
        call gfr_f2g_vector(gfr, ie, elem, &
             wr1, wr2, elem(ie)%derived%FM(:,:,1,:), elem(ie)%derived%FM(:,:,2,:))
 
        call get_field(elem(ie), 'p', p, hvcoord, nt, -1)
        call gfr_g2f_scalar(ie, elem(ie)%metdet, p, p_fv)
-       wr1(:nf,:nf,:) = reshape(T(:ncol,:,ie), (/nf,nf,nlev/))
+       wr1(:nf,:nf,:) = reshape(T(:nf2,:,ie), (/nf,nf,nlev/))
        wr1(:nf,:nf,:) = wr1(:nf,:nf,:)*(p0/p_fv(:nf,:nf,:))**kappa
        call gfr_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wr1, elem(ie)%derived%FT)
        elem(ie)%derived%FT = elem(ie)%derived%FT*(p/p0)**kappa
@@ -382,7 +381,7 @@ contains
              call gfr_g2f_mixing_ratio(gfr, ie, elem(ie)%metdet, dp, dp_fv, &
                   dp*elem(ie)%state%Q(:,:,:,qi), wr1)
              !   FV Q_ten = FV Q1 - FV Q0
-             wr1(:nf,:nf,:) = reshape(q(:ncol,:,qi,ie), (/nf,nf,nlev/)) - wr1(:nf,:nf,:)
+             wr1(:nf,:nf,:) = reshape(q(:nf2,:,qi,ie), (/nf,nf,nlev/)) - wr1(:nf,:nf,:)
              if (nf > 1 .or. .not. gfr%boost_pg1) then
                 ! GLL Q_ten
                 call gfr_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wr1, wr2)
@@ -396,12 +395,12 @@ contains
              end if
              ! Get limiter bounds.
              do k = 1,nlev
-                gfr%qmin(k,qi,ie) = minval(q(:ncol,k,qi,ie))
-                gfr%qmax(k,qi,ie) = maxval(q(:ncol,k,qi,ie))
+                gfr%qmin(k,qi,ie) = minval(q(:nf2,k,qi,ie))
+                gfr%qmax(k,qi,ie) = maxval(q(:nf2,k,qi,ie))
              end do
           else
              ! FV Q_ten
-             wr1(:nf,:nf,:) = reshape(q(:ncol,:,qi,ie), (/nf,nf,nlev/))
+             wr1(:nf,:nf,:) = reshape(q(:nf2,:,qi,ie), (/nf,nf,nlev/))
              wr1(:nf,:nf,:) = dt*wr1(:nf,:nf,:)/dp_fv(:nf,:nf,:)
              if (nf > 1 .or. .not. gfr%boost_pg1) then
                 ! GLL Q_ten
@@ -498,18 +497,18 @@ contains
     logical, intent(in), optional :: square, augment
 
     type (hybrid_t) :: hybrid
-    integer :: ie, ncol
+    integer :: ie, nf2
     logical :: augment_in
 
     augment_in = .false.
     if (present(augment)) augment_in = augment
 
-    ncol = gfr%nphys*gfr%nphys
+    nf2 = gfr%nphys*gfr%nphys
 
     do ie = nets,nete
        call gfr_dyn_to_fv_phys_topo_data_elem(ie, elem, square, augment_in, &
             g(npsq*(ie-nets)+1 : npsq*(ie-nets+1)), &
-            p(ncol*(ie-nets)+1 : ncol*(ie-nets+1)))
+            p(nf2*(ie-nets)+1 : nf2*(ie-nets+1)))
     end do
   end subroutine gfr_dyn_to_fv_phys_topo_data
 
@@ -525,11 +524,11 @@ contains
     real(kind=real_kind), intent(out) :: p(:)
 
     real(kind=real_kind) :: wr(np,np,3), ones(np,np), qmin, qmax, phispg(npsq)
-    integer :: nf, ncol, i, j, k
+    integer :: nf, nf2, i, j, k
 
     ones = one
     nf = gfr%nphys
-    ncol = nf*nf
+    nf2 = nf*nf
 
     if (augment_variance) then
        ! Estimate additional variance due to remapping from GLL to FV
@@ -550,16 +549,16 @@ contains
        ! Original SGH. augment_variance implies we need to square and sqrt
        ! quantities.
        wr(:,:,1) = reshape(g(:npsq)**2, (/np,np/))
-       call gfr_g2f_scalar_and_limit(gfr, ie, elem(ie)%metdet, wr(:,:,1), p(:ncol))
+       call gfr_g2f_scalar_and_limit(gfr, ie, elem(ie)%metdet, wr(:,:,1), p(:nf2))
 
        ! Combine the two sources of variance.
-       wr(:nf,:nf,2) = sqrt(reshape(p(:ncol), (/nf,nf/)) + wr(:nf,:nf,3))
-       p(:ncol) = reshape(wr(:nf,:nf,2), (/ncol/))
+       wr(:nf,:nf,2) = sqrt(reshape(p(:nf2), (/nf,nf/)) + wr(:nf,:nf,3))
+       p(:nf2) = reshape(wr(:nf,:nf,2), (/nf2/))
     else
        wr(:,:,1) = reshape(g(:npsq), (/np,np/))
        if (square) wr(:,:,1) = wr(:,:,1)**2
-       call gfr_g2f_scalar_and_limit(gfr, ie, elem(ie)%metdet, wr(:,:,1), p(:ncol))
-       if (square) p(:ncol) = sqrt(p(:ncol))
+       call gfr_g2f_scalar_and_limit(gfr, ie, elem(ie)%metdet, wr(:,:,1), p(:nf2))
+       if (square) p(:nf2) = sqrt(p(:nf2))
     end if
   end subroutine gfr_dyn_to_fv_phys_topo_data_elem
   
@@ -577,18 +576,18 @@ contains
     real(kind=real_kind), intent(in) :: phis(:,:)
 
     real(kind=real_kind) :: wr(np,np,2), ones(np,np,1)
-    integer :: ie, nf, ncol
+    integer :: ie, nf, nf2
 
     ones = one
     nf = gfr%nphys
-    ncol = nf*nf
+    nf2 = nf*nf
     ! For now, map GLL topo back to FV, as ne30pg2 runs otherwise show grid
     ! imprint in the PHIS diagnostic. We may revise this choice later.
     !gfr%have_fv_topo_file_phis = .true.
 
     do ie = nets,nete
-       gfr%phis(:,ie) = phis(:ncol,ie)
-       wr(:nf,:nf,1) = reshape(phis(:ncol,ie), (/nf,nf/))
+       gfr%phis(:,ie) = phis(:nf2,ie)
+       wr(:nf,:nf,1) = reshape(phis(:nf2,ie), (/nf,nf/))
        gfr%qmin(:,:,ie) = minval(wr(:nf,:nf,1))
        gfr%qmax(:,:,ie) = maxval(wr(:nf,:nf,1))
        if (nf > 1) then
@@ -1404,24 +1403,6 @@ contains
     end do
   end subroutine gfr_g2f_mixing_ratio
 
-  subroutine gfr_g2f_mixing_ratios(gfr, ie, gll_metdet, dp_g, dp_f, qdp_g, q_f)
-    ! Remap mixing ratios conservatively and preventing new extrema.
-
-    type (GllFvRemap_t), intent(in) :: gfr
-    integer, intent(in) :: ie
-    real(kind=real_kind), intent(in) :: gll_metdet(:,:), dp_g(:,:,:), dp_f(:,:,:), &
-         qdp_g(:,:,:,:)
-    real(kind=real_kind), intent(out) :: q_f(:,:,:,:)
-
-    real(kind=real_kind) :: qmin, qmax, wrk(np,np)
-    integer :: q, k, nf
-
-    nf = gfr%nphys
-    do q = 1, size(qdp_g,4)
-       call gfr_g2f_mixing_ratio(gfr, ie, gll_metdet, dp_g, dp_f, qdp_g(:,:,:,q), q_f(:,:,:,q))
-    end do
-  end subroutine gfr_g2f_mixing_ratios
-
   subroutine gfr_g2f_scalar_and_limit(gfr, ie, gll_metdet, g, f)
     ! After remap, limit using extremal values from g.
 
@@ -1431,19 +1412,19 @@ contains
     real(kind=real_kind), intent(out) :: f(:)
 
     real(kind=real_kind) :: wr(np,np,2), ones(np,np), qmin, qmax
-    integer :: nf, ncol
+    integer :: nf, nf2
 
     ones = one
     nf = gfr%nphys
-    ncol = nf*nf
+    nf2 = nf*nf
 
     wr(:np,:np,1) = g
     call gfr_g2f_scalar(ie, gll_metdet, wr(:,:,1:1), wr(:,:,2:2))
     qmin = minval(g(:np,:np))
     qmax = maxval(g(:np,:np))
-    wr(:nf,:nf,1) = reshape(gfr%w_ff(:ncol)*gfr%fv_metdet(:ncol,ie), (/nf,nf/))
+    wr(:nf,:nf,1) = reshape(gfr%w_ff(:nf2)*gfr%fv_metdet(:nf2,ie), (/nf,nf/))
     call limiter_clip_and_sum(gfr%nphys, wr(:,:,1), qmin, qmax, ones, wr(:nf,:nf,2))
-    f(:ncol) = reshape(wr(:nf,:nf,2), (/ncol/))
+    f(:nf2) = reshape(wr(:nf,:nf,2), (/nf2/))
   end subroutine gfr_g2f_scalar_and_limit
 
   ! FV -> GLL (f2g)
@@ -1759,7 +1740,7 @@ contains
     integer, intent(in) :: nets, nete
 
     real(kind=real_kind) :: wr(np,np,2), ones(np,np,1)
-    integer :: ie, nf, ncol
+    integer :: ie, nf
 
     if (gfr%nphys /= 1 .or. .not. gfr%boost_pg1) return
 
