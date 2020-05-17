@@ -100,8 +100,10 @@ module gllfvremap_mod
           fv_metdet(:,:), & ! (nphys*nphys,nelemd)
           ! Vector on ref elem -> vector on sphere
           D_f(:,:,:,:,:), & ! (nphys,nphys,2,2,nelemd)
+          D1_f(:,:,:,:), & ! (nphys,nphys,2,2,nelemd)
           ! Inverse of D_f
           Dinv_f(:,:,:,:,:), &
+          Dinv1_f(:,:,:,:), &
           qmin(:,:,:), qmax(:,:,:), &
           phis(:,:), &
           ! For 'check', when it's on
@@ -235,6 +237,7 @@ contains
 
     allocate(gfr%fv_metdet(nphys2,nelemd), &
          gfr%D_f(nphys,nphys,2,2,nelemd), gfr%Dinv_f(nphys,nphys,2,2,nelemd), &
+         gfr%D1_f(nphys*nphys,2,2,nelemd), gfr%Dinv1_f(nphys*nphys,2,2,nelemd), &
          gfr%qmin(nlev,max(1,qsize),nelemd), gfr%qmax(nlev,max(1,qsize),nelemd), &
          gfr%phis(nphys2,nelemd), gfr%center_f(nphys,nphys,nelemd), &
          gfr%corners_f(4,nphys,nphys,nelemd))
@@ -248,7 +251,7 @@ contains
     ! Deallocate the internal gfr structure.
 
     if (.not. allocated(gfr%fv_metdet)) return
-    deallocate(gfr%fv_metdet, gfr%D_f, gfr%Dinv_f, gfr%qmin, gfr%qmax, gfr%phis, &
+    deallocate(gfr%fv_metdet, gfr%D_f, gfr%Dinv_f, gfr%D1_f, gfr%Dinv1_f, gfr%qmin, gfr%qmax, gfr%phis, &
          gfr%center_f, gfr%corners_f)
     if (gfr%check) deallocate(gfr%check_areas)
   end subroutine gfr_finish
@@ -348,7 +351,8 @@ contains
     integer, intent(in) :: nets, nete
     real(kind=real_kind), intent(in) :: T(:,:,:), uv(:,:,:,:), q(:,:,:,:)
 
-    real(kind=real_kind), dimension(np,np,nlev) :: dp, dp_fv, wr1, wr2, p, p_fv
+    real(kind=real_kind), dimension(np,np,nlev) :: dp, dp_fv, wg1, wg2, p, p_fv
+    real(kind=real_kind), dimension(np*np,nlev) :: wf1, wf2
     real(kind=real_kind) :: qmin, qmax
     integer :: ie, nf, nf2, k, qsize, qi
     logical :: q_adjustment
@@ -362,16 +366,15 @@ contains
        dp = elem(ie)%state%dp3d(:,:,:,nt)
        call gfr_g2f_scalar(ie, elem(ie)%metdet, dp, dp_fv)
 
-       wr1(:nf,:nf,:) = reshape(uv(:nf2,1,:,ie), (/nf,nf,nlev/))
-       wr2(:nf,:nf,:) = reshape(uv(:nf2,2,:,ie), (/nf,nf,nlev/))
-       call gfr_f2g_vector(gfr, ie, elem, &
-            wr1, wr2, elem(ie)%derived%FM(:,:,1,:), elem(ie)%derived%FM(:,:,2,:))
+       call gfr1_f2g_vector(gfr, ie, elem, &
+            uv(:nf2,1,:,ie), uv(:nf2,2,:,ie), &
+            elem(ie)%derived%FM(:,:,1,:), elem(ie)%derived%FM(:,:,2,:))
 
        call get_field(elem(ie), 'p', p, hvcoord, nt, -1)
        call gfr_g2f_scalar(ie, elem(ie)%metdet, p, p_fv)
-       wr1(:nf,:nf,:) = reshape(T(:nf2,:,ie), (/nf,nf,nlev/))
-       wr1(:nf,:nf,:) = wr1(:nf,:nf,:)*(p0/p_fv(:nf,:nf,:))**kappa
-       call gfr_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wr1, elem(ie)%derived%FT)
+       wg1(:nf,:nf,:) = reshape(T(:nf2,:,ie), (/nf,nf,nlev/))
+       wg1(:nf,:nf,:) = wg1(:nf,:nf,:)*(p0/p_fv(:nf,:nf,:))**kappa
+       call gfr_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wg1, elem(ie)%derived%FT)
        elem(ie)%derived%FT = elem(ie)%derived%FT*(p/p0)**kappa
 
        do qi = 1,qsize
@@ -379,18 +382,18 @@ contains
              ! FV Q_ten
              !   GLL Q0 -> FV Q0
              call gfr_g2f_mixing_ratio(gfr, ie, elem(ie)%metdet, dp, dp_fv, &
-                  dp*elem(ie)%state%Q(:,:,:,qi), wr1)
+                  dp*elem(ie)%state%Q(:,:,:,qi), wg1)
              !   FV Q_ten = FV Q1 - FV Q0
-             wr1(:nf,:nf,:) = reshape(q(:nf2,:,qi,ie), (/nf,nf,nlev/)) - wr1(:nf,:nf,:)
+             wg1(:nf,:nf,:) = reshape(q(:nf2,:,qi,ie), (/nf,nf,nlev/)) - wg1(:nf,:nf,:)
              if (nf > 1 .or. .not. gfr%boost_pg1) then
                 ! GLL Q_ten
-                call gfr_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wr1, wr2)
+                call gfr_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wg1, wg2)
                 ! GLL Q1
-                elem(ie)%derived%FQ(:,:,:,qi) = elem(ie)%state%Q(:,:,:,qi) + wr2
+                elem(ie)%derived%FQ(:,:,:,qi) = elem(ie)%state%Q(:,:,:,qi) + wg2
              else
                 ! GLL Q_ten
                 do k = 1,nlev
-                   elem(ie)%derived%FQ(:,:,k,qi) = wr1(1,1,k)
+                   elem(ie)%derived%FQ(:,:,k,qi) = wg1(1,1,k)
                 end do
              end if
              ! Get limiter bounds.
@@ -400,28 +403,28 @@ contains
              end do
           else
              ! FV Q_ten
-             wr1(:nf,:nf,:) = reshape(q(:nf2,:,qi,ie), (/nf,nf,nlev/))
-             wr1(:nf,:nf,:) = dt*wr1(:nf,:nf,:)/dp_fv(:nf,:nf,:)
+             wg1(:nf,:nf,:) = reshape(q(:nf2,:,qi,ie), (/nf,nf,nlev/))
+             wg1(:nf,:nf,:) = dt*wg1(:nf,:nf,:)/dp_fv(:nf,:nf,:)
              if (nf > 1 .or. .not. gfr%boost_pg1) then
                 ! GLL Q_ten
-                call gfr_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wr1, wr2)
+                call gfr_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wg1, wg2)
                 ! GLL Q1
-                elem(ie)%derived%FQ(:,:,:,qi) = elem(ie)%state%Q(:,:,:,qi) + wr2
+                elem(ie)%derived%FQ(:,:,:,qi) = elem(ie)%state%Q(:,:,:,qi) + wg2
              else
                 ! GLL Q_ten
                 do k = 1,nlev
-                   elem(ie)%derived%FQ(:,:,k,qi) = wr1(1,1,k)
+                   elem(ie)%derived%FQ(:,:,k,qi) = wg1(1,1,k)
                 end do
              end if
              ! GLL Q0 -> FV Q0
              call gfr_g2f_mixing_ratio(gfr, ie, elem(ie)%metdet, dp, dp_fv, &
-                  dp*elem(ie)%state%Q(:,:,:,qi), wr2)
+                  dp*elem(ie)%state%Q(:,:,:,qi), wg2)
              ! FV Q1
-             wr2(:nf,:nf,:) = wr2(:nf,:nf,:) + wr1(:nf,:nf,:)
+             wg2(:nf,:nf,:) = wg2(:nf,:nf,:) + wg1(:nf,:nf,:)
              ! Get limiter bounds.
              do k = 1,nlev
-                gfr%qmin(k,qi,ie) = minval(wr2(:nf,:nf,k))
-                gfr%qmax(k,qi,ie) = maxval(wr2(:nf,:nf,k))
+                gfr%qmin(k,qi,ie) = minval(wg2(:nf,:nf,k))
+                gfr%qmax(k,qi,ie) = maxval(wg2(:nf,:nf,k))
              end do
           end if
        end do
@@ -437,7 +440,7 @@ contains
        dp = elem(ie)%state%dp3d(:,:,:,nt)
        do qi = 1,qsize
           ! Limit GLL Q1.
-          if (gfr%check) wr1 = elem(ie)%derived%FQ(:,:,:,qi)
+          if (gfr%check) wg1 = elem(ie)%derived%FQ(:,:,:,qi)
           do k = 1,nlev
              ! Augment bounds with GLL Q0 bounds. This assures that if
              ! the tendency is 0, GLL Q1 = GLL Q0.
@@ -449,7 +452,7 @@ contains
           end do
           if (gfr%check) then
              call check_f2g_mixing_ratio(gfr, hybrid, ie, qi, elem, gfr%qmin(:,qi,ie), &
-                  gfr%qmax(:,qi,ie), dp, wr1, elem(ie)%derived%FQ(:,:,:,qi))
+                  gfr%qmax(:,qi,ie), dp, wg1, elem(ie)%derived%FQ(:,:,:,qi))
           end if
           if (.not. q_adjustment) then
              ! Convert to a tendency.
@@ -1257,11 +1260,16 @@ contains
              det = gfr%fv_metdet(k,ie)
 
              gfr%D_f(i,j,:,:,ie) = wrk
+             gfr%D1_f(k,:,:,ie) = wrk
 
              gfr%Dinv_f(i,j,1,1,ie) =  wrk(2,2)/det
              gfr%Dinv_f(i,j,1,2,ie) = -wrk(1,2)/det
              gfr%Dinv_f(i,j,2,1,ie) = -wrk(2,1)/det
              gfr%Dinv_f(i,j,2,2,ie) =  wrk(1,1)/det
+             gfr%Dinv1_f(k,1,1,ie) =  wrk(2,2)/det
+             gfr%Dinv1_f(k,1,2,ie) = -wrk(1,2)/det
+             gfr%Dinv1_f(k,2,1,ie) = -wrk(2,1)/det
+             gfr%Dinv1_f(k,2,2,ie) =  wrk(1,1)/det
           end do
        end do
     end do
@@ -1495,6 +1503,41 @@ contains
     end do
   end subroutine gfr_f2g_vector
 
+  subroutine gfr1_f2g_vector(gfr, ie, elem, u_f, v_f, u_g, v_g)
+    ! Remap a vector on the sphere by doing the actual remap on the
+    ! reference element, thus avoiding steep gradients at the poles.
+
+    type (GllFvRemap_t), intent(in) :: gfr
+    integer, intent(in) :: ie
+    type (element_t), intent(in) :: elem(:)
+    real(kind=real_kind), intent(in) :: u_f(:,:), v_f(:,:)
+    real(kind=real_kind), intent(out) :: u_g(:,:,:), v_g(:,:,:)
+
+    real(kind=real_kind) :: wg(np,np,2), wf(np*np,2), ones(np*np), ones2(np,np)
+    integer :: k, d, nf, nf2, nlev
+
+    nf = gfr%nphys
+    nf2 = nf*nf
+    ones = one
+    ones2 = one
+
+    nlev = size(u_g,3)
+    do k = 1, nlev
+       ! sphere -> FV ref
+       do d = 1,2
+          wf(:nf2,d) = &
+               gfr%Dinv1_f(:nf2,d,1,ie)*u_f(:nf2,k) + &
+               gfr%Dinv1_f(:nf2,d,2,ie)*v_f(:nf2,k)
+       end do
+       do d = 1,2
+          call gfr1_f2g_remapd(gfr, ones2, ones, wf(:,d), wg(:,:,d))
+       end do
+       ! GLL ref -> sphere
+       u_g(:,:,k) = elem(ie)%D(:,:,1,1)*wg(:,:,1) + elem(ie)%D(:,:,1,2)*wg(:,:,2)
+       v_g(:,:,k) = elem(ie)%D(:,:,2,1)*wg(:,:,1) + elem(ie)%D(:,:,2,2)*wg(:,:,2)
+    end do
+  end subroutine gfr1_f2g_vector
+
   subroutine gfr_f2g_vector_dp(gfr, ie, elem, dp_f, dp_g, u_f, v_f, u_g, v_g)
     ! Remap dp_f*(u_f,v_f).
 
@@ -1600,6 +1643,28 @@ contains
        end do
     end do
   end subroutine gfr_f2g_remapd
+
+  subroutine gfr1_f2g_remapd(gfr, gll_metdet, fv_metdet, f, g)
+    ! Core remap operator. Conservative remap on the reference
+    ! element.
+
+    type (GllFvRemap_t), intent(in) :: gfr
+    real(kind=real_kind), intent(in) :: gll_metdet(:,:), fv_metdet(:), f(:)
+    real(kind=real_kind), intent(out) :: g(:,:)
+
+    integer :: nf, nf2, gi, gj, fi, fj
+    real(kind=real_kind) :: wrk(np*np)
+
+    nf = gfr%nphys
+    nf2 = nf*nf
+    wrk(:nf2) = f(:nf2)*fv_metdet(:nf2)
+    do gj = 1,np
+       do gi = 1,np
+          g(gi,gj) = sum(gfr%f2g_remapd(:nf2,gi,gj)*wrk(:nf2))/ &
+               gll_metdet(gi,gj)
+       end do
+    end do
+  end subroutine gfr1_f2g_remapd
 
   ! ----------------------------------------------------------------------
   ! All routines to boost pg1 OOA from 1 to ~1.6.
