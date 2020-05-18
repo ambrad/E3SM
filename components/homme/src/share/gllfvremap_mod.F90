@@ -99,10 +99,8 @@ module gllfvremap_mod
           ! FV subcell areas; FV analogue of GLL elem(ie)%metdet arrays
           fv_metdet(:,:), & ! (nphys*nphys,nelemd)
           ! Vector on ref elem -> vector on sphere
-          D_f(:,:,:,:,:), & ! (nphys,nphys,2,2,nelemd)
           D1_f(:,:,:,:), & ! (nphys,nphys,2,2,nelemd)
           ! Inverse of D_f
-          Dinv_f(:,:,:,:,:), &
           Dinv1_f(:,:,:,:), &
           qmin(:,:,:), qmax(:,:,:), &
           phis(:,:), &
@@ -236,7 +234,6 @@ contains
     call gfr_init_f2g_remapd(gfr, R, tau)
 
     allocate(gfr%fv_metdet(nphys2,nelemd), &
-         gfr%D_f(nphys,nphys,2,2,nelemd), gfr%Dinv_f(nphys,nphys,2,2,nelemd), &
          gfr%D1_f(nphys*nphys,2,2,nelemd), gfr%Dinv1_f(nphys*nphys,2,2,nelemd), &
          gfr%qmin(nlev,max(1,qsize),nelemd), gfr%qmax(nlev,max(1,qsize),nelemd), &
          gfr%phis(nphys2,nelemd), gfr%center_f(nphys,nphys,nelemd), &
@@ -251,7 +248,7 @@ contains
     ! Deallocate the internal gfr structure.
 
     if (.not. allocated(gfr%fv_metdet)) return
-    deallocate(gfr%fv_metdet, gfr%D_f, gfr%Dinv_f, gfr%D1_f, gfr%Dinv1_f, gfr%qmin, gfr%qmax, gfr%phis, &
+    deallocate(gfr%fv_metdet, gfr%D1_f, gfr%Dinv1_f, gfr%qmin, gfr%qmax, gfr%phis, &
          gfr%center_f, gfr%corners_f)
     if (gfr%check) deallocate(gfr%check_areas)
   end subroutine gfr_finish
@@ -1251,13 +1248,8 @@ contains
              wrk = wrk*sqrt(gfr%fv_metdet(k,ie)/abs(det))
              det = gfr%fv_metdet(k,ie)
 
-             gfr%D_f(i,j,:,:,ie) = wrk
              gfr%D1_f(k,:,:,ie) = wrk
 
-             gfr%Dinv_f(i,j,1,1,ie) =  wrk(2,2)/det
-             gfr%Dinv_f(i,j,1,2,ie) = -wrk(1,2)/det
-             gfr%Dinv_f(i,j,2,1,ie) = -wrk(2,1)/det
-             gfr%Dinv_f(i,j,2,2,ie) =  wrk(1,1)/det
              gfr%Dinv1_f(k,1,1,ie) =  wrk(2,2)/det
              gfr%Dinv1_f(k,1,2,ie) = -wrk(1,2)/det
              gfr%Dinv1_f(k,2,1,ie) = -wrk(2,1)/det
@@ -1464,43 +1456,6 @@ contains
     g = g/dp_g
   end subroutine gfr1_f2g_scalar_dp
 
-  subroutine gfr_f2g_vector(gfr, ie, elem, u_f, v_f, u_g, v_g)
-    ! Remap a vector on the sphere by doing the actual remap on the
-    ! reference element, thus avoiding steep gradients at the poles.
-
-    type (GllFvRemap_t), intent(in) :: gfr
-    integer, intent(in) :: ie
-    type (element_t), intent(in) :: elem(:)
-    real(kind=real_kind), intent(in) :: u_f(:,:,:), v_f(:,:,:)
-    real(kind=real_kind), intent(out) :: u_g(:,:,:), v_g(:,:,:)
-
-    real(kind=real_kind) :: wg(np,np,2), wf(np,np,2), ones(np*np), ones2(np,np)
-    integer :: k, d, nf, nlev
-
-    nf = gfr%nphys
-    ones = one
-    ones2 = one
-
-    nlev = size(u_g,3)
-    do k = 1, nlev
-       ! sphere -> FV ref
-       do d = 1,2
-          wf(:nf,:nf,d) = &
-               gfr%Dinv_f(:nf,:nf,d,1,ie)*u_f(:nf,:nf,k) + &
-               gfr%Dinv_f(:nf,:nf,d,2,ie)*v_f(:nf,:nf,k)
-       end do
-       do d = 1,2
-          call gfr_f2g_remapd(gfr, ones2, ones, wf(:,:,d), wg(:,:,d))
-       end do
-       ! GLL ref -> sphere
-       do d = 1,2
-          wf(:,:,d) = elem(ie)%D(:,:,d,1)*wg(:,:,1) + elem(ie)%D(:,:,d,2)*wg(:,:,2)
-       end do
-       u_g(:,:,k) = wf(:,:,1)
-       v_g(:,:,k) = wf(:,:,2)
-    end do
-  end subroutine gfr_f2g_vector
-
   subroutine gfr1_f2g_vector(gfr, ie, elem, u_f, v_f, u_g, v_g)
     ! Remap a vector on the sphere by doing the actual remap on the
     ! reference element, thus avoiding steep gradients at the poles.
@@ -1535,24 +1490,6 @@ contains
        v_g(:,:,k) = elem(ie)%D(:,:,2,1)*wg(:,:,1) + elem(ie)%D(:,:,2,2)*wg(:,:,2)
     end do
   end subroutine gfr1_f2g_vector
-
-  subroutine gfr_f2g_vector_dp(gfr, ie, elem, dp_f, dp_g, u_f, v_f, u_g, v_g)
-    ! Remap dp_f*(u_f,v_f).
-
-    type (GllFvRemap_t), intent(in) :: gfr
-    integer, intent(in) :: ie
-    type (element_t), intent(in) :: elem(:)
-    real(kind=real_kind), intent(in) :: dp_f(:,:,:), dp_g(:,:,:), u_f(:,:,:), v_f(:,:,:)
-    real(kind=real_kind), intent(out) :: u_g(:,:,:), v_g(:,:,:)
-
-    integer :: nf
-
-    nf = gfr%nphys
-    call gfr_f2g_vector(gfr, ie, elem, dp_f(:nf,:nf,:)*u_f(:nf,:nf,:), &
-         dp_f(:nf,:nf,:)*v_f(:nf,:nf,:), u_g, v_g)
-    u_g = u_g/dp_g
-    v_g = v_g/dp_g
-  end subroutine gfr_f2g_vector_dp
 
   subroutine gfr_f2g_mixing_ratios_he(hybrid, nets, nete, qmin, qmax)
     ! Exchange qmin/qmax among element neighbors.
