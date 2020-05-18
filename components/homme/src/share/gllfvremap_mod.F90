@@ -319,7 +319,7 @@ contains
                dp*elem(ie)%state%Q(:,:,:,qi), wf1)
           q(:nf2,:,qi,ie) = wf1(:nf2,:)
           if (gfr%check) then
-             call check1_g2f_mixing_ratio(gfr, hybrid, ie, qi, elem, dp, dp_fv, &
+             call check_g2f_mixing_ratio(gfr, hybrid, ie, qi, elem, dp, dp_fv, &
                   elem(ie)%state%Q(:,:,:,qi), wf1)
           end if
        end do
@@ -2238,43 +2238,6 @@ contains
     type (hybrid_t), intent(in) :: hybrid
     integer, intent(in) :: ie, qi
     type (element_t), intent(in) :: elem(:)
-    real(kind=real_kind), intent(in) :: dp(:,:,:), dp_fv(:,:,:), q_g(:,:,:), q_f(:,:,:)
-
-    real(kind=real_kind) :: qmin_f, qmin_g, qmax_f, qmax_g, mass_f, mass_g, den
-    integer :: q, k, nf, nf2
-
-    nf = gfr%nphys
-    nf2 = nf*nf
-    do k = 1,size(dp,3)
-       qmin_f = minval(q_f(:nf,:nf,k))
-       qmax_f = maxval(q_f(:nf,:nf,k))
-       qmin_g = minval(elem(ie)%state%Q(:,:,k,qi))
-       qmax_g = maxval(elem(ie)%state%Q(:,:,k,qi))
-       den = gfr%tolfac*max(1e-10_real_kind, maxval(abs(elem(ie)%state%Q(:,:,k,qi))))
-       mass_f = sum(reshape(gfr%w_ff(:nf2)*gfr%fv_metdet(:nf2,ie), (/nf,nf/))* &
-            dp_fv(:nf,:nf,k)*q_f(:nf,:nf,k))
-       mass_g = sum(elem(ie)%spheremp*dp(:,:,k)*q_g(:,:,k))
-       if (qmin_f < qmin_g - 10*eps*den .or. qmax_f > qmax_g + 10*eps*den) then
-          write(iulog,*) 'gfr> g2f mixing ratio limits:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
-               qmin_g, qmin_f-qmin_g, qmax_f-qmax_g, qmax_g, mass_f, mass_g, 'ERROR'
-       end if
-       if (abs(mass_f - mass_g) > gfr%tolfac*20*eps*max(mass_f, mass_g)) then
-          write(iulog,*) 'gfr> g2f mixing ratio mass:', hybrid%par%rank, hybrid%ithr, ie, qi, k, &
-               qmin_g, qmax_g, mass_f, mass_g, 'ERROR'
-       end if
-    end do
-  end subroutine check_g2f_mixing_ratio
-
-  subroutine check1_g2f_mixing_ratio(gfr, hybrid, ie, qi, elem, dp, dp_fv, q_g, q_f)
-    ! Check that gfr_g2f_mixing_ratio found a property-preserving
-    ! solution.
-
-    use kinds, only: iulog
-
-    type (GllFvRemap_t), intent(in) :: gfr
-    type (hybrid_t), intent(in) :: hybrid
-    integer, intent(in) :: ie, qi
-    type (element_t), intent(in) :: elem(:)
     real(kind=real_kind), intent(in) :: dp(:,:,:), dp_fv(:,:), q_g(:,:,:), q_f(:,:)
 
     real(kind=real_kind) :: qmin_f, qmin_g, qmax_f, qmax_g, mass_f, mass_g, den
@@ -2299,7 +2262,7 @@ contains
                qmin_g, qmax_g, mass_f, mass_g, 'ERROR'
        end if
     end do
-  end subroutine check1_g2f_mixing_ratio
+  end subroutine check_g2f_mixing_ratio
 
   subroutine check_f2g_mixing_ratio(gfr, hybrid, ie, qi, elem, qmin, qmax, dp, q0_g, q1_g)
     ! Check that a property-preserving solution was found in the FV ->
