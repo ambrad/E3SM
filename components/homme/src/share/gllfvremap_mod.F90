@@ -2704,10 +2704,10 @@ contains
     type (element_t), intent(inout) :: elem(:)
     logical, intent(in) :: verbose
 
-    real(kind=real_kind) :: a, b, rd, x, y, f0(np,np), f1(np,np), g(np,np), &
-         wrk(np,np), qmin, qmax, qmin1, qmax1, wr1(np,np,1), sphere_area, area
-    integer :: nf, nf2, ie, i, j, iremap, info, ilimit, it
-    real(kind=real_kind), allocatable :: Qdp_fv(:,:,:), ps_v_fv(:,:,:), &
+    real(kind=real_kind) :: a, b, rd, x, y, f0(np*np), f1(np*np), g(np,np), &
+         wf(np*np), wg(np,np), qmin, qmax, qmin1, qmax1, sphere_area, area
+    integer :: nf, nf2, ie, i, j, k, iremap, info, ilimit, it
+    real(kind=real_kind), allocatable :: Qdp_fv(:,:), ps_v_fv(:,:), &
          qmins(:,:,:), qmaxs(:,:,:)
     logical :: limit
     character(32) :: msg
@@ -2771,14 +2771,14 @@ contains
        if (rd /= rd .or. rd > 10*eps) write(iulog,*) 'gfr> area', ie, a, b, rd
 
        ! Check FV geometry.
-       f0(:nf,:nf) = gfr%D_f(:,:,1,1,ie)*gfr%D_f(:,:,2,2,ie) - &
-            gfr%D_f(:,:,1,2,ie)*gfr%D_f(:,:,2,1,ie)
-       rd = maxval(reshape(abs(f0(:nf,:nf)), (/nf2/)) - gfr%fv_metdet(:nf2,ie))/ &
+       f0(:nf2) = gfr%D1_f(:,1,1,ie)*gfr%D1_f(:,2,2,ie) - &
+            gfr%D1_f(:,1,2,ie)*gfr%D1_f(:,2,1,ie)
+       rd = maxval(abs(f0(:nf2)) - gfr%fv_metdet(:nf2,ie))/ &
             maxval(gfr%fv_metdet(:nf2,ie))
        if (rd > 10*eps) write(iulog,*) 'gfr> D', ie, rd
-       f0(:nf,:nf) = gfr%Dinv_f(:,:,1,1,ie)*gfr%Dinv_f(:,:,2,2,ie) - &
-            gfr%Dinv_f(:,:,1,2,ie)*gfr%Dinv_f(:,:,2,1,ie)
-       rd = maxval(reshape(abs(f0(:nf,:nf)), (/nf2/)) - one/gfr%fv_metdet(:nf2,ie))/ &
+       f0(:nf2) = gfr%Dinv1_f(:,1,1,ie)*gfr%Dinv1_f(:,2,2,ie) - &
+            gfr%Dinv1_f(:,1,2,ie)*gfr%Dinv1_f(:,2,1,ie)
+       rd = maxval(abs(f0(:nf2)) - one/gfr%fv_metdet(:nf2,ie))/ &
             maxval(one/gfr%fv_metdet(:nf2,ie))
        if (rd > 10*eps) write(iulog,*) 'gfr> Dinv', ie, rd
 
@@ -2788,14 +2788,15 @@ contains
           x = real(j-1, real_kind)/real(nf, real_kind)
           do i = 1,nf
              y = real(i-1, real_kind)/real(nf, real_kind)
-             f0(i,j) = real(ie)/nelemd + x*x + ie*x + cos(ie + 4.2*y)
+             k = i + (j-1)*nf
+             f0(k) = real(ie)/nelemd + x*x + ie*x + cos(ie + 4.2*y)
           end do
        end do
-       call gfr_f2g_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,ie), f0, g)
-       call gfr_g2f_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,ie), g, f1)
-       wrk(:nf,:nf) = reshape(gfr%w_ff(:nf2)*gfr%fv_metdet(:nf2,ie), (/nf,nf/))
-       a = sum(wrk(:nf,:nf)*abs(f1(:nf,:nf) - f0(:nf,:nf)))
-       b = sum(wrk(:nf,:nf)*abs(f0(:nf,:nf)))
+       call gfr1_f2g_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,ie), f0, g)
+       call gfr1_g2f_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,ie), g, f1)
+       wf(:nf2) = gfr%w_ff(:nf2)*gfr%fv_metdet(:nf2,ie)
+       a = sum(wf(:nf2)*abs(f1(:nf2) - f0(:nf2)))
+       b = sum(wf(:nf2)*abs(f0(:nf2)))
        rd = a/b
        if (rd /= rd .or. rd > 10*eps) &
             write(iulog,*) 'gfr> recover', ie, a, b, rd, gfr%fv_metdet(:nf2,ie)
@@ -2804,7 +2805,7 @@ contains
 
     ! For convergence testing. Run this testing routine with a sequence of ne
     ! values and plot log l2 error vs log ne.
-    allocate(Qdp_fv(gfr%nphys, gfr%nphys, nets:nete), ps_v_fv(gfr%nphys, gfr%nphys, nets:nete))
+    allocate(Qdp_fv(nf2, nets:nete), ps_v_fv(nf2, nets:nete))
     allocate(qmins(nlev,qsize,nets:nete), qmaxs(nlev,qsize,nets:nete))
     do ilimit = 0,1
        limit = ilimit > 0
@@ -2814,45 +2815,45 @@ contains
        do iremap = 1,1
           ! 1. GLL -> FV
           do ie = nets, nete
-             call gfr_g2f_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,ie), &
-                  elem(ie)%state%ps_v(:,:,1)*elem(ie)%state%Q(:,:,1,1), Qdp_fv(:,:,ie))
-             call gfr_g2f_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,ie), &
-                  elem(ie)%state%ps_v(:,:,1), ps_v_fv(:,:,ie))
+             call gfr1_g2f_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,ie), &
+                  elem(ie)%state%ps_v(:,:,1)*elem(ie)%state%Q(:,:,1,1), Qdp_fv(:,ie))
+             call gfr1_g2f_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,ie), &
+                  elem(ie)%state%ps_v(:,:,1), ps_v_fv(:,ie))
              if (limit) then
                 qmin = minval(elem(ie)%state%Q(:,:,1,1))
                 qmax = maxval(elem(ie)%state%Q(:,:,1,1))
-                wrk(:nf,:nf) = Qdp_fv(:nf,:nf,ie)/ps_v_fv(:nf,:nf,ie)
-                f0(:nf,:nf) = reshape(gfr%w_ff(:nf2)*gfr%fv_metdet(:nf2,ie), (/nf,nf/))
-                call limiter_clip_and_sum(nf, f0, qmin, qmax, ps_v_fv(:,:,ie), wrk)
-                Qdp_fv(:nf,:nf,ie) = wrk(:nf,:nf)*ps_v_fv(:nf,:nf,ie)
+                wf(:nf2) = Qdp_fv(:nf2,ie)/ps_v_fv(:nf2,ie)
+                f0(:nf2) = gfr%w_ff(:nf2)*gfr%fv_metdet(:nf2,ie)
+                call limiter1_clip_and_sum(nf, f0, qmin, qmax, ps_v_fv(:,ie), wf)
+                Qdp_fv(:nf2,ie) = wf(:nf2)*ps_v_fv(:nf2,ie)
              end if
           end do
           ! 2. FV -> GLL
           if (limit) then
              ! 2a. Get q bounds
              do ie = nets, nete
-                wrk(:nf,:nf) = Qdp_fv(:nf,:nf,ie)/ps_v_fv(:nf,:nf,ie)
-                qmins(:,:,ie) = minval(wrk(:nf,:nf))
-                qmaxs(:,:,ie) = maxval(wrk(:nf,:nf))
+                wf(:nf2) = Qdp_fv(:nf2,ie)/ps_v_fv(:nf2,ie)
+                qmins(:,:,ie) = minval(wf(:nf2))
+                qmaxs(:,:,ie) = maxval(wf(:nf2))
              end do
              ! 2b. Halo exchange q bounds.
              call neighbor_minmax(hybrid, edgeAdvQminmax, nets, nete, qmins, qmaxs)
              ! 2c. Augment bounds with current values.
              do ie = nets, nete
-                wrk = elem(ie)%state%Q(:,:,1,1)
-                qmins(1,1,ie) = min(qmins(1,1,ie), minval(wrk))
-                qmaxs(1,1,ie) = max(qmaxs(1,1,ie), maxval(wrk))                
+                wg = elem(ie)%state%Q(:,:,1,1)
+                qmins(1,1,ie) = min(qmins(1,1,ie), minval(wg))
+                qmaxs(1,1,ie) = max(qmaxs(1,1,ie), maxval(wg))                
              end do
           endif
           ! 2d. Remap
           if (nf == 1 .and. gfr%boost_pg1) then
              do ie = nets, nete
-                elem(ie)%state%Q(:,:,1,1) = Qdp_fv(1,1,ie)/ps_v_fv(1,1,ie)
+                elem(ie)%state%Q(:,:,1,1) = Qdp_fv(1,ie)/ps_v_fv(1,ie)
              end do
           else
              do ie = nets, nete
-                call gfr_f2g_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,ie), &
-                     Qdp_fv(:,:,ie), elem(ie)%state%Q(:,:,1,1))
+                call gfr1_f2g_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,ie), &
+                     Qdp_fv(:,ie), elem(ie)%state%Q(:,:,1,1))
                 elem(ie)%state%Q(:,:,1,1) = elem(ie)%state%Q(:,:,1,1)/elem(ie)%state%ps_v(:,:,1)
                 if (limit) then
                    call limiter_clip_and_sum(np, elem(ie)%spheremp, & ! same as w_gg*gll_metdet
@@ -2882,8 +2883,10 @@ contains
                       qmins(1,1,ie) = min(minval(elem(ie)%state%Q(:,:,1,1)), qmins(1,1,ie))
                       qmaxs(1,1,ie) = max(maxval(elem(ie)%state%Q(:,:,1,1)), qmaxs(1,1,ie))
                    end if
+#if 0
                    call gfr_pg1_g_reconstruct_scalar_dp(gfr, ie, elem(ie)%metdet, &
                         elem(ie)%state%ps_v(:,:,:1), elem(ie)%state%Q(:,:,:1,1))
+#endif
                    if (limit) then
                       call limiter_clip_and_sum(np, gfr%w_gg*elem(ie)%metdet, qmins(1,1,ie), &
                            qmaxs(1,1,ie), elem(ie)%state%ps_v(:,:,1), elem(ie)%state%Q(:,:,1,1))
@@ -2898,16 +2901,16 @@ contains
        qmin1 = two
        qmax1 = -two
        do ie = nets, nete
-          wrk = gfr%w_gg(:,:)*elem(ie)%metdet(:,:)
+          wg = gfr%w_gg(:,:)*elem(ie)%metdet(:,:)
           ! L2 on q. Might switch to q*ps_v.
           global_shared_buf(ie,1) = &
-               sum(wrk*(elem(ie)%state%Q(:,:,1,1) - elem(ie)%state%Q(:,:,1,2))**2)
+               sum(wg*(elem(ie)%state%Q(:,:,1,1) - elem(ie)%state%Q(:,:,1,2))**2)
           global_shared_buf(ie,2) = &
-               sum(wrk*elem(ie)%state%Q(:,:,1,2)**2)
+               sum(wg*elem(ie)%state%Q(:,:,1,2)**2)
           ! Mass conservation.
-          wrk = wrk*elem(ie)%state%ps_v(:,:,1)
-          global_shared_buf(ie,3) = sum(wrk*elem(ie)%state%Q(:,:,1,2))
-          global_shared_buf(ie,4) = sum(wrk*elem(ie)%state%Q(:,:,1,1))
+          wg = wg*elem(ie)%state%ps_v(:,:,1)
+          global_shared_buf(ie,3) = sum(wg*elem(ie)%state%Q(:,:,1,2))
+          global_shared_buf(ie,4) = sum(wg*elem(ie)%state%Q(:,:,1,1))
           qmin = min(qmin, minval(elem(ie)%state%Q(:,:,1,1)))
           qmin1 = min(qmin1, minval(elem(ie)%state%Q(:,:,1,2)))
           qmax = max(qmax, maxval(elem(ie)%state%Q(:,:,1,1)))
