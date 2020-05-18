@@ -99,9 +99,9 @@ module gllfvremap_mod
           ! FV subcell areas; FV analogue of GLL elem(ie)%metdet arrays
           fv_metdet(:,:), & ! (nphys*nphys,nelemd)
           ! Vector on ref elem -> vector on sphere
-          D1_f(:,:,:,:), & ! (nphys,nphys,2,2,nelemd)
+          D_f(:,:,:,:), & ! (nphys,nphys,2,2,nelemd)
           ! Inverse of D_f
-          Dinv1_f(:,:,:,:), &
+          Dinv_f(:,:,:,:), &
           qmin(:,:,:), qmax(:,:,:), &
           phis(:,:), &
           ! For 'check', when it's on
@@ -117,7 +117,7 @@ module gllfvremap_mod
   ! For testing.
   public :: &
        gfr_test, &
-       gfr1_g2f_scalar, gfr_f2g_scalar, gfr1_g2f_vector, &
+       gfr1_g2f_scalar, gfr1_f2g_scalar, gfr1_g2f_vector, &
        gfr_f_get_area, gfr_f_get_latlon, gfr_f_get_corner_latlon, gfr_f_get_cartesian3d, &
        gfr_g_make_nonnegative, gfr_dyn_to_fv_phys_topo_elem, gfr_f2g_dss
 
@@ -234,7 +234,7 @@ contains
     call gfr_init_f2g_remapd(gfr, R, tau)
 
     allocate(gfr%fv_metdet(nphys2,nelemd), &
-         gfr%D1_f(nphys*nphys,2,2,nelemd), gfr%Dinv1_f(nphys*nphys,2,2,nelemd), &
+         gfr%D_f(nphys*nphys,2,2,nelemd), gfr%Dinv_f(nphys*nphys,2,2,nelemd), &
          gfr%qmin(nlev,max(1,qsize),nelemd), gfr%qmax(nlev,max(1,qsize),nelemd), &
          gfr%phis(nphys2,nelemd), gfr%center_f(nphys,nphys,nelemd), &
          gfr%corners_f(4,nphys,nphys,nelemd))
@@ -248,7 +248,7 @@ contains
     ! Deallocate the internal gfr structure.
 
     if (.not. allocated(gfr%fv_metdet)) return
-    deallocate(gfr%fv_metdet, gfr%D1_f, gfr%Dinv1_f, gfr%qmin, gfr%qmax, gfr%phis, &
+    deallocate(gfr%fv_metdet, gfr%D_f, gfr%Dinv_f, gfr%qmin, gfr%qmax, gfr%phis, &
          gfr%center_f, gfr%corners_f)
     if (gfr%check) deallocate(gfr%check_areas)
   end subroutine gfr_finish
@@ -568,7 +568,7 @@ contains
     integer, intent(in) :: nets, nete
     real(kind=real_kind), intent(in) :: phis(:,:)
 
-    real(kind=real_kind) :: wr(np,np,2), ones(np,np,1)
+    real(kind=real_kind) :: wg(np,np,2), ones(np,np,1)
     integer :: ie, nf, nf2
 
     ones = one
@@ -579,15 +579,14 @@ contains
     !gfr%have_fv_topo_file_phis = .true.
 
     do ie = nets,nete
-       gfr%phis(:,ie) = phis(:nf2,ie)
-       wr(:nf,:nf,1) = reshape(phis(:nf2,ie), (/nf,nf/))
-       gfr%qmin(:,:,ie) = minval(wr(:nf,:nf,1))
-       gfr%qmax(:,:,ie) = maxval(wr(:nf,:nf,1))
+       gfr%phis(:nf2,ie) = phis(:nf2,ie)
+       gfr%qmin(:,:,ie) = minval(phis(:nf2,ie))
+       gfr%qmax(:,:,ie) = maxval(phis(:nf2,ie))
        if (nf > 1) then
-          call gfr_f2g_scalar(ie, elem(ie)%metdet, wr(:,:,1:1), wr(:,:,2:2))
-          elem(ie)%state%phis = wr(:,:,2)
+          call gfr1_f2g_scalar(ie, elem(ie)%metdet, phis(:nf2,ie:ie), wg(:,:,2:2))
+          elem(ie)%state%phis = wg(:,:,2)
        else
-          elem(ie)%state%phis = wr(1,1,1)
+          elem(ie)%state%phis = phis(1,ie)
        end if
     end do
 
@@ -596,7 +595,7 @@ contains
 
     if (nf > 1 .or. .not. gfr%boost_pg1) then
        do ie = nets,nete
-          if (gfr%check) wr(:,:,1) = elem(ie)%state%phis
+          if (gfr%check) wg(:,:,1) = elem(ie)%state%phis
           call limiter_clip_and_sum(np, elem(ie)%spheremp, gfr%qmin(1,1,ie), &
                gfr%qmax(1,1,ie), ones(:,:,1), elem(ie)%state%phis)
           if (gfr%check) then
@@ -604,9 +603,9 @@ contains
                 write(iulog,*) 'gfr> topo min:', hybrid%par%rank, hybrid%ithr, ie, &
                      gfr%qmin(1,1,ie), 'ERROR'
              end if
-             wr(:,:,2) = elem(ie)%state%phis
+             wg(:,:,2) = elem(ie)%state%phis
              call check_f2g_mixing_ratio(gfr, hybrid, ie, 1, elem, gfr%qmin(:1,1,ie), &
-                  gfr%qmax(:1,1,ie), ones, wr(:,:,:1), wr(:,:,2:))
+                  gfr%qmax(:1,1,ie), ones, wg(:,:,:1), wg(:,:,2:))
           end if
        end do
     end if
@@ -1248,12 +1247,12 @@ contains
              wrk = wrk*sqrt(gfr%fv_metdet(k,ie)/abs(det))
              det = gfr%fv_metdet(k,ie)
 
-             gfr%D1_f(k,:,:,ie) = wrk
+             gfr%D_f(k,:,:,ie) = wrk
 
-             gfr%Dinv1_f(k,1,1,ie) =  wrk(2,2)/det
-             gfr%Dinv1_f(k,1,2,ie) = -wrk(1,2)/det
-             gfr%Dinv1_f(k,2,1,ie) = -wrk(2,1)/det
-             gfr%Dinv1_f(k,2,2,ie) =  wrk(1,1)/det
+             gfr%Dinv_f(k,1,1,ie) =  wrk(2,2)/det
+             gfr%Dinv_f(k,1,2,ie) = -wrk(1,2)/det
+             gfr%Dinv_f(k,2,1,ie) = -wrk(2,1)/det
+             gfr%Dinv_f(k,2,2,ie) =  wrk(1,1)/det
           end do
        end do
     end do
@@ -1340,8 +1339,8 @@ contains
           call gfr1_g2f_remapd(gfr, ones2, ones, wg(:,:,d), wf(:,d))
        end do
        ! FV ref -> sphere
-       u_f(:nf2,k) = gfr%D1_f(:nf2,1,1,ie)*wf(:nf2,1) + gfr%D1_f(:nf2,1,2,ie)*wf(:nf2,2)
-       v_f(:nf2,k) = gfr%D1_f(:nf2,2,1,ie)*wf(:nf2,1) + gfr%D1_f(:nf2,2,2,ie)*wf(:nf2,2)
+       u_f(:nf2,k) = gfr%D_f(:nf2,1,1,ie)*wf(:nf2,1) + gfr%D_f(:nf2,1,2,ie)*wf(:nf2,2)
+       v_f(:nf2,k) = gfr%D_f(:nf2,2,1,ie)*wf(:nf2,1) + gfr%D_f(:nf2,2,2,ie)*wf(:nf2,2)
     end do
   end subroutine gfr1_g2f_vector
 
@@ -1398,20 +1397,6 @@ contains
 
   ! FV -> GLL (f2g)
 
-  subroutine gfr_f2g_scalar(ie, gll_metdet, f, g) ! no gfr b/c public for testing
-    ! Wrapper to remapd, where g and f are densities.
-
-    integer, intent(in) :: ie
-    real(kind=real_kind), intent(in) :: gll_metdet(:,:), f(:,:,:)
-    real(kind=real_kind), intent(out) :: g(:,:,:)
-
-    integer :: k
-
-    do k = 1, size(g,3)
-       call gfr_f2g_remapd(gfr, gll_metdet, gfr%fv_metdet(:,ie), f(:,:,k), g(:,:,k))
-    end do
-  end subroutine gfr_f2g_scalar
-
   subroutine gfr1_f2g_scalar(ie, gll_metdet, f, g) ! no gfr b/c public for testing
     ! Wrapper to remapd, where g and f are densities.
 
@@ -1425,21 +1410,6 @@ contains
        call gfr1_f2g_remapd(gfr, gll_metdet, gfr%fv_metdet(:,ie), f(:,k), g(:,:,k))
     end do
   end subroutine gfr1_f2g_scalar
-
-  subroutine gfr_f2g_scalar_dp(gfr, ie, gll_metdet, dp_f, dp_g, f, g)
-    ! Wrapper to remapd, where g and f are mixing ratios.
-
-    type (GllFvRemap_t), intent(in) :: gfr
-    integer, intent(in) :: ie
-    real(kind=real_kind), intent(in) :: gll_metdet(:,:), dp_f(:,:,:), dp_g(:,:,:), f(:,:,:)
-    real(kind=real_kind), intent(out) :: g(:,:,:)
-
-    integer :: nf
-
-    nf = gfr%nphys
-    call gfr_f2g_scalar(ie, gll_metdet, dp_f(:nf,:nf,:)*f(:nf,:nf,:), g)
-    g = g/dp_g
-  end subroutine gfr_f2g_scalar_dp
 
   subroutine gfr1_f2g_scalar_dp(gfr, ie, gll_metdet, dp_f, dp_g, f, g)
     ! Wrapper to remapd, where g and f are mixing ratios.
@@ -1479,8 +1449,8 @@ contains
        ! sphere -> FV ref
        do d = 1,2
           wf(:nf2,d) = &
-               gfr%Dinv1_f(:nf2,d,1,ie)*u_f(:nf2,k) + &
-               gfr%Dinv1_f(:nf2,d,2,ie)*v_f(:nf2,k)
+               gfr%Dinv_f(:nf2,d,1,ie)*u_f(:nf2,k) + &
+               gfr%Dinv_f(:nf2,d,2,ie)*v_f(:nf2,k)
        end do
        do d = 1,2
           call gfr1_f2g_remapd(gfr, ones2, ones, wf(:,d), wg(:,:,d))
@@ -2096,63 +2066,6 @@ contains
     p = gfr%center_f(i,j,ie)
   end subroutine gfr_f_get_cartesian3d
 
-  subroutine limiter_clip_and_sum(n, spheremp, qmin, qmax, dp, q)
-    ! CAAS as described in Alg 3.1 of doi:10.1137/18M1165414. q is a
-    ! mixing ratio. Solve
-    !    min_q* norm(dp q - dp q*, 1)
-    !     st    spheremp'(dp q*) = spheremp'(dp q)
-    !           qmin < q* < qmax
-
-    integer, intent(in) :: n
-    real (kind=real_kind), intent(in) :: spheremp(:,:), dp(:,:)
-    real (kind=real_kind), intent(inout) :: qmin, qmax, q(:,:)
-
-    integer :: k1, i, j
-    logical :: modified
-    real(kind=real_kind) :: addmass, mass, sumc, den
-    real(kind=real_kind) :: c(n*n), v(n*n), x(n*n)
-
-    x = reshape(q(:n,:n), (/n*n/))
-    c = reshape(spheremp(:n,:n)*dp(:n,:n), (/n*n/))
-
-    sumc = sum(c)
-    mass = sum(c*x)
-    ! In the case of an infeasible problem, prefer to conserve mass
-    ! and violate a bound.
-    if (mass < qmin*sumc) qmin = mass / sumc
-    if (mass > qmax*sumc) qmax = mass / sumc
-
-    addmass = zero
-
-    ! Clip.
-    modified = .false.
-    do k1 = 1, n*n
-       if (x(k1) > qmax) then
-          modified = .true.
-          addmass = addmass + (x(k1) - qmax)*c(k1)
-          x(k1) = qmax
-       elseif (x(k1) < qmin) then
-          modified = .true.
-          addmass = addmass + (x(k1) - qmin)*c(k1)
-          x(k1) = qmin
-       end if
-    end do
-    if (.not. modified) return
-
-    if (addmass /= zero) then
-       ! Determine weights.
-       if (addmass > zero) then
-          v = qmax - x
-       else
-          v = x - qmin
-       end if
-       den = sum(v*c)
-       if (den > zero) x = x + addmass*(v/den)
-    end if
-
-    q(:n,:n) = reshape(x, (/n,n/))
-  end subroutine limiter_clip_and_sum
-
   subroutine limiter1_clip_and_sum(n, spheremp, qmin, qmax, dp, q)
     ! CAAS as described in Alg 3.1 of doi:10.1137/18M1165414. q is a
     ! mixing ratio. Solve
@@ -2210,6 +2123,22 @@ contains
 
     q(:n2) = x
   end subroutine limiter1_clip_and_sum
+
+  subroutine limiter_clip_and_sum(n, spheremp, qmin, qmax, dp, q)
+    integer, intent(in) :: n
+    real (kind=real_kind), intent(in) :: spheremp(:,:), dp(:,:)
+    real (kind=real_kind), intent(inout) :: qmin, qmax, q(:,:)
+
+    integer :: n2
+    real(kind=real_kind) :: spheremp1(n*n), dp1(n*n), q1(n*n)
+
+    n2 = n*n
+    spheremp1 = reshape(spheremp(:n,:n), (/n2/))
+    dp1 = reshape(dp(:n,:n), (/n2/))
+    q1 = reshape(q(:n,:n), (/n2/))
+    call limiter1_clip_and_sum(n, spheremp1, qmin, qmax, dp1, q1)
+    q(:n,:n) = reshape(q1(:n2), (/n,n/))
+  end subroutine limiter_clip_and_sum
 
   subroutine ref2spherea_deriv(c, a, b, s_ab, s)
     ! For cubed_sphere_map = 2.
@@ -2548,13 +2477,13 @@ contains
        if (rd /= rd .or. rd > 10*eps) write(iulog,*) 'gfr> area', ie, a, b, rd
 
        ! Check FV geometry.
-       f0(:nf2) = gfr%D1_f(:,1,1,ie)*gfr%D1_f(:,2,2,ie) - &
-            gfr%D1_f(:,1,2,ie)*gfr%D1_f(:,2,1,ie)
+       f0(:nf2) = gfr%D_f(:,1,1,ie)*gfr%D_f(:,2,2,ie) - &
+            gfr%D_f(:,1,2,ie)*gfr%D_f(:,2,1,ie)
        rd = maxval(abs(f0(:nf2)) - gfr%fv_metdet(:nf2,ie))/ &
             maxval(gfr%fv_metdet(:nf2,ie))
        if (rd > 10*eps) write(iulog,*) 'gfr> D', ie, rd
-       f0(:nf2) = gfr%Dinv1_f(:,1,1,ie)*gfr%Dinv1_f(:,2,2,ie) - &
-            gfr%Dinv1_f(:,1,2,ie)*gfr%Dinv1_f(:,2,1,ie)
+       f0(:nf2) = gfr%Dinv_f(:,1,1,ie)*gfr%Dinv_f(:,2,2,ie) - &
+            gfr%Dinv_f(:,1,2,ie)*gfr%Dinv_f(:,2,1,ie)
        rd = maxval(abs(f0(:nf2)) - one/gfr%fv_metdet(:nf2,ie))/ &
             maxval(one/gfr%fv_metdet(:nf2,ie))
        if (rd > 10*eps) write(iulog,*) 'gfr> Dinv', ie, rd
