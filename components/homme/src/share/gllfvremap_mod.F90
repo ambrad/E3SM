@@ -2883,10 +2883,8 @@ contains
                       qmins(1,1,ie) = min(minval(elem(ie)%state%Q(:,:,1,1)), qmins(1,1,ie))
                       qmaxs(1,1,ie) = max(maxval(elem(ie)%state%Q(:,:,1,1)), qmaxs(1,1,ie))
                    end if
-#if 0
                    call gfr_pg1_g_reconstruct_scalar_dp(gfr, ie, elem(ie)%metdet, &
                         elem(ie)%state%ps_v(:,:,:1), elem(ie)%state%Q(:,:,:1,1))
-#endif
                    if (limit) then
                       call limiter_clip_and_sum(np, gfr%w_gg*elem(ie)%metdet, qmins(1,1,ie), &
                            qmaxs(1,1,ie), elem(ie)%state%ps_v(:,:,1), elem(ie)%state%Q(:,:,1,1))
@@ -2911,7 +2909,7 @@ contains
           wg = wg*elem(ie)%state%ps_v(:,:,1)
           global_shared_buf(ie,3) = sum(wg*elem(ie)%state%Q(:,:,1,2))
           global_shared_buf(ie,4) = sum(wg*elem(ie)%state%Q(:,:,1,1))
-          qmin = min(qmin, minval(elem(ie)%state%Q(:,:,1,1)))
+          qmin = min(qmin, minval(elem(ie) %state%Q(:,:,1,1)))
           qmin1 = min(qmin1, minval(elem(ie)%state%Q(:,:,1,2)))
           qmax = max(qmax, maxval(elem(ie)%state%Q(:,:,1,1)))
           qmax1 = max(qmax1, maxval(elem(ie)%state%Q(:,:,1,2)))
