@@ -319,10 +319,10 @@ contains
                 !  omega_p
                 !  True omega on GLL and FV grids.
                 call get_field(elem(ie), 'omega', wg1, hvcoord, nt1, -1)
-                call gfr1_g2f_scalar(ie, elem(ie)%metdet, wg1, wf1)
+                call gfr_g2f_scalar(ie, elem(ie)%metdet, wg1, wf1)
                 !  Convert omega_p on FV grid to omega for preqx
                 call get_field(elem(ie), 'p', pressure, hvcoord, nt1, -1)
-                call gfr1_g2f_scalar(ie, elem(ie)%metdet, pressure, p_fv)
+                call gfr_g2f_scalar(ie, elem(ie)%metdet, pressure, p_fv)
 #ifdef MODEL_THETA_L
                 wf2(:nf2,:) = pg_data%omega_p(:,:,ie)
 #else                
@@ -340,7 +340,7 @@ contains
                 !  ps
                 wg(:,:,1) = elem(ie)%state%ps_v(:,:,nt1)
                 wf1(:nf2,2) = pg_data%ps(:,ie)
-                call gfr1_g2f_scalar(ie, elem(ie)%metdet, wg(:,:,1:1), wf1(:,3:3))
+                call gfr_g2f_scalar(ie, elem(ie)%metdet, wg(:,:,1:1), wf1(:,3:3))
                 global_shared_buf(ie,1) = global_shared_buf(ie,1) + &
                      sum((wf1(:nf2,2) - wf1(:nf2,3))**2)
                 global_shared_buf(ie,2) = global_shared_buf(ie,2) + &

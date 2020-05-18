@@ -117,7 +117,7 @@ module gllfvremap_mod
   ! For testing.
   public :: &
        gfr_test, &
-       gfr1_g2f_scalar, gfr1_f2g_scalar, gfr1_g2f_vector, &
+       gfr_g2f_scalar, gfr_f2g_scalar, gfr_g2f_vector, &
        gfr_f_get_area, gfr_f_get_latlon, gfr_f_get_corner_latlon, gfr_f_get_cartesian3d, &
        gfr_g_make_nonnegative, gfr_dyn_to_fv_phys_topo_elem, gfr_f2g_dss
 
@@ -282,32 +282,32 @@ contains
     qsize = size(q,3)
     
     do ie = nets,nete
-       call gfr1_g2f_scalar(ie, elem(ie)%metdet, elem(ie)%state%ps_v(:,:,nt:nt), wf1(:,:1))
+       call gfr_g2f_scalar(ie, elem(ie)%metdet, elem(ie)%state%ps_v(:,:,nt:nt), wf1(:,:1))
        ps(:nf2,ie) = wf1(:nf2,1)
        
        if (gfr%have_fv_topo_file_phis) then
           phis(:nf2,ie) = gfr%phis(:,ie)
        else
-          call gfr1_g2f_scalar_and_limit(gfr, ie, elem(ie)%metdet, elem(ie)%state%phis, &
+          call gfr_g2f_scalar_and_limit(gfr, ie, elem(ie)%metdet, elem(ie)%state%phis, &
                phis(:,ie))
        end if
 
        dp = elem(ie)%state%dp3d(:,:,:,nt)
-       call gfr1_g2f_scalar(ie, elem(ie)%metdet, dp, dp_fv)
+       call gfr_g2f_scalar(ie, elem(ie)%metdet, dp, dp_fv)
 
        call get_temperature(elem(ie), wg1, hvcoord, nt)
        call get_field(elem(ie), 'p', p, hvcoord, nt, -1)
-       call gfr1_g2f_scalar(ie, elem(ie)%metdet, p, p_fv)
+       call gfr_g2f_scalar(ie, elem(ie)%metdet, p, p_fv)
        wg1 = wg1*(p0/p)**kappa
-       call gfr1_g2f_scalar_dp(gfr, ie, elem(ie)%metdet, dp, dp_fv, wg1, wf1)
+       call gfr_g2f_scalar_dp(gfr, ie, elem(ie)%metdet, dp, dp_fv, wg1, wf1)
        T(:nf2,:,ie) = wf1(:nf2,:)*(p_fv(:nf2,:)/p0)**kappa
 
-       call gfr1_g2f_vector(ie, elem, &
+       call gfr_g2f_vector(ie, elem, &
             elem(ie)%state%v(:,:,1,:,nt), elem(ie)%state%v(:,:,2,:,nt), &
             uv(:,1,:,ie), uv(:,2,:,ie))
 
        call get_field(elem(ie), 'omega', wg1, hvcoord, nt, -1)
-       call gfr1_g2f_scalar(ie, elem(ie)%metdet, wg1, wf1)
+       call gfr_g2f_scalar(ie, elem(ie)%metdet, wg1, wf1)
 #ifdef MODEL_THETA_L
        omega_p(:nf2,:,ie) = wf1(:nf2,:)
 #else
@@ -315,7 +315,7 @@ contains
        omega_p(:nf2,:,ie) = wf1(:nf2,:)/p_fv(:nf2,:)
 #endif
        do qi = 1,qsize
-          call gfr1_g2f_mixing_ratio(gfr, ie, elem(ie)%metdet, dp, dp_fv, &
+          call gfr_g2f_mixing_ratio(gfr, ie, elem(ie)%metdet, dp, dp_fv, &
                dp*elem(ie)%state%Q(:,:,:,qi), wf1)
           q(:nf2,:,qi,ie) = wf1(:nf2,:)
           if (gfr%check) then
@@ -359,16 +359,16 @@ contains
 
     do ie = nets,nete
        dp = elem(ie)%state%dp3d(:,:,:,nt)
-       call gfr1_g2f_scalar(ie, elem(ie)%metdet, dp, dp_fv)
+       call gfr_g2f_scalar(ie, elem(ie)%metdet, dp, dp_fv)
 
-       call gfr1_f2g_vector(gfr, ie, elem, &
+       call gfr_f2g_vector(gfr, ie, elem, &
             uv(:nf2,1,:,ie), uv(:nf2,2,:,ie), &
             elem(ie)%derived%FM(:,:,1,:), elem(ie)%derived%FM(:,:,2,:))
 
        call get_field(elem(ie), 'p', p, hvcoord, nt, -1)
-       call gfr1_g2f_scalar(ie, elem(ie)%metdet, p, p_fv)
+       call gfr_g2f_scalar(ie, elem(ie)%metdet, p, p_fv)
        wf1(:nf2,:) = T(:nf2,:,ie)*(p0/p_fv(:nf2,:))**kappa
-       call gfr1_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wf1, &
+       call gfr_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wf1, &
             elem(ie)%derived%FT)
        elem(ie)%derived%FT = elem(ie)%derived%FT*(p/p0)**kappa
 
@@ -376,13 +376,13 @@ contains
           if (q_adjustment) then
              ! FV Q_ten
              !   GLL Q0 -> FV Q0
-             call gfr1_g2f_mixing_ratio(gfr, ie, elem(ie)%metdet, dp, dp_fv, &
+             call gfr_g2f_mixing_ratio(gfr, ie, elem(ie)%metdet, dp, dp_fv, &
                   dp*elem(ie)%state%Q(:,:,:,qi), wf1)
              !   FV Q_ten = FV Q1 - FV Q0
              wf1(:nf2,:) = q(:nf2,:,qi,ie) - wf1(:nf2,:)
              if (nf > 1 .or. .not. gfr%boost_pg1) then
                 ! GLL Q_ten
-                call gfr1_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wf1, wg1)
+                call gfr_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wf1, wg1)
                 ! GLL Q1
                 elem(ie)%derived%FQ(:,:,:,qi) = elem(ie)%state%Q(:,:,:,qi) + wg1
              else
@@ -401,7 +401,7 @@ contains
              wf1(:nf2,:) = dt*q(:nf2,:,qi,ie)/dp_fv(:nf2,:)
              if (nf > 1 .or. .not. gfr%boost_pg1) then
                 ! GLL Q_ten
-                call gfr1_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wf1, wg1)
+                call gfr_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wf1, wg1)
                 ! GLL Q1
                 elem(ie)%derived%FQ(:,:,:,qi) = elem(ie)%state%Q(:,:,:,qi) + wg1
              else
@@ -411,7 +411,7 @@ contains
                 end do
              end if
              ! GLL Q0 -> FV Q0
-             call gfr1_g2f_mixing_ratio(gfr, ie, elem(ie)%metdet, dp, dp_fv, &
+             call gfr_g2f_mixing_ratio(gfr, ie, elem(ie)%metdet, dp, dp_fv, &
                   dp*elem(ie)%state%Q(:,:,:,qi), wf2)
              ! FV Q1
              wf2(:nf2,:) = wf2(:nf2,:) + wf1(:nf2,:)
@@ -470,7 +470,7 @@ contains
     integer :: ie
 
     do ie = nets,nete
-       call gfr1_g2f_scalar_and_limit(gfr, ie, elem(ie)%metdet, elem(ie)%state%phis, phis(:,ie))
+       call gfr_g2f_scalar_and_limit(gfr, ie, elem(ie)%metdet, elem(ie)%state%phis, phis(:,ie))
     end do
   end subroutine gfr_dyn_to_fv_phys_topo_hybrid
 
@@ -530,12 +530,12 @@ contains
     if (augment_variance) then
        ! Estimate additional variance due to remapping from GLL to FV
        ! bases.
-       call gfr1_g2f_scalar_and_limit(gfr, ie, elem(ie)%metdet, elem(ie)%state%phis, phispg)
+       call gfr_g2f_scalar_and_limit(gfr, ie, elem(ie)%metdet, elem(ie)%state%phis, phispg)
        do k = 1,nf2
           ! Integrate (phis_gll - phis_fv)^2 over FV subcell (i,j). Do this
           ! using gfr_g2f_scalar; thus, only one entry out of nf^2 is used.
           wg(:,:,1) = ((elem(ie)%state%phis - phispg(k))/grav)**2
-          call gfr1_g2f_scalar(ie, elem(ie)%metdet, wg(:,:,:1), wf(:,1:1))
+          call gfr_g2f_scalar(ie, elem(ie)%metdet, wg(:,:,:1), wf(:,1:1))
           ! Use just entry (i,j).
           wf(k,2) = max(zero, wf(k,1))
        end do
@@ -543,14 +543,14 @@ contains
        ! Original SGH. augment_variance implies we need to square and sqrt
        ! quantities.
        wg(:,:,1) = reshape(g(:npsq)**2, (/np,np/))
-       call gfr1_g2f_scalar_and_limit(gfr, ie, elem(ie)%metdet, wg(:,:,1), p(:nf2))
+       call gfr_g2f_scalar_and_limit(gfr, ie, elem(ie)%metdet, wg(:,:,1), p(:nf2))
 
        ! Combine the two sources of variance.
        p(:nf2) = sqrt(p(:nf2) + wf(:nf2,2))
     else
        wg(:,:,1) = reshape(g(:npsq), (/np,np/))
        if (square) wg(:,:,1) = wg(:,:,1)**2
-       call gfr1_g2f_scalar_and_limit(gfr, ie, elem(ie)%metdet, wg(:,:,1), p(:nf2))
+       call gfr_g2f_scalar_and_limit(gfr, ie, elem(ie)%metdet, wg(:,:,1), p(:nf2))
        if (square) p(:nf2) = sqrt(p(:nf2))
     end if
   end subroutine gfr_dyn_to_fv_phys_topo_data_elem
@@ -583,7 +583,7 @@ contains
        gfr%qmin(:,:,ie) = minval(phis(:nf2,ie))
        gfr%qmax(:,:,ie) = maxval(phis(:nf2,ie))
        if (nf > 1) then
-          call gfr1_f2g_scalar(ie, elem(ie)%metdet, phis(:nf2,ie:ie), wg(:,:,2:2))
+          call gfr_f2g_scalar(ie, elem(ie)%metdet, phis(:nf2,ie:ie), wg(:,:,2:2))
           elem(ie)%state%phis = wg(:,:,2)
        else
           elem(ie)%state%phis = phis(1,ie)
@@ -1163,7 +1163,7 @@ contains
        ones = one
        ones2 = one
        do ie = 1,nelemd
-          call gfr1_g2f_remapd(gfr, elem(ie)%metdet, ones, ones2, gfr%fv_metdet(:nf2,ie))
+          call gfr_g2f_remapd(gfr, elem(ie)%metdet, ones, ones2, gfr%fv_metdet(:nf2,ie))
           do j = 1,nf
              call gfr_f_ref_center(nf, j, bc)
              do i = 1,nf
@@ -1263,7 +1263,7 @@ contains
 
   ! GLL -> FV (g2f)
 
-  subroutine gfr1_g2f_remapd(gfr, gll_metdet, fv_metdet, g, f)
+  subroutine gfr_g2f_remapd(gfr, gll_metdet, fv_metdet, g, f)
     ! Core remap operator. Conservative remap on the reference
     ! element.
 
@@ -1280,9 +1280,9 @@ contains
     do k = 1,nf2
        f(k) = sum(gfr%g2f_remapd(:,:,k)*gw)/(gfr%w_ff(k)*fv_metdet(k))
     end do
-  end subroutine gfr1_g2f_remapd
+  end subroutine gfr_g2f_remapd
 
-  subroutine gfr1_g2f_scalar(ie, gll_metdet, g, f) ! no gfr b/c public
+  subroutine gfr_g2f_scalar(ie, gll_metdet, g, f) ! no gfr b/c public
     ! Wrapper to remapd, where g and f are densities.
 
     integer, intent(in) :: ie
@@ -1293,11 +1293,11 @@ contains
 
     nlev = size(g,3)
     do k = 1, nlev
-       call gfr1_g2f_remapd(gfr, gll_metdet, gfr%fv_metdet(:,ie), g(:,:,k), f(:,k))
+       call gfr_g2f_remapd(gfr, gll_metdet, gfr%fv_metdet(:,ie), g(:,:,k), f(:,k))
     end do
-  end subroutine gfr1_g2f_scalar
+  end subroutine gfr_g2f_scalar
 
-  subroutine gfr1_g2f_scalar_dp(gfr, ie, gll_metdet, dp_g, dp_f, g, f)
+  subroutine gfr_g2f_scalar_dp(gfr, ie, gll_metdet, dp_g, dp_f, g, f)
     ! Wrapper to remapd, where g and f are mixing ratios.
 
     type (GllFvRemap_t), intent(in) :: gfr
@@ -1308,11 +1308,11 @@ contains
     integer :: nf2
 
     nf2 = gfr%nphys*gfr%nphys
-    call gfr1_g2f_scalar(ie, gll_metdet, dp_g*g, f)
+    call gfr_g2f_scalar(ie, gll_metdet, dp_g*g, f)
     f(:nf2,:) = f(:nf2,:)/dp_f(:nf2,:)
-  end subroutine gfr1_g2f_scalar_dp
+  end subroutine gfr_g2f_scalar_dp
 
-  subroutine gfr1_g2f_vector(ie, elem, u_g, v_g, u_f, v_f) ! no gfr b/c public
+  subroutine gfr_g2f_vector(ie, elem, u_g, v_g, u_f, v_f) ! no gfr b/c public
     ! Remap a vector on the sphere by doing the actual remap on the
     ! reference element, thus avoiding steep gradients at the poles.
 
@@ -1336,15 +1336,15 @@ contains
           wg(:,:,d) = elem(ie)%Dinv(:,:,d,1)*u_g(:,:,k) + elem(ie)%Dinv(:,:,d,2)*v_g(:,:,k)
        end do
        do d = 1,2
-          call gfr1_g2f_remapd(gfr, ones2, ones, wg(:,:,d), wf(:,d))
+          call gfr_g2f_remapd(gfr, ones2, ones, wg(:,:,d), wf(:,d))
        end do
        ! FV ref -> sphere
        u_f(:nf2,k) = gfr%D_f(:nf2,1,1,ie)*wf(:nf2,1) + gfr%D_f(:nf2,1,2,ie)*wf(:nf2,2)
        v_f(:nf2,k) = gfr%D_f(:nf2,2,1,ie)*wf(:nf2,1) + gfr%D_f(:nf2,2,2,ie)*wf(:nf2,2)
     end do
-  end subroutine gfr1_g2f_vector
+  end subroutine gfr_g2f_vector
 
-  subroutine gfr1_g2f_mixing_ratio(gfr, ie, gll_metdet, dp_g, dp_f, qdp_g, q_f)
+  subroutine gfr_g2f_mixing_ratio(gfr, ie, gll_metdet, dp_g, dp_f, qdp_g, q_f)
     ! Remap a mixing ratio conservatively and preventing new extrema.
 
     type (GllFvRemap_t), intent(in) :: gfr
@@ -1363,15 +1363,15 @@ contains
        wg = qdp_g(:,:,k)/dp_g(:,:,k)
        qmin = minval(wg)
        qmax = maxval(wg)
-       call gfr1_g2f_remapd(gfr, gll_metdet, gfr%fv_metdet(:,ie), qdp_g(:,:,k), wf1)
+       call gfr_g2f_remapd(gfr, gll_metdet, gfr%fv_metdet(:,ie), qdp_g(:,:,k), wf1)
        wf1(:nf2) = wf1(:nf2)/dp_f(:nf2,k)
        wf2(:nf2) = gfr%w_ff(:nf2)*gfr%fv_metdet(:nf2,ie)
        call limiter1_clip_and_sum(nf, wf2, qmin, qmax, dp_f(:,k), wf1)
        q_f(:nf2,k) = wf1(:nf2)
     end do
-  end subroutine gfr1_g2f_mixing_ratio
+  end subroutine gfr_g2f_mixing_ratio
 
-  subroutine gfr1_g2f_scalar_and_limit(gfr, ie, gll_metdet, g, f)
+  subroutine gfr_g2f_scalar_and_limit(gfr, ie, gll_metdet, g, f)
     ! After remap, limit using extremal values from g.
 
     type (GllFvRemap_t), intent(in) :: gfr
@@ -1389,15 +1389,15 @@ contains
     qmin = minval(g(:np,:np))
     qmax = maxval(g(:np,:np))
     wg(:np,:np,1) = g
-    call gfr1_g2f_scalar(ie, gll_metdet, wg(:,:,:1), wf(:,:1))
+    call gfr_g2f_scalar(ie, gll_metdet, wg(:,:,:1), wf(:,:1))
     f(:nf2) = wf(:nf2,1)
     wf(:nf2,1) = gfr%w_ff(:nf2)*gfr%fv_metdet(:nf2,ie)
     call limiter1_clip_and_sum(gfr%nphys, wf(:,1), qmin, qmax, ones, f)
-  end subroutine gfr1_g2f_scalar_and_limit
+  end subroutine gfr_g2f_scalar_and_limit
 
   ! FV -> GLL (f2g)
 
-  subroutine gfr1_f2g_scalar(ie, gll_metdet, f, g) ! no gfr b/c public for testing
+  subroutine gfr_f2g_scalar(ie, gll_metdet, f, g) ! no gfr b/c public for testing
     ! Wrapper to remapd, where g and f are densities.
 
     integer, intent(in) :: ie
@@ -1407,11 +1407,11 @@ contains
     integer :: k
 
     do k = 1, size(g,3)
-       call gfr1_f2g_remapd(gfr, gll_metdet, gfr%fv_metdet(:,ie), f(:,k), g(:,:,k))
+       call gfr_f2g_remapd(gfr, gll_metdet, gfr%fv_metdet(:,ie), f(:,k), g(:,:,k))
     end do
-  end subroutine gfr1_f2g_scalar
+  end subroutine gfr_f2g_scalar
 
-  subroutine gfr1_f2g_scalar_dp(gfr, ie, gll_metdet, dp_f, dp_g, f, g)
+  subroutine gfr_f2g_scalar_dp(gfr, ie, gll_metdet, dp_f, dp_g, f, g)
     ! Wrapper to remapd, where g and f are mixing ratios.
 
     type (GllFvRemap_t), intent(in) :: gfr
@@ -1422,11 +1422,11 @@ contains
     integer :: nf2
 
     nf2 = gfr%nphys*gfr%nphys
-    call gfr1_f2g_scalar(ie, gll_metdet, dp_f(:nf2,:)*f(:nf2,:), g)
+    call gfr_f2g_scalar(ie, gll_metdet, dp_f(:nf2,:)*f(:nf2,:), g)
     g = g/dp_g
-  end subroutine gfr1_f2g_scalar_dp
+  end subroutine gfr_f2g_scalar_dp
 
-  subroutine gfr1_f2g_vector(gfr, ie, elem, u_f, v_f, u_g, v_g)
+  subroutine gfr_f2g_vector(gfr, ie, elem, u_f, v_f, u_g, v_g)
     ! Remap a vector on the sphere by doing the actual remap on the
     ! reference element, thus avoiding steep gradients at the poles.
 
@@ -1453,13 +1453,13 @@ contains
                gfr%Dinv_f(:nf2,d,2,ie)*v_f(:nf2,k)
        end do
        do d = 1,2
-          call gfr1_f2g_remapd(gfr, ones2, ones, wf(:,d), wg(:,:,d))
+          call gfr_f2g_remapd(gfr, ones2, ones, wf(:,d), wg(:,:,d))
        end do
        ! GLL ref -> sphere
        u_g(:,:,k) = elem(ie)%D(:,:,1,1)*wg(:,:,1) + elem(ie)%D(:,:,1,2)*wg(:,:,2)
        v_g(:,:,k) = elem(ie)%D(:,:,2,1)*wg(:,:,1) + elem(ie)%D(:,:,2,2)*wg(:,:,2)
     end do
-  end subroutine gfr1_f2g_vector
+  end subroutine gfr_f2g_vector
 
   subroutine gfr_f2g_mixing_ratios_he(hybrid, nets, nete, qmin, qmax)
     ! Exchange qmin/qmax among element neighbors.
@@ -1527,7 +1527,7 @@ contains
     end do
   end subroutine gfr_f2g_dss
 
-  subroutine gfr1_f2g_remapd(gfr, gll_metdet, fv_metdet, f, g)
+  subroutine gfr_f2g_remapd(gfr, gll_metdet, fv_metdet, f, g)
     ! Core remap operator. Conservative remap on the reference
     ! element.
 
@@ -1547,7 +1547,7 @@ contains
                gll_metdet(gi,gj)
        end do
     end do
-  end subroutine gfr1_f2g_remapd
+  end subroutine gfr_f2g_remapd
 
   ! ----------------------------------------------------------------------
   ! All routines to boost pg1 OOA from 1 to ~1.6.
@@ -1916,7 +1916,7 @@ contains
     integer, intent(in) :: ie
     real(kind=real_kind), intent(out) :: phis(:)
 
-    call gfr1_g2f_scalar_and_limit(gfr, ie, elem(ie)%metdet, elem(ie)%state%phis, phis)
+    call gfr_g2f_scalar_and_limit(gfr, ie, elem(ie)%metdet, elem(ie)%state%phis, phis)
   end subroutine gfr_dyn_to_fv_phys_topo_elem
 
   subroutine gfr_hybrid_create(par, dom_mt, hybrid, nets, nete)
@@ -2476,8 +2476,8 @@ contains
              f0(k) = real(ie)/nelemd + x*x + ie*x + cos(ie + 4.2*y)
           end do
        end do
-       call gfr1_f2g_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,ie), f0, g)
-       call gfr1_g2f_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,ie), g, f1)
+       call gfr_f2g_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,ie), f0, g)
+       call gfr_g2f_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,ie), g, f1)
        wf(:nf2) = gfr%w_ff(:nf2)*gfr%fv_metdet(:nf2,ie)
        a = sum(wf(:nf2)*abs(f1(:nf2) - f0(:nf2)))
        b = sum(wf(:nf2)*abs(f0(:nf2)))
@@ -2499,9 +2499,9 @@ contains
        do iremap = 1,1
           ! 1. GLL -> FV
           do ie = nets, nete
-             call gfr1_g2f_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,ie), &
+             call gfr_g2f_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,ie), &
                   elem(ie)%state%ps_v(:,:,1)*elem(ie)%state%Q(:,:,1,1), Qdp_fv(:,ie))
-             call gfr1_g2f_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,ie), &
+             call gfr_g2f_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,ie), &
                   elem(ie)%state%ps_v(:,:,1), ps_v_fv(:,ie))
              if (limit) then
                 qmin = minval(elem(ie)%state%Q(:,:,1,1))
@@ -2536,7 +2536,7 @@ contains
              end do
           else
              do ie = nets, nete
-                call gfr1_f2g_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,ie), &
+                call gfr_f2g_remapd(gfr, elem(ie)%metdet, gfr%fv_metdet(:,ie), &
                      Qdp_fv(:,ie), elem(ie)%state%Q(:,:,1,1))
                 elem(ie)%state%Q(:,:,1,1) = elem(ie)%state%Q(:,:,1,1)/elem(ie)%state%ps_v(:,:,1)
                 if (limit) then
