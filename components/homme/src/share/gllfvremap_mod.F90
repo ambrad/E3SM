@@ -1527,28 +1527,6 @@ contains
     end do
   end subroutine gfr_f2g_dss
 
-  subroutine gfr_f2g_remapd(gfr, gll_metdet, fv_metdet, f, g)
-    ! Core remap operator. Conservative remap on the reference
-    ! element.
-
-    type (GllFvRemap_t), intent(in) :: gfr
-    real(kind=real_kind), intent(in) :: gll_metdet(:,:), fv_metdet(:), f(:,:)
-    real(kind=real_kind), intent(out) :: g(:,:)
-
-    integer :: nf, nf2, gi, gj, fi, fj
-    real(kind=real_kind) :: wrk(np*np)
-
-    nf = gfr%nphys
-    nf2 = nf*nf
-    wrk(:nf2) = reshape(f(:nf,:nf), (/nf2/))*fv_metdet(:nf2)
-    do gj = 1,np
-       do gi = 1,np
-          g(gi,gj) = sum(gfr%f2g_remapd(:nf2,gi,gj)*wrk(:nf2))/ &
-               gll_metdet(gi,gj)
-       end do
-    end do
-  end subroutine gfr_f2g_remapd
-
   subroutine gfr1_f2g_remapd(gfr, gll_metdet, fv_metdet, f, g)
     ! Core remap operator. Conservative remap on the reference
     ! element.
