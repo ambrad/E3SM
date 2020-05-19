@@ -6071,7 +6071,7 @@ static void run_cdr (CDR& q) {
 #endif
 }
 
-template <int NP>
+template <int np_>
 void accum_values (const Int ie, const Int k, const Int q, const Int tl_np1,
                    const Int n0_qdp, const Int np, const bool nonneg,
                    const FA1<const Real>& spheremp, const FA3<const Real>& dp3d_c,
@@ -6079,8 +6079,8 @@ void accum_values (const Int ie, const Int k, const Int q, const Int tl_np1,
                    const FA4<const Real>& qdp_p, const FA3<const Real>& q_c,
                    Real& volume, Real& rhom, Real& Qm, Real& Qm_prev,
                    Real& Qm_min, Real& Qm_max) {
-  cedr_assert(np == NP);
-  static const Int np2 = NP*NP;
+  cedr_assert(np == np_);
+  static const Int np2 = np_*np_;
   for (Int g = 0; g < np2; ++g) {
     volume += spheremp(g); // * dp0[k];
     const Real rhomij = dp3d_c(g,k,tl_np1) * spheremp(g);
@@ -6093,13 +6093,13 @@ void accum_values (const Int ie, const Int k, const Int q, const Int tl_np1,
   }
 }
 
-template <int NP>
+template <int np_>
 void run_global (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
                  const Int nets, const Int nete) {
-  static const Int np2 = NP*NP;
+  static const Int np2 = np_*np_;
   const Int np = d.np, nlev = d.nlev, qsize = d.qsize,
     nlevwrem = cdr.nsuplev*cdr.nsublev;
-  cedr_assert(np == NP);
+  cedr_assert(np == np_);
   
   FA4<      Real> q_min(q_min_r, np2, nlev, qsize, nete+1);
   FA4<const Real> q_max(q_max_r, np2, nlev, qsize, nete+1);
@@ -6136,9 +6136,9 @@ void run_global (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
             volume = 0;
           }
           if (k < nlev)
-            accum_values<NP>(ie, k, q, d.tl_np1, d.n0_qdp, np, nonneg,
-                             spheremp, dp3d_c, q_min, q_max, qdp_p, q_c,
-                             volume, rhom, Qm, Qm_prev, Qm_min, Qm_max);
+            accum_values<np_>(ie, k, q, d.tl_np1, d.n0_qdp, np, nonneg,
+			      spheremp, dp3d_c, q_min, q_max, qdp_p, q_c,
+			      volume, rhom, Qm, Qm_prev, Qm_min, Qm_max);
           const bool write = ! cdr.caas_in_suplev || sbli == cdr.nsublev-1;
           if (write) {
             // For now, handle just one rhom. For feasible global problems,
@@ -6180,15 +6180,15 @@ void run_global (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
   run_cdr(cdr);
 }
 
-template <int NP>
+template <int np_>
 void solve_local (const Int ie, const Int k, const Int q,
                   const Int tl_np1, const Int n1_qdp, const Int np, 
                   const bool scalar_bounds, const Int limiter_option,
                   const FA1<const Real>& spheremp, const FA3<const Real>& dp3d_c,
                   const FA4<const Real>& q_min, const FA4<const Real>& q_max,
                   const Real Qm, FA4<Real>& qdp_c, FA3<Real>& q_c) {
-  cedr_assert(np == NP);
-  static const Int np2 = NP*NP;
+  cedr_assert(np == np_);
+  static const Int np2 = np_*np_;
 
   Real wa[np2], qlo[np2], qhi[np2], y[np2], x[np2];
   Real rhom = 0;
@@ -6316,14 +6316,14 @@ void accum_values (const Int ie, const Int k, const Int q, const Int tl_np1,
   }
 }
 
-template <int NP>
+template <int np_>
 void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
                 const Int nets, const Int nete, const bool scalar_bounds,
                 const Int limiter_option) {
-  static const Int np2 = NP*NP;
+  static const Int np2 = np_*np_;
   const Int np = d.np, nlev = d.nlev, qsize = d.qsize,
     nlevwrem = cdr.nsuplev*cdr.nsublev;
-  cedr_assert(np == NP);
+  cedr_assert(np == np_);
 
   FA4<      Real> q_min(q_min_r, np2, nlev, qsize, nete+1);
   FA4<const Real> q_max(q_max_r, np2, nlev, qsize, nete+1);
@@ -6390,9 +6390,9 @@ void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
           // Redistribute mass in the horizontal direction of each level.
           for (Int i = 0; i < n; ++i) {
             const Int k = k0 + i;
-            solve_local<NP>(ie, k, q, d.tl_np1, d.n1_qdp, np,
-                            scalar_bounds, limiter_option,
-                            spheremp, dp3d_c, q_min, q_max, Qm[i], qdp_c, q_c);
+            solve_local<np_>(ie, k, q, d.tl_np1, d.n1_qdp, np,
+			     scalar_bounds, limiter_option,
+			     spheremp, dp3d_c, q_min, q_max, Qm[i], qdp_c, q_c);
           }
         } else {
           for (Int sbli = 0; sbli < cdr.nsublev; ++sbli) {
@@ -6403,9 +6403,9 @@ void run_local (CDR& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
               cdr.nsublev*ie + sbli;
             const auto lci = cdr.ie2lci[ie_idx];
             const Real Qm = cdr.cdr->get_Qm(lci, ti);
-            solve_local<NP>(ie, k, q, d.tl_np1, d.n1_qdp, np,
-                            scalar_bounds, limiter_option,
-                            spheremp, dp3d_c, q_min, q_max, Qm, qdp_c, q_c);
+            solve_local<np_>(ie, k, q, d.tl_np1, d.n1_qdp, np,
+			     scalar_bounds, limiter_option,
+			     spheremp, dp3d_c, q_min, q_max, Qm, qdp_c, q_c);
           }
         }
       }
