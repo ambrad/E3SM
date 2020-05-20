@@ -213,15 +213,32 @@ void calc_q (const IslMpi<MT>& cm, const Int& src_lid, const Int& lev,
   const auto& ed = cm.ed_d(src_lid);
   const Int levos = np*np*lev;
   const Int np2nlev = np*np*cm.nlev;
+  const Int qsize = cm.qsize;
+  static const Int blocksize = 8;
   if (use_q) {
     // We can use q from calc_q_extrema.
     const Real* const qs0 = ed.q + levos;
     // It was found that Intel 18 produced code that was not BFB between runs
     // due to this pragma.
     //#pragma ivdep
-    for (Int iq = 0; iq < cm.qsize; ++iq) {
-      const Real* const qs = qs0 + iq*np2nlev;
-      q_tgt[iq] = calc_q_tgt(rx, ry, qs);
+    for (Int iqo = 0; iqo < qsize; iqo += blocksize) {
+      // So, instead, provide the compiler with a clear view of
+      // ivdep-ness. Write to tmp here in chunks of blocksize, then
+      // move tmp to q_tgt later.
+      if (iqo + blocksize <= qsize) {
+        Real tmp[blocksize];
+        for (Int iqi = 0; iqi < blocksize; ++iqi) {
+          const Real* const qs = qs0 + (iqo + iqi)*np2nlev;
+          tmp[iqi] = calc_q_tgt(rx, ry, qs);
+        }
+        for (Int iqi = 0; iqi < blocksize; ++iqi)
+          q_tgt[iqo + iqi] = tmp[iqi];
+      } else {
+        for (Int iq = iqo; iq < qsize; ++iq) {
+          const Real* const qs = qs0 + iq*np2nlev;
+          q_tgt[iq] = calc_q_tgt(rx, ry, qs);
+        }
+      }
     }
   } else {
     // q from calc_q_extrema is being overwritten, so have to use qdp/dp.
@@ -229,9 +246,22 @@ void calc_q (const IslMpi<MT>& cm, const Int& src_lid, const Int& lev,
     const Real* const qdp0 = ed.qdp + levos;
     // I'm commenting out this pragma, too, to be safe.
     //#pragma ivdep
-    for (Int iq = 0; iq < cm.qsize; ++iq) {
-      const Real* const qdp = qdp0 + iq*np2nlev;
-      q_tgt[iq] = calc_q_tgt(rx, ry, qdp, dp);
+    for (Int iqo = 0; iqo < qsize; iqo += blocksize) {
+      // And I'm using the same technique as above.
+      if (iqo + blocksize <= qsize) {
+        Real tmp[blocksize];
+        for (Int iqi = 0; iqi < blocksize; ++iqi) {
+          const Real* const qdp = qdp0 + (iqo + iqi)*np2nlev;
+          tmp[iqi] = calc_q_tgt(rx, ry, qdp, dp);
+        }
+        for (Int iqi = 0; iqi < blocksize; ++iqi)
+          q_tgt[iqo + iqi] = tmp[iqi];
+      } else {
+        for (Int iq = iqo; iq < qsize; ++iq) {
+          const Real* const qdp = qdp0 + iq*np2nlev;
+          q_tgt[iq] = calc_q_tgt(rx, ry, qdp, dp);
+        }
+      }
     }
   }
 }
