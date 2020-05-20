@@ -218,13 +218,8 @@ void calc_q (const IslMpi<MT>& cm, const Int& src_lid, const Int& lev,
   if (use_q) {
     // We can use q from calc_q_extrema.
     const Real* const qs0 = ed.q + levos;
-    // It was found that Intel 18 produced code that was not BFB between runs
-    // due to this pragma.
-    //#pragma ivdep
     for (Int iqo = 0; iqo < qsize; iqo += blocksize) {
-      // So, instead, provide the compiler with a clear view of
-      // ivdep-ness. Write to tmp here in chunks of blocksize, then
-      // move tmp to q_tgt later.
+      // Chunk for auto-vectorization.
       if (iqo + blocksize <= qsize) {
         Real tmp[blocksize];
         for (Int iqi = 0; iqi < blocksize; ++iqi) {
@@ -244,10 +239,7 @@ void calc_q (const IslMpi<MT>& cm, const Int& src_lid, const Int& lev,
     // q from calc_q_extrema is being overwritten, so have to use qdp/dp.
     const Real* const dp = ed.dp + levos;
     const Real* const qdp0 = ed.qdp + levos;
-    // I'm commenting out this pragma, too, to be safe.
-    //#pragma ivdep
     for (Int iqo = 0; iqo < qsize; iqo += blocksize) {
-      // And I'm using the same technique as above.
       if (iqo + blocksize <= qsize) {
         Real tmp[blocksize];
         for (Int iqi = 0; iqi < blocksize; ++iqi) {
@@ -388,6 +380,7 @@ void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
   const auto local_meshes = cm.advecter->local_meshes();
   const auto alg = cm.advecter->alg();
   const Int qsize = cm.qsize, nlev = cm.nlev, np2 = cm.np2;
+  static const Int blocksize = 8;
   const auto f = KOKKOS_LAMBDA (const Int& it) {
     const Int tci = nets + it/(np2*nlev);
     const Int own_id = it % (np2*nlev);
@@ -403,14 +396,26 @@ void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
     Real rx[4], ry[4];
     calc_coefs<np,MT>(s2r, local_meshes(slid), alg, slid, e.lev,
                       &dep_points(tci, e.lev, e.k, 0), rx, ry);
-    for (Int iq = 0; iq < qsize; ++iq) {
-      // q from calc_q_extrema is being overwritten, so have to use qdp/dp.
-      Real dp[16];
-      for (Int k = 0; k < 16; ++k) dp[k] = dp_src(slid, e.k, e.lev);
-      for (Int iq = 0; iq < qsize; ++iq) {
-        Real qdp[16];
-        for (Int k = 0; k < 16; ++k) qdp[k] = qdp_src(slid, qtl, iq, k, e.lev);
-        q_tgt(tci, iq, e.k, e.lev) = calc_q_tgt(rx, ry, qdp, dp);
+    // q from calc_q_extrema is being overwritten, so have to use qdp/dp.
+    Real dp[16];
+    for (Int k = 0; k < 16; ++k) dp[k] = dp_src(slid, e.k, e.lev);
+    for (Int iqo = 0; iqo < qsize; iqo += blocksize) {
+      if (iqo + blocksize <= qsize) {
+        Real tmp[blocksize];
+        for (Int iqi = 0; iqi < blocksize; ++iqi) {
+          const Int iq = iqo + iqi;
+          Real qdp[16];
+          for (Int k = 0; k < 16; ++k) qdp[k] = qdp_src(slid, qtl, iq, k, e.lev);
+          tmp[iqi] = calc_q_tgt(rx, ry, qdp, dp);
+        }
+        for (Int iqi = 0; iqi < blocksize; ++iqi)
+          q_tgt(tci, iqo + iqi, e.k, e.lev) = tmp[iqi];
+      } else {
+        for (Int iq = iqo; iq < qsize; ++iq) {
+          Real qdp[16];
+          for (Int k = 0; k < 16; ++k) qdp[k] = qdp_src(slid, qtl, iq, k, e.lev);
+          q_tgt(tci, iq, e.k, e.lev) = calc_q_tgt(rx, ry, qdp, dp);
+        }
       }
     }
   };
