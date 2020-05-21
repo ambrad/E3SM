@@ -314,49 +314,36 @@ void copy_q (IslMpi<MT>& cm, const Int& nets,
 }
 
 template <Int np, typename MT>
-void calc_rmt_q (IslMpi<MT>& cm) {
-  const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
-#ifdef COMPOSE_HORIZ_OPENMP
+void calc_rmt_q_pass2 (IslMpi<MT>& cm) {
+  const Int qsize = cm.qsize;
+
+#ifdef HORIZ_OPENMP
 # pragma omp for
 #endif
-  for (Int ri = 0; ri < nrmtrank; ++ri) {
+  for (Int it = 0; it < cm.nrmt_qs_extrema; ++it) {
+    const Int
+      ri = cm.rmt_qs_extrema_h(4*it), lid = cm.rmt_qs_extrema_h(4*it + 1),
+      lev = cm.rmt_qs_extrema_h(4*it + 2), qos = qsize*cm.rmt_qs_extrema_h(4*it + 3);  
+    auto&& qs = cm.sendbuf(ri);
+    const auto& ed = cm.ed_h(lid);
+    for (Int iq = 0; iq < qsize; ++iq)
+      for (int i = 0; i < 2; ++i)
+        qs(qos + 2*iq + i) = ed.q_extrema(iq, lev, i);
+  }
+
+#ifdef HORIZ_OPENMP
+# pragma omp for
+#endif
+  for (Int it = 0; it < cm.nrmt_xs; ++it) {
+    const Int
+      ri = cm.rmt_xs_h(5*it), lid = cm.rmt_xs_h(5*it + 1), lev = cm.rmt_xs_h(5*it + 2),
+      xos = cm.rmt_xs_h(5*it + 3), qos = qsize*cm.rmt_xs_h(5*it + 4);
     const auto&& xs = cm.recvbuf(ri);
     auto&& qs = cm.sendbuf(ri);
-    Int mos = 0, qos = 0, nx_in_rank, xos;
-    mos += getbuf(xs, mos, xos, nx_in_rank);
-    if (nx_in_rank == 0) {
-      cm.sendcount_h(ri) = 0;
-      continue; 
-    }
-    // The upper bound is to prevent an inf loop if the msg is corrupted.
-    for (Int lidi = 0; lidi < cm.nelemd; ++lidi) {
-      Int lid, nx_in_lid;
-      mos += getbuf(xs, mos, lid, nx_in_lid);
-      const auto& ed = cm.ed_d(lid);
-      for (Int levi = 0; levi < cm.nlev; ++levi) { // same re: inf loop
-        Int lev, nx;
-        mos += getbuf(xs, mos, lev, nx);
-        slmm_assert(nx > 0);
-        for (Int iq = 0; iq < cm.qsize; ++iq)
-          for (int i = 0; i < 2; ++i)
-            qs(qos + 2*iq + i) = ed.q_extrema(iq, lev, i);
-        qos += 2*cm.qsize;
-        for (Int ix = 0; ix < nx; ++ix) {
-          calc_q<np>(cm, lid, lev, &xs(xos), &qs(qos), true);
-          xos += 3;
-          qos += cm.qsize;
-        }
-        nx_in_lid -= nx;
-        nx_in_rank -= nx;
-        if (nx_in_lid == 0) break;
-      }
-      slmm_assert(nx_in_lid == 0);
-      if (nx_in_rank == 0) break;
-    }
-    slmm_assert(nx_in_rank == 0);
-    cm.sendcount_h(ri) = qos;
+    calc_q<np>(cm, lid, lev, &xs(xos), &qs(qos), true);
   }
 }
+
 #else // COMPOSE_PORT
 // Hommexx computational pattern.
 
@@ -543,8 +530,72 @@ void calc_rmt_q_pass1_scan (IslMpi<MT>& cm) {
 }
 
 template <Int np, typename MT>
+void calc_rmt_q_pass2 (IslMpi<MT>& cm) {
+  const auto q_src = cm.tracer_arrays->q;
+  const auto rmt_qs_extrema = cm.rmt_qs_extrema;
+  const auto rmt_xs = cm.rmt_xs;
+  const auto ed_d = cm.ed_d;
+  const auto sendbuf = cm.sendbuf;
+  const auto recvbuf = cm.recvbuf;
+  const Int qsize = cm.qsize;
+
+  const auto fqe = KOKKOS_LAMBDA (const Int& it) {
+    const Int
+    ri = rmt_qs_extrema(4*it), lid = rmt_qs_extrema(4*it + 1),
+    lev = rmt_qs_extrema(4*it + 2), qos = qsize*rmt_qs_extrema(4*it + 3);  
+    auto&& qs = sendbuf(ri);
+    const auto& ed = ed_d(lid);
+    for (Int iq = 0; iq < qsize; ++iq)
+      for (int i = 0; i < 2; ++i)
+        qs(qos + 2*iq + i) = ed.q_extrema(iq, lev, i);
+  };
+  ko::fence();
+  ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, cm.nrmt_qs_extrema), fqe);
+
+  const auto s2r = cm.advecter->s2r();
+  const auto local_meshes = cm.advecter->local_meshes();
+  const auto alg = cm.advecter->alg();
+  static const Int blocksize = 8;
+
+  const auto fx = KOKKOS_LAMBDA (const Int& it) {
+    const Int
+    ri = rmt_xs(5*it), lid = rmt_xs(5*it + 1), lev = rmt_xs(5*it + 2),
+    xos = rmt_xs(5*it + 3), qos = qsize*rmt_xs(5*it + 4);
+    const auto&& xs = recvbuf(ri);
+    auto&& qs = sendbuf(ri);
+    Real rx[4], ry[4];
+    calc_coefs<np,MT>(s2r, local_meshes(lid), alg, lid, lev, &xs(xos), rx, ry);
+    Real* const q_tgt = &qs(qos);
+    // Block for auto-vectorization.
+    for (Int iqo = 0; iqo < qsize; iqo += blocksize) {
+      if (iqo + blocksize <= qsize) {
+        Real tmp[blocksize];
+        for (Int iqi = 0; iqi < blocksize; ++iqi) {
+          const Int iq = iqo + iqi;
+          Real qsrc[16];
+          for (Int k = 0; k < 16; ++k) qsrc[k] = q_src(lid, iq, k, lev);
+          tmp[iqi] = calc_q_tgt(rx, ry, qsrc);
+        }
+        for (Int iqi = 0; iqi < blocksize; ++iqi)
+          q_tgt[iqo + iqi] = tmp[iqi];
+      } else {
+        for (Int iq = iqo; iq < qsize; ++iq) {
+          Real qsrc[16];
+          for (Int k = 0; k < 16; ++k) qsrc[k] = q_src(lid, iq, k, lev);
+          q_tgt[iq] = calc_q_tgt(rx, ry, qsrc);
+        }
+      }
+    }
+  };
+  ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, cm.nrmt_xs), fx);
+  ko::fence();
+}
+
+#endif // COMPOSE_PORT
+
+template <Int np, typename MT>
 void calc_rmt_q_pass1 (IslMpi<MT>& cm) {
-#ifndef COMPOSE_PACK_NOSCAN
+#if defined COMPOSE_PORT && ! defined COMPOSE_PACK_NOSCAN
   if (ko::OnGpu<MT>::value) {
     calc_rmt_q_pass1_scan<np>(cm);
     return;
@@ -617,76 +668,12 @@ void calc_rmt_q_pass1 (IslMpi<MT>& cm) {
 }
 
 template <Int np, typename MT>
-void calc_rmt_q_pass2 (IslMpi<MT>& cm) {
-  const auto q_src = cm.tracer_arrays->q;
-  const auto rmt_qs_extrema = cm.rmt_qs_extrema;
-  const auto rmt_xs = cm.rmt_xs;
-  const auto ed_d = cm.ed_d;
-  const auto sendbuf = cm.sendbuf;
-  const auto recvbuf = cm.recvbuf;
-  const Int qsize = cm.qsize;
-
-  const auto fqe = KOKKOS_LAMBDA (const Int& it) {
-    const Int
-    ri = rmt_qs_extrema(4*it), lid = rmt_qs_extrema(4*it + 1),
-    lev = rmt_qs_extrema(4*it + 2), qos = qsize*rmt_qs_extrema(4*it + 3);  
-    auto&& qs = sendbuf(ri);
-    const auto& ed = ed_d(lid);
-    for (Int iq = 0; iq < qsize; ++iq)
-      for (int i = 0; i < 2; ++i)
-        qs(qos + 2*iq + i) = ed.q_extrema(iq, lev, i);
-  };
-  ko::fence();
-  ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, cm.nrmt_qs_extrema), fqe);
-
-  const auto s2r = cm.advecter->s2r();
-  const auto local_meshes = cm.advecter->local_meshes();
-  const auto alg = cm.advecter->alg();
-  static const Int blocksize = 8;
-
-  const auto fx = KOKKOS_LAMBDA (const Int& it) {
-    const Int
-    ri = rmt_xs(5*it), lid = rmt_xs(5*it + 1), lev = rmt_xs(5*it + 2),
-    xos = rmt_xs(5*it + 3), qos = qsize*rmt_xs(5*it + 4);
-    const auto&& xs = recvbuf(ri);
-    auto&& qs = sendbuf(ri);
-    Real rx[4], ry[4];
-    calc_coefs<np,MT>(s2r, local_meshes(lid), alg, lid, lev, &xs(xos), rx, ry);
-    Real* const q_tgt = &qs(qos);
-    // Block for auto-vectorization.
-    for (Int iqo = 0; iqo < qsize; iqo += blocksize) {
-      if (iqo + blocksize <= qsize) {
-        Real tmp[blocksize];
-        for (Int iqi = 0; iqi < blocksize; ++iqi) {
-          const Int iq = iqo + iqi;
-          Real qsrc[16];
-          for (Int k = 0; k < 16; ++k) qsrc[k] = q_src(lid, iq, k, lev);
-          tmp[iqi] = calc_q_tgt(rx, ry, qsrc);
-        }
-        for (Int iqi = 0; iqi < blocksize; ++iqi)
-          q_tgt[iqo + iqi] = tmp[iqi];
-      } else {
-        for (Int iq = iqo; iq < qsize; ++iq) {
-          Real qsrc[16];
-          for (Int k = 0; k < 16; ++k) qsrc[k] = q_src(lid, iq, k, lev);
-          q_tgt[iq] = calc_q_tgt(rx, ry, qsrc);
-        }
-      }
-    }
-  };
-  ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, cm.nrmt_xs), fx);
-  ko::fence();
-}
-
-template <Int np, typename MT>
 void calc_rmt_q (IslMpi<MT>& cm) {
   { slmm::Timer t("09a_rmt_q_pass1");
     calc_rmt_q_pass1<np>(cm); }
   { slmm::Timer t("09b_rmt_q_pass2");
     calc_rmt_q_pass2<np>(cm); }
 }
-
-#endif // COMPOSE_PORT
 
 template <typename MT>
 void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
