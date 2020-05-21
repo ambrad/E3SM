@@ -218,8 +218,8 @@ void calc_q (const IslMpi<MT>& cm, const Int& src_lid, const Int& lev,
   if (use_q) {
     // We can use q from calc_q_extrema.
     const Real* const qs0 = ed.q + levos;
+    // Block for auto-vectorization.
     for (Int iqo = 0; iqo < qsize; iqo += blocksize) {
-      // Chunk for auto-vectorization.
       if (iqo + blocksize <= qsize) {
         Real tmp[blocksize];
         for (Int iqi = 0; iqi < blocksize; ++iqi) {
@@ -399,6 +399,7 @@ void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
     // q from calc_q_extrema is being overwritten, so have to use qdp/dp.
     Real dp[16];
     for (Int k = 0; k < 16; ++k) dp[k] = dp_src(slid, e.k, e.lev);
+    // Block for auto-vectorization.
     for (Int iqo = 0; iqo < qsize; iqo += blocksize) {
       if (iqo + blocksize <= qsize) {
         Real tmp[blocksize];
@@ -636,6 +637,7 @@ void calc_rmt_q_pass2 (IslMpi<MT>& cm) {
   const auto s2r = cm.advecter->s2r();
   const auto local_meshes = cm.advecter->local_meshes();
   const auto alg = cm.advecter->alg();
+  static const Int blocksize = 8;
 
   const auto fx = KOKKOS_LAMBDA (const Int& it) {
     const Int
@@ -646,10 +648,25 @@ void calc_rmt_q_pass2 (IslMpi<MT>& cm) {
     Real rx[4], ry[4];
     calc_coefs<np,MT>(s2r, local_meshes(lid), alg, lid, lev, &xs(xos), rx, ry);
     Real* const q_tgt = &qs(qos);
-    for (Int iq = 0; iq < qsize; ++iq) {
-      Real qsrc[16];
-      for (Int k = 0; k < 16; ++k) qsrc[k] = q_src(lid, iq, k, lev);
-      q_tgt[iq] = calc_q_tgt(rx, ry, qsrc);
+    // Block for auto-vectorization.
+    for (Int iqo = 0; iqo < qsize; iqo += blocksize) {
+      if (iqo + blocksize <= qsize) {
+        Real tmp[blocksize];
+        for (Int iqi = 0; iqi < blocksize; ++iqi) {
+          const Int iq = iqo + iqi;
+          Real qsrc[16];
+          for (Int k = 0; k < 16; ++k) qsrc[k] = q_src(lid, iq, k, lev);
+          tmp[iqi] = calc_q_tgt(rx, ry, qsrc);
+        }
+        for (Int iqi = 0; iqi < blocksize; ++iqi)
+          q_tgt[iqo + iqi] = tmp[iqi];
+      } else {
+        for (Int iq = iqo; iq < qsize; ++iq) {
+          Real qsrc[16];
+          for (Int k = 0; k < 16; ++k) qsrc[k] = q_src(lid, iq, k, lev);
+          q_tgt[iq] = calc_q_tgt(rx, ry, qsrc);
+        }
+      }
     }
   };
   ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, cm.nrmt_xs), fx);
