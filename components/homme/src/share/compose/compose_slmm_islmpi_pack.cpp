@@ -45,7 +45,7 @@ Int setbuf (Buffer& buf, const Int& os, const Int& i1, const short& i2, const sh
           lev               short
           #x)               s
              *#x-in-rank)
-             */
+*/
 
 struct Accum {
   Int mos, sendcount, xos, qos;

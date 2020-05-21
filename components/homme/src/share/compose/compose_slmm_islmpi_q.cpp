@@ -263,10 +263,15 @@ void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
                  const DepPoints<MT>& dep_points,
                  const QExtrema<MT>& q_min, const QExtrema<MT>& q_max) {
   const int tid = get_tid();
-  for (Int tci = nets; tci <= nete; ++tci) {
+  for (Int tci = 0; tci < cm.nelemd; ++tci) {
     auto& ed = cm.ed_d(tci);
     const FA3<Real> q_tgt(ed.q, cm.np2, cm.nlev, cm.qsize);
-    for (const auto& e: ed.own) {
+    const Int ned = ed.own.n();
+#ifdef HORIZ_OPENMP
+    #pragma omp for
+#endif
+    for (Int idx = 0; idx < ned; ++idx) {
+      const auto& e = ed.own(idx);
       const Int slid = ed.nbrs(ed.src(e.lev, e.k)).lid_on_rank;
       const auto& sed = cm.ed_d(slid);
       for (Int iq = 0; iq < cm.qsize; ++iq) {
