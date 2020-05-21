@@ -3822,7 +3822,7 @@ void CAAS<ES>::get_buffers_sizes (size_t& buf1, size_t& buf2, size_t& buf3) {
   const Int e = need_conserve_ ? 1 : 0;
   const auto nslots = 4*probs_.size();
   buf1 = nlclcells_ * ((3+e)*probs_.size() + 1);
-  cedr_assert(nlclcells_ % user_reducer_->n_accum_in_place() == 0);
+  cedr_assert( ! user_reducer_ || nlclcells_ % user_reducer_->n_accum_in_place() == 0);
   buf2 = nslots*(user_reducer_ ? (nlclcells_ / user_reducer_->n_accum_in_place()) : 1);
   buf3 = nslots;
 }
