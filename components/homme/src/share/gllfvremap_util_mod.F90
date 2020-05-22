@@ -17,7 +17,7 @@ module gllfvremap_util_mod
   ! PHIS_d in the sense that an integral of either one over a finite volume
   ! subcell has the same value.
   !
-  ! AMB 2019/07-2020/05 Initial
+  ! AMB 2019/07-2020/06 Initial
 
   use hybrid_mod, only: hybrid_t
   use kinds, only: real_kind
@@ -555,10 +555,11 @@ contains
              if (hybrid%ithr == 0) then
                 ftype = 2
                 if (ftype_idx == 2) ftype = 0
-                ! check=.true. means that the remap routines to
+                ! check=2 means that the remap routines due
                 ! element-level verification of properties and output
-                ! messages if a property fails.
-                call gfr_init(hybrid%par, elem, nphys, .true., boost_pg1)
+                ! messages if a property fails. check >= 1 means that
+                ! global properties are checked.
+                call gfr_init(hybrid%par, elem, nphys, 2, boost_pg1)
                 call init(nphys)
              end if
              !$omp barrier
@@ -745,7 +746,7 @@ contains
          write_latlon)
 
     deallocate(gll_fields, pg_fields)
-    stat = 0
 #endif
+    stat = 0
   end function gfr_pgn_to_smoothed_topo
 end module gllfvremap_util_mod
