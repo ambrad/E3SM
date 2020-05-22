@@ -296,15 +296,14 @@ contains
        end if
 
        dp = elem(ie)%state%dp3d(:,:,:,nt)
+#if 0
        call gfr_g2f_scalar(ie, elem(ie)%metdet, dp, dp_fv)
-
-       wrk = 0
+#else
        do k = 1,nlev
-          wrk(:nf2) = wrk(:nf2) + dp_fv(:nf2,k)
+          dp_fv(:nf2,k) = (hvcoord%hyai(k+1) - hvcoord%hyai(k))*hvcoord%ps0 + &
+               (hvcoord%hybi(k+1) - hvcoord%hybi(k))*ps(:nf2,ie)
        end do
-       if (any(abs(ps(:nf2,ie) - wrk(:nf2)) >= 1e-14*abs(ps(:nf2,ie)))) then
-          print *,'amb> ps',maxval(ps(:nf2,ie)),maxval(abs(ps(:nf2,ie) - wrk(:nf2)))
-       end if
+#endif
 
        call get_temperature(elem(ie), wg1, hvcoord, nt)
        call get_field(elem(ie), 'p', p, hvcoord, nt, -1)
@@ -316,6 +315,22 @@ contains
        call gfr_g2f_vector(ie, elem, &
             elem(ie)%state%v(:,:,1,:,nt), elem(ie)%state%v(:,:,2,:,nt), &
             uv(:,1,:,ie), uv(:,2,:,ie))
+
+       wrk = hvcoord%hyai(1)*hvcoord%ps0
+       do k = 1,nlev
+          wrk(:nf2) = wrk(:nf2) + dp_fv(:nf2,k)
+       end do
+       if (any(abs(ps(:nf2,ie) - wrk(:nf2)) >= 1e-14*abs(ps(:nf2,ie)))) then
+          print *,'amb> ps_f',maxval(ps(:nf2,ie)),maxval(abs(ps(:nf2,ie) - wrk(:nf2)))
+       end if
+       wg1(:,:,1) = hvcoord%hyai(1)*hvcoord%ps0
+       do k = 1,nlev
+          wg1(:,:,1) = wg1(:,:,1) + dp(:,:,k)
+       end do
+       if (any(abs(elem(ie)%state%ps_v(:,:,nt) - wg1(:,:,1)) >= 1e-14*abs(wg1(:,:,1)))) then
+          print *,'amb> ps_g',maxval(elem(ie)%state%ps_v(:,:,nt)), &
+               maxval(abs(elem(ie)%state%ps_v(:,:,nt) - wg1(:,:,1)))
+       end if
 
        call get_field(elem(ie), 'omega', wg1, hvcoord, nt, -1)
        call gfr_g2f_scalar(ie, elem(ie)%metdet, wg1, wf1)
@@ -339,7 +354,14 @@ contains
     do ie = nets,nete
        mass = 0
        dp = elem(ie)%state%dp3d(:,:,:,nt)
+#if 0
        call gfr_g2f_scalar(ie, elem(ie)%metdet, dp, dp_fv)
+#else
+       do k = 1,nlev
+          dp_fv(:nf2,k) = (hvcoord%hyai(k+1) - hvcoord%hyai(k))*hvcoord%ps0 + &
+               (hvcoord%hybi(k+1) - hvcoord%hybi(k))*ps(:nf2,ie)
+       end do
+#endif
        do k = 1,nlev
           mass(1) = mass(1) + sum(elem(ie)%spheremp(:,:)*dp(:,:,k)*elem(ie)%state%Q(:,:,k,42))
           mass(2) = mass(2) + sum(gfr%fv_metdet(:nf2,ie)*gfr%w_ff(:nf2)*dp_fv(:nf2,k)*q(:nf2,k,42,ie))
@@ -393,7 +415,15 @@ contains
        mass = 0
 
        dp = elem(ie)%state%dp3d(:,:,:,nt)
+#if 0
        call gfr_g2f_scalar(ie, elem(ie)%metdet, dp, dp_fv)
+#else
+       call gfr_g2f_scalar(ie, elem(ie)%metdet, elem(ie)%state%ps_v(:,:,nt:nt), wf1(:,:1))
+       do k = 1,nlev
+          dp_fv(:nf2,k) = (hvcoord%hyai(k+1) - hvcoord%hyai(k))*hvcoord%ps0 + &
+               (hvcoord%hybi(k+1) - hvcoord%hybi(k))*wf1(:nf2,1)
+       end do
+#endif
 
        call gfr_f2g_vector(gfr, ie, elem, &
             uv(:nf2,1,:,ie), uv(:nf2,2,:,ie), &
@@ -927,10 +957,10 @@ contains
           do qj = 1,np
              ! (xref,yref) are w.r.t. the [-1,1]^2 reference domain mapped to
              ! the subcell.
-             ref = xs + half*(xe - xs)*(1 + gll%points(qj))
+             ref = xs + half*(xe - xs)*(one + gll%points(qj))
              call eval_lagrange_bases(gll, np, ref, bj)
              do qi = 1,np
-                ref = ys + half*(ye - ys)*(1 + gll%points(qi))
+                ref = ys + half*(ye - ys)*(one + gll%points(qi))
                 call eval_lagrange_bases(gll, np, ref, bi)
                 do gj = 1,np
                    do gi = 1,np

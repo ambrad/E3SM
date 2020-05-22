@@ -668,6 +668,7 @@ contains
     character(*), intent(in) :: intopofn, outtopoprefix
     integer :: stat
 
+    stat = 0
 #ifndef CAM
     real(real_kind), allocatable :: gll_fields(:,:,:,:), pg_fields(:,:,:)
     integer :: intopo_nphys, ie, i, j, k, nvar, nf2
