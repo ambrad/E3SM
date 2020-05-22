@@ -262,6 +262,8 @@ contains
     use hybvcoord_mod, only: hvcoord_t
     use element_ops, only: get_temperature, get_field
     use physical_constants, only: p0, kappa
+    use parallel_mod, only: global_shared_buf, global_shared_sum
+    use global_norms_mod, only: wrap_repro_sum
 
     type (hybrid_t), intent(in) :: hybrid
     integer, intent(in) :: nt
@@ -273,8 +275,8 @@ contains
 
     real(kind=real_kind), dimension(np,np,nlev) :: wg1, dp, p
     real(kind=real_kind), dimension(np*np,nlev) :: wf1, dp_fv, p_fv
-    real(kind=real_kind) :: qmin, qmax, ones(np,np)
-    integer :: ie, nf, nf2, qi, qsize
+    real(kind=real_kind) :: qmin, qmax, ones(np,np), mass(2), tmp(2), wrk(np*np)
+    integer :: ie, nf, nf2, qi, qsize, i, j, k
 
     ones = one
     nf = gfr%nphys
@@ -295,6 +297,14 @@ contains
 
        dp = elem(ie)%state%dp3d(:,:,:,nt)
        call gfr_g2f_scalar(ie, elem(ie)%metdet, dp, dp_fv)
+
+       wrk = 0
+       do k = 1,nlev
+          wrk(:nf2) = wrk(:nf2) + dp_fv(:nf2,k)
+       end do
+       if (any(abs(ps(:nf2,ie) - wrk(:nf2)) >= 1e-14*abs(ps(:nf2,ie)))) then
+          print *,'amb> ps',maxval(ps(:nf2,ie)),maxval(abs(ps(:nf2,ie) - wrk(:nf2)))
+       end if
 
        call get_temperature(elem(ie), wg1, hvcoord, nt)
        call get_field(elem(ie), 'p', p, hvcoord, nt, -1)
@@ -317,7 +327,7 @@ contains
 #endif
        do qi = 1,qsize
           call gfr_g2f_mixing_ratio(gfr, ie, elem(ie)%metdet, dp, dp_fv, &
-               dp*elem(ie)%state%Q(:,:,:,qi), wf1)
+               elem(ie)%state%Q(:,:,:,qi), wf1)
           q(:nf2,:,qi,ie) = wf1(:nf2,:)
           if (gfr%check) then
              call check_g2f_mixing_ratio(gfr, hybrid, ie, qi, elem, dp, dp_fv, &
@@ -325,6 +335,23 @@ contains
           end if
        end do
     end do
+
+    do ie = nets,nete
+       mass = 0
+       dp = elem(ie)%state%dp3d(:,:,:,nt)
+       call gfr_g2f_scalar(ie, elem(ie)%metdet, dp, dp_fv)
+       do k = 1,nlev
+          mass(1) = mass(1) + sum(elem(ie)%spheremp(:,:)*dp(:,:,k)*elem(ie)%state%Q(:,:,k,42))
+          mass(2) = mass(2) + sum(gfr%fv_metdet(:nf2,ie)*gfr%w_ff(:nf2)*dp_fv(:nf2,k)*q(:nf2,k,42,ie))
+       end do
+       do i = 1,2
+          global_shared_buf(ie,i) = mass(i)
+       end do
+    end do
+    call wrap_repro_sum(nvars=2, comm=hybrid%par%comm)
+    if (hybrid%masterthread) then
+       print '(a,es23.16,es23.16)','amb> g2f 42',global_shared_sum(1),global_shared_sum(2)
+    end if
   end subroutine gfr_dyn_to_fv_phys_hybrid
 
   subroutine gfr_fv_phys_to_dyn_hybrid(hybrid, nt, dt, hvcoord, elem, nets, nete, T, uv, q)
@@ -338,6 +365,8 @@ contains
     use hybvcoord_mod, only: hvcoord_t
     use physical_constants, only: p0, kappa
     use control_mod, only: ftype
+    use parallel_mod, only: global_shared_buf, global_shared_sum
+    use global_norms_mod, only: wrap_repro_sum
 
     type (hybrid_t), intent(in) :: hybrid
     integer, intent(in) :: nt
@@ -349,9 +378,11 @@ contains
 
     real(kind=real_kind), dimension(np,np,nlev) :: dp, wg1, p
     real(kind=real_kind), dimension(np*np,nlev) :: wf1, wf2, dp_fv, p_fv
-    real(kind=real_kind) :: qmin, qmax
+    real(kind=real_kind) :: qmin, qmax, mass(2), tmp(2)
     integer :: ie, nf, nf2, k, qsize, qi
     logical :: q_adjustment
+
+    integer, save :: count = 0
 
     nf = gfr%nphys
     nf2 = nf*nf
@@ -359,6 +390,8 @@ contains
     qsize = size(q,3)
 
     do ie = nets,nete
+       mass = 0
+
        dp = elem(ie)%state%dp3d(:,:,:,nt)
        call gfr_g2f_scalar(ie, elem(ie)%metdet, dp, dp_fv)
 
@@ -378,14 +411,30 @@ contains
              ! FV Q_ten
              !   GLL Q0 -> FV Q0
              call gfr_g2f_mixing_ratio(gfr, ie, elem(ie)%metdet, dp, dp_fv, &
-                  dp*elem(ie)%state%Q(:,:,:,qi), wf1)
+                  elem(ie)%state%Q(:,:,:,qi), wf1)
              !   FV Q_ten = FV Q1 - FV Q0
              wf1(:nf2,:) = q(:nf2,:,qi,ie) - wf1(:nf2,:)
+             if (qi == 42) then
+                do k = 1,nlev
+                   mass(2) = mass(2) + sum(gfr%fv_metdet(:nf2,ie)*gfr%w_ff(:nf2)*dp_fv(:nf2,k)*q(:nf2,k,qi,ie))
+                end do
+             end if
              if (nf > 1 .or. .not. gfr%boost_pg1) then
                 ! GLL Q_ten
                 call gfr_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wf1, wg1)
                 ! GLL Q1
                 elem(ie)%derived%FQ(:,:,:,qi) = elem(ie)%state%Q(:,:,:,qi) + wg1
+                if (qi == 42) then
+                   do k = 1,nlev
+                      mass(1) = mass(1) + sum(elem(ie)%spheremp(:,:)*dp(:,:,k)*elem(ie)%derived%FQ(:,:,k,qi))
+                      tmp(1) = sum(elem(ie)%spheremp(:,:)*dp(:,:,k)*elem(ie)%derived%FQ(:,:,k,qi))
+                      tmp(2) = sum(gfr%fv_metdet(:nf2,ie)*gfr%w_ff(:nf2)*dp_fv(:nf2,k)*q(:nf2,k,qi,ie))
+                      if (count < 999 .and. abs(tmp(1) - tmp(2)) >= 1e-14*maxval(abs(tmp))) then
+                         print '(a,i3,i3,es23.16,es23.16,es9.2)','amb>',hybrid%par%rank,ie,tmp(1),tmp(2),tmp(1)-tmp(2)
+                         count = count + 1
+                      end if
+                   end do
+                end if
              else
                 ! GLL Q_ten
                 do k = 1,nlev
@@ -413,7 +462,7 @@ contains
              end if
              ! GLL Q0 -> FV Q0
              call gfr_g2f_mixing_ratio(gfr, ie, elem(ie)%metdet, dp, dp_fv, &
-                  dp*elem(ie)%state%Q(:,:,:,qi), wf2)
+                  elem(ie)%state%Q(:,:,:,qi), wf2)
              ! FV Q1
              wf2(:nf2,:) = wf2(:nf2,:) + wf1(:nf2,:)
              ! Get limiter bounds.
@@ -422,6 +471,9 @@ contains
                 gfr%qmax(k,qi,ie) = maxval(wf2(:nf2,k))
              end do
           end if
+       end do
+       do k = 1,2
+          global_shared_buf(ie,k) = mass(k)
        end do
     end do
 
@@ -455,6 +507,15 @@ contains
                   dp*(elem(ie)%derived%FQ(:,:,:,qi) - elem(ie)%state%Q(:,:,:,qi))/dt
           end if
        end do
+    end do
+
+    call wrap_repro_sum(nvars=2, comm=hybrid%par%comm)
+    if (hybrid%masterthread) then
+       print '(a,es23.16,es23.16)','amb> f2g 42',global_shared_sum(1),global_shared_sum(2)
+    end if
+    return
+    do ie = nets,nete
+       elem(ie)%derived%FQ(:,:,:,42) = elem(ie)%state%Q(:,:,:,42)
     end do
   end subroutine gfr_fv_phys_to_dyn_hybrid
 
@@ -1345,13 +1406,12 @@ contains
     end do
   end subroutine gfr_g2f_vector
 
-  subroutine gfr_g2f_mixing_ratio(gfr, ie, gll_metdet, dp_g, dp_f, qdp_g, q_f)
+  subroutine gfr_g2f_mixing_ratio(gfr, ie, gll_metdet, dp_g, dp_f, q_g, q_f)
     ! Remap a mixing ratio conservatively and preventing new extrema.
 
     type (GllFvRemap_t), intent(in) :: gfr
     integer, intent(in) :: ie
-    real(kind=real_kind), intent(in) :: gll_metdet(:,:), dp_g(:,:,:), dp_f(:,:), &
-         qdp_g(:,:,:)
+    real(kind=real_kind), intent(in) :: gll_metdet(:,:), dp_g(:,:,:), dp_f(:,:), q_g(:,:,:)
     real(kind=real_kind), intent(out) :: q_f(:,:)
 
     real(kind=real_kind) :: qmin, qmax, wg(np,np), wf1(np*np), wf2(np*np)
@@ -1359,12 +1419,13 @@ contains
 
     nf = gfr%nphys
     nf2 = nf*nf
-    nlev = size(qdp_g,3)
+    nlev = size(q_g,3)
     do k = 1,nlev
-       wg = qdp_g(:,:,k)/dp_g(:,:,k)
+       wg = q_g(:,:,k)
        qmin = minval(wg)
        qmax = maxval(wg)
-       call gfr_g2f_remapd(gfr, gll_metdet, gfr%fv_metdet(:,ie), qdp_g(:,:,k), wf1)
+       wg = dp_g(:,:,k)*wg
+       call gfr_g2f_remapd(gfr, gll_metdet, gfr%fv_metdet(:,ie), wg, wf1)
        wf1(:nf2) = wf1(:nf2)/dp_f(:nf2,k)
        wf2(:nf2) = gfr%w_ff(:nf2)*gfr%fv_metdet(:nf2,ie)
        call limiter1_clip_and_sum(nf, wf2, qmin, qmax, dp_f(:,k), wf1)

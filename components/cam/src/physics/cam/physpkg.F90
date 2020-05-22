@@ -1016,9 +1016,9 @@ subroutine phys_run1(phys_state, ztodt, phys_tend, pbuf2d,  cam_in, cam_out)
 
        call t_stopf ('physpkg_st1')
 
-#ifdef TRACER_CHECK
+!#ifdef TRACER_CHECK
        call gmean_mass ('before tphysbc DRY', phys_state)
-#endif
+!#endif
 
 
        !-----------------------------------------------------------------------
