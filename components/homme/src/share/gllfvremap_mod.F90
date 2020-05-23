@@ -33,7 +33,7 @@ module gllfvremap_mod
   ! dcmip2016_test1_pg2 and dcmip2016_test1 (np4). pg2 and np4 fields are
   ! nearly identical out to day 30, whereas pg1 fields differ visibly.
   !
-  ! AMB 2019/07-2020/05 Initial
+  ! AMB 2019/07-2020/06 Initial
 
   use hybrid_mod, only: hybrid_t
   use kinds, only: real_kind
@@ -163,10 +163,11 @@ contains
   subroutine gfr_init(par, elem, nphys, check, boost_pg1)
     ! Initialize the gfr internal data structure.
     !   nphys is N in pgN.
-    !   check is optional and defaults to false. It will produce very
-    ! verbose output if something goes wrong. It is also expensive. It
-    ! is intended to be used in unit testing and (if ever needed) for
-    ! debuggin.
+    !   check is optional and defaults to 0, no checking. It will produce very
+    ! verbose output if something goes wrong. It is also expensive. It is
+    ! intended to be used in unit testing and (if ever needed) for
+    ! debugging. There are three levels: 0, no checking; 1, global properties
+    ! only; 2, also element-local properties.
 
     use kinds, only: iulog
     use dimensions_mod, only: nlev
@@ -2053,10 +2054,10 @@ contains
   end subroutine gfr_f_get_cartesian3d
 
   subroutine calc_dp_fv(nf, hvcoord, ps, dp_fv)
-    ! Compute pressure level increments on the FV grid given ps on the
-    ! FV grid. Directly projecting dp_gll to dp_fv disagrees
-    ! numerically with the loop in this subroutine. This loop is
-    ! essentially how CAM computes pdel, so we must use it, too.
+    ! Compute pressure level increments on the FV grid given ps on the FV
+    ! grid. Directly projecting dp_gll to dp_fv disagrees numerically with the
+    ! loop in this subroutine. This loop is essentially how CAM computes pdel,
+    ! so we must use it, too.
 
     use hybvcoord_mod, only: hvcoord_t
     use dimensions_mod, only: nlev

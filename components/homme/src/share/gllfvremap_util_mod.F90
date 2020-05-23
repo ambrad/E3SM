@@ -17,7 +17,7 @@ module gllfvremap_util_mod
   ! PHIS_d in the sense that an integral of either one over a finite volume
   ! subcell has the same value.
   !
-  ! AMB 2019/07-2020/05 Initial
+  ! AMB 2019/07-2020/06 Initial
 
   use hybrid_mod, only: hybrid_t
   use kinds, only: real_kind
