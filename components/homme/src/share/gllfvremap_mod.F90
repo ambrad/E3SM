@@ -193,7 +193,7 @@ contains
     gfr%tolfac = one
     if (par%masterproc) then
        write(iulog,*) 'gfr> Running with dynamics and physics on separate grids (physgrid).'
-       write(iulog, '(a,i3,a,l2,a,i2,a,l2)') 'gfr> init nphys', nphys, ' check', gfr%check, &
+       write(iulog, '(a,i3,a,i2,a,i2,a,l2)') 'gfr> init nphys', nphys, ' check', gfr%check, &
             ' ftype', ftype, ' boost_pg1', gfr%boost_pg1
        if (nphys == 1) then
           ! Document state of pg1. dcmip2016_test1 shows it is too coarse. For
@@ -327,8 +327,10 @@ contains
        end do
     end do
 
-    if (gfr%check > 0) &
-         call check_global_properties(gfr, hybrid, hvcoord, elem, nt, nets, nete, q)
+    if (gfr%check > 0) then
+       call check_global_properties(gfr, hybrid, hvcoord, elem, nt, nets, nete, &
+            elem(ie)%state%Q, q)
+    end if
   end subroutine gfr_dyn_to_fv_phys_hybrid
 
   subroutine gfr_fv_phys_to_dyn_hybrid(hybrid, nt, dt, hvcoord, elem, nets, nete, T, uv, q)
@@ -462,8 +464,10 @@ contains
        end do
     end do
 
-    if (gfr%check > 0) &
-         call check_global_properties(gfr, hybrid, hvcoord, elem, nt, nets, nete, q)
+    if (gfr%check > 0) then
+       call check_global_properties(gfr, hybrid, hvcoord, elem, nt, nets, nete, &
+            elem(ie)%derived%FQ, q)
+    end if
   end subroutine gfr_fv_phys_to_dyn_hybrid
 
   subroutine gfr_dyn_to_fv_phys_topo_hybrid(hybrid, elem, nets, nete, phis)
@@ -2260,11 +2264,11 @@ contains
     end do
   end subroutine set_ps_Q
 
-  subroutine check_global_properties(gfr, hybrid, hvcoord, elem, nt, nets, nete, q)
+  subroutine check_global_properties(gfr, hybrid, hvcoord, elem, nt, nets, nete, q_g, q_f)
     use parallel_mod, only: global_shared_buf, global_shared_sum
     use global_norms_mod, only: wrap_repro_sum
     use kinds, only: iulog
-    use dimensions_mod, only: nlev
+    use dimensions_mod, only: nlev, qsize_d
     use hybvcoord_mod, only: hvcoord_t
 
     type (GllFvRemap_t), intent(in) :: gfr
@@ -2272,7 +2276,7 @@ contains
     type (hvcoord_t), intent(in) :: hvcoord
     type (element_t), intent(in) :: elem(:)
     integer, intent(in) :: nt, nets, nete
-    real (kind=real_kind), intent(in) :: q(:,:,:,:)
+    real (kind=real_kind), intent(in) :: q_g(:,:,:,:), q_f(:,:,:,:)
 
     integer :: nf, nf2, ie, k, qi
     real (kind=real_kind) :: mass(2), dp(np,np,nlev), dp_fv(np*np,nlev), wf(np*np,1)
@@ -2280,6 +2284,7 @@ contains
     nf = gfr%nphys
     nf2 = nf*nf
     qi = 42
+    if (qi > qsize_d) return
     do ie = nets,nete
        mass = 0
        dp = elem(ie)%state%dp3d(:,:,:,nt)
@@ -2287,9 +2292,9 @@ contains
        call calc_dp_fv(nf, hvcoord, wf(:,1), dp_fv)
        do k = 1,nlev
           mass(1) = mass(1) + sum(elem(ie)%spheremp(:,:)* &
-               dp(:,:,k)*elem(ie)%derived%FQ(:,:,k,qi))
+               dp(:,:,k)*q_g(:,:,k,qi))
           mass(2) = mass(2) + sum(gfr%fv_metdet(:nf2,ie)*gfr%w_ff(:nf2)* &
-               dp_fv(:nf2,k)*q(:nf2,k,qi,ie))
+               dp_fv(:nf2,k)*q_f(:nf2,k,qi,ie))
        end do
        do k = 1,2
           global_shared_buf(ie,k) = mass(k)

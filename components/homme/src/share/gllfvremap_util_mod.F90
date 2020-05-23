@@ -669,7 +669,6 @@ contains
     character(*), intent(in) :: intopofn, outtopoprefix
     integer :: stat
 
-    stat = 0
 #ifndef CAM
     real(real_kind), allocatable :: gll_fields(:,:,:,:), pg_fields(:,:,:)
     integer :: intopo_nphys, ie, i, j, k, nvar, nf2
@@ -747,7 +746,7 @@ contains
          write_latlon)
 
     deallocate(gll_fields, pg_fields)
-    stat = 0
 #endif
+    stat = 0
   end function gfr_pgn_to_smoothed_topo
 end module gllfvremap_util_mod
