@@ -555,10 +555,11 @@ contains
              if (hybrid%ithr == 0) then
                 ftype = 2
                 if (ftype_idx == 2) ftype = 0
-                ! check=.true. means that the remap routines to
+                ! check=2 means that the remap routines due
                 ! element-level verification of properties and output
-                ! messages if a property fails.
-                call gfr_init(hybrid%par, elem, nphys, .true., boost_pg1)
+                ! messages if a property fails. check >= 1 means that
+                ! global properties are checked.
+                call gfr_init(hybrid%par, elem, nphys, 2, boost_pg1)
                 call init(nphys)
              end if
              !$omp barrier
