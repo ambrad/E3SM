@@ -751,7 +751,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
 
      ! These gfr calls are special to this routine, to handle
      ! DCMIP-specific precl.
-     wf(:ncol,1) = reshape(precl_fv, (/ncol/))
+     wf(:ncol,1) = reshape(precl_fv(:nf,:nf,1), (/ncol/))
      call gfr_f2g_scalar(ie, elem(ie)%metdet, wf(:,:1), wrk3(:,:,:1))
      call gfr_g_make_nonnegative(elem(ie)%metdet, wrk3(:,:,:1))
      precl(:,:,ie) = wrk3(:,:,1)
