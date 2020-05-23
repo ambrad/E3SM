@@ -101,7 +101,7 @@ subroutine dcmip2016_test1(elem,hybrid,hvcoord,nets,nete)
 
   if (hybrid%masterthread) write(iulog,*) 'initializing dcmip2016 test 1: moist baroclinic wave'
 
-  if (qsize<5) call abortmp('ERROR: test requires qsize>=5')
+  if (qsize<6) call abortmp('ERROR: test requires qsize>=6')
 
   ! set initial conditions
   do ie = nets,nete
