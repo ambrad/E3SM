@@ -329,7 +329,8 @@ contains
 
     if (gfr%check > 0) then
        call check_global_properties(gfr, hybrid, hvcoord, elem, nt, nets, nete, &
-            elem(ie)%state%Q, q)
+            ! q_adjustment and dt args don't matter.
+            .true., .true., one, q)
     end if
   end subroutine gfr_dyn_to_fv_phys_hybrid
 
@@ -466,7 +467,7 @@ contains
 
     if (gfr%check > 0) then
        call check_global_properties(gfr, hybrid, hvcoord, elem, nt, nets, nete, &
-            elem(ie)%derived%FQ, q)
+            .false., q_adjustment, dt, q)
     end if
   end subroutine gfr_fv_phys_to_dyn_hybrid
 
@@ -2264,7 +2265,8 @@ contains
     end do
   end subroutine set_ps_Q
 
-  subroutine check_global_properties(gfr, hybrid, hvcoord, elem, nt, nets, nete, q_g, q_f)
+  subroutine check_global_properties(gfr, hybrid, hvcoord, elem, nt, nets, nete, &
+       use_state_Q, q_adjustment, dt, q_f)
     use parallel_mod, only: global_shared_buf, global_shared_sum
     use global_norms_mod, only: wrap_repro_sum
     use kinds, only: iulog
@@ -2276,10 +2278,12 @@ contains
     type (hvcoord_t), intent(in) :: hvcoord
     type (element_t), intent(in) :: elem(:)
     integer, intent(in) :: nt, nets, nete
-    real (kind=real_kind), intent(in) :: q_g(:,:,:,:), q_f(:,:,:,:)
+    logical, intent(in) :: use_state_Q, q_adjustment
+    real (kind=real_kind), intent(in) :: dt, q_f(:,:,:,:)
 
     integer :: nf, nf2, ie, k, qi
-    real (kind=real_kind) :: mass(2), dp(np,np,nlev), dp_fv(np*np,nlev), wf(np*np,1)
+    real (kind=real_kind) :: mass(2), dp(np,np,nlev), dp_fv(np*np,nlev), &
+         wg(np,np), wf(np*np,1)
 
     nf = gfr%nphys
     nf2 = nf*nf
@@ -2291,8 +2295,16 @@ contains
        call gfr_g2f_scalar(ie, elem(ie)%metdet, elem(ie)%state%ps_v(:,:,nt:nt), wf(:,:1))
        call calc_dp_fv(nf, hvcoord, wf(:,1), dp_fv)
        do k = 1,nlev
+          if (use_state_Q) then
+             wg = elem(ie)%state%Q(:,:,k,qi)
+          else
+             wg = elem(ie)%derived%FQ(:,:,k,qi)
+             if (.not. q_adjustment) then
+                wg = elem(ie)%state%Q(:,:,k,qi) + dt*wg/dp(:,:,k)
+             end if
+          end if
           mass(1) = mass(1) + sum(elem(ie)%spheremp(:,:)* &
-               dp(:,:,k)*q_g(:,:,k,qi))
+               dp(:,:,k)*wg)
           mass(2) = mass(2) + sum(gfr%fv_metdet(:nf2,ie)*gfr%w_ff(:nf2)* &
                dp_fv(:nf2,k)*q_f(:nf2,k,qi,ie))
        end do
