@@ -2341,15 +2341,16 @@ contains
     tol = 10*eps
     if (.not. q_adjustment) then
        ! In the case of Q tendencies, cancellation can lead to arbitrarily large
-       ! errors. We have no control over that, so just loosen the tolerance a
-       ! little and likely warn more often.
-       tol = 100*tol
+       ! errors in the tendencies. We have no control over that, so just loosen
+       ! the tolerance a little and likely warn more often.
+       tol = 1.e3_real_kind*tol
     end if
     if (hybrid%masterthread) then
        do qi = 1,qsize
-          if (abs(mass(2,qi) - mass(1,qi)) > 10*eps*abs(mass(1,qi))) then
-             write (iulog,'(a,l2,i3,es23.16,es23.16)') 'gfr> mass err', &
-                  use_state_Q, qi, mass(1,qi), mass(2,qi)!abs(mass(2,qi) - mass(1,qi))
+          if (abs(mass(2,qi) - mass(1,qi)) > tol*abs(mass(1,qi))) then
+             write (iulog,'(a,l2,i3,es24.16,es12.4)') 'gfr> mass err', &
+                  use_state_Q, qi, mass(1,qi), &
+                  abs(mass(2,qi) - mass(1,qi))/maxval(abs(mass(1:2,qi)))
           end if
        end do
     end if
