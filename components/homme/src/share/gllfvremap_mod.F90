@@ -329,8 +329,7 @@ contains
 
     if (gfr%check > 0) then
        call check_global_properties(gfr, hybrid, hvcoord, elem, nt, nets, nete, &
-            ! q_adjustment and dt args don't matter.
-            .true., .true., one, q)
+            .true., .true., q)
     end if
   end subroutine gfr_dyn_to_fv_phys_hybrid
 
@@ -467,7 +466,7 @@ contains
 
     if (gfr%check > 0) then
        call check_global_properties(gfr, hybrid, hvcoord, elem, nt, nets, nete, &
-            .false., q_adjustment, dt, q)
+            .false., q_adjustment, q)
     end if
   end subroutine gfr_fv_phys_to_dyn_hybrid
 
@@ -2266,11 +2265,14 @@ contains
   end subroutine set_ps_Q
 
   subroutine check_global_properties(gfr, hybrid, hvcoord, elem, nt, nets, nete, &
-       use_state_Q, q_adjustment, dt, q_f)
-    use parallel_mod, only: global_shared_buf, global_shared_sum
+       use_state_Q, q_adjustment, q_f)
+
+    ! Compare global mass on dynamics and physics grids.
+
+    use parallel_mod, only: global_shared_buf, global_shared_sum, nrepro_vars
     use global_norms_mod, only: wrap_repro_sum
     use kinds, only: iulog
-    use dimensions_mod, only: nlev, qsize_d
+    use dimensions_mod, only: nlev, qsize_d, qsize
     use hybvcoord_mod, only: hvcoord_t
 
     type (GllFvRemap_t), intent(in) :: gfr
@@ -2279,42 +2281,77 @@ contains
     type (element_t), intent(in) :: elem(:)
     integer, intent(in) :: nt, nets, nete
     logical, intent(in) :: use_state_Q, q_adjustment
-    real (kind=real_kind), intent(in) :: dt, q_f(:,:,:,:)
+    real (kind=real_kind), intent(in) :: q_f(:,:,:,:)
 
-    integer :: nf, nf2, ie, k, qi
-    real (kind=real_kind) :: mass(2), dp(np,np,nlev), dp_fv(np*np,nlev), &
-         wg(np,np), wf(np*np,1)
+    integer :: nf, nf2, ie, k, qi, ic, nchunk, qi0, nq, qic, b1, b2, cnt
+    real (kind=real_kind) :: dp(np,np,nlev), dp_fv(np*np,nlev), wg(np,np), &
+         wf(np*np,1), mass(2,qsize), tol
 
     nf = gfr%nphys
     nf2 = nf*nf
-    qi = 42
-    if (qi > qsize_d) return
-    do ie = nets,nete
-       mass = 0
-       dp = elem(ie)%state%dp3d(:,:,:,nt)
-       call gfr_g2f_scalar(ie, elem(ie)%metdet, elem(ie)%state%ps_v(:,:,nt:nt), wf(:,:1))
-       call calc_dp_fv(nf, hvcoord, wf(:,1), dp_fv)
-       do k = 1,nlev
-          if (use_state_Q) then
-             wg = elem(ie)%state%Q(:,:,k,qi)
-          else
-             wg = elem(ie)%derived%FQ(:,:,k,qi)
-             if (.not. q_adjustment) then
-                wg = elem(ie)%state%Q(:,:,k,qi) + dt*wg/dp(:,:,k)
-             end if
-          end if
-          mass(1) = mass(1) + sum(elem(ie)%spheremp(:,:)* &
-               dp(:,:,k)*wg)
-          mass(2) = mass(2) + sum(gfr%fv_metdet(:nf2,ie)*gfr%w_ff(:nf2)* &
-               dp_fv(:nf2,k)*q_f(:nf2,k,qi,ie))
+    nq = nrepro_vars/2
+    nchunk = (qsize*2 + 2*nq - 1)/(2*nq)
+    do ic = 1,nchunk
+       qi0 = nq*(ic-1)
+       do ie = nets,nete
+          dp = elem(ie)%state%dp3d(:,:,:,nt)
+          call gfr_g2f_scalar(ie, elem(ie)%metdet, elem(ie)%state%ps_v(:,:,nt:nt), &
+               wf(:,:1))
+          call calc_dp_fv(nf, hvcoord, wf(:,1), dp_fv)
+          global_shared_buf(ie,:) = 0
+          cnt = 0
+          do qic = 1,nq
+             qi = qi0 + qic
+             if (qi > qsize) exit
+             cnt = cnt + 2
+             b1 = 2*(qic-1) + 1
+             b2 = 2*(qic-1) + 2
+             do k = 1,nlev
+                if (use_state_Q) then
+                   wg = elem(ie)%state%Q(:,:,k,qi)
+                else
+                   wg = elem(ie)%derived%FQ(:,:,k,qi)
+                end if
+                if (q_adjustment) then
+                   global_shared_buf(ie,b1) = global_shared_buf(ie,b1) + &
+                        sum(elem(ie)%spheremp(:,:)*dp(:,:,k)*wg)
+                   global_shared_buf(ie,b2) = global_shared_buf(ie,b2) + &
+                        sum(gfr%fv_metdet(:nf2,ie)*gfr%w_ff(:nf2)* &
+                        dp_fv(:nf2,k)*q_f(:nf2,k,qi,ie))
+                else
+                   global_shared_buf(ie,b1) = global_shared_buf(ie,b1) + &
+                        sum(elem(ie)%spheremp(:,:)*wg)
+                   global_shared_buf(ie,b2) = global_shared_buf(ie,b2) + &
+                        sum(gfr%fv_metdet(:nf2,ie)*gfr%w_ff(:nf2)* &
+                        q_f(:nf2,k,qi,ie))                   
+                end if
+             end do
+          end do
        end do
-       do k = 1,2
-          global_shared_buf(ie,k) = mass(k)
+       call wrap_repro_sum(nvars=cnt, comm=hybrid%par%comm)
+       do qic = 1,nq
+          qi = qi0 + qic
+          if (qi > qsize) exit
+          b1 = 2*(qic-1) + 1
+          b2 = 2*(qic-1) + 2
+          mass(1,qi) = global_shared_sum(b1)
+          mass(2,qi) = global_shared_sum(b2)
        end do
     end do
-    call wrap_repro_sum(nvars=2, comm=hybrid%par%comm)
+    tol = 10*eps
+    if (.not. q_adjustment) then
+       ! In the case of Q tendencies, cancellation can lead to arbitrarily large
+       ! errors. We have no control over that, so just loosen the tolerance a
+       ! little and likely warn more often.
+       tol = 100*tol
+    end if
     if (hybrid%masterthread) then
-       write (iulog,'(a,es23.16,es23.16)') 'amb> f2g 42',global_shared_sum(1),global_shared_sum(2)
+       do qi = 1,qsize
+          if (abs(mass(2,qi) - mass(1,qi)) > 10*eps*abs(mass(1,qi))) then
+             write (iulog,'(a,l2,i3,es23.16,es23.16)') 'gfr> mass err', &
+                  use_state_Q, qi, mass(1,qi), mass(2,qi)!abs(mass(2,qi) - mass(1,qi))
+          end if
+       end do
     end if
   end subroutine check_global_properties
 
