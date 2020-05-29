@@ -126,7 +126,7 @@ contains
     real (kind=real_kind) :: deltatol,restol,deltaerr,reserr,rcond,min_rcond,anorm,dt3,alpha
     real (kind=real_kind) :: dw,dx,alpha_k,alphas(np,np)
     integer :: i,j,k,l,ie,nt
-    integer :: nsafe
+    integer :: nsafe,verbosity
 
 !#define HOMME_IMEX_MKLSOLVE
 #ifdef HOMME_IMEX_MKLSOLVE
@@ -268,21 +268,6 @@ contains
           !call get_dirk_jacobian(JacL,JacD,JacU,dt2,elem(ie)%state%dp3d(:,:,:,np1),dphi,pnh,0,1d-4,hvcoord,dpnh_dp_i,vtheta_dp) 
           ! analytic J:
           call get_dirk_jacobian(JacL,JacD,JacU,dt2,elem(ie)%state%dp3d(:,:,:,np1),dphi,pnh,1) 
-
-<<<<<<< HEAD:components/homme/src/theta-l/share/imex_mod.F90
-          do i=1,np
-             do j=1,np
-                x(1:nlev,i,j) = -Fn(i,j,1:nlev)  
-#ifdef HOMMEXX_BFB_TESTING
-                ! Note: the C function is designed to accept both single and double precision,
-                !       so we need to pass also the size of a real (last argument)
-                call tridiag_diagdom_bfb_a1x1(nlev, JacL(:,i,j), jacD(:,i,j), jacU(:,i,j), x(:,i,j),INT(SIZEOF(JacL)/SIZE(JacL),4))
-#else
-||||||| parent of f59f755... Homme: Fast F90 DIRK solver.
-          do i=1,np
-             do j=1,np
-                x(1:nlev,i,j) = -Fn(i,j,1:nlev)  
-=======
           x(:,:,1:nlev) = -Fn(:,:,1:nlev)
 
 #ifdef HOMME_IMEX_MKLSOLVE
