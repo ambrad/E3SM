@@ -1,3 +1,5 @@
+#include "/home/ambradl/climate/sik/hommexx/dbg.hpp"
+
 #include <catch2/catch.hpp>
 
 #include "DirkFunctorImpl.hpp"
@@ -251,6 +253,7 @@ static void init (dfi& d, FunctorsBuffersManager& fbm) {
   d.init_buffers(fbm);
 }
 
+#if 0
 TEST_CASE ("dirk_pieces_testing") {
   using Kokkos::parallel_for;
   using Kokkos::fence;
@@ -291,6 +294,7 @@ TEST_CASE ("dirk_pieces_testing") {
     require_all_equal(nlev+1, hai0, hai1);
   }
 
+#if 0
   SECTION ("jacobian") {
     const int nlev = NUM_PHYSICAL_LEV, np = NP;
     const Real dt = r.urrng(32, 64);
@@ -414,6 +418,7 @@ TEST_CASE ("dirk_pieces_testing") {
                                  &x3(i,j,0), sizeof(Real));
     eq(x2m, 0, x3, nlev);
   }
+#endif
 
   SECTION ("pnh_and_exner_from_eos") {
     const int nlev = NUM_PHYSICAL_LEV, np = NP;
@@ -566,6 +571,7 @@ TEST_CASE ("dirk_pieces_testing") {
     REQUIRE(thr_cnt == 4);
   }
 }
+#endif
 
 static void c2f (const Elements& e) {
   const auto dp3d = cmvdc(e.m_state.m_dp3d);
@@ -755,6 +761,7 @@ TEST_CASE ("dirk_toplevel_testing") {
 
       bool good = false;
       for (int trial = 0; trial < 100 /* don't enter an inf loop */; ++trial) {
+        prc(trial);
         init_elems(ne, nelemd, r, hvcoord, e);
 
         deep_copy(w_i, e.m_state.m_w_i);
@@ -805,6 +812,7 @@ TEST_CASE ("dirk_toplevel_testing") {
         good = true;
 
         // Run C++ with non-BFB solver.
+        pr("C++ non-BFB");
         d.run(nm1, alphadtwt_nm1*dt2, n0, alphadtwt_n0*dt2, np1, dt2,
               e, hvcoord, false /* non-BFB solver */);
         fence();
@@ -836,6 +844,7 @@ TEST_CASE ("dirk_toplevel_testing") {
             }
 
       // Run F90 with BFB solver.
+      pr("F90");
       c2f(e);
       compute_stage_value_dirk_f90(nm1+1, alphadtwt_nm1*dt2, n0+1, alphadtwt_n0*dt2, np1+1, dt2);
       Elements ef90;
@@ -853,7 +862,8 @@ TEST_CASE ("dirk_toplevel_testing") {
               Real* pf = f == 0 ? &phif   (ie,np1,i,j,0)[0] : &wif(ie,np1,i,j,0)[0];
               Real* pc = f == 0 ? &phinh2m(ie,np1,i,j,0)[0] : &w2m(ie,np1,i,j,0)[0];
               for (int k = 0; k < nlev; ++k)
-                REQUIRE(equal(pf[k], pc[k], 1e8*eps));
+                if ( ! equal(pf[k], pc[k], 1e3*eps))
+                  pr(puf(ie) pu(i) pu(j) pu(f) pu(pf[k]) pu(pc[k]));
             }
           }
     }

@@ -297,10 +297,10 @@ contains
 #  endif
                 ! Tridiagonal solve
                 call DGTTRS( 'N', nlev,1, JacLt(:,i,j), JacDt(:,i,j), JacUt(:,i,j), JacU2t(:,i,j), Ipiv(:,i,j),xt(:,i,j), nlev, info(i,j) )
+# endif
                 do k = 1,nlev
                    x(i,j,k) = xt(k,i,j)
                 end do
-# endif
              end do
           end do
 #else
@@ -315,12 +315,13 @@ contains
           dphi(:,:,nlev) = dphi_n0(:,:,nlev) - dt2*g*(w_np1(:,:,nlev) + x(:,:,nlev))
 
           alphas = 1
-          if (maxval(dphi(i,j,1:nlev)) >= 0) then
+          if (maxval(dphi(:,:,1:nlev)) >= 0) then
              do j=1,np
                 do i=1,np
                    if (maxval(dphi(i,j,1:nlev)) < 0) cycle
 
                    ! Step halfway to the distance at which at least one dphi is 0.
+                   alpha = 1
                    do k = 1,nlev
                       if (k < nlev) then
                          dx = x(i,j,k+1) - x(i,j,k)
