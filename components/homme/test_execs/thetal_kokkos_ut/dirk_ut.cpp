@@ -862,8 +862,7 @@ TEST_CASE ("dirk_toplevel_testing") {
               Real* pf = f == 0 ? &phif   (ie,np1,i,j,0)[0] : &wif(ie,np1,i,j,0)[0];
               Real* pc = f == 0 ? &phinh2m(ie,np1,i,j,0)[0] : &w2m(ie,np1,i,j,0)[0];
               for (int k = 0; k < nlev; ++k)
-                if ( ! equal(pf[k], pc[k], 1e3*eps))
-                  pr(puf(ie) pu(i) pu(j) pu(f) pu(pf[k]) pu(pc[k]));
+                REQUIRE(equal(pf[k], pc[k], 1e3*eps));
             }
           }
     }
