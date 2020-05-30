@@ -71,9 +71,27 @@ contains
     character*(80) errorstring
 
     logical(kind=log_kind),parameter              :: Debug=.FALSE.
-    logical(kind=log_kind) :: singlethread_copy = .false.
+    logical(kind=log_kind) :: singlethread_copy,docopy
+    logical, save :: first = .true.
 
     integer        :: i,j
+
+#define AMB_BNDRYEXCH 0
+! 0 straightforward fix
+! 1 force current behavior
+! 2 only ithr 0 copies
+! 3 if nthr >= 2, only ithr 1 copies
+#if AMB_BNDRYEXCH == 0
+    singlethread_copy = .false.
+#else
+    singlethread_copy = .true.
+#endif
+    if (first) then
+       first = .false.
+       if (par%masterproc .and. ithr == 0) then
+          print *,'amb> AMB_BNDRYEXCH',AMB_BNDRYEXCH
+       end if
+    end if
 
     pSchedule => Schedule(1)
     nlyr = buffer%nlyr       
@@ -146,6 +164,17 @@ contains
     ! Copy data that doesn't get messaged from the send buffer to the receive
     ! buffer
     if (singlethread_copy) then 
+       docopy = .true.
+#if AMB_BNDRYEXCH >= 2
+# if AMB_BNDRYEXCH == 2
+       docopy = ithr == 0
+# elif AMB_BNDRYEXCH == 3
+       if (omp_get_num_threads() > 1) docopy = ithr == 1
+# else
+       ERROR
+# endif
+#endif
+       if (docopy) then
        do j=1,size(buffer%moveptr0)
           iptr   = nlyr*buffer%moveptr0(j) + 1   ! 1 based indexing
           length = nlyr*buffer%moveLength(j)
@@ -155,8 +184,8 @@ contains
              enddo
           endif
        enddo
+       endif
     else
-
        iptr   = nlyr*buffer%moveptr0(ithr+1) + 1   ! 1 based indexing
        length = nlyr*buffer%moveLength(ithr+1)
        if(length>0) then 
