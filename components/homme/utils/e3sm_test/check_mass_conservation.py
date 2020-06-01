@@ -75,9 +75,10 @@ tracer_idx = 42
 d = gather_mass_data(atm_fn, tracer_idx)
 good = (conservative('dry M', d['day'], d['dryM'], 1e-11, True) and
         conservative('tracer {}'.format(tracer_idx), d['day'], d['qmass'], 1e-13, True))
+
 if good:
     print('PASS')
     sys.exit(0)
 else:
     print('FAIL')
-    sys.exit(1)
+    sys.exit(1) # non-0 exit will make test RUN phase fail, as desired
