@@ -272,7 +272,7 @@ _TESTS = {
                  "SMS_Ln5.ne4pg2_ne4pg2.FC5AV1C-L.cam-thetahy_pg2",
                  "SMS_Ln5.ne4pg2_ne4pg2.FC5AV1C-L.cam-thetahy_sl_pg2",
                  "ERS_Ln5.ne4pg2_ne4pg2.FC5AV1C-L.cam-thetahy_sl_pg2",
-                 "SMS_Ln5.ne4pg2_ne4pg2.FC5AV1C-04P2.cam-thetahy_sl_pg2_mass",
+                 "SMS_Ld9.ne4pg2_ne4pg2.FC5AV1C-04P2.cam-thetahy_sl_pg2_mass",
                  )
     },
     "e3sm_bench_hires_g" : {
