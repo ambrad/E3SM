@@ -158,23 +158,31 @@ CONTAINS
                                 ! data structure, If 1D data structure, then
                                 ! hdim2_d == 1.
     character(len=64) :: filein ! Input namelist filename
+
+    call t_startf('amb1 all');
     !-----------------------------------------------------------------------
     !
     ! Determine cdata points
     !
+    call t_startf('amb1 01')
 #if (defined _MEMTRACE)
     if(masterproc) then
       lbnum=1
       call memmon_dump_fort('memmon.out','atm_init_mct:start::',lbnum)
     endif                      
-#endif                         
+#endif                     
+    call t_stopf('amb1 01'); call t_startf('amb1 02')
 
     call seq_cdata_setptrs(cdata_a, ID=ATMID, mpicom=mpicom_atm, &
          gsMap=gsMap_atm, dom=dom_a, infodata=infodata)
 
+    call t_stopf('amb1 02');
+
     if (first_time) then
-       
+
+       call t_startf('amb1 04')
        call cam_instance_init(ATMID)
+       call t_stopf('amb1 04'); call t_startf('amb1 05')
 
        ! Set filename specifier for restart surface file
        ! (%c=caseid, $y=year, $m=month, $d=day, $s=seconds in day)
@@ -182,14 +190,19 @@ CONTAINS
 
        ! Determine attribute vector indices
 
+       call t_stopf('amb1 05'); call t_startf('amb1 06')
        call cam_cpl_indices_set()
+       call t_stopf('amb1 06'); call t_startf('amb1 07')
 
        ! Initialize MPI for CAM
 
+       call t_stopf('amb1 07'); call t_startf('amb1 08')
        call spmdinit(mpicom_atm, calc_proc_smp_map=.false.)
+       call t_stopf('amb1 08'); call t_startf('amb1 09')
        
        ! Redirect share output to cam log
        
+       call t_stopf('amb1 09'); call t_startf('amb1 10')
        if (masterproc) then
           inquire(file='atm_modelio.nml'//trim(inst_suffix), exist=exists)
           if (exists) then
@@ -198,6 +211,7 @@ CONTAINS
           endif
           write(iulog,*) "CAM atmosphere model initialization"
        endif
+       call t_stopf('amb1 10'); call t_startf('amb1 11')
        
        call shr_file_getLogUnit (shrlogunit)
        call shr_file_getLogLevel(shrloglev)
@@ -206,6 +220,7 @@ CONTAINS
        ! Identify SMP nodes and process/SMP mapping for this instance
        ! (Assume that processor names are SMP node names on SMP clusters.)
        write(c_inst_index,'(i8)') inst_index
+       call t_stopf('amb1 11'); call t_startf('amb1 12')
 
        if (info_taskmap_comp > 0) then
 
@@ -233,6 +248,7 @@ CONTAINS
           verbose_taskmap_output = .false.
 
        endif
+       call t_stopf('amb1 12'); call t_startf('amb1 13')
 
        call t_startf("shr_taskmap_write")
        call shr_taskmap_write(iulog, mpicom_atm,                    &
@@ -243,6 +259,7 @@ CONTAINS
                               save_task_node_map=proc_smp_map       )
        call shr_sys_flush(iulog)
        call t_stopf("shr_taskmap_write")
+       call t_stopf('amb1 13'); call t_startf('amb1 14')
 
        ! 
        ! Consistency check                              
@@ -254,6 +271,7 @@ CONTAINS
        ! 
        ! Get data from infodata object
        !
+       call t_stopf('amb1 14'); call t_startf('amb1 15')
        call seq_infodata_GetData( infodata,                                           &
             case_name=caseid, case_desc=ctitle,                                       &
             start_type=starttype,                                                     &
@@ -263,6 +281,7 @@ CONTAINS
             orb_eccen=eccen, orb_mvelpp=mvelpp, orb_lambm0=lambm0, orb_obliqr=obliqr, &
             lnd_present=lnd_present, ocn_present=ocn_present,                         & 
             perpetual=perpetual_run, perpetual_ymd=perpetual_ymd)
+       call t_stopf('amb1 15'); call t_startf('amb1 16')
        !
        ! Get nsrest from startup type methods
        !
@@ -279,17 +298,20 @@ CONTAINS
        !
        ! Initialize time manager.
        !
+       call t_stopf('amb1 16'); call t_startf('amb1 17')
        call seq_timemgr_EClockGetData(EClock, &
             start_ymd=start_ymd, start_tod=start_tod, &
             ref_ymd=ref_ymd, ref_tod=ref_tod,         &
             stop_ymd=stop_ymd, stop_tod=stop_tod,     &
             calendar=calendar )
+       call t_stopf('amb1 17'); call t_startf('amb1 18')
        !
        ! Read namelist
        !
        filein = "atm_in" // trim(inst_suffix)
        call read_namelist(single_column_in=single_column, scmlat_in=scmlat, &
             scmlon_in=scmlon, nlfilename_in=filein)
+       call t_stopf('amb1 18'); call t_startf('amb1 19')
        !
        ! Initialize cam time manager
        !
@@ -301,6 +323,7 @@ CONTAINS
                perpetual_run=perpetual_run,               &
                perpetual_ymd=perpetual_ymd )
        end if
+       call t_stopf('amb1 19'); call t_startf('amb1 20')
        !
        ! First phase of cam initialization 
        ! Initialize mpicom_atm, allocate cam_in and cam_out and determine 
@@ -313,6 +336,7 @@ CONTAINS
        call cam_init( cam_out, cam_in, mpicom_atm, &
             start_ymd, start_tod, ref_ymd, ref_tod, stop_ymd, stop_tod, &
             perpetual_run, perpetual_ymd, calendar)
+       call t_stopf('amb1 20'); call t_startf('amb1 22')
        !
        ! Check consistency of restart time information with input clock
        !
@@ -321,30 +345,40 @@ CONTAINS
           call timemgr_check_restart( calendar, start_ymd, start_tod, ref_ymd, &
                ref_tod, dtime_cam, perpetual_run, perpetual_ymd)
        end if
+       call t_stopf('amb1 22'); call t_startf('amb1 23')
        !
        ! Initialize MCT gsMap, domain and attribute vectors (and dof)
        !
        call atm_SetgsMap_mct( mpicom_atm, ATMID, gsMap_atm )
+       call t_stopf('amb1 23'); call t_startf('amb1 24')
        lsize = mct_gsMap_lsize(gsMap_atm, mpicom_atm)
+       call t_stopf('amb1 24'); call t_startf('amb1 25')
 
        ! Set dof (module variable, needed for pio for restarts)
        call mct_gsmap_orderedpoints(gsmap_atm, iam, dof)
+       call t_stopf('amb1 25'); call t_startf('amb1 26')
        !
        ! Initialize MCT domain 
        !
        call atm_domain_mct( lsize, gsMap_atm, dom_a )
+       call t_stopf('amb1 26'); call t_startf('amb1 27')
        !
        ! Initialize MCT attribute vectors
        !
        call mct_aVect_init(a2x_a, rList=seq_flds_a2x_fields, lsize=lsize)
+       call t_stopf('amb1 27'); call t_startf('amb1 28')
        call mct_aVect_zero(a2x_a)
+       call t_stopf('amb1 28'); call t_startf('amb1 29')
        
        call mct_aVect_init(x2a_a, rList=seq_flds_x2a_fields, lsize=lsize) 
+       call t_stopf('amb1 29'); call t_startf('amb1 30')
        call mct_aVect_zero(x2a_a)
+       call t_stopf('amb1 30'); call t_startf('amb1 31')
        !
        ! Create initial atm export state
        !
        call atm_export( cam_out, a2x_a%rattr )
+       call t_stopf('amb1 31'); call t_startf('amb1 32')
        !
        ! Set flag to specify that an extra albedo calculation is to be done (i.e. specify active)
        !
@@ -356,7 +390,7 @@ CONTAINS
        ! This is now hardcoded to .true. since the ability of CICE to read these
        ! fluxes from a file has been removed.
        call seq_infodata_PutData(infodata, atm_aero=.true.)
-
+       call t_stopf('amb1 32'); call t_startf('amb1 33')
        !
        ! Set time step of radiation computation as the current calday
        ! This will only be used on the first timestep of an initial run
@@ -365,15 +399,16 @@ CONTAINS
           nextsw_cday = get_curr_calday()
           call seq_infodata_PutData( infodata, nextsw_cday=nextsw_cday )
        end if
-       
+       call t_stopf('amb1 33'); call t_startf('amb1 34')
        ! End redirection of share output to cam log
        
        call shr_file_setLogUnit (shrlogunit)
        call shr_file_setLogLevel(shrloglev)
 
        first_time = .false.
-
+       call t_stopf('amb1 34')
     else
+       call t_startf('amb1 35')
        
        ! For initial run, run cam radiation/clouds and return
        ! For restart run, read restart x2a_a
@@ -387,22 +422,31 @@ CONTAINS
        call shr_file_getLogUnit (shrlogunit)
        call shr_file_getLogLevel(shrloglev)
        call shr_file_setLogUnit (iulog)
-
+       call t_stopf('amb1 35'); call t_startf('amb1 35a')
        call seq_timemgr_EClockGetData(EClock,curr_ymd=CurrentYMD, StepNo=StepNo, dtime=DTime_Sync )
+       call t_stopf('amb1 35a');
        if (StepNo == 0) then
+          call t_startf('amb1 36a')
           call atm_import( x2a_a%rattr, cam_in )
+          call t_stopf('amb1 36a'); call t_startf('amb1 36b')
           call cam_run1 ( cam_in, cam_out ) 
+          call t_stopf('amb1 36b'); call t_startf('amb1 36c')
           call atm_export( cam_out, a2x_a%rattr )
+          call t_stopf('amb1 36c')
        else
+          call t_startf('amb1 36d')
           call atm_read_srfrest_mct( EClock, x2a_a, a2x_a )
+          call t_stopf('amb1 36d'); call t_startf('amb1 36e')
           ! Sent .true. as an optional argument so that restart_init is set to .true.  in atm_import
 	      ! This will ensure BFB restarts whenever qneg4 updates fluxes on the restart time step
           call atm_import( x2a_a%rattr, cam_in, .true. )
+          call t_stopf('amb1 36e'); call t_startf('amb1 36f')
           call cam_run1 ( cam_in, cam_out ) 
+          call t_stopf('amb1 36f')
        end if
 
        ! Compute time of next radiation computation, like in run method for exact restart
-
+       call t_startf('amb1 37')
        call seq_timemgr_EClockGetData(Eclock,dtime=atm_cpl_dt)
        dtime = get_step_size()          
        nstep = get_nstep()
@@ -416,14 +460,15 @@ CONTAINS
           call shr_sys_abort('dtime must be less than or equal to atm_cpl_dt')
        end if
        call seq_infodata_PutData( infodata, nextsw_cday=nextsw_cday ) 
-
+       call t_stopf('amb1 37'); call t_startf('amb1 38')
        ! End redirection of share output to cam log
        
        call shr_file_setLogUnit (shrlogunit)
        call shr_file_setLogLevel(shrloglev)
-       
+       call t_stopf('amb1 38');
     end if
 
+    call t_startf('amb1 39')
 #if (defined _MEMTRACE )
     if(masterproc) then
       lbnum=1
@@ -433,6 +478,8 @@ CONTAINS
 #endif
     
     call shr_sys_flush(iulog)
+    call t_stopf('amb1 39')
+    call t_stopf('amb1 all');
 
  end subroutine atm_init_mct
 

@@ -115,33 +115,40 @@ CONTAINS
 
     !----------------------------------------------------------------------
 
+    call t_startf('amb4 01')
     if (use_gw_front) then
        call pbuf_add_field("FRONTGF", "global", dtype_r8, (/pcols,pver/), &
             frontgf_idx)
        call pbuf_add_field("FRONTGA", "global", dtype_r8, (/pcols,pver/), &
             frontga_idx)
     end if
+    call t_stopf('amb4 01'); call t_startf('amb4 02')
 
     ! Initialize dynamics grid variables
     call dyn_grid_init()
+    call t_stopf('amb4 02'); call t_startf('amb4 03')
 
     ! Read in the number of tasks to be assigned to SE (needed by initmp)
     call spmd_readnl(NLFileName, npes_se, npes_se_stride)
+    call t_stopf('amb4 03'); call t_startf('amb4 04')
     ! Initialize the SE structure that holds the MPI decomposition information
     par=initmp(npes_se, npes_se_stride)
+    call t_stopf('amb4 04'); call t_startf('amb4 05')
 
     ! Read the SE specific part of the namelist
     call readnl(par, NLFileName)
+    call t_stopf('amb4 05'); call t_startf('amb4 06')
 
     ! override the setting in the SE namelist, it's redundant anyway
     if (.not. is_first_step()) runtype = 1
 
     ! Initialize hybrid coordinate arrays.
     call hycoef_init(fh)
+    call t_stopf('amb4 06'); call t_startf('amb4 07')
 
     ! Initialize physics grid reference pressures (needed by initialize_radbuffer)
     call ref_pres_init()
-
+    call t_stopf('amb4 07')
     ! legacy reduced grid code -- should be removed
     fullgrid=.true.
 
@@ -151,12 +158,15 @@ CONTAINS
 #endif
 
     if(par%dynproc) then
+       call t_startf('amb4 08')
        call prim_init1(elem,par,dom_mt,TimeLevel)
+       call t_stopf('amb4 08'); call t_startf('amb4 09')
 
        dyn_in%elem => elem
        dyn_out%elem => elem
     
        call set_horiz_grid_cnt_d(GlobalUniqueCols)
+       call t_stopf('amb4 09')
 
        neltmp(1) = nelemdmax
        neltmp(2) = nelem
@@ -173,6 +183,7 @@ CONTAINS
 
     dyndecomp_set = .true.
 
+    call t_startf('amb4 10')
     if (par%nprocs .lt. npes_cam) then
 ! Broadcast quantities to auxiliary processes
 #ifdef SPMD
@@ -184,6 +195,7 @@ CONTAINS
           call set_horiz_grid_cnt_d(neltmp(3))
        endif
     endif
+    call t_stopf('amb4 10')
 
     ! Dynamics timestep
     !
@@ -192,6 +204,7 @@ CONTAINS
     !        tstep = the dynamics timestep:  
     !
 
+    call t_startf('amb4 11')
     ! Ignore ierr, as on error, timestep_make_eam_parameters_consistent defaults
     ! to printing an error and then aborting.
     ierr = timestep_make_eam_parameters_consistent(par, dt_remap_factor, dt_tracer_factor, &
@@ -203,10 +216,13 @@ CONTAINS
     if (fv_nphys > 0) then
       call fv_physgrid_init()
     end if
+    call t_stopf('amb4 11')
 
+    call t_startf('amb4 12')
     ! Define the CAM grids (this has to be after dycore spinup).
     ! Physics-grid will be defined later by phys_grid_init
     call define_cam_grids()
+    call t_stopf('amb4 12')
 
     hvcoord%hyam=hyam
     hvcoord%hyai=hyai
@@ -214,7 +230,9 @@ CONTAINS
     hvcoord%hybi=hybi
     hvcoord%ps0=ps0
         
+    call t_startf('amb4 13')
     call set_layer_locations(hvcoord,.false.,par%masterproc)
+    call t_stopf('amb4 13')
         
   end subroutine dyn_init1
 

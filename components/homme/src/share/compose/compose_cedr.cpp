@@ -5105,6 +5105,9 @@ class QLT : public cedr::qlt::QLT<ES> {
 #ifndef NDEBUG
     cedr_assert(b >= 0);
     for (Int i = 0; i < n; ++i) {
+      if (xhi[i] < xlo[i])
+        fprintf(stderr, "amb> %2d b %1.16e a %1.16e xlo,xhi,x %1.16e %1.16e %1.16e\n",
+                i, b, a[i], xlo[i], xhi[i], x[i]);
       cedr_assert(a[i] > 0);
       cedr_assert(xlo[i] >= 0);
       cedr_assert(xhi[i] >= xlo[i]);
@@ -5129,6 +5132,9 @@ class QLT : public cedr::qlt::QLT<ES> {
     } else {
       cedr::local::caas(n, a, b, xlo, xhi, x, x, false);
     }
+    if (status != 0)
+      fprintf(stderr,"amb> status %d b %1.16e lo,hi %1.16e %1.16e\n",
+              status,b,tot_lo,tot_hi);
     return status;
   }
 

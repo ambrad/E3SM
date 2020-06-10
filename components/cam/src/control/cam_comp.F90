@@ -134,15 +134,20 @@ subroutine cam_init( cam_out, cam_in, mpicom_atm, &
    !
    ! Initialization needed for cam_history
    ! 
+   call t_startf('amb2 01')
    call init_masterlinkedlist()
+   call t_stopf('amb2 01'); call t_startf('amb2 02')
    !
    ! Set up spectral arrays
    !
+   call t_stopf('amb2 02'); call t_startf('amb2 03')
    call trunc()
+   call t_stopf('amb2 03'); call t_startf('amb2 04')
    !
    ! Initialize index values for advected and non-advected tracers
    !
    call phys_register ()
+   call t_stopf('amb2 04'); call t_startf('amb2 05')
    !
    ! Determine input namelist filename
    !
@@ -151,17 +156,21 @@ subroutine cam_init( cam_out, cam_in, mpicom_atm, &
    ! Do appropriate dynamics and history initialization depending on whether initial, restart, or 
    ! branch.  On restart run intht need not be called because all the info is on restart dataset.
    !
+   call t_stopf('amb2 05'); call t_startf('amb2 06')
    call init_pio_subsystem(filein)
+   call t_stopf('amb2 06');
 
    if ( nsrest == 0 )then
 
+      call t_startf('amb2 07')
       call cam_initfiles_open()
+      call t_stopf('amb2 07'); call t_startf('amb2 08')
       call cam_initial(dyn_in, dyn_out, NLFileName=filein)
-
+      call t_stopf('amb2 08'); call t_startf('amb2 09')
       ! Allocate and setup surface exchange data
       call atm2hub_alloc(cam_out)
       call hub2atm_alloc(cam_in)
-
+      call t_stopf('amb2 09')
    else
 
       call cam_read_restart ( cam_in, cam_out, dyn_in, dyn_out, pbuf2d, stop_ymd, stop_tod, NLFileName=filein )
@@ -175,10 +184,12 @@ subroutine cam_init( cam_out, cam_in, mpicom_atm, &
    end if
 
 
+   call t_startf('amb2 10')
    call phys_init( phys_state, phys_tend, pbuf2d,  cam_out )
+   call t_stopf('amb2 10'); call t_startf('amb2 11')
 
    call bldfld ()       ! master field list (if branch, only does hash tables)
-
+   call t_stopf('amb2 11'); call t_startf('amb2 12')
    !
    ! Setup the characteristics of the orbit
    ! (Based on the namelist parameters)
@@ -189,11 +200,13 @@ subroutine cam_init( cam_out, cam_in, mpicom_atm, &
       log_print = .false.
    end if
 
+   call t_stopf('amb2 12'); call t_startf('amb2 13')
    call stepon_init( dyn_in, dyn_out ) ! dyn_out necessary?
+   call t_stopf('amb2 13'); call t_startf('amb2 14')
 
    if (single_column) call scm_intht()
    call intht()
-
+   call t_stopf('amb2 14');
 
 end subroutine cam_init
 
