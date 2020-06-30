@@ -293,6 +293,10 @@ void slmm_query_bufsz (homme::Int* sendsz, homme::Int* recvsz) {
 void slmm_set_bufs (homme::Real* sendbuf, homme::Real* recvbuf,
                     homme::Int, homme::Int) {
   slmm_assert(g_csl_mpi);
+#ifndef COMPOSE_WITH_HOMMEXX
+  if (ko::OnGpu<ko::MachineTraits::DES>::value)
+    sendbuf = recvbuf = nullptr;
+#endif
   amb::dev_init_threads();
   homme::islmpi::alloc_mpi_buffers(*g_csl_mpi, sendbuf, recvbuf);
   amb::dev_fin_threads();

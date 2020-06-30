@@ -137,7 +137,7 @@ template <typename MT>
 void pack_dep_points_sendbuf_pass1 (IslMpi<MT>& cm) {
 #ifdef COMPOSE_PORT
 # ifndef COMPOSE_PACK_NOSCAN
-  if (ko::OnGpu<MT>::value) {
+  if (ko::OnGpu<typename MT::DES>::value) {
     pack_dep_points_sendbuf_pass1_scan(cm);
     return;
   }

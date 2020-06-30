@@ -86,6 +86,7 @@ template <typename ES> struct OnGpu {
 };
 #ifdef KOKKOS_ENABLE_CUDA
 template <> struct OnGpu<Kokkos::Cuda> { enum : bool { value = true }; };
+template <> struct OnGpu<MachineTraits> {}; // flag as an error at compile time
 #endif
 
 template <typename MT> using EnableIfOnGpu

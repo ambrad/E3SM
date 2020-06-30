@@ -596,7 +596,7 @@ void calc_rmt_q_pass2 (IslMpi<MT>& cm) {
 template <Int np, typename MT>
 void calc_rmt_q_pass1 (IslMpi<MT>& cm) {
 #if defined COMPOSE_PORT && ! defined COMPOSE_PACK_NOSCAN
-  if (ko::OnGpu<MT>::value) {
+  if (ko::OnGpu<typename MT::DES>::value) {
     calc_rmt_q_pass1_scan<np>(cm);
     return;
   }
