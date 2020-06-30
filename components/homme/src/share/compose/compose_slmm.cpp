@@ -344,6 +344,7 @@ void slmm_csl (
   amb::dev_init_threads();
   slmm_assert(g_csl_mpi);
   slmm_assert(g_csl_mpi->sendsz.empty()); // alloc_mpi_buffers was called
+  //if (g_csl_mpi->p->amroot() && s_h2d) printf("sl_h2d\n");
   homme::sl_h2d(*g_csl_mpi->tracer_arrays, s_h2d, dep_points);
   *info = 0;
 #if 0
@@ -359,6 +360,7 @@ void slmm_csl (
   homme::islmpi::step(*g_csl_mpi, nets - 1, nete - 1,
                       reinterpret_cast<homme::Real*>(dep_points), minq, maxq);
 #endif
+  //if (g_csl_mpi->p->amroot() && s_d2h) printf("sl_d2h\n");
   homme::sl_d2h(*g_csl_mpi->tracer_arrays, s_d2h, dep_points, minq, maxq);
   amb::dev_fin_threads();
 }
