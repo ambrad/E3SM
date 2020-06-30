@@ -733,6 +733,7 @@ void alloc_mpi_buffers (IslMpi<MT>& cm, Real* sendbuf, Real* recvbuf) {
   cm.sendsz.clear();
   cm.recvsz.clear();
 #ifdef COMPOSE_PORT_SEPARATE_VIEWS
+  slmm_assert(sendbuf == nullptr && recvbuf == nullptr);
   cm.sendbuf_meta_h.init(nrmtrank, cm.sendmetasz.data());
   cm.recvbuf_meta_h.init(nrmtrank, cm.recvmetasz.data());
 #else
