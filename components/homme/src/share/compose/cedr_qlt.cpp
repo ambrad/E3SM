@@ -528,6 +528,7 @@ void QLT<ES>::MetaData::init (const MetaDataBuilder& mdb) {
 
 template <typename ES>
 void QLT<ES>::BulkData::init (const size_t& l2r_sz, const size_t& r2l_sz) {
+  printf("init device data\n");
   l2r_data_ = RealList("QLT l2r_data", l2r_sz);
   r2l_data_ = RealList("QLT r2l_data", r2l_sz);
   l2r_data = l2r_data_;
@@ -538,6 +539,7 @@ void QLT<ES>::BulkData::init (const size_t& l2r_sz, const size_t& r2l_sz) {
 template <typename ES>
 void QLT<ES>::BulkData::init (Real* buf1, const size_t& l2r_sz,
                               Real* buf2, const size_t& r2l_sz) {
+  printf("init ptr data\n");
   l2r_data_ = RealList(buf1, l2r_sz);
   r2l_data_ = RealList(buf2, r2l_sz);
   l2r_data = l2r_data_;
@@ -676,6 +678,8 @@ void QLT<ES>::set_buffers (Real* buf1, Real* buf2) {
 
 template <typename ES>
 void QLT<ES>::finish_setup () {
+  on_gpu_.md_ = md_;
+  on_gpu_.bd_ = bd_;
   if (bd_.inited()) return;
   size_t l2r_sz, r2l_sz;
   get_buffers_sizes(l2r_sz, r2l_sz);

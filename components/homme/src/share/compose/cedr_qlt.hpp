@@ -332,6 +332,32 @@ PRIVATE_CUDA:
   void r2l_recv(const impl::NodeSets::Level& lvl, const Int& r2lndps) const;
   void r2l_solve_qp(const Int& lvlidx, const Int& l2rndps, const Int& r2lndps) const;
   void r2l_send_to_kids(const impl::NodeSets::Level& lvl, const Int& r2lndps) const;
+
+public:
+  struct OnGpu {
+    KOKKOS_INLINE_FUNCTION
+    void set_rhom(const Int& lclcellidx, const Int& rhomidx, const Real& rhom) const;
+
+    KOKKOS_INLINE_FUNCTION
+    void set_Qm (const Int& lclcellidx, const Int& tracer_idx,
+                 const Real& Qm, const Real& Qm_min, const Real& Qm_max,
+                 const Real Qm_prev) const;
+
+    KOKKOS_INLINE_FUNCTION
+    Real get_Qm(const Int& lclcellidx, const Int& tracer_idx) const;
+
+  private:
+    friend class QLT<ExeSpace>;
+
+    MetaData md_;
+    BulkData bd_;
+  };
+
+private:
+  OnGpu on_gpu_;
+
+public:
+  OnGpu get_gpu_object () const { return on_gpu_; }
 };
 
 namespace test {

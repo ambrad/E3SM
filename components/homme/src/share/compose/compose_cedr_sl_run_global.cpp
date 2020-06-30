@@ -52,7 +52,7 @@ static void run_cdr (CDR<MT>& q) {
 }
 
 template <typename MT, typename CDRT>
-void run_global (CDR<MT>& cdr, CDRT* cedr_cdr_p,
+void run_global (CDR<MT>& cdr, CDRT* cedr_cdr,
                  const Data& d, Real* q_min_r, const Real* q_max_r,
                  const Int nets, const Int nete) {
   const auto& ta = *d.ta;
@@ -82,7 +82,7 @@ void run_global (CDR<MT>& cdr, CDRT* cedr_cdr_p,
   const auto ie2lci = cdr.ie2lci;
   const auto ie2gci = cdr.ie2gci;
   const auto rank = cdr.p->rank();
-  const auto cedr_cdr = *cedr_cdr_p;
+  const auto cdr_gpu = cedr_cdr->get_gpu_object();
   const auto f = KOKKOS_LAMBDA (const Int& idx) {
     const Int ie = nets + idx/(nsuplev*qsize);
     const Int q = (idx / nsuplev) % qsize;
@@ -128,16 +128,20 @@ void run_global (CDR<MT>& cdr, CDRT* cedr_cdr_p,
         // this field is used as a weight vector.
         //todo Generalize to one rhom field per level. Until then, we're not
         // getting QLT's safety benefit.
-        if (ti == 0) cedr_cdr.set_rhom(lci, 0, volume);
-        cedr_cdr.set_Qm(lci, ti, Qm, Qm_min, Qm_max, Qm_prev);
+        if (ti == 0) cdr_gpu.set_rhom(lci, 0, volume);
+        cdr_gpu.set_Qm(lci, ti, Qm, Qm_min, Qm_max, Qm_prev);
         if (Qm_prev < -0.5)
           warn_on_Qm_prev_negative<MT>(Qm_prev, rank, ie, ie2gci, np2, spli, k0, q,
                                        ti, sbli, lci, k, n0_qdp, np1, qdp_p, dp3d_c);
       }
-    }    
+    }
   };
-  { Timer t("01_write_global");
+  ko::fence();
+  printf("write_global\n");
+  { //Timer t("01_write_global");
     ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, (nete - nets + 1)*nsuplev*qsize), f); }
+  ko::fence();
+  printf("write_global done\n");
 }
 
 template <typename MT>

@@ -97,10 +97,17 @@ void CAAS<ES>::set_buffers (Real* buf1, Real* buf2) {
 
 template <typename ES>
 void CAAS<ES>::finish_setup () {
+  on_gpu_.need_conserve_ = need_conserve_;
+  on_gpu_.nlclcells_ = nlclcells_;
+  on_gpu_.nrhomidxs_ = nrhomidxs_;
+  on_gpu_.probs_ = probs_;
+  on_gpu_.d_ = d_;
+
   if (recv_.size() > 0) {
     finished_setup_ = true;
     return;
   }
+
   size_t buf1, buf2, buf3;
   get_buffers_sizes(buf1, buf2, buf3);
   // (rho, Qm, Qm_min, Qm_max, [Qm_prev])

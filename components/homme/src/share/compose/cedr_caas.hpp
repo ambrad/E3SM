@@ -94,6 +94,34 @@ PRIVATE_CUDA:
 
 private:
   void get_buffers_sizes(size_t& buf1, size_t& buf2, size_t& buf3);
+
+public:
+  struct OnGpu {
+    KOKKOS_INLINE_FUNCTION
+    void set_rhom(const Int& lclcellidx, const Int& rhomidx, const Real& rhom) const;
+
+    KOKKOS_INLINE_FUNCTION
+    void set_Qm (const Int& lclcellidx, const Int& tracer_idx,
+                 const Real& Qm, const Real& Qm_min, const Real& Qm_max,
+                 const Real Qm_prev) const;
+
+    KOKKOS_INLINE_FUNCTION
+    Real get_Qm(const Int& lclcellidx, const Int& tracer_idx) const;
+
+  private:
+    friend class CAAS<ExeSpace>;
+
+    bool need_conserve_;
+    Int nlclcells_, nrhomidxs_;
+    IntList probs_;
+    RealList d_;
+  };
+
+private:
+  OnGpu on_gpu_;
+
+public:
+  OnGpu get_gpu_object () const { return on_gpu_; }
 };
 
 namespace test {

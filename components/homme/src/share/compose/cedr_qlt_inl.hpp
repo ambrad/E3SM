@@ -12,17 +12,22 @@ namespace cedr {
 namespace qlt {
 
 template <typename ES> KOKKOS_INLINE_FUNCTION
-void QLT<ES>::set_rhom (const Int& lclcellidx, const Int& rhomidx,
-                        const Real& rhom) const {
+void QLT<ES>::OnGpu
+::set_rhom (const Int& lclcellidx, const Int& rhomidx,
+            const Real& rhom) const {
+  printf("set_rhom %d %d %d %d %d\n",lclcellidx,rhomidx,md_.nprobtypes,md_.a_d.prob2bl2r[md_.nprobtypes],bd_.l2r_data.extent_int(0));
   const Int ndps = md_.a_d.prob2bl2r[md_.nprobtypes];
-  bd_.l2r_data(ndps*lclcellidx) = rhom;  
+  printf("set_rhom ndps %d idx %d\n",ndps,ndps*lclcellidx);
+  bd_.l2r_data(ndps*lclcellidx) = rhom;
+  printf("set_rhom %d %d done\n",lclcellidx,rhomidx);
 }
 
 template <typename ES> KOKKOS_INLINE_FUNCTION
-void QLT<ES>::set_Qm (const Int& lclcellidx, const Int& tracer_idx,
-                      const Real& Qm,
-                      const Real& Qm_min, const Real& Qm_max,
-                      const Real Qm_prev) const {
+void QLT<ES>::OnGpu
+::set_Qm (const Int& lclcellidx, const Int& tracer_idx,
+          const Real& Qm, const Real& Qm_min, const Real& Qm_max,
+          const Real Qm_prev) const {
+  printf("set_Qm %d %d\n", lclcellidx, tracer_idx);
   const Int ndps = md_.a_d.prob2bl2r[md_.nprobtypes];
   Real* bd; {
     const Int bdi = md_.a_d.trcr2bl2r(tracer_idx);
@@ -54,13 +59,36 @@ void QLT<ES>::set_Qm (const Int& lclcellidx, const Int& tracer_idx,
       bd[next] = Qm_prev;
     }
   }
+  printf("set_Qm %d %d done\n", lclcellidx, tracer_idx);
 }
 
 template <typename ES> KOKKOS_INLINE_FUNCTION
-Real QLT<ES>::get_Qm (const Int& lclcellidx, const Int& tracer_idx) const {
+Real QLT<ES>::OnGpu
+::get_Qm (const Int& lclcellidx, const Int& tracer_idx) const {
   const Int ndps = md_.a_d.prob2br2l[md_.nprobtypes];
   const Int bdi = md_.a_d.trcr2br2l(tracer_idx);
   return bd_.r2l_data(ndps*lclcellidx + bdi);
+}
+
+template <typename ES>
+void QLT<ES>
+::set_rhom (const Int& lclcellidx, const Int& rhomidx,
+            const Real& rhom) const {
+  on_gpu_.set_rhom(lclcellidx, rhomidx, rhom);
+}
+
+template <typename ES>
+void QLT<ES>
+::set_Qm (const Int& lclcellidx, const Int& tracer_idx,
+          const Real& Qm, const Real& Qm_min, const Real& Qm_max,
+          const Real Qm_prev) const {
+  on_gpu_.set_Qm(lclcellidx, tracer_idx, Qm, Qm_min, Qm_max, Qm_prev);
+}
+
+template <typename ES>
+Real QLT<ES>
+::get_Qm (const Int& lclcellidx, const Int& tracer_idx) const {
+  return on_gpu_.get_Qm(lclcellidx, tracer_idx);
 }
 
 //todo Replace this and the calling code with ReconstructSafely.
