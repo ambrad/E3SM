@@ -406,12 +406,21 @@ void CDR<MT>::init_tracers (const Int qsize, const bool need_conservation) {
 
 template <typename MT>
 void CDR<MT>::get_buffers_sizes (size_t& s1, size_t &s2) {
+#ifndef COMPOSE_WITH_HOMMEXX
+  if (ko::OnGpu<ko::MachineTraits::DES>::value) {
+    s1 = s2 = 0;
+    return;
+  }
+#endif
   cdr->get_buffers_sizes(s1, s2);
 }
 
 template <typename MT>
 void CDR<MT>::set_buffers (Real* b1, Real* b2) {
-  cdr->set_buffers(b1, b2);
+#ifndef COMPOSE_WITH_HOMMEXX
+  if ( ! ko::OnGpu<ko::MachineTraits::DES>::value)
+#endif
+    cdr->set_buffers(b1, b2);
   cdr->finish_setup();
 }
 
