@@ -467,6 +467,7 @@ struct IslMpi {
     FixedCapList<GidRank, DT> nbrs;   // the cell's neighbors (but including me)
     Int nin1halo;                     // nbrs[0:n]
     FixedCapList<OwnItem, DT> own;    // points whose q are computed with own rank's data
+    Int owns[128*16];
     FixedCapList<RemoteItem, DT> rmt; // points computed by a remote rank's data
     Array<Int**, DT> src;             // src(lev,k) = get_src_cell
     Array<Real**[2], DT> q_extrema;

@@ -84,9 +84,13 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
   {
     auto ed = cm.ed_d;
     ko::parallel_for(ko::RangePolicy<typename MT::DES>(nets, nete+1),
-                     KOKKOS_LAMBDA (const Int& tci) { ed(tci).own.clear(); });
+                     KOKKOS_LAMBDA (const Int& tci) {
+                       auto& e = ed(tci);
+                       e.own.clear();
+                       for (int i = 0; i < 128*16; ++i) e.owns[i] = 0;
+                     });
   }
-  {
+  { slmm::Timer timer("isl_03_adp_core");
     const Int np2 = cm.np2, nlev = cm.nlev;
     const Int nearest_point_permitted_lev_bdy =
       cm.advecter->nearest_point_permitted_lev_bdy();
@@ -118,9 +122,13 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
       }
       ed.src(lev,k) = sci;
       if (ed.nbrs(sci).rank == myrank) {
+#if 0
         auto& t = ed.own.atomic_inc_and_return_next();
         t.lev = lev;
         t.k = k;
+#else
+        ed.owns[128*k+lev] = 1;
+#endif
       } else {
         const auto ri = ed.nbrs(sci).rank_idx;
         const auto lidi = ed.nbrs(sci).lid_on_rank_idx;
@@ -150,7 +158,24 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
     ko::parallel_for(
       ko::RangePolicy<typename MT::DES>(0, (nete - nets + 1)*nlev*np2), f);
   }
-#ifndef COMPOSE_PORT
+#ifdef COMPOSE_PORT
+  {
+    slmm::Timer timer("isl_03_adp_own");
+    auto ed = cm.ed_d;
+    ko::parallel_for(ko::RangePolicy<typename MT::DES>(nets, nete+1),
+                     KOKKOS_LAMBDA (const Int& tci) {
+                       auto& e = ed(tci);
+                       for (int k = 0; k < 16; ++k)
+                         for (int lev = 0; lev < 128; ++lev)
+                           if (e.owns[128*k+lev] == 1) {
+                             e.own.inc();
+                             auto& t = e.own.back();
+                             t.lev = lev;
+                             t.k = k;
+                           }
+                     });
+  }
+#else
 # ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
 # pragma omp for
