@@ -669,9 +669,9 @@ void calc_rmt_q_pass1 (IslMpi<MT>& cm) {
 
 template <Int np, typename MT>
 void calc_rmt_q (IslMpi<MT>& cm) {
-  { slmm::Timer t("09a_rmt_q_pass1");
+  { slmm::Timer t("09_rmt_q_pass1");
     calc_rmt_q_pass1<np>(cm); }
-  { slmm::Timer t("09b_rmt_q_pass2");
+  { slmm::Timer t("09_rmt_q_pass2");
     calc_rmt_q_pass2<np>(cm); }
 }
 
