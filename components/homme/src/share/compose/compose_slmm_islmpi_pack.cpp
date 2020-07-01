@@ -58,6 +58,7 @@ struct Accum {
 template <typename MT>
 void pack_dep_points_sendbuf_pass1_scan (IslMpi<MT>& cm) {
   ko::fence();
+  deep_copy(cm.nx_in_rank_h, cm.nx_in_rank);
   const auto sendbufs = cm.sendbuf;
   const auto lid_on_ranks = cm.lid_on_rank;
   const auto nx_in_rank = cm.nx_in_rank;
