@@ -83,6 +83,14 @@ void run_global (CDR<MT>& cdr, CDRT* cedr_cdr_p,
   const auto ie2gci = cdr.ie2gci;
   const auto rank = cdr.p->rank();
   const auto cedr_cdr = *cedr_cdr_p;
+  if (cedr::impl::OnGpu<typename MT::DES>::value) {
+    Timer t("01_write_global_nonneg");
+    const Int n = ta.nelemd*nlev*qsize*np2;
+    ko::View<Real*> q_min_1d(q_min.data(), n);
+    ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, n),
+                     KOKKOS_LAMBDA (const Int& idx)
+                     { q_min_1d(idx) = ko::max<Real>(q_min_1d(idx), 0); });
+  }
   const auto f = KOKKOS_LAMBDA (const Int& idx) {
     const Int ie = nets + idx/(nsuplev*qsize);
     const Int q = (idx / nsuplev) % qsize;
@@ -114,7 +122,8 @@ void run_global (CDR<MT>& cdr, CDRT* cedr_cdr_p,
           const Real rhomij = dp3d_c(ie,np1,g,k) * spheremp(ie,g);
           rhom += rhomij;
           Qm += q_c(ie,q,g,k) * rhomij;
-          if (nonneg) q_min(ie,q,k,g) = ko::max<Real>(q_min(ie,q,k,g), 0);
+          if ( ! cedr::impl::OnGpu<typename MT::DES>::value && nonneg)
+            q_min(ie,q,k,g) = ko::max<Real>(q_min(ie,q,k,g), 0);
           Qm_min += q_min(ie,q,k,g) * rhomij;
           Qm_max += q_max(ie,q,k,g) * rhomij;
           Qm_prev += qdp_p(ie,n0_qdp,q,g,k) * spheremp(ie,g);
