@@ -55,6 +55,7 @@ template <typename MT, typename CDRT>
 void run_global (CDR<MT>& cdr, CDRT* cedr_cdr_p,
                  const Data& d, Real* q_min_r, const Real* q_max_r,
                  const Int nets, const Int nete) {
+  Timer t("01_write_global");
   const auto& ta = *d.ta;
   const Int np = ta.np, np2 = np*np, nlev = ta.nlev, qsize = ta.qsize,
     nlevwrem = cdr.nsuplev*cdr.nsublev;
@@ -84,7 +85,6 @@ void run_global (CDR<MT>& cdr, CDRT* cedr_cdr_p,
   const auto rank = cdr.p->rank();
   const auto cedr_cdr = *cedr_cdr_p;
   if (cedr::impl::OnGpu<typename MT::DES>::value) {
-    Timer t("01_write_global_nonneg");
     const Int n = ta.nelemd*nlev*qsize*np2;
     ko::View<Real*> q_min_1d(q_min.data(), n);
     ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, n),
@@ -146,8 +146,7 @@ void run_global (CDR<MT>& cdr, CDRT* cedr_cdr_p,
     }
   };
   ko::fence();
-  { Timer t("01_write_global");
-    ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, (nete - nets + 1)*nsuplev*qsize), f); }
+  ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, (nete - nets + 1)*nsuplev*qsize), f);
 }
 
 template <typename MT>
