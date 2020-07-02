@@ -48,7 +48,7 @@ void deep_copy (typename IslMpi<MT>::template ElemData<ESD>& d,
   const ptrdiff_t me_os = s.me - s.nbrs.data();
   d.me = d.nbrs.data() + me_os;
   d.nin1halo = s.nin1halo;
-  d.own.copy(s.own);
+  //d.own.copy(s.own); unused in COMPOSE_PORT
   d.rmt.copy(s.rmt);
   siqk::resize_and_copy(d.src, s.src);
   d.q_extrema = typename IslMpi<MT>::template Array<Real**[2], ESD>(

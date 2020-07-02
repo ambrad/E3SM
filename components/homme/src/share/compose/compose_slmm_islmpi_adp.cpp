@@ -77,6 +77,7 @@ SLMM_KF ko::EnableIfOnGpu<MT> throw_on_sci_error (
 template <typename MT>
 void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
                          const DepPoints<MT>& dep_points) {
+#ifdef COMPOSE_PORT
   const auto myrank = cm.p->rank();
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
   const Int np2 = cm.np2, nlev = cm.nlev;
@@ -84,29 +85,16 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
   const auto own_dep_mask = cm.own_dep_mask;
   cm.bla.zero();
   cm.nx_in_lid.zero();
-  { slmm::Timer timer("isl_03_adp_0");
-    ko::parallel_for(ko::RangePolicy<typename MT::DES>(nets, nete+1),
-                     KOKKOS_LAMBDA (const Int& tci) {
-                       auto& e = ed_d(tci);
-                       e.own.clear();
-                     });
-    ko::deep_copy(own_dep_mask, 0);
-  }
-  { slmm::Timer timer("isl_03_adp_core");
+  cm.nx_in_rank.zero();
+  ko::deep_copy(own_dep_mask, 0);
+  {
     const Int nearest_point_permitted_lev_bdy =
       cm.advecter->nearest_point_permitted_lev_bdy();
     const auto local_meshes = cm.advecter->local_meshes();
     const auto ed_d = cm.ed_d;
     const auto nx_in_lid = cm.nx_in_lid;
     const auto bla = cm.bla;
-#ifdef COMPOSE_HORIZ_OPENMP
-    const auto horiz_openmp = cm.horiz_openmp;
-    const auto& ri_lidi_locks = cm.ri_lidi_locks;
-#endif
-#ifdef COMPOSE_PORT
-    auto nx_in_rank = cm.nx_in_rank;
-    nx_in_rank.zero();
-#endif
+    const auto nx_in_rank = cm.nx_in_rank;
     const auto f = KOKKOS_LAMBDA (const Int& ki) {
       const Int tci = nets + ki/(nlev*np2);
       const Int lev = (ki/np2) % nlev;
@@ -122,57 +110,20 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
         if (sci == -1) throw_on_sci_error<MT>(mesh, ed, npp, dep_points, k, lev, tci);
       }
       ed.src(lev,k) = sci;
-      if (ed.nbrs(sci).rank == myrank) {
+      if (ed.nbrs(sci).rank == myrank)
         own_dep_mask(tci,lev,k) = 1;
-      } else {
+      else {
         const auto ri = ed.nbrs(sci).rank_idx;
         const auto lidi = ed.nbrs(sci).lid_on_rank_idx;
-#ifdef COMPOSE_HORIZ_OPENMP
-        omp_lock_t* lock;
-        if (horiz_openmp) {
-          lock = &ri_lidi_locks(ri,lidi);
-          omp_set_lock(lock);
-        }
-#endif
-        {
-#ifdef COMPOSE_PORT
-          ko::atomic_increment(static_cast<volatile Int*>(&nx_in_lid(ri,lidi)));
-          ko::atomic_increment(static_cast<volatile Int*>(&bla(ri,lidi,lev).xptr));
-          ko::atomic_increment(static_cast<volatile Int*>(&nx_in_rank(ri)));
-#else
-          ++nx_in_lid(ri,lidi);
-          ++bla(ri,lidi,lev).xptr;
-#endif
-        }
-#ifdef COMPOSE_HORIZ_OPENMP
-        if (horiz_openmp) omp_unset_lock(lock);
-#endif
+        ko::atomic_increment(static_cast<volatile Int*>(&nx_in_lid(ri,lidi)));
+        ko::atomic_increment(static_cast<volatile Int*>(&bla(ri,lidi,lev).xptr));
+        ko::atomic_increment(static_cast<volatile Int*>(&nx_in_rank(ri)));
       }
     };
     ko::fence();
-    ko::parallel_for(
-      ko::RangePolicy<typename MT::DES>(0, (nete - nets + 1)*nlev*np2), f);
+    ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, (nete - nets + 1)*nlev*np2), f);
   }
-#ifdef COMPOSE_PORT
-#if 0
   {
-    slmm::Timer timer("isl_03_adp_own");
-    ko::parallel_for(ko::RangePolicy<typename MT::DES>(nets, nete+1),
-                     KOKKOS_LAMBDA (const Int tci) {
-                       auto& e = ed_d(tci);
-                       for (int k = 0; k < 16; ++k)
-                         for (int lev = 0; lev < 128; ++lev)
-                           if (e.owns[128*k+lev] == 1) {
-                             e.own.inc();
-                             auto& t = e.own.back();
-                             t.lev = lev;
-                             t.k = k;
-                           }
-                     });
-  }
-#endif
-  {
-    slmm::Timer timer("isl_03_adp_scan");
     const auto own_dep_list = cm.own_dep_list;
     const auto f = KOKKOS_LAMBDA (const Int ki, Int& slot, const bool fin) {
       const Int tci = nets + ki/(nlev*np2);
@@ -189,15 +140,74 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
     };
     Int slot;
     ko::fence();
-    ko::parallel_scan(
-      ko::RangePolicy<typename MT::DES>(0, (nete - nets + 1)*nlev*np2), f, slot);
+    ko::parallel_scan(ko::RangePolicy<typename MT::DES>(0, (nete - nets + 1)*nlev*np2),
+                      f, slot);
     cm.own_dep_list_len = slot;
   }
-#else
-# ifdef COMPOSE_HORIZ_OPENMP
+#else // COMPOSE_PORT
+  const auto myrank = cm.p->rank();
+  const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
+  const Int np2 = cm.np2, nlev = cm.nlev;
+  const auto ed_d = cm.ed_d;
+  const auto own_dep_mask = cm.own_dep_mask;
+  cm.bla.zero();
+  cm.nx_in_lid.zero();
+  {
+    const Int nearest_point_permitted_lev_bdy =
+      cm.advecter->nearest_point_permitted_lev_bdy();
+    const auto local_meshes = cm.advecter->local_meshes();
+    const auto ed_d = cm.ed_d;
+    const auto bla = cm.bla;
+    const auto nx_in_lid = cm.nx_in_lid;
+    const auto horiz_openmp = cm.horiz_openmp;
+    const auto& ri_lidi_locks = cm.ri_lidi_locks;
+    ko::parallel_for(ko::RangePolicy<typename MT::DES>(nets, nete+1),
+                     KOKKOS_LAMBDA (const Int& tci) { ed_d(tci).own.clear(); });
+    Int own_dep_list_len = 0;
+    const auto f = KOKKOS_LAMBDA (const Int& ki) {
+      const Int tci = nets + ki/(nlev*np2);
+      const Int lev = (ki/np2) % nlev;
+      const Int k = ki % np2;
+      const auto& mesh = local_meshes(tci);
+      const auto tgt_idx = mesh.tgt_elem;
+      auto& ed = ed_d(tci);
+      Int sci = slmm::get_src_cell(mesh, &dep_points(tci,lev,k,0), tgt_idx);
+      if (sci == -1) {
+        const bool npp = slmm::Advecter<MT>::nearest_point_permitted(
+          nearest_point_permitted_lev_bdy, lev);
+        if (npp) sci = slmm::get_nearest_point(mesh, &dep_points(tci,lev,k,0), tgt_idx);
+        if (sci == -1) throw_on_sci_error<MT>(mesh, ed, npp, dep_points, k, lev, tci);
+      }
+      ed.src(lev,k) = sci;
+      if (ed.nbrs(sci).rank == myrank) {
+        auto& t = ed.own.atomic_inc_and_return_next();
+        t.lev = lev;
+        t.k = k;
+      } else {
+        const auto ri = ed.nbrs(sci).rank_idx;
+        const auto lidi = ed.nbrs(sci).lid_on_rank_idx;
+#ifdef COMPOSE_HORIZ_OPENMP
+        omp_lock_t* lock;
+        if (horiz_openmp) {
+          lock = &ri_lidi_locks(ri,lidi);
+          omp_set_lock(lock);
+        }
+#endif
+        ++nx_in_lid(ri,lidi);
+        ++bla(ri,lidi,lev).xptr;
+#ifdef COMPOSE_HORIZ_OPENMP
+        if (horiz_openmp) omp_unset_lock(lock);
+#endif
+      }
+    };
+    ko::fence();
+    ko::parallel_for(
+      ko::RangePolicy<typename MT::DES>(0, (nete - nets + 1)*nlev*np2), f);
+  }
+#ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
 # pragma omp for
-# endif
+#endif
   for (Int ri = 0; ri < nrmtrank; ++ri) {
     auto& nx_in_rank = cm.nx_in_rank(ri);
     nx_in_rank = 0;

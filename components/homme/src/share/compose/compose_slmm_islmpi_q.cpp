@@ -268,7 +268,7 @@ void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
     const FA3<Real> q_tgt(ed.q, cm.np2, cm.nlev, cm.qsize);
     const Int ned = ed.own.n();
 #ifdef HORIZ_OPENMP
-    #pragma omp for
+#   pragma omp for
 #endif
     for (Int idx = 0; idx < ned; ++idx) {
       const auto& e = ed.own(idx);
@@ -376,21 +376,21 @@ void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
   static const Int blocksize = 8;
   const auto f = KOKKOS_LAMBDA (const Int& it) {
     const Int tci = own_dep_list(it,0);
-    const Int e_lev = own_dep_list(it,1);
-    const Int e_k = own_dep_list(it,2);
+    const Int tgt_lev = own_dep_list(it,1);
+    const Int tgt_k = own_dep_list(it,2);
     const auto& ed = ed_d(tci);
-    const Int slid = ed.nbrs(ed.src(e_lev, e_k)).lid_on_rank;
+    const Int slid = ed.nbrs(ed.src(tgt_lev, tgt_k)).lid_on_rank;
     const auto& sed = ed_d(slid);
     for (Int iq = 0; iq < qsize; ++iq) {
-      q_min(tci, iq, e_lev, e_k) = sed.q_extrema(iq, e_lev, 0);
-      q_max(tci, iq, e_lev, e_k) = sed.q_extrema(iq, e_lev, 1);
+      q_min(tci, iq, tgt_lev, tgt_k) = sed.q_extrema(iq, tgt_lev, 0);
+      q_max(tci, iq, tgt_lev, tgt_k) = sed.q_extrema(iq, tgt_lev, 1);
     }
     Real rx[4], ry[4];
-    calc_coefs<np,MT>(s2r, local_meshes(slid), alg, slid, e_lev,
-                      &dep_points(tci, e_lev, e_k, 0), rx, ry);
+    calc_coefs<np,MT>(s2r, local_meshes(slid), alg, slid, tgt_lev,
+                      &dep_points(tci, tgt_lev, tgt_k, 0), rx, ry);
     // q from calc_q_extrema is being overwritten, so have to use qdp/dp.
     Real dp[16];
-    for (Int k = 0; k < 16; ++k) dp[k] = dp_src(slid, e_k, e_lev);
+    for (Int k = 0; k < 16; ++k) dp[k] = dp_src(slid, tgt_k, tgt_lev);
     // Block for auto-vectorization.
     for (Int iqo = 0; iqo < qsize; iqo += blocksize) {
       if (iqo + blocksize <= qsize) {
@@ -398,16 +398,16 @@ void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
         for (Int iqi = 0; iqi < blocksize; ++iqi) {
           const Int iq = iqo + iqi;
           Real qdp[16];
-          for (Int k = 0; k < 16; ++k) qdp[k] = qdp_src(slid, qtl, iq, k, e_lev);
+          for (Int k = 0; k < 16; ++k) qdp[k] = qdp_src(slid, qtl, iq, k, tgt_lev);
           tmp[iqi] = calc_q_tgt(rx, ry, qdp, dp);
         }
         for (Int iqi = 0; iqi < blocksize; ++iqi)
-          q_tgt(tci, iqo + iqi, e_k, e_lev) = tmp[iqi];
+          q_tgt(tci, iqo + iqi, tgt_k, tgt_lev) = tmp[iqi];
       } else {
         for (Int iq = iqo; iq < qsize; ++iq) {
           Real qdp[16];
-          for (Int k = 0; k < 16; ++k) qdp[k] = qdp_src(slid, qtl, iq, k, e_lev);
-          q_tgt(tci, iq, e_k, e_lev) = calc_q_tgt(rx, ry, qdp, dp);
+          for (Int k = 0; k < 16; ++k) qdp[k] = qdp_src(slid, qtl, iq, k, tgt_lev);
+          q_tgt(tci, iq, tgt_k, tgt_lev) = calc_q_tgt(rx, ry, qdp, dp);
         }
       }
     }
