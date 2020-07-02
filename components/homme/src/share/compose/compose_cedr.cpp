@@ -597,8 +597,9 @@ extern "C" void cedr_sl_run_global (homme::Real* minq, const homme::Real* maxq,
   cedr_assert(minq != maxq);
   cedr_assert(g_cdr);
   cedr_assert(g_sl);
-  //if (g_cdr->p->amroot() && s_h2d) printf("cedr_h2d\n");
-  homme::cedr_h2d(*g_sl->ta, s_h2d);
+  { homme::Timer timer("h2d");
+    //if (g_cdr->p->amroot() && s_h2d) printf("cedr_h2d\n");
+    homme::cedr_h2d(*g_sl->ta, s_h2d); }
   homme::sl::run_global<ko::MachineTraits>(*g_cdr, *g_sl, minq, maxq, nets-1, nete-1);
 }
 
@@ -611,8 +612,9 @@ extern "C" void cedr_sl_run_local (homme::Real* minq, const homme::Real* maxq,
   cedr_assert(g_sl);
   homme::sl::run_local(*g_cdr, *g_sl, minq, maxq, nets-1, nete-1, use_ir,
                        limiter_option);
-  //if (g_cdr->p->amroot() && s_h2d) printf("cedr_d2h\n");
-  homme::cedr_d2h(*g_sl->ta, s_d2h);
+  { homme::Timer timer("d2h");
+    //if (g_cdr->p->amroot() && s_d2h) printf("cedr_d2h\n");
+    homme::cedr_d2h(*g_sl->ta, s_d2h); }
 }
 
 // Check properties for this transport step.

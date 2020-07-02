@@ -118,7 +118,7 @@ void run_global (CDR<MT>& cdr, CDRT* cedr_cdr_p,
       }
       if (k < nlev) {
         for (Int g = 0; g < np2; ++g) {
-          volume += spheremp(ie,g); // * dp0[k];
+          volume += spheremp(ie,g);
           const Real rhomij = dp3d_c(ie,np1,g,k) * spheremp(ie,g);
           rhom += rhomij;
           Qm += q_c(ie,q,g,k) * rhomij;
@@ -143,8 +143,9 @@ void run_global (CDR<MT>& cdr, CDRT* cedr_cdr_p,
           warn_on_Qm_prev_negative<MT>(Qm_prev, rank, ie, ie2gci, np2, spli, k0, q,
                                        ti, sbli, lci, k, n0_qdp, np1, qdp_p, dp3d_c);
       }
-    }    
+    }
   };
+  ko::fence();
   { Timer t("01_write_global");
     ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, (nete - nets + 1)*nsuplev*qsize), f); }
 }
