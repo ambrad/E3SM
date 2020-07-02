@@ -467,7 +467,6 @@ struct IslMpi {
     FixedCapList<GidRank, DT> nbrs;   // the cell's neighbors (but including me)
     Int nin1halo;                     // nbrs[0:n]
     FixedCapList<OwnItem, DT> own;    // points whose q are computed with own rank's data
-    Int owns[128*16];
     FixedCapList<RemoteItem, DT> rmt; // points computed by a remote rank's data
     Array<Int**, DT> src;             // src(lev,k) = get_src_cell
     Array<Real**[2], DT> q_extrema;
@@ -517,7 +516,11 @@ struct IslMpi {
 
   // temporary work space
   std::vector<Int> nlid_per_rank, sendsz, recvsz, sendmetasz, recvmetasz;
-  Array<Real**,DDT> rwork;
+  ArrayD<Real**> rwork;
+
+  ArrayD<char***> own_dep_mask;
+  ArrayD<Int*[3]> own_dep_list;
+  Int own_dep_list_len;
 
   IslMpi (const mpi::Parallel::Ptr& ip, const typename Advecter::ConstPtr& advecter,
           const typename TracerArrays<MT>::Ptr& tracer_arrays_,

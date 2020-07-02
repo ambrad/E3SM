@@ -371,26 +371,26 @@ void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
   const auto s2r = cm.advecter->s2r();
   const auto local_meshes = cm.advecter->local_meshes();
   const auto alg = cm.advecter->alg();
-  const Int qsize = cm.qsize, nlev = cm.nlev, np2 = cm.np2;
+  const auto own_dep_list = cm.own_dep_list;
+  const Int qsize = cm.qsize;
   static const Int blocksize = 8;
   const auto f = KOKKOS_LAMBDA (const Int& it) {
-    const Int tci = nets + it/(np2*nlev);
-    const Int own_id = it % (np2*nlev);
-    auto& ed = ed_d(tci);
-    if (own_id >= ed.own.size()) return;
-    const auto& e = ed.own(own_id);
-    const Int slid = ed.nbrs(ed.src(e.lev, e.k)).lid_on_rank;
+    const Int tci = own_dep_list(it,0);
+    const Int e_lev = own_dep_list(it,1);
+    const Int e_k = own_dep_list(it,2);
+    const auto& ed = ed_d(tci);
+    const Int slid = ed.nbrs(ed.src(e_lev, e_k)).lid_on_rank;
     const auto& sed = ed_d(slid);
     for (Int iq = 0; iq < qsize; ++iq) {
-      q_min(tci, iq, e.lev, e.k) = sed.q_extrema(iq, e.lev, 0);
-      q_max(tci, iq, e.lev, e.k) = sed.q_extrema(iq, e.lev, 1);
+      q_min(tci, iq, e_lev, e_k) = sed.q_extrema(iq, e_lev, 0);
+      q_max(tci, iq, e_lev, e_k) = sed.q_extrema(iq, e_lev, 1);
     }
     Real rx[4], ry[4];
-    calc_coefs<np,MT>(s2r, local_meshes(slid), alg, slid, e.lev,
-                      &dep_points(tci, e.lev, e.k, 0), rx, ry);
+    calc_coefs<np,MT>(s2r, local_meshes(slid), alg, slid, e_lev,
+                      &dep_points(tci, e_lev, e_k, 0), rx, ry);
     // q from calc_q_extrema is being overwritten, so have to use qdp/dp.
     Real dp[16];
-    for (Int k = 0; k < 16; ++k) dp[k] = dp_src(slid, e.k, e.lev);
+    for (Int k = 0; k < 16; ++k) dp[k] = dp_src(slid, e_k, e_lev);
     // Block for auto-vectorization.
     for (Int iqo = 0; iqo < qsize; iqo += blocksize) {
       if (iqo + blocksize <= qsize) {
@@ -398,22 +398,22 @@ void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
         for (Int iqi = 0; iqi < blocksize; ++iqi) {
           const Int iq = iqo + iqi;
           Real qdp[16];
-          for (Int k = 0; k < 16; ++k) qdp[k] = qdp_src(slid, qtl, iq, k, e.lev);
+          for (Int k = 0; k < 16; ++k) qdp[k] = qdp_src(slid, qtl, iq, k, e_lev);
           tmp[iqi] = calc_q_tgt(rx, ry, qdp, dp);
         }
         for (Int iqi = 0; iqi < blocksize; ++iqi)
-          q_tgt(tci, iqo + iqi, e.k, e.lev) = tmp[iqi];
+          q_tgt(tci, iqo + iqi, e_k, e_lev) = tmp[iqi];
       } else {
         for (Int iq = iqo; iq < qsize; ++iq) {
           Real qdp[16];
-          for (Int k = 0; k < 16; ++k) qdp[k] = qdp_src(slid, qtl, iq, k, e.lev);
-          q_tgt(tci, iq, e.k, e.lev) = calc_q_tgt(rx, ry, qdp, dp);
+          for (Int k = 0; k < 16; ++k) qdp[k] = qdp_src(slid, qtl, iq, k, e_lev);
+          q_tgt(tci, iq, e_k, e_lev) = calc_q_tgt(rx, ry, qdp, dp);
         }
       }
     }
   };
   ko::parallel_for(
-    ko::RangePolicy<typename MT::DES>(0, (nete - nets + 1)*np2*nlev), f);
+    ko::RangePolicy<typename MT::DES>(0, cm.own_dep_list_len), f);
 }
 
 template <typename MT>

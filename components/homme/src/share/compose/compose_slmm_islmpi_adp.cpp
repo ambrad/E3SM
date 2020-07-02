@@ -79,19 +79,20 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
                          const DepPoints<MT>& dep_points) {
   const auto myrank = cm.p->rank();
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
+  const Int np2 = cm.np2, nlev = cm.nlev;
+  const auto ed_d = cm.ed_d;
+  const auto own_dep_mask = cm.own_dep_mask;
   cm.bla.zero();
   cm.nx_in_lid.zero();
-  {
-    auto ed = cm.ed_d;
+  { slmm::Timer timer("isl_03_adp_0");
     ko::parallel_for(ko::RangePolicy<typename MT::DES>(nets, nete+1),
                      KOKKOS_LAMBDA (const Int& tci) {
-                       auto& e = ed(tci);
+                       auto& e = ed_d(tci);
                        e.own.clear();
-                       for (int i = 0; i < 128*16; ++i) e.owns[i] = 0;
                      });
+    ko::deep_copy(own_dep_mask, 0);
   }
   { slmm::Timer timer("isl_03_adp_core");
-    const Int np2 = cm.np2, nlev = cm.nlev;
     const Int nearest_point_permitted_lev_bdy =
       cm.advecter->nearest_point_permitted_lev_bdy();
     const auto local_meshes = cm.advecter->local_meshes();
@@ -122,13 +123,7 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
       }
       ed.src(lev,k) = sci;
       if (ed.nbrs(sci).rank == myrank) {
-#if 0
-        auto& t = ed.own.atomic_inc_and_return_next();
-        t.lev = lev;
-        t.k = k;
-#else
-        ed.owns[128*k+lev] = 1;
-#endif
+        own_dep_mask(tci,lev,k) = 1;
       } else {
         const auto ri = ed.nbrs(sci).rank_idx;
         const auto lidi = ed.nbrs(sci).lid_on_rank_idx;
@@ -159,12 +154,12 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
       ko::RangePolicy<typename MT::DES>(0, (nete - nets + 1)*nlev*np2), f);
   }
 #ifdef COMPOSE_PORT
+#if 0
   {
     slmm::Timer timer("isl_03_adp_own");
-    auto ed = cm.ed_d;
     ko::parallel_for(ko::RangePolicy<typename MT::DES>(nets, nete+1),
-                     KOKKOS_LAMBDA (const Int& tci) {
-                       auto& e = ed(tci);
+                     KOKKOS_LAMBDA (const Int tci) {
+                       auto& e = ed_d(tci);
                        for (int k = 0; k < 16; ++k)
                          for (int lev = 0; lev < 128; ++lev)
                            if (e.owns[128*k+lev] == 1) {
@@ -174,6 +169,29 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
                              t.k = k;
                            }
                      });
+  }
+#endif
+  {
+    slmm::Timer timer("isl_03_adp_scan");
+    const auto own_dep_list = cm.own_dep_list;
+    const auto f = KOKKOS_LAMBDA (const Int ki, Int& slot, const bool fin) {
+      const Int tci = nets + ki/(nlev*np2);
+      const Int lev = (ki/np2) % nlev;
+      const Int k = ki % np2;
+      if (own_dep_mask(tci,lev,k)) {
+        if (fin) {
+          own_dep_list(slot,0) = tci;
+          own_dep_list(slot,1) = lev;
+          own_dep_list(slot,2) = k;
+        }
+        ++slot;
+      }
+    };
+    Int slot;
+    ko::fence();
+    ko::parallel_scan(
+      ko::RangePolicy<typename MT::DES>(0, (nete - nets + 1)*nlev*np2), f, slot);
+    cm.own_dep_list_len = slot;
   }
 #else
 # ifdef COMPOSE_HORIZ_OPENMP
