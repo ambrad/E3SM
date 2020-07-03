@@ -166,8 +166,13 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
     Int own_dep_list_len = 0;
     const auto f = KOKKOS_LAMBDA (const Int& ki) {
       const Int tci = nets + ki/(nlev*np2);
+#if 0
       const Int   k = (ki/nlev) % np2;
       const Int lev = ki % nlev;
+#else
+      const Int   k = ki % np2;
+      const Int lev = (ki/np2) % nlev;      
+#endif
       const auto& mesh = local_meshes(tci);
       const auto tgt_idx = mesh.tgt_elem;
       auto& ed = ed_d(tci);

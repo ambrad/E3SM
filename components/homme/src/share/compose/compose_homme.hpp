@@ -31,6 +31,15 @@ template <typename MT> using QExtremaH = typename QExtrema<MT>::HostMirror;
 template <typename MT> using QExtremaHConst = ko::Const<QExtremaH<MT> >;
 template <typename MT> using QExtremaConst = ko::Const<QExtrema<MT> >;
 
+template <typename VT> KOKKOS_FORCEINLINE_FUNCTION
+typename VT::value_type& idx_qext (const VT& qe, int ie, int q, int g, int lev) {
+#ifdef COMPOSE_PORT
+  return qe(ie,q,g,lev);
+#else
+  return qe(ie,q,lev,g);
+#endif
+}
+
 struct Cartesian3D { Real x, y, z; };
 
 template <typename T, int rank_>

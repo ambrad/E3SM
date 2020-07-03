@@ -26,8 +26,8 @@ void step (
 #else
   const DepPointsH<MT> dep_points(dep_points_r, cm.nelemd, cm.nlev, cm.np2);
   const QExtremaH<MT>
-    q_min(q_min_r, cm.nelemd, cm.qsize, cm.np2, cm.nlev),
-    q_max(q_max_r, cm.nelemd, cm.qsize, cm.np2, cm.nlev);
+    q_min(q_min_r, cm.nelemd, cm.qsize, cm.nlev, cm.np2),
+    q_max(q_max_r, cm.nelemd, cm.qsize, cm.nlev, cm.np2);
 #endif
 
   // Partition my elements that communicate with remotes among threads, if I

@@ -30,8 +30,8 @@ void solve_local (const Int ie, const Int k, const Int q,
 
   //todo Replace with ReconstructSafely.
   if (scalar_bounds) {
-    qlo[0] = q_min(ie,q,0,k);
-    qhi[0] = q_max(ie,q,0,k);
+    qlo[0] = idx_qext(q_min,ie,q,0,k);
+    qhi[0] = idx_qext(q_max,ie,q,0,k);
     const Int N = ko::min(max_np2, np2);
     for (Int i = 1; i < N; ++i) qlo[i] = qlo[0];
     for (Int i = 1; i < N; ++i) qhi[i] = qhi[0];
@@ -50,8 +50,8 @@ void solve_local (const Int ie, const Int k, const Int q,
   } else {
     const Int N = ko::min(max_np2, np2);
     for (Int g = 0; g < np2; ++g) {
-      qlo[g] = q_min(ie,q,g,k);
-      qhi[g] = q_max(ie,q,g,k);
+      qlo[g] = idx_qext(q_min,ie,q,g,k);
+      qhi[g] = idx_qext(q_max,ie,q,g,k);
     }
     for (Int trial = 0; trial < 3; ++trial) {
       int info;
@@ -147,9 +147,9 @@ void run_local (CDR<MT>& cdr, CDRT* cedr_cdr_p,
   const auto q_max = ta.q_max;
 #else
   const QExtremaH<ko::MachineTraits>
-    q_min(q_min_r, ta.nelemd, ta.qsize, ta.np2, ta.nlev);
+    q_min(q_min_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2);
   const QExtremaHConst<ko::MachineTraits>
-    q_max(q_max_r, ta.nelemd, ta.qsize, ta.np2, ta.nlev);
+    q_max(q_max_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2);
 #endif
   const auto np1 = ta.np1;
   const auto n1_qdp = ta.n1_qdp;
@@ -192,8 +192,8 @@ void run_local (CDR<MT>& cdr, CDRT* cedr_cdr_p,
           const Real rhomij = dp3d_c(ie,np1,g,k) * spheremp(ie,g);
           rhom[sbli] += rhomij;
           Qm[sbli] += q_c(ie,q,g,k) * rhomij;
-          Qm_min[sbli] += q_min(ie,q,g,k) * rhomij;
-          Qm_max[sbli] += q_max(ie,q,g,k) * rhomij;
+          Qm_min[sbli] += idx_qext(q_min,ie,q,g,k) * rhomij;
+          Qm_max[sbli] += idx_qext(q_max,ie,q,g,k) * rhomij;
         }
         Qm_min_tot += Qm_min[sbli];
         Qm_max_tot += Qm_max[sbli];
@@ -208,12 +208,12 @@ void run_local (CDR<MT>& cdr, CDRT* cedr_cdr_p,
           const Int k = k0 + sbli;
           for (Int g = 0; g < np2; ++g) {
             if (first) {
-              q_min_s = q_min(ie,q,g,k);
-              q_max_s = q_max(ie,q,g,k);
+              q_min_s = idx_qext(q_min,ie,q,g,k);
+              q_max_s = idx_qext(q_max,ie,q,g,k);
               first = false;
             } else {
-              q_min_s = ko::min(q_min_s, q_min(ie,q,g,k));
-              q_max_s = ko::max(q_max_s, q_max(ie,q,g,k));
+              q_min_s = ko::min(q_min_s, idx_qext(q_min,ie,q,g,k));
+              q_max_s = ko::max(q_max_s, idx_qext(q_max,ie,q,g,k));
             }
           }
         }

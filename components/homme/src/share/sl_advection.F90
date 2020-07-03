@@ -112,7 +112,7 @@ contains
           need_conservation = 1
           call cedr_sl_init(np, nlev, qsize, qsize_d, timelevels, need_conservation)
        end if
-       allocate(minq(nlev,np,np,qsize,size(elem)), maxq(nlev,np,np,qsize,size(elem)))
+       allocate(minq(np,np,nlev,qsize,size(elem)), maxq(np,np,nlev,qsize,size(elem)))
        dp_tol = -one
     endif
 
