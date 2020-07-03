@@ -10,7 +10,7 @@ template <typename MT>
 void step (
   IslMpi<MT>& cm, const Int nets, const Int nete,
   Real* dep_points_r,           // dep_points(1:3, 1:np, 1:np)
-  Real* q_min_r, Real* q_max_r) // q_{min,max}(1:np, 1:np, lev, 1:qsize, ie-nets+1)
+  Real* q_min_r, Real* q_max_r) // q_{min,max}(lev, 1:np, 1:np, 1:qsize, ie-nets+1)
 {
   using slmm::Timer;
 
@@ -26,8 +26,8 @@ void step (
 #else
   const DepPointsH<MT> dep_points(dep_points_r, cm.nelemd, cm.nlev, cm.np2);
   const QExtremaH<MT>
-    q_min(q_min_r, cm.nelemd, cm.qsize, cm.nlev, cm.np2),
-    q_max(q_max_r, cm.nelemd, cm.qsize, cm.nlev, cm.np2);
+    q_min(q_min_r, cm.nelemd, cm.qsize, cm.np2, cm.nlev),
+    q_max(q_max_r, cm.nelemd, cm.qsize, cm.np2, cm.nlev);
 #endif
 
   // Partition my elements that communicate with remotes among threads, if I

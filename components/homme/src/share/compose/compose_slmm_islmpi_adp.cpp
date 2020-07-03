@@ -97,8 +97,8 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
     const auto nx_in_rank = cm.nx_in_rank;
     const auto f = KOKKOS_LAMBDA (const Int& ki) {
       const Int tci = nets + ki/(nlev*np2);
-      const Int lev = (ki/np2) % nlev;
-      const Int k = ki % np2;
+      const Int   k = (ki/nlev) % np2;
+      const Int lev = ki % nlev;
       const auto& mesh = local_meshes(tci);
       const auto tgt_idx = mesh.tgt_elem;
       auto& ed = ed_d(tci);
@@ -127,8 +127,8 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
     const auto own_dep_list = cm.own_dep_list;
     const auto f = KOKKOS_LAMBDA (const Int ki, Int& slot, const bool fin) {
       const Int tci = nets + ki/(nlev*np2);
-      const Int lev = (ki/np2) % nlev;
-      const Int k = ki % np2;
+      const Int   k = (ki/nlev) % np2;
+      const Int lev = ki % nlev;
       if (own_dep_mask(tci,lev,k)) {
         if (fin) {
           own_dep_list(slot,0) = tci;
@@ -166,8 +166,8 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
     Int own_dep_list_len = 0;
     const auto f = KOKKOS_LAMBDA (const Int& ki) {
       const Int tci = nets + ki/(nlev*np2);
-      const Int lev = (ki/np2) % nlev;
-      const Int k = ki % np2;
+      const Int   k = (ki/nlev) % np2;
+      const Int lev = ki % nlev;
       const auto& mesh = local_meshes(tci);
       const auto tgt_idx = mesh.tgt_elem;
       auto& ed = ed_d(tci);

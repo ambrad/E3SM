@@ -275,8 +275,8 @@ void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
       const Int slid = ed.nbrs(ed.src(e.lev, e.k)).lid_on_rank;
       const auto& sed = cm.ed_d(slid);
       for (Int iq = 0; iq < cm.qsize; ++iq) {
-        q_min(tci, iq, e.lev, e.k) = sed.q_extrema(iq, e.lev, 0);
-        q_max(tci, iq, e.lev, e.k) = sed.q_extrema(iq, e.lev, 1);
+        q_min(tci, iq, e.k, e.lev) = sed.q_extrema(iq, e.lev, 0);
+        q_max(tci, iq, e.k, e.lev) = sed.q_extrema(iq, e.lev, 1);
       }
       Real* const qtmp = &cm.rwork(tid, 0);
       calc_q<np>(cm, slid, e.lev, &dep_points(tci, e.lev, e.k, 0), qtmp, false);
@@ -302,8 +302,8 @@ void copy_q (IslMpi<MT>& cm, const Int& nets,
       const Int ri = ed.nbrs(ed.src(e.lev, e.k)).rank_idx;
       const auto&& recvbuf = cm.recvbuf(ri);
       for (Int iq = 0; iq < cm.qsize; ++iq) {
-        q_min(tci, iq, e.lev, e.k) = recvbuf(e.q_extrema_ptr + 2*iq    );
-        q_max(tci, iq, e.lev, e.k) = recvbuf(e.q_extrema_ptr + 2*iq + 1);
+        q_min(tci, iq, e.k, e.lev) = recvbuf(e.q_extrema_ptr + 2*iq    );
+        q_max(tci, iq, e.k, e.lev) = recvbuf(e.q_extrema_ptr + 2*iq + 1);
       }
       for (Int iq = 0; iq < cm.qsize; ++iq) {
         slmm_assert(recvbuf(e.q_ptr + iq) != -1);
@@ -382,8 +382,8 @@ void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
     const Int slid = ed.nbrs(ed.src(tgt_lev, tgt_k)).lid_on_rank;
     const auto& sed = ed_d(slid);
     for (Int iq = 0; iq < qsize; ++iq) {
-      q_min(tci, iq, tgt_lev, tgt_k) = sed.q_extrema(iq, tgt_lev, 0);
-      q_max(tci, iq, tgt_lev, tgt_k) = sed.q_extrema(iq, tgt_lev, 1);
+      q_min(tci, iq, tgt_k, tgt_lev) = sed.q_extrema(iq, tgt_lev, 0);
+      q_max(tci, iq, tgt_k, tgt_lev) = sed.q_extrema(iq, tgt_lev, 1);
     }
     Real rx[4], ry[4];
     calc_coefs<np,MT>(s2r, local_meshes(slid), alg, slid, tgt_lev,
@@ -437,8 +437,8 @@ void copy_q (IslMpi<MT>& cm, const Int& nets,
     const Int ri = ed.nbrs(ed.src(e.lev, e.k)).rank_idx;
     const auto&& recvbuf = recvbufs(ri);
     for (Int iq = 0; iq < qsize; ++iq) {
-      q_min(tci, iq, e.lev, e.k) = recvbuf(e.q_extrema_ptr + 2*iq    );
-      q_max(tci, iq, e.lev, e.k) = recvbuf(e.q_extrema_ptr + 2*iq + 1);
+      q_min(tci, iq, e.k, e.lev) = recvbuf(e.q_extrema_ptr + 2*iq    );
+      q_max(tci, iq, e.k, e.lev) = recvbuf(e.q_extrema_ptr + 2*iq + 1);
     }
     for (Int iq = 0; iq < qsize; ++iq) {
       slmm_kernel_assert(recvbuf(e.q_ptr + iq) != -1);

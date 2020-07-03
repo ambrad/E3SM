@@ -14,7 +14,7 @@ TracerArrays<MT>::TracerArrays (Int nelemd_, Int nlev_, Int np_, Int qsize_, Int
     qdp("qdp", nelemd, 2, qsize, np2, nlev),
     q("q", nelemd, qsize, np2, nlev),
     dep_points("dep_points", nelemd, nlev, np2),
-    q_min("q_min", nelemd, qsize, nlev, np2), q_max("q_max", nelemd, qsize, nlev, np2)
+    q_min("q_min", nelemd, qsize, np2, nlev), q_max("q_max", nelemd, qsize, np2, nlev)
 #else
     spheremp(pspheremp), dp(pdp), dp3d(pdp3d), qdp(pqdp), q(pq)
 #endif
@@ -67,8 +67,8 @@ void sl_d2h (const TracerArrays<MT>& ta, bool transfer, Cartesian3D* dep_points,
           ta.pq(ie,iq,k,lev) = q_m(ie,iq,k,lev);
   const DepPointsH<MT> dep_points_h(reinterpret_cast<Real*>(dep_points), nelemd, nlev, np2);
   const QExtremaH<MT>
-    q_min_h(minq, nelemd, qsize, nlev, np2),
-    q_max_h(maxq, nelemd, qsize, nlev, np2);
+    q_min_h(minq, nelemd, qsize, np2, nlev),
+    q_max_h(maxq, nelemd, qsize, np2, nlev);
   ko::deep_copy(dep_points_h, ta.dep_points);
   ko::deep_copy(q_min_h, ta.q_min);
   ko::deep_copy(q_max_h, ta.q_max);

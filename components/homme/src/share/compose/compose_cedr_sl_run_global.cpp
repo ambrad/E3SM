@@ -65,8 +65,8 @@ void run_global (CDR<MT>& cdr, CDRT* cedr_cdr_p,
   const auto q_min = ta.q_min;
   const auto q_max = ta.q_max;
 #else
-  const QExtremaH<MT>      q_min(q_min_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2);
-  const QExtremaHConst<MT> q_max(q_max_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2);
+  const QExtremaH<MT>      q_min(q_min_r, ta.nelemd, ta.qsize, ta.np2, ta.nlev);
+  const QExtremaHConst<MT> q_max(q_max_r, ta.nelemd, ta.qsize, ta.np2, ta.nlev);
 #endif
   const auto np1 = ta.np1;
   const auto n0_qdp = ta.n0_qdp;
@@ -123,9 +123,9 @@ void run_global (CDR<MT>& cdr, CDRT* cedr_cdr_p,
           rhom += rhomij;
           Qm += q_c(ie,q,g,k) * rhomij;
           if ( ! cedr::impl::OnGpu<typename MT::DES>::value && nonneg)
-            q_min(ie,q,k,g) = ko::max<Real>(q_min(ie,q,k,g), 0);
-          Qm_min += q_min(ie,q,k,g) * rhomij;
-          Qm_max += q_max(ie,q,k,g) * rhomij;
+            q_min(ie,q,g,k) = ko::max<Real>(q_min(ie,q,g,k), 0);
+          Qm_min += q_min(ie,q,g,k) * rhomij;
+          Qm_max += q_max(ie,q,g,k) * rhomij;
           Qm_prev += qdp_p(ie,n0_qdp,q,g,k) * spheremp(ie,g);
         }
       }
