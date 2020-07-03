@@ -30,9 +30,15 @@ void check (CDR<MT>& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
   const auto& q_min = ta.q_min;
   const auto& q_max = ta.q_max;
 #else
+# ifdef COMPOSE_PORT
   const QExtremaHConst<ko::MachineTraits>
     q_min(q_min_r, ta.nelemd, ta.qsize, ta.np2, ta.nlev),
     q_max(q_max_r, ta.nelemd, ta.qsize, ta.np2, ta.nlev);
+# else
+  const QExtremaHConst<ko::MachineTraits>
+    q_min(q_min_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2),
+    q_max(q_max_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2);
+# endif
 #endif
   const auto np1 = ta.np1;
   const auto n0_qdp = ta.n0_qdp;
