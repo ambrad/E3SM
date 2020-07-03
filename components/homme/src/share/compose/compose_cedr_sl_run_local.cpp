@@ -17,7 +17,6 @@ void solve_local (const Int ie, const Int k, const Int q,
                   const Real Qm, V5& qdp_c, V4& q_c) {
   cedr_assert(np == np_);
   static const Int np2 = np_*np_;
-  cedr_kernel_assert(np <= max_np);
 
   Real wa[np2], qlo[np2], qhi[np2], y[np2], x[np2];
   Real rhom = 0;
@@ -136,8 +135,8 @@ void run_local (CDR<MT>& cdr, CDRT* cedr_cdr_p,
                 const Data& d, Real* q_min_r, const Real* q_max_r,
                 const Int nets, const Int nete, const bool scalar_bounds,
                 const Int limiter_option) {
-  cedr_assert(ta.np == np_);
   const auto& ta = *d.ta;
+  cedr_assert(ta.np == np_);
   static const Int np = np_, np2 = np_*np_;
   const Int nlev = ta.nlev, qsize = ta.qsize, nlevwrem = cdr.nsuplev*cdr.nsublev;
 
