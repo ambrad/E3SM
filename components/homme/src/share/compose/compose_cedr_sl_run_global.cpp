@@ -51,14 +51,15 @@ static void run_cdr (CDR<MT>& q) {
 #endif
 }
 
-template <typename MT, typename CDRT>
+template <int np_, typename MT, typename CDRT>
 void run_global (CDR<MT>& cdr, CDRT* cedr_cdr_p,
                  const Data& d, Real* q_min_r, const Real* q_max_r,
                  const Int nets, const Int nete) {
   Timer t("01_write_global");
   const auto& ta = *d.ta;
-  const Int np = ta.np, np2 = np*np, nlev = ta.nlev, qsize = ta.qsize,
-    nlevwrem = cdr.nsuplev*cdr.nsublev;
+  cedr_assert(ta.np == np_);
+  static const Int np = np_, np2 = np_*np_;
+  const Int nlev = ta.nlev, qsize = ta.qsize, nlevwrem = cdr.nsuplev*cdr.nsublev;
   cedr_assert(np <= 4);
   
 #ifdef COMPOSE_PORT_DEV_VIEWS
@@ -153,11 +154,11 @@ template <typename MT>
 void run_global (CDR<MT>& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
                  const Int nets, const Int nete) {
   if (dynamic_cast<typename CDR<MT>::QLTT*>(cdr.cdr.get()))
-    run_global<MT, typename CDR<MT>::QLTT>(
+    run_global<4, MT, typename CDR<MT>::QLTT>(
       cdr, dynamic_cast<typename CDR<MT>::QLTT*>(cdr.cdr.get()),
       d, q_min_r, q_max_r, nets, nete);
   else if (dynamic_cast<typename CDR<MT>::CAAST*>(cdr.cdr.get()))
-    run_global<MT, typename CDR<MT>::CAAST>(
+    run_global<4, MT, typename CDR<MT>::CAAST>(
       cdr, dynamic_cast<typename CDR<MT>::CAAST*>(cdr.cdr.get()),
       d, q_min_r, q_max_r, nets, nete);
   else

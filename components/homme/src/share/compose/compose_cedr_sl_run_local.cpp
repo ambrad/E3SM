@@ -5,7 +5,8 @@
 namespace homme {
 namespace sl {
 
-template <typename CV2, typename CV4, typename CV5, typename QV5,
+template <int np_,
+          typename CV2, typename CV4, typename CV5, typename QV5,
           typename V4, typename V5>
 KOKKOS_FUNCTION
 void solve_local (const Int ie, const Int k, const Int q,
@@ -14,11 +15,11 @@ void solve_local (const Int ie, const Int k, const Int q,
                   const CV2& spheremp, const CV4& dp3d_c,
                   const QV5& q_min, const CV5& q_max,
                   const Real Qm, V5& qdp_c, V4& q_c) {
-  static constexpr Int max_np = 4, max_np2 = max_np*max_np;
-  const Int np2 = np*np;
+  cedr_assert(np == np_);
+  static const Int np2 = np_*np_;
   cedr_kernel_assert(np <= max_np);
 
-  Real wa[max_np2], qlo[max_np2], qhi[max_np2], y[max_np2], x[max_np2];
+  Real wa[np2], qlo[np2], qhi[np2], y[np2], x[np2];
   Real rhom = 0;
   for (Int g = 0; g < np2; ++g) {
     const Real rhomij = dp3d_c(ie,np1,g,k) * spheremp(ie,g);
@@ -32,9 +33,8 @@ void solve_local (const Int ie, const Int k, const Int q,
   if (scalar_bounds) {
     qlo[0] = idx_qext(q_min,ie,q,0,k);
     qhi[0] = idx_qext(q_max,ie,q,0,k);
-    const Int N = ko::min(max_np2, np2);
-    for (Int i = 1; i < N; ++i) qlo[i] = qlo[0];
-    for (Int i = 1; i < N; ++i) qhi[i] = qhi[0];
+    for (Int i = 1; i < np2; ++i) qlo[i] = qlo[0];
+    for (Int i = 1; i < np2; ++i) qhi[i] = qhi[0];
     // We can use either 2-norm minimization or ClipAndAssuredSum for
     // the local filter. CAAS is the faster. It corresponds to limiter
     // = 0. 2-norm minimization is the same in spirit as limiter = 8,
@@ -48,7 +48,6 @@ void solve_local (const Int ie, const Int k, const Int q,
       cedr::local::caas(np2, wa, Qm, qlo, qhi, y, x);
     }
   } else {
-    const Int N = ko::min(max_np2, np2);
     for (Int g = 0; g < np2; ++g) {
       qlo[g] = idx_qext(q_min,ie,q,g,k);
       qhi[g] = idx_qext(q_max,ie,q,g,k);
@@ -64,29 +63,28 @@ void solve_local (const Int ie, const Int k, const Int q,
         cedr::local::caas(np2, wa, Qm, qlo, qhi, y, x, false /* clip */);
         // Clip for numerics against the cell extrema.
         Real qlo_s = qlo[0], qhi_s = qhi[0];
-        for (Int i = 1; i < N; ++i) {
+        for (Int i = 1; i < np2; ++i) {
           qlo_s = ko::min(qlo_s, qlo[i]);
           qhi_s = ko::max(qhi_s, qhi[i]);
         }
-        for (Int i = 0; i < N; ++i)
+        for (Int i = 0; i < np2; ++i)
           x[i] = ko::max(qlo_s, cedr::impl::min(qhi_s, x[i]));
       }
       if (info == 0 || trial == 1) break;
       switch (trial) {
       case 0: {
         Real qlo_s = qlo[0], qhi_s = qhi[0];
-        for (Int i = 1; i < N; ++i) {
+        for (Int i = 1; i < np2; ++i) {
           qlo_s = ko::min(qlo_s, qlo[i]);
           qhi_s = ko::max(qhi_s, qhi[i]);
         }
-        const Int N = ko::min(max_np2, np2);
-        for (Int i = 0; i < N; ++i) qlo[i] = qlo_s;
-        for (Int i = 0; i < N; ++i) qhi[i] = qhi_s;
+        for (Int i = 0; i < np2; ++i) qlo[i] = qlo_s;
+        for (Int i = 0; i < np2; ++i) qhi[i] = qhi_s;
       } break;
       case 1: {
         const Real q = Qm / rhom;
-        for (Int i = 0; i < N; ++i) qlo[i] = ko::min(qlo[i], q);
-        for (Int i = 0; i < N; ++i) qhi[i] = ko::max(qhi[i], q);                
+        for (Int i = 0; i < np2; ++i) qlo[i] = ko::min(qlo[i], q);
+        for (Int i = 0; i < np2; ++i) qhi[i] = ko::max(qhi[i], q);                
       } break;
       }
     }
@@ -133,23 +131,24 @@ Int vertical_caas_backup (const Int n, Real* rhom,
   return status;
 }
 
-template <typename MT, typename CDRT>
+template <int np_, typename MT, typename CDRT>
 void run_local (CDR<MT>& cdr, CDRT* cedr_cdr_p,
                 const Data& d, Real* q_min_r, const Real* q_max_r,
                 const Int nets, const Int nete, const bool scalar_bounds,
                 const Int limiter_option) {
+  cedr_assert(ta.np == np_);
   const auto& ta = *d.ta;
-  const Int np = ta.np, np2 = np*np, nlev = ta.nlev, qsize = ta.qsize,
-    nlevwrem = cdr.nsuplev*cdr.nsublev;
+  static const Int np = np_, np2 = np_*np_;
+  const Int nlev = ta.nlev, qsize = ta.qsize, nlevwrem = cdr.nsuplev*cdr.nsublev;
 
 #ifdef COMPOSE_PORT_DEV_VIEWS
   const auto q_min = ta.q_min;
   const auto q_max = ta.q_max;
 #else
   const QExtremaH<ko::MachineTraits>
-    q_min(q_min_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2);
+    q_min(q_min_r, ta.nelemd, ta.qsize, ta.nlev, np2);
   const QExtremaHConst<ko::MachineTraits>
-    q_max(q_max_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2);
+    q_max(q_max_r, ta.nelemd, ta.qsize, ta.nlev, np2);
 #endif
   const auto np1 = ta.np1;
   const auto n1_qdp = ta.n1_qdp;
@@ -224,9 +223,9 @@ void run_local (CDR<MT>& cdr, CDRT* cedr_cdr_p,
       // Redistribute mass in the horizontal direction of each level.
       for (Int i = 0; i < n; ++i) {
         const Int k = k0 + i;
-        solve_local(ie, k, q, np1, n1_qdp, np,
-                    scalar_bounds, limiter_option,
-                    spheremp, dp3d_c, q_min, q_max, Qm[i], qdp_c, q_c);
+        solve_local<np_>(ie, k, q, np1, n1_qdp, np,
+                         scalar_bounds, limiter_option,
+                         spheremp, dp3d_c, q_min, q_max, Qm[i], qdp_c, q_c);
       }
     } else {
       for (Int sbli = 0; sbli < nsublev; ++sbli) {
@@ -237,9 +236,9 @@ void run_local (CDR<MT>& cdr, CDRT* cedr_cdr_p,
                              nsublev*ie + sbli);
         const auto lci = ie2lci[ie_idx];
         const Real Qm = cedr_cdr.get_Qm(lci, ti);
-        solve_local(ie, k, q, np1, n1_qdp, np,
-                    scalar_bounds, limiter_option,
-                    spheremp, dp3d_c, q_min, q_max, Qm, qdp_c, q_c);
+        solve_local<np_>(ie, k, q, np1, n1_qdp, np,
+                         scalar_bounds, limiter_option,
+                         spheremp, dp3d_c, q_min, q_max, Qm, qdp_c, q_c);
       }
     }
   };
@@ -253,11 +252,11 @@ void run_local (CDR<MT>& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
                 const Int nets, const Int nete, const bool scalar_bounds,
                 const Int limiter_option) {
   if (dynamic_cast<typename CDR<MT>::QLTT*>(cdr.cdr.get()))
-    run_local<MT, typename CDR<MT>::QLTT>(
+    run_local<4, MT, typename CDR<MT>::QLTT>(
       cdr, dynamic_cast<typename CDR<MT>::QLTT*>(cdr.cdr.get()),
       d, q_min_r, q_max_r, nets, nete, scalar_bounds, limiter_option);
   else if (dynamic_cast<typename CDR<MT>::CAAST*>(cdr.cdr.get()))
-    run_local<MT, typename CDR<MT>::CAAST>(
+    run_local<4, MT, typename CDR<MT>::CAAST>(
       cdr, dynamic_cast<typename CDR<MT>::CAAST*>(cdr.cdr.get()),
       d, q_min_r, q_max_r, nets, nete, scalar_bounds, limiter_option);
   else

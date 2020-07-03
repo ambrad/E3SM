@@ -48,19 +48,24 @@ struct HommeFormatArray {
   typedef T value_type;
 
   HommeFormatArray (Int nelemd, Int np2_, Int nlev_ = -1, Int qsized_ = -1, Int ntimelev_ = -1)
-    : nlev(nlev_), np2(np2_), qsized(qsized_), ntimelev(ntimelev_)
-  { ie_data_ptr.resize(nelemd); }
+    : nlev(nlev_), qsized(qsized_), ntimelev(ntimelev_)
+  {
+    assert(np2_ == np2);
+    ie_data_ptr.resize(nelemd);
+  }
 
   void set_ie_ptr (const Int ie, T* ptr) {
     check(ie);
     ie_data_ptr[ie] = ptr;
   }
 
+  KOKKOS_FORCEINLINE_FUNCTION
   T& operator() (const Int& ie, const Int& i) const {
     static_assert(rank == 2, "rank 2 array");
     assert(i >= 0);
     return *(ie_data_ptr[ie] + i);
   }
+  KOKKOS_FORCEINLINE_FUNCTION 
   T& operator() (const Int& ie, const Int& k, const Int& lev) const {
     static_assert(rank == 3, "rank 3 array");
     assert(k >= 0);
@@ -68,6 +73,7 @@ struct HommeFormatArray {
     check(ie, k, lev);
     return *(ie_data_ptr[ie] + lev*np2 + k);
   }
+  KOKKOS_FORCEINLINE_FUNCTION 
   T& operator() (const Int& ie, const Int& q_or_timelev, const Int& k, const Int& lev) const {
     static_assert(rank == 4, "rank 4 array");
     assert(q_or_timelev >= 0);
@@ -76,6 +82,7 @@ struct HommeFormatArray {
     check(ie, k, lev, q_or_timelev);
     return *(ie_data_ptr[ie] + (q_or_timelev*nlev + lev)*np2 + k);
   }
+  KOKKOS_FORCEINLINE_FUNCTION 
   T& operator() (const Int& ie, const Int& timelev, const Int& q, const Int& k, const Int& lev) const {
     static_assert(rank == 5, "rank 4 array");
     assert(timelev >= 0);
@@ -87,10 +94,13 @@ struct HommeFormatArray {
   }
 
 private:
+  static const int np2 = 16;
   std::vector<T*> ie_data_ptr;
-  const Int nlev, np2, qsized, ntimelev;
+  const Int nlev, qsized, ntimelev;
 
-  void check (Int ie, Int k = -1, Int lev = -1, Int q_or_timelev = -1, Int timelev = -1) const {
+  KOKKOS_FORCEINLINE_FUNCTION
+  void check (Int ie, Int k = -1, Int lev = -1, Int q_or_timelev = -1,
+              Int timelev = -1) const {
 #ifdef COMPOSE_BOUNDS_CHECK
     assert(ie >= 0 && ie < static_cast<Int>(ie_data_ptr.size()));
     if (k >= 0) assert(k < np2);
