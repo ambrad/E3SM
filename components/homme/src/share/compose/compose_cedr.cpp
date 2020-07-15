@@ -276,8 +276,8 @@ make_tree_over_index_range (const Int cs, const Int ce,
 }
 
 qlt::tree::Node::Ptr
-combine_superlevels(const qlt::tree::Node::Ptr& horiz_tree, const Int horiz_nleaf,
-                    const Int nsuplev) {
+combine_superlevels (const qlt::tree::Node::Ptr& horiz_tree, const Int horiz_nleaf,
+                     const Int nsuplev) {
   cedr_assert(horiz_tree->nkids > 0);
   // In this tree, cellidx 0 is the top super level.
   const auto suptree = make_tree_over_index_range(0, nsuplev);
@@ -345,6 +345,7 @@ struct ReproSumReducer :
   int operator() (const cedr::mpi::Parallel& p, Real* sendbuf, Real* rcvbuf,
                   int nlocal, int count, MPI_Op op) const override {
     cedr_assert(op == MPI_SUM);
+    //todo Protect with omp master once the rest of CAAS is threaded.
     compose_repro_sum(sendbuf, rcvbuf, nlocal, count, fcomm_);
     return 0;
   }
