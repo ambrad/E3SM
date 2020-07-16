@@ -251,7 +251,7 @@ contains
     end if
 
     ! CEDR works with either classical SL or IR.
-    if (semi_lagrange_cdr_alg > 1) then
+    if (semi_lagrange_cdr_alg > 1 .and. semi_lagrange_cdr_alg /= 42) then
        scalar_q_bounds = 0
        call cedr_sl_set_pointers_begin(nets, nete)
        do ie = nets, nete
