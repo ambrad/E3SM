@@ -33,7 +33,7 @@ template <typename MT> using QExtremaConst = ko::Const<QExtrema<MT> >;
 
 template <typename VT> KOKKOS_FORCEINLINE_FUNCTION
 typename VT::value_type& idx_qext (const VT& qe, int ie, int q, int g, int lev) {
-#ifdef COMPOSE_PORT
+#ifdef COMPOSE_PORT_DEV_VIEWS
   return qe(ie,q,g,lev);
 #else
   return qe(ie,q,lev,g);
