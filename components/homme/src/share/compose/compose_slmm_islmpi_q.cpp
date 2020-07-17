@@ -390,7 +390,7 @@ void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
                       &dep_points(tci, tgt_lev, tgt_k, 0), rx, ry);
     // q from calc_q_extrema is being overwritten, so have to use qdp/dp.
     Real dp[16];
-    for (Int k = 0; k < 16; ++k) dp[k] = dp_src(slid, tgt_k, tgt_lev);
+    for (Int k = 0; k < 16; ++k) dp[k] = dp_src(slid, k, tgt_lev);
     // Block for auto-vectorization.
     for (Int iqo = 0; iqo < qsize; iqo += blocksize) {
       if (iqo + blocksize <= qsize) {
