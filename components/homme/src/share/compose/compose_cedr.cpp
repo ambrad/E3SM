@@ -386,9 +386,14 @@ CDR<MT>::CDR (Int cdr_alg_, Int ngblcell_, Int nlclcell_, Int nlev_, bool use_sg
   } else if (Alg::is_caas(alg)) {
     const Int n_accum_in_place = n_id_in_suplev*(cdr_over_super_levels ?
                                                  nsuplev : 1);
-    const auto caas = std::make_shared<CAAST>(
-      p, nlclcell*n_accum_in_place,
-      std::make_shared<ReproSumReducer<MT> >(fcomm, n_accum_in_place));
+    auto reducer = std::make_shared<ReproSumReducer<MT> >(fcomm, n_accum_in_place);
+#ifdef KOKKOS_ENABLE_CUDA
+    // We don't have repro_sum on GPU, so use raw and non-decomp-BFB
+    // MPI_Allreduce for now.
+    if (ko::OnGpu<ko::MachineTraits::DES>::value)
+      reducer = nullptr;
+#endif
+    const auto caas = std::make_shared<CAAST>(p, nlclcell*n_accum_in_place, reducer);
     cdr = caas;
   } else {
     cedr_throw_if(true, "Invalid semi_lagrange_cdr_alg " << alg);
