@@ -25,9 +25,6 @@
 #ifdef COMPOSE_PORT_DEV_VIEWS
 # pragma message "COMPOSE_PORT_DEV_VIEWS"
 #endif
-#ifdef COMPOSE_WITH_HOMMEXX
-# pragma message "COMPOSE_WITH_HOMMEXX"
-#endif
 
 namespace slmm {
 template <typename ES> SLMM_KIF

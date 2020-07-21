@@ -49,10 +49,6 @@
 # endif
 #endif
 
-#if defined HOMMEXX_VECTOR_SIZE
-# define COMPOSE_WITH_HOMMEXX
-#endif
-
 // Define COMPOSE_PORT if we're on or mimicking the GPU or being used by
 // Hommexx. COMPOSE_PORT is used to provide separate code paths when necessary.
 #if ! defined COMPOSE_PORT

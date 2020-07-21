@@ -392,15 +392,15 @@ void QLT<ES>::run () {
             const auto k1 = ns_->node_h(n->kids[1]);
             cedr::qlt::impl::solve_node_problem(
               problem_type,
-              bd_.l2r_data( n->offset*l2rndps),
+               bd_.l2r_data( n->offset*l2rndps),
               &bd_.l2r_data( n->offset*l2rndps + l2rbdi),
-              bd_.r2l_data( n->offset*r2lndps + r2lbdi),
-              bd_.l2r_data(k0->offset*l2rndps),
+               bd_.r2l_data( n->offset*r2lndps + r2lbdi),
+               bd_.l2r_data(k0->offset*l2rndps),
               &bd_.l2r_data(k0->offset*l2rndps + l2rbdi),
-              bd_.r2l_data(k0->offset*r2lndps + r2lbdi),
-              bd_.l2r_data(k1->offset*l2rndps),
+               bd_.r2l_data(k0->offset*r2lndps + r2lbdi),
+               bd_.l2r_data(k1->offset*l2rndps),
               &bd_.l2r_data(k1->offset*l2rndps + l2rbdi),
-              bd_.r2l_data(k1->offset*r2lndps + r2lbdi),
+               bd_.r2l_data(k1->offset*r2lndps + r2lbdi),
               this->options_.prefer_numerical_mass_conservation_to_numerical_bounds);
           }
         }

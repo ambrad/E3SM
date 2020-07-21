@@ -277,12 +277,10 @@ void slmm_init_impl (
 
 void slmm_query_bufsz (homme::Int* sendsz, homme::Int* recvsz) {
   slmm_assert(g_csl_mpi);
-#ifndef COMPOSE_WITH_HOMMEXX
   if (ko::OnGpu<ko::MachineTraits::DES>::value) {
     *sendsz = *recvsz = 0;
     return;
   }
-#endif
   homme::Int s = 0, r = 0;
   for (const auto e : g_csl_mpi->sendsz) s += e;
   for (const auto e : g_csl_mpi->recvsz) r += e;
