@@ -3,7 +3,7 @@
 #include <memory>
 #include <vector>
 
-#include "compose.hpp"
+#include "compose_homme.hpp"
 #include "compose_test.hpp"
 
 #define pr(m) do {                              \
@@ -327,14 +327,7 @@ public:
   { return format_strings_as_list(inputs, 6); }
 };
 
-const char* WindFieldType::inputs[] =
-  {"nondivergent", "divergent"};
-
-// Fortran array wrappers.
-template <typename T> using FA2 = ko::View<T**,   ko::LayoutLeft,ko::HostSpace>;
-template <typename T> using FA3 = ko::View<T***,  ko::LayoutLeft,ko::HostSpace>;
-template <typename T> using FA4 = ko::View<T****, ko::LayoutLeft,ko::HostSpace>;
-template <typename T> using FA5 = ko::View<T*****,ko::LayoutLeft,ko::HostSpace>;
+const char* WindFieldType::inputs[] = {"nondivergent", "divergent"};
 
 extern "C"
 void compose_repro_sum(const Real* send, Real* recv,
@@ -367,9 +360,9 @@ struct StandaloneTracersTester {
 
   void fill_ics (const Int ie, const Real* rp_elem, const Real* rdp,
                  Real* rqdp) const {
-    const FA3<const Real> p_elem(rp_elem, 3, np, np); // (rad, lon, lat)
-    const FA3<const Real> dp(rdp, np, np, nlev);
-    const FA4<Real> qdp(rqdp, np, np, nlev, qsize_d);
+    const homme::FA3<const Real> p_elem(rp_elem, 3, np, np); // (rad, lon, lat)
+    const homme::FA3<const Real> dp(rdp, np, np, nlev);
+    const homme::FA4<Real> qdp(rqdp, np, np, nlev, qsize_d);
     for (Int q = 0; q < qsize; ++q)
       for (Int k = 0; k < nlev; ++k)
         for (Int j = 0; j < np; ++j)
@@ -383,8 +376,8 @@ struct StandaloneTracersTester {
   }
 
   void fill_v (const Int ie, const Real* rp_elem, const Real t, Real* rv) const {
-    const FA3<const Real> p_elem(rp_elem, 3, np, np);
-    const FA4<Real> v(rv, np, np, 2, nlev);
+    const homme::FA3<const Real> p_elem(rp_elem, 3, np, np);
+    const homme::FA4<Real> v(rv, np, np, 2, nlev);
     NonDivergentWindField f;
     for (Int k = 0; k < nlev; ++k)
       for (Int j = 0; j < np; ++j)
@@ -426,16 +419,17 @@ struct StandaloneTracersTester {
       0
 #endif
       ;
-    const FA3<const Real> p_elem(rp_elem, 3, np, np);
-    const FA2<const Real> spheremp(rspheremp, np, np);
-    const FA3<const Real> dp(rdp, np, np, nlev);
-    const FA4<const Real> qdp(rqdp, np, np, nlev, qsize_d);
-    FA3<Real> l2_num(l2_num_.data(), nelemd, nlev, qsize),
-              l2_den(l2_den_.data(), nelemd, nlev, qsize);
-    FA2<Real> mass0(mass0_.data(), nelemd), massf(massf_.data(), nelemd);
+    const homme::FA3<const Real> p_elem(rp_elem, 3, np, np);
+    const homme::FA2<const Real> spheremp(rspheremp, np, np);
+    const homme::FA3<const Real> dp(rdp, np, np, nlev);
+    const homme::FA4<const Real> qdp(rqdp, np, np, nlev, qsize_d);
+    homme::FA3<Real> l2_num(l2_num_.data(), nelemd, nlev, qsize),
+                     l2_den(l2_den_.data(), nelemd, nlev, qsize);
+    homme::FA2<Real> mass0(mass0_.data(), nelemd, qsize),
+                     massf(massf_.data(), nelemd, qsize);
     Real* const wrk = wrk_.data() + np*np*nlev*qsize*tid;
     fill_ics(ie, rp_elem, nullptr, wrk);
-    const FA4<const Real> q0(wrk, np, np, nlev, qsize_d);
+    const homme::FA4<const Real> q0(wrk, np, np, nlev, qsize_d);
     for (Int q = 0; q < qsize; ++q) {
       Real m0 = 0, mf = 0;
       for (Int k = 0; k < nlev; ++k) {
@@ -470,7 +464,8 @@ struct StandaloneTracersTester {
     {
 #endif
       {
-        FA2<Real> l2_num(wrk_.data(), nlev, qsize), l2_den(wrk_.data() + nr, nlev, qsize);
+        homme::FA2<Real> l2_num(wrk_.data(), nlev, qsize),
+                         l2_den(wrk_.data() + nr, nlev, qsize);
         compose_repro_sum(l2_num_.data(), l2_num.data(), nelemd, nr, fcomm);
         compose_repro_sum(l2_den_.data(), l2_den.data(), nelemd, nr, fcomm);
         if (rank == root)
