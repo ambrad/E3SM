@@ -17,6 +17,10 @@
 
 using namespace Homme;
 
+extern "C" {
+void cleanup_f90();
+} // extern "C"
+
 class Random {
   using rngalg = std::mt19937_64;
   using rpdf = std::uniform_real_distribution<Real>;

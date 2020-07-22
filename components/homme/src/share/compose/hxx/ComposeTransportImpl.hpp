@@ -97,8 +97,6 @@ struct ComposeTransportImpl {
     }
     m_tu = TeamUtils<ExecSpace>(m_policy);
     nslot = std::min(nelem, m_tu.get_num_ws_slots());
-    m_ig_policy = Homme::get_default_team_policy<ExecSpace>(nelem);
-    m_tu_ig = TeamUtils<ExecSpace>(m_ig_policy);
   }
 
   int requested_buffer_size () const {

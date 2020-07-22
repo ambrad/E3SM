@@ -4,8 +4,8 @@
  * See the file 'COPYRIGHT' in the HOMMEXX/src/share/cxx directory
  *******************************************************************************/
 
-#ifndef HOMMEXX_DIRK_FUNCTOR_HPP
-#define HOMMEXX_DIRK_FUNCTOR_HPP
+#ifndef HOMMEXX_COMPOSE_TRANSPORT_HPP
+#define HOMMEXX_COMPOSE_TRANSPORT_HPP
 
 #include "Types.hpp"
 #include <memory>
@@ -13,29 +13,27 @@
 namespace Homme {
 
 class FunctorsBuffersManager;
-class DirkFunctorImpl;
 class Elements;
 class HybridVCoord;
+class ComposeTransportImpl;
 
-class DirkFunctor {
+class ComposeTransport {
 public:
-  DirkFunctor(const int nelem);
-  DirkFunctor(const DirkFunctor &) = delete;
-  DirkFunctor &operator=(const DirkFunctor &) = delete;
+  ComposeTransport(const int nelem);
+  ComposeTransport(const ComposeTransport &) = delete;
+  ComposeTransport &operator=(const ComposeTransport &) = delete;
 
-  ~DirkFunctor();
+  ~ComposeTransport();
 
   int requested_buffer_size() const;
   void init_buffers(const FunctorsBuffersManager& fbm);
 
-  // Top-level interface, equivalent to compute_stage_value_dirk.
-  void run(int nm1, Real alphadt_nm1, int n0, Real alphadt_n0, int np1, Real dt2,
-           const Elements& elements, const HybridVCoord& hvcoord);
+  void run();
 
 private:
-  std::unique_ptr<DirkFunctorImpl> m_dirk_impl;
+  std::unique_ptr<ComposeTransportImpl> m_compose_impl;
 };
 
 } // Namespace Homme
 
-#endif // HOMMEXX_DIRK_FUNCTOR_HPP
+#endif // HOMMEXX_COMPOSE_TRANSPORT_HPP
