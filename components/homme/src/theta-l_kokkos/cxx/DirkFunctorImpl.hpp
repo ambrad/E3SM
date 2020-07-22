@@ -382,9 +382,9 @@ struct DirkFunctorImpl {
       } // Newton iteration
       kv.team_barrier();
 
-      if (it>=maxiter) {
-        printf ("[DIRK] WARNING! Newton reached max iteration count, with deltaerr = %3.17f\n",deltaerr);
-      }
+      if (it >= maxiter)
+        printf ("[DIRK] WARNING! Newton reached max iteration count,"
+                " with deltaerr = %3.17f\n", deltaerr);
 
       // Update phi_np1.
       loop_ki(kv, nlev, nvec, [&] (int k, int i) { phi_np1(k,i) = phi_n0(k,i) + dt2*grav*w_np1(k,i); });
