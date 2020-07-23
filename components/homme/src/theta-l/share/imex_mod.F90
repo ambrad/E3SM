@@ -315,12 +315,13 @@ contains
           dphi(:,:,nlev) = dphi_n0(:,:,nlev) - dt2*g*(w_np1(:,:,nlev) + x(:,:,nlev))
 
           alphas = 1
-          if (maxval(dphi(i,j,1:nlev)) >= 0) then
+          if (maxval(dphi(:,:,1:nlev)) >= 0) then
              do j=1,np
                 do i=1,np
                    if (maxval(dphi(i,j,1:nlev)) < 0) cycle
 
                    ! Step halfway to the distance at which at least one dphi is 0.
+                   alpha = 1
                    do k = 1,nlev
                       if (k < nlev) then
                          dx = x(i,j,k+1) - x(i,j,k)
@@ -552,9 +553,9 @@ contains
           if (k.eq.1) then
             norminfJ0(i,j) = max(norminfJ0(i,j),(abs(JacD(i,j,k))+abs(JacU(i,j,k))))
           elseif (k.eq.nlev) then
-            norminfJ0(i,j) = max(norminfJ0(i,j),(abs(JacL(k-1,i,j))+abs(JacD(i,j,k))))
+            norminfJ0(i,j) = max(norminfJ0(i,j),(abs(JacL(i,j,k-1))+abs(JacD(i,j,k))))
           else
-            norminfJ0(i,j) = max(norminfJ0(i,j),(abs(JacL(k-1,i,j))+abs(JacD(i,j,k))+ &
+            norminfJ0(i,j) = max(norminfJ0(i,j),(abs(JacL(i,j,k-1))+abs(JacD(i,j,k))+ &
               abs(JacU(i,j,k))))
           end if
       end do
@@ -668,7 +669,7 @@ contains
 
     ! Compare y and b
     relerr = maxval(abs(y - b), 3)/maxval(abs(b), 3)
-    if (hybrid%masterthread .and. maxval(relerr) > 1e3*epsilon(1.0_real_kind)) then
+    if (hybrid%masterthread .and. maxval(relerr) > 1e5*epsilon(1.0_real_kind)) then
        write(iulog,*) 'FAIL test_tridiag_solver', maxval(relerr)
     end if
   end subroutine test_tridiag_solver

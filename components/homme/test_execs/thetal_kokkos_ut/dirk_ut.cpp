@@ -324,14 +324,14 @@ TEST_CASE ("dirk_pieces_testing") {
     const auto dlm = cmvdc(dl), dm = cmvdc(d), dum = cmvdc(du);
 
     FA3 dp3df("dp3df", nlev), dphif("dphif", nlev), pnhf("pnhf", nlev);
-    FA3d dlf("dlf", np, np, nlev-1), df("df", np, np, nlev), duf("duf", np, np, nlev-1);
+    FA3 dlf("dlf", nlev-1), df("df", nlev), duf("duf", nlev-1);
     c2f(dp3d, dp3df);
     c2f(dphi, dphif);
     c2f(pnh, pnhf);
     get_dirk_jacobian_f90(dlf.data(), df.data(), duf.data(), dt,
                           dp3df.data(), dphif.data(), pnhf.data());
 
-    const auto eq = [&] (const decltype(dm)& dc, const int os, const FA3d& df,
+    const auto eq = [&] (const decltype(dm)& dc, const int os, const FA3& df,
                          const int n) {
       for (int i = 0; i < np; ++i)
         for (int j = 0; j < np; ++j) {
@@ -340,7 +340,7 @@ TEST_CASE ("dirk_pieces_testing") {
           pi = idx / dfi::packn,
           si = idx % dfi::packn;
           for (int k = 0; k < n; ++k)
-            REQUIRE(equal(dc(k+os,pi)[si], df(i,j,k), 1e3*eps));
+            REQUIRE(equal(dc(k+os,pi)[si], df(k,i,j), 1e3*eps));
         }
     };
     eq(dlm, 1, dlf, nlev-1); eq(dm, 0, df, nlev); eq(dum, 0, duf, nlev-1);
@@ -400,19 +400,25 @@ TEST_CASE ("dirk_pieces_testing") {
           idx = np*i + j,
           pi = idx / dfi::packn,
           si = idx % dfi::packn;
-        for (int k = 0; k < nlev; ++k) {
-          const auto a = x1m(k,pi)[si];
-          const auto b = x2m(k,pi)[si];
-          const auto re = std::abs(a - b)/std::abs(1 + std::abs(a));
-          REQUIRE(re <= 1e4*std::numeric_limits<Real>::epsilon());
-        }
+        for (int k = 0; k < nlev; ++k)
+          REQUIRE(almost_equal(x1m(k,pi)[si], x2m(k,pi)[si], 1e4*eps));
       }
     // Test BFB F90 and C++.
     for (int i = 0; i < np; ++i)
-      for (int j = 0; j < np; ++j)
-        tridiag_diagdom_bfb_a1x1(nlev, &dlf(i,j,0), &df(i,j,0), &duf(i,j,0),
-                                 &x3(i,j,0), sizeof(Real));
-    eq(x2m, 0, x3, nlev);
+      for (int j = 0; j < np; ++j) {
+        static const int n = NUM_PHYSICAL_LEV;
+        Real dl[n], d[n], du[n];
+        for (int k = 0; k < nlev-1; ++k) dl[k] = dlf(k,i,j);
+        for (int k = 0; k < nlev  ; ++k) d [k] = df (k,i,j);
+        for (int k = 0; k < nlev-1; ++k) du[k] = duf(k,i,j);
+        tridiag_diagdom_bfb_a1x1(nlev, dl, d, du, &x3(i,j,0), sizeof(Real));
+        const auto
+          idx = np*i + j,
+          pi = idx / dfi::packn,
+          si = idx % dfi::packn;
+        for (int k = 0; k < nlev; ++k)
+          REQUIRE(equal(x2m(k,pi)[si], x3(i,j,k), 1e3*eps));
+      }
   }
 
   SECTION ("pnh_and_exner_from_eos") {
