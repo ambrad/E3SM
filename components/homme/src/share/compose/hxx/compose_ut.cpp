@@ -105,7 +105,8 @@ static bool equal (const Real& a, const Real& b,
 }
 
 TEST_CASE ("compose_transport_testing") {
-  const auto fails = ComposeTransport::run_unit_tests();
+  ComposeTransport ct(1);
+  const auto fails = ct.run_unit_tests();
   for (const auto& e : fails) printf("%s %d\n", e.first.c_str(), e.second);
   REQUIRE(fails.empty());
 }

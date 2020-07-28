@@ -30,7 +30,7 @@ public:
 
   void run();
 
-  static std::vector<std::pair<std::string, int> > run_unit_tests();
+  std::vector<std::pair<std::string, int> > run_unit_tests();
 
 private:
   std::unique_ptr<ComposeTransportImpl> m_compose_impl;

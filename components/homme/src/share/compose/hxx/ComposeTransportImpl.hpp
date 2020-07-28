@@ -7,6 +7,10 @@
 #ifndef HOMMEXX_COMPOSE_TRANSPORT_IMPL_HPP
 #define HOMMEXX_COMPOSE_TRANSPORT_IMPL_HPP
 
+#include "compose_kokkos.hpp"
+#include "compose_cedr_cdr.hpp"
+#include "compose_slmm_islmpi.hpp"
+
 #include "Types.hpp"
 #include "FunctorsBuffersManager.hpp"
 #include "Elements.hpp"
@@ -48,6 +52,14 @@ struct ComposeTransportImpl {
                    Kokkos::LayoutRight, ExecSpace,
                    Kokkos::MemoryTraits<Kokkos::Unmanaged> >;
 
+  homme::islmpi::IslMpi<ko::MachineTraits>::Ptr islet;
+  homme::CDR<ko::MachineTraits>::Ptr cdr;
+
+  Work m_work;
+  TeamPolicy m_policy;
+  TeamUtils<ExecSpace> m_tu;
+  int nslot;
+
   KOKKOS_INLINE_FUNCTION
   static WorkSlot get_work_slot (const Work& w, const int& wi, const int& si) {
     using Kokkos::subview;
@@ -56,17 +68,12 @@ struct ComposeTransportImpl {
     return subview(w, wi, si, a, a);
   }
 
-  Work m_work;
-  TeamPolicy m_policy;
-  TeamUtils<ExecSpace> m_tu;
-  int nslot;
-
   KOKKOS_INLINE_FUNCTION
   size_t shmem_size (const int team_size) const {
     return KernelVariables::shmem_size(team_size);
   }
 
-  ComposeTransportImpl (const int nelem)
+  ComposeTransportImpl (int nelem)
     : m_policy(1,1,1), m_tu(m_policy) // throwaway settings
   {
     init(nelem);

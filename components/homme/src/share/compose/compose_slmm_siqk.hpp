@@ -26,6 +26,7 @@ using homme::Real;
 
 namespace ko = Kokkos;
 
+#ifndef pr
 #define pr(m) do {                                          \
     int _pid_ = 0;                                          \
     MPI_Comm_rank(MPI_COMM_WORLD, &_pid_);                  \
@@ -45,6 +46,7 @@ static void prarr (const std::string& name, const T* const v, const size_t n) {
   pr(ss.str());
 }
 #define mprarr(m) siqk::prarr(#m, m.data(), m.size())
+#endif
 
 #define SIQK_THROW_IF(condition, message) do {                          \
     if (condition) {                                                    \
