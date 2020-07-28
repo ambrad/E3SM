@@ -103,7 +103,10 @@ struct Session {
   }
 
   // Call only in last line of last TEST_CASE.
-  static void delete_singleton () { s_session = nullptr; }
+  static void delete_singleton () {
+    if (s_session) s_session->cleanup();
+    s_session = nullptr;
+  }
 
 private:
   static std::shared_ptr<Session> s_session;
