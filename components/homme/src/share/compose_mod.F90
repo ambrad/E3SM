@@ -209,7 +209,7 @@ module compose_mod
 
 contains
 
-  subroutine compose_init(par, elem, GridVertex)
+  subroutine compose_init(par, elem, GridVertex, init_kokkos)
     use iso_c_binding, only: c_bool
     use parallel_mod, only: parallel_t, abortmp
     use dimensions_mod, only: np, nlev, qsize, qsize_d, nelem, nelemd
@@ -224,6 +224,8 @@ contains
     type (parallel_t), intent(in) :: par
     type (element_t), intent(in) :: elem(:)
     type (GridVertex_t), intent(in), target :: GridVertex(:)
+    logical, optional, intent(in) :: init_kokkos
+
     integer, allocatable :: &
          nbr_id_rank(:), nirptr(:), & ! (GID, rank) in local mesh patch, starting with own
          ! These are for non-scalable grid initialization, still used for RRM.
@@ -235,10 +237,14 @@ contains
     integer, allocatable :: owned_ids(:)
     integer, pointer :: rank2sfc(:) => null()
     integer, target :: null_target(1)
+    logical :: call_init_kokkos
 
 #ifdef HOMME_ENABLE_COMPOSE
     call t_startf('compose_init')
-    call kokkos_init()
+
+    call_init_kokkos = .true.
+    if (present(init_kokkos)) call_init_kokkos = init_kokkos
+    if (call_init_kokkos) call kokkos_init()
 
     use_sgi = sgi_is_initialized()
     hard_zero = .true.
@@ -328,11 +334,18 @@ contains
 #endif
   end subroutine compose_init
 
-  subroutine compose_finalize()
+  subroutine compose_finalize(finalize_kokkos)
+    logical, optional, intent(in) :: finalize_kokkos
+
+    logical :: call_finalize_kokkos
+
 #ifdef HOMME_ENABLE_COMPOSE
     call cedr_finalize()
     call slmm_finalize()
-    call kokkos_finalize()
+
+    call_finalize_kokkos = .true.
+    if (present(finalize_kokkos)) call_finalize_kokkos = finalize_kokkos
+    if (call_finalize_kokkos) call kokkos_finalize()
 #endif
   end subroutine compose_finalize
   

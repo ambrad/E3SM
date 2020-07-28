@@ -23,8 +23,17 @@
 using namespace Homme;
 
 extern "C" {
-void cleanup_f90();
+  void init_compose_f90(int ne, const Real* hyai, const Real* hybi,
+                        const Real* hyam, const Real* hybm, Real ps0);
+  void cleanup_compose_f90();
 } // extern "C"
+
+template <typename V>
+decltype(Kokkos::create_mirror_view(V())) cmvdc (const V& v) {
+  const auto h = Kokkos::create_mirror_view(v);
+  deep_copy(h, v);
+  return h;
+}
 
 class Random {
   using rngalg = std::mt19937_64;
@@ -44,7 +53,7 @@ struct Session {
   HybridVCoord h;
   Random r;
   Elements e;
-  const int ne = 2;
+  const int ne = 4;
   int nelemd;
 
   //Session () : r(269041989) {}
@@ -54,12 +63,20 @@ struct Session {
     auto& c = Context::singleton();
     c.create<HybridVCoord>().random_init(r.gen_seed());
     h = c.get<HybridVCoord>();
+
+    const auto hyai = cmvdc(h.hybrid_ai);
+    const auto hybi = cmvdc(h.hybrid_bi);
+    const auto hyam = cmvdc(h.hybrid_am);
+    const auto hybm = cmvdc(h.hybrid_bm);
+
+    init_compose_f90(ne, hyai.data(), hybi.data(), &hyam(0)[0], &hybm(0)[0], h.ps0);
+
     nelemd = c.get<Connectivity>().get_num_local_elements();
     e = c.create<Elements>();
   }
 
   void cleanup () {
-    cleanup_f90();
+    cleanup_compose_f90();
     auto& c = Context::singleton();
     c.finalize_singleton();
   }
@@ -73,7 +90,10 @@ struct Session {
   }
 
   // Call only in last line of last TEST_CASE.
-  static void delete_singleton () { s_session = nullptr; }
+  static void delete_singleton () {
+    if (s_session) s_session->cleanup();
+    s_session = nullptr;
+  }
 
 private:
   static std::shared_ptr<Session> s_session;
@@ -105,8 +125,12 @@ static bool equal (const Real& a, const Real& b,
 }
 
 TEST_CASE ("compose_transport_testing") {
+  auto& s = Session::singleton();
+
   ComposeTransport ct(1);
   const auto fails = ct.run_unit_tests();
   for (const auto& e : fails) printf("%s %d\n", e.first.c_str(), e.second);
   REQUIRE(fails.empty());
+
+  Session::delete_singleton();
 }
