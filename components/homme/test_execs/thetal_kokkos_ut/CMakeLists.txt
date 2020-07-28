@@ -267,6 +267,7 @@ SET (COMPOSE_UT_CXX_SRCS
 )
 
 SET (COMPOSE_UT_F90_SRCS
+  ${THETA_UT_DIR}/compose_interface.F90
   ${THETA_UT_DIR}/thetal_test_interface.F90
   ${SHARE_UT_DIR}/geometry_interface.F90
 )
