@@ -22,6 +22,7 @@ SET (EXEC_INCLUDE_DIRS
   ${UTILS_TIMING_SRC_DIR}
   ${UTILS_TIMING_DIR}
   ${SRC_SHARE_DIR}/cxx
+  ${SRC_SHARE_DIR}/compose
   ${CMAKE_BINARY_DIR}/src/share/cxx)
 
 # Find F90 files in share and test directories
