@@ -15,7 +15,7 @@ contains
          semi_lagrange_hv_q, cubed_sphere_map
     use geometry_interface_mod, only: GridVertex
     use bndry_mod, only: sort_neighbor_buffer_mapping
-    use compose_mod, only: compose_init, cedr_set_ie2gci
+    use compose_mod, only: compose_init, cedr_set_ie2gci, compose_set_null_bufs
     use sl_advection, only: sl_init1
 
     real (kind=real_kind), intent(in) :: hyai(nlevp), hybi(nlevp), hyam(nlev), hybm(nlev)
@@ -35,6 +35,7 @@ contains
     call initEdgeBuffer(par, edge_g, elem, 6*nlev+1)
     call sort_neighbor_buffer_mapping(par, elem, 1, nelemd)
     call compose_init(par, elem, GridVertex, init_kokkos=.false.)
+    call compose_set_null_bufs()
     do ie = 1, nelemd
        call cedr_set_ie2gci(ie, elem(ie)%vertex%number)
     end do

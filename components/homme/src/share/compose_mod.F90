@@ -375,6 +375,16 @@ contains
 #endif
   end subroutine compose_set_bufs
 
+  subroutine compose_set_null_bufs()
+    use kinds, only: real_kind
+    real(kind=real_kind), pointer :: n(:) => null()
+
+#ifdef HOMME_ENABLE_COMPOSE
+    call slmm_set_bufs(n, n, 0, 0)
+    call cedr_set_bufs(n, n, 0, 0)
+#endif
+  end subroutine compose_set_null_bufs
+
   subroutine compose_repro_sum(send, recv, nlocal, nfld, comm) bind(c)
     use iso_c_binding, only: c_int, c_double
 #ifdef CAM

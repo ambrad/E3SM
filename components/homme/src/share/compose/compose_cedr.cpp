@@ -427,9 +427,7 @@ void CDR<MT>::get_buffers_sizes (size_t& s1, size_t &s2) {
 
 template <typename MT>
 void CDR<MT>::set_buffers (Real* b1, Real* b2) {
-#ifndef COMPOSE_WITH_HOMMEXX
-  if ( ! ko::OnGpu<ko::MachineTraits::DES>::value)
-#endif
+  if ( ! ko::OnGpu<ko::MachineTraits::DES>::value && b1 && b2)
     cdr->set_buffers(b1, b2);
   cdr->finish_setup();
 }
