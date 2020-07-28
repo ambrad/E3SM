@@ -26,8 +26,7 @@ Int test_canpoa () {
 }
 
 template <typename ES>
-Int test_calc (const LocalMesh<ES>& m, const Int& tgt_ic)
-{
+Int test_calc (const LocalMesh<ES>& m, const Int& tgt_ic) {
   Int nerr = 0;
   // If a point is on the perim, then calc should return it as the nearest
   // point.

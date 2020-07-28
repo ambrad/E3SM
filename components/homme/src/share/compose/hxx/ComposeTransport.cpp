@@ -8,6 +8,8 @@
 #include "ComposeTransportImpl.hpp"
 #include "Context.hpp"
 
+#include "cedr_local.hpp"
+
 #include "profiling.hpp"
 
 #include <assert.h>
@@ -32,6 +34,15 @@ void ComposeTransport::init_buffers (const FunctorsBuffersManager& fbm) {
 void ComposeTransport::run () {
   GPTLstart("compute_step");
   GPTLstop("compute_step");
+}
+
+std::vector<std::pair<std::string, int> >
+ComposeTransport::run_unit_tests () {
+  std::vector<std::pair<std::string, int> > fails;
+  int ne;
+  ne = cedr::local::unittest();
+  if (ne) fails.push_back(std::make_pair(std::string("cedr::local"), ne));
+  return fails;
 }
 
 } // Namespace Homme

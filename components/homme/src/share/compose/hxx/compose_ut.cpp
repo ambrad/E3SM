@@ -1,8 +1,4 @@
-#include <catch2/catch.hpp>
-
-#include "ComposeTransportImpl.hpp"
-
-#include <random>
+#include "ComposeTransport.hpp"
 
 #include "Types.hpp"
 #include "Context.hpp"
@@ -10,10 +6,19 @@
 #include "mpi/Connectivity.hpp"
 #include "SimulationParams.hpp"
 #include "Elements.hpp"
+#include "HybridVCoord.hpp"
+#include "KernelVariables.hpp"
+#include "PhysicalConstants.hpp"
+#include "ElementOps.hpp"
+#include "profiling.hpp"
+#include "ErrorDefs.hpp"
 
 #include "utilities/TestUtils.hpp"
 #include "utilities/SyncUtils.hpp"
 #include "utilities/ViewUtils.hpp"
+
+#include <catch2/catch.hpp>
+#include <random>
 
 using namespace Homme;
 
@@ -100,4 +105,7 @@ static bool equal (const Real& a, const Real& b,
 }
 
 TEST_CASE ("compose_transport_testing") {
+  const auto fails = ComposeTransport::run_unit_tests();
+  for (const auto& e : fails) printf("%s %d\n", e.first.c_str(), e.second);
+  REQUIRE(fails.empty());
 }
