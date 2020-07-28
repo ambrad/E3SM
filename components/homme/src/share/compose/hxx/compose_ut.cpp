@@ -26,6 +26,7 @@ extern "C" {
   void init_compose_f90(int ne, const Real* hyai, const Real* hybi,
                         const Real* hyam, const Real* hybm, Real ps0);
   void cleanup_compose_f90();
+  void run_compose_standalone_test_f90();
 } // extern "C"
 
 template <typename V>
@@ -131,6 +132,8 @@ TEST_CASE ("compose_transport_testing") {
   const auto fails = ct.run_unit_tests();
   for (const auto& e : fails) printf("%s %d\n", e.first.c_str(), e.second);
   REQUIRE(fails.empty());
+
+  run_compose_standalone_test_f90();
 
   Session::delete_singleton();
 }
