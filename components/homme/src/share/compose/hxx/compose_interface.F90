@@ -15,6 +15,7 @@ contains
     use geometry_interface_mod, only: GridVertex
     use bndry_mod, only: sort_neighbor_buffer_mapping
     use compose_mod, only: compose_init, cedr_set_ie2gci
+    use sl_advection, only: sl_init1
 
     real (kind=real_kind), intent(in) :: hyai(nlevp), hybi(nlevp), hyam(nlev), hybm(nlev)
     integer (kind=c_int), value, intent(in) :: ne
@@ -31,6 +32,7 @@ contains
     do ie = 1, nelemd
        call cedr_set_ie2gci(ie, elem(ie)%vertex%number)
     end do
+    call sl_init1(par, elem)
   end subroutine init_compose_f90
 
   subroutine cleanup_compose_f90() bind(c)

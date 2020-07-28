@@ -88,7 +88,6 @@ contains
        if (par%masterproc .and. nu_q > 0 .and. semi_lagrange_hv_q > 0) &
             write(iulog,*) 'COMPOSE> use HV; nu_q, all:', nu_q, semi_lagrange_hv_q
        nslots = nlev*qsize
-       call interpolate_tracers_init()
        ! Technically a memory leak, but the array persists for the entire
        ! run, so not a big deal for now.
        allocate(dep_points_all(np,np,nlev,size(elem)))
