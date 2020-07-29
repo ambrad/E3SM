@@ -28,7 +28,7 @@ contains
     real (kind=real_kind) :: mp(np,np), dvv(np,np)
 
     transport_alg = 12
-    semi_lagrange_cdr_alg = 42
+    semi_lagrange_cdr_alg = 3
     semi_lagrange_cdr_check = semi_lagrange_cdr_alg /= 42
     semi_lagrange_hv_q = 0
     cubed_sphere_map = 2
@@ -45,11 +45,11 @@ contains
 
     call sort_neighbor_buffer_mapping(par, elem, 1, nelemd)
     call compose_init(par, elem, GridVertex, init_kokkos=.false.)
-    call compose_set_null_bufs()
     do ie = 1, nelemd
        call cedr_set_ie2gci(ie, elem(ie)%vertex%number)
     end do
     call sl_init1(par, elem)
+    call compose_set_null_bufs()
   end subroutine init_compose_f90
 
   subroutine cleanup_compose_f90() bind(c)
