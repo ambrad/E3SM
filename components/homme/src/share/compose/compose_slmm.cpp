@@ -190,6 +190,8 @@ void dev_fin_threads () {
 }
 } // namespace amb
 
+namespace compose {
+namespace test {
 // Valid after slmm_init_local_mesh_ is called.
 int slmm_unittest () {
   amb::dev_init_threads();
@@ -201,12 +203,14 @@ int slmm_unittest () {
       ne += slmm::unittest(m, m.tgt_elem);
     }
     if (ne)
-      fprintf(stderr, "slmm_unittest: slmm::unittest returned %d\n", ne);
+      fprintf(stderr, "FAIL slmm::unittest returned %d\n", ne);
     nerr += ne;
   }
   amb::dev_fin_threads();
   return nerr;
 }
+} // namespace test
+} // namespace compose
 
 #include <cstdlib>
 

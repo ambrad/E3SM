@@ -1,4 +1,5 @@
 #include "ComposeTransport.hpp"
+#include "compose_test.hpp"
 
 #include "Types.hpp"
 #include "Context.hpp"
@@ -127,6 +128,9 @@ static bool equal (const Real& a, const Real& b,
 
 TEST_CASE ("compose_transport_testing") {
   auto& s = Session::singleton();
+
+  REQUIRE(compose::test::slmm_unittest() == 0);
+  REQUIRE(compose::test::cedr_unittest() == 0);
 
   ComposeTransport ct(1);
   const auto fails = ct.run_unit_tests();

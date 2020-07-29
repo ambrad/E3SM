@@ -6,23 +6,7 @@
 #include "compose_homme.hpp"
 #include "compose_test.hpp"
 
-#define pr(m) do {                              \
-    std::stringstream _ss_;                     \
-    _ss_ << m << std::endl;                     \
-    std::cerr << _ss_.str();                    \
-  } while (0)
-#define prc(m) pr(#m << " | " << (m))
-#define puf(m)"(" << #m << " " << (m) << ")"
-#define pu(m) << " " << puf(m)
-template<typename T>
-static void prarr (const std::string& name, const T* const v, const size_t n) {
-  std::cerr << name << ": ";
-  for (size_t i = 0; i < n; ++i) std::cerr << " " << v[i];
-  std::cerr << "\n";
-}
-#define mprarr(m) siqk::prarr(#m, m.data(), m.size())
-
-namespace {
+namespace compose {
 typedef double Real;
 typedef int Int;
 typedef Int Size;
@@ -30,7 +14,7 @@ typedef Int Size;
 namespace ko = Kokkos;
 
 template <typename T> inline constexpr T square (const T& x) { return x*x; }
-template<typename T> inline constexpr T cube (const T& x) { return x*x*x; }
+template <typename T> inline constexpr T cube (const T& x) { return x*x*x; }
 
 struct consts {
   static constexpr Real earth_radius_m = 6.376e6;
@@ -391,6 +375,7 @@ struct StandaloneTracersTester {
           v(i,j,1,k) = uv[1];
         }
   }
+
   // Error data.
   std::vector<Real> l2_num_, l2_den_, wrk_, mass0_, massf_;
 
@@ -495,10 +480,13 @@ struct StandaloneTracersTester {
 };
  
 static StandaloneTracersTester::Ptr g_stt;
-} // namespace anon
+} // namespace compose
 
-extern "C" void compose_unittest () {
-  slmm_unittest();
+using namespace compose;
+
+extern "C" void compose_unittest () { 
+  test::slmm_unittest();
+  test::cedr_unittest();
 }
 
 extern "C" void compose_stt_init (

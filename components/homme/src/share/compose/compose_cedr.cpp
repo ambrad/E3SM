@@ -512,6 +512,26 @@ void insert (const Data::Ptr& d, const Int ie, const Int ptridx, Real* array,
 } // namespace sl
 } // namespace homme
 
+namespace compose {
+namespace test {
+
+int cedr_unittest () {
+  int nerr = 0, ne;
+  ne = cedr::local::unittest();
+  if (ne) printf("FAIL cedr::local::unittest returned %d\n", ne);
+  nerr += ne;
+  ne = homme::test_tree_maker();
+  if (ne) printf("FAIL homme::test_tree_maker %d\n", ne);
+  nerr += ne;
+  ne = homme::CDR<ko::MachineTraits>::QLTT::unittest();
+  if (ne) printf("FAIL homme::CDR::QLTT::unittest %d\n", ne);
+  nerr += ne;
+  return nerr;
+}
+
+} // namespace test
+} // namespace compose
+
 static homme::CDR<ko::MachineTraits>::Ptr g_cdr;
 
 extern "C" void
@@ -543,17 +563,16 @@ extern "C" void cedr_set_null_bufs () { cedr_set_bufs(nullptr, nullptr, 0, 0); }
 
 extern "C" void cedr_unittest (const homme::Int fcomm, homme::Int* nerrp) {
 #if 0
+  auto p = cedr::mpi::make_parallel(MPI_Comm_f2c(fcomm));
   cedr_assert(g_cdr);
   cedr_assert(g_cdr->tree);
-  auto p = cedr::mpi::make_parallel(MPI_Comm_f2c(fcomm));
   if (homme::CDR::Alg::is_qlt(g_cdr->alg))
     *nerrp = cedr::qlt::test::test_qlt(p, g_cdr->tree, g_cdr->nsublev*g_cdr->ncell,
                                        1, false, false, true, false);
   else
     *nerrp = cedr::caas::test::unittest(p);
 #endif
-  *nerrp += homme::test_tree_maker();
-  *nerrp += homme::CDR<ko::MachineTraits>::QLTT::unittest();
+  *nerrp += compose::test::cedr_unittest();
 }
 
 extern "C" void cedr_set_ie2gci (const homme::Int ie, const homme::Int gci) {
