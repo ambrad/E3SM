@@ -51,10 +51,10 @@ public:
 };
 
 struct Session {
+  static const int ne = 4;
   HybridVCoord h;
   Random r;
   Elements e;
-  const int ne = 4;
   int nelemd;
 
   //Session () : r(269041989) {}

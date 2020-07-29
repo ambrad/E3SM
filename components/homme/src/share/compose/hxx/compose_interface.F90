@@ -76,7 +76,7 @@ contains
     dom_mt(0)%start = 1
     dom_mt(0)%end = nelemd
     transport_alg = 19
-    nmax = 6*ne
+    nmax = 7*ne
     statefreq = 2*ne
     call compose_test(par, hvcoord, dom_mt, elem)
     transport_alg = 12
