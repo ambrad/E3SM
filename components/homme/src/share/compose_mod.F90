@@ -51,6 +51,9 @@ module compose_mod
        real(kind=c_double), intent(in) :: sendbuf(sendsz), recvbuf(recvsz)
      end subroutine cedr_set_bufs
 
+     subroutine cedr_set_null_bufs() bind(c)
+     end subroutine cedr_set_null_bufs
+
      subroutine cedr_set_ie2gci(ie, gci) bind(c)
        use iso_c_binding, only: c_int
        integer(kind=c_int), value, intent(in) :: ie, gci
@@ -158,6 +161,9 @@ module compose_mod
        integer(kind=c_int), intent(in) :: sendsz, recvsz
        real(kind=c_double), intent(in) :: sendbuf(sendsz), recvbuf(recvsz)
      end subroutine slmm_set_bufs
+
+     subroutine slmm_set_null_bufs() bind(c)
+     end subroutine slmm_set_null_bufs
 
      subroutine slmm_init_finalize() bind(c)
      end subroutine slmm_init_finalize
@@ -276,7 +282,7 @@ contains
        ! These lines fix ifort -check catches. The data are not used,
        ! but the function call cedr_init_impl makes -check think they
        ! are used.
-       allocate(owned_ids(1))
+       allocate(owned_ids(1), sc2gci(1), sc2rank(1))
        rank2sfc => null_target
     end if
     if (use_sgi) then
@@ -377,11 +383,10 @@ contains
 
   subroutine compose_set_null_bufs()
     use kinds, only: real_kind
-    real(kind=real_kind), pointer :: n(:) => null()
 
 #ifdef HOMME_ENABLE_COMPOSE
-    call slmm_set_bufs(n, n, 0, 0)
-    call cedr_set_bufs(n, n, 0, 0)
+    call slmm_set_null_bufs()
+    call cedr_set_null_bufs()
 #endif
   end subroutine compose_set_null_bufs
 

@@ -15,6 +15,8 @@ contains
          semi_lagrange_hv_q, cubed_sphere_map
     use geometry_interface_mod, only: GridVertex
     use bndry_mod, only: sort_neighbor_buffer_mapping
+    use reduction_mod, only: initreductionbuffer, red_sum, red_min, red_max
+    use parallel_mod, only: global_shared_buf, nrepro_vars
     use compose_mod, only: compose_init, cedr_set_ie2gci, compose_set_null_bufs
     use sl_advection, only: sl_init1
 
@@ -26,13 +28,21 @@ contains
     real (kind=real_kind) :: mp(np,np), dvv(np,np)
 
     transport_alg = 12
-    semi_lagrange_cdr_alg = 3
-    semi_lagrange_cdr_check = .true.
+    semi_lagrange_cdr_alg = 42
+    semi_lagrange_cdr_check = semi_lagrange_cdr_alg /= 42
     semi_lagrange_hv_q = 0
     cubed_sphere_map = 2
     qsize = 4
+
     call init_f90(ne, hyai, hybi, hyam, hybm, dvv, mp, ps0)
+
     call initEdgeBuffer(par, edge_g, elem, 6*nlev+1)
+
+    call initReductionBuffer(red_sum,5)
+    call initReductionBuffer(red_min,1)
+    call initReductionBuffer(red_max,1)
+    allocate(global_shared_buf(nelemd, nrepro_vars))
+
     call sort_neighbor_buffer_mapping(par, elem, 1, nelemd)
     call compose_init(par, elem, GridVertex, init_kokkos=.false.)
     call compose_set_null_bufs()
@@ -54,7 +64,7 @@ contains
     use thetal_test_interface, only: deriv, hvcoord
     use compose_test_mod, only: compose_test
     use domain_mod, only: domain1d_t
-    use control_mod, only: transport_alg
+    use control_mod, only: transport_alg, statefreq
     use time_mod, only: nmax
     use thread_mod, only: hthreads, vthreads
 
@@ -67,6 +77,7 @@ contains
     dom_mt(0)%end = nelemd
     transport_alg = 19
     nmax = 6*ne
+    statefreq = 2*ne
     call compose_test(par, hvcoord, dom_mt, elem)
     transport_alg = 12
     deallocate(dom_mt)

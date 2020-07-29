@@ -300,6 +300,8 @@ void slmm_set_bufs (homme::Real* sendbuf, homme::Real* recvbuf,
   amb::dev_fin_threads();
 }
 
+void slmm_set_null_bufs () { slmm_set_bufs(nullptr, nullptr, 0, 0); }
+
 void slmm_get_mpi_pattern (homme::Int* sl_mpi) {
   *sl_mpi = g_csl_mpi ? 1 : 0;
 }

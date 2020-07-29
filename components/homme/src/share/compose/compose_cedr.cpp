@@ -539,6 +539,8 @@ extern "C" void cedr_set_bufs (homme::Real* sendbuf, homme::Real* recvbuf,
   g_cdr->set_buffers(sendbuf, recvbuf);
 }
 
+extern "C" void cedr_set_null_bufs () { cedr_set_bufs(nullptr, nullptr, 0, 0); }
+
 extern "C" void cedr_unittest (const homme::Int fcomm, homme::Int* nerrp) {
 #if 0
   cedr_assert(g_cdr);
