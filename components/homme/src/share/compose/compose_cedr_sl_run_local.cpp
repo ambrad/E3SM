@@ -15,7 +15,7 @@ void solve_local (const Int ie, const Int k, const Int q,
                   const CV2& spheremp, const CV4& dp3d_c,
                   const QV5& q_min, const CV5& q_max,
                   const Real Qm, V5& qdp_c, V4& q_c) {
-  cedr_assert(np == np_);
+  cedr_kernel_assert(np == np_);
   static const Int np2 = np_*np_;
 
   Real wa[np2], qlo[np2], qhi[np2], y[np2], x[np2];
