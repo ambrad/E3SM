@@ -27,9 +27,11 @@ add_library (${COMPOSE_LIBRARY}
   compose_cedr_sl_run_check.cpp
   compose_cedr_qlt.cpp
   cedr_util.cpp
-  cedr_test_randomized.cpp
-  cedr_qlt.cpp
   cedr_mpi.cpp
   cedr_local.cpp
-  cedr_caas.cpp)
+  cedr_bfb_tree_allreduce.cpp
+  cedr_tree.cpp
+  cedr_caas.cpp
+  cedr_qlt.cpp
+  cedr_test_randomized.cpp)
 link_to_kokkos(${COMPOSE_LIBRARY})

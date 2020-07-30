@@ -54,7 +54,7 @@ struct CDR {
   const Int ncell, nlclcell, nlev, nsublev, nsuplev;
   const bool threed, cdr_over_super_levels, caas_in_suplev, hard_zero;
   const cedr::mpi::Parallel::Ptr p;
-  cedr::qlt::tree::Node::Ptr tree; // Don't need this except for unit testing.
+  cedr::tree::Node::Ptr tree; // Don't need this except for unit testing.
   cedr::CDR::Ptr cdr;
   Idxs ie2gci; // Map Homme ie to Homme global cell index.
   Idxs ie2lci; // Map Homme ie to CDR local cell index (lclcellidx).

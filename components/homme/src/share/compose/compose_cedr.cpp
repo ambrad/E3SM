@@ -6,6 +6,7 @@ namespace ko = Kokkos;
 
 namespace homme {
 namespace qlt = cedr::qlt;
+namespace tree = cedr::tree;
 using cedr::Int;
 using cedr::Real;
 
@@ -24,7 +25,7 @@ Int rank2sfc_search (const Int* rank2sfc, const Int& nrank, const Int& sfc) {
 // Change leaf node->cellidx from index into space-filling curve to global cell
 // index. owned_ids is in SFC index order for this rank.
 void renumber (const Int nrank, const Int nelem, const Int my_rank, const Int* owned_ids,
-               const Int* rank2sfc, const qlt::tree::Node::Ptr& node) {
+               const Int* rank2sfc, const tree::Node::Ptr& node) {
   if (node->nkids) {
     for (Int k = 0; k < node->nkids; ++k)
       renumber(nrank, nelem, my_rank, owned_ids, rank2sfc, node->kids[k]);
@@ -37,7 +38,7 @@ void renumber (const Int nrank, const Int nelem, const Int my_rank, const Int* o
 }
 
 void renumber (const Int* sc2gci, const Int* sc2rank,
-               const qlt::tree::Node::Ptr& node) {
+               const tree::Node::Ptr& node) {
   if (node->nkids) {
     for (Int k = 0; k < node->nkids; ++k)
       renumber(sc2gci, sc2rank, node->kids[k]);
@@ -49,7 +50,7 @@ void renumber (const Int* sc2gci, const Int* sc2rank,
 }
 
 // Build a subtree over [0, nsublev).
-void add_sub_levels (const qlt::tree::Node::Ptr& node, const Int nsublev,
+void add_sub_levels (const tree::Node::Ptr& node, const Int nsublev,
                      const Int gci, const Int my_rank, const Int rank,
                      const bool calc_level, const Int slb, const Int sle) {
   if (slb+1 == sle) {
@@ -58,7 +59,7 @@ void add_sub_levels (const qlt::tree::Node::Ptr& node, const Int nsublev,
   } else {
     node->nkids = 2;
     for (Int k = 0; k < 2; ++k) {
-      auto kid = std::make_shared<qlt::tree::Node>();
+      auto kid = std::make_shared<tree::Node>();
       kid->parent = node.get();
       kid->rank = rank;
       node->kids[k] = kid;
@@ -72,7 +73,7 @@ void add_sub_levels (const qlt::tree::Node::Ptr& node, const Int nsublev,
 }
 
 // Recurse to each leaf and call add_sub_levels above.
-void add_sub_levels (const Int my_rank, const qlt::tree::Node::Ptr& node,
+void add_sub_levels (const Int my_rank, const tree::Node::Ptr& node,
                      const Int nsublev, const Int level_offset) {
   if (node->nkids) {
     for (Int k = 0; k < node->nkids; ++k)
@@ -123,13 +124,13 @@ private:
 // since here we're assigning the ranks ourselves. Similarly, it must
 // check for node->level >= 0; if the tree is partial, it is unable to
 // compute node level.
-qlt::tree::Node::Ptr
+tree::Node::Ptr
 make_my_tree_part (const oned::Mesh& m, const Int cs, const Int ce,
-                   const qlt::tree::Node* parent,
+                   const tree::Node* parent,
                    const Int& nrank, const Int* rank2sfc) {
   const auto my_rank = m.parallel()->rank();
   const Int cn = ce - cs, cn0 = cn/2;
-  qlt::tree::Node::Ptr n = std::make_shared<qlt::tree::Node>();
+  tree::Node::Ptr n = std::make_shared<tree::Node>();
   n->parent = parent;
   n->rank = rank2sfc_search(rank2sfc, nrank, cs);
   n->cellidx = n->rank == my_rank ? cs : -1;
@@ -161,7 +162,7 @@ make_my_tree_part (const oned::Mesh& m, const Int cs, const Int ce,
   return n;
 }
 
-qlt::tree::Node::Ptr
+tree::Node::Ptr
 make_my_tree_part (const cedr::mpi::Parallel::Ptr& p, const Int& ncells,
                    const Int& nrank, const Int* rank2sfc) {
   oned::Mesh m(ncells, p);
@@ -184,7 +185,7 @@ static size_t get_tree_height (size_t nleaf) {
   return height;
 }
 
-qlt::tree::Node::Ptr
+tree::Node::Ptr
 make_tree_sgi (const cedr::mpi::Parallel::Ptr& p, const Int nelem,
                const Int* owned_ids, const Int* rank2sfc, const Int nsublev) {
   // Partition 0:nelem-1, the space-filling curve space.
@@ -200,19 +201,19 @@ make_tree_sgi (const cedr::mpi::Parallel::Ptr& p, const Int nelem,
   return tree;
 }
 
-qlt::tree::Node::Ptr
+tree::Node::Ptr
 make_tree_non_sgi (const cedr::mpi::Parallel::Ptr& p, const Int nelem,
                    const Int* sc2gci, const Int* sc2rank, const Int nsublev) {
-  auto tree = qlt::tree::make_tree_over_1d_mesh(p, nelem);
+  auto tree = tree::make_tree_over_1d_mesh(p, nelem);
   renumber(sc2gci, sc2rank, tree);
   const auto my_rank = p->rank();
   if (nsublev > 1) add_sub_levels(my_rank, tree, nsublev, 0);
   return tree;
 }
 
-qlt::tree::Node::Ptr
-clone (const qlt::tree::Node::Ptr& in, const qlt::tree::Node* parent = nullptr) {
-  const auto out = std::make_shared<qlt::tree::Node>(*in);
+tree::Node::Ptr
+clone (const tree::Node::Ptr& in, const tree::Node* parent = nullptr) {
+  const auto out = std::make_shared<tree::Node>(*in);
   cedr_assert(out->rank == in->rank && out->level == in->level &&
               out->nkids == in->nkids && out->cellidx == in->cellidx);
   out->parent = parent;
@@ -221,7 +222,7 @@ clone (const qlt::tree::Node::Ptr& in, const qlt::tree::Node* parent = nullptr) 
   return out;
 }
 
-void renumber_leaves (const qlt::tree::Node::Ptr& node, const Int horiz_nleaf,
+void renumber_leaves (const tree::Node::Ptr& node, const Int horiz_nleaf,
                       const Int supidx) {
   if (node->nkids) {
     for (Int k = 0; k < node->nkids; ++k)
@@ -234,8 +235,8 @@ void renumber_leaves (const qlt::tree::Node::Ptr& node, const Int horiz_nleaf,
   }
 }
 
-void attach_and_renumber_horizontal_trees (const qlt::tree::Node::Ptr& supnode,
-                                           const qlt::tree::Node::Ptr& htree,
+void attach_and_renumber_horizontal_trees (const tree::Node::Ptr& supnode,
+                                           const tree::Node::Ptr& htree,
                                            const Int horiz_nleaf) {
   Int level = -1, rank;
   for (Int k = 0; k < supnode->nkids; ++k) {
@@ -258,11 +259,11 @@ void attach_and_renumber_horizontal_trees (const qlt::tree::Node::Ptr& supnode,
   supnode->rank = rank;
 }
 
-qlt::tree::Node::Ptr
+tree::Node::Ptr
 make_tree_over_index_range (const Int cs, const Int ce,
-                            const qlt::tree::Node* parent = nullptr) {
+                            const tree::Node* parent = nullptr) {
   const Int cn = ce - cs, cn0 = cn/2;
-  const auto n = std::make_shared<qlt::tree::Node>();
+  const auto n = std::make_shared<tree::Node>();
   n->parent = parent;
   if (cn == 1) {
     n->nkids = 0;
@@ -275,8 +276,8 @@ make_tree_over_index_range (const Int cs, const Int ce,
   return n;
 }
 
-qlt::tree::Node::Ptr
-combine_superlevels (const qlt::tree::Node::Ptr& horiz_tree, const Int horiz_nleaf,
+tree::Node::Ptr
+combine_superlevels (const tree::Node::Ptr& horiz_tree, const Int horiz_nleaf,
                      const Int nsuplev) {
   cedr_assert(horiz_tree->nkids > 0);
   // In this tree, cellidx 0 is the top super level.
@@ -285,7 +286,7 @@ combine_superlevels (const qlt::tree::Node::Ptr& horiz_tree, const Int horiz_nle
   return suptree;
 }
 
-void check_tree (const cedr::mpi::Parallel::Ptr& p, const qlt::tree::Node::Ptr& n,
+void check_tree (const cedr::mpi::Parallel::Ptr& p, const tree::Node::Ptr& n,
                  const Int nleaf) {
 #ifndef NDEBUG
   cedr_assert(n->nkids >= -1 && n->nkids <= 2);
@@ -304,7 +305,7 @@ void check_tree (const cedr::mpi::Parallel::Ptr& p, const qlt::tree::Node::Ptr& 
 #endif
 }
 
-qlt::tree::Node::Ptr
+tree::Node::Ptr
 make_tree (const cedr::mpi::Parallel::Ptr& p, const Int nelem,
            const Int* gid_data, const Int* rank_data, const Int nsublev,
            const bool use_sgi, const bool cdr_over_super_levels,

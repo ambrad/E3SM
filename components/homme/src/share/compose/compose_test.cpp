@@ -319,8 +319,8 @@ extern "C" void compose_stt_init (
 # pragma omp barrier
 # pragma omp master
 #endif
-    g_stt = std::make_shared<StandaloneTracersTester>(
-      np, nlev, qsize, qsize_d, nelemd);
+  g_stt = std::make_shared<StandaloneTracersTester>(
+    np, nlev, qsize, qsize_d, nelemd);
 #ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
 #endif

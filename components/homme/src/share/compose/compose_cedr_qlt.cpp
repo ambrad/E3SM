@@ -173,7 +173,7 @@ void QLT<ES>::reconcile_vertical (const Int problem_type, const Int bd_os,
 
 template <typename ES>
 QLT<ES>::QLT (const cedr::mpi::Parallel::Ptr& p, const cedr::Int& ncells,
-              const cedr::qlt::tree::Node::Ptr& tree, const cedr::CDR::Options& options,
+              const cedr::tree::Node::Ptr& tree, const cedr::CDR::Options& options,
               const cedr::Int& vertical_levels)
   : cedr::qlt::QLT<ES>(p, ncells, tree, options)
 {
@@ -194,7 +194,7 @@ void QLT<ES>::run () {
   using cedr::Int;
   using cedr::Real;
   using cedr::ProblemType;
-  using cedr::qlt::impl::NodeSets;
+  using cedr::tree::NodeSets;
   namespace mpi = cedr::mpi;
   auto& md_ = this->md_;
   auto& bd_ = this->bd_;

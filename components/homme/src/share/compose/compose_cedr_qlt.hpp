@@ -20,7 +20,7 @@ class QLT : public cedr::qlt::QLT<ES> {
 
 public:
   QLT(const cedr::mpi::Parallel::Ptr& p, const cedr::Int& ncells,
-      const cedr::qlt::tree::Node::Ptr& tree, const cedr::CDR::Options& options,
+      const cedr::tree::Node::Ptr& tree, const cedr::CDR::Options& options,
       const cedr::Int& vertical_levels);
 
   void run() override;
