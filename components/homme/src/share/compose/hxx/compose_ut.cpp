@@ -97,6 +97,10 @@ struct Session {
     s_session = nullptr;
   }
 
+  MPI_Comm get_mpi_comm () const {
+    return Context::singleton().get<Comm>().mpi_comm();
+  }
+
 private:
   static std::shared_ptr<Session> s_session;
 };
@@ -131,6 +135,7 @@ TEST_CASE ("compose_transport_testing") {
 
   REQUIRE(compose::test::slmm_unittest() == 0);
   REQUIRE(compose::test::cedr_unittest() == 0);
+  REQUIRE(compose::test::cedr_unittest(s.get_mpi_comm()) == 0);
 
   ComposeTransport ct(1);
   const auto fails = ct.run_unit_tests();

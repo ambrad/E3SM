@@ -590,6 +590,27 @@ int cedr_unittest () {
   return nerr;
 }
 
+int cedr_unittest (MPI_Comm mpi_comm) {
+  const auto p = cedr::mpi::make_parallel(mpi_comm);
+  int ne, nerr = 0;
+  ne = cedr::tree::oned::Mesh::unittest(p);
+  if (ne && p->amroot()) std::cerr << "FAIL: cedr::tree::oned::Mesh::unittest()\n";
+  nerr += ne;
+  ne = cedr::tree::oned::unittest(p);
+  if (ne && p->amroot()) std::cerr << "FAIL: tree::oned::test::unittest()\n";
+  nerr += ne;
+  ne = cedr::tree::unittest(p);
+  if (ne && p->amroot()) std::cerr << "FAIL: tree::unittest()\n";
+  nerr += ne;
+  ne = cedr::caas::test::unittest(p);
+  if (ne && p->amroot()) std::cerr << "FAIL: cedr::caas::test::unittest()\n";
+  nerr += ne;
+  ne = cedr::BfbTreeAllReducer<>::unittest(p);
+  if (ne && p->amroot()) std::cerr << "FAIL: cedr::BfbTreeAllReducer<>::unittest()\n";
+  nerr += ne;
+  return nerr;
+}
+
 } // namespace test
 } // namespace compose
 

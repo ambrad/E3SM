@@ -1,11 +1,14 @@
 #ifndef INCLUDE_COMPOSE_TEST_HPP
 #define INCLUDE_COMPOSE_TEST_HPP
 
+#include <mpi.h>
+
 namespace compose {
 namespace test {
 
 int slmm_unittest();
 int cedr_unittest();
+int cedr_unittest(MPI_Comm comm);
 
 typedef double Real;
 typedef int Int;
