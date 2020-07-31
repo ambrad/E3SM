@@ -133,14 +133,14 @@ static void copy (V dst, CV src, const Int n) {
 
 template <typename DV, typename SV>
 void resize_and_copy (DV& d, const SV& s,
-                      typename std::enable_if<DV::rank == 1>::type* = 0) {
+                      typename std::enable_if<DV::rank_dynamic == 1>::type* = 0) {
   ko::resize(d, nslices(s));
   ko::deep_copy(d, s);
 }
 
 template <typename DV, typename SV>
 void resize_and_copy (DV& d, const SV& s,
-                      typename std::enable_if<DV::rank == 2>::type* = 0) {
+                      typename std::enable_if<DV::rank_dynamic == 2>::type* = 0) {
   ko::resize(d, nslices(s), szslice(s));
   ko::deep_copy(d, s);
 }
