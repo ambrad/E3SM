@@ -351,12 +351,30 @@ struct ReproSumReducer :
   int operator() (const cedr::mpi::Parallel& p, Real* sendbuf, Real* rcvbuf,
                   int nlocal, int count, MPI_Op op) const override {
     cedr_assert(op == MPI_SUM);
+    const Real* sendptr = sendbuf;
+    Real* rcvptr = rcvbuf;
+    if (ko::OnGpu<typename MT::DES>::value) {
+      if (send.size() == 0) {
+        send = typename RealList::HostMirror("send", nlocal*count);
+        recv = typename RealList::HostMirror("recv", count);
+      }
+      cedr_assert(send.size() == nlocal*count);
+      ko::deep_copy(send, ConstRealList(sendbuf, nlocal*count));
+      sendptr = send.data();
+      rcvptr = recv.data();
+    }
     //todo Protect with omp master once the rest of CAAS is threaded.
-    compose_repro_sum(sendbuf, rcvbuf, nlocal, count, fcomm_);
+    compose_repro_sum(sendptr, rcvptr, nlocal, count, fcomm_);
+    if (ko::OnGpu<typename MT::DES>::value)
+      ko::deep_copy(RealList(rcvbuf, count), recv);
     return 0;
   }
 
 private:
+  typedef Kokkos::View<Real*, typename MT::DES> RealList;
+  typedef Kokkos::View<const Real*, typename MT::DES> ConstRealList;
+
+  mutable typename RealList::HostMirror send, recv;
   const Int fcomm_, n_accum_in_place_;
 };
 
@@ -423,7 +441,9 @@ CDR<MT>::CDR (Int cdr_alg_, Int ngblcell_, Int nlclcell_, Int nlev_, Int qsize_,
     const Int n_accum_in_place = n_id_in_suplev*(cdr_over_super_levels ?
                                                  nsuplev : 1);
     typename CAAST::UserAllReducer::Ptr reducer;
-    if (ko::OnGpu<ko::MachineTraits::DES>::value) {
+    //todo Measure perf on CPU and GPU of TreeReducer vs
+    // ReproSumReducer. For now, I'll continue to use ReproSumReducer.
+    if (false && ko::OnGpu<ko::MachineTraits::DES>::value) {
       tree = make_tree(p, ncell, gid_data, rank_data, 1, use_sgi, false, false);
       const Int nfield = 4*qsize*(cdr_over_super_levels ? 1 : nsuplev);
       reducer = std::make_shared<TreeReducer<MT> >(p, tree, ncell, nfield,
