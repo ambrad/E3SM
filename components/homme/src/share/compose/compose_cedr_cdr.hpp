@@ -51,7 +51,7 @@ struct CDR {
   enum { nsublev_per_suplev = 8 };
   
   const Alg::Enum alg;
-  const Int ncell, nlclcell, nlev, nsublev, nsuplev;
+  const Int ncell, nlclcell, nlev, qsize, nsublev, nsuplev;
   const bool threed, cdr_over_super_levels, caas_in_suplev, hard_zero;
   const cedr::mpi::Parallel::Ptr p;
   cedr::tree::Node::Ptr tree; // Don't need this except for unit testing.
@@ -62,14 +62,14 @@ struct CDR {
   Bools nonneg;
   BoolsH nonneg_h;
 
-  CDR(Int cdr_alg_, Int ngblcell_, Int nlclcell_, Int nlev_, bool use_sgi,
+  CDR(Int cdr_alg_, Int ngblcell_, Int nlclcell_, Int nlev_, Int qsize_, bool use_sgi,
       bool independent_time_steps, const bool hard_zero_, const Int* gid_data,
       const Int* rank_data, const cedr::mpi::Parallel::Ptr& p_, Int fcomm);
 
   CDR(const CDR&) = delete;
   CDR& operator=(const CDR&) = delete;
 
-  void init_tracers(const Int qsize, const bool need_conservation);
+  void init_tracers(const bool need_conservation);
 
   void get_buffers_sizes(size_t& s1, size_t &s2);
 

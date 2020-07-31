@@ -1,6 +1,7 @@
 #include "compose_cedr_cdr.hpp"
 #include "compose_cedr_sl.hpp"
 #include "compose_kokkos.hpp"
+#include "cedr_bfb_tree_allreduce.hpp"
 
 namespace ko = Kokkos;
 
@@ -360,11 +361,45 @@ private:
 };
 
 template <typename MT>
-CDR<MT>::CDR (Int cdr_alg_, Int ngblcell_, Int nlclcell_, Int nlev_, bool use_sgi,
-              bool independent_time_steps, const bool hard_zero_, const Int* gid_data,
-              const Int* rank_data, const cedr::mpi::Parallel::Ptr& p_, Int fcomm)
+struct TreeReducer :
+    public compose::CAAS<typename MT::DES>::UserAllReducer {
+  typedef typename cedr::BfbTreeAllReducer<typename MT::DES> Reducer;
+
+  TreeReducer (const cedr::mpi::Parallel::Ptr& p, const cedr::tree::Node::Ptr& tree,
+               Int nleaf, Int nfield, Int n_accum_in_place)
+    : n_accum_in_place_(n_accum_in_place), nfield_(nfield),
+      r_(p, tree, nleaf, nfield)
+  {}
+
+  int n_accum_in_place () const override { return n_accum_in_place_; }
+
+  int operator() (const cedr::mpi::Parallel& p, Real* sendbuf, Real* rcvbuf,
+                  int nlocal, int count, MPI_Op op) const override {
+    cedr_assert(op == MPI_SUM);
+    cedr_assert(count == nfield_);
+#ifdef HORIZ_OPENMP
+#   pragma omp barrier
+#   pragma omp master
+#endif
+    r_.allreduce(Reducer::ConstRealList(sendbuf), Reducer::RealList(rcvbuf), true);
+#ifdef HORIZ_OPENMP
+#   pragma omp barrier
+#endif
+    return 0;
+  }
+
+private:
+  const Int n_accum_in_place_, nfield_;
+  Reducer r_;
+};
+
+template <typename MT>
+CDR<MT>::CDR (Int cdr_alg_, Int ngblcell_, Int nlclcell_, Int nlev_, Int qsize_,
+              bool use_sgi, bool independent_time_steps, const bool hard_zero_,
+              const Int* gid_data, const Int* rank_data,
+              const cedr::mpi::Parallel::Ptr& p_, Int fcomm)
   : alg(Alg::convert(cdr_alg_)),
-    ncell(ngblcell_), nlclcell(nlclcell_), nlev(nlev_),
+    ncell(ngblcell_), nlclcell(nlclcell_), nlev(nlev_), qsize(qsize_),
     nsublev(Alg::is_suplev(alg) ? nsublev_per_suplev : 1),
     nsuplev((nlev + nsublev - 1) / nsublev),
     threed(independent_time_steps),
@@ -374,37 +409,43 @@ CDR<MT>::CDR (Int cdr_alg_, Int ngblcell_, Int nlclcell_, Int nlev_, bool use_sg
     p(p_), inited_tracers_(false)
 {
   const Int n_id_in_suplev = caas_in_suplev ? 1 : nsublev;
-  if (Alg::is_qlt(alg)) {
+  Int nleaf = 0;
+  if (Alg::is_qlt(alg) ||
+      (Alg::is_caas(alg) && ko::OnGpu<ko::MachineTraits::DES>::value)) {
     tree = make_tree(p, ncell, gid_data, rank_data, n_id_in_suplev, use_sgi,
                      cdr_over_super_levels, nsuplev);
+    nleaf = ncell*n_id_in_suplev;
+    if (cdr_over_super_levels) nleaf *= nsuplev;
+  }
+  if (Alg::is_qlt(alg)) {
     cedr::CDR::Options options;
     options.prefer_numerical_mass_conservation_to_numerical_bounds = true;
-    Int nleaf = ncell*n_id_in_suplev;
-    if (cdr_over_super_levels) nleaf *= nsuplev;
-    cdr = std::make_shared<QLTT>(p, nleaf, tree, options,
-                                 threed ? nsuplev : 0);
+    cdr = std::make_shared<QLTT>(p, nleaf, tree, options, threed ? nsuplev : 0);
     tree = nullptr;
   } else if (Alg::is_caas(alg)) {
     const Int n_accum_in_place = n_id_in_suplev*(cdr_over_super_levels ?
                                                  nsuplev : 1);
-    auto reducer = std::make_shared<ReproSumReducer<MT> >(fcomm, n_accum_in_place);
-#ifdef KOKKOS_ENABLE_CUDA
-    // We don't have repro_sum on GPU, so use raw and non-decomp-BFB
-    // MPI_Allreduce for now.
-    if (ko::OnGpu<ko::MachineTraits::DES>::value)
-      reducer = nullptr;
-#endif
+    typename CAAST::UserAllReducer::Ptr reducer;
+    if (ko::OnGpu<ko::MachineTraits::DES>::value) {
+      const Int nfield = 4*qsize;
+      reducer = std::make_shared<TreeReducer<MT> >(p, tree, nleaf, nfield,
+                                                   n_accum_in_place);
+      tree = nullptr;
+    } else {
+      reducer = std::make_shared<ReproSumReducer<MT> >(fcomm, n_accum_in_place);
+    }
     const auto caas = std::make_shared<CAAST>(p, nlclcell*n_accum_in_place, reducer);
     cdr = caas;
   } else {
     cedr_throw_if(true, "Invalid semi_lagrange_cdr_alg " << alg);
   }
+  cedr_assert( ! tree);
   ie2gci = Idxs("ie2gci", nlclcell);
   ie2gci_h = Kokkos::create_mirror_view(ie2gci);
 }
 
 template <typename MT>
-void CDR<MT>::init_tracers (const Int qsize, const bool need_conservation) {
+void CDR<MT>::init_tracers (const bool need_conservation) {
   nonneg = Bools("nonneg", qsize);
   nonneg_h = Kokkos::create_mirror_view(nonneg);
   Kokkos::deep_copy(nonneg_h, hard_zero);
@@ -486,7 +527,8 @@ void init_ie2lci (CDR<MT>& q) {
 template <typename MT>
 void init_tracers (CDR<MT>& q, const Int nlev, const Int qsize,
                    const bool need_conservation) {
-  q.init_tracers(qsize, need_conservation);
+  cedr_assert(q.qsize == qsize);
+  q.init_tracers(need_conservation);
 }
 
 namespace sl { // For sl_advection.F90
@@ -539,12 +581,13 @@ extern "C" void
 cedr_init_impl (const homme::Int fcomm, const homme::Int cdr_alg, const bool use_sgi,
                 const homme::Int* gid_data, const homme::Int* rank_data,
                 const homme::Int gbl_ncell, const homme::Int lcl_ncell,
-                const homme::Int nlev, const bool independent_time_steps, const bool hard_zero,
+                const homme::Int nlev, const homme::Int qsize,
+                const bool independent_time_steps, const bool hard_zero,
                 const homme::Int, const homme::Int) {
   const auto p = cedr::mpi::make_parallel(MPI_Comm_f2c(fcomm));
   g_cdr = std::make_shared<homme::CDR<ko::MachineTraits> >(
-    cdr_alg, gbl_ncell, lcl_ncell, nlev, use_sgi, independent_time_steps, hard_zero,
-    gid_data, rank_data, p, fcomm);
+    cdr_alg, gbl_ncell, lcl_ncell, nlev, qsize, use_sgi,
+    independent_time_steps, hard_zero, gid_data, rank_data, p, fcomm);
 }
 
 extern "C" void cedr_query_bufsz (homme::Int* sendsz, homme::Int* recvsz) {
