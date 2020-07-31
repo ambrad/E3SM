@@ -381,7 +381,8 @@ struct TreeReducer :
 #   pragma omp barrier
 #   pragma omp master
 #endif
-    r_.allreduce(Reducer::ConstRealList(sendbuf), Reducer::RealList(rcvbuf), true);
+    r_.allreduce(typename Reducer::ConstRealList(sendbuf, nlocal*count),
+                 typename Reducer::RealList(rcvbuf, count), true);
 #ifdef HORIZ_OPENMP
 #   pragma omp barrier
 #endif
@@ -409,15 +410,11 @@ CDR<MT>::CDR (Int cdr_alg_, Int ngblcell_, Int nlclcell_, Int nlev_, Int qsize_,
     p(p_), inited_tracers_(false)
 {
   const Int n_id_in_suplev = caas_in_suplev ? 1 : nsublev;
-  Int nleaf = 0;
-  if (Alg::is_qlt(alg) ||
-      (Alg::is_caas(alg) && ko::OnGpu<ko::MachineTraits::DES>::value)) {
+  if (Alg::is_qlt(alg)) {
     tree = make_tree(p, ncell, gid_data, rank_data, n_id_in_suplev, use_sgi,
                      cdr_over_super_levels, nsuplev);
-    nleaf = ncell*n_id_in_suplev;
+    Int nleaf = ncell*n_id_in_suplev;
     if (cdr_over_super_levels) nleaf *= nsuplev;
-  }
-  if (Alg::is_qlt(alg)) {
     cedr::CDR::Options options;
     options.prefer_numerical_mass_conservation_to_numerical_bounds = true;
     cdr = std::make_shared<QLTT>(p, nleaf, tree, options, threed ? nsuplev : 0);
@@ -427,8 +424,9 @@ CDR<MT>::CDR (Int cdr_alg_, Int ngblcell_, Int nlclcell_, Int nlev_, Int qsize_,
                                                  nsuplev : 1);
     typename CAAST::UserAllReducer::Ptr reducer;
     if (ko::OnGpu<ko::MachineTraits::DES>::value) {
-      const Int nfield = 4*qsize;
-      reducer = std::make_shared<TreeReducer<MT> >(p, tree, nleaf, nfield,
+      tree = make_tree(p, ncell, gid_data, rank_data, 1, use_sgi, false, false);
+      const Int nfield = 4*qsize*(cdr_over_super_levels ? 1 : nsuplev);
+      reducer = std::make_shared<TreeReducer<MT> >(p, tree, ncell, nfield,
                                                    n_accum_in_place);
       tree = nullptr;
     } else {
