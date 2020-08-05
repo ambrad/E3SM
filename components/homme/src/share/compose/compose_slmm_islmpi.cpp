@@ -480,10 +480,10 @@ void collect_gid_rank (IslMpi<MT>& cm, const Int* nbr_id_rank, const Int* nirptr
   }
   if (cm.halo == 2) extend_halo::collect_gid_rank<MT>(*cm.p, cm.ed_h);
 #ifdef COMPOSE_PORT
-  cm.own_dep_mask = typename IslMpi<MT>::ArrayD<char***>(
-    "own_dep_mask", cm.nelemd, cm.nlev, cm.np2);
-  cm.own_dep_list = typename IslMpi<MT>::ArrayD<Int*[3]>(
-    "own_dep_list", cm.nelemd*cm.nlev*cm.np2);
+  cm.own_dep_mask = typename IslMpi<MT>::DepMask("own_dep_mask",
+                                                 cm.nelemd, cm.nlev, cm.np2);
+  cm.own_dep_list = typename IslMpi<MT>::DepList("own_dep_list",
+                                                 cm.nelemd*cm.nlev*cm.np2);
 #endif
 }
 

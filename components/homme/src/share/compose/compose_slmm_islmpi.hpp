@@ -518,8 +518,10 @@ struct IslMpi {
   std::vector<Int> nlid_per_rank, sendsz, recvsz, sendmetasz, recvmetasz;
   ArrayD<Real**> rwork;
 
-  ArrayD<char***> own_dep_mask;
-  ArrayD<Int*[3]> own_dep_list;
+  typedef ArrayD<char***> DepMask;
+  typedef ArrayD<Int*[3]> DepList;
+  DepMask own_dep_mask;
+  DepList own_dep_list;
   Int own_dep_list_len;
 
   IslMpi (const mpi::Parallel::Ptr& ip, const typename Advecter::ConstPtr& advecter,
