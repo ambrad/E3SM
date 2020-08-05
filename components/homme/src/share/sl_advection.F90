@@ -11,9 +11,8 @@ module sl_advection
   use hybvcoord_mod, only      : hvcoord_t
   use time_mod, only           : TimeLevel_t, TimeLevel_Qdp
   use control_mod, only        : integration, test_case, hypervis_order, transport_alg, limiter_option
-  use edge_mod, only           : edgevpack_nlyr, edgevunpack_nlyr, edge_g, &
-       initghostbuffer3D, ghostVpack_unoriented, ghostVunpack_unoriented
-  use edgetype_mod, only       : EdgeDescriptor_t, EdgeBuffer_t, ghostbuffer3D_t
+  use edge_mod, only           : edgevpack_nlyr, edgevunpack_nlyr, edge_g
+  use edgetype_mod, only       : EdgeDescriptor_t, EdgeBuffer_t
   use hybrid_mod, only         : hybrid_t
   use bndry_mod, only          : bndry_exchangev
   use perf_mod, only           : t_startf, t_stopf, t_barrierf ! _EXTERNAL
@@ -29,7 +28,6 @@ module sl_advection
        half = 0.5_real_kind, one = 1.0_real_kind, two = 2.0_real_kind, &
        eps = epsilon(1.0_real_kind)
 
-  type (ghostBuffer3D_t)   :: ghostbuf_tr
   type (cartesian3D_t), allocatable :: dep_points_all(:,:,:,:) ! (np,np,nlev,nelemd)
   real(kind=real_kind), dimension(:,:,:,:,:), allocatable :: minq, maxq ! (np,np,nlev,qsize,nelemd)
 
@@ -139,7 +137,6 @@ contains
   subroutine prim_advec_tracers_remap_ALE(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete)
     use coordinate_systems_mod, only : cartesian3D_t, cartesian2D_t
     use dimensions_mod,         only : max_neigh_edges
-    use bndry_mod,              only : ghost_exchangevfull
     use interpolate_mod,        only : interpolate_tracers, minmax_tracers
     use control_mod,            only : dt_tracer_factor, nu_q, transport_alg, semi_lagrange_hv_q, &
          semi_lagrange_cdr_alg, semi_lagrange_cdr_check
@@ -557,63 +554,6 @@ contains
        end do
     end do
   end subroutine dss_Qdp
-
-  ! Replacement for edge_mod_base::ghostvpack_unoriented, which has a strange
-  ! 'threadsafe' module variable that causes a race condition when HORIZ and
-  ! COLUMN threading are on at the same time.
-  subroutine amb_ghostvpack_unoriented(edge,v,nc,vlyr,kptr,desc)
-    use edgetype_mod, only : edgedescriptor_t, ghostbuffer3d_t 
-    implicit none
-    type (Ghostbuffer3D_t),intent(inout) :: edge
-    integer,              intent(in)   :: vlyr
-    integer,              intent(in)   :: nc
-    real (kind=real_kind),intent(in)   :: v(nc,nc,vlyr)
-    integer,              intent(in)   :: kptr
-    type (EdgeDescriptor_t),intent(in) :: desc
-
-    integer :: k,l,l_local,is
-
-    do l_local=1,desc%actual_neigh_edges
-       l=desc%loc2buf(l_local)
-       is = desc%putmapP_ghost(l)
-       do k=1,vlyr
-          edge%buf(:,:,kptr+k,is) = v(:,:,k)  
-       enddo
-    end do
-  end subroutine amb_ghostvpack_unoriented
-
-  subroutine amb_ghostvunpack_unoriented(edge,v,nc,vlyr,kptr,desc,GlobalId,u)
-    use edgetype_mod, only : Ghostbuffer3d_t, EdgeDescriptor_t
-    implicit none
-
-    type (Ghostbuffer3D_t),intent(inout)  :: edge
-    integer,               intent(in)     :: vlyr
-    integer,               intent(in)     :: nc
-    real (kind=real_kind), intent(out)    :: v(nc,nc,vlyr,*)
-    integer,               intent(in)     :: kptr
-    type (EdgeDescriptor_t),intent(in)    :: desc
-    integer(kind=int_kind),intent(in)     :: GlobalId
-    real (kind=real_kind), intent(in)     :: u(nc,nc,vlyr)
-
-    integer :: k,l,n,is,m,pid,gid
-
-    m=0
-    gid = GlobalID
-    do n=1,desc%actual_neigh_edges+1
-       l = desc%loc2buf(m+1)
-       pid = desc%globalID(l)
-       if (m==desc%actual_neigh_edges .OR. pid < gid) then
-          gid = -1
-          v(:,:,:,n) = u(:,:,:)
-       else
-          m = m+1
-          is = desc%getmapP_ghost(l)
-          do k=1,vlyr
-             v(:,:,k,n) = edge%buf(:,:,kptr+k,is) 
-          enddo
-       end if
-    end do
-  end subroutine amb_ghostvunpack_unoriented
 
   subroutine perf_barrier(hybrid)
     use hybrid_mod, only : hybrid_t
