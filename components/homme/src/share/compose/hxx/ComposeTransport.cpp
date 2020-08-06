@@ -17,8 +17,12 @@
 
 namespace Homme {
 
-ComposeTransport::ComposeTransport (int nelem) {
-  m_compose_impl.reset(new ComposeTransportImpl(nelem));
+ComposeTransport::ComposeTransport () {
+  m_compose_impl.reset(new ComposeTransportImpl());
+}
+
+void ComposeTransport::reset (const SimulationParams& params) {
+  m_compose_impl->reset(params);
 }
 
 ComposeTransport::~ComposeTransport () = default;
@@ -29,6 +33,10 @@ int ComposeTransport::requested_buffer_size () const {
 
 void ComposeTransport::init_buffers (const FunctorsBuffersManager& fbm) {
   m_compose_impl->init_buffers(fbm);
+}
+
+void ComposeTransport::init_boundary_exchanges () {
+  m_compose_impl->init_boundary_exchanges();
 }
 
 void ComposeTransport::run () {

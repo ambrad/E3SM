@@ -137,7 +137,7 @@ TEST_CASE ("compose_transport_testing") {
   REQUIRE(compose::test::cedr_unittest() == 0);
   REQUIRE(compose::test::cedr_unittest(s.get_mpi_comm()) == 0);
 
-  ComposeTransport ct(1);
+  ComposeTransport ct;
   const auto fails = ct.run_unit_tests();
   for (const auto& e : fails) printf("%s %d\n", e.first.c_str(), e.second);
   REQUIRE(fails.empty());

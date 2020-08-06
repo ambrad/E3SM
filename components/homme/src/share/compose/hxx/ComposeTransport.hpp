@@ -13,20 +13,22 @@
 namespace Homme {
 
 class FunctorsBuffersManager;
-class Elements;
-class HybridVCoord;
 class ComposeTransportImpl;
+class SimulationParams;
 
 class ComposeTransport {
 public:
-  ComposeTransport(const int nelem);
+  ComposeTransport();
   ComposeTransport(const ComposeTransport &) = delete;
   ComposeTransport &operator=(const ComposeTransport &) = delete;
 
   ~ComposeTransport();
 
+  void reset(const SimulationParams& params);
+
   int requested_buffer_size() const;
   void init_buffers(const FunctorsBuffersManager& fbm);
+  void init_boundary_exchanges();
 
   void run();
 

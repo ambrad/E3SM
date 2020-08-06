@@ -11,15 +11,21 @@
 #include "compose_cedr_cdr.hpp"
 #include "compose_slmm_islmpi.hpp"
 
-#include "Types.hpp"
+#include "Context.hpp"
+#include "ReferenceElement.hpp"
+#include "ElementsGeometry.hpp"
+#include "ElementsDerivedState.hpp"
 #include "FunctorsBuffersManager.hpp"
-#include "Elements.hpp"
-#include "HybridVCoord.hpp"
-#include "KernelVariables.hpp"
-#include "PhysicalConstants.hpp"
-#include "ElementOps.hpp"
-#include "profiling.hpp"
 #include "ErrorDefs.hpp"
+#include "EulerStepFunctor.hpp"
+#include "HommexxEnums.hpp"
+#include "HybridVCoord.hpp"
+#include "SimulationParams.hpp"
+#include "SphereOperators.hpp"
+#include "Tracers.hpp"
+#include "profiling.hpp"
+#include "mpi/BoundaryExchange.hpp"
+#include "mpi/MpiBuffersManager.hpp"
 
 #include <cassert>
 
@@ -52,13 +58,25 @@ struct ComposeTransportImpl {
                    Kokkos::LayoutRight, ExecSpace,
                    Kokkos::MemoryTraits<Kokkos::Unmanaged> >;
 
+  struct Data {
+    int qsize, hv_q, np1_qdp;
+    bool independent_time_steps;
+  };
+
   homme::islmpi::IslMpi<ko::MachineTraits>::Ptr islet;
   homme::CDR<ko::MachineTraits>::Ptr cdr;
+
+  const ElementsGeometry m_geometry;
+  const ElementsDerivedState m_derived;
+  const Tracers m_tracers;
+  Data m_data;
 
   Work m_work;
   TeamPolicy m_policy;
   TeamUtils<ExecSpace> m_tu;
   int nslot;
+
+  std::shared_ptr<BoundaryExchange> m_qdp_dss_be, m_v_dss_be, m_Q_dss_be;
 
   KOKKOS_INLINE_FUNCTION
   static WorkSlot get_work_slot (const Work& w, const int& wi, const int& si) {
@@ -73,13 +91,15 @@ struct ComposeTransportImpl {
     return KernelVariables::shmem_size(team_size);
   }
 
-  ComposeTransportImpl (int nelem)
-    : m_policy(1,1,1), m_tu(m_policy) // throwaway settings
-  {
-    init(nelem);
-  }
+  ComposeTransportImpl ()
+    : m_geometry(Context::singleton().get<ElementsGeometry>()),
+      m_derived(Context::singleton().get<ElementsDerivedState>()),
+      m_tracers(Context::singleton().get<Tracers>()),
+      m_policy(1,1,1), m_tu(m_policy) // throwaway settings
+  {}
 
-  void init (const int nelem) {
+  void reset (const SimulationParams& params) {
+    const auto nelem = m_geometry.num_elems();
     if (OnGpu<ExecSpace>::value) {
       ThreadPreferences tp;
       tp.max_threads_usable = NUM_PHYSICAL_LEV;
@@ -115,6 +135,40 @@ struct ComposeTransportImpl {
     Scalar* mem = reinterpret_cast<Scalar*>(fbm.get_memory());
     m_work = Work(mem, nslot);
     mem += Work::shmem_size(nslot)/sizeof(Scalar);
+  }
+
+  void init_boundary_exchanges () {
+    assert(m_data.qsize > 0); // after reset() called
+
+    auto bm_exchange = Context::singleton().get<MpiBuffersManagerMap>()[MPI_EXCHANGE];
+
+    // For qdp DSS at end of transport step.
+    m_qdp_dss_be = std::make_shared<BoundaryExchange>();
+    auto be = m_qdp_dss_be;
+    be->set_buffers_manager(bm_exchange);
+    be->set_num_fields(0, 0, m_data.qsize + 1);
+    be->register_field(m_tracers.qdp, m_data.np1_qdp, m_data.qsize, 0);
+    be->register_field(m_derived.m_omega_p);
+    be->registration_completed();
+
+    // For trajectory computation.
+    m_v_dss_be = std::make_shared<BoundaryExchange>();
+    be = m_v_dss_be;
+    be->set_buffers_manager(bm_exchange);
+    be->set_num_fields(0, 0, 2 + (m_data.independent_time_steps ? 1 : 0));
+    be->register_field(m_derived.m_vstar, 2, 0);
+    be->register_field(m_derived.m_divdp);
+    be->registration_completed();
+
+    // For optional HV applied to q.
+    if (m_data.hv_q > 0) {
+      m_Q_dss_be = std::make_shared<BoundaryExchange>();
+      be = m_Q_dss_be;
+      be->set_buffers_manager(bm_exchange);
+      be->set_num_fields(0, 0, m_data.hv_q);
+      be->register_field(m_tracers.Q, m_data.hv_q, 0);
+      be->registration_completed();
+    }
   }
 
   void run () {
