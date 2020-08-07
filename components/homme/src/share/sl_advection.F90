@@ -36,6 +36,9 @@ module sl_advection
 
   public :: prim_advec_tracers_remap_ALE, sl_init1, sl_vertically_remap_tracers, sl_unittest
 
+  ! For testing
+  public :: calc_trajectory, dep_points_all
+
   logical, parameter :: barrier = .false.
 
   integer :: amb_gpu_profile

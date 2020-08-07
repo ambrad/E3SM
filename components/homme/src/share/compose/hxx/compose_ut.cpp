@@ -32,6 +32,7 @@ extern "C" {
                         const Real* hyam, const Real* hybm, Real ps0);
   void cleanup_compose_f90();
   void run_compose_standalone_test_f90();
+  void run_trajectory_f90(Real dt, bool independent_time_steps, Real* dep);
 } // extern "C"
 
 template <typename V>

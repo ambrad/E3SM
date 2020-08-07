@@ -1,7 +1,7 @@
 module compose_interface
   use kinds, only: real_kind
-  use iso_c_binding, only: c_int
-  use dimensions_mod, only: nlev, nlevp, np, nelemd, ne, qsize
+  use iso_c_binding, only: c_bool, c_int, c_double
+  use dimensions_mod, only: nlev, nlevp, np, nelemd, ne, qsize, qsize_d
   use geometry_interface_mod, only: par, elem
   implicit none
 
@@ -20,12 +20,12 @@ contains
     use compose_mod, only: compose_init, cedr_set_ie2gci, compose_set_null_bufs
     use sl_advection, only: sl_init1
 
-    real (kind=real_kind), intent(in) :: hyai(nlevp), hybi(nlevp), hyam(nlev), hybm(nlev)
+    real (real_kind), intent(in) :: hyai(nlevp), hybi(nlevp), hyam(nlev), hybm(nlev)
     integer (kind=c_int), value, intent(in) :: ne
-    real (kind=real_kind), value, intent(in) :: ps0
+    real (real_kind), value, intent(in) :: ps0
 
     integer :: ie
-    real (kind=real_kind) :: mp(np,np), dvv(np,np)
+    real (real_kind) :: mp(np,np), dvv(np,np)
 
     transport_alg = 12
     semi_lagrange_cdr_alg = 3
@@ -82,5 +82,45 @@ contains
     transport_alg = 12
     deallocate(dom_mt)
   end subroutine run_compose_standalone_test_f90
+
+  subroutine run_trajectory_f90(dt, independent_time_steps, dep) bind(c)
+    use time_mod, only: timelevel_t, timelevel_init_default
+    use control_mod, only: qsplit
+    use hybrid_mod, only: hybrid_t, hybrid_create
+    use thetal_test_interface, only: deriv, hvcoord
+    use compose_test_mod, only: compose_stt_init, compose_stt_fill_v, compose_stt_clear
+    use sl_advection, only: calc_trajectory, dep_points_all
+
+    real(c_double), value, intent(in) :: dt
+    logical(c_bool), value, intent(in) :: independent_time_steps
+    real(c_double), intent(out) :: dep(3,np,np,nlev,nelemd)
+
+    real(real_kind), parameter :: twelve_days = 3600.d0 * 24 * 12
+
+    type (timelevel_t) :: tl
+    type (hybrid_t) :: hybrid
+    real(real_kind) :: tprev, t
+    integer :: ie
+    logical :: its
+
+    call timelevel_init_default(tl)
+    call compose_stt_init(np, nlev, qsize, qsize_d, nelemd)
+
+    tprev = 0.13*twelve_days
+    t = 0.22*twelve_days
+    do ie = 1, nelemd
+       call compose_stt_fill_v(ie, elem(ie)%spherep, tprev, &
+            elem(ie)%derived%vstar)
+       call compose_stt_fill_v(ie, elem(ie)%spherep, t, &
+            elem(ie)%state%v(:,:,:,:,tl%np1))
+    end do
+    hybrid = hybrid_create(par, 0, 1)
+    its = independent_time_steps
+    call calc_trajectory(elem, deriv, hvcoord, hybrid, dt, tl, its, 1, nelemd)
+
+    do ie = 1,nelemd
+       !todo
+    end do
+  end subroutine run_trajectory_f90
   
 end module compose_interface

@@ -59,6 +59,9 @@ interface
           dp3d(np,np,nlev,timelevels), qdp(np,np,nlev,qsize_d,2)
    end subroutine compose_stt_record_q
 
+   subroutine compose_stt_clear() bind(c)
+   end subroutine compose_stt_clear
+
    subroutine compose_stt_finish(comm, root, rank) bind(c)
      use iso_c_binding, only: c_int
      integer (kind=c_int), value, intent(in) :: comm, root, rank

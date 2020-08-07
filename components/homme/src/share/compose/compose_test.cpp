@@ -360,11 +360,15 @@ extern "C" void compose_stt_record_q (
                 (n0_qdp - 1));
 }
 
-extern "C" void compose_stt_finish (Int fcomm, Int root, Int rank) {
-  g_stt->record_end(fcomm, root, rank);
+extern "C" void compose_stt_clear () {
 #ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
 # pragma omp master
 #endif
   g_stt = nullptr;
+}
+
+extern "C" void compose_stt_finish (Int fcomm, Int root, Int rank) {
+  g_stt->record_end(fcomm, root, rank);
+  compose_stt_clear();
 }
