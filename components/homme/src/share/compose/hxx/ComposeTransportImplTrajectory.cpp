@@ -8,7 +8,13 @@
 
 namespace Homme {
 
+/*
+  m_geometry.m_vec_sph2cart
+*/
+
 void ComposeTransportImpl::calc_trajectory () {
+  assert( ! m_data.independent_time_steps); // until impl'ed
+
   
 }
 

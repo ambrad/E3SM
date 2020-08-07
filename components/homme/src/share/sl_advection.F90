@@ -34,7 +34,7 @@ module sl_advection
   ! For use in make_positive.
   real(kind=real_kind) :: dp_tol
 
-  public :: Prim_Advec_Tracers_remap_ALE, sl_init1, sl_vertically_remap_tracers, sl_unittest
+  public :: prim_advec_tracers_remap_ALE, sl_init1, sl_vertically_remap_tracers, sl_unittest
 
   logical, parameter :: barrier = .false.
 
@@ -143,7 +143,6 @@ contains
     ! For DCMIP16 supercell test case.
     use control_mod,            only : dcmip16_mu_q
     use prim_advection_base,    only : advance_physical_vis
-    use vertremap_base,         only : remap1
     use compose_mod,            only : compose_h2d, compose_d2h
     use iso_c_binding,          only : c_bool
 
@@ -160,9 +159,8 @@ contains
     type(cartesian3D_t)   :: dep_points  (np,np)
 
     integer :: i,j,k,l,n,q,ie,n0_qdp,np1_qdp
-    integer :: num_neighbors, scalar_q_bounds, info
+    integer :: scalar_q_bounds, info
     logical :: slmm, cisl, qos, sl_test, independent_time_steps
-    real(kind=real_kind) :: wr(np,np,nlev,2)
     logical(kind=c_bool) :: h2d, d2h
 
 #ifdef HOMME_ENABLE_COMPOSE
@@ -179,43 +177,8 @@ contains
 
     call TimeLevel_Qdp(tl, dt_tracer_factor, n0_qdp, np1_qdp)
 
-    do ie = nets,nete
-       elem(ie)%derived%vn0 = elem(ie)%state%v(:,:,:,:,tl%np1)
-    end do
-    if (independent_time_steps) then
-       call t_startf('SLMM_reconstruct')
-       if (dp_tol < zero) then
-          ! Thread write race condition; benign b/c written value is same in all threads.
-          call set_dp_tol(hvcoord, dp_tol)
-       end if
-       do ie = nets,nete
-          ! divdp is dp_star
-          call calc_vertically_lagrangian_levels(hybrid, elem(ie), ie, hvcoord, tl, dt, &
-               deriv, dp_tol, elem(ie)%derived%divdp)
-          wr(:,:,:,1) = elem(ie)%derived%vn0(:,:,1,:)*elem(ie)%state%dp3d(:,:,:,tl%np1)
-          wr(:,:,:,2) = elem(ie)%derived%vn0(:,:,2,:)*elem(ie)%state%dp3d(:,:,:,tl%np1)
-          call remap1(wr, np, 2, elem(ie)%state%dp3d(:,:,:,tl%np1), elem(ie)%derived%divdp)
-          elem(ie)%derived%vn0(:,:,1,:) = wr(:,:,:,1)/elem(ie)%derived%divdp
-          elem(ie)%derived%vn0(:,:,2,:) = wr(:,:,:,2)/elem(ie)%derived%divdp
-       end do
-       call t_stopf('SLMM_reconstruct')
-    end if
-
-    call ALE_RKdss(elem, nets, nete, hybrid, deriv, dt, tl, independent_time_steps)
-
-    if (barrier) call perf_barrier(hybrid)
-    call t_startf('SLMM_v2x')
-    do ie = nets, nete
-       num_neighbors = elem(ie)%desc%actual_neigh_edges + 1
-#if (defined COLUMN_OPENMP)
-       !$omp parallel do private(k)
-#endif
-       do k = 1, nlev
-          call ALE_departure_from_gll(dep_points_all(:,:,k,ie), &
-               elem(ie)%derived%vstar(:,:,:,k), elem(ie), dt, normalize=.true.)
-       end do
-    end do
-    call t_stopf('SLMM_v2x')
+    call calc_trajectory(elem, deriv, hvcoord, hybrid, dt, tl, &
+         independent_time_steps, nets, nete)
 
     call t_startf('SLMM_csl')
     !todo Here and in the set-pointer loop for CEDR, do just in the first call.
@@ -311,6 +274,61 @@ contains
     call t_stopf('Prim_Advec_Tracers_remap_ALE')
 #endif
   end subroutine prim_advec_tracers_remap_ALE
+  
+  subroutine calc_trajectory(elem, deriv, hvcoord, hybrid, dt, tl, &
+       independent_time_steps, nets, nete)
+    use vertremap_base, only : remap1
+
+    type (element_t)     , intent(inout) :: elem(:)
+    type (derivative_t)  , intent(in   ) :: deriv
+    type (hvcoord_t)     , intent(in   ) :: hvcoord
+    type (hybrid_t)      , intent(in   ) :: hybrid
+    real(kind=real_kind) , intent(in   ) :: dt
+    type (TimeLevel_t)   , intent(in   ) :: tl
+    logical              , intent(in   ) :: independent_time_steps
+    integer              , intent(in   ) :: nets
+    integer              , intent(in   ) :: nete
+
+    real(kind=real_kind) :: wr(np,np,nlev,2)
+    integer :: ie, k
+
+    do ie = nets,nete
+       elem(ie)%derived%vn0 = elem(ie)%state%v(:,:,:,:,tl%np1)
+    end do
+    if (independent_time_steps) then
+       call t_startf('SLMM_reconstruct')
+       if (dp_tol < zero) then
+          ! Thread write race condition; benign b/c written value is same in all threads.
+          call set_dp_tol(hvcoord, dp_tol)
+       end if
+       do ie = nets,nete
+          ! divdp is dp_star
+          call calc_vertically_lagrangian_levels(hybrid, elem(ie), ie, hvcoord, tl, dt, &
+               deriv, dp_tol, elem(ie)%derived%divdp)
+          wr(:,:,:,1) = elem(ie)%derived%vn0(:,:,1,:)*elem(ie)%state%dp3d(:,:,:,tl%np1)
+          wr(:,:,:,2) = elem(ie)%derived%vn0(:,:,2,:)*elem(ie)%state%dp3d(:,:,:,tl%np1)
+          call remap1(wr, np, 2, elem(ie)%state%dp3d(:,:,:,tl%np1), elem(ie)%derived%divdp)
+          elem(ie)%derived%vn0(:,:,1,:) = wr(:,:,:,1)/elem(ie)%derived%divdp
+          elem(ie)%derived%vn0(:,:,2,:) = wr(:,:,:,2)/elem(ie)%derived%divdp
+       end do
+       call t_stopf('SLMM_reconstruct')
+    end if
+
+    call ALE_RKdss(elem, nets, nete, hybrid, deriv, dt, tl, independent_time_steps)
+
+    if (barrier) call perf_barrier(hybrid)
+    call t_startf('SLMM_v2x')
+    do ie = nets, nete
+#if (defined COLUMN_OPENMP)
+       !$omp parallel do private(k)
+#endif
+       do k = 1, nlev
+          call ALE_departure_from_gll(dep_points_all(:,:,k,ie), &
+               elem(ie)%derived%vstar(:,:,:,k), elem(ie), dt, normalize=.true.)
+       end do
+    end do
+    call t_stopf('SLMM_v2x')
+  end subroutine calc_trajectory
 
   ! ----------------------------------------------------------------------------------!
   !SUBROUTINE ALE_RKDSS

@@ -65,7 +65,7 @@ struct ComposeTransportImpl {
     int nelemd, qsize, hv_q, np1_qdp;
     bool independent_time_steps;
 
-    Data () : nelemd(-1), qsize(-1), hv_q(1), np1_qdp(-1), independent_time_steps(true) {}
+    Data () : nelemd(-1), qsize(-1), hv_q(1), np1_qdp(-1), independent_time_steps(false) {}
   };
 
   homme::islmpi::IslMpi<ko::MachineTraits>::Ptr islet;
