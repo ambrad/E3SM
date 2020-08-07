@@ -83,7 +83,7 @@ contains
     deallocate(dom_mt)
   end subroutine run_compose_standalone_test_f90
 
-  subroutine run_trajectory_f90(dt, independent_time_steps, dep) bind(c)
+  subroutine run_trajectory_f90(independent_time_steps, dep) bind(c)
     use time_mod, only: timelevel_t, timelevel_init_default
     use control_mod, only: qsplit
     use hybrid_mod, only: hybrid_t, hybrid_create
@@ -91,7 +91,6 @@ contains
     use compose_test_mod, only: compose_stt_init, compose_stt_fill_v, compose_stt_clear
     use sl_advection, only: calc_trajectory, dep_points_all
 
-    real(c_double), value, intent(in) :: dt
     logical(c_bool), value, intent(in) :: independent_time_steps
     real(c_double), intent(out) :: dep(3,np,np,nlev,nelemd)
 
@@ -99,8 +98,8 @@ contains
 
     type (timelevel_t) :: tl
     type (hybrid_t) :: hybrid
-    real(real_kind) :: tprev, t
-    integer :: ie
+    real(real_kind) :: tprev, t, dt
+    integer :: ie, i, j, k
     logical :: its
 
     call timelevel_init_default(tl)
@@ -108,6 +107,7 @@ contains
 
     tprev = 0.13*twelve_days
     t = 0.22*twelve_days
+    dt = t - tprev
     do ie = 1, nelemd
        call compose_stt_fill_v(ie, elem(ie)%spherep, tprev, &
             elem(ie)%derived%vstar)
@@ -119,7 +119,15 @@ contains
     call calc_trajectory(elem, deriv, hvcoord, hybrid, dt, tl, its, 1, nelemd)
 
     do ie = 1,nelemd
-       !todo
+       do k = 1,nlev
+          do j = 1,np
+             do i = 1,np
+                dep(1,i,j,k,ie) = dep_points_all(i,j,k,ie)%x
+                dep(2,i,j,k,ie) = dep_points_all(i,j,k,ie)%y
+                dep(3,i,j,k,ie) = dep_points_all(i,j,k,ie)%z
+             end do
+          end do
+       end do
     end do
   end subroutine run_trajectory_f90
   

@@ -32,8 +32,10 @@ extern "C" {
                         const Real* hyam, const Real* hybm, Real ps0);
   void cleanup_compose_f90();
   void run_compose_standalone_test_f90();
-  void run_trajectory_f90(Real dt, bool independent_time_steps, Real* dep);
+  void run_trajectory_f90(bool independent_time_steps, Real* dep);
 } // extern "C"
+
+using FA5d = Kokkos::View<Real*****, Kokkos::LayoutRight, Kokkos::HostSpace>;
 
 template <typename V>
 decltype(Kokkos::create_mirror_view(V())) cmvdc (const V& v) {
@@ -135,7 +137,8 @@ struct Session {
   HybridVCoord h;
   Random r;
   std::shared_ptr<Elements> e;
-  int nelemd, qsize;
+  int nelemd, qsize, nlev, np;
+  bool independent_time_steps;
 
   //Session () : r(269041989) {}
 
@@ -158,7 +161,7 @@ struct Session {
 
     init_compose_f90(ne, hyai.data(), hybi.data(), &hyam(0)[0], &hybm(0)[0], h.ps0);
 
-    const int nelemd = c.get<Connectivity>().get_num_local_elements();
+    nelemd = c.get<Connectivity>().get_num_local_elements();
     auto& bmm = c.create<MpiBuffersManagerMap>();
     bmm.set_connectivity(c.get_ptr<Connectivity>());
     c.create<Elements>();
@@ -171,6 +174,12 @@ struct Session {
     auto& ct = c.create<ComposeTransport>();
     ct.reset(c.get<SimulationParams>());
     ct.init_boundary_exchanges();
+
+    nlev = NUM_PHYSICAL_LEV;
+    assert(nlev > 0);
+    np = NP;
+    assert(np == 4);
+    independent_time_steps = false;
   }
 
   void cleanup () {
@@ -237,6 +246,11 @@ TEST_CASE ("compose_transport_testing") {
   const auto fails = ct.run_unit_tests();
   for (const auto& e : fails) printf("%s %d\n", e.first.c_str(), e.second);
   REQUIRE(fails.empty());
+
+  {
+    FA5d depf("depf", 3, s.np, s.np, s.nlev, s.nelemd);
+    run_trajectory_f90(s.independent_time_steps, depf.data());
+  }
 
   run_compose_standalone_test_f90();
 
