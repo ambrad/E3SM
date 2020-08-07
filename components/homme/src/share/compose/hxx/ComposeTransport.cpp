@@ -47,9 +47,6 @@ void ComposeTransport::run () {
 std::vector<std::pair<std::string, int> >
 ComposeTransport::run_unit_tests () {
   std::vector<std::pair<std::string, int> > fails;
-  int ne;
-  ne = cedr::local::unittest();
-  if (ne) fails.push_back(std::make_pair(std::string("cedr::local"), ne));
   return fails;
 }
 

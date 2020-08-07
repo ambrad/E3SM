@@ -85,6 +85,9 @@ struct Session {
     const int nelemd = c.get<Connectivity>().get_num_local_elements();
     c.create<SimulationParams>();
     c.create<Tracers>(nelemd, qsize);
+
+    c.create<ComposeTransport>();
+    c.get<ComposeTransport>().reset(c.get<SimulationParams>());
   }
 
   void cleanup () {
@@ -147,7 +150,7 @@ TEST_CASE ("compose_transport_testing") {
   REQUIRE(compose::test::cedr_unittest() == 0);
   REQUIRE(compose::test::cedr_unittest(s.get_mpi_comm()) == 0);
 
-  ComposeTransport ct;
+  auto& ct = Context::singleton().get<ComposeTransport>();
   const auto fails = ct.run_unit_tests();
   for (const auto& e : fails) printf("%s %d\n", e.first.c_str(), e.second);
   REQUIRE(fails.empty());
