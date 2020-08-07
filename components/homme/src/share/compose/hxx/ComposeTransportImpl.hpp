@@ -12,7 +12,7 @@
 #include "compose_slmm_islmpi.hpp"
 
 #include "Context.hpp"
-#include "ReferenceElement.hpp"
+#include "Elements.hpp"
 #include "ElementsGeometry.hpp"
 #include "ElementsDerivedState.hpp"
 #include "FunctorsBuffersManager.hpp"
@@ -26,6 +26,7 @@
 #include "profiling.hpp"
 #include "mpi/BoundaryExchange.hpp"
 #include "mpi/MpiBuffersManager.hpp"
+#include "mpi/Connectivity.hpp"
 
 #include <cassert>
 
@@ -59,14 +60,16 @@ struct ComposeTransportImpl {
                    Kokkos::MemoryTraits<Kokkos::Unmanaged> >;
 
   struct Data {
-    int qsize, hv_q, np1_qdp;
+    int nelemd, qsize, hv_q, np1_qdp;
     bool independent_time_steps;
   };
 
   homme::islmpi::IslMpi<ko::MachineTraits>::Ptr islet;
   homme::CDR<ko::MachineTraits>::Ptr cdr;
 
-  const ElementsGeometry m_geometry;
+  const HybridVCoord m_hvcoord;
+  const Elements m_elements;
+  const ElementsState m_state;
   const ElementsDerivedState m_derived;
   const Tracers m_tracers;
   Data m_data;
@@ -92,14 +95,16 @@ struct ComposeTransportImpl {
   }
 
   ComposeTransportImpl ()
-    : m_geometry(Context::singleton().get<ElementsGeometry>()),
-      m_derived(Context::singleton().get<ElementsDerivedState>()),
+    : m_hvcoord(Context::singleton().get<HybridVCoord>()),
+      m_elements(Context::singleton().get<Elements>()),
+      m_derived(m_elements.m_derived),
+      m_state(m_elements.m_state),
       m_tracers(Context::singleton().get<Tracers>()),
       m_policy(1,1,1), m_tu(m_policy) // throwaway settings
   {}
 
   void reset (const SimulationParams& params) {
-    const auto nelem = m_geometry.num_elems();
+    m_data.nelemd = Context::singleton().get<Connectivity>().get_num_local_elements();
     if (OnGpu<ExecSpace>::value) {
       ThreadPreferences tp;
       tp.max_threads_usable = NUM_PHYSICAL_LEV;
@@ -107,23 +112,23 @@ struct ComposeTransportImpl {
       tp.prefer_threads = false;
       tp.prefer_larger_team = true;
       const auto p = DefaultThreadsDistribution<ExecSpace>
-        ::team_num_threads_vectors(nelem, tp);
+        ::team_num_threads_vectors(m_data.nelemd, tp);
       const auto
         nhwthr = p.first*p.second,
         nvec = std::min(NP*NP, nhwthr),
         nthr = nhwthr/nvec;
-      m_policy = TeamPolicy(nelem, nthr, nvec);
+      m_policy = TeamPolicy(m_data.nelemd, nthr, nvec);
     } else {
       ThreadPreferences tp;
       tp.max_threads_usable = NUM_PHYSICAL_LEV;
       tp.max_vectors_usable = 1;
       tp.prefer_threads = true;
       const auto p = DefaultThreadsDistribution<ExecSpace>
-        ::team_num_threads_vectors(nelem, tp);
-      m_policy = TeamPolicy(nelem, p.first, 1);
+        ::team_num_threads_vectors(m_data.nelemd, tp);
+      m_policy = TeamPolicy(m_data.nelemd, p.first, 1);
     }
     m_tu = TeamUtils<ExecSpace>(m_policy);
-    nslot = std::min(nelem, m_tu.get_num_ws_slots());
+    nslot = std::min(m_data.nelemd, m_tu.get_num_ws_slots());
   }
 
   int requested_buffer_size () const {

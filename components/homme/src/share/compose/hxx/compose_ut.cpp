@@ -1,3 +1,5 @@
+#include "/home/ambrad/repo/sik/hommexx/dbg.hpp"
+
 #include "ComposeTransport.hpp"
 #include "compose_test.hpp"
 
@@ -7,6 +9,7 @@
 #include "mpi/Connectivity.hpp"
 #include "SimulationParams.hpp"
 #include "Elements.hpp"
+#include "Tracers.hpp"
 #include "HybridVCoord.hpp"
 #include "KernelVariables.hpp"
 #include "PhysicalConstants.hpp"
@@ -56,13 +59,17 @@ struct Session {
   HybridVCoord h;
   Random r;
   Elements e;
-  int nelemd;
+  int nelemd, qsize;
 
   //Session () : r(269041989) {}
 
   void init () {
     printf("seed %u\n", r.gen_seed());
+
+    qsize = 5;
+
     auto& c = Context::singleton();
+
     c.create<HybridVCoord>().random_init(r.gen_seed());
     h = c.get<HybridVCoord>();
 
@@ -73,8 +80,11 @@ struct Session {
 
     init_compose_f90(ne, hyai.data(), hybi.data(), &hyam(0)[0], &hybm(0)[0], h.ps0);
 
-    nelemd = c.get<Connectivity>().get_num_local_elements();
-    e = c.create<Elements>();
+    c.create<Elements>();
+    e = c.get<Elements>();
+    const int nelemd = c.get<Connectivity>().get_num_local_elements();
+    c.create<SimulationParams>();
+    c.create<Tracers>(nelemd, qsize);
   }
 
   void cleanup () {
