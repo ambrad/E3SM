@@ -30,6 +30,8 @@
 
 #include <cassert>
 
+#include "/home/ambrad/repo/sik/hommexx/dbg.hpp"
+
 namespace Homme {
 
 struct ComposeTransportImpl {
@@ -81,7 +83,7 @@ struct ComposeTransportImpl {
   TeamUtils<ExecSpace> m_tu;
   int nslot;
 
-  std::shared_ptr<BoundaryExchange> m_qdp_dss_be, m_v_dss_be, m_Q_dss_be;
+  std::shared_ptr<BoundaryExchange> m_qdp_dss_be[Q_NUM_TIME_LEVELS], m_v_dss_be, m_Q_dss_be;
 
   KOKKOS_INLINE_FUNCTION
   static WorkSlot get_work_slot (const Work& w, const int& wi, const int& si) {
@@ -209,6 +211,8 @@ struct ComposeTransportImpl {
   void init_boundary_exchanges();
 
   void run();
+
+  void calc_trajectory();
 };
 
 } // namespace Homme

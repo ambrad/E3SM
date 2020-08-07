@@ -7,6 +7,7 @@
 #include "Context.hpp"
 #include "mpi/Comm.hpp"
 #include "mpi/Connectivity.hpp"
+#include "mpi/MpiBuffersManager.hpp"
 #include "SimulationParams.hpp"
 #include "Elements.hpp"
 #include "Tracers.hpp"
@@ -66,7 +67,8 @@ struct Session {
   void init () {
     printf("seed %u\n", r.gen_seed());
 
-    qsize = 5;
+    assert(QSIZE_D >= 4);
+    qsize = QSIZE_D;
 
     auto& c = Context::singleton();
 
@@ -80,14 +82,17 @@ struct Session {
 
     init_compose_f90(ne, hyai.data(), hybi.data(), &hyam(0)[0], &hybm(0)[0], h.ps0);
 
-    c.create<Elements>();
-    e = c.get<Elements>();
     const int nelemd = c.get<Connectivity>().get_num_local_elements();
+    auto& bmm = c.create<MpiBuffersManagerMap>();
+    bmm.set_connectivity(c.get_ptr<Connectivity>());
+    e = c.create<Elements>();
+    e.init(nelemd, false, true);
     c.create<SimulationParams>();
     c.create<Tracers>(nelemd, qsize);
 
-    c.create<ComposeTransport>();
-    c.get<ComposeTransport>().reset(c.get<SimulationParams>());
+    auto& ct = c.create<ComposeTransport>();
+    ct.reset(c.get<SimulationParams>());
+    ct.init_boundary_exchanges();
   }
 
   void cleanup () {
