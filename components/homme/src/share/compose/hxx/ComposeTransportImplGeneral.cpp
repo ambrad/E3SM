@@ -67,7 +67,7 @@ void ComposeTransportImpl::init_boundary_exchanges () {
   be->set_buffers_manager(bm_exchange);
   be->set_num_fields(0, 0, 2 + (m_data.independent_time_steps ? 1 : 0));
   be->register_field(m_derived.m_vstar, 2, 0);
-  be->register_field(m_derived.m_divdp);
+  if (m_data.independent_time_steps) be->register_field(m_derived.m_divdp);
   be->registration_completed();
 
   // For optional HV applied to q.
