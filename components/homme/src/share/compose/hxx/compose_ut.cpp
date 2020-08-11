@@ -236,6 +236,8 @@ static bool equal (const Real& a, const Real& b,
 }
 
 TEST_CASE ("compose_transport_testing") {
+  static constexpr Real tol = std::numeric_limits<Real>::epsilon();
+
   auto& s = Session::singleton();
 
   REQUIRE(compose::test::slmm_unittest() == 0);
@@ -262,7 +264,7 @@ TEST_CASE ("compose_transport_testing") {
         for (int j = 0, k = 0; j < s.np; ++j)
           for (int i = 0; i < s.np; ++i, ++k)
             for (int d = 0; d < 3; ++d)
-              REQUIRE(depf(d,i,j,lev,ie) == depc(ie,lev,k,d));
+              REQUIRE(equal(depf(d,i,j,lev,ie), depc(ie,lev,k,d), 1e4*tol));
   }
 
   run_compose_standalone_test_f90();
