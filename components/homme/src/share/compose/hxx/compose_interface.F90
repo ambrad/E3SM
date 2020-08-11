@@ -119,9 +119,15 @@ contains
        do k = 1,nlev
           do j = 1,np
              do i = 1,np
+#if 0
                 dep(1,i,j,k,ie) = dep_points_all(i,j,k,ie)%x
                 dep(2,i,j,k,ie) = dep_points_all(i,j,k,ie)%y
                 dep(3,i,j,k,ie) = dep_points_all(i,j,k,ie)%z
+#else
+                dep(1,i,j,k,ie) = (ie-1)*(k-1 + np*(j-1)+i-1) + 0
+                dep(2,i,j,k,ie) = (ie-1)*(k-1 + np*(j-1)+i-1) + 1
+                dep(3,i,j,k,ie) = (ie-1)*(k-1 + np*(j-1)+i-1) + 2
+#endif
              end do
           end do
        end do

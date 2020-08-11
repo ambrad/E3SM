@@ -22,6 +22,11 @@ ComposeTransport::TestDepView::HostMirror ComposeTransportImpl::
 test_trajectory(Real t0, Real t1, bool independent_time_steps) {
   ComposeTransport::TestDepView dep("dep", m_data.nelemd, num_phys_lev, np2, 3);
   const auto deph = Kokkos::create_mirror_view(dep);
+  for (int ie = 0; ie < m_data.nelemd; ++ie)
+    for (int lev = 0; lev < num_phys_lev; ++lev)
+      for (int k = 0; k < np2; ++k)
+          for (int d = 0; d < 3; ++d)
+            deph(ie,lev,k,d) = ie*(lev + k) + d;
   return deph;
 }
 

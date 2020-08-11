@@ -35,7 +35,7 @@ extern "C" {
   void run_trajectory_f90(Real t0, Real t1, bool independent_time_steps, Real* dep);
 } // extern "C"
 
-using FA5d = Kokkos::View<Real*****, Kokkos::LayoutRight, Kokkos::HostSpace>;
+using FA5d = Kokkos::View<Real*****, Kokkos::LayoutLeft, Kokkos::HostSpace>;
 
 template <typename V>
 decltype(Kokkos::create_mirror_view(V())) cmvdc (const V& v) {
@@ -251,11 +251,18 @@ TEST_CASE ("compose_transport_testing") {
     const Real twelve_days = 3600 * 24 * 12;
     const Real t0 = 0.13*twelve_days, t1 = 0.22*twelve_days;
     FA5d depf("depf", 3, s.np, s.np, s.nlev, s.nelemd);
+    depf(2,0,0,0,0) = 42;
     run_trajectory_f90(t0, t1, s.independent_time_steps, depf.data());
     const auto depc = ct.test_trajectory(t0, t1, s.independent_time_steps);
     REQUIRE(depc.extent_int(0) == s.nelemd);
     REQUIRE(depc.extent_int(2) == s.np*s.np);
     REQUIRE(depc.extent_int(3) == 3);
+    for (int ie = 0; ie < s.nelemd; ++ie)
+      for (int lev = 0; lev < s.nlev; ++lev)
+        for (int j = 0, k = 0; j < s.np; ++j)
+          for (int i = 0; i < s.np; ++i, ++k)
+            for (int d = 0; d < 3; ++d)
+              REQUIRE(depf(d,i,j,lev,ie) == depc(ie,lev,k,d));
   }
 
   run_compose_standalone_test_f90();
