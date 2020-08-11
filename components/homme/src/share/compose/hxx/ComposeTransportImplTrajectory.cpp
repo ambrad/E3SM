@@ -18,4 +18,11 @@ void ComposeTransportImpl::calc_trajectory () {
   
 }
 
+ComposeTransport::TestDepView::HostMirror ComposeTransportImpl::
+test_trajectory(Real t0, Real t1, bool independent_time_steps) {
+  ComposeTransport::TestDepView dep("dep", m_data.nelemd, num_phys_lev, np2, 3);
+  const auto deph = Kokkos::create_mirror_view(dep);
+  return deph;
+}
+
 } // namespace Homme

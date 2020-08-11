@@ -83,7 +83,7 @@ contains
     deallocate(dom_mt)
   end subroutine run_compose_standalone_test_f90
 
-  subroutine run_trajectory_f90(independent_time_steps, dep) bind(c)
+  subroutine run_trajectory_f90(t0, t1, independent_time_steps, dep) bind(c)
     use time_mod, only: timelevel_t, timelevel_init_default
     use control_mod, only: qsplit
     use hybrid_mod, only: hybrid_t, hybrid_create
@@ -91,30 +91,27 @@ contains
     use compose_test_mod, only: compose_stt_init, compose_stt_fill_v, compose_stt_clear
     use sl_advection, only: calc_trajectory, dep_points_all
 
+    real(c_double), value, intent(in) :: t0, t1
     logical(c_bool), value, intent(in) :: independent_time_steps
     real(c_double), intent(out) :: dep(3,np,np,nlev,nelemd)
 
-    real(real_kind), parameter :: twelve_days = 3600.d0 * 24 * 12
-
     type (timelevel_t) :: tl
     type (hybrid_t) :: hybrid
-    real(real_kind) :: tprev, t, dt
+    real(real_kind) :: dt
     integer :: ie, i, j, k
     logical :: its
 
     call timelevel_init_default(tl)
     call compose_stt_init(np, nlev, qsize, qsize_d, nelemd)
 
-    tprev = 0.13*twelve_days
-    t = 0.22*twelve_days
-    dt = t - tprev
     do ie = 1, nelemd
-       call compose_stt_fill_v(ie, elem(ie)%spherep, tprev, &
+       call compose_stt_fill_v(ie, elem(ie)%spherep, t0, &
             elem(ie)%derived%vstar)
-       call compose_stt_fill_v(ie, elem(ie)%spherep, t, &
+       call compose_stt_fill_v(ie, elem(ie)%spherep, t1, &
             elem(ie)%state%v(:,:,:,:,tl%np1))
     end do
     hybrid = hybrid_create(par, 0, 1)
+    dt = t1 - t0
     its = independent_time_steps
     call calc_trajectory(elem, deriv, hvcoord, hybrid, dt, tl, its, 1, nelemd)
 

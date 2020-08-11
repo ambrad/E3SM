@@ -32,7 +32,7 @@ extern "C" {
                         const Real* hyam, const Real* hybm, Real ps0);
   void cleanup_compose_f90();
   void run_compose_standalone_test_f90();
-  void run_trajectory_f90(bool independent_time_steps, Real* dep);
+  void run_trajectory_f90(Real t0, Real t1, bool independent_time_steps, Real* dep);
 } // extern "C"
 
 using FA5d = Kokkos::View<Real*****, Kokkos::LayoutRight, Kokkos::HostSpace>;
@@ -248,8 +248,14 @@ TEST_CASE ("compose_transport_testing") {
   REQUIRE(fails.empty());
 
   {
+    const Real twelve_days = 3600 * 24 * 12;
+    const Real t0 = 0.13*twelve_days, t1 = 0.22*twelve_days;
     FA5d depf("depf", 3, s.np, s.np, s.nlev, s.nelemd);
-    run_trajectory_f90(s.independent_time_steps, depf.data());
+    run_trajectory_f90(t0, t1, s.independent_time_steps, depf.data());
+    const auto depc = ct.test_trajectory(t0, t1, s.independent_time_steps);
+    REQUIRE(depc.extent_int(0) == s.nelemd);
+    REQUIRE(depc.extent_int(2) == s.np*s.np);
+    REQUIRE(depc.extent_int(3) == 3);
   }
 
   run_compose_standalone_test_f90();

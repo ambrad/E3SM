@@ -50,4 +50,9 @@ ComposeTransport::run_unit_tests () {
   return fails;
 }
 
+ComposeTransport::TestDepView::HostMirror ComposeTransport::
+test_trajectory (Real t0, Real t1, bool independent_time_steps) {
+  return m_compose_impl->test_trajectory(t0, t1, independent_time_steps);
+}
+
 } // Namespace Homme
