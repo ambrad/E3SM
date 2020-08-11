@@ -158,6 +158,8 @@ SET(THETAL_DEPS_CXX
   ${SRC_SHARE_DIR}/cxx/ErrorDefs.cpp
   ${SRC_SHARE_DIR}/cxx/EulerStepFunctor.cpp
   ${SRC_SHARE_DIR}/cxx/ComposeTransport.cpp
+  ${SRC_SHARE_DIR}/cxx/ComposeTransportImplGeneral.cpp
+  ${SRC_SHARE_DIR}/cxx/ComposeTransportImplTrajectory.cpp
   ${SRC_SHARE_DIR}/cxx/ExecSpaceDefs.cpp
   ${SRC_SHARE_DIR}/cxx/FunctorsBuffersManager.cpp
   ${SRC_SHARE_DIR}/cxx/Hommexx_Session.cpp
