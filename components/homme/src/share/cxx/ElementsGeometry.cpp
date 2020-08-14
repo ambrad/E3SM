@@ -36,8 +36,8 @@ void ElementsGeometry::init(const int num_elems, const bool consthv, const bool 
 
   if(!consthv){
     m_tensorvisc   = ExecViewManaged<Real * [2][2][NP][NP]>("TENSORVISC",   m_num_elems);
-    m_vec_sph2cart = ExecViewManaged<Real * [2][3][NP][NP]>("VEC_SPH2CART", m_num_elems);
   }
+  m_vec_sph2cart = ExecViewManaged<Real * [2][3][NP][NP]>("VEC_SPH2CART", m_num_elems);
 
   m_phis     = ExecViewManaged<Real *    [NP][NP]>("PHIS",          m_num_elems);
 
@@ -83,8 +83,8 @@ set_elem_data (const int ie,
   Tensor23View::HostMirror h_vec_sph2cart;
   if( !consthv ){
     h_tensorvisc   = Kokkos::create_mirror_view(Homme::subview(m_tensorvisc,ie));
-    h_vec_sph2cart = Kokkos::create_mirror_view(Homme::subview(m_vec_sph2cart,ie));
   }
+  h_vec_sph2cart = Kokkos::create_mirror_view(Homme::subview(m_vec_sph2cart,ie));
 
   ScalarViewF90 h_fcor_f90         (fcor);
   ScalarViewF90 h_metdet_f90       (metdet);
