@@ -17,33 +17,12 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
   slmm_throw_if(m_data.qsize == 0,
                 "SL transport requires qsize > 0; if qsize == 0, use Eulerian.");
 
-  if (OnGpu<ExecSpace>::value) {
-    ThreadPreferences tp;
-    tp.max_threads_usable = NUM_PHYSICAL_LEV;
-    tp.max_vectors_usable = NP*NP;
-    tp.prefer_threads = false;
-    tp.prefer_larger_team = true;
-    const auto p = DefaultThreadsDistribution<ExecSpace>
-      ::team_num_threads_vectors(m_data.nelemd, tp);
-    const auto
-      nhwthr = p.first*p.second,
-      nvec = std::min(NP*NP, nhwthr),
-      nthr = nhwthr/nvec;
-    m_tp_ne = TeamPolicy(m_data.nelemd, nthr, nvec);
-  } else {
-    ThreadPreferences tp;
-    tp.max_threads_usable = NUM_PHYSICAL_LEV;
-    tp.max_vectors_usable = 1;
-    tp.prefer_threads = true;
-    const auto p = DefaultThreadsDistribution<ExecSpace>
-      ::team_num_threads_vectors(m_data.nelemd, tp);
-    m_tp_ne = TeamPolicy(m_data.nelemd, p.first, 1);
-  }
-
+  m_tp_ne = Homme::get_default_team_policy<ExecSpace>(m_data.nelemd);
+  m_tp_ne_qsize = Homme::get_default_team_policy<ExecSpace>(m_data.nelemd * m_data.qsize);
   m_tu_ne = TeamUtils<ExecSpace>(m_tu_ne);
   m_tu_ne_qsize = TeamUtils<ExecSpace>(m_tu_ne_qsize);
+
   m_sphere_ops.allocate_buffers(m_tu_ne_qsize);
-  nslot = std::min(m_data.nelemd, m_tu_ne.get_num_ws_slots());
 
   if (Context::singleton().get<Connectivity>().get_comm().root())
     printf("nelemd %d qsize %d hv_q %d np1_qdp %d independent_time_steps %d\n",

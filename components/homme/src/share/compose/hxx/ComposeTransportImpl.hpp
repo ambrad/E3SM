@@ -70,7 +70,6 @@ struct ComposeTransportImpl {
 
   TeamPolicy m_tp_ne, m_tp_ne_qsize;
   TeamUtils<ExecSpace> m_tu_ne, m_tu_ne_qsize;
-  int nslot;
 
   std::shared_ptr<BoundaryExchange>
     m_qdp_dss_be[Q_NUM_TIME_LEVELS], m_v_dss_be[2], m_Q_dss_be;
