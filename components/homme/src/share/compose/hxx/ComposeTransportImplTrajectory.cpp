@@ -51,11 +51,6 @@ void ComposeTransportImpl::calc_trajectory () {
     KernelVariables kv(team, m_tu_ne);
     const auto ie = kv.ie;
 
-    Homme::subview(geo.m_vec_sph2cart, ie);
-    Homme::subview(m_derived.m_vn0, ie);
-    Homme::subview(m_derived.m_vstar, ie);
-    Homme::subview(m_buf1, kv.team_idx);
-    Homme::subview(m_buf2[0], kv.team_idx);
     const auto ugradv = Homme::subview(m_buf2[1], kv.team_idx);
     ugradv_sphere(sphere_ops, kv, Homme::subview(geo.m_vec_sph2cart, ie),
                   Homme::subview(m_derived.m_vn0, ie), Homme::subview(m_derived.m_vstar, ie),
