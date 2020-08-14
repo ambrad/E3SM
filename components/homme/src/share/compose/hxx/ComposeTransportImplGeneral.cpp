@@ -9,10 +9,14 @@
 namespace Homme {
 
 void ComposeTransportImpl::reset (const SimulationParams& params) {
-  m_data.nelemd = Context::singleton().get<Connectivity>().get_num_local_elements();
-  m_data.qsize = m_tracers.num_tracers();
+  const auto num_elems = Context::singleton().get<Connectivity>().get_num_local_elements();
+  if (m_data.nelemd == num_elems && m_data.qsize == params.qsize) return;
+
+  m_data.qsize = params.qsize;
+  m_data.nelemd = num_elems;
   slmm_throw_if(m_data.qsize == 0,
                 "SL transport requires qsize > 0; if qsize == 0, use Eulerian.");
+
   if (OnGpu<ExecSpace>::value) {
     ThreadPreferences tp;
     tp.max_threads_usable = NUM_PHYSICAL_LEV;
@@ -25,7 +29,7 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
       nhwthr = p.first*p.second,
       nvec = std::min(NP*NP, nhwthr),
       nthr = nhwthr/nvec;
-    m_policy = TeamPolicy(m_data.nelemd, nthr, nvec);
+    m_tp_ne = TeamPolicy(m_data.nelemd, nthr, nvec);
   } else {
     ThreadPreferences tp;
     tp.max_threads_usable = NUM_PHYSICAL_LEV;
@@ -33,16 +37,18 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
     tp.prefer_threads = true;
     const auto p = DefaultThreadsDistribution<ExecSpace>
       ::team_num_threads_vectors(m_data.nelemd, tp);
-    m_policy = TeamPolicy(m_data.nelemd, p.first, 1);
+    m_tp_ne = TeamPolicy(m_data.nelemd, p.first, 1);
   }
-  m_tu = TeamUtils<ExecSpace>(m_policy);
-  nslot = std::min(m_data.nelemd, m_tu.get_num_ws_slots());
-  do {
-    if ( ! Context::singleton().get<Connectivity>().get_comm().root()) break;
+
+  m_tu_ne = TeamUtils<ExecSpace>(m_tu_ne);
+  m_tu_ne_qsize = TeamUtils<ExecSpace>(m_tu_ne_qsize);
+  m_sphere_ops.allocate_buffers(m_tu_ne_qsize);
+  nslot = std::min(m_data.nelemd, m_tu_ne.get_num_ws_slots());
+
+  if (Context::singleton().get<Connectivity>().get_comm().root())
     printf("nelemd %d qsize %d hv_q %d np1_qdp %d independent_time_steps %d\n",
            m_data.nelemd, m_data.qsize, m_data.hv_q, m_data.np1_qdp,
            (int) m_data.independent_time_steps);
-  } while (0);
 }
 
 void ComposeTransportImpl::init_boundary_exchanges () {

@@ -14,6 +14,8 @@
 #include "HybridVCoord.hpp"
 #include "KernelVariables.hpp"
 #include "PhysicalConstants.hpp"
+#include "ReferenceElement.hpp"
+#include "SphereOperators.hpp"
 #include "ElementOps.hpp"
 #include "profiling.hpp"
 #include "ErrorDefs.hpp"
@@ -29,7 +31,8 @@ using namespace Homme;
 
 extern "C" {
   void init_compose_f90(int ne, const Real* hyai, const Real* hybi,
-                        const Real* hyam, const Real* hybm, Real ps0);
+                        const Real* hyam, const Real* hybm, Real ps0,
+                        Real* dvv, Real* mp);
   void cleanup_compose_f90();
   void run_compose_standalone_test_f90();
   void run_trajectory_f90(Real t0, Real t1, bool independent_time_steps, Real* dep);
@@ -158,8 +161,12 @@ struct Session {
     const auto hybi = cmvdc(h.hybrid_bi);
     const auto hyam = cmvdc(h.hybrid_am);
     const auto hybm = cmvdc(h.hybrid_bm);
-
-    init_compose_f90(ne, hyai.data(), hybi.data(), &hyam(0)[0], &hybm(0)[0], h.ps0);
+    auto& ref_FE = c.create<ReferenceElement>();
+    std::vector<Real> dvv(NP*NP), mp(NP*NP);
+    init_compose_f90(ne, hyai.data(), hybi.data(), &hyam(0)[0], &hybm(0)[0], h.ps0,
+                     dvv.data(), mp.data());
+    ref_FE.init_mass(mp.data());
+    ref_FE.init_deriv(dvv.data());
 
     nelemd = c.get<Connectivity>().get_num_local_elements();
     auto& bmm = c.create<MpiBuffersManagerMap>();
@@ -170,16 +177,22 @@ struct Session {
     c.create<Tracers>(nelemd, qsize);
 
     init_elems(nelemd, r, h, *e);
+
+    auto& geo = e->m_geometry;
+    auto& sphop = c.create<SphereOperators>();
+    sphop.setup(geo, ref_FE);
     
     auto& ct = c.create<ComposeTransport>();
-    ct.reset(c.get<SimulationParams>());
+    auto& p = c.get<SimulationParams>();
+    p.qsize = qsize;
+    ct.reset(p);
     ct.init_boundary_exchanges();
 
     nlev = NUM_PHYSICAL_LEV;
     assert(nlev > 0);
     np = NP;
     assert(np == 4);
-    independent_time_steps = false;
+    independent_time_steps = false; // until impl'ed
   }
 
   void cleanup () {
@@ -249,7 +262,7 @@ TEST_CASE ("compose_transport_testing") {
   for (const auto& e : fails) printf("%s %d\n", e.first.c_str(), e.second);
   REQUIRE(fails.empty());
 
-  {
+  if (1) {
     const Real twelve_days = 3600 * 24 * 12;
     const Real t0 = 0.13*twelve_days, t1 = 0.22*twelve_days;
     FA5d depf("depf", 3, s.np, s.np, s.nlev, s.nelemd);

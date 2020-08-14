@@ -65,10 +65,11 @@ struct ComposeTransportImpl {
   const ElementsState m_state;
   const ElementsDerivedState m_derived;
   const Tracers m_tracers;
+  SphereOperators m_sphere_ops;
   Data m_data;
 
-  TeamPolicy m_policy;
-  TeamUtils<ExecSpace> m_tu;
+  TeamPolicy m_tp_ne, m_tp_ne_qsize;
+  TeamUtils<ExecSpace> m_tu_ne, m_tu_ne_qsize;
   int nslot;
 
   std::shared_ptr<BoundaryExchange>
@@ -85,7 +86,9 @@ struct ComposeTransportImpl {
       m_derived(m_elements.m_derived),
       m_state(m_elements.m_state),
       m_tracers(Context::singleton().get<Tracers>()),
-      m_policy(1,1,1), m_tu(m_policy) // throwaway settings
+      m_sphere_ops(Context::singleton().get<SphereOperators>()),
+      m_tp_ne(1,1,1), m_tu_ne(m_tp_ne), // throwaway settings
+      m_tp_ne_qsize(1,1,1), m_tu_ne_qsize(m_tp_ne_qsize) // throwaway settings
   {}
 
   void reset(const SimulationParams& params);

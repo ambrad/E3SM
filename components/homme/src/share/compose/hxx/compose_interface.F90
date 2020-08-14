@@ -7,7 +7,7 @@ module compose_interface
 
 contains
 
-  subroutine init_compose_f90(ne, hyai, hybi, hyam, hybm, ps0) bind(c)
+  subroutine init_compose_f90(ne, hyai, hybi, hyam, hybm, ps0, dvv, mp) bind(c)
     use hybvcoord_mod, only: set_layer_locations
     use thetal_test_interface, only: init_f90
     use edge_mod_base, only: initEdgeBuffer, edge_g
@@ -23,9 +23,9 @@ contains
     real (real_kind), intent(in) :: hyai(nlevp), hybi(nlevp), hyam(nlev), hybm(nlev)
     integer (kind=c_int), value, intent(in) :: ne
     real (real_kind), value, intent(in) :: ps0
+    real (real_kind), intent(out) :: dvv(np,np), mp(np,np)
 
     integer :: ie
-    real (real_kind) :: mp(np,np), dvv(np,np)
 
     transport_alg = 12
     semi_lagrange_cdr_alg = 3
