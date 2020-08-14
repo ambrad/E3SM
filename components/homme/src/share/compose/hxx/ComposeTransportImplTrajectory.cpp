@@ -7,10 +7,40 @@
 #include "ComposeTransportImpl.hpp"
 
 namespace Homme {
+using cti = ComposeTransportImpl;
 
-/*
-  m_geometry.m_vec_sph2cart
-*/
+KOKKOS_FUNCTION
+void ugradv_sphere (
+  const SphereOperators& sphere_ops, KernelVariables& kv,
+  const typename ViewConst<ExecViewUnmanaged<Real[2][3][NP][NP]> >::type& vec_sphere2cart,
+  // velocity, latlon
+  const typename ViewConst<ExecViewUnmanaged<Scalar[2][NP][NP][NUM_LEV]> >::type& u,
+  const typename ViewConst<ExecViewUnmanaged<Scalar[2][NP][NP][NUM_LEV]> >::type& v,
+  ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV]>& v_cart,
+  ExecViewUnmanaged<Scalar[2][NP][NP][NUM_LEV]>& ugradv_cart,
+  // [u dot grad] v, latlon
+  ExecViewUnmanaged<Scalar[2][NP][NP][NUM_LEV]>& ugradv)
+{
+  for (int d_cart = 0; d_cart < 3; ++d_cart) {
+    const auto f1 = [&] (const int i, const int j, const int k) {
+      v_cart(i,j,k) = (vec_sphere2cart(d_cart,0,i,j) * v(0,i,j,k) +
+                       vec_sphere2cart(d_cart,1,i,j) * v(1,i,j,k));      
+    };
+    cti::loop_ijk<NUM_LEV>(kv, f1);
+    kv.team_barrier();
+
+    sphere_ops.gradient_sphere<NUM_LEV>(kv, v_cart, ugradv_cart);
+
+    const auto f2 = [&] (const int i, const int j, const int k) {
+      if (d_cart == 0) ugradv(0,i,j,k) = ugradv(1,i,j,k) = 0;
+      for (int d_latlon = 0; d_latlon < 2; ++d_latlon)
+        ugradv(d_latlon,i,j,k) +=
+          vec_sphere2cart(d_latlon,d_cart,i,j)*
+          (u(0,i,j,k) * ugradv_cart(0,i,j,k) + u(1,i,j,k) * ugradv_cart(1,i,j,k));
+    };
+    cti::loop_ijk<NUM_LEV>(kv, f2);
+  }
+}
 
 void ComposeTransportImpl::calc_trajectory () {
   assert( ! m_data.independent_time_steps); // until impl'ed

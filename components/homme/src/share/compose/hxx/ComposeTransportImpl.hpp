@@ -108,6 +108,38 @@ struct ComposeTransportImpl {
 
   ComposeTransport::TestDepView::HostMirror
   test_trajectory(Real t0, Real t1, bool independent_time_steps);
+
+  template <int KLIM, typename Fn>
+  KOKKOS_INLINE_FUNCTION
+  static void loop_ijk (const KernelVariables& kv, const Fn& h) {
+    using Kokkos::parallel_for;
+    using Kokkos::TeamThreadRange;
+    using Kokkos::ThreadVectorRange;
+
+    if (OnGpu<ExecSpace>::value) {
+      const auto ttr = TeamThreadRange(kv.team, KLIM);
+      const auto tvr = ThreadVectorRange(kv.team, NP*NP);
+      const auto f = [&] (const int idx) {
+        const int i = idx / NP, j = idx % NP;
+        const auto g = [&] (const int k) { h(i,j,k); };
+        parallel_for(tvr, g);
+      };
+      parallel_for(ttr, f);
+    } else if (kv.team.team_size() == 1) {
+      for (int i = 0; i < NP; ++i)
+        for (int j = 0; j < NP; ++j)
+          for (int k = 0; k < KLIM; ++k)
+            h(i,j,k);
+    } else {
+      const auto tr = TeamThreadRange(kv.team, KLIM);
+      const auto f = [&] (const int k) {
+        for (int i = 0; i < NP; ++i)
+          for (int j = 0; j < NP; ++j)
+            h(i,j,k);
+      };
+      parallel_for(tr, f);
+    }
+  }
 };
 
 } // namespace Homme
