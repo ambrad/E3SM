@@ -50,6 +50,9 @@ struct ComposeTransportImpl {
   using TeamPolicy = Kokkos::TeamPolicy<ExecSpace>;
   using MT = typename TeamPolicy::member_type;
 
+  using Buf1 = ExecViewUnmanaged<Scalar*[NP][NP][NUM_LEV]>;
+  using Buf2 = ExecViewUnmanaged<Scalar*[2][NP][NP][NUM_LEV]>;
+
   struct Data {
     int nelemd, qsize, hv_q, np1_qdp;
     bool independent_time_steps;
@@ -67,6 +70,10 @@ struct ComposeTransportImpl {
   const Tracers m_tracers;
   SphereOperators m_sphere_ops;
   Data m_data;
+
+  int m_nslot;
+  Buf1 m_buf1;
+  Buf2 m_buf2[2];
 
   TeamPolicy m_tp_ne, m_tp_ne_qsize;
   TeamUtils<ExecSpace> m_tu_ne, m_tu_ne_qsize;
@@ -91,15 +98,8 @@ struct ComposeTransportImpl {
   {}
 
   void reset(const SimulationParams& params);
-
-  int requested_buffer_size () const {
-    // FunctorsBuffersManager wants the size in terms of sizeof(Real).
-    return 0;
-  }
-
-  void init_buffers (const FunctorsBuffersManager& fbm) {
-  }
-
+  int requested_buffer_size() const;
+  void init_buffers(const FunctorsBuffersManager& fbm);
   void init_boundary_exchanges();
 
   void run();

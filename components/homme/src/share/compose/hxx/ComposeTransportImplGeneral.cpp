@@ -24,10 +24,27 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
 
   m_sphere_ops.allocate_buffers(m_tu_ne_qsize);
 
+  m_nslot = std::min(m_data.nelemd, m_tu_ne.get_num_ws_slots());
+
   if (Context::singleton().get<Connectivity>().get_comm().root())
     printf("nelemd %d qsize %d hv_q %d np1_qdp %d independent_time_steps %d\n",
            m_data.nelemd, m_data.qsize, m_data.hv_q, m_data.np1_qdp,
            (int) m_data.independent_time_steps);
+}
+
+int ComposeTransportImpl::requested_buffer_size () const {
+  // FunctorsBuffersManager wants the size in terms of sizeof(Real).
+  return Buf1::shmem_size(m_nslot) + 2*Buf2::shmem_size(m_nslot);
+}
+
+void ComposeTransportImpl::init_buffers (const FunctorsBuffersManager& fbm) {
+  Scalar* mem = reinterpret_cast<Scalar*>(fbm.get_memory());
+  m_buf1 = Buf1(mem, m_nslot);
+  mem += Buf1::shmem_size(m_nslot)/sizeof(Scalar);
+  for (int i = 0; i < 2; ++i) {
+    m_buf2[i] = Buf2(mem, m_nslot);
+    mem += Buf2::shmem_size(m_nslot)/sizeof(Scalar);
+  }
 }
 
 void ComposeTransportImpl::init_boundary_exchanges () {

@@ -8,6 +8,7 @@
 #include "mpi/Comm.hpp"
 #include "mpi/Connectivity.hpp"
 #include "mpi/MpiBuffersManager.hpp"
+#include "FunctorsBuffersManager.hpp"
 #include "SimulationParams.hpp"
 #include "Elements.hpp"
 #include "Tracers.hpp"
@@ -142,6 +143,7 @@ struct Session {
   std::shared_ptr<Elements> e;
   int nelemd, qsize, nlev, np;
   bool independent_time_steps;
+  FunctorsBuffersManager fbm;
 
   //Session () : r(269041989) {}
 
@@ -186,6 +188,9 @@ struct Session {
     auto& p = c.get<SimulationParams>();
     p.qsize = qsize;
     ct.reset(p);
+    fbm.request_size(ct.requested_buffer_size());
+    fbm.allocate();
+    ct.init_buffers(fbm);
     ct.init_boundary_exchanges();
 
     nlev = NUM_PHYSICAL_LEV;
