@@ -42,40 +42,69 @@ void ugradv_sphere (
   }
 }
 
+/* Calculate the trajecotry at second order using Taylor series expansion. Also
+   DSS the vertical velocity data if running the 3D algorithm.
+
+   Derivation:
+       p is position, v velocity
+       p0 = p1 - dt/2 (v(p0,t0) + v(p1,t1)) + O(dt^3)
+       O((p1 - p0)^2) = O(dt^2)
+       p0 - p1 = -dt v(p1,t1) + O(dt^2)
+       v(p0,t0) = v(p1,t0) + grad v(p1,t0) (p0 - p1) + O((p0 - p1)^2)
+                = v(p1,t0) + grad v(p1,t0) (p0 - p1) + O(dt^2)
+                = v(p1,t0) - dt grad v(p1,t0) v(p1,t1) + O(dt^2)
+       p0 = p1 - dt/2 (v(p0,t0) + v(p1,t1)) + O(dt^3)
+          = p1 - dt/2 (v(p1,t0) - dt grad v(p1,t0) v(p1,t1) + v(p1,t1)) + O(dt^3)
+          = p1 - dt/2 (v(p1,t0) + v(p1,t1) - dt grad v(p1,t0) v(p1,t1)) + O(dt^3)
+   In the code, v(p1,t0) = vstar, v(p1,t1) is vn0.
+ */
 void ComposeTransportImpl::calc_trajectory (const Real dt) {
   assert( ! m_data.independent_time_steps); // until impl'ed
-
   const auto sphere_ops = m_sphere_ops;
   const auto geo = m_elements.m_geometry;
   const auto m_vec_sph2cart = geo.m_vec_sph2cart;
   const auto m_spheremp = geo.m_spheremp;
   const auto m_rspheremp = geo.m_rspheremp;
-  const auto m_vn0 = m_derived.m_vn0;
   const auto m_vstar = m_derived.m_vstar;
-  const auto tl = KOKKOS_LAMBDA (const MT& team) {
-    KernelVariables kv(team, m_tu_ne);
-    const auto ie = kv.ie;
+  { // Calculate midpoint velocity.
+    const auto m_vn0 = m_derived.m_vn0;
+    const auto calc_midpoint_velocity = KOKKOS_LAMBDA (const MT& team) {
+      KernelVariables kv(team, m_tu_ne);
+      const auto ie = kv.ie;
 
-    const auto vn0 = Homme::subview(m_vn0, ie);
-    const auto vstar = Homme::subview(m_vstar, ie);
-    const auto ugradv = Homme::subview(m_buf2[1], kv.team_idx);
-    ugradv_sphere(sphere_ops, kv, Homme::subview(m_vec_sph2cart, ie), vn0, vstar,
-                  Homme::subview(m_buf1, kv.team_idx), Homme::subview(m_buf2[0], kv.team_idx),
-                  ugradv);
+      const auto vn0 = Homme::subview(m_vn0, ie);
+      const auto vstar = Homme::subview(m_vstar, ie);
+      const auto ugradv = Homme::subview(m_buf2[1], kv.team_idx);
+      ugradv_sphere(sphere_ops, kv, Homme::subview(m_vec_sph2cart, ie),
+                    vn0, vstar,
+                    Homme::subview(m_buf1, kv.team_idx),
+                    Homme::subview(m_buf2[0], kv.team_idx),
+                    ugradv);
 
-    const auto spheremp = Homme::subview(m_spheremp, ie);
-    const auto rspheremp = Homme::subview(m_rspheremp, ie);
-    const auto f = [&] (const int i, const int j, const int k) {
-      for (int d = 0; d < 2; ++d)
-        vstar(d,i,j,k) = (((vn0(d,i,j,k) + vstar(d,i,j,k))/2 - dt*ugradv(d,i,j,k)/2)*
-                          spheremp(i,j)*rspheremp(i,j));
-        
+      // Write the midpoint velocity to vstar.
+      const auto spheremp = Homme::subview(m_spheremp, ie);
+      const auto rspheremp = Homme::subview(m_rspheremp, ie);
+      const auto f = [&] (const int i, const int j, const int k) {
+        for (int d = 0; d < 2; ++d)
+          vstar(d,i,j,k) = (((vn0(d,i,j,k) + vstar(d,i,j,k))/2 - dt*ugradv(d,i,j,k)/2)*
+                            spheremp(i,j)*rspheremp(i,j));
+      };
+      cti::loop_ijk<NUM_LEV>(kv, f);
     };
-    cti::loop_ijk<NUM_LEV>(kv, f);
-  };
-  Kokkos::parallel_for(m_tp_ne, tl);
-  const auto be = m_data.independent_time_steps ? m_v_dss_be[1] : m_v_dss_be[0];
-  be->exchange();
+    Kokkos::parallel_for(m_tp_ne, calc_midpoint_velocity);
+  }
+  { // DSS velocity.
+    Kokkos::fence();
+    const auto be = m_data.independent_time_steps ? m_v_dss_be[1] : m_v_dss_be[0];
+    be->exchange();
+  }
+  { // Calculate departure point.
+    const auto calc_departure_point = KOKKOS_LAMBDA (const MT& team) {
+      KernelVariables kv(team, m_tu_ne);
+      const auto ie = kv.ie;
+    };
+    Kokkos::parallel_for(m_tp_ne, calc_departure_point);
+  }
 }
 
 ComposeTransport::TestDepView::HostMirror ComposeTransportImpl::
