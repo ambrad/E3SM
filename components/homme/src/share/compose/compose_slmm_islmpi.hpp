@@ -10,6 +10,9 @@
 
 #include <memory>
 
+// AMB 2017/06-2020/05 Initial for E3SMv2
+// AMB 2020/05-?       Performance-portable impl
+
 namespace homme {
 namespace mpi { //todo Share with cedr.
 

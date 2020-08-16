@@ -104,7 +104,7 @@ struct ComposeTransportImpl {
 
   void run();
 
-  void calc_trajectory();
+  void calc_trajectory(const Real dt);
 
   ComposeTransport::TestDepView::HostMirror
   test_trajectory(Real t0, Real t1, bool independent_time_steps);

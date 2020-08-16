@@ -42,28 +42,46 @@ void ugradv_sphere (
   }
 }
 
-void ComposeTransportImpl::calc_trajectory () {
+void ComposeTransportImpl::calc_trajectory (const Real dt) {
   assert( ! m_data.independent_time_steps); // until impl'ed
 
   const auto sphere_ops = m_sphere_ops;
   const auto geo = m_elements.m_geometry;
-  const auto toplevel = KOKKOS_LAMBDA (const MT& team) {
+  const auto m_vec_sph2cart = geo.m_vec_sph2cart;
+  const auto m_spheremp = geo.m_spheremp;
+  const auto m_rspheremp = geo.m_rspheremp;
+  const auto m_vn0 = m_derived.m_vn0;
+  const auto m_vstar = m_derived.m_vstar;
+  const auto tl = KOKKOS_LAMBDA (const MT& team) {
     KernelVariables kv(team, m_tu_ne);
     const auto ie = kv.ie;
 
+    const auto vn0 = Homme::subview(m_vn0, ie);
+    const auto vstar = Homme::subview(m_vstar, ie);
     const auto ugradv = Homme::subview(m_buf2[1], kv.team_idx);
-    ugradv_sphere(sphere_ops, kv, Homme::subview(geo.m_vec_sph2cart, ie),
-                  Homme::subview(m_derived.m_vn0, ie), Homme::subview(m_derived.m_vstar, ie),
+    ugradv_sphere(sphere_ops, kv, Homme::subview(m_vec_sph2cart, ie), vn0, vstar,
                   Homme::subview(m_buf1, kv.team_idx), Homme::subview(m_buf2[0], kv.team_idx),
                   ugradv);
+
+    const auto spheremp = Homme::subview(m_spheremp, ie);
+    const auto rspheremp = Homme::subview(m_rspheremp, ie);
+    const auto f = [&] (const int i, const int j, const int k) {
+      for (int d = 0; d < 2; ++d)
+        vstar(d,i,j,k) = (((vn0(d,i,j,k) + vstar(d,i,j,k))/2 - dt*ugradv(d,i,j,k)/2)*
+                          spheremp(i,j)*rspheremp(i,j));
+        
+    };
+    cti::loop_ijk<NUM_LEV>(kv, f);
   };
-  Kokkos::parallel_for(m_tp_ne, toplevel);
+  Kokkos::parallel_for(m_tp_ne, tl);
+  const auto be = m_data.independent_time_steps ? m_v_dss_be[1] : m_v_dss_be[0];
+  be->exchange();
 }
 
 ComposeTransport::TestDepView::HostMirror ComposeTransportImpl::
 test_trajectory(Real t0, Real t1, bool independent_time_steps) {
   ComposeTransport::TestDepView dep("dep", m_data.nelemd, num_phys_lev, np2, 3);
-  calc_trajectory();
+  calc_trajectory(t1 - t0);
   const auto deph = Kokkos::create_mirror_view(dep);
   for (int ie = 0; ie < m_data.nelemd; ++ie)
     for (int lev = 0; lev < num_phys_lev; ++lev)
