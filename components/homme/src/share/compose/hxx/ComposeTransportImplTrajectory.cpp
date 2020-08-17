@@ -5,6 +5,7 @@
  *******************************************************************************/
 
 #include "ComposeTransportImpl.hpp"
+#include "PhysicalConstants.hpp"
 
 namespace Homme {
 using cti = ComposeTransportImpl;
@@ -63,22 +64,25 @@ void ComposeTransportImpl::calc_trajectory (const Real dt) {
   const auto sphere_ops = m_sphere_ops;
   const auto geo = m_elements.m_geometry;
   const auto m_vec_sph2cart = geo.m_vec_sph2cart;
-  const auto m_spheremp = geo.m_spheremp;
-  const auto m_rspheremp = geo.m_rspheremp;
   const auto m_vstar = m_derived.m_vstar;
   { // Calculate midpoint velocity.
+    const auto m_spheremp = geo.m_spheremp;
+    const auto m_rspheremp = geo.m_rspheremp;
     const auto m_vn0 = m_derived.m_vn0;
+    const auto buf1 = m_data.buf1;
+    const auto buf2a = m_data.buf2[0];
+    const auto buf2b = m_data.buf2[1];
     const auto calc_midpoint_velocity = KOKKOS_LAMBDA (const MT& team) {
       KernelVariables kv(team, m_tu_ne);
       const auto ie = kv.ie;
 
       const auto vn0 = Homme::subview(m_vn0, ie);
       const auto vstar = Homme::subview(m_vstar, ie);
-      const auto ugradv = Homme::subview(m_buf2[1], kv.team_idx);
+      const auto ugradv = Homme::subview(buf2b, kv.team_idx);
       ugradv_sphere(sphere_ops, kv, Homme::subview(m_vec_sph2cart, ie),
                     vn0, vstar,
-                    Homme::subview(m_buf1, kv.team_idx),
-                    Homme::subview(m_buf2[0], kv.team_idx),
+                    Homme::subview(buf1, kv.team_idx),
+                    Homme::subview(buf2a, kv.team_idx),
                     ugradv);
 
       // Write the midpoint velocity to vstar.
@@ -89,7 +93,7 @@ void ComposeTransportImpl::calc_trajectory (const Real dt) {
           vstar(d,i,j,k) = (((vn0(d,i,j,k) + vstar(d,i,j,k))/2 - dt*ugradv(d,i,j,k)/2)*
                             spheremp(i,j)*rspheremp(i,j));
       };
-      cti::loop_ijk<NUM_LEV>(kv, f);
+      cti::loop_ijk<num_lev_pack>(kv, f);
     };
     Kokkos::parallel_for(m_tp_ne, calc_midpoint_velocity);
   }
@@ -99,9 +103,36 @@ void ComposeTransportImpl::calc_trajectory (const Real dt) {
     be->exchange();
   }
   { // Calculate departure point.
+    const auto m_sphere_cart = geo.m_sphere_cart;
+    const auto rearth = PhysicalConstants::rearth;
+    const auto m_dep_pts = m_data.dep_pts;
     const auto calc_departure_point = KOKKOS_LAMBDA (const MT& team) {
       KernelVariables kv(team, m_tu_ne);
       const auto ie = kv.ie;
+
+      const auto vstar = Homme::subview(m_vstar, ie);
+      const auto vec_sphere2cart = Homme::subview(m_vec_sph2cart, ie);
+      const auto sphere_cart = Homme::subview(m_sphere_cart, ie);
+      const auto dep_pts = Homme::subview(m_dep_pts, ie);
+      const auto f = [&] (const int i, const int j, const int k) {
+        // dp = p1 - dt v/rearth
+        Scalar dp[3], r = 0;
+        for (int d = 0; d < 3; ++d) {
+          const auto vel_cart = (vec_sphere2cart(0,d,i,j)*vstar(0,i,j,k) +
+                                 vec_sphere2cart(1,d,i,j)*vstar(1,i,j,k));
+          dp[d] = sphere_cart(i,j,d) - dt*vel_cart/rearth;
+        }
+        const auto r2 = square(dp[0]) + square(dp[1]) + square(dp[2]);
+        // Pack -> scalar storage.
+        const auto os = packn*k;
+        for (int s = 0; s < packn; ++s) {
+          // No vec call for sqrt.
+          const auto r = std::sqrt(r2[s]);
+          for (int d = 0; d < 3; ++d)
+            dep_pts(i,j,os+s,d) = dp[d][s]/r;
+        }
+      };
+      cti::loop_ijk<num_lev_pack>(kv, f);
     };
     Kokkos::parallel_for(m_tp_ne, calc_departure_point);
   }

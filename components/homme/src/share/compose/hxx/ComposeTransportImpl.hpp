@@ -39,6 +39,7 @@ struct ComposeTransportImpl {
   enum : int { np = NP };
   enum : int { packn = VECTOR_SIZE };
   enum : int { np2 = NP*NP };
+  enum : int { num_lev_pack = NUM_LEV };
   enum : int { max_num_lev_pack = NUM_LEV_P };
   enum : int { num_lev_aligned = max_num_lev_pack*packn };
   enum : int { num_phys_lev = NUM_PHYSICAL_LEV };
@@ -53,9 +54,17 @@ struct ComposeTransportImpl {
   using Buf1 = ExecViewUnmanaged<Scalar*[NP][NP][NUM_LEV]>;
   using Buf2 = ExecViewUnmanaged<Scalar*[2][NP][NP][NUM_LEV]>;
 
+  using DeparturePoints = ExecViewManaged<Real*[NP][NP][NUM_PHYSICAL_LEV][3]>;
+
   struct Data {
     int nelemd, qsize, hv_q, np1_qdp;
     bool independent_time_steps;
+
+    int nslot;
+    Buf1 buf1;
+    Buf2 buf2[2];
+
+    DeparturePoints dep_pts;
 
     Data () : nelemd(-1), qsize(-1), hv_q(1), np1_qdp(-1), independent_time_steps(false) {}
   };
@@ -70,10 +79,6 @@ struct ComposeTransportImpl {
   const Tracers m_tracers;
   SphereOperators m_sphere_ops;
   Data m_data;
-
-  int m_nslot;
-  Buf1 m_buf1;
-  Buf2 m_buf2[2];
 
   TeamPolicy m_tp_ne, m_tp_ne_qsize;
   TeamUtils<ExecSpace> m_tu_ne, m_tu_ne_qsize;

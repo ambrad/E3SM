@@ -1,9 +1,24 @@
 module compose_interface
   use kinds, only: real_kind
-  use iso_c_binding, only: c_bool, c_int, c_double
+  use iso_c_binding, only: c_bool, c_int, c_double, c_ptr, c_loc
   use dimensions_mod, only: nlev, nlevp, np, nelemd, ne, qsize, qsize_d
   use geometry_interface_mod, only: par, elem
   implicit none
+
+  interface
+     subroutine init_elements_2d_c(ie, D_ptr, Dinv_ptr, elem_fcor_ptr, elem_spheremp_ptr, &
+          elem_rspheremp_ptr, elem_metdet_ptr, elem_metinv_ptr, phis_ptr, gradphis_ptr, &
+          tensorvisc_ptr, vec_sph2cart_ptr, sphere_cart_vec) bind(c)
+       use iso_c_binding, only : c_ptr, c_int, c_double
+       use dimensions_mod, only : np
+
+       integer (kind=c_int), intent(in) :: ie
+       type (c_ptr), intent(in) :: D_ptr, Dinv_ptr, elem_fcor_ptr, elem_spheremp_ptr, &
+            elem_rspheremp_ptr, elem_metdet_ptr, elem_metinv_ptr, phis_ptr, gradphis_ptr, &
+            tensorvisc_ptr, vec_sph2cart_ptr
+       real (kind=c_double), intent(in) :: sphere_cart_vec(3,np,np)
+     end subroutine init_elements_2d_c
+  end interface
 
 contains
 
@@ -42,7 +57,7 @@ contains
     call initReductionBuffer(red_min,1)
     call initReductionBuffer(red_max,1)
     allocate(global_shared_buf(nelemd, nrepro_vars))
-
+    
     call sort_neighbor_buffer_mapping(par, elem, 1, nelemd)
     call compose_init(par, elem, GridVertex, init_kokkos=.false.)
     do ie = 1, nelemd
@@ -51,6 +66,61 @@ contains
     call sl_init1(par, elem)
     call compose_set_null_bufs()
   end subroutine init_compose_f90
+
+  subroutine init_geometry_f90() bind(c)
+    use coordinate_systems_mod, only: change_coordinates, cartesian3D_t
+
+    real (real_kind), target, dimension(np,np)     :: elem_mp, elem_fcor, elem_spheremp, &
+         elem_rspheremp, elem_metdet, elem_state_phis
+    real (real_kind), target, dimension(np,np,2)   :: elem_gradphis
+    real (real_kind), target, dimension(np,np,2,2) :: elem_D, elem_Dinv, elem_metinv, elem_tensorvisc
+    real (real_kind), target, dimension(np,np,3,2) :: elem_vec_sph2cart
+    type (c_ptr) :: elem_D_ptr, elem_Dinv_ptr, elem_fcor_ptr, elem_spheremp_ptr, &
+         elem_rspheremp_ptr, elem_metdet_ptr, elem_metinv_ptr, elem_tensorvisc_ptr, &
+         elem_vec_sph2cart_ptr, elem_state_phis_ptr, elem_gradphis_ptr
+
+    type (cartesian3D_t) :: sphere_cart
+    real (kind=real_kind) :: sphere_cart_vec(3,np,np)
+
+    integer :: ie, i, j
+
+    elem_D_ptr            = c_loc(elem_D)
+    elem_Dinv_ptr         = c_loc(elem_Dinv)
+    elem_fcor_ptr         = c_loc(elem_fcor)
+    elem_spheremp_ptr     = c_loc(elem_spheremp)
+    elem_rspheremp_ptr    = c_loc(elem_rspheremp)
+    elem_metdet_ptr       = c_loc(elem_metdet)
+    elem_metinv_ptr       = c_loc(elem_metinv)
+    elem_tensorvisc_ptr   = c_loc(elem_tensorvisc)
+    elem_vec_sph2cart_ptr = c_loc(elem_vec_sph2cart)
+    elem_state_phis_ptr   = c_loc(elem_state_phis)
+    elem_gradphis_ptr     = c_loc(elem_gradphis)
+    do ie=1,nelemd
+      elem_D            = elem(ie)%D
+      elem_Dinv         = elem(ie)%Dinv
+      elem_fcor         = elem(ie)%fcor
+      elem_spheremp     = elem(ie)%spheremp
+      elem_rspheremp    = elem(ie)%rspheremp
+      elem_metdet       = elem(ie)%metdet
+      elem_metinv       = elem(ie)%metinv
+      elem_state_phis   = elem(ie)%state%phis
+      elem_gradphis     = elem(ie)%derived%gradphis
+      elem_tensorvisc   = elem(ie)%tensorVisc
+      elem_vec_sph2cart = elem(ie)%vec_sphere2cart
+      do j = 1,np
+         do i = 1,np
+            sphere_cart = change_coordinates(elem(ie)%spherep(i,j))
+            sphere_cart_vec(1,i,j) = sphere_cart%x
+            sphere_cart_vec(2,i,j) = sphere_cart%y
+            sphere_cart_vec(3,i,j) = sphere_cart%z
+         end do
+      end do
+      call init_elements_2d_c(ie-1, elem_D_ptr, elem_Dinv_ptr, elem_fcor_ptr, &
+           elem_spheremp_ptr, elem_rspheremp_ptr, elem_metdet_ptr, elem_metinv_ptr, &
+           elem_state_phis_ptr, elem_gradphis_ptr, elem_tensorvisc_ptr, &
+           elem_vec_sph2cart_ptr, sphere_cart_vec)
+    enddo
+  end subroutine init_geometry_f90
 
   subroutine cleanup_compose_f90() bind(c)
     use compose_mod, only: compose_finalize

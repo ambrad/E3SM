@@ -34,6 +34,7 @@ extern "C" {
   void init_compose_f90(int ne, const Real* hyai, const Real* hybi,
                         const Real* hyam, const Real* hybm, Real ps0,
                         Real* dvv, Real* mp);
+  void init_geometry_f90();
   void cleanup_compose_f90();
   void run_compose_standalone_test_f90();
   void run_trajectory_f90(Real t0, Real t1, bool independent_time_steps, Real* dep);
@@ -103,37 +104,7 @@ static void init_elems (int nelemd, Random& r, const HybridVCoord& hvcoord,
   e.m_state.randomize(r.gen_seed(), max_pressure, hvcoord.ps0, hvcoord.hybrid_ai0,
                       geo.m_phis);
   e.m_derived.randomize(r.gen_seed(), 10);
-
-  // We want mixed signs in w_i, v, and gradphis.
-  for (int ie = 0; ie < e.num_elems(); ++ie)
-    for (int i = 0; i < 3; ++i) {
-      fill(r, subview(e.m_state.m_w_i,ie,i,all,all,all), 5 ); // Pa/s
-      fill(r, subview(e.m_state.m_v,ie,i,0,all,all,all), 10); // m/s
-      fill(r, subview(e.m_state.m_v,ie,i,1,all,all,all), 10);
-    }
-  const auto gpm = create_mirror_view(e.m_geometry.m_gradphis);
-  for (int ie = 0; ie < e.num_elems(); ++ie)
-    for (int d = 0; d < 2; ++d)
-      for (int i = 0; i < np; ++i)
-        for (int j = 0; j < np; ++j)
-          gpm(ie,d,i,j) = r.urrng(-1,1);
-  deep_copy(e.m_geometry.m_gradphis, gpm);
-
-  // Make sure dphi <= -g.
-  const auto phis = cmvdc(geo.m_phis);
-  const auto phinh_i = cmvdc(e.m_state.m_phinh_i);
-  for (int ie = 0; ie < e.num_elems(); ++ie)
-    for (int t = 0; t < NUM_TIME_LEVELS; ++t)
-      for (int i = 0; i < np; ++i)
-        for (int j = 0; j < np; ++j) {
-          Real* const phi = &phinh_i(ie,t,i,j,0)[0];
-          phi[nlev] = phis(ie,i,j);
-          for (int k = nlev-1; k >= 0; --k)
-            if (phi[k] - phi[k+1] < PhysicalConstants::g)
-              for (int k1 = k; k1 >= 0; --k1)
-                phi[k1] += PhysicalConstants::g;
-        }
-  deep_copy(e.m_state.m_phinh_i, phinh_i);
+  init_geometry_f90();
 }
 
 struct Session {

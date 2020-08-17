@@ -17,6 +17,8 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
   slmm_throw_if(m_data.qsize == 0,
                 "SL transport requires qsize > 0; if qsize == 0, use Eulerian.");
 
+  m_data.dep_pts = DeparturePoints("dep_pts", m_data.nelemd);
+
   m_tp_ne = Homme::get_default_team_policy<ExecSpace>(m_data.nelemd);
   m_tp_ne_qsize = Homme::get_default_team_policy<ExecSpace>(m_data.nelemd * m_data.qsize);
   m_tu_ne = TeamUtils<ExecSpace>(m_tu_ne);
@@ -24,7 +26,7 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
 
   m_sphere_ops.allocate_buffers(m_tu_ne_qsize);
 
-  m_nslot = std::min(m_data.nelemd, m_tu_ne.get_num_ws_slots());
+  m_data.nslot = std::min(m_data.nelemd, m_tu_ne.get_num_ws_slots());
 
   if (Context::singleton().get<Connectivity>().get_comm().root())
     printf("nelemd %d qsize %d hv_q %d np1_qdp %d independent_time_steps %d\n",
@@ -34,16 +36,16 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
 
 int ComposeTransportImpl::requested_buffer_size () const {
   // FunctorsBuffersManager wants the size in terms of sizeof(Real).
-  return Buf1::shmem_size(m_nslot) + 2*Buf2::shmem_size(m_nslot);
+  return Buf1::shmem_size(m_data.nslot) + 2*Buf2::shmem_size(m_data.nslot);
 }
 
 void ComposeTransportImpl::init_buffers (const FunctorsBuffersManager& fbm) {
   Scalar* mem = reinterpret_cast<Scalar*>(fbm.get_memory());
-  m_buf1 = Buf1(mem, m_nslot);
-  mem += Buf1::shmem_size(m_nslot)/sizeof(Scalar);
+  m_data.buf1 = Buf1(mem, m_data.nslot);
+  mem += Buf1::shmem_size(m_data.nslot)/sizeof(Scalar);
   for (int i = 0; i < 2; ++i) {
-    m_buf2[i] = Buf2(mem, m_nslot);
-    mem += Buf2::shmem_size(m_nslot)/sizeof(Scalar);
+    m_data.buf2[i] = Buf2(mem, m_data.nslot);
+    mem += Buf2::shmem_size(m_data.nslot)/sizeof(Scalar);
   }
 }
 
