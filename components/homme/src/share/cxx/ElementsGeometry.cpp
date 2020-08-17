@@ -55,7 +55,8 @@ set_elem_data (const int ie,
                CF90Ptr& D, CF90Ptr& Dinv, CF90Ptr& fcor,
                CF90Ptr& spheremp, CF90Ptr& rspheremp,
                CF90Ptr& metdet, CF90Ptr& metinv, CF90Ptr& phis,
-               CF90Ptr& tensorvisc, CF90Ptr& vec_sph2cart, const bool consthv) {
+               CF90Ptr& tensorvisc, CF90Ptr& vec_sph2cart, const bool consthv,
+               const Real* sphere_cart) {
   // Check geometry was inited
   assert (m_num_elems>0);
 
@@ -153,6 +154,13 @@ set_elem_data (const int ie,
   if( !consthv ) {
     Kokkos::deep_copy(Homme::subview(m_tensorvisc,ie), h_tensorvisc);
     Kokkos::deep_copy(Homme::subview(m_vec_sph2cart,ie), h_vec_sph2cart);
+  }
+
+  if (sphere_cart) {
+    if (m_sphere_cart.size() == 0)
+      m_sphere_cart = ExecViewManaged<Real * [NP][NP][3]>("sphere_cart", m_num_elems);
+    const auto fsc = HostViewUnmanaged<const Real [NP][NP][3]>(sphere_cart);
+    Kokkos::deep_copy(Homme::subview(m_sphere_cart, ie), fsc);
   }
 }
 

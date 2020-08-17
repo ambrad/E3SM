@@ -14,7 +14,7 @@ module prim_driver_mod
 contains
 
   subroutine prim_init2(elem, hybrid, nets, nete, tl, hvcoord)
-    use iso_c_binding,    only : c_loc, c_ptr, c_bool, C_NULL_CHAR
+    use iso_c_binding,    only : c_loc, c_ptr, c_bool, C_NULL_CHAR, c_double
     use control_mod,      only : limiter_option, rsplit, qsplit, tstep_type, statefreq,  &
                                  nu, nu_p, nu_q, nu_s, nu_div, nu_top, vert_remap_q_alg, &
                                  hypervis_order, hypervis_subcycle, hypervis_scaling,    &
@@ -35,6 +35,7 @@ contains
     use kinds,            only : real_kind
     use prim_driver_base, only : deriv1, prim_init2_base => prim_init2
     use prim_state_mod,   only : prim_printstate
+    use coordinate_systems_mod, only: change_coordinates, cartesian3D_t
 
     interface
       subroutine init_reference_element_c (deriv_ptr, mass_ptr) bind(c)
@@ -76,8 +77,10 @@ contains
                                      elem_spheremp_ptr, elem_rspheremp_ptr,   &
                                      elem_metdet_ptr, elem_metinv_ptr,        &
                                      phis_ptr, gradphis_ptr,                  &
-                                     tensorvisc_ptr, vec_sph2cart_ptr) bind(c)
-        use iso_c_binding, only : c_ptr, c_int
+                                     tensorvisc_ptr, vec_sph2cart_ptr,        &
+                                     sphere_cart_vec) bind(c)
+        use iso_c_binding, only : c_ptr, c_int, c_double
+        use dimensions_mod, only : np
         !
         ! Inputs
         !
@@ -86,6 +89,7 @@ contains
         type (c_ptr) , intent(in) :: elem_spheremp_ptr, elem_rspheremp_ptr
         type (c_ptr) , intent(in) :: elem_metdet_ptr, elem_metinv_ptr, phis_ptr, gradphis_ptr
         type (c_ptr) , intent(in) :: tensorvisc_ptr, vec_sph2cart_ptr
+        real (kind=c_double), intent(in) :: sphere_cart_vec(3,np,np)
       end subroutine init_elements_2d_c
       subroutine init_diagnostics_c (elem_state_q_ptr, elem_accum_qvar_ptr, elem_accum_qmass_ptr, &
                                      elem_accum_q1mass_ptr, elem_accum_iener_ptr,                 &
@@ -148,7 +152,7 @@ contains
     !
     ! Locals
     !
-    integer :: ie
+    integer :: ie, i, j
     logical (kind=c_bool) :: use_semi_lagrange_transport
     real (kind=real_kind), target :: dvv (np,np)
 
@@ -170,6 +174,9 @@ contains
     type (c_ptr) :: elem_accum_iener_ptr, elem_accum_kener_ptr, elem_accum_pener_ptr
     type (c_ptr) :: elem_accum_qvar_ptr, elem_accum_qmass_ptr, elem_accum_q1mass_ptr
     character(len=MAX_STRING_LEN), target :: test_name
+
+    type (cartesian3D_t) :: sphere_cart
+    real (kind=real_kind) :: sphere_cart_vec(3,np,np)
 
     ! Call the base version of prim_init2
     call prim_init2_base(elem,hybrid,nets,nete,tl,hvcoord)
@@ -232,12 +239,21 @@ contains
       elem_gradphis     = elem(ie)%derived%gradphis
       elem_tensorvisc   = elem(ie)%tensorVisc
       elem_vec_sph2cart = elem(ie)%vec_sphere2cart
+      do j = 1,np
+         do i = 1,np
+            sphere_cart = change_coordinates(elem(ie)%spherep(i,j))
+            sphere_cart_vec(1,i,j) = sphere_cart%x
+            sphere_cart_vec(2,i,j) = sphere_cart%y
+            sphere_cart_vec(3,i,j) = sphere_cart%z
+         end do
+      end do
       call init_elements_2d_c (ie-1,                                      &
                                elem_D_ptr, elem_Dinv_ptr, elem_fcor_ptr,  &
                                elem_spheremp_ptr, elem_rspheremp_ptr,     &
                                elem_metdet_ptr, elem_metinv_ptr,          &
                                elem_state_phis_ptr, elem_gradphis_ptr,    &
-                               elem_tensorvisc_ptr, elem_vec_sph2cart_ptr)
+                               elem_tensorvisc_ptr, elem_vec_sph2cart_ptr,&
+                               sphere_cart_vec)
     enddo
 
     ! Initialize the 3d element arrays in C++

@@ -41,6 +41,9 @@ public:
   ExecViewManaged<Real * [2][2][NP][NP]> m_d;
   ExecViewManaged<Real * [2][2][NP][NP]> m_dinv;
 
+  // (x,y,z) points of GLL nodes
+  ExecViewManaged<Real * [NP][NP][3]> m_sphere_cart;
+
   ElementsGeometry() : m_num_elems(0) {}
 
   void init (const int num_elems, const bool consthv, const bool alloc_gradphis);
@@ -56,7 +59,8 @@ public:
                       CF90Ptr& spheremp, CF90Ptr& rspheremp,
                       CF90Ptr& metdet, CF90Ptr& metinv,
                       CF90Ptr& phis, CF90Ptr& tensorvisc,
-                      CF90Ptr& vec_sph2cart, const bool consthv);
+                      CF90Ptr& vec_sph2cart, const bool consthv,
+                      const Real* sphere_cart = nullptr);
 
 
 private:

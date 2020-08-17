@@ -380,13 +380,15 @@ void init_elements_2d_c (const int& ie,
                          CF90Ptr& spheremp, CF90Ptr& rspheremp,
                          CF90Ptr& metdet, CF90Ptr& metinv,
                          CF90Ptr& phis, CF90Ptr& gradphis,
-                         CF90Ptr &tensorvisc, CF90Ptr &vec_sph2cart)
+                         CF90Ptr &tensorvisc, CF90Ptr &vec_sph2cart,
+                         double* sphere_cart_vec)
 {
   Elements& e = Context::singleton().get<Elements> ();
   const SimulationParams& params = Context::singleton().get<SimulationParams>();
 
   const bool consthv = (params.hypervis_scaling==0.0);
-  e.m_geometry.set_elem_data(ie,D,Dinv,fcor,spheremp,rspheremp,metdet,metinv,phis,tensorvisc,vec_sph2cart,consthv);
+  e.m_geometry.set_elem_data(ie,D,Dinv,fcor,spheremp,rspheremp,metdet,metinv,phis,tensorvisc,
+                             vec_sph2cart,consthv,sphere_cart_vec);
 
   // Note: yes, we *could* compute gradphis from grad, but at the time of this call,
   //       we do not yet have the SphereOperators functor initialized. For simplicity,
