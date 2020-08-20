@@ -108,7 +108,9 @@ static void init_elems (int nelemd, Random& r, const HybridVCoord& hvcoord,
 }
 
 struct Session {
-  static const int ne = 4;
+#pragma message "FOR DEV"
+  static const int ne = 2; //4;
+
   HybridVCoord h;
   Random r;
   std::shared_ptr<Elements> e;
@@ -146,8 +148,11 @@ struct Session {
     bmm.set_connectivity(c.get_ptr<Connectivity>());
     c.create<Elements>();
     e = c.get_ptr<Elements>();
-    c.create<SimulationParams>();
     c.create<Tracers>(nelemd, qsize);
+
+    auto& p = c.create<SimulationParams>();
+    p.hypervis_scaling = 0;
+    p.qsize = qsize;
 
     init_elems(nelemd, r, h, *e);
 
@@ -156,8 +161,6 @@ struct Session {
     sphop.setup(geo, ref_FE);
     
     auto& ct = c.create<ComposeTransport>();
-    auto& p = c.get<SimulationParams>();
-    p.qsize = qsize;
     ct.reset(p);
     fbm.request_size(ct.requested_buffer_size());
     fbm.allocate();
@@ -238,7 +241,7 @@ TEST_CASE ("compose_transport_testing") {
   for (const auto& e : fails) printf("%s %d\n", e.first.c_str(), e.second);
   REQUIRE(fails.empty());
 
-  if (1) {
+  {
     const Real twelve_days = 3600 * 24 * 12;
     const Real t0 = 0.13*twelve_days, t1 = 0.22*twelve_days;
     FA5d depf("depf", 3, s.np, s.np, s.nlev, s.nelemd);

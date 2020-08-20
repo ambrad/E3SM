@@ -197,6 +197,12 @@ public:
   { return format_strings_as_list(inputs, 6); }
 };
 
+// Function to add some additional variation to the test: make the winds differ
+// by elevation.
+inline void offset_latlon (const Int nlev, const Int k, Real& lat, Real& lon) {
+  lon += k*(0.4/nlev);
+}
+
 } // namespace test
 } // namespace compose
 

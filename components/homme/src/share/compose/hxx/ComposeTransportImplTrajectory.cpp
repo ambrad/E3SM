@@ -126,6 +126,8 @@ void ComposeTransportImpl::calc_trajectory (const Real dt) {
         // Pack -> scalar storage.
         const auto os = packn*k;
         for (int s = 0; s < packn; ++s) {
+          if (num_phys_lev % packn != 0 && // compile out this conditional when possible
+              os+s >= num_phys_lev) break;
           // No vec call for sqrt.
           const auto r = std::sqrt(r2[s]);
           for (int d = 0; d < 3; ++d)
