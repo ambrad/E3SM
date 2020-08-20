@@ -189,7 +189,7 @@ contains
        do k = 1,nlev
           do j = 1,np
              do i = 1,np
-#if 0
+#if 1
                 dep(1,i,j,k,ie) = dep_points_all(i,j,k,ie)%x
                 dep(2,i,j,k,ie) = dep_points_all(i,j,k,ie)%y
                 dep(3,i,j,k,ie) = dep_points_all(i,j,k,ie)%z

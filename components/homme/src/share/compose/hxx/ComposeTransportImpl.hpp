@@ -145,6 +145,15 @@ struct ComposeTransportImpl {
       parallel_for(tr, f);
     }
   }
+
+  template <typename Fn>
+  void loop_host_ie_plev_ij (const Fn& f) const {
+    for (int ie = 0; ie < m_data.nelemd; ++ie)
+      for (int lev = 0; lev < num_phys_lev; ++lev)
+        for (int i = 0, k = 0; i < np; ++i)
+          for (int j = 0; j < np; ++j, ++k)
+            f(ie, lev, i, j);
+  }
 };
 
 } // namespace Homme

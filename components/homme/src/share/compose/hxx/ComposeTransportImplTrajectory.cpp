@@ -7,6 +7,8 @@
 #include "ComposeTransportImpl.hpp"
 #include "PhysicalConstants.hpp"
 
+#include "compose_test.hpp"
+
 namespace Homme {
 using cti = ComposeTransportImpl;
 
@@ -149,14 +151,37 @@ void ComposeTransportImpl::calc_trajectory (const Real dt) {
 
 ComposeTransport::TestDepView::HostMirror ComposeTransportImpl::
 test_trajectory(Real t0, Real t1, bool independent_time_steps) {
+  m_data.np1 = 0;
+  const auto& geo = m_elements.m_geometry;
+
+  {
+    const auto vstar = Kokkos::create_mirror_view(m_derived.m_vstar);
+    const auto v = Kokkos::create_mirror_view(m_state.m_v);
+    const auto p_gll = Kokkos::create_mirror_view(geo.m_sphere_cart);
+    Kokkos::deep_copy(p_gll, geo.m_sphere_cart);
+    compose::test::NonDivergentWindField wf;
+    const auto f1 = [&] (int ie, int lev, int i, int j) {
+      Real lat, lon;
+      compose::test::xyz2ll(p_gll(ie,i,j,0), p_gll(ie,i,j,1), p_gll(ie,i,j,2), lat, lon);
+      compose::test::offset_latlon(num_phys_lev, lev, lat, lon);
+      const Real latlon[] = {lat, lon};
+      Real uv[2];
+      wf.eval(t0, latlon, uv);
+      for (int d = 0; d < 2; ++d)
+        vstar(ie,d,i,j,lev/packn)[lev%packn] = uv[d];
+      wf.eval(t1, latlon, uv);
+      for (int d = 0; d < 2; ++d)
+        v(ie,m_data.np1,d,i,j,lev/packn)[lev%packn] = uv[d];
+    };
+    loop_host_ie_plev_ij(f1);
+    Kokkos::deep_copy(m_derived.m_vstar, vstar);
+    Kokkos::deep_copy(m_state.m_v, v);
+  }
+
   calc_trajectory(t1 - t0);
+
   const auto deph = Kokkos::create_mirror_view(m_data.dep_pts);
-  for (int ie = 0; ie < m_data.nelemd; ++ie)
-    for (int lev = 0; lev < num_phys_lev; ++lev)
-      for (int i = 0, k = 0; i < np; ++i)
-        for (int j = 0; j < np; ++j, ++k)
-          for (int d = 0; d < 3; ++d)
-            deph(ie,lev,i,j,d) = ie*(lev + k) + d;
+  Kokkos::deep_copy(deph, m_data.dep_pts);
   return deph;
 }
 
