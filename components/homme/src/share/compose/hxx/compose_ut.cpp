@@ -227,7 +227,7 @@ static bool equal (const Real& a, const Real& b,
 TEST_CASE ("compose_transport_testing") {
   static constexpr Real tol = std::numeric_limits<Real>::epsilon();
 
-  auto& s = Session::singleton(); try {
+  auto& s = Session::singleton(); //try {
 
   REQUIRE(compose::test::slmm_unittest() == 0);
   REQUIRE(compose::test::cedr_unittest() == 0);
@@ -257,6 +257,6 @@ TEST_CASE ("compose_transport_testing") {
 
   run_compose_standalone_test_f90();
 
-  } catch (...) {}
+  //} catch (...) {}
   Session::delete_singleton();
 }

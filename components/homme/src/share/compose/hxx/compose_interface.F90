@@ -8,7 +8,7 @@ module compose_interface
   interface
      subroutine init_elements_2d_c(ie, D_ptr, Dinv_ptr, elem_fcor_ptr, elem_spheremp_ptr, &
           elem_rspheremp_ptr, elem_metdet_ptr, elem_metinv_ptr, phis_ptr, gradphis_ptr, &
-          tensorvisc_ptr, vec_sph2cart_ptr, sphere_cart_vec) bind(c)
+          tensorvisc_ptr, vec_sph2cart_ptr, sphere_cart_vec, sphere_latlon_vec) bind(c)
        use iso_c_binding, only : c_ptr, c_int, c_double
        use dimensions_mod, only : np
 
@@ -16,7 +16,7 @@ module compose_interface
        type (c_ptr), intent(in) :: D_ptr, Dinv_ptr, elem_fcor_ptr, elem_spheremp_ptr, &
             elem_rspheremp_ptr, elem_metdet_ptr, elem_metinv_ptr, phis_ptr, gradphis_ptr, &
             tensorvisc_ptr, vec_sph2cart_ptr
-       real (kind=c_double), intent(in) :: sphere_cart_vec(3,np,np)
+       real (kind=c_double), intent(in) :: sphere_cart_vec(3,np,np), sphere_latlon_vec(2,np,np)
      end subroutine init_elements_2d_c
   end interface
 
@@ -80,7 +80,7 @@ contains
          elem_vec_sph2cart_ptr, elem_state_phis_ptr, elem_gradphis_ptr
 
     type (cartesian3D_t) :: sphere_cart
-    real (kind=real_kind) :: sphere_cart_vec(3,np,np)
+    real (kind=real_kind) :: sphere_cart_vec(3,np,np), sphere_latlon_vec(2,np,np)
 
     integer :: ie, i, j
 
@@ -113,12 +113,14 @@ contains
             sphere_cart_vec(1,i,j) = sphere_cart%x
             sphere_cart_vec(2,i,j) = sphere_cart%y
             sphere_cart_vec(3,i,j) = sphere_cart%z
+            sphere_latlon_vec(1,i,j) = elem(ie)%spherep(i,j)%lat
+            sphere_latlon_vec(2,i,j) = elem(ie)%spherep(i,j)%lon
          end do
       end do
       call init_elements_2d_c(ie-1, elem_D_ptr, elem_Dinv_ptr, elem_fcor_ptr, &
            elem_spheremp_ptr, elem_rspheremp_ptr, elem_metdet_ptr, elem_metinv_ptr, &
            elem_state_phis_ptr, elem_gradphis_ptr, elem_tensorvisc_ptr, &
-           elem_vec_sph2cart_ptr, sphere_cart_vec)
+           elem_vec_sph2cart_ptr, sphere_cart_vec, sphere_latlon_vec)
     enddo
   end subroutine init_geometry_f90
 

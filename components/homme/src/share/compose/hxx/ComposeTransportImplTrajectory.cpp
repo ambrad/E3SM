@@ -157,14 +157,12 @@ test_trajectory(Real t0, Real t1, bool independent_time_steps) {
   {
     const auto vstar = Kokkos::create_mirror_view(m_derived.m_vstar);
     const auto v = Kokkos::create_mirror_view(m_state.m_v);
-    const auto p_gll = Kokkos::create_mirror_view(geo.m_sphere_cart);
-    Kokkos::deep_copy(p_gll, geo.m_sphere_cart);
+    const auto pll = Kokkos::create_mirror_view(geo.m_sphere_latlon);
+    Kokkos::deep_copy(pll, geo.m_sphere_latlon);
     compose::test::NonDivergentWindField wf;
     const auto f1 = [&] (int ie, int lev, int i, int j) {
-      Real lat, lon;
-      compose::test::xyz2ll(p_gll(ie,i,j,0), p_gll(ie,i,j,1), p_gll(ie,i,j,2), lat, lon);
-      compose::test::offset_latlon(num_phys_lev, lev, lat, lon);
-      const Real latlon[] = {lat, lon};
+      Real latlon[] = {pll(ie,i,j,0), pll(ie,i,j,1)};
+      compose::test::offset_latlon(num_phys_lev, lev, latlon[0], latlon[1]);
       Real uv[2];
       wf.eval(t0, latlon, uv);
       for (int d = 0; d < 2; ++d)
