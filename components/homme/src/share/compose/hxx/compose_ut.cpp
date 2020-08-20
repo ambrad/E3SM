@@ -101,10 +101,6 @@ static void init_elems (int nelemd, Random& r, const HybridVCoord& hvcoord,
   e.init(nelemd, false, true);
   const auto max_pressure = 1000 + hvcoord.ps0;
   auto& geo = e.m_geometry;
-  e.m_geometry.randomize(r.gen_seed());
-  e.m_state.randomize(r.gen_seed(), max_pressure, hvcoord.ps0, hvcoord.hybrid_ai0,
-                      geo.m_phis);
-  e.m_derived.randomize(r.gen_seed(), 10);
   init_geometry_f90();
 }
 
@@ -231,7 +227,7 @@ static bool equal (const Real& a, const Real& b,
 TEST_CASE ("compose_transport_testing") {
   static constexpr Real tol = std::numeric_limits<Real>::epsilon();
 
-  auto& s = Session::singleton();
+  auto& s = Session::singleton(); try {
 
   REQUIRE(compose::test::slmm_unittest() == 0);
   REQUIRE(compose::test::cedr_unittest() == 0);
@@ -256,10 +252,11 @@ TEST_CASE ("compose_transport_testing") {
         for (int i = 0; i < s.np; ++i)
           for (int j = 0; j < s.np; ++j)  
             for (int d = 0; d < 3; ++d)
-              REQUIRE(equal(depf(ie,lev,i,j,d), depc(ie,lev,i,j,d), 1e4*tol));
+              REQUIRE(equal(depf(ie,lev,i,j,d), depc(ie,lev,i,j,d), 10*tol));
   }
 
   run_compose_standalone_test_f90();
 
+  } catch (...) {}
   Session::delete_singleton();
 }

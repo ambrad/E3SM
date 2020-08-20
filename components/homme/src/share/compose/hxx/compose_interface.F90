@@ -95,7 +95,7 @@ contains
     elem_vec_sph2cart_ptr = c_loc(elem_vec_sph2cart)
     elem_state_phis_ptr   = c_loc(elem_state_phis)
     elem_gradphis_ptr     = c_loc(elem_gradphis)
-    do ie=1,nelemd
+    do ie = 1,nelemd
       elem_D            = elem(ie)%D
       elem_Dinv         = elem(ie)%Dinv
       elem_fcor         = elem(ie)%fcor
@@ -189,15 +189,9 @@ contains
        do k = 1,nlev
           do j = 1,np
              do i = 1,np
-#if 1
                 dep(1,i,j,k,ie) = dep_points_all(i,j,k,ie)%x
                 dep(2,i,j,k,ie) = dep_points_all(i,j,k,ie)%y
                 dep(3,i,j,k,ie) = dep_points_all(i,j,k,ie)%z
-#else
-                dep(1,i,j,k,ie) = (ie-1)*(k-1 + np*(j-1)+i-1) + 0
-                dep(2,i,j,k,ie) = (ie-1)*(k-1 + np*(j-1)+i-1) + 1
-                dep(3,i,j,k,ie) = (ie-1)*(k-1 + np*(j-1)+i-1) + 2
-#endif
              end do
           end do
        end do
