@@ -132,16 +132,16 @@ set_elem_data (const int ie,
         }
       }
     }
-    for (int idim = 0; idim < 2; ++idim) {
-      for (int jdim = 0; jdim < 3; ++jdim) {
-        for (int igp = 0; igp < NP; ++igp) {
-          for (int jgp = 0; jgp < NP; ++jgp) {
-            h_vec_sph2cart (idim,jdim,igp,jgp) = h_vec_sph2cart_f90 (idim,jdim,igp,jgp);
-          }
+  }
+  for (int idim = 0; idim < 2; ++idim) {
+    for (int jdim = 0; jdim < 3; ++jdim) {
+      for (int igp = 0; igp < NP; ++igp) {
+        for (int jgp = 0; jgp < NP; ++jgp) {
+          h_vec_sph2cart (idim,jdim,igp,jgp) = h_vec_sph2cart_f90 (idim,jdim,igp,jgp);
         }
       }
     }
-  }//end if consthv
+  }
 
   Kokkos::deep_copy(Homme::subview(m_fcor,ie), h_fcor);
   Kokkos::deep_copy(Homme::subview(m_metinv,ie), h_metinv);
@@ -153,8 +153,8 @@ set_elem_data (const int ie,
   Kokkos::deep_copy(Homme::subview(m_dinv,ie), h_dinv);
   if( !consthv ) {
     Kokkos::deep_copy(Homme::subview(m_tensorvisc,ie), h_tensorvisc);
-    Kokkos::deep_copy(Homme::subview(m_vec_sph2cart,ie), h_vec_sph2cart);
   }
+  Kokkos::deep_copy(Homme::subview(m_vec_sph2cart,ie), h_vec_sph2cart);
 
   if (sphere_cart) {
     if (m_sphere_cart.size() == 0)
