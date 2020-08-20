@@ -68,15 +68,21 @@ void ComposeTransportImpl::calc_trajectory (const Real dt) {
   { // Calculate midpoint velocity.
     const auto m_spheremp = geo.m_spheremp;
     const auto m_rspheremp = geo.m_rspheremp;
+    const auto m_v = m_state.m_v;
     const auto m_vn0 = m_derived.m_vn0;
     const auto buf1 = m_data.buf1;
     const auto buf2a = m_data.buf2[0];
     const auto buf2b = m_data.buf2[1];
+    const auto np1 = m_data.np1;
     const auto calc_midpoint_velocity = KOKKOS_LAMBDA (const MT& team) {
       KernelVariables kv(team, m_tu_ne);
       const auto ie = kv.ie;
 
-      const auto vn0 = Homme::subview(m_vn0, ie);
+      //todo independent_time_steps code here
+
+      const auto vn0 = (m_data.independent_time_steps ?
+                        Homme::subview(m_vn0, ie) :
+                        Homme::subview(m_v, ie, np1));
       const auto vstar = Homme::subview(m_vstar, ie);
       const auto ugradv = Homme::subview(buf2b, kv.team_idx);
       ugradv_sphere(sphere_ops, kv, Homme::subview(m_vec_sph2cart, ie),
@@ -126,12 +132,13 @@ void ComposeTransportImpl::calc_trajectory (const Real dt) {
         // Pack -> scalar storage.
         const auto os = packn*k;
         for (int s = 0; s < packn; ++s) {
+          const auto oss = os + s;
           if (num_phys_lev % packn != 0 && // compile out this conditional when possible
-              os+s >= num_phys_lev) break;
+              oss >= num_phys_lev) break;
           // No vec call for sqrt.
           const auto r = std::sqrt(r2[s]);
           for (int d = 0; d < 3; ++d)
-            dep_pts(i,j,os+s,d) = dp[d][s]/r;
+            dep_pts(oss,i,j,d) = dp[d][s]/r;
         }
       };
       cti::loop_ijk<num_lev_pack>(kv, f);
@@ -142,14 +149,14 @@ void ComposeTransportImpl::calc_trajectory (const Real dt) {
 
 ComposeTransport::TestDepView::HostMirror ComposeTransportImpl::
 test_trajectory(Real t0, Real t1, bool independent_time_steps) {
-  ComposeTransport::TestDepView dep("dep", m_data.nelemd, num_phys_lev, np2, 3);
   calc_trajectory(t1 - t0);
-  const auto deph = Kokkos::create_mirror_view(dep);
+  const auto deph = Kokkos::create_mirror_view(m_data.dep_pts);
   for (int ie = 0; ie < m_data.nelemd; ++ie)
     for (int lev = 0; lev < num_phys_lev; ++lev)
-      for (int k = 0; k < np2; ++k)
+      for (int i = 0, k = 0; i < np; ++i)
+        for (int j = 0; j < np; ++j, ++k)
           for (int d = 0; d < 3; ++d)
-            deph(ie,lev,k,d) = ie*(lev + k) + d;
+            deph(ie,lev,i,j,d) = ie*(lev + k) + d;
   return deph;
 }
 

@@ -54,10 +54,10 @@ struct ComposeTransportImpl {
   using Buf1 = ExecViewUnmanaged<Scalar*[NP][NP][NUM_LEV]>;
   using Buf2 = ExecViewUnmanaged<Scalar*[2][NP][NP][NUM_LEV]>;
 
-  using DeparturePoints = ExecViewManaged<Real*[NP][NP][NUM_PHYSICAL_LEV][3]>;
+  using DeparturePoints = ExecViewManaged<Real*[NUM_PHYSICAL_LEV][NP][NP][3]>;
 
   struct Data {
-    int nelemd, qsize, hv_q, np1_qdp;
+    int nelemd, qsize, hv_q, np1, np1_qdp;
     bool independent_time_steps;
 
     int nslot;

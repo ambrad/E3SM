@@ -41,6 +41,7 @@ extern "C" {
 } // extern "C"
 
 using FA5d = Kokkos::View<Real*****, Kokkos::LayoutLeft, Kokkos::HostSpace>;
+using CA5d = Kokkos::View<Real*****, Kokkos::LayoutRight, Kokkos::HostSpace>;
 
 template <typename V>
 decltype(Kokkos::create_mirror_view(V())) cmvdc (const V& v) {
@@ -230,7 +231,7 @@ static bool equal (const Real& a, const Real& b,
 TEST_CASE ("compose_transport_testing") {
   static constexpr Real tol = std::numeric_limits<Real>::epsilon();
 
-  auto& s = Session::singleton(); try {
+  auto& s = Session::singleton();
 
   REQUIRE(compose::test::slmm_unittest() == 0);
   REQUIRE(compose::test::cedr_unittest() == 0);
@@ -244,23 +245,21 @@ TEST_CASE ("compose_transport_testing") {
   {
     const Real twelve_days = 3600 * 24 * 12;
     const Real t0 = 0.13*twelve_days, t1 = 0.22*twelve_days;
-    FA5d depf("depf", 3, s.np, s.np, s.nlev, s.nelemd);
-    depf(2,0,0,0,0) = 42;
+    CA5d depf("depf", s.nelemd, s.nlev, s.np, s.np, 3);
     run_trajectory_f90(t0, t1, s.independent_time_steps, depf.data());
     const auto depc = ct.test_trajectory(t0, t1, s.independent_time_steps);
     REQUIRE(depc.extent_int(0) == s.nelemd);
-    REQUIRE(depc.extent_int(2) == s.np*s.np);
-    REQUIRE(depc.extent_int(3) == 3);
+    REQUIRE(depc.extent_int(2) == s.np);
+    REQUIRE(depc.extent_int(4) == 3);
     for (int ie = 0; ie < s.nelemd; ++ie)
       for (int lev = 0; lev < s.nlev; ++lev)
-        for (int j = 0, k = 0; j < s.np; ++j)
-          for (int i = 0; i < s.np; ++i, ++k)
+        for (int i = 0; i < s.np; ++i)
+          for (int j = 0; j < s.np; ++j)  
             for (int d = 0; d < 3; ++d)
-              REQUIRE(equal(depf(d,i,j,lev,ie), depc(ie,lev,k,d), 1e4*tol));
+              REQUIRE(equal(depf(ie,lev,i,j,d), depc(ie,lev,i,j,d), 1e4*tol));
   }
 
   run_compose_standalone_test_f90();
 
-  } catch (...) { Session::delete_singleton(); }
   Session::delete_singleton();
 }

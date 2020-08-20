@@ -34,7 +34,7 @@ public:
 
   std::vector<std::pair<std::string, int> > run_unit_tests();
 
-  typedef Kokkos::View<Real****, Kokkos::LayoutRight> TestDepView;
+  typedef Kokkos::View<Real*****, Kokkos::LayoutRight> TestDepView;
   TestDepView::HostMirror test_trajectory(Real t0, Real t1, bool independent_time_steps);
 
 private:
