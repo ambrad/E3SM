@@ -164,7 +164,7 @@ set_elem_data (const int ie,
   }
   if (sphere_latlon) {
     if (m_sphere_latlon.size() == 0)
-      m_sphere_latlon = ExecViewManaged<Real * [NP][NP][2]>("sphere_longlat", m_num_elems);
+      m_sphere_latlon = ExecViewManaged<Real * [NP][NP][2]>("sphere_latlon", m_num_elems);
     const auto fsl = HostViewUnmanaged<const Real [NP][NP][2]>(sphere_latlon);
     Kokkos::deep_copy(Homme::subview(m_sphere_latlon, ie), fsl);
   }

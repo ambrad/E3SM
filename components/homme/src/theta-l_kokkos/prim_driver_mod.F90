@@ -245,8 +245,8 @@ contains
             sphere_cart_vec(1,i,j) = sphere_cart%x
             sphere_cart_vec(2,i,j) = sphere_cart%y
             sphere_cart_vec(3,i,j) = sphere_cart%z
-            sphere_latlon_vec(1,i,j) = elem(ie)%spherep(i,j)%lon
-            sphere_latlon_vec(2,i,j) = elem(ie)%spherep(i,j)%lat
+            sphere_latlon_vec(1,i,j) = elem(ie)%spherep(i,j)%lat
+            sphere_latlon_vec(2,i,j) = elem(ie)%spherep(i,j)%lon
          end do
       end do
       call init_elements_2d_c (ie-1,                                      &
