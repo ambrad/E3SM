@@ -24,9 +24,14 @@ template <typename MT>
 void sl_h2d (const TracerArrays<MT>& ta, bool transfer, Cartesian3D* dep_points) {
 #if defined COMPOSE_PORT_DEV_VIEWS
   ko::fence();
-  const Int nelemd = ta.q.extent_int(0), qsize = ta.q.extent_int(1), np2 = ta.q.extent_int(2),
-    nlev = ta.q.extent_int(3);
-  const DepPointsH<MT> dep_points_h(reinterpret_cast<Real*>(dep_points), nelemd, nlev, np2);
+  const Int nelemd = ta.nelemd, qsize = ta.qsize, np2 = ta.np2, nlev = ta.nlev;
+  const DepPointsH<MT> cart_h(reinterpret_cast<Real*>(dep_points), nelemd, nlev, np2);
+  const auto dep_points_h = ko::create_mirror_view(ta.dep_points);
+  for (Int ie = 0; ie < nelemd; ++ie)
+    for (Int lev = 0; lev < nlev; ++lev)
+      for (Int k = 0; k < np2; ++k)
+        for (Int d = 0; d < 3; ++d)
+          dep_points_h(ie,lev,k,d) = cart_h(ie,lev,k,d);
   ko::deep_copy(ta.dep_points, dep_points_h);
   if ( ! transfer) return;
   const auto qdp_m = ko::create_mirror_view(ta.qdp);
@@ -57,8 +62,7 @@ void sl_d2h (const TracerArrays<MT>& ta, bool transfer, Cartesian3D* dep_points,
   if ( ! transfer) return;
   ko::fence();
   const auto q_m = ko::create_mirror_view(ta.q);
-  const Int nelemd = q_m.extent_int(0), qsize = q_m.extent_int(1), np2 = q_m.extent_int(2),
-    nlev = q_m.extent_int(3);
+  const Int nelemd = ta.nelemd, qsize = ta.qsize, np2 = ta.np2, nlev = ta.nlev;
   ko::deep_copy(q_m, ta.q);
   for (Int ie = 0; ie < nelemd; ++ie)
     for (Int iq = 0; iq < qsize; ++iq)
@@ -83,8 +87,7 @@ void cedr_h2d (const TracerArrays<MT>& ta, bool transfer) {
   const auto dp3d_m = ko::create_mirror_view(ta.dp3d);
   const auto q_m = ko::create_mirror_view(ta.q);
   const auto spheremp_m = ko::create_mirror_view(ta.spheremp);
-  const Int nelemd = q_m.extent_int(0), qsize = q_m.extent_int(1), np2 = q_m.extent_int(2),
-    nlev = q_m.extent_int(3), np1 = ta.np1;
+  const Int nelemd = ta.nelemd, qsize = ta.qsize, np2 = ta.np2, nlev = ta.nlev, np1 = ta.np1;
   for (Int ie = 0; ie < nelemd; ++ie)
     for (Int iq = 0; iq < qsize; ++iq)
       for (Int k = 0; k < np2; ++k)
@@ -110,8 +113,8 @@ void cedr_d2h (const TracerArrays<MT>& ta, bool transfer) {
   ko::fence();
   const auto q_m = ko::create_mirror_view(ta.q);
   const auto qdp_m = ko::create_mirror_view(ta.qdp);
-  const Int nelemd = q_m.extent_int(0), qsize = q_m.extent_int(1), np2 = q_m.extent_int(2),
-    nlev = q_m.extent_int(3), n1_qdp = ta.n1_qdp;
+  const Int nelemd = ta.nelemd, qsize = ta.qsize, np2 = ta.np2, nlev = ta.nlev,
+    n1_qdp = ta.n1_qdp;
   ko::deep_copy(qdp_m, ta.qdp);
   ko::deep_copy(q_m, ta.q);
   for (Int ie = 0; ie < nelemd; ++ie)

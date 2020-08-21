@@ -6,6 +6,8 @@
 
 #include "ComposeTransportImpl.hpp"
 
+#include "compose_hommexx.hpp"
+
 namespace Homme {
 
 void ComposeTransportImpl::reset (const SimulationParams& params) {
@@ -32,6 +34,27 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
     printf("nelemd %d qsize %d hv_q %d np1_qdp %d independent_time_steps %d\n",
            m_data.nelemd, m_data.qsize, m_data.hv_q, m_data.np1_qdp,
            (int) m_data.independent_time_steps);
+
+  {
+    const auto& g = m_elements.m_geometry;
+    const auto& t = m_tracers;
+    const auto& s = m_state;
+    const auto& d = m_derived;
+    const auto nel = m_data.nelemd;
+    const auto nlev = NUM_LEV*packn;
+    using Kokkos::View;
+    homme::compose::set_views(
+      g.m_spheremp,
+      View<Real****>  (reinterpret_cast<Real*>(d.m_dp.data()),
+                       nel, np, np, nlev),
+      View<Real*****> (reinterpret_cast<Real*>(s.m_dp3d.data()),
+                       nel, NUM_TIME_LEVELS, np, np, nlev),
+      View<Real******>(reinterpret_cast<Real*>(t.qdp.data()),
+                       nel, Q_NUM_TIME_LEVELS, QSIZE_D, np, np, nlev),
+      View<Real*****> (reinterpret_cast<Real*>(t.Q.data()),
+                       nel, QSIZE_D, np, np, nlev),
+      m_data.dep_pts);
+  }
 }
 
 int ComposeTransportImpl::requested_buffer_size () const {
