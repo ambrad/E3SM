@@ -13,7 +13,7 @@ namespace Homme {
 using cti = ComposeTransportImpl;
 
 KOKKOS_FUNCTION
-void ugradv_sphere (
+static void ugradv_sphere (
   const SphereOperators& sphere_ops, KernelVariables& kv,
   const typename ViewConst<ExecViewUnmanaged<Real[2][3][NP][NP]> >::type& vec_sphere2cart,
   // velocity, latlon
@@ -155,6 +155,7 @@ test_trajectory(Real t0, Real t1, bool independent_time_steps) {
   const auto vstar = m_derived.m_vstar;
   const auto v = m_state.m_v;
   const auto pll = m_elements.m_geometry.m_sphere_latlon;
+  const auto np1 = m_data.np1;
   const compose::test::NonDivergentWindField wf;
   const auto f = [&] (int ie, int lev, int i, int j) {
     Real latlon[] = {pll(ie,i,j,0), pll(ie,i,j,1)};
@@ -165,9 +166,9 @@ test_trajectory(Real t0, Real t1, bool independent_time_steps) {
       vstar(ie,d,i,j,lev/packn)[lev%packn] = uv[d];
     wf.eval(t1, latlon, uv);
     for (int d = 0; d < 2; ++d)
-      v(ie,m_data.np1,d,i,j,lev/packn)[lev%packn] = uv[d];
+      v(ie,np1,d,i,j,lev/packn)[lev%packn] = uv[d];
   };
-  loop_device_ie_plev_ij(f);
+  loop_device_ie_physlev_ij(f);
   Kokkos::fence();
 
   calc_trajectory(t1 - t0);
