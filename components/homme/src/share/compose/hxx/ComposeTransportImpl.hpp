@@ -114,6 +114,8 @@ struct ComposeTransportImpl {
   ComposeTransport::TestDepView::HostMirror
   test_trajectory(Real t0, Real t1, bool independent_time_steps);
 
+  void test_2d();
+
   template <int KLIM, typename Fn>
   KOKKOS_INLINE_FUNCTION
   static void loop_ijk (const KernelVariables& kv, const Fn& h) {
