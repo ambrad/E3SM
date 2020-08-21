@@ -24,6 +24,7 @@
 #include "SimulationParams.hpp"
 #include "SphereOperators.hpp"
 #include "Tracers.hpp"
+#include "TimeLevel.hpp"
 #include "profiling.hpp"
 #include "mpi/BoundaryExchange.hpp"
 #include "mpi/MpiBuffersManager.hpp"
@@ -107,14 +108,14 @@ struct ComposeTransportImpl {
   void init_buffers(const FunctorsBuffersManager& fbm);
   void init_boundary_exchanges();
 
-  void run(const Real dt);
+  void run(const TimeLevel& tl, const Real dt);
 
   void calc_trajectory(const Real dt);
 
   ComposeTransport::TestDepView::HostMirror
   test_trajectory(Real t0, Real t1, bool independent_time_steps);
 
-  void test_2d();
+  void test_2d(const int nstep);
 
   template <int KLIM, typename Fn>
   KOKKOS_INLINE_FUNCTION

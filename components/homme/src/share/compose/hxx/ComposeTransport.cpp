@@ -39,9 +39,9 @@ void ComposeTransport::init_boundary_exchanges () {
   m_compose_impl->init_boundary_exchanges();
 }
 
-void ComposeTransport::run (const Real dt) {
+void ComposeTransport::run (const TimeLevel& tl, const Real dt) {
   GPTLstart("compute_step");
-  m_compose_impl->run(dt);
+  m_compose_impl->run(tl, dt);
   GPTLstop("compute_step");
 }
 
@@ -56,6 +56,6 @@ test_trajectory (Real t0, Real t1, bool independent_time_steps) {
   return m_compose_impl->test_trajectory(t0, t1, independent_time_steps);
 }
 
-void ComposeTransport::test_2d () { m_compose_impl->test_2d(); }
+void ComposeTransport::test_2d (const int nstep) { m_compose_impl->test_2d(nstep); }
 
 } // Namespace Homme
