@@ -155,12 +155,11 @@ test_trajectory(Real t0, Real t1, bool independent_time_steps) {
   const auto& geo = m_elements.m_geometry;
 
   {
-    const auto vstar = Kokkos::create_mirror_view(m_derived.m_vstar);
-    const auto v = Kokkos::create_mirror_view(m_state.m_v);
-    const auto pll = Kokkos::create_mirror_view(geo.m_sphere_latlon);
-    Kokkos::deep_copy(pll, geo.m_sphere_latlon);
-    compose::test::NonDivergentWindField wf;
-    const auto f1 = [&] (int ie, int lev, int i, int j) {
+    const auto vstar = m_derived.m_vstar;
+    const auto v = m_state.m_v;
+    const auto pll = geo.m_sphere_latlon;
+    const compose::test::NonDivergentWindField wf;
+    const auto f = [&] (int ie, int lev, int i, int j) {
       Real latlon[] = {pll(ie,i,j,0), pll(ie,i,j,1)};
       compose::test::offset_latlon(num_phys_lev, lev, latlon[0], latlon[1]);
       Real uv[2];
@@ -171,9 +170,7 @@ test_trajectory(Real t0, Real t1, bool independent_time_steps) {
       for (int d = 0; d < 2; ++d)
         v(ie,m_data.np1,d,i,j,lev/packn)[lev%packn] = uv[d];
     };
-    loop_host_ie_plev_ij(f1);
-    Kokkos::deep_copy(m_derived.m_vstar, vstar);
-    Kokkos::deep_copy(m_state.m_v, v);
+    loop_device_ie_plev_ij(f);
   }
 
   calc_trajectory(t1 - t0);

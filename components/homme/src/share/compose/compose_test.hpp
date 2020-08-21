@@ -25,8 +25,8 @@ struct consts {
 
 template<typename T> inline T sign (const T& a) { return a >= 0 ? 1 : -1; }
 
-inline Real sec2day (const Real sec) { return sec/(24*3600); }
-inline Real day2sec (const Real day) { return day*(24*3600); }
+KOKKOS_INLINE_FUNCTION Real sec2day (const Real sec) { return sec/(24*3600); }
+KOKKOS_INLINE_FUNCTION Real day2sec (const Real day) { return day*(24*3600); }
 
 // Output is in radians.
 //todo Make a version that lets you pass R = mag(x,y,z).
@@ -144,6 +144,7 @@ public:
 
 // Also from Lauritzen et al.
 struct NonDivergentWindField : public OdeFn {
+  KOKKOS_FUNCTION
   bool eval (const Real t, const Real* const d, Real* const f) const override {
     const Real theta = d[0];  // latitude
     const Real lambda = d[1]; // longitude
@@ -199,7 +200,8 @@ public:
 
 // Function to add some additional variation to the test: make the winds differ
 // by elevation.
-inline void offset_latlon (const Int nlev, const Int k, Real& lat, Real& lon) {
+KOKKOS_INLINE_FUNCTION void
+offset_latlon (const Int nlev, const Int k, Real& lat, Real& lon) {
   lon += k*(0.4/nlev);
 }
 

@@ -156,6 +156,19 @@ struct ComposeTransportImpl {
           for (int j = 0; j < np; ++j)
             f(ie, lev, i, j);
   }
+
+  template <typename Fn>
+  void loop_device_ie_plev_ij (const Fn& f) const {
+    const auto g = KOKKOS_LAMBDA (const int idx) {
+      const int ie = idx / (num_phys_lev*np*np);
+      const int lev = (idx / (np*np)) % num_phys_lev;
+      const int i = (idx / np) % np;
+      const int j = idx % np;
+      f(ie, lev, i, j);
+    };
+    Kokkos::parallel_for(
+      Kokkos::RangePolicy<ExecSpace>(0, m_data.nelemd*num_phys_lev*np*np), g);
+  }
 };
 
 } // namespace Homme
