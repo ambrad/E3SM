@@ -86,8 +86,8 @@ void ComposeTransportImpl::init_boundary_exchanges () {
   }
 }
 
-void ComposeTransportImpl::run () {
-  Kokkos::fence();
+void ComposeTransportImpl::run (const Real dt) {
+  
 }
 
 } // namespace Homme

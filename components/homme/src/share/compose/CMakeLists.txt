@@ -10,6 +10,7 @@ endif ()
 add_library (${COMPOSE_LIBRARY}
   compose_test.cpp
   compose_homme.cpp
+  compose_hommexx.cpp
   compose_cedr.cpp
   compose_slmm.cpp
   compose_slmm_util.cpp

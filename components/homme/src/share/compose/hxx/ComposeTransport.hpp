@@ -30,7 +30,7 @@ public:
   void init_buffers(const FunctorsBuffersManager& fbm);
   void init_boundary_exchanges();
 
-  void run();
+  void run(const Real dt);
 
   std::vector<std::pair<std::string, int> > run_unit_tests();
 

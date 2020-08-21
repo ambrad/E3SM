@@ -250,7 +250,7 @@ TEST_CASE ("compose_transport_testing") {
     for (int ie = 0; ie < s.nelemd; ++ie)
       for (int lev = 0; lev < s.nlev; ++lev)
         for (int i = 0; i < s.np; ++i)
-          for (int j = 0; j < s.np; ++j)  
+          for (int j = 0; j < s.np; ++j)
             for (int d = 0; d < 3; ++d)
               REQUIRE(equal(depf(ie,lev,i,j,d), depc(ie,lev,i,j,d), 10*tol));
   }

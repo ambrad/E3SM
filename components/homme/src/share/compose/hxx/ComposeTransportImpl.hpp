@@ -107,7 +107,7 @@ struct ComposeTransportImpl {
   void init_buffers(const FunctorsBuffersManager& fbm);
   void init_boundary_exchanges();
 
-  void run();
+  void run(const Real dt);
 
   void calc_trajectory(const Real dt);
 

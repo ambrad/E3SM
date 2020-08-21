@@ -39,8 +39,9 @@ void ComposeTransport::init_boundary_exchanges () {
   m_compose_impl->init_boundary_exchanges();
 }
 
-void ComposeTransport::run () {
+void ComposeTransport::run (const Real dt) {
   GPTLstart("compute_step");
+  m_compose_impl->run(dt);
   GPTLstop("compute_step");
 }
 
