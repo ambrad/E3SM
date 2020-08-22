@@ -12,6 +12,7 @@
 #include "SimulationParams.hpp"
 #include "Elements.hpp"
 #include "Tracers.hpp"
+#include "TimeLevel.hpp"
 #include "HybridVCoord.hpp"
 #include "KernelVariables.hpp"
 #include "PhysicalConstants.hpp"
@@ -36,7 +37,7 @@ extern "C" {
                         Real* dvv, Real* mp);
   void init_geometry_f90();
   void cleanup_compose_f90();
-  void run_compose_standalone_test_f90();
+  void run_compose_standalone_test_f90(int* nmax);
   void run_trajectory_f90(Real t0, Real t1, bool independent_time_steps, Real* dep);
 } // extern "C"
 
@@ -146,6 +147,7 @@ struct Session {
     c.create<Elements>();
     e = c.get_ptr<Elements>();
     c.create<Tracers>(nelemd, qsize);
+    c.create<TimeLevel>();
 
     auto& p = c.create<SimulationParams>();
     p.hypervis_scaling = 0;
@@ -255,7 +257,9 @@ TEST_CASE ("compose_transport_testing") {
               REQUIRE(equal(depf(ie,lev,i,j,d), depc(ie,lev,i,j,d), 10*tol));
   }
 
-  run_compose_standalone_test_f90();
+  int nmax;
+  run_compose_standalone_test_f90(&nmax);
+  ct.test_2d(nmax);
 
   //} catch (...) {}
   Session::delete_singleton();

@@ -154,11 +154,6 @@ struct StandaloneTracersTester {
       rdp[i] = 1;
   }
 
-  InitialCondition::Shape get_ic (const Int k, const Int q) const {
-    return static_cast<InitialCondition::Shape>((k*qsize + q) %
-                                                InitialCondition::nshapes);
-  }
-
   void fill_ics (const Int ie, const Real* rp_elem, const Real* rdp,
                  Real* rqdp) const {
     const homme::FA3<const Real> p_elem(rp_elem, 3, np, np); // (rad, lon, lat)
@@ -170,7 +165,7 @@ struct StandaloneTracersTester {
           for (Int i = 0; i < np; ++i) {
             Real lat = p_elem(2,i,j), lon = p_elem(1,i,j);
             offset_latlon(nlev, k, lat, lon);
-            InitialCondition::init(get_ic(k,q), 1, &lat, &lon, &qdp(i,j,k,q));
+            InitialCondition::init(get_ic(qsize,k,q), 1, &lat, &lon, &qdp(i,j,k,q));
             if (rdp)
               qdp(i,j,k,q) *= dp(i,j,k);
           }

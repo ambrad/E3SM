@@ -205,6 +205,10 @@ offset_latlon (const Int nlev, const Int k, Real& lat, Real& lon) {
   lon += k*(0.4/nlev);
 }
 
+inline InitialCondition::Shape get_ic (const Int qsize, const Int k, const Int q) {
+  return static_cast<InitialCondition::Shape>((k*qsize + q) % InitialCondition::nshapes);
+}
+
 } // namespace test
 } // namespace compose
 
