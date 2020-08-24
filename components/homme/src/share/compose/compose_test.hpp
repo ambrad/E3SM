@@ -3,6 +3,10 @@
 
 #include <mpi.h>
 
+extern "C"
+void compose_repro_sum(const double* send, double* recv,
+                       int nlocal, int nfld, int fcomm);
+
 namespace compose {
 namespace test {
 
