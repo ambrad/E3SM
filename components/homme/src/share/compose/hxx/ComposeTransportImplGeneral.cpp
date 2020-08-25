@@ -5,7 +5,6 @@
  *******************************************************************************/
 
 #include "ComposeTransportImpl.hpp"
-
 #include "compose_hommexx.hpp"
 
 namespace Homme {
@@ -16,8 +15,9 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
 
   m_data.qsize = params.qsize;
   m_data.nelemd = num_elems;
-  slmm_throw_if(m_data.qsize == 0,
-                "SL transport requires qsize > 0; if qsize == 0, use Eulerian.");
+  Errors::runtime_check(m_data.qsize > 0,
+                        "SL transport requires qsize > 0; if qsize == 0, use Eulerian.");
+  m_data.limiter_option = params.limiter_option;
 
   m_data.dep_pts = DeparturePoints("dep_pts", m_data.nelemd);
 
@@ -110,7 +110,11 @@ void ComposeTransportImpl::init_boundary_exchanges () {
 }
 
 void ComposeTransportImpl::run (const TimeLevel& tl, const Real dt) {
-  
+  m_data.np1 = tl.np1;
+  m_data.np1_qdp = tl.np1_qdp;
+  calc_trajectory(dt);
+  homme::compose::advect(tl.np1, tl.n0_qdp, tl.np1_qdp);
+  homme::compose::property_preserve(m_data.limiter_option);
 }
 
 } // namespace Homme

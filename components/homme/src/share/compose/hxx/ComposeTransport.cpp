@@ -8,8 +8,6 @@
 #include "ComposeTransportImpl.hpp"
 #include "Context.hpp"
 
-#include "cedr_local.hpp"
-
 #include "profiling.hpp"
 
 #include <assert.h>

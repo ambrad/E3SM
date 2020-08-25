@@ -214,7 +214,17 @@ int slmm_unittest () {
 
 #include <cstdlib>
 
+namespace homme {
 static homme::HommeIslMpi::Ptr g_csl_mpi;
+
+HommeIslMpi::Ptr get_isl_mpi_singleton () { return g_csl_mpi; }
+
+void slmm_finalize () {
+  homme::g_csl_mpi = nullptr;
+  homme::g_advecter = nullptr;
+  homme::delete_tracer_arrays();
+}
+} // namespace homme
 
 static void initialize_kokkos () {
   std::vector<char*> args;
@@ -273,41 +283,41 @@ void slmm_init_impl (
                    sl_nearest_point_lev - 1, lid2facenum);
   slmm_throw_if(homme::g_advecter->is_cisl(), "CISL code was removed.");
   const auto p = homme::mpi::make_parallel(MPI_Comm_f2c(fcomm));
-  g_csl_mpi = homme::islmpi::init<homme::HommeMachineTraits>(
+  homme::g_csl_mpi = homme::islmpi::init<homme::HommeMachineTraits>(
     homme::g_advecter, p, np, nlev, qsize, qsized, nelemd,
     nbr_id_rank, nirptr, 2 /* halo */);
   amb::dev_fin_threads();
 }
 
 void slmm_query_bufsz (homme::Int* sendsz, homme::Int* recvsz) {
-  slmm_assert(g_csl_mpi);
+  slmm_assert(homme::g_csl_mpi);
   if (ko::OnGpu<ko::MachineTraits::DES>::value) {
     *sendsz = *recvsz = 0;
     return;
   }
   homme::Int s = 0, r = 0;
-  for (const auto e : g_csl_mpi->sendsz) s += e;
-  for (const auto e : g_csl_mpi->recvsz) r += e;
+  for (const auto e : homme::g_csl_mpi->sendsz) s += e;
+  for (const auto e : homme::g_csl_mpi->recvsz) r += e;
   *sendsz = s;
   *recvsz = r;
 }
 
 void slmm_set_bufs (homme::Real* sendbuf, homme::Real* recvbuf,
                     homme::Int, homme::Int) {
-  slmm_assert(g_csl_mpi);
+  slmm_assert(homme::g_csl_mpi);
 #ifndef COMPOSE_WITH_HOMMEXX
   if (ko::OnGpu<ko::MachineTraits::DES>::value)
     sendbuf = recvbuf = nullptr;
 #endif
   amb::dev_init_threads();
-  homme::islmpi::alloc_mpi_buffers(*g_csl_mpi, sendbuf, recvbuf);
+  homme::islmpi::alloc_mpi_buffers(*homme::g_csl_mpi, sendbuf, recvbuf);
   amb::dev_fin_threads();
 }
 
 void slmm_set_null_bufs () { slmm_set_bufs(nullptr, nullptr, 0, 0); }
 
 void slmm_get_mpi_pattern (homme::Int* sl_mpi) {
-  *sl_mpi = g_csl_mpi ? 1 : 0;
+  *sl_mpi = homme::g_csl_mpi ? 1 : 0;
 }
 
 void slmm_init_local_mesh (
@@ -324,8 +334,8 @@ void slmm_init_local_mesh (
 
 void slmm_init_finalize () {
   amb::dev_init_threads();
-  if (g_csl_mpi)
-    homme::islmpi::finalize_init_phase(*g_csl_mpi, *homme::g_advecter);
+  if (homme::g_csl_mpi)
+    homme::islmpi::finalize_init_phase(*homme::g_csl_mpi, *homme::g_advecter);
   amb::dev_fin_threads();
 }
 
@@ -343,8 +353,8 @@ void slmm_csl_set_elem_data (
   homme::Real* dp, homme::Real* q, homme::Int nelem_in_patch, bool h2d, bool d2h)
 {
   amb::dev_init_threads();
-  slmm_assert(g_csl_mpi);
-  homme::islmpi::set_elem_data(*g_csl_mpi, ie - 1, qdp, n0_qdp - 1, dp, q,
+  slmm_assert(homme::g_csl_mpi);
+  homme::islmpi::set_elem_data(*homme::g_csl_mpi, ie - 1, qdp, n0_qdp - 1, dp, q,
                                nelem_in_patch);
   s_h2d = h2d;
   s_d2h = d2h;
@@ -356,34 +366,30 @@ void slmm_csl (
   homme::Real* minq, homme::Real* maxq, homme::Int* info)
 {
   amb::dev_init_threads();
-  slmm_assert(g_csl_mpi);
-  slmm_assert(g_csl_mpi->sendsz.empty()); // alloc_mpi_buffers was called
+  slmm_assert(homme::g_csl_mpi);
+  slmm_assert(homme::g_csl_mpi->sendsz.empty()); // alloc_mpi_buffers was called
   { slmm::Timer timer("h2d");
-    //if (g_csl_mpi->p->amroot() && s_h2d) printf("sl_h2d\n");
-    homme::sl_h2d(*g_csl_mpi->tracer_arrays, s_h2d, dep_points); }
+    //if (homme::g_csl_mpi->p->amroot() && s_h2d) printf("sl_h2d\n");
+    homme::sl_h2d(*homme::g_csl_mpi->tracer_arrays, s_h2d, dep_points); }
   *info = 0;
 #if 0
 #pragma message "RM TRY-CATCH WHILE DEV'ING"
   try {
-    homme::islmpi::step(*g_csl_mpi, nets - 1, nete - 1,
+    homme::islmpi::step(*homme::g_csl_mpi, nets - 1, nete - 1,
                         reinterpret_cast<homme::Real*>(dep_points), minq, maxq);
   } catch (const std::exception& e) {
     std::cerr << e.what();
     *info = -1;
   }
 #else
-  homme::islmpi::step(*g_csl_mpi, nets - 1, nete - 1,
+  homme::islmpi::step(*homme::g_csl_mpi, nets - 1, nete - 1,
                       reinterpret_cast<homme::Real*>(dep_points), minq, maxq);
 #endif
   { slmm::Timer timer("d2h");
-    //if (g_csl_mpi->p->amroot() && s_d2h) printf("sl_d2h\n");
-    homme::sl_d2h(*g_csl_mpi->tracer_arrays, s_d2h, dep_points, minq, maxq); }
+    //if (homme::g_csl_mpi->p->amroot() && s_d2h) printf("sl_d2h\n");
+    homme::sl_d2h(*homme::g_csl_mpi->tracer_arrays, s_d2h, dep_points, minq, maxq); }
   amb::dev_fin_threads();
 }
 
-void slmm_finalize () {
-  g_csl_mpi = nullptr;
-  homme::g_advecter = nullptr;
-  homme::delete_tracer_arrays();
-}
+void slmm_finalize () { homme::slmm_finalize(); }
 } // extern "C"

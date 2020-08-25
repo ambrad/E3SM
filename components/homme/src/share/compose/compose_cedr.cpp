@@ -737,10 +737,24 @@ extern "C" void cedr_sl_check (const homme::Real* minq, const homme::Real* maxq,
   homme::sl::check(*g_cdr, *g_sl, minq, maxq, nets-1, nete-1);
 }
 
-extern "C" void cedr_finalize () {
+namespace homme {
+void cedr_sl_run_global () {
+  homme::sl::run_global<ko::MachineTraits>(*g_cdr, *g_sl, nullptr, nullptr,
+                                           0, g_sl->ta->nelemd - 1);
+}
+
+void cedr_sl_run_local (const int limiter_option) {
+  homme::sl::run_local(*g_cdr, *g_sl, nullptr, nullptr, 0, g_sl->ta->nelemd - 1,
+                       false, limiter_option);
+}
+
+void cedr_finalize () {
   g_sl = nullptr;
   g_cdr = nullptr;
 }
+} // namespace homme
+
+extern "C" void cedr_finalize () { homme::cedr_finalize(); }
 
 namespace homme {
 template class CDR<Kokkos::MachineTraits>;

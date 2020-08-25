@@ -7,9 +7,6 @@
 #ifndef HOMMEXX_COMPOSE_TRANSPORT_IMPL_HPP
 #define HOMMEXX_COMPOSE_TRANSPORT_IMPL_HPP
 
-#include "compose_kokkos.hpp"
-#include "compose_cedr_cdr.hpp"
-#include "compose_slmm_islmpi.hpp"
 #include "ComposeTransport.hpp"
 
 #include "Context.hpp"
@@ -58,7 +55,7 @@ struct ComposeTransportImpl {
   using DeparturePoints = ExecViewManaged<Real*[NUM_PHYSICAL_LEV][NP][NP][3]>;
 
   struct Data {
-    int nelemd, qsize, hv_q, np1, np1_qdp;
+    int nelemd, qsize, hv_q, np1, np1_qdp, limiter_option;
     bool independent_time_steps;
 
     int nslot;
@@ -69,9 +66,6 @@ struct ComposeTransportImpl {
 
     Data () : nelemd(-1), qsize(-1), hv_q(1), np1_qdp(-1), independent_time_steps(false) {}
   };
-
-  homme::islmpi::IslMpi<ko::MachineTraits>::Ptr islet;
-  homme::CDR<ko::MachineTraits>::Ptr cdr;
 
   const HybridVCoord m_hvcoord;
   const Elements m_elements;
