@@ -6,6 +6,7 @@ namespace homme {
 
 islmpi::IslMpi<>::Ptr get_isl_mpi_singleton();
 
+bool cedr_should_run();
 void cedr_sl_run_global();
 void cedr_sl_run_local(const int limiter_option);
 
@@ -40,9 +41,11 @@ void advect (const int np1, const int n0_qdp, const int np1_qdp) {
   islmpi::step<>(cm, 0, cm.nelemd - 1, nullptr, nullptr, nullptr);
 }
 
-void property_preserve (const int limiter_option) {
+bool property_preserve (const int limiter_option) {
+  if ( ! cedr_should_run()) return false;
   homme::cedr_sl_run_global();
   homme::cedr_sl_run_local(limiter_option);
+  return true;
 }
 
 void finalize () {

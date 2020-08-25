@@ -61,6 +61,7 @@ struct CDR {
   IdxsH ie2lci_h, ie2gci_h;
   Bools nonneg;
   BoolsH nonneg_h;
+  bool run; // for debugging, it can be useful not to run the CEDR.
 
   CDR(Int cdr_alg_, Int ngblcell_, Int nlclcell_, Int nlev_, Int qsize_, bool use_sgi,
       bool independent_time_steps, const bool hard_zero_, const Int* gid_data,

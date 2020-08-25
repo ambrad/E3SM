@@ -13,7 +13,7 @@ void set_views(const Kokkos::View<double***>& spheremp,
 
 void advect(const int np1, const int n0_qdp, const int np1_qdp);
 
-void property_preserve(const int limiter_option);
+bool property_preserve(const int limiter_option);
 
 void finalize();
 

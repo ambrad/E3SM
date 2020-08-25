@@ -277,7 +277,7 @@ struct StandaloneTracersTester {
         if (rank == root)
           for (int q = 0; q < qsize; ++q) {
             printf("COMPOSE>");
-            printf(" mass0 %8.2e mass re %9.2e\n",
+            printf(" mass0 %8.16e mass re %9.2e\n",
                    mass0[q], (massf[q] - mass0[q])/mass0[q]);
           }
       }  

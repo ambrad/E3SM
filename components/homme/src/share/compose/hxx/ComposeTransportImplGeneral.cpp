@@ -115,7 +115,20 @@ void ComposeTransportImpl::run (const TimeLevel& tl, const Real dt) {
   calc_trajectory(dt);
   homme::compose::advect(tl.np1, tl.n0_qdp, tl.np1_qdp);
   //todo optional hypervis
-  homme::compose::property_preserve(m_data.limiter_option);
+  if ( ! homme::compose::property_preserve(m_data.limiter_option)) {
+    // For analysis purposes, property preservation was not run. Need to convert
+    // Q to qdp.
+    const auto np1 = m_data.np1;
+    const auto np1_qdp = m_data.np1_qdp;
+    const auto qdp = m_tracers.qdp;
+    const auto Q = m_tracers.Q;
+    const auto dp3d = m_state.m_dp3d;
+    const auto spheremp = m_elements.m_geometry.m_spheremp;
+    const auto f = [&] (int ie, int q, int i, int j, int lev) {
+      qdp(ie,np1_qdp,q,i,j,lev) = Q(ie,q,i,j,lev)/dp3d(ie,np1,i,j,lev);
+    };
+    loop_device_ie_q_ij_nlev<num_lev_pack>(f);
+  }
   { // DSS qdp and omega
     const auto np1_qdp = m_data.np1_qdp;
     const auto qdp = m_tracers.qdp;

@@ -117,7 +117,7 @@ static void finish (const ComposeTransportImpl& cti, const Comm& comm,
     if (am_root)
       for (int q = 0; q < qsize; ++q) {
         printf("COMPOSE (hxx)>");
-        printf(" mass0 %8.2e mass re %9.2e\n",
+        printf(" mass0 %8.16e mass re %9.2e\n",
                mass0_red[q], (massf_red[q] - mass0_red[q])/mass0_red[q]);
       }
   }
