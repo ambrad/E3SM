@@ -117,7 +117,7 @@ static void finish (const ComposeTransportImpl& cti, const Comm& comm,
     if (am_root)
       for (int q = 0; q < qsize; ++q) {
         printf("COMPOSE (hxx)>");
-        printf(" mass0 %8.16e mass re %9.2e\n",
+        printf(" mass0 %8.2e mass re %9.2e\n",
                mass0_red[q], (massf_red[q] - mass0_red[q])/mass0_red[q]);
       }
   }
@@ -137,9 +137,9 @@ void ComposeTransportImpl::test_2d (const int nstep) {
   GPTLstart("compose_stt_step");
   for (int i = 0; i < nstep; ++i) {
     const auto tprev = dt*i;
-    const auto t = dt*i;
+    const auto t = dt*(i+1);
     if (i == 0) {
-      fill_v(*this, t, tl.np1);
+      fill_v(*this, tprev, tl.np1);
       Kokkos::fence();
     }
     cp_v_to_vstar(*this, tl.np1);

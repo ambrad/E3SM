@@ -43,7 +43,7 @@ contains
     integer :: ie
 
     transport_alg = 12
-    semi_lagrange_cdr_alg = 3
+    semi_lagrange_cdr_alg = 30
     semi_lagrange_cdr_check = semi_lagrange_cdr_alg /= 42
     semi_lagrange_hv_q = 0
     qsize = 4
