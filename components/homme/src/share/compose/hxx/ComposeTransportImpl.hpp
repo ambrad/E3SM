@@ -165,6 +165,34 @@ struct ComposeTransportImpl {
       Kokkos::RangePolicy<ExecSpace>(0, m_data.nelemd*nlev*np*np), g);
   }
 
+  template <int nlev, typename Fn>
+  void loop_device_ie_ij_nlev (const Fn& f) const {
+    const auto g = KOKKOS_LAMBDA (const int idx) {
+      const int ie = idx / (np*np*nlev);
+      const int i = (idx / (np*nlev)) % np;
+      const int j = (idx / nlev) % np;
+      const int lev = idx % nlev;
+      f(ie, i, j, lev);
+    };
+    Kokkos::parallel_for(
+      Kokkos::RangePolicy<ExecSpace>(0, m_data.nelemd*np*np*nlev), g);
+  }
+
+  template <int nlev, typename Fn>
+  void loop_device_ie_q_ij_nlev (const Fn& f) const {
+    const auto qsize = m_data.qsize;
+    const auto g = KOKKOS_LAMBDA (const int idx) {
+      const int ie = idx / (qsize*np*np*nlev);
+      const int q = (idx / (np*np*nlev)) % qsize;
+      const int i = (idx / (np*nlev)) % np;
+      const int j = (idx / nlev) % np;
+      const int lev = idx % nlev;
+      f(ie, q, i, j, lev);
+    };
+    Kokkos::parallel_for(
+      Kokkos::RangePolicy<ExecSpace>(0, m_data.nelemd*qsize*np*np*nlev), g);
+  }
+
   template <typename Fn>
   void loop_device_ie_physlev_ij (const Fn& f) const {
     loop_device_ie_nlev_ij<num_phys_lev>(f);

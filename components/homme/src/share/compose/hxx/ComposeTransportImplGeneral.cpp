@@ -116,8 +116,22 @@ void ComposeTransportImpl::run (const TimeLevel& tl, const Real dt) {
   homme::compose::advect(tl.np1, tl.n0_qdp, tl.np1_qdp);
   //todo optional hypervis
   homme::compose::property_preserve(m_data.limiter_option);
+  { // DSS qdp and omega
+    const auto np1_qdp = m_data.np1_qdp;
+    const auto qdp = m_tracers.qdp;
+    const auto spheremp = m_elements.m_geometry.m_spheremp;
+    const auto f1 = [&] (int ie, int q, int i, int j, int lev) {
+      qdp(ie,np1_qdp,q,i,j,lev) *= spheremp(ie,i,j);
+    };
+    loop_device_ie_q_ij_nlev<num_lev_pack>(f1);
+    const auto omega = m_derived.m_omega_p;
+    const auto f2 = [&] (int ie, int i, int j, int lev) {
+      omega(ie,i,j,lev) *= spheremp(ie,i,j);
+    };
+    loop_device_ie_ij_nlev<num_lev_pack>(f2);
+    m_qdp_dss_be[tl.np1_qdp]->exchange(m_elements.m_geometry.m_rspheremp);
+  }
   //todo semi_lagrange_cdr_check
-  //todo DSS
 }
 
 } // namespace Homme

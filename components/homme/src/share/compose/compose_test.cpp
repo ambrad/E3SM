@@ -232,7 +232,6 @@ struct StandaloneTracersTester {
             num += spheremp(i,j)*square(qdp(i,j,k,q)/dp(i,j,k) -
                                         q0(i,j,k,q));
             den += spheremp(i,j)*square(q0(i,j,k,q));
-            //if (q==0 && ie==0) printf("%d %d %d %d %1.6e %1.6e\n",ie,i,j,k,spheremp(i,j),q0(i,j,k,q));
             m0 += spheremp(i,j)*q0(i,j,k,q) /* times rho = 1 */;
             mf += spheremp(i,j)*qdp(i,j,k,q);
           }

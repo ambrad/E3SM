@@ -152,6 +152,7 @@ struct Session {
     auto& p = c.create<SimulationParams>();
     p.hypervis_scaling = 0;
     p.qsize = qsize;
+    p.limiter_option = 9;
 
     init_elems(nelemd, r, h, *e);
 

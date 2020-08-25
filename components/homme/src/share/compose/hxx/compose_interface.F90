@@ -27,7 +27,7 @@ contains
     use thetal_test_interface, only: init_f90
     use edge_mod_base, only: initEdgeBuffer, edge_g
     use control_mod, only: transport_alg, semi_lagrange_cdr_alg, semi_lagrange_cdr_check, &
-         semi_lagrange_hv_q, cubed_sphere_map
+         semi_lagrange_hv_q, limiter_option
     use geometry_interface_mod, only: GridVertex
     use bndry_mod, only: sort_neighbor_buffer_mapping
     use reduction_mod, only: initreductionbuffer, red_sum, red_min, red_max
@@ -46,8 +46,8 @@ contains
     semi_lagrange_cdr_alg = 3
     semi_lagrange_cdr_check = semi_lagrange_cdr_alg /= 42
     semi_lagrange_hv_q = 0
-    cubed_sphere_map = 2
     qsize = 4
+    limiter_option = 9
 
     call init_f90(ne, hyai, hybi, hyam, hybm, dvv, mp, ps0)
 
