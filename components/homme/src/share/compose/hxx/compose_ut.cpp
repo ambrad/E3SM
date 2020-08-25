@@ -194,9 +194,7 @@ struct Session {
     s_session = nullptr;
   }
 
-  MPI_Comm get_mpi_comm () const {
-    return Context::singleton().get<Comm>().mpi_comm();
-  }
+  Comm& get_comm () const { return Context::singleton().get<Comm>(); }
 
 private:
   static std::shared_ptr<Session> s_session;
@@ -234,7 +232,7 @@ TEST_CASE ("compose_transport_testing") {
 
   REQUIRE(compose::test::slmm_unittest() == 0);
   REQUIRE(compose::test::cedr_unittest() == 0);
-  REQUIRE(compose::test::cedr_unittest(s.get_mpi_comm()) == 0);
+  REQUIRE(compose::test::cedr_unittest(s.get_comm().mpi_comm()) == 0);
 
   auto& ct = Context::singleton().get<ComposeTransport>();
   const auto fails = ct.run_unit_tests();
@@ -263,14 +261,17 @@ TEST_CASE ("compose_transport_testing") {
     std::vector<Real> eval_f((s.nlev+1)*s.qsize), eval_c(eval_f.size());
     run_compose_standalone_test_f90(&nmax, eval_f.data());
     ct.test_2d(nmax, eval_c);
-    const auto n = s.nlev*s.qsize;
-    // When not a BFB build, still expect l2 error to be the same to a few digits.
-    for (size_t i = 0; i < n; ++i) REQUIRE(equal(eval_f[i], eval_c[i], 1e-3));
-    // Mass conservation error should be within a factor of 10 of each other.
-    for (size_t i = n; i < n + s.qsize; ++i) REQUIRE(equal(eval_f[i], eval_c[i], 10));
-    // And mass conservation itself should be small.
-    for (size_t i = n; i < n + s.qsize; ++i) REQUIRE(std::abs(eval_f[i]) <= 20*tol);
-    for (size_t i = n; i < n + s.qsize; ++i) REQUIRE(std::abs(eval_c[i]) <= 20*tol);
+    if (s.get_comm().root()) {
+      const auto n = s.nlev*s.qsize;
+      // When not a BFB build, still expect l2 error to be the same to a few digits.
+      for (size_t i = 0; i < n; ++i) REQUIRE(equal(eval_f[i], eval_c[i], 1e-3));
+      // Mass conservation error should be within a factor of 10 of each other.
+      for (size_t i = n; i < n + s.qsize; ++i) REQUIRE(equal(eval_f[i], eval_c[i], 10));
+      // And mass conservation itself should be small.
+      for (size_t i = n; i < n + s.qsize; ++i) REQUIRE(std::abs(eval_f[i]) <= 20*tol);
+      for (size_t i = n; i < n + s.qsize; ++i) REQUIRE(std::abs(eval_c[i]) <= 20*tol);
+      //todo add an l2 ceiling for some select tracers as a function of ne
+    }
   }
 
   //} catch (...) {}
