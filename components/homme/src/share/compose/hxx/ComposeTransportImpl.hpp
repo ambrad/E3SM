@@ -150,55 +150,64 @@ struct ComposeTransportImpl {
             f(ie, lev, i, j);
   }
 
-  template <int nlev, typename Fn>
-  void loop_device_ie_nlev_ij (const Fn& f) const {
-    const auto g = KOKKOS_LAMBDA (const int idx) {
-      const int ie = idx / (nlev*np*np);
-      const int lev = (idx / (np*np)) % nlev;
-      const int i = (idx / np) % np;
-      const int j = idx % np;
-      f(ie, lev, i, j);
-    };
-    Kokkos::parallel_for(
-      Kokkos::RangePolicy<ExecSpace>(0, m_data.nelemd*nlev*np*np), g);
+  template <int nlev> KOKKOS_INLINE_FUNCTION
+  static void idx_ie_nlev_ij (const int idx, int& ie, int& lev, int& i, int& j) {
+    ie = idx / (nlev*np*np);
+    lev = (idx / (np*np)) % nlev;
+    i = (idx / np) % np;
+    j = idx % np;
   }
 
-  template <int nlev, typename Fn>
-  void loop_device_ie_ij_nlev (const Fn& f) const {
-    const auto g = KOKKOS_LAMBDA (const int idx) {
-      const int ie = idx / (np*np*nlev);
-      const int i = (idx / (np*nlev)) % np;
-      const int j = (idx / nlev) % np;
-      const int lev = idx % nlev;
-      f(ie, i, j, lev);
-    };
-    Kokkos::parallel_for(
-      Kokkos::RangePolicy<ExecSpace>(0, m_data.nelemd*np*np*nlev), g);
-  }
-
-  template <int nlev, typename Fn>
-  void loop_device_ie_q_ij_nlev (const Fn& f) const {
-    const auto qsize = m_data.qsize;
-    const auto g = KOKKOS_LAMBDA (const int idx) {
-      const int ie = idx / (qsize*np*np*nlev);
-      const int q = (idx / (np*np*nlev)) % qsize;
-      const int i = (idx / (np*nlev)) % np;
-      const int j = (idx / nlev) % np;
-      const int lev = idx % nlev;
-      f(ie, q, i, j, lev);
-    };
-    Kokkos::parallel_for(
-      Kokkos::RangePolicy<ExecSpace>(0, m_data.nelemd*qsize*np*np*nlev), g);
+  KOKKOS_INLINE_FUNCTION
+  static void idx_ie_physlev_ij (const int idx, int& ie, int& lev, int& i, int& j) {
+    return idx_ie_nlev_ij<num_phys_lev>(idx, ie, lev, i, j);
   }
 
   template <typename Fn>
-  void loop_device_ie_physlev_ij (const Fn& f) const {
-    loop_device_ie_nlev_ij<num_phys_lev>(f);
+  void launch_ie_physlev_ij (Fn& f) const {
+    Kokkos::parallel_for(
+      Kokkos::RangePolicy<ExecSpace>(0, m_data.nelemd*np*np*num_phys_lev), f);
+  }
+
+  KOKKOS_INLINE_FUNCTION
+  static void idx_ie_packlev_ij (const int idx, int& ie, int& lev, int& i, int& j) {
+    return idx_ie_nlev_ij<num_lev_pack>(idx, ie, lev, i, j);
   }
 
   template <typename Fn>
-  void loop_device_ie_packlev_ij (const Fn& f) const {
-    loop_device_ie_nlev_ij<num_lev_pack>(f);
+  void launch_ie_packlev_ij (Fn& f) const {
+    Kokkos::parallel_for(
+      Kokkos::RangePolicy<ExecSpace>(0, m_data.nelemd*np*np*num_lev_pack), f);
+  }
+
+  template <int nlev> KOKKOS_INLINE_FUNCTION
+  static void idx_ie_ij_nlev (const int idx, int& ie, int& i, int& j, int& lev) {
+    ie = idx / (np*np*nlev);
+    i = (idx / (np*nlev)) % np;
+    j = (idx / nlev) % np;
+    lev = idx % nlev;
+  }
+
+  template <int nlev, typename Fn>
+  void launch_ie_ij_nlev (Fn& f) const {
+    Kokkos::parallel_for(
+      Kokkos::RangePolicy<ExecSpace>(0, m_data.nelemd*np*np*nlev), f);
+  }
+
+  template <int nlev> KOKKOS_INLINE_FUNCTION
+  static void idx_ie_q_ij_nlev (const int qsize, const int idx,
+                                int& ie, int& q, int& i, int& j, int& lev) {
+    ie = idx / (qsize*np*np*nlev);
+    q = (idx / (np*np*nlev)) % qsize;
+    i = (idx / (np*nlev)) % np;
+    j = (idx / nlev) % np;
+    lev = idx % nlev;
+  }
+
+  template <int nlev, typename Fn>
+  void launch_ie_q_ij_nlev (Fn& f) const {
+    Kokkos::parallel_for(
+      Kokkos::RangePolicy<ExecSpace>(0, m_data.nelemd*m_data.qsize*np*np*nlev), f);
   }
 };
 

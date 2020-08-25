@@ -10,6 +10,7 @@
 #include "mpi/Comm.hpp"
 
 namespace Homme {
+using cti = ComposeTransportImpl;
 
 static void fill_ics (const ComposeTransportImpl& cti, const int n0_qdp, const int np1 = -1) {
   const auto qdp = Kokkos::create_mirror_view(cti.m_tracers.qdp);
@@ -33,11 +34,13 @@ static void fill_ics (const ComposeTransportImpl& cti, const int n0_qdp, const i
 static void cp_v_to_vstar (const ComposeTransportImpl& cti, const int np1) {
   const auto vstar = cti.m_derived.m_vstar;
   const auto v = cti.m_state.m_v;
-  const auto f = [&] (int ie, int lev, int i, int j) {
+  const auto f = [&] (const int idx) {
+    int ie, lev, i, j;
+    cti::idx_ie_packlev_ij(idx, ie, lev, i, j);
     for (int d = 0; d < 2; ++d)
       vstar(ie,d,i,j,lev) = v(ie,np1,d,i,j,lev);
   };
-  cti.loop_device_ie_packlev_ij(f);
+  cti.launch_ie_packlev_ij(f);
 }
 
 static void fill_v (const ComposeTransportImpl& cti, const Real t, const int np1) {
@@ -45,7 +48,9 @@ static void fill_v (const ComposeTransportImpl& cti, const Real t, const int np1
   const auto v = cti.m_state.m_v;
   const auto packn = cti.packn;
   const compose::test::NonDivergentWindField wf;
-  const auto f = [&] (int ie, int lev, int i, int j) {
+  const auto f = [&] (const int idx) {
+    int ie, lev, i, j;
+    cti::idx_ie_physlev_ij(idx, ie, lev, i, j);
     Real latlon[] = {pll(ie,i,j,0), pll(ie,i,j,1)};
     compose::test::offset_latlon(cti.num_phys_lev, lev, latlon[0], latlon[1]);
     Real uv[2];
@@ -53,7 +58,7 @@ static void fill_v (const ComposeTransportImpl& cti, const Real t, const int np1
     for (int d = 0; d < 2; ++d)
       v(ie,np1,d,i,j,lev/packn)[lev%packn] = uv[d];
   };
-  cti.loop_device_ie_physlev_ij(f);
+  cti.launch_ie_physlev_ij(f);
 }
 
 static void finish (const ComposeTransportImpl& cti, const Comm& comm,

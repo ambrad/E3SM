@@ -157,7 +157,9 @@ test_trajectory(Real t0, Real t1, bool independent_time_steps) {
   const auto pll = m_elements.m_geometry.m_sphere_latlon;
   const auto np1 = m_data.np1;
   const compose::test::NonDivergentWindField wf;
-  const auto f = [&] (int ie, int lev, int i, int j) {
+  const auto f = [&] (int idx) {
+    int ie, lev, i, j;
+    idx_ie_physlev_ij(idx, ie, lev, i, j);
     Real latlon[] = {pll(ie,i,j,0), pll(ie,i,j,1)};
     compose::test::offset_latlon(num_phys_lev, lev, latlon[0], latlon[1]);
     Real uv[2];
@@ -168,7 +170,7 @@ test_trajectory(Real t0, Real t1, bool independent_time_steps) {
     for (int d = 0; d < 2; ++d)
       v(ie,np1,d,i,j,lev/packn)[lev%packn] = uv[d];
   };
-  loop_device_ie_physlev_ij(f);
+  launch_ie_physlev_ij(f);
   Kokkos::fence();
 
   calc_trajectory(t1 - t0);

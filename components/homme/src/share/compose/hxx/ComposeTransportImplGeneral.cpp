@@ -114,33 +114,39 @@ void ComposeTransportImpl::run (const TimeLevel& tl, const Real dt) {
   calc_trajectory(dt);
   homme::compose::advect(tl.np1, tl.n0_qdp, tl.np1_qdp);
   //todo optional hypervis
+  const auto np1 = m_data.np1;
+  const auto np1_qdp = m_data.np1_qdp;
+  const auto qsize = m_data.qsize;
   if ( ! homme::compose::property_preserve(m_data.limiter_option)) {
     // For analysis purposes, property preservation was not run. Need to convert
     // Q to qdp.
-    const auto np1 = m_data.np1;
-    const auto np1_qdp = m_data.np1_qdp;
     const auto qdp = m_tracers.qdp;
     const auto Q = m_tracers.Q;
     const auto dp3d = m_state.m_dp3d;
     const auto spheremp = m_elements.m_geometry.m_spheremp;
-    const auto f = [&] (int ie, int q, int i, int j, int lev) {
+    const auto f = [&] (const int idx) {
+      int ie, q, i, j, lev;
+      idx_ie_q_ij_nlev<num_lev_pack>(qsize, idx, ie, q, i, j, lev);
       qdp(ie,np1_qdp,q,i,j,lev) = Q(ie,q,i,j,lev)/dp3d(ie,np1,i,j,lev);
     };
-    loop_device_ie_q_ij_nlev<num_lev_pack>(f);
+    launch_ie_q_ij_nlev<num_lev_pack>(f);
   }
   { // DSS qdp and omega
-    const auto np1_qdp = m_data.np1_qdp;
     const auto qdp = m_tracers.qdp;
     const auto spheremp = m_elements.m_geometry.m_spheremp;
-    const auto f1 = [&] (int ie, int q, int i, int j, int lev) {
+    const auto f1 = [&] (const int idx) {
+      int ie, q, i, j, lev;
+      idx_ie_q_ij_nlev<num_lev_pack>(qsize, idx, ie, q, i, j, lev);
       qdp(ie,np1_qdp,q,i,j,lev) *= spheremp(ie,i,j);
     };
-    loop_device_ie_q_ij_nlev<num_lev_pack>(f1);
+    launch_ie_q_ij_nlev<num_lev_pack>(f1);
     const auto omega = m_derived.m_omega_p;
-    const auto f2 = [&] (int ie, int i, int j, int lev) {
+    const auto f2 = [&] (const int idx) {
+      int ie, i, j, lev;
+      idx_ie_ij_nlev<num_lev_pack>(idx, ie, i, j, lev);
       omega(ie,i,j,lev) *= spheremp(ie,i,j);
     };
-    loop_device_ie_ij_nlev<num_lev_pack>(f2);
+    launch_ie_ij_nlev<num_lev_pack>(f2);
     m_qdp_dss_be[tl.np1_qdp]->exchange(m_elements.m_geometry.m_rspheremp);
   }
   //todo semi_lagrange_cdr_check
