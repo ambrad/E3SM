@@ -43,7 +43,7 @@ static void cp_v_to_vstar (const ComposeTransportImpl& cti, const int np1) {
 static void fill_v (const ComposeTransportImpl& cti, const Real t, const int np1) {
   const auto pll = cti.m_elements.m_geometry.m_sphere_latlon;
   const auto v = cti.m_state.m_v;
-  constexpr auto packn = cti.packn;
+  const auto packn = cti.packn;
   const compose::test::NonDivergentWindField wf;
   const auto f = [&] (int ie, int lev, int i, int j) {
     Real latlon[] = {pll(ie,i,j,0), pll(ie,i,j,1)};

@@ -87,7 +87,8 @@ class OdeFn {
   mutable int ne_;
 public:
   OdeFn () : ne_(0) {}
-  virtual bool eval (const Real t, const Real* const d, Real* const f) const = 0;
+  KOKKOS_FUNCTION virtual bool eval(const Real t, const Real* const d,
+                                    Real* const f) const = 0;
   virtual void record (const Real t, const Real* const y) const { ++ne_; }
   int ne () const { return ne_; }
 };
@@ -148,6 +149,7 @@ public:
 
 // Also from Lauritzen et al.
 struct NonDivergentWindField : public OdeFn {
+  NonDivergentWindField () {}
   KOKKOS_FUNCTION
   bool eval (const Real t, const Real* const d, Real* const f) const override {
     const Real theta = d[0];  // latitude
@@ -169,6 +171,8 @@ struct NonDivergentWindField : public OdeFn {
 
 // Also from Lauritzen et al.
 struct DivergentWindField : public OdeFn {
+  DivergentWindField () {}
+  KOKKOS_FUNCTION
   bool eval (const Real t, const Real* const d, Real* const f) const override {
     const Real
       theta = d[0],  // latitude

@@ -29,8 +29,6 @@
 
 #include <cassert>
 
-#include "/home/ambrad/repo/sik/hommexx/dbg.hpp"
-
 namespace Homme {
 
 struct ComposeTransportImpl {

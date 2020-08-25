@@ -15,11 +15,13 @@ void cedr_finalize();
 
 namespace compose {
 
-void set_views (const Kokkos::View<double***>& spheremp,
-                const Kokkos::View<double****>& dp, const Kokkos::View<double*****>& dp3d,
-                const Kokkos::View<double******>& qdp, const Kokkos::View<double*****>& q,
-                const Kokkos::View<double*****>& dep_points) {
-  using Kokkos::View;
+template <typename DataType>
+using View = typename TracerArrays<ko::MachineTraits>::View<DataType>;
+
+void set_views (const SetView<double***>& spheremp,
+                const SetView<double****>& dp, const SetView<double*****>& dp3d,
+                const SetView<double******>& qdp, const SetView<double*****>& q,
+                const SetView<double*****>& dep_points) {
   auto& ta = *get_tracer_arrays();
   const auto nel = spheremp.extent_int(0);
   const auto np2 = spheremp.extent_int(1)*spheremp.extent_int(1);
