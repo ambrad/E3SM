@@ -19,9 +19,9 @@ module thetal_test_interface
 contains
 
   subroutine init_f90 (ne, hyai, hybi, hyam, hybm, dvv, mp, ps0) bind(c)
-    use control_mod,            only: cubed_sphere_map
+    use control_mod,            only: cubed_sphere_map, topology
     use cube_mod,               only: cube_init_atomic, set_corner_coordinates, &
-                                      set_area_correction_map0
+                                      set_area_correction_map0, set_area_correction_map2
     use derivative_mod,         only: derivinit
     use dimensions_mod,         only: nelemd, nlev, nlevp, np
     use geometry_interface_mod, only: initmp_f90, init_cube_geometry_f90, init_connectivity_f90
@@ -50,7 +50,8 @@ contains
     call init_cube_geometry_f90(ne)
     call init_connectivity_f90()
 
-    cubed_sphere_map = 0
+    topology = "cube"
+    cubed_sphere_map = 2
     gp=gausslobatto(np)  ! GLL points
     do ie=1,nelemd
       call set_corner_coordinates(elem(ie))
@@ -61,7 +62,8 @@ contains
     call allocate_element_arrays(nelemd)
 
     call mass_matrix(par,elem)
-    call set_area_correction_map0(elem, nelemd, par, gp)
+    if (cubed_sphere_map == 0) call set_area_correction_map0(elem, nelemd, par, gp)
+    if (cubed_sphere_map == 2 .and. np > 2) call set_area_correction_map2(elem, nelemd, par, gp)
     call mass_matrix(par,elem)
 
     ! Copy refFE matrices back to C
