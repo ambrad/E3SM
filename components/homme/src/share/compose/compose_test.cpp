@@ -243,7 +243,8 @@ struct StandaloneTracersTester {
     }
   }
 
-  void record_end (const Int fcomm, const Int root, const Int rank) {
+  void record_end (const Int fcomm, const Int root, const Int rank,
+                   Real* l2_errs, Real* mass_errs) {
 #ifdef COMPOSE_HORIZ_OPENMP
 #   pragma omp barrier
 #endif
@@ -262,10 +263,13 @@ struct StandaloneTracersTester {
         compose_repro_sum(l2_num_.data(), l2_num.data(), nelemd, nr, fcomm);
         compose_repro_sum(l2_den_.data(), l2_den.data(), nelemd, nr, fcomm);
         if (rank == root)
-          for (int q = 0; q < qsize; ++q) {
+          for (int q = 0, cnt = 0; q < qsize; ++q) {
             printf("COMPOSE>");
-            for (int k = 0; k < nlev; ++k)
-              printf("%23.16e", std::sqrt(l2_num(k,q)/l2_den(k,q)));
+            for (int k = 0; k < nlev; ++k) {
+              const auto err = std::sqrt(l2_num(k,q)/l2_den(k,q));
+              l2_errs[cnt++] = err;
+              printf("%23.16e", err);
+            }
             printf("\n");
           }
       }
@@ -276,9 +280,9 @@ struct StandaloneTracersTester {
         compose_repro_sum(massf_.data(), massf, nelemd, qsize, fcomm);
         if (rank == root)
           for (int q = 0; q < qsize; ++q) {
-            printf("COMPOSE>");
-            printf(" mass0 %8.2e mass re %9.2e\n",
-                   mass0[q], (massf[q] - mass0[q])/mass0[q]);
+            const auto err = (massf[q] - mass0[q])/mass0[q];
+            mass_errs[q] = err;
+            printf("COMPOSE> mass0 %8.2e mass re %9.2e\n", mass0[q], err);
           }
       }  
 #ifdef COMPOSE_HORIZ_OPENMP
@@ -354,7 +358,7 @@ extern "C" void compose_stt_clear () {
   g_stt = nullptr;
 }
 
-extern "C" void compose_stt_finish (Int fcomm, Int root, Int rank) {
-  g_stt->record_end(fcomm, root, rank);
+extern "C" void compose_stt_finish (Int fcomm, Int root, Int rank, Real* eval) {
+  g_stt->record_end(fcomm, root, rank, eval, eval + g_stt->nlev * g_stt->qsize);
   compose_stt_clear();
 }

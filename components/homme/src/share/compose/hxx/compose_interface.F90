@@ -132,17 +132,22 @@ contains
     call cleanup_f90()
   end subroutine cleanup_compose_f90
 
-  subroutine run_compose_standalone_test_f90(nmax_out) bind(c)
+  subroutine run_compose_standalone_test_f90(nmax_out, eval) bind(c)
     use thetal_test_interface, only: deriv, hvcoord
     use compose_test_mod, only: compose_test
     use domain_mod, only: domain1d_t
     use control_mod, only: transport_alg, statefreq
     use time_mod, only: nmax
     use thread_mod, only: hthreads, vthreads
+    use dimensions_mod, only: nlev, qsize
 
     integer(c_int), intent(out) :: nmax_out
+    real(c_double), intent(out) :: eval((nlev+1)*qsize)
 
     type (domain1d_t), pointer :: dom_mt(:)
+    real(real_kind) :: buf((nlev+1)*qsize)
+
+    integer :: i
 
     hthreads = 1
     vthreads = 1
@@ -153,7 +158,11 @@ contains
     nmax = 7*ne
     nmax_out = nmax
     statefreq = 2*ne
-    call compose_test(par, hvcoord, dom_mt, elem)
+    print *,'amb> calling compose_test with eval'
+    call compose_test(par, hvcoord, dom_mt, elem, buf)
+    do i = 1,size(buf)
+       eval(i) = buf(i)
+    end do
     transport_alg = 12
     deallocate(dom_mt)
   end subroutine run_compose_standalone_test_f90

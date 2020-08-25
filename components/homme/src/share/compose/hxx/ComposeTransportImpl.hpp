@@ -109,7 +109,7 @@ struct ComposeTransportImpl {
   ComposeTransport::TestDepView::HostMirror
   test_trajectory(Real t0, Real t1, bool independent_time_steps);
 
-  void test_2d(const int nstep);
+  void test_2d(const int nstep, std::vector<Real>& eval);
 
   template <int KLIM, typename Fn>
   KOKKOS_INLINE_FUNCTION

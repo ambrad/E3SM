@@ -56,9 +56,8 @@ static void fill_v (const ComposeTransportImpl& cti, const Real t, const int np1
   cti.loop_device_ie_physlev_ij(f);
 }
 
-//todo Rewrite to return values. For now, just q&d.
 static void finish (const ComposeTransportImpl& cti, const Comm& comm,
-                    const int n0_qdp, const int np1) {
+                    const int n0_qdp, const int np1, std::vector<Real>& eval) {
   const int nelemd = cti.m_data.nelemd, qsize = cti.m_data.qsize, nlev = cti.num_phys_lev,
     nother_qdp = (n0_qdp + 1) % 2;
   fill_ics(cti, nother_qdp);
@@ -96,6 +95,8 @@ static void finish (const ComposeTransportImpl& cti, const Comm& comm,
   const auto mpi_comm = comm.mpi_comm();
   const auto am_root = comm.root();
   const auto fcomm = MPI_Comm_c2f(mpi_comm);
+  eval.resize((nlev+1)*qsize);
+  int cnt = 0;
   {
     Kokkos::View<Real**, HostMemSpace>
       l2_num_red("l2_num_red", nlev, qsize), l2_den_red("l2_den_red", nlev, qsize);
@@ -105,8 +106,11 @@ static void finish (const ComposeTransportImpl& cti, const Comm& comm,
     if (am_root)
       for (int q = 0; q < qsize; ++q) {
         printf("COMPOSE (hxx)>");
-        for (int k = 0; k < nlev; ++k)
-          printf("%23.16e", std::sqrt(l2_num_red(k,q)/l2_den_red(k,q)));
+        for (int k = 0; k < nlev; ++k) {
+          const auto err = std::sqrt(l2_num_red(k,q)/l2_den_red(k,q));
+          eval[cnt++] = err;
+          printf("%23.16e", err);
+        }
         printf("\n");
       }
   }
@@ -116,14 +120,14 @@ static void finish (const ComposeTransportImpl& cti, const Comm& comm,
     compose_repro_sum(massf.data(), massf_red.data(), nelemd, qsize, fcomm);
     if (am_root)
       for (int q = 0; q < qsize; ++q) {
-        printf("COMPOSE (hxx)>");
-        printf(" mass0 %8.2e mass re %9.2e\n",
-               mass0_red[q], (massf_red[q] - mass0_red[q])/mass0_red[q]);
+        const auto err = (massf_red[q] - mass0_red[q])/mass0_red[q];
+        eval[cnt++] = err;
+        printf("COMPOSE (hxx)> mass0 %8.2e mass re %9.2e\n", mass0_red[q], err);
       }
   }
 }
 
-void ComposeTransportImpl::test_2d (const int nstep) {
+void ComposeTransportImpl::test_2d (const int nstep, std::vector<Real>& eval) {
   SimulationParams& params = Context::singleton().get<SimulationParams>();
   params.qsplit = 1;
 
@@ -153,7 +157,7 @@ void ComposeTransportImpl::test_2d (const int nstep) {
   }
   GPTLstop("compose_stt_step");
 
-  finish(*this, Context::singleton().get<Comm>(), tl.n0_qdp, tl.np1);
+  finish(*this, Context::singleton().get<Comm>(), tl.n0_qdp, tl.np1, eval);
 }
 
 } // namespace Homme

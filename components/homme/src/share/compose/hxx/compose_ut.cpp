@@ -37,7 +37,7 @@ extern "C" {
                         Real* dvv, Real* mp);
   void init_geometry_f90();
   void cleanup_compose_f90();
-  void run_compose_standalone_test_f90(int* nmax);
+  void run_compose_standalone_test_f90(int* nmax, Real* eval);
   void run_trajectory_f90(Real t0, Real t1, bool independent_time_steps, Real* dep);
 } // extern "C"
 
@@ -258,9 +258,20 @@ TEST_CASE ("compose_transport_testing") {
               REQUIRE(equal(depf(ie,lev,i,j,d), depc(ie,lev,i,j,d), 10*tol));
   }
 
-  int nmax;
-  run_compose_standalone_test_f90(&nmax);
-  ct.test_2d(nmax);
+  {
+    int nmax;
+    std::vector<Real> eval_f((s.nlev+1)*s.qsize), eval_c(eval_f.size());
+    run_compose_standalone_test_f90(&nmax, eval_f.data());
+    ct.test_2d(nmax, eval_c);
+    const auto n = s.nlev*s.qsize;
+    // When not a BFB build, still expect l2 error to be the same to a few digits.
+    for (size_t i = 0; i < n; ++i) REQUIRE(equal(eval_f[i], eval_c[i], 1e-3));
+    // Mass conservation error should be within a factor of 10 of each other.
+    for (size_t i = n; i < n + s.qsize; ++i) REQUIRE(equal(eval_f[i], eval_c[i], 10));
+    // And mass conservation itself should be small.
+    for (size_t i = n; i < n + s.qsize; ++i) REQUIRE(std::abs(eval_f[i]) <= 20*tol);
+    for (size_t i = n; i < n + s.qsize; ++i) REQUIRE(std::abs(eval_c[i]) <= 20*tol);
+  }
 
   //} catch (...) {}
   Session::delete_singleton();
