@@ -114,7 +114,10 @@ void ComposeTransportImpl::run (const TimeLevel& tl, const Real dt) {
   m_data.np1_qdp = tl.np1_qdp;
   calc_trajectory(dt);
   homme::compose::advect(tl.np1, tl.n0_qdp, tl.np1_qdp);
+  //todo optional hypervis
   homme::compose::property_preserve(m_data.limiter_option);
+  //todo semi_lagrange_cdr_check
+  //todo DSS
 }
 
 } // namespace Homme

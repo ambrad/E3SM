@@ -16,13 +16,14 @@ static void fill_ics (const ComposeTransportImpl& cti, const int n0_qdp, const i
   const auto dp3d = Kokkos::create_mirror_view(cti.m_state.m_dp3d);
   const auto pll = Kokkos::create_mirror_view(cti.m_elements.m_geometry.m_sphere_latlon);
   const auto f = [&] (int ie, int lev, int i, int j) {
-    auto lat = pll(ie,i,j,0), lon = pll(ie,i,j,1);
+    Real lat = pll(ie,i,j,0), lon = pll(ie,i,j,1);
     compose::test::offset_latlon(cti.num_phys_lev, lev, lat, lon);
+    const int p = lev / cti.packn, s = lev % cti.packn;
     for (int q = 0; q < cti.m_data.qsize; ++q)
       compose::test::InitialCondition::init(compose::test::get_ic(cti.m_data.qsize, lev, q),
                                             1, &lat, &lon,
-                                            &qdp(ie,n0_qdp,q,i,j,lev/cti.packn)[lev%cti.packn]);
-    if (np1 >= 0) dp3d(ie,np1,i,j,lev/cti.packn)[lev%cti.packn] = 1;
+                                            &qdp(ie,n0_qdp,q,i,j,p)[s]);
+    if (np1 >= 0) dp3d(ie,np1,i,j,p)[s] = 1;
   };
   cti.loop_host_ie_plev_ij(f);
   Kokkos::deep_copy(cti.m_tracers.qdp, qdp);
@@ -68,29 +69,30 @@ static void finish (const ComposeTransportImpl& cti, const Comm& comm,
   Kokkos::deep_copy(dp3d, cti.m_state.m_dp3d);
   Kokkos::deep_copy(spheremp, cti.m_elements.m_geometry.m_spheremp);
   Kokkos::View<Real***, HostMemSpace>
-    l2_num("l2_num", nelemd, nlev, qsize), l2_den("l2_den", nelemd, nlev, qsize);
+    l2_num("l2_num", nlev, qsize, nelemd), l2_den("l2_den", nlev, qsize, nelemd);
   Kokkos::View<Real**, HostMemSpace>
-    mass0("mass0", nelemd, qsize), massf("massf", nelemd, qsize);
-  for (int ie = 0; ie < nelemd; ++ie)
+    mass0("mass0", qsize, nelemd), massf("massf", qsize, nelemd);
+  for (int ie = 0; ie < nelemd; ++ie) {
     for (int q = 0; q < qsize; ++q) {
       Real m0 = 0, mf = 0;
       for (int k = 0; k < nlev; ++k) {
+        const int p = k / cti.packn, s = k % cti.packn;
         Real num = 0, den = 0;
         for (int i = 0; i < cti.np; ++i)
           for (int j = 0; j < cti.np; ++j) {
-            const int p = k / cti.packn, s = k % cti.packn;
             num += spheremp(ie,i,j)*square(qdp(ie,n0_qdp,q,i,j,p)[s]/dp3d(ie,np1,i,j,p)[s] -
                                            qdp(ie,nother_qdp,q,i,j,p)[s]);
             den += spheremp(ie,i,j)*square(qdp(ie,nother_qdp,q,i,j,p)[s]);
             m0 += spheremp(ie,i,j)*qdp(ie,nother_qdp,q,i,j,p)[s] /* times rho = 1 */;
             mf += spheremp(ie,i,j)*qdp(ie,n0_qdp,q,i,j,p)[s];
           }
-        l2_num(ie,k,q) = num;
-        l2_den(ie,k,q) = den;
+        l2_num(k,q,ie) = num;
+        l2_den(k,q,ie) = den;
       }
-      mass0(ie,q) = m0;
-      massf(ie,q) = mf;
+      mass0(q,ie) = m0;
+      massf(q,ie) = mf;
     }
+  }
   const auto mpi_comm = comm.mpi_comm();
   const auto am_root = comm.root();
   const auto fcomm = MPI_Comm_c2f(mpi_comm);

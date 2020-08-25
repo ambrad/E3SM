@@ -82,7 +82,7 @@ contains
     type (cartesian3D_t) :: sphere_cart
     real (kind=real_kind) :: sphere_cart_vec(3,np,np), sphere_latlon_vec(2,np,np)
 
-    integer :: ie, i, j
+    integer :: ie, i, j    
 
     elem_D_ptr            = c_loc(elem_D)
     elem_Dinv_ptr         = c_loc(elem_Dinv)
