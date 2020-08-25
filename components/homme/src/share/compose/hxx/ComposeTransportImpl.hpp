@@ -160,7 +160,7 @@ struct ComposeTransportImpl {
 
   KOKKOS_INLINE_FUNCTION
   static void idx_ie_physlev_ij (const int idx, int& ie, int& lev, int& i, int& j) {
-    return idx_ie_nlev_ij<num_phys_lev>(idx, ie, lev, i, j);
+    idx_ie_nlev_ij<num_phys_lev>(idx, ie, lev, i, j);
   }
 
   template <typename Fn>
@@ -171,7 +171,7 @@ struct ComposeTransportImpl {
 
   KOKKOS_INLINE_FUNCTION
   static void idx_ie_packlev_ij (const int idx, int& ie, int& lev, int& i, int& j) {
-    return idx_ie_nlev_ij<num_lev_pack>(idx, ie, lev, i, j);
+    idx_ie_nlev_ij<num_lev_pack>(idx, ie, lev, i, j);
   }
 
   template <typename Fn>

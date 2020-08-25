@@ -124,7 +124,7 @@ void ComposeTransportImpl::run (const TimeLevel& tl, const Real dt) {
     const auto Q = m_tracers.Q;
     const auto dp3d = m_state.m_dp3d;
     const auto spheremp = m_elements.m_geometry.m_spheremp;
-    const auto f = [&] (const int idx) {
+    const auto f = KOKKOS_LAMBDA (const int idx) {
       int ie, q, i, j, lev;
       idx_ie_q_ij_nlev<num_lev_pack>(qsize, idx, ie, q, i, j, lev);
       qdp(ie,np1_qdp,q,i,j,lev) = Q(ie,q,i,j,lev)/dp3d(ie,np1,i,j,lev);
@@ -134,14 +134,14 @@ void ComposeTransportImpl::run (const TimeLevel& tl, const Real dt) {
   { // DSS qdp and omega
     const auto qdp = m_tracers.qdp;
     const auto spheremp = m_elements.m_geometry.m_spheremp;
-    const auto f1 = [&] (const int idx) {
+    const auto f1 = KOKKOS_LAMBDA (const int idx) {
       int ie, q, i, j, lev;
       idx_ie_q_ij_nlev<num_lev_pack>(qsize, idx, ie, q, i, j, lev);
       qdp(ie,np1_qdp,q,i,j,lev) *= spheremp(ie,i,j);
     };
     launch_ie_q_ij_nlev<num_lev_pack>(f1);
     const auto omega = m_derived.m_omega_p;
-    const auto f2 = [&] (const int idx) {
+    const auto f2 = KOKKOS_LAMBDA (const int idx) {
       int ie, i, j, lev;
       idx_ie_ij_nlev<num_lev_pack>(idx, ie, i, j, lev);
       omega(ie,i,j,lev) *= spheremp(ie,i,j);

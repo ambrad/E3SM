@@ -10,7 +10,7 @@
 #include "compose_test.hpp"
 
 namespace Homme {
-using cti = ComposeTransportImpl;
+using CTI = ComposeTransportImpl;
 
 KOKKOS_FUNCTION
 static void ugradv_sphere (
@@ -29,7 +29,7 @@ static void ugradv_sphere (
       v_cart(i,j,k) = (vec_sphere2cart(0,d_cart,i,j) * v(0,i,j,k) +
                        vec_sphere2cart(1,d_cart,i,j) * v(1,i,j,k));      
     };
-    cti::loop_ijk<NUM_LEV>(kv, f1);
+    CTI::loop_ijk<NUM_LEV>(kv, f1);
     kv.team_barrier();
 
     sphere_ops.gradient_sphere<NUM_LEV>(kv, v_cart, ugradv_cart);
@@ -41,7 +41,7 @@ static void ugradv_sphere (
           vec_sphere2cart(d_latlon,d_cart,i,j)*
           (u(0,i,j,k) * ugradv_cart(0,i,j,k) + u(1,i,j,k) * ugradv_cart(1,i,j,k));
     };
-    cti::loop_ijk<NUM_LEV>(kv, f2);
+    CTI::loop_ijk<NUM_LEV>(kv, f2);
   }
 }
 
@@ -101,7 +101,7 @@ void ComposeTransportImpl::calc_trajectory (const Real dt) {
           vstar(d,i,j,k) = (((vn0(d,i,j,k) + vstar(d,i,j,k))/2 - dt*ugradv(d,i,j,k)/2)*
                             spheremp(i,j)*rspheremp(i,j));
       };
-      cti::loop_ijk<num_lev_pack>(kv, f);
+      CTI::loop_ijk<num_lev_pack>(kv, f);
     };
     Kokkos::parallel_for(m_tp_ne, calc_midpoint_velocity);
   }
@@ -111,6 +111,8 @@ void ComposeTransportImpl::calc_trajectory (const Real dt) {
     be->exchange();
   }
   { // Calculate departure point.
+    const int packn = this->packn;
+    const int num_phys_lev = this->num_phys_lev;
     const auto m_sphere_cart = geo.m_sphere_cart;
     const auto rearth = PhysicalConstants::rearth;
     const auto m_dep_pts = m_data.dep_pts;
@@ -143,7 +145,7 @@ void ComposeTransportImpl::calc_trajectory (const Real dt) {
             dep_pts(oss,i,j,d) = dp[d][s]/r;
         }
       };
-      cti::loop_ijk<num_lev_pack>(kv, f);
+      CTI::loop_ijk<num_lev_pack>(kv, f);
     };
     Kokkos::parallel_for(m_tp_ne, calc_departure_point);
   }
@@ -156,19 +158,21 @@ test_trajectory(Real t0, Real t1, bool independent_time_steps) {
   const auto v = m_state.m_v;
   const auto pll = m_elements.m_geometry.m_sphere_latlon;
   const auto np1 = m_data.np1;
+  const int packn = this->packn;
   const compose::test::NonDivergentWindField wf;
-  const auto f = [&] (int idx) {
+  const auto f = KOKKOS_LAMBDA (int idx) {
     int ie, lev, i, j;
     idx_ie_physlev_ij(idx, ie, lev, i, j);
     Real latlon[] = {pll(ie,i,j,0), pll(ie,i,j,1)};
     compose::test::offset_latlon(num_phys_lev, lev, latlon[0], latlon[1]);
     Real uv[2];
     wf.eval(t0, latlon, uv);
+    const int p = lev/packn, s = lev%packn;
     for (int d = 0; d < 2; ++d)
-      vstar(ie,d,i,j,lev/packn)[lev%packn] = uv[d];
+      vstar(ie,d,i,j,p)[s] = uv[d];
     wf.eval(t1, latlon, uv);
     for (int d = 0; d < 2; ++d)
-      v(ie,np1,d,i,j,lev/packn)[lev%packn] = uv[d];
+      v(ie,np1,d,i,j,p)[s] = uv[d];
   };
   launch_ie_physlev_ij(f);
   Kokkos::fence();
