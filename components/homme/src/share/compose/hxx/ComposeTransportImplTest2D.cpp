@@ -13,11 +13,9 @@ namespace Homme {
 using CTI = ComposeTransportImpl;
 
 static void fill_ics (const ComposeTransportImpl& cti, const int n0_qdp, const int np1 = -1) {
-  const auto pll = Kokkos::create_mirror_view(cti.m_elements.m_geometry.m_sphere_latlon);
-  const auto qdp = Kokkos::create_mirror_view(cti.m_tracers.qdp);
+  const auto pll = CTI::cmvdc(cti.m_elements.m_geometry.m_sphere_latlon);
+  const auto qdp = CTI::cmvdc(cti.m_tracers.qdp);
   const auto dp3d = Kokkos::create_mirror_view(cti.m_state.m_dp3d);
-  Kokkos::deep_copy(pll, cti.m_elements.m_geometry.m_sphere_latlon);
-  Kokkos::deep_copy(qdp, cti.m_tracers.qdp);
   if (np1 >= 0) Kokkos::deep_copy(dp3d, cti.m_state.m_dp3d);
   const auto f = [&] (int ie, int lev, int i, int j) {
     Real lat = pll(ie,i,j,0), lon = pll(ie,i,j,1);
@@ -46,24 +44,39 @@ static void cp_v_to_vstar (const ComposeTransportImpl& cti, const int np1) {
   cti.launch_ie_packlev_ij(f);
 }
 
-static void fill_v (const ComposeTransportImpl& cti, const Real t, const int np1) {
-  const auto pll = cti.m_elements.m_geometry.m_sphere_latlon;
-  const auto v = cti.m_state.m_v;
+static void fill_v (const ComposeTransportImpl& cti, const Real t, const int np1,
+                    const bool bfb) {
   const int packn = cti.packn;
   const int num_phys_lev = cti.num_phys_lev;
   const compose::test::NonDivergentWindField wf;
-  const auto f = KOKKOS_LAMBDA (const int idx) {
-    int ie, lev, i, j;
-    CTI::idx_ie_physlev_ij(idx, ie, lev, i, j);
-    Real latlon[] = {pll(ie,i,j,0), pll(ie,i,j,1)};
-    compose::test::offset_latlon(num_phys_lev, lev, latlon[0], latlon[1]);
-    Real uv[2];
-    wf.eval(t, latlon, uv);
-    const int p = lev / packn, s = lev % packn;
-    for (int d = 0; d < 2; ++d)
-      v(ie,np1,d,i,j,p)[s] = uv[d];
-  };
-  cti.launch_ie_physlev_ij(f);
+  if (bfb) {
+    const auto pll = CTI::cmvdc(cti.m_elements.m_geometry.m_sphere_latlon);
+    const auto v = CTI::cmvdc(cti.m_state.m_v);
+    const auto f = [&] (const int ie, const int lev, const int i, const int j) {
+      Real latlon[] = {pll(ie,i,j,0), pll(ie,i,j,1)};
+      compose::test::offset_latlon(num_phys_lev, lev, latlon[0], latlon[1]);
+      Real uv[2];
+      wf.eval(t, latlon, uv);
+      const int p = lev / packn, s = lev % packn;
+      for (int d = 0; d < 2; ++d) v(ie,np1,d,i,j,p)[s] = uv[d];  
+    };
+    Kokkos::deep_copy(cti.m_state.m_v, v);
+    cti.loop_host_ie_plev_ij(f);
+  } else {
+    const auto pll = cti.m_elements.m_geometry.m_sphere_latlon;
+    const auto v = cti.m_state.m_v;
+    const auto f = KOKKOS_LAMBDA (const int idx) {
+      int ie, lev, i, j;
+      CTI::idx_ie_physlev_ij(idx, ie, lev, i, j);
+      Real latlon[] = {pll(ie,i,j,0), pll(ie,i,j,1)};
+      compose::test::offset_latlon(num_phys_lev, lev, latlon[0], latlon[1]);
+      Real uv[2];
+      wf.eval(t, latlon, uv);
+      const int p = lev / packn, s = lev % packn;
+      for (int d = 0; d < 2; ++d) v(ie,np1,d,i,j,p)[s] = uv[d];  
+    };
+    cti.launch_ie_physlev_ij(f);
+  }
 }
 
 static void finish (const ComposeTransportImpl& cti, const Comm& comm,
@@ -71,12 +84,9 @@ static void finish (const ComposeTransportImpl& cti, const Comm& comm,
   const int nelemd = cti.m_data.nelemd, qsize = cti.m_data.qsize, nlev = cti.num_phys_lev,
     nother_qdp = (n0_qdp + 1) % 2;
   fill_ics(cti, nother_qdp);
-  const auto qdp = Kokkos::create_mirror_view(cti.m_tracers.qdp);
-  const auto dp3d = Kokkos::create_mirror_view(cti.m_state.m_dp3d);
-  const auto spheremp = Kokkos::create_mirror_view(cti.m_elements.m_geometry.m_spheremp);
-  Kokkos::deep_copy(qdp, cti.m_tracers.qdp);
-  Kokkos::deep_copy(dp3d, cti.m_state.m_dp3d);
-  Kokkos::deep_copy(spheremp, cti.m_elements.m_geometry.m_spheremp);
+  const auto qdp = CTI::cmvdc(cti.m_tracers.qdp);
+  const auto dp3d = CTI::cmvdc(cti.m_state.m_dp3d);
+  const auto spheremp = CTI::cmvdc(cti.m_elements.m_geometry.m_spheremp);
   Kokkos::View<Real***, HostMemSpace>
     l2_num("l2_num", nlev, qsize, nelemd), l2_den("l2_den", nlev, qsize, nelemd);
   Kokkos::View<Real**, HostMemSpace>
@@ -137,7 +147,7 @@ static void finish (const ComposeTransportImpl& cti, const Comm& comm,
   }
 }
 
-void ComposeTransportImpl::test_2d (const int nstep, std::vector<Real>& eval) {
+void ComposeTransportImpl::test_2d (const bool bfb, const int nstep, std::vector<Real>& eval) {
   SimulationParams& params = Context::singleton().get<SimulationParams>();
   params.qsplit = 1;
 
@@ -153,12 +163,12 @@ void ComposeTransportImpl::test_2d (const int nstep, std::vector<Real>& eval) {
     const auto tprev = dt*i;
     const auto t = dt*(i+1);
     if (i == 0) {
-      fill_v(*this, tprev, tl.np1);
+      fill_v(*this, tprev, tl.np1, bfb);
       Kokkos::fence();
     }
     cp_v_to_vstar(*this, tl.np1);
     Kokkos::fence();
-    fill_v(*this, t, tl.np1);
+    fill_v(*this, t, tl.np1, bfb);
     Kokkos::fence();
     run(tl, dt);
     Kokkos::fence();

@@ -107,7 +107,7 @@ struct ComposeTransportImpl {
   ComposeTransport::TestDepView::HostMirror
   test_trajectory(Real t0, Real t1, bool independent_time_steps);
 
-  void test_2d(const int nstep, std::vector<Real>& eval);
+  void test_2d(const bool bfb, const int nstep, std::vector<Real>& eval);
 
   template <int KLIM, typename Fn>
   KOKKOS_INLINE_FUNCTION
@@ -208,6 +208,13 @@ struct ComposeTransportImpl {
   void launch_ie_q_ij_nlev (Fn& f) const {
     Kokkos::parallel_for(
       Kokkos::RangePolicy<ExecSpace>(0, m_data.nelemd*m_data.qsize*np*np*nlev), f);
+  }
+
+  template <typename V>
+  static decltype(Kokkos::create_mirror_view(V())) cmvdc (const V& v) {
+    const auto h = Kokkos::create_mirror_view(v);
+    deep_copy(h, v);
+    return h;
   }
 };
 

@@ -90,15 +90,7 @@ void fill (Random& r, const V& a,
 
 static void init_elems (int nelemd, Random& r, const HybridVCoord& hvcoord,
                         Elements& e) {
-  using Kokkos::create_mirror_view;
-  using Kokkos::deep_copy;
-  using Kokkos::subview;
-
-  const int nlev = NUM_PHYSICAL_LEV, np = NP;
-  const auto all = Kokkos::ALL();
-
   e.init(nelemd, false, true);
-  const auto max_pressure = 1000 + hvcoord.ps0;
   auto& geo = e.m_geometry;
   init_geometry_f90();
 }
@@ -226,7 +218,7 @@ static bool equal (const Real& a, const Real& b,
 TEST_CASE ("compose_transport_testing") {
   static constexpr Real tol = std::numeric_limits<Real>::epsilon();
 
-  auto& s = Session::singleton(); //try {
+  auto& s = Session::singleton(); try {
 
   REQUIRE(compose::test::slmm_unittest() == 0);
   REQUIRE(compose::test::cedr_unittest() == 0);
@@ -258,20 +250,23 @@ TEST_CASE ("compose_transport_testing") {
     int nmax;
     std::vector<Real> eval_f((s.nlev+1)*s.qsize), eval_c(eval_f.size());
     run_compose_standalone_test_f90(&nmax, eval_f.data());
-    ct.test_2d(nmax, eval_c);
-    if (s.get_comm().root()) {
-      const auto n = s.nlev*s.qsize;
-      // When not a BFB build, still expect l2 error to be the same to a few digits.
-      for (size_t i = 0; i < n; ++i) REQUIRE(equal(eval_f[i], eval_c[i], 1e-3));
-      // Mass conservation error should be within a factor of 10 of each other.
-      for (size_t i = n; i < n + s.qsize; ++i) REQUIRE(equal(eval_f[i], eval_c[i], 10));
-      // And mass conservation itself should be small.
-      for (size_t i = n; i < n + s.qsize; ++i) REQUIRE(std::abs(eval_f[i]) <= 20*tol);
-      for (size_t i = n; i < n + s.qsize; ++i) REQUIRE(std::abs(eval_c[i]) <= 20*tol);
-      //todo add an l2 ceiling for some select tracers as a function of ne
+    for (const bool bfb : {false, true}) {
+      ct.test_2d(bfb, nmax, eval_c);
+      if (s.get_comm().root()) {
+        const Real f = bfb ? 0 : 1;
+        const auto n = s.nlev*s.qsize;
+        // When not a BFB build, still expect l2 error to be the same to a few digits.
+        for (size_t i = 0; i < n; ++i) REQUIRE(almost_equal(eval_f[i], eval_c[i], f*1e-3));
+        // Mass conservation error should be within a factor of 10 of each other.
+        for (size_t i = n; i < n + s.qsize; ++i) REQUIRE(almost_equal(eval_f[i], eval_c[i], f*10));
+        // And mass conservation itself should be small.
+        for (size_t i = n; i < n + s.qsize; ++i) REQUIRE(std::abs(eval_f[i]) <= 20*tol);
+        for (size_t i = n; i < n + s.qsize; ++i) REQUIRE(std::abs(eval_c[i]) <= 20*tol);
+        //todo add an l2 ceiling for some select tracers as a function of ne
+      }
     }
   }
 
-  //} catch (...) {}
+  } catch (...) {}
   Session::delete_singleton();
 }

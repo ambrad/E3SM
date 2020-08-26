@@ -179,8 +179,7 @@ test_trajectory(Real t0, Real t1, bool independent_time_steps) {
   calc_trajectory(t1 - t0);
   Kokkos::fence();
 
-  const auto deph = Kokkos::create_mirror_view(m_data.dep_pts);
-  Kokkos::deep_copy(deph, m_data.dep_pts);
+  const auto deph = CTI::cmvdc(m_data.dep_pts);
   return deph;
 }
 
