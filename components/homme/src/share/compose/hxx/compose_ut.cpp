@@ -29,6 +29,9 @@
 
 using namespace Homme;
 
+extern int hommexx_catch2_argc;
+extern char** hommexx_catch2_argv;
+
 extern "C" {
   void init_compose_f90(int ne, const Real* hyai, const Real* hybi,
                         const Real* hyam, const Real* hybm, Real ps0,
@@ -96,9 +99,7 @@ static void init_elems (int nelemd, Random& r, const HybridVCoord& hvcoord,
 }
 
 struct Session {
-#pragma message "FOR DEV"
-  static const int ne = 2; //4;
-
+  int ne;
   HybridVCoord h;
   Random r;
   std::shared_ptr<Elements> e;
@@ -113,7 +114,7 @@ struct Session {
     printf("seed %u\n", seed);
 
     assert(QSIZE_D >= 4);
-    qsize = QSIZE_D;
+    parse_command_line();
 
     auto& c = Context::singleton();
 
@@ -188,6 +189,41 @@ struct Session {
 
 private:
   static std::shared_ptr<Session> s_session;
+
+  void parse_command_line () {
+    const bool am_root = get_comm().root();
+    ne = 2;
+    qsize = QSIZE_D;
+    bool ok = true;
+    int i;
+    for (i = 0; i < hommexx_catch2_argc; ++i) {
+      const std::string tok(hommexx_catch2_argv[i]);
+      if (tok == "-ne") {
+        if (i+1 == hommexx_catch2_argc) { ok = false; break; }
+        ne = std::atoi(hommexx_catch2_argv[++i]);
+        if (ne < 2 || ne > 128) {
+          if (am_root)
+            printf("compose_ut> ne must be between 2 and 128; got %d; "
+                   "switching to 2\n", ne);
+          ne = 2;
+        }
+      } else if (tok == "-qsize") {
+        if (i+1 == hommexx_catch2_argc) { ok = false; break; }
+        qsize = std::atoi(hommexx_catch2_argv[++i]);
+        if (qsize < 1 || qsize > QSIZE_D) {
+          if (am_root)
+            printf("compose_ut> ne must be between 1 and %d; got %d; "
+                   "switching to %d\n", QSIZE_D, qsize, QSIZE_D);
+          qsize = QSIZE_D;
+        }
+      }
+    }
+    if ( ! ok && am_root)
+      printf("compose_ut> Failed to parse command line, starting with: %s\n",
+             hommexx_catch2_argv[i]);
+    if (am_root)
+      printf("compose_ut> ne %d qsize %d\n", ne, qsize);
+  }
 };
 
 std::shared_ptr<Session> Session::s_session;
