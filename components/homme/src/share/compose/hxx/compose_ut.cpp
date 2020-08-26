@@ -251,6 +251,9 @@ TEST_CASE ("compose_transport_testing") {
     std::vector<Real> eval_f((s.nlev+1)*s.qsize), eval_c(eval_f.size());
     run_compose_standalone_test_f90(&nmax, eval_f.data());
     for (const bool bfb : {false, true}) {
+#if ! defined HOMMEXX_BFB_TESTING
+      if (bfb) continue;
+#endif
       ct.test_2d(bfb, nmax, eval_c);
       if (s.get_comm().root()) {
         const Real f = bfb ? 0 : 1;

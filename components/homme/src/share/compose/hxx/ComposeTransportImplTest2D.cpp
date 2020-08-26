@@ -49,7 +49,7 @@ static void fill_v (const ComposeTransportImpl& cti, const Real t, const int np1
   const int packn = cti.packn;
   const int num_phys_lev = cti.num_phys_lev;
   const compose::test::NonDivergentWindField wf;
-  if (bfb) {
+  if (bfb) { // On host b/c trig isn't BFB between host and device.
     const auto pll = CTI::cmvdc(cti.m_elements.m_geometry.m_sphere_latlon);
     const auto v = CTI::cmvdc(cti.m_state.m_v);
     const auto f = [&] (const int ie, const int lev, const int i, const int j) {

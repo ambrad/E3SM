@@ -107,6 +107,8 @@ struct ComposeTransportImpl {
   ComposeTransport::TestDepView::HostMirror
   test_trajectory(Real t0, Real t1, const bool independent_time_steps);
 
+  // In test code, the bfb flag says to construct manufactured fields on host to
+  // avoid non-bfb-ness in, e.g., trig functions.
   void test_2d(const bool bfb, const int nstep, std::vector<Real>& eval);
 
   template <int KLIM, typename Fn>
