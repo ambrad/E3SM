@@ -13,9 +13,12 @@ namespace Homme {
 using CTI = ComposeTransportImpl;
 
 static void fill_ics (const ComposeTransportImpl& cti, const int n0_qdp, const int np1 = -1) {
+  const auto pll = Kokkos::create_mirror_view(cti.m_elements.m_geometry.m_sphere_latlon);
   const auto qdp = Kokkos::create_mirror_view(cti.m_tracers.qdp);
   const auto dp3d = Kokkos::create_mirror_view(cti.m_state.m_dp3d);
-  const auto pll = Kokkos::create_mirror_view(cti.m_elements.m_geometry.m_sphere_latlon);
+  Kokkos::deep_copy(pll, cti.m_elements.m_geometry.m_sphere_latlon);
+  Kokkos::deep_copy(qdp, cti.m_tracers.qdp);
+  if (np1 >= 0) Kokkos::deep_copy(dp3d, cti.m_state.m_dp3d);
   const auto f = [&] (int ie, int lev, int i, int j) {
     Real lat = pll(ie,i,j,0), lon = pll(ie,i,j,1);
     compose::test::offset_latlon(cti.num_phys_lev, lev, lat, lon);

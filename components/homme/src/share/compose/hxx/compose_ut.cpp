@@ -253,7 +253,7 @@ TEST_CASE ("compose_transport_testing") {
             for (int d = 0; d < 3; ++d)
               REQUIRE(equal(depf(ie,lev,i,j,d), depc(ie,lev,i,j,d), 10*tol));
   }
-
+  
   {
     int nmax;
     std::vector<Real> eval_f((s.nlev+1)*s.qsize), eval_c(eval_f.size());

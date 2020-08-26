@@ -158,7 +158,6 @@ contains
     nmax = 7*ne
     nmax_out = nmax
     statefreq = 2*ne
-    print *,'amb> calling compose_test with eval'
     call compose_test(par, hvcoord, dom_mt, elem, buf)
     do i = 1,size(buf)
        eval(i) = buf(i)
