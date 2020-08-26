@@ -60,8 +60,8 @@ static void fill_v (const ComposeTransportImpl& cti, const Real t, const int np1
       const int p = lev / packn, s = lev % packn;
       for (int d = 0; d < 2; ++d) v(ie,np1,d,i,j,p)[s] = uv[d];  
     };
-    Kokkos::deep_copy(cti.m_state.m_v, v);
     cti.loop_host_ie_plev_ij(f);
+    Kokkos::deep_copy(cti.m_state.m_v, v);
   } else {
     const auto pll = cti.m_elements.m_geometry.m_sphere_latlon;
     const auto v = cti.m_state.m_v;

@@ -50,7 +50,7 @@ ComposeTransport::run_unit_tests () {
 }
 
 ComposeTransport::TestDepView::HostMirror ComposeTransport::
-test_trajectory (Real t0, Real t1, bool independent_time_steps) {
+test_trajectory (Real t0, Real t1, const bool independent_time_steps) {
   return m_compose_impl->test_trajectory(t0, t1, independent_time_steps);
 }
 

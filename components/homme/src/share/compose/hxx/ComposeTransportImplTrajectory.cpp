@@ -151,30 +151,28 @@ void ComposeTransportImpl::calc_trajectory (const Real dt) {
 }
 
 ComposeTransport::TestDepView::HostMirror ComposeTransportImpl::
-test_trajectory(Real t0, Real t1, bool independent_time_steps) {
+test_trajectory(Real t0, Real t1, const bool independent_time_steps) {
   m_data.np1 = 0;
-  const auto vstar = m_derived.m_vstar;
-  const auto v = m_state.m_v;
-  const auto pll = m_elements.m_geometry.m_sphere_latlon;
+  const auto vstar = Kokkos::create_mirror_view(m_derived.m_vstar);
+  const auto v = Kokkos::create_mirror_view(m_state.m_v);
+  const auto pll = cmvdc(m_elements.m_geometry.m_sphere_latlon);
   const auto np1 = m_data.np1;
   const int packn = this->packn;
   const compose::test::NonDivergentWindField wf;
-  const auto f = KOKKOS_LAMBDA (int idx) {
-    int ie, lev, i, j;
-    idx_ie_physlev_ij(idx, ie, lev, i, j);
+  // On host b/c trig isn't BFB between host and device.
+  const auto f = [&] (const int ie, const int lev, const int i, const int j) {
     Real latlon[] = {pll(ie,i,j,0), pll(ie,i,j,1)};
     compose::test::offset_latlon(num_phys_lev, lev, latlon[0], latlon[1]);
     Real uv[2];
     wf.eval(t0, latlon, uv);
     const int p = lev/packn, s = lev%packn;
-    for (int d = 0; d < 2; ++d)
-      vstar(ie,d,i,j,p)[s] = uv[d];
+    for (int d = 0; d < 2; ++d) vstar(ie,d,i,j,p)[s] = uv[d];
     wf.eval(t1, latlon, uv);
-    for (int d = 0; d < 2; ++d)
-      v(ie,np1,d,i,j,p)[s] = uv[d];
+    for (int d = 0; d < 2; ++d) v(ie,np1,d,i,j,p)[s] = uv[d];
   };
-  launch_ie_physlev_ij(f);
-  Kokkos::fence();
+  loop_host_ie_plev_ij(f);
+  Kokkos::deep_copy(m_derived.m_vstar, vstar);
+  Kokkos::deep_copy(m_state.m_v, v);
 
   calc_trajectory(t1 - t0);
   Kokkos::fence();
