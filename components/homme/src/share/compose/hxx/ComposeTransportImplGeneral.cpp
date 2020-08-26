@@ -23,8 +23,8 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
 
   m_tp_ne = Homme::get_default_team_policy<ExecSpace>(m_data.nelemd);
   m_tp_ne_qsize = Homme::get_default_team_policy<ExecSpace>(m_data.nelemd * m_data.qsize);
-  m_tu_ne = TeamUtils<ExecSpace>(m_tu_ne);
-  m_tu_ne_qsize = TeamUtils<ExecSpace>(m_tu_ne_qsize);
+  m_tu_ne = TeamUtils<ExecSpace>(m_tp_ne);
+  m_tu_ne_qsize = TeamUtils<ExecSpace>(m_tp_ne_qsize);
 
   m_sphere_ops.allocate_buffers(m_tu_ne_qsize);
 

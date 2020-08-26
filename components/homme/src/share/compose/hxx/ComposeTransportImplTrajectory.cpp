@@ -76,21 +76,20 @@ void ComposeTransportImpl::calc_trajectory (const Real dt) {
     const auto buf2a = m_data.buf2[0];
     const auto buf2b = m_data.buf2[1];
     const auto np1 = m_data.np1;
+    const auto independent_time_steps = m_data.independent_time_steps;
     const auto calc_midpoint_velocity = KOKKOS_LAMBDA (const MT& team) {
       KernelVariables kv(team, m_tu_ne);
       const auto ie = kv.ie;
 
       //todo independent_time_steps code here
 
-      const auto vn0 = (m_data.independent_time_steps ?
+      const auto vn0 = (independent_time_steps ?
                         Homme::subview(m_vn0, ie) :
                         Homme::subview(m_v, ie, np1));
       const auto vstar = Homme::subview(m_vstar, ie);
       const auto ugradv = Homme::subview(buf2b, kv.team_idx);
-      ugradv_sphere(sphere_ops, kv, Homme::subview(m_vec_sph2cart, ie),
-                    vn0, vstar,
-                    Homme::subview(buf1, kv.team_idx),
-                    Homme::subview(buf2a, kv.team_idx),
+      ugradv_sphere(sphere_ops, kv, Homme::subview(m_vec_sph2cart, ie), vn0, vstar,
+                    Homme::subview(buf1, kv.team_idx), Homme::subview(buf2a, kv.team_idx),
                     ugradv);
 
       // Write the midpoint velocity to vstar.

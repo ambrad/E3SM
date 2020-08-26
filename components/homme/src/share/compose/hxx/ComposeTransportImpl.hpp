@@ -117,8 +117,8 @@ struct ComposeTransportImpl {
     using Kokkos::ThreadVectorRange;
 
     if (OnGpu<ExecSpace>::value) {
-      const auto ttr = TeamThreadRange(kv.team, KLIM);
-      const auto tvr = ThreadVectorRange(kv.team, NP*NP);
+      const auto ttr = TeamThreadRange(kv.team, NP*NP);
+      const auto tvr = ThreadVectorRange(kv.team, KLIM);
       const auto f = [&] (const int idx) {
         const int i = idx / NP, j = idx % NP;
         const auto g = [&] (const int k) { h(i,j,k); };
