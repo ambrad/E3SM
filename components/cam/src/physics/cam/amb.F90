@@ -10,7 +10,7 @@ contains
     character(len=*), intent(in) :: message
     logical :: out
 
-    if (.not. cond) print *,'amb> assert ',trim(message)
+    if (.not. cond) print *, 'amb> assert ', trim(message)
     out = cond
   end function test
 

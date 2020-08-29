@@ -6649,12 +6649,11 @@ logical function phys_grid_initialized ()
 
      real(r8), intent(in) :: max_angle
 
-     integer :: lcid, cid, ncols, i, j, j_lo, j_up, jl, jl_lim, gcol, cjd, jcol
+     integer :: lcid, cid, ncols, gcol, i, j, j_lo, j_up, jl, jl_lim, jgcol, jcid, jcol
      real(r8) :: lat, lon, xi, yi, zi, angle
      logical :: e
 
      call run_unit_tests()
-     return
 
      do lcid = begchunk, endchunk
         cid = lchunks(lcid)%cid
@@ -6663,6 +6662,7 @@ logical function phys_grid_initialized ()
         do i = 1, ncols
            e = assert(chunks(cid)%lat(i) >= 1 .and. chunks(cid)%lat(i) <= clat_p_tot, '%lat')
            e = assert(chunks(cid)%lon(i) >= 1 .and. chunks(cid)%lon(i) <= clon_p_tot, '%lon')
+           gcol = chunks(cid)%gcol(i)
            lat = clat_p(chunks(cid)%lat(i))
            lon = clon_p(chunks(cid)%lon(i))
            call latlon2xyz(lat, lon, xi, yi, zi)
@@ -6676,15 +6676,14 @@ logical function phys_grid_initialized ()
                  jl_lim = ngcols_p - clat_p_idx(j) + 1
               end if
               do jl = 1, jl_lim
-                 e = assert(clat_p_idx(j) + jl - 1 <= clat_p_tot, 'clat_p_idx(j)')
-                 gcol = latlon_to_dyn_gcol_map(clat_p_idx(j) + jl - 1)
-                 if (gcol == -1) cycle
-                 cjd = knuhcs(gcol)%chunkid
-                 jcol = knuhcs(gcol)%col
+                 jgcol = latlon_to_dyn_gcol_map(clat_p_idx(j) + jl - 1)
+                 if (jgcol == -1 .or. jgcol == gcol) cycle
+                 jcid = knuhcs(jgcol)%chunkid
+                 jcol = knuhcs(jgcol)%col
                  angle = unit_sphere_angle(xi, yi, zi, &
-                      clat_p(chunks(cjd)%lat(jcol)), clon_p(chunks(cjd)%lon(jcol)))
+                      clat_p(chunks(jcid)%lat(jcol)), clon_p(chunks(jcid)%lon(jcol)))
                  if (angle > max_angle) cycle
-                 
+
               end do
            end do
         end do
