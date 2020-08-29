@@ -472,6 +472,8 @@ contains
     logical                             :: unstructured
     real(r8)                            :: lonmin, latmin
 
+    integer, pointer :: nbrhd_ptr(:), nbrhds(:)
+
 #if ( defined _OPENMP )
     integer omp_get_max_threads
     external omp_get_max_threads
@@ -1066,7 +1068,8 @@ contains
     deallocate( area_d )
     deallocate( wght_d )
 
-    call nbrhd_find(0.06d0)
+    call nbrhd_find(0.06d0, nbrhd_ptr, nbrhds)
+    print *,'amb> nbrhd',size(nbrhd_ptr),nbrhd_ptr(nlcols+1),size(nbrhds)
     call endrun('amb> exit')
 
     if (.not. local_dp_map) then
@@ -6644,22 +6647,31 @@ logical function phys_grid_initialized ()
 
 !#######################################################################
 
-   subroutine nbrhd_find(max_angle)
+   subroutine nbrhd_find(max_angle, nbrhd_ptr, nbrhds)
      use amb
 
      real(r8), intent(in) :: max_angle
+     integer, pointer, intent(out) :: nbrhd_ptr(:), nbrhds(:)
 
-     integer :: lcid, cid, ncols, gcol, i, j, j_lo, j_up, jl, jl_lim, jgcol, jcid, jcol
+     integer :: lcid, cid, ncols, gcol, i, j, j_lo, j_up, jl, jl_lim, jgcol, jcid, jcol, &
+          cap, lcolid, cnt, ptr
      real(r8) :: lat, lon, xi, yi, zi, angle
      logical :: e
 
      call run_unit_tests()
 
+     allocate(nbrhd_ptr(nlcols+1), nbrhds(nlcols))
+     cap = nlcols
+
+     lcolid = 1
+     nbrhd_ptr(lcolid) = 1
      do lcid = begchunk, endchunk
         cid = lchunks(lcid)%cid
         ncols = chunks(cid)%ncols
         e = assert(ncols >= 1, 'ncols')
         do i = 1, ncols
+           cnt = 0
+           ptr = nbrhd_ptr(lcolid)
            e = assert(chunks(cid)%lat(i) >= 1 .and. chunks(cid)%lat(i) <= clat_p_tot, '%lat')
            e = assert(chunks(cid)%lon(i) >= 1 .and. chunks(cid)%lon(i) <= clon_p_tot, '%lon')
            gcol = chunks(cid)%gcol(i)
@@ -6683,12 +6695,19 @@ logical function phys_grid_initialized ()
                  angle = unit_sphere_angle(xi, yi, zi, &
                       clat_p(chunks(jcid)%lat(jcol)), clon_p(chunks(jcid)%lon(jcol)))
                  if (angle > max_angle) cycle
-
+                 if (ptr + cnt == cap) then
+                    call array_realloc(nbrhds, cap, 2*cap)
+                    cap = 2*cap
+                 end if
+                 nbrhds(ptr+cnt) = jgcol
+                 cnt = cnt + 1
               end do
            end do
+           nbrhd_ptr(lcolid+1) = nbrhd_ptr(lcolid) + cnt
+           lcolid = lcolid + 1
         end do
      end do
-     
+     call array_realloc(nbrhds, nbrhd_ptr(nlcols+1), nbrhd_ptr(nlcols+1))
    end subroutine nbrhd_find
 
 end module phys_grid

@@ -115,4 +115,21 @@ contains
     e = test(reldif(0.1_r8,angle) <= 10*tol, 'usa 1')
   end subroutine run_unit_tests
 
+  subroutine array_realloc(a, n, n_new)
+    integer, pointer, intent(inout) :: a(:)
+    integer, intent(in) :: n, n_new
+
+    integer, allocatable :: buf(:)
+    integer :: i, n_min
+    logical :: e
+
+    n_min = min(n, n_new)
+    e = assert(n >= 1 .and. n_new >= 1 .and. size(a) >= n, 'array_realloc size(a)')
+    allocate(buf(n_min))
+    buf(1:n_min) = a(1:n_min)
+    deallocate(a)
+    allocate(a(n_new))
+    a(1:n_min) = buf(1:n_min)
+    deallocate(buf)
+  end subroutine array_realloc
 end module amb
