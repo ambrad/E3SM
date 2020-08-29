@@ -1066,6 +1066,9 @@ contains
     deallocate( area_d )
     deallocate( wght_d )
 
+    call nbrhd_find(0.06d0)
+    call endrun('amb> exit')
+
     if (.not. local_dp_map) then
 
        !
@@ -6640,5 +6643,51 @@ logical function phys_grid_initialized ()
 !========================================================================
 
 !#######################################################################
+
+   subroutine nbrhd_find(max_angle)
+     use amb
+
+     real(r8), intent(in) :: max_angle
+
+     integer :: lcid, cid, ncols, i, j, j_lo, j_up, jl, jl_lim, gcol, cjd, jcol
+     real(r8) :: lat, lon, xi, yi, zi, angle
+     logical :: e
+
+     call run_unit_tests()
+
+     do lcid = begchunk, endchunk
+        cid = lchunks(lcid)%cid
+        ncols = chunks(cid)%ncols
+        e = assert(ncols >= 1, 'ncols')
+        do i = 1, ncols
+           e = assert(chunks(cid)%lat(i) >= 1 .and. chunks(cid)%lat(i) <= clat_p_tot, '%lat')
+           e = assert(chunks(cid)%lon(i) >= 1 .and. chunks(cid)%lon(i) <= clon_p_tot, '%lon')
+           lat = clat_p(chunks(cid)%lat(i))
+           lon = clon_p(chunks(cid)%lon(i))
+           call latlon2xyz(lat, lon, xi, yi, zi)
+           j_lo = lower_bound(clat_p_tot, clat_p, lat - max_angle)
+           j_up = upper_bound(clat_p_tot, clat_p, lat + max_angle) - 1
+           do j = j_lo, j_up
+              if (j < clat_p_tot) then
+                 jl_lim = clat_p_idx(j+1) - clat_p_idx(j)
+              else
+                 jl_lim = ngcols_p - clat_p_idx(j) + 1
+              end if
+              do jl = 1, jl_lim
+                 e = assert(clat_p_idx(j) + jl - 1 <= clat_p_tot, 'clat_p_idx(j)')
+                 gcol = latlon_to_dyn_gcol_map(clat_p_idx(j) + jl - 1)
+                 if (gcol == -1) cycle
+                 cjd = knuhcs(gcol)%chunkid
+                 jcol = knuhcs(gcol)%col
+                 angle = unit_sphere_angle(xi, yi, zi, &
+                      clat_p(chunks(cjd)%lat(jcol)), clon_p(chunks(cjd)%lon(jcol)))
+                 if (angle > max_angle) cycle
+                 
+              end do
+           end do
+        end do
+     end do
+     
+   end subroutine nbrhd_find
 
 end module phys_grid
