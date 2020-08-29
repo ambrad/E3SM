@@ -1,19 +1,35 @@
-module amb
+module amb !todo rename phys_grid_nbrhd_utils
   use spmd_utils, only: iam, masterproc
   use shr_kind_mod, only: r8 => shr_kind_r8, r4 => shr_kind_r4
 
   implicit none
 
 contains
-  function assert(cond, message) result(out)
+  function test(cond, message) result(out)
     logical, intent(in) :: cond
     character(len=*), intent(in) :: message
-
     logical :: out
 
     if (.not. cond) print *,'amb> assert ',trim(message)
     out = cond
+  end function test
+
+  function assert(cond, message) result(out)
+    logical, intent(in) :: cond
+    character(len=*), intent(in) :: message
+    logical :: out
+
+    out = test(cond, message)
   end function assert
+
+  function reldif(a, b) result(r)
+    real(r8), intent(in) :: a, b
+    real(r8) :: r
+
+    r = abs(b - a)
+    if (a == 0) return
+    r = r/abs(a)
+  end function reldif
 
   subroutine latlon2xyz(lat,lon,x,y,z)
     real(r8), intent(in) :: lat,lon
@@ -39,24 +55,64 @@ contains
                   x1*x2 + y1*y2 + z1*z2)
   end function unit_sphere_angle
 
-  function lower_bound(n, a, val) result (idx)
-    integer, intent(in) :: n
+  function upper_bound_or_in_range(n, a, val, k_in) result (k)
+    ! Find k such that
+    !   if k > 1 then a(k-1) <= val
+    !   if k < n then           val < a(k)
+    ! where a(1:n) has unique elements and is ascending.
+
+    integer, intent(in) :: n, k_in
     real(r8), intent(in) :: a(n), val
+    
+    integer :: lo, hi, k
+    logical :: e
 
-    integer :: idx
-
-    idx = 1
-  end function lower_bound
-
-  function upper_bound(n, a, val) result (idx)
-    integer, intent(in) :: n
-    real(r8), intent(in) :: a(n), val
-
-    integer :: idx
-
-    idx = 2
-  end function upper_bound
+    e = assert(k_in >= 1 .and. k <= n, 'upper_bound_or_in_range k_in')
+    if (val < a(k_in)) then
+       lo = 1
+       hi = k_in
+    else
+       lo = k_in
+       hi = n
+    end if
+    do while (hi > lo + 1)
+       k = (lo + hi)/2
+       e = assert(k > lo .and. k < hi, 'upper_bound_or_in_range k')
+       if (val < a(k)) then
+          hi = k
+       else
+          lo = k
+       end if
+    end do
+    k = hi
+    e = assert((k == 1 .or. a(k-1) <= val) .and. (k == n .or. val < a(k)), &
+               'upper_bound_or_in_range post')
+  end function upper_bound_or_in_range
 
   subroutine run_unit_tests()
+    use shr_const_mod, only: pi => shr_const_pi
+
+    integer, parameter :: n = 4
+    real(r8), parameter :: a(n) = (/ -1.0_r8, 1.0_r8, 1.5_r8, 3.0_r8 /), &
+         tol = epsilon(1.0_r8)
+
+    integer :: k
+    real(r8) :: lat1, lon1, lat2, lon2, x1, y1, z1, x2, y2, z2, angle
+    logical :: e
+
+    k = upper_bound_or_in_range(n, a, -1.0_r8, n); e = test(k == 2, 'uboir 1')
+    k = upper_bound_or_in_range(n, a, -1.0_r8, 2); e = test(k == 2, 'uboir 2')
+    k = upper_bound_or_in_range(n, a, 3.0_r8, 2); e = test(k == n, 'uboir 3')
+    k = upper_bound_or_in_range(n, a, 3.0_r8, 1); e = test(k == n, 'uboir 4')
+    k = upper_bound_or_in_range(n, a, 1.2_r8, 1); e = test(k == 3, 'uboir 5')
+
+    lat1 = -pi/3
+    lon1 = pi/2
+    call latlon2xyz(lat1, lon1, x1, y1, z1)
+    lat2 = lat1 - 0.1_r8
+    lon2 = lon1
+    angle = unit_sphere_angle(x1, y1, z1, lat2, lon2)
+    e = test(reldif(0.1_r8,angle) <= 10*tol, 'usa 1')
   end subroutine run_unit_tests
+
 end module amb

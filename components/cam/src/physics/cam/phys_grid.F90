@@ -6654,6 +6654,7 @@ logical function phys_grid_initialized ()
      logical :: e
 
      call run_unit_tests()
+     return
 
      do lcid = begchunk, endchunk
         cid = lchunks(lcid)%cid
@@ -6665,8 +6666,9 @@ logical function phys_grid_initialized ()
            lat = clat_p(chunks(cid)%lat(i))
            lon = clon_p(chunks(cid)%lon(i))
            call latlon2xyz(lat, lon, xi, yi, zi)
-           j_lo = lower_bound(clat_p_tot, clat_p, lat - max_angle)
-           j_up = upper_bound(clat_p_tot, clat_p, lat + max_angle) - 1
+           j_lo = upper_bound_or_in_range(clat_p_tot, clat_p, lat - max_angle, 1)
+           if (j_lo > 1) j_lo = j_lo - 1
+           j_up = upper_bound_or_in_range(clat_p_tot, clat_p, lat + max_angle, j_lo)
            do j = j_lo, j_up
               if (j < clat_p_tot) then
                  jl_lim = clat_p_idx(j+1) - clat_p_idx(j)
