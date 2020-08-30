@@ -472,7 +472,7 @@ contains
     logical                             :: unstructured
     real(r8)                            :: lonmin, latmin
 
-    integer, pointer :: nbrhd_ptr(:), nbrhds(:)
+    integer, pointer :: nbrhd_ptr(:), nbrhds(:), pe2nbrhd_ptr(:), pe2nbrhd(:)
 
 #if ( defined _OPENMP )
     integer omp_get_max_threads
@@ -1068,8 +1068,10 @@ contains
     deallocate( area_d )
     deallocate( wght_d )
 
-    call nbrhd_find(0.06d0, nbrhd_ptr, nbrhds)
-    print *,'amb> nbrhd',size(nbrhd_ptr),nbrhd_ptr(nlcols+1),size(nbrhds)
+    call nbrhd_find_nbrs(0.06d0, nbrhd_ptr, nbrhds)
+    print *,'amb> nbrhd',size(nbrhd_ptr),nbrhd_ptr(nlcols+1)-1,size(nbrhds)
+    call nbrhd_make_pe2nbrhd(nbrhd_ptr, nbrhds, pe2nbrhd_ptr, pe2nbrhd)
+    deallocate(nbrhd_ptr, nbrhds, pe2nbrhd_ptr, pe2nbrhd)
     call endrun('amb> exit')
 
     if (.not. local_dp_map) then
@@ -6647,7 +6649,7 @@ logical function phys_grid_initialized ()
 
 !#######################################################################
 
-   subroutine nbrhd_find(max_angle, nbrhd_ptr, nbrhds)
+   subroutine nbrhd_find_nbrs(max_angle, nbrhd_ptr, nbrhds)
      use amb
 
      real(r8), intent(in) :: max_angle
@@ -6707,7 +6709,102 @@ logical function phys_grid_initialized ()
            lcolid = lcolid + 1
         end do
      end do
-     call array_realloc(nbrhds, nbrhd_ptr(nlcols+1), nbrhd_ptr(nlcols+1))
-   end subroutine nbrhd_find
+     call array_realloc(nbrhds, nbrhd_ptr(nlcols+1)-1, nbrhd_ptr(nlcols+1)-1)
+   end subroutine nbrhd_find_nbrs
+
+   subroutine nbrhd_make_pe2nbrhd(nbrhd_ptr, nbrhds, pe2nbrhd_ptr, pe2nbrhd)
+     use amb
+
+     integer, intent(in) :: nbrhd_ptr(:), nbrhds(:)
+     integer, pointer, intent(out) :: pe2nbrhd_ptr(:), pe2nbrhd(:)
+
+     integer, allocatable :: w_ptr(:), w(:), idx(:), wsort(:)
+     integer :: i, j, pe, gcol, max_len, len, cnt, j_prev, w_ptr_pe
+     logical :: e
+
+     allocate(w_ptr(0:npes))
+     ! Count nonunique gcols for each pe.
+     w_ptr(:) = 0
+     do i = 1, nbrhd_ptr(nlcols+1)-1
+        gcol = nbrhds(i)
+        pe = chunks(knuhcs(gcol)%chunkid)%owner
+        e = assert(pe >= 0 .and. pe < npes, 'pe')
+        w_ptr(pe+1) = w_ptr(pe+1) + 1
+     end do
+     ! Scan to get array space for each pe and get max list length.
+     max_len = 0
+     w_ptr(0) = 1
+     do i = 1, npes
+        max_len = max(max_len, w_ptr(i))
+        w_ptr(i) = w_ptr(i) + w_ptr(i-1)
+     end do
+     print *,'amb> max_len',max_len,'size',w_ptr(npes)-1
+     e = assert(nbrhd_ptr(nlcols+1) == w_ptr(npes), 'same count')
+     allocate(w(w_ptr(npes)-1))
+     ! Fill each pe's list with nonunique gcols.
+     do i = 1, nbrhd_ptr(nlcols+1)-1
+        gcol = nbrhds(i)
+        pe = chunks(knuhcs(gcol)%chunkid)%owner
+        e = assert(w_ptr(pe) <= size(w), 'size(w)')
+        w(w_ptr(pe)) = gcol
+        w_ptr(pe) = w_ptr(pe) + 1
+     end do
+     ! Restore pointers.
+     e = assert(w_ptr(npes-1) == w_ptr(npes), 'restore pointers')
+     do i = npes-1, 1, -1
+        w_ptr(i) = w_ptr(i-1)
+     end do
+     w_ptr(0) = 1
+     ! Sort each pe's list and record unique gcol count.
+     allocate(pe2nbrhd_ptr(0:npes), idx(max_len), wsort(max_len))
+     do pe = 0, npes-1
+        w_ptr_pe = w_ptr(pe)
+        len = w_ptr(pe+1) - w_ptr_pe
+        if (len == 0) then
+           pe2nbrhd_ptr(pe+1) = 0
+           cycle
+        end if
+        call IndexSet(len, idx(1:len))
+        do j = 1, len
+           wsort(j) = w(w_ptr_pe+j-1)
+        end do
+        call IndexSort(len, idx(1:len), wsort(1:len))
+        do j = 1, len
+           w(w_ptr_pe+j-1) = wsort(idx(j))
+        end do
+        j_prev = 0
+        cnt = 1
+        do j = 1, len-1
+           if (w(w_ptr_pe+j) == w(w_ptr_pe+j_prev)) cycle
+           cnt = cnt + 1
+           j_prev = j
+        end do
+        pe2nbrhd_ptr(pe+1) = cnt
+     end do
+     deallocate(idx, wsort)
+     ! Scan to get array space for each pe.
+     pe2nbrhd_ptr(0) = 1
+     do i = 1, npes
+        pe2nbrhd_ptr(i) = pe2nbrhd_ptr(i) + pe2nbrhd_ptr(i-1)
+     end do
+     allocate(pe2nbrhd(pe2nbrhd_ptr(npes)-1))
+     ! Fill each pe's unique-gcol list.
+     do pe = 0, npes-1
+        w_ptr_pe = w_ptr(pe)
+        len = w_ptr(pe+1) - w_ptr_pe
+        if (len == 0) cycle
+        pe2nbrhd(pe2nbrhd_ptr(pe)) = w(w_ptr_pe)
+        j_prev = 0
+        cnt = 1
+        do j = 1, len-1
+           if (w(w_ptr_pe+j) == w(w_ptr_pe+j_prev)) cycle
+           pe2nbrhd(pe2nbrhd_ptr(pe)+cnt) = w(w_ptr_pe+j)
+           cnt = cnt + 1
+           j_prev = j
+        end do
+        e = assert(cnt == pe2nbrhd_ptr(pe+1) - pe2nbrhd_ptr(pe), 'cnt')
+     end do
+     deallocate(w_ptr, w)
+   end subroutine nbrhd_make_pe2nbrhd
 
 end module phys_grid
