@@ -474,7 +474,7 @@ contains
     logical                             :: unstructured
     real(r8)                            :: lonmin, latmin
 
-    integer, pointer :: nbrhd_ptr(:), nbrhds(:), pe2nbrhd_ptr(:), pe2nbrhd(:)
+    integer, pointer :: nbrhd_ptr(:), nbrhds(:), pe2nbrs_ptr(:), pe2nbrs(:)
 
 #if ( defined _OPENMP )
     integer omp_get_max_threads
@@ -954,18 +954,17 @@ contains
 
     enddo
 
+    nlcols = gs_col_num(iam)
+    call nbrhd_find_nbrhds(0.06d0, nbrhd_ptr, nbrhds)
+    call nbrhd_make_pe2nbrs(nbrhd_ptr, nbrhds, pe2nbrs_ptr, pe2nbrs)
+    deallocate(nbrhd_ptr, nbrhds, pe2nbrs_ptr, pe2nbrs)
+
     !
     ! Deallocate unneeded work space
     !
     deallocate( tmp_gcol )
     deallocate( lat_p )
     deallocate( lon_p )
-
-    nlcols = gs_col_num(iam)
-    call nbrhd_find_nbrs(0.06d0, nbrhd_ptr, nbrhds)
-    call nbrhd_make_pe2nbrhd(nbrhd_ptr, nbrhds, pe2nbrhd_ptr, pe2nbrhd)
-    !amb init chunks(endchunk+1)
-    deallocate(nbrhd_ptr, nbrhds, pe2nbrhd_ptr, pe2nbrhd)
 
     !
     ! Allocate and initialize data structures for gather/scatter
@@ -6652,7 +6651,16 @@ logical function phys_grid_initialized ()
 
 !#######################################################################
 
-   subroutine nbrhd_find_nbrs(max_angle, nbrhd_ptr, nbrhds)
+   ! bpe owning block pe
+   ! cpe owning chunk pe
+   !todo
+   ! x extract geometry query part of nbrhd_find_nbrhds
+   ! - find_nbrhds of gcol for my blocks
+   ! - cpe2nbrs to supply chunks nbrhds
+   ! - find_nbrhds of gcol for my chunks
+   ! - bpe2nbrs to supply chunks nbrhds
+
+   subroutine nbrhd_find_nbrhds(max_angle, nbrhd_ptr, nbrhds)
      use amb
 
      real(r8), intent(in) :: max_angle
@@ -6663,8 +6671,9 @@ logical function phys_grid_initialized ()
      real(r8) :: lat, lon, xi, yi, zi, angle
      logical :: e
 
-     if (nbrhd_verbose) print *,'amb> nlcols',nlcols
      call run_unit_tests()
+
+     if (nbrhd_verbose) print *,'amb> nlcols',nlcols
      allocate(nbrhd_ptr(nlcols+1), nbrhds(nlcols))
      cap = nlcols
      lcolid = 1
@@ -6676,49 +6685,61 @@ logical function phys_grid_initialized ()
         do i = 1, ncols
            cnt = 0
            ptr = nbrhd_ptr(lcolid)
-           e = assert(chunks(cid)%lat(i) >= 1 .and. chunks(cid)%lat(i) <= clat_p_tot, '%lat')
-           e = assert(chunks(cid)%lon(i) >= 1 .and. chunks(cid)%lon(i) <= clon_p_tot, '%lon')
            gcol = chunks(cid)%gcol(i)
-           lat = clat_p(chunks(cid)%lat(i))
-           lon = clon_p(chunks(cid)%lon(i))
-           call latlon2xyz(lat, lon, xi, yi, zi)
-           j_lo = upper_bound_or_in_range(clat_p_tot, clat_p, lat - max_angle, 1)
-           if (j_lo > 1) j_lo = j_lo - 1
-           j_up = upper_bound_or_in_range(clat_p_tot, clat_p, lat + max_angle, j_lo)
-           do j = j_lo, j_up
-              if (j < clat_p_tot) then
-                 jl_lim = clat_p_idx(j+1) - clat_p_idx(j)
-              else
-                 jl_lim = ngcols_p - clat_p_idx(j) + 1
-              end if
-              do jl = 1, jl_lim
-                 jgcol = latlon_to_dyn_gcol_map(clat_p_idx(j) + jl - 1)
-                 if (jgcol == -1 .or. jgcol == gcol) cycle
-                 jcid = knuhcs(jgcol)%chunkid
-                 jcol = knuhcs(jgcol)%col
-                 angle = unit_sphere_angle(xi, yi, zi, &
-                      clat_p(chunks(jcid)%lat(jcol)), clon_p(chunks(jcid)%lon(jcol)))
-                 if (angle > max_angle) cycle
-                 if (ptr + cnt == cap) then
-                    call array_realloc(nbrhds, cap, 2*cap)
-                    cap = 2*cap
-                 end if
-                 nbrhds(ptr+cnt) = jgcol
-                 cnt = cnt + 1
-              end do
-           end do
+           cnt = nbrhd_find_gcol_nbrhd(max_angle, gcol, nbrhds, ptr, cap)
            nbrhd_ptr(lcolid+1) = nbrhd_ptr(lcolid) + cnt
            lcolid = lcolid + 1
         end do
      end do
      call array_realloc(nbrhds, nbrhd_ptr(nlcols+1)-1, nbrhd_ptr(nlcols+1)-1)
-   end subroutine nbrhd_find_nbrs
+   end subroutine nbrhd_find_nbrhds
 
-   subroutine nbrhd_make_pe2nbrhd(nbrhd_ptr, nbrhds, pe2nbrhd_ptr, pe2nbrhd)
+   function nbrhd_find_gcol_nbrhd(max_angle, gcol, nbrhds, ptr, cap) result(cnt)
+     use amb
+
+     real(r8), intent(in) :: max_angle
+     integer, intent(in) :: gcol, ptr
+     integer, pointer, intent(inout) :: nbrhds(:)
+     integer, intent(inout) :: cap
+
+     integer :: cnt, j_lo, j_up, j, jl_lim, jl, jgcol
+     real(r8) :: lat, xi, yi, zi, angle
+     logical :: e
+
+     e = assert(allocated(lat_p) .and. allocated(lon_p), 'lat/lon_p alloced')
+     cnt = 0
+     lat = clat_p(lat_p(gcol))
+     call latlon2xyz(lat, clon_p(lon_p(gcol)), xi, yi, zi)
+     j_lo = upper_bound_or_in_range(clat_p_tot, clat_p, lat - max_angle, 1)
+     if (j_lo > 1) j_lo = j_lo - 1
+     j_up = upper_bound_or_in_range(clat_p_tot, clat_p, lat + max_angle, j_lo)
+     do j = j_lo, j_up
+        if (j < clat_p_tot) then
+           jl_lim = clat_p_idx(j+1) - clat_p_idx(j)
+        else
+           jl_lim = ngcols_p - clat_p_idx(j) + 1
+        end if
+        do jl = 1, jl_lim
+           jgcol = latlon_to_dyn_gcol_map(clat_p_idx(j) + jl - 1)
+           if (jgcol == -1 .or. jgcol == gcol) cycle
+           angle = unit_sphere_angle(xi, yi, zi, &
+                clat_p(lat_p(jgcol)), clon_p(lon_p(jgcol)))
+           if (angle > max_angle) cycle
+           if (ptr + cnt == cap) then
+              call array_realloc(nbrhds, cap, 2*cap)
+              cap = 2*cap
+           end if
+           nbrhds(ptr+cnt) = jgcol
+           cnt = cnt + 1
+        end do
+     end do
+   end function nbrhd_find_gcol_nbrhd
+
+   subroutine nbrhd_make_pe2nbrs(nbrhd_ptr, nbrhds, pe2nbrs_ptr, pe2nbrs)
      use amb
 
      integer, intent(in) :: nbrhd_ptr(:), nbrhds(:)
-     integer, pointer, intent(out) :: pe2nbrhd_ptr(:), pe2nbrhd(:)
+     integer, pointer, intent(out) :: pe2nbrs_ptr(:), pe2nbrs(:)
 
      integer, allocatable :: w_ptr(:), w(:), idx(:), wsort(:)
      integer :: i, j, pe, gcol, max_len, len, cnt, j_prev, w_ptr_pe
@@ -6757,12 +6778,12 @@ logical function phys_grid_initialized ()
      end do
      w_ptr(0) = 1
      ! Sort each pe's list and record unique gcol count.
-     allocate(pe2nbrhd_ptr(0:npes), idx(max_len), wsort(max_len))
+     allocate(pe2nbrs_ptr(0:npes), idx(max_len), wsort(max_len))
      do pe = 0, npes-1
         w_ptr_pe = w_ptr(pe)
         len = w_ptr(pe+1) - w_ptr_pe
         if (len == 0) then
-           pe2nbrhd_ptr(pe+1) = 0
+           pe2nbrs_ptr(pe+1) = 0
            cycle
         end if
         call IndexSet(len, idx(1:len))
@@ -6780,33 +6801,33 @@ logical function phys_grid_initialized ()
            cnt = cnt + 1
            j_prev = j
         end do
-        pe2nbrhd_ptr(pe+1) = cnt
+        pe2nbrs_ptr(pe+1) = cnt
      end do
      deallocate(idx, wsort)
      ! Scan to get array space for each pe.
-     pe2nbrhd_ptr(0) = 1
+     pe2nbrs_ptr(0) = 1
      do i = 1, npes
-        pe2nbrhd_ptr(i) = pe2nbrhd_ptr(i) + pe2nbrhd_ptr(i-1)
+        pe2nbrs_ptr(i) = pe2nbrs_ptr(i) + pe2nbrs_ptr(i-1)
      end do
-     allocate(pe2nbrhd(pe2nbrhd_ptr(npes)-1))
+     allocate(pe2nbrs(pe2nbrs_ptr(npes)-1))
      ! Fill each pe's unique-gcol list.
      do pe = 0, npes-1
         w_ptr_pe = w_ptr(pe)
         len = w_ptr(pe+1) - w_ptr_pe
         if (len == 0) cycle
-        pe2nbrhd(pe2nbrhd_ptr(pe)) = w(w_ptr_pe)
+        pe2nbrs(pe2nbrs_ptr(pe)) = w(w_ptr_pe)
         j_prev = 0
         cnt = 1
         do j = 1, len-1
            if (w(w_ptr_pe+j) == w(w_ptr_pe+j_prev)) cycle
-           pe2nbrhd(pe2nbrhd_ptr(pe)+cnt) = w(w_ptr_pe+j)
+           pe2nbrs(pe2nbrs_ptr(pe)+cnt) = w(w_ptr_pe+j)
            cnt = cnt + 1
            j_prev = j
         end do
-        e = assert(cnt == pe2nbrhd_ptr(pe+1) - pe2nbrhd_ptr(pe), 'cnt')
+        e = assert(cnt == pe2nbrs_ptr(pe+1) - pe2nbrs_ptr(pe), 'cnt')
         if (nbrhd_verbose) print *,'amb> len->cnt',pe,len,cnt
      end do
      deallocate(w_ptr, w)
-   end subroutine nbrhd_make_pe2nbrhd
+   end subroutine nbrhd_make_pe2nbrs
 
 end module phys_grid
