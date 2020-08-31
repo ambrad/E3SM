@@ -91,7 +91,7 @@ module phys_grid
 !-----------------------------------------------------------------------
    use shr_kind_mod,     only: r8 => shr_kind_r8, r4 => shr_kind_r4
    use physconst,        only: pi
-   use ppgrid,           only: pcols, pver, begchunk, endchunk
+   use ppgrid,           only: pcols, pver, begchunk, endchunk, nbrhdchunk
 #if ( defined SPMD )
    use spmd_dyn,         only: block_buf_nrecs, chunk_buf_nrecs, &
                                local_dp_map
@@ -358,6 +358,8 @@ module phys_grid
 ! Physics computational cost on this process
 ! (running total of time measured over loops over chunks in physpkg.F90)
    real(r8), public :: phys_proc_cost = 0.0_r8
+
+   logical, parameter, private :: nbrhd_verbose = .true.
 
 contains
 !========================================================================
@@ -959,6 +961,12 @@ contains
     deallocate( lat_p )
     deallocate( lon_p )
 
+    nlcols = gs_col_num(iam)
+    call nbrhd_find_nbrs(0.06d0, nbrhd_ptr, nbrhds)
+    call nbrhd_make_pe2nbrhd(nbrhd_ptr, nbrhds, pe2nbrhd_ptr, pe2nbrhd)
+    !amb init chunks(endchunk+1)
+    deallocate(nbrhd_ptr, nbrhds, pe2nbrhd_ptr, pe2nbrhd)
+
     !
     ! Allocate and initialize data structures for gather/scatter
     !  
@@ -1067,12 +1075,6 @@ contains
 
     deallocate( area_d )
     deallocate( wght_d )
-
-    call nbrhd_find_nbrs(0.06d0, nbrhd_ptr, nbrhds)
-    print *,'amb> nbrhd',size(nbrhd_ptr),nbrhd_ptr(nlcols+1)-1,size(nbrhds)
-    call nbrhd_make_pe2nbrhd(nbrhd_ptr, nbrhds, pe2nbrhd_ptr, pe2nbrhd)
-    deallocate(nbrhd_ptr, nbrhds, pe2nbrhd_ptr, pe2nbrhd)
-    call endrun('amb> exit')
 
     if (.not. local_dp_map) then
 
@@ -1376,6 +1378,7 @@ contains
 
     call t_stopf("phys_grid_init")
     call t_adj_detailf(+2)
+    call endrun('amb> exit')
     return
   end subroutine phys_grid_init
 
@@ -6655,20 +6658,19 @@ logical function phys_grid_initialized ()
      real(r8), intent(in) :: max_angle
      integer, pointer, intent(out) :: nbrhd_ptr(:), nbrhds(:)
 
-     integer :: lcid, cid, ncols, gcol, i, j, j_lo, j_up, jl, jl_lim, jgcol, jcid, jcol, &
+     integer :: cid, ncols, gcol, i, j, j_lo, j_up, jl, jl_lim, jgcol, jcid, jcol, &
           cap, lcolid, cnt, ptr
      real(r8) :: lat, lon, xi, yi, zi, angle
      logical :: e
 
+     if (nbrhd_verbose) print *,'amb> nlcols',nlcols
      call run_unit_tests()
-
      allocate(nbrhd_ptr(nlcols+1), nbrhds(nlcols))
      cap = nlcols
-
      lcolid = 1
      nbrhd_ptr(lcolid) = 1
-     do lcid = begchunk, endchunk
-        cid = lchunks(lcid)%cid
+     do cid = 1, nchunks
+        if (chunks(cid)%owner /= iam) cycle
         ncols = chunks(cid)%ncols
         e = assert(ncols >= 1, 'ncols')
         do i = 1, ncols
@@ -6738,7 +6740,6 @@ logical function phys_grid_initialized ()
         max_len = max(max_len, w_ptr(i))
         w_ptr(i) = w_ptr(i) + w_ptr(i-1)
      end do
-     print *,'amb> max_len',max_len,'size',w_ptr(npes)-1
      e = assert(nbrhd_ptr(nlcols+1) == w_ptr(npes), 'same count')
      allocate(w(w_ptr(npes)-1))
      ! Fill each pe's list with nonunique gcols.
@@ -6803,6 +6804,7 @@ logical function phys_grid_initialized ()
            j_prev = j
         end do
         e = assert(cnt == pe2nbrhd_ptr(pe+1) - pe2nbrhd_ptr(pe), 'cnt')
+        if (nbrhd_verbose) print *,'amb> len->cnt',pe,len,cnt
      end do
      deallocate(w_ptr, w)
    end subroutine nbrhd_make_pe2nbrhd
