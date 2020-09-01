@@ -6856,17 +6856,20 @@ logical function phys_grid_initialized ()
      ! For pe cpe that owns a chunk having a gcol nbr to one of iam's gcols, add
      ! the associated entries for btofc_blk_offset.
 
-     use dyn_grid, only: get_gcol_block_cnt_d, get_block_owner_d, get_gcol_block_d
+     use dyn_grid, only: get_gcol_block_cnt_d, get_block_owner_d, get_gcol_block_d, &
+          get_block_gcol_cnt_d, get_block_lvl_cnt_d
 
      type(SparseTriple), intent(in) :: cpe2nbrs
      integer, intent(in) :: cpe ! current chunks-owning pe being considered
      integer, intent(inout):: curcnt, glbcnt
 
-     integer :: i, j, k, jb, gcol, block_cnt, blockids(1), bcids(1), owner_d
+     integer :: i, j, k, jb, gcol, block_cnt, blockids(1), bcids(1), owner_d, &
+          blksiz, numlvl
      logical :: e
 
      j = SparseTriple_in_xs(cpe2nbrs, cpe)
      if (j == -1) return
+     e = assert(cpe == cpe2nbrs%xs(j), 'binary_search')
      do i = cpe2nbrs%yptr(j), cpe2nbrs%yptr(j+1)-1
         gcol = cpe2nbrs%ys(i)
         block_cnt = get_gcol_block_cnt_d(gcol)
@@ -6875,7 +6878,13 @@ logical function phys_grid_initialized ()
         jb = 1
         owner_d = get_block_owner_d(blockids(jb))
         e = assert(owner_d == iam, 'owner_d by construction')
-        e = assert(associated(btofc_blk_offset(blockids(jb))%pter), 'by nbrhd def')
+        if (.not. associated(btofc_blk_offset(blockids(jb))%pter)) then
+           blksiz = get_block_gcol_cnt_d(blockids(jb))
+           numlvl = get_block_lvl_cnt_d(blockids(jb),bcids(jb))
+           btofc_blk_offset(blockids(jb))%ncols = blksiz
+           btofc_blk_offset(blockids(jb))%nlvls = numlvl
+           allocate(btofc_blk_offset(blockids(jb))%pter(blksiz,numlvl))
+        end if
         do k = 1, btofc_blk_offset(blockids(jb))%nlvls
            btofc_blk_offset(blockids(jb))%pter(bcids(jb),k) = glbcnt
            curcnt = curcnt + 1

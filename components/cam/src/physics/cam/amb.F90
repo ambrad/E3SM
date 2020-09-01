@@ -97,10 +97,11 @@ contains
   end function upper_bound_or_in_range
 
   function binary_search(n, a, val, k_in) result (k)
-    integer, intent(in) :: n, a(:), val
+    integer, intent(in) :: n, a(n), val
     integer, intent(in), optional :: k_in
 
     integer :: lo, hi, k
+    logical :: e
 
     k = 1
     if (present(k_in) .and. k_in >= 1 .and. k_in <= n) k = k_in
@@ -127,6 +128,7 @@ contains
     else
        k = -1
     end if
+    e = assert(k == -1 .or. (k >= 1 .and. k <= n), 'binary_search post')
   end function binary_search
 
   subroutine array_realloc(a, n, n_new)
@@ -168,7 +170,7 @@ contains
   function SparseTriple_in_xs(st, x) result(k)
     type (SparseTriple), intent(in) :: st
     integer, intent(in) :: x
-    logical :: k
+    integer :: k
     k = binary_search(size(st%xs), st%xs, x, 1)
   end function SparseTriple_in_xs
 
