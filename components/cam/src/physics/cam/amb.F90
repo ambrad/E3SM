@@ -165,11 +165,11 @@ contains
     call SparseTriple_nullify(st)
   end subroutine SparseTriple_deallocate
 
-  function SparseTriple_in_xs(st, x) result(in)
+  function SparseTriple_in_xs(st, x) result(k)
     type (SparseTriple), intent(in) :: st
     integer, intent(in) :: x
-    logical :: in
-    in = binary_search(size(st%xs), st%xs, x, 1) /= -1
+    logical :: k
+    k = binary_search(size(st%xs), st%xs, x, 1)
   end function SparseTriple_in_xs
 
   subroutine run_unit_tests()
