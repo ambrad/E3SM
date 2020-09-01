@@ -137,8 +137,13 @@ contains
     integer :: i, n_min
     logical :: e
 
+    e = assert(n_new >= 1 .and. size(a) >= n, 'array_realloc size(a)')
+    if (n == 0) then
+       deallocate(a)
+       allocate(a(n_new))
+       return
+    end if
     n_min = min(n, n_new)
-    e = assert(n >= 1 .and. n_new >= 1 .and. size(a) >= n, 'array_realloc size(a)')
     allocate(buf(n_min))
     buf(1:n_min) = a(1:n_min)
     deallocate(a)

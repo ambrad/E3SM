@@ -6659,12 +6659,15 @@ logical function phys_grid_initialized ()
    ! x cpe2nbrs to supply chunks nbrhds
    ! - find_nbrhds of gcol for my chunks
    ! - bpe2nbrs to supply chunks nbrhds
+   ! - rm cap where size(a) suffices
 
    subroutine nbrhd_make_cpe2nbrs(max_angle, cpe2nbrs)
      use dyn_grid, only: get_gcol_block_cnt_d, get_block_owner_d, get_gcol_block_d
 
      real(r8), intent(in) :: max_angle
      type (SparseTriple), intent(out) :: cpe2nbrs
+
+     integer, parameter :: cap_init = 128
 
      integer :: ptr, cap, gcol, block_cnt, blockids(1), bcids(1), cnt, ucnt, &
           i, j, pe, prev, acap, aptr, ng, max_ng, jprev, nupes
@@ -6673,9 +6676,9 @@ logical function phys_grid_initialized ()
      logical :: e, same
 
      ! Collect (pe,gcol) pairs where gcol is in one of my owned blocks.
-     cap = 128
-     acap = 128
-     allocate(nbrhd(cap), idxs(cap), pes(cap), upes(cap), apes(cap), agcols(acap))
+     cap = cap_init
+     acap = cap_init
+     allocate(nbrhd(cap), idxs(cap), pes(cap), upes(cap), apes(acap), agcols(acap))
      aptr = 1
      do gcol = 1, ngcols
         block_cnt = get_gcol_block_cnt_d(gcol)
@@ -6688,11 +6691,13 @@ logical function phys_grid_initialized ()
            deallocate(idxs, pes, upes)
            allocate(idxs(cap), pes(cap), upes(cap))
         end if
+        e = assert(cnt <= cap, 'cap')
         do i = 1, cnt
+           e = assert(nbrhd(i) >= 1 .and. nbrhd(i) <= ngcols, 'nbrhd(i)')
            pes(i) = chunks(knuhcs(nbrhd(i))%chunkid)%owner
         end do
-        call IndexSet(cnt, idxs)
-        call IndexSort(cnt, idxs, pes)
+        call IndexSet(cnt, idxs(1:cnt))
+        call IndexSort(cnt, idxs(1:cnt), pes(1:cnt))
         prev = pes(1)
         ucnt = 1
         upes(ucnt) = prev
@@ -6702,10 +6707,11 @@ logical function phys_grid_initialized ()
            ucnt = ucnt + 1
            upes(ucnt) = prev
         end do
-        if (ucnt > acap) then
-           call array_realloc(apes, acap, 2*acap)
-           call array_realloc(agcols, acap, 2*acap)
-           acap = 2*acap
+        if (aptr + ucnt - 1 > acap) then
+           acap = max(2*acap, aptr + ucnt - 1)
+           e = assert(size(apes) >= aptr-1, 'apes size')
+           call array_realloc(apes, aptr-1, acap)
+           call array_realloc(agcols, aptr-1, acap)
         end if
         do i = 1, ucnt
            apes(aptr) = upes(i)
@@ -6739,7 +6745,7 @@ logical function phys_grid_initialized ()
      nupes = ucnt
      ! Collect unique pes, set up pe -> unique gcols pointers, and collect
      ! unique gcols per pe.
-     cap = 128
+     cap = cap_init
      allocate(cpe2nbrs%xs(nupes), cpe2nbrs%yptr(nupes+1), cpe2nbrs%ys(cap), &
           gidxs(max_ng), gcols(max_ng), ugcols(max_ng))
      ucnt = 1
@@ -6765,9 +6771,9 @@ logical function phys_grid_initialized ()
            ugcols(ptr) = jprev
            cpe2nbrs%yptr(ucnt+1) = cpe2nbrs%yptr(ucnt+1) + 1
         end do
-        if (cap > cpe2nbrs%yptr(ucnt+1)-1) then
-           call array_realloc(cpe2nbrs%ys, cap, 2*cap)
-           cap = 2*cap
+        if (cpe2nbrs%yptr(ucnt+1)-1 > cap) then
+           cap = max(2*cap, cpe2nbrs%yptr(ucnt+1)-1)
+           call array_realloc(cpe2nbrs%ys, cpe2nbrs%yptr(ucnt)-1, cap)
         end if
         e = assert(cpe2nbrs%yptr(ucnt+1) - cpe2nbrs%yptr(ucnt) == ptr, 'yptr and ptr')
         cpe2nbrs%ys(cpe2nbrs%yptr(ucnt):cpe2nbrs%yptr(ucnt+1)-1) = ugcols(1:ptr)
@@ -6776,25 +6782,34 @@ logical function phys_grid_initialized ()
      cnt = cpe2nbrs%yptr(nupes+1)-1
      call array_realloc(cpe2nbrs%ys, cnt, cnt) ! compact memory
      deallocate(apes, agcols, idxs, gidxs, gcols, ugcols)
+     if (nbrhd_verbose) then
+        print *,'amb> #pes',size(cpe2nbrs%xs)
+        do i = 1, size(cpe2nbrs%xs)
+           print *,'amb> pe',cpe2nbrs%xs(i),cpe2nbrs%yptr(i+1)-cpe2nbrs%yptr(i)
+        end do
+     end if
    end subroutine nbrhd_make_cpe2nbrs
 
-   function nbrhd_find_gcol_nbrhd(max_angle, gcol, nbrhds, ptr, cap) result(cnt)
+   function nbrhd_find_gcol_nbrhd(max_angle, gcol, nbrhd, ptr, cap) result(cnt)
      real(r8), intent(in) :: max_angle
      integer, intent(in) :: gcol, ptr
-     integer, pointer, intent(inout) :: nbrhds(:)
+     integer, pointer, intent(inout) :: nbrhd(:)
      integer, intent(inout) :: cap
 
-     integer :: cnt, j_lo, j_up, j, jl_lim, jl, jgcol
+     integer :: cnt, j_lo, j_up, j, jl_lim, jl, jgcol, new_cap
      real(r8) :: lat, xi, yi, zi, angle
      logical :: e
 
+     e = assert(cap <= size(nbrhd) .and. ptr <= cap, 'cap, ptr, nbrhd')
      e = assert(allocated(lat_p) .and. allocated(lon_p), 'lat/lon_p alloced')
      cnt = 0
      lat = clat_p(lat_p(gcol))
      call latlon2xyz(lat, clon_p(lon_p(gcol)), xi, yi, zi)
      j_lo = upper_bound_or_in_range(clat_p_tot, clat_p, lat - max_angle)
      if (j_lo > 1) j_lo = j_lo - 1
+     e = assert(j_lo >= 1 .and. j_lo <= clat_p_tot, 'gcol_nbrhd j_lo')
      j_up = upper_bound_or_in_range(clat_p_tot, clat_p, lat + max_angle, j_lo)
+     e = assert(j_up > j_lo .and. j_up <= clat_p_tot, 'gcol_nbrhd j_up')
      do j = j_lo, j_up
         if (j < clat_p_tot) then
            jl_lim = clat_p_idx(j+1) - clat_p_idx(j)
@@ -6802,16 +6817,18 @@ logical function phys_grid_initialized ()
            jl_lim = ngcols_p - clat_p_idx(j) + 1
         end if
         do jl = 1, jl_lim
+           e = assert(clat_p_idx(j) + jl - 1 <= ngcols_p, 'gcol_nbrhd jgcol access')
            jgcol = latlon_to_dyn_gcol_map(clat_p_idx(j) + jl - 1)
            if (jgcol == -1 .or. jgcol == gcol) cycle
            angle = unit_sphere_angle(xi, yi, zi, &
                 clat_p(lat_p(jgcol)), clon_p(lon_p(jgcol)))
            if (angle > max_angle) cycle
-           if (ptr + cnt == cap) then
-              call array_realloc(nbrhds, cap, 2*cap)
-              cap = 2*cap
+           if (ptr + cnt > cap) then
+              new_cap = max(2*cap, ptr + cnt)
+              call array_realloc(nbrhd, ptr+cnt-1, new_cap)
+              cap = new_cap
            end if
-           nbrhds(ptr+cnt) = jgcol
+           nbrhd(ptr+cnt) = jgcol
            cnt = cnt + 1
         end do
      end do
