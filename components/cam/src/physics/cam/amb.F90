@@ -4,6 +4,11 @@ module amb !todo rename phys_grid_nbrhd_utils
 
   implicit none
 
+  type SparseTriple
+     ! xs(i) maps to ys(yptr(i):yptr(i+1)-1)
+     integer, pointer :: xs(:), yptr(:), ys(:)
+  end type SparseTriple
+
 contains
   function test(cond, message) result(out)
     logical, intent(in) :: cond
@@ -61,18 +66,20 @@ contains
     !   if k < n then           val < a(k)
     ! where a(1:n) has unique elements and is ascending.
 
-    integer, intent(in) :: n, k_in
+    integer, intent(in) :: n
+    integer, intent(in), optional :: k_in
     real(r8), intent(in) :: a(n), val
     
     integer :: lo, hi, k
     logical :: e
 
-    e = assert(k_in >= 1 .and. k <= n, 'upper_bound_or_in_range k_in')
-    if (val < a(k_in)) then
+    k = 1
+    if (present(k_in) .and. k_in >= 1 .and. k_in <= n) k = k_in
+    if (val < a(k)) then
        lo = 1
-       hi = k_in
+       hi = k
     else
-       lo = k_in
+       lo = k
        hi = n
     end if
     do while (hi > lo + 1)
@@ -88,6 +95,39 @@ contains
     e = assert((k == 1 .or. a(k-1) <= val) .and. (k == n .or. val < a(k)), &
                'upper_bound_or_in_range post')
   end function upper_bound_or_in_range
+
+  function binary_search(n, a, val, k_in) result (k)
+    integer, intent(in) :: n, a(:), val
+    integer, intent(in), optional :: k_in
+
+    integer :: lo, hi, k
+
+    k = 1
+    if (present(k_in) .and. k_in >= 1 .and. k_in <= n) k = k_in
+    if (val < a(k)) then
+       lo = 1
+       hi = k
+    else
+       lo = k
+       hi = n
+    end if
+    do while (hi > lo + 1)
+       k = (lo + hi)/2
+       if (val < a(k)) then
+          hi = k
+       else
+          lo = k
+          if (a(k) == val) exit
+       end if
+    end do
+    if (a(lo) == val) then
+       k = lo
+    else if (a(hi) == val) then
+       k = hi
+    else
+       k = -1
+    end if
+  end function binary_search
 
   subroutine array_realloc(a, n, n_new)
     integer, pointer, intent(inout) :: a(:)
@@ -107,10 +147,30 @@ contains
     deallocate(buf)
   end subroutine array_realloc
 
+  subroutine SparseTriple_nullify(st)
+    type (SparseTriple), intent(out) :: st
+    st%xs => null()
+    st%yptr => null()
+    st%ys => null()
+  end subroutine SparseTriple_nullify
+
+  subroutine SparseTriple_deallocate(st)
+    type (SparseTriple), intent(out) :: st
+    deallocate(st%xs, st%yptr, st%ys)
+    call SparseTriple_nullify(st)
+  end subroutine SparseTriple_deallocate
+
+  function SparseTriple_in_xs(st, x) result(in)
+    type (SparseTriple), intent(in) :: st
+    integer, intent(in) :: x
+    logical :: in
+    in = binary_search(size(st%xs), st%xs, x, 1) /= -1
+  end function SparseTriple_in_xs
+
   subroutine run_unit_tests()
     use shr_const_mod, only: pi => shr_const_pi
 
-    integer, parameter :: n = 4
+    integer, parameter :: n = 4, b(n) = (/ -2, -1, 3, 7 /)
     real(r8), parameter :: a(n) = (/ -1.0_r8, 1.0_r8, 1.5_r8, 3.0_r8 /), &
          tol = epsilon(1.0_r8)
 
@@ -118,11 +178,19 @@ contains
     real(r8) :: lat1, lon1, lat2, lon2, x1, y1, z1, x2, y2, z2, angle
     logical :: e
 
-    k = upper_bound_or_in_range(n, a, -1.0_r8, n); e = test(k == 2, 'uboir 1')
+    k = upper_bound_or_in_range(n, a, -1.0_r8); e = test(k == 2, 'uboir 1')
     k = upper_bound_or_in_range(n, a, -1.0_r8, 2); e = test(k == 2, 'uboir 2')
     k = upper_bound_or_in_range(n, a, 3.0_r8, 2); e = test(k == n, 'uboir 3')
-    k = upper_bound_or_in_range(n, a, 3.0_r8, 1); e = test(k == n, 'uboir 4')
-    k = upper_bound_or_in_range(n, a, 1.2_r8, 1); e = test(k == 3, 'uboir 5')
+    k = upper_bound_or_in_range(n, a, 3.0_r8, -11); e = test(k == n, 'uboir 4')
+    k = upper_bound_or_in_range(n, a, 1.2_r8); e = test(k == 3, 'uboir 5')
+
+    k = binary_search(n, b, -22, -5); e = test(k == -1, 'binsrc 1')
+    k = binary_search(n, b, -2); e = test(k == 1, 'binsrc 2')
+    k = binary_search(n, b, 3, 2); e = test(k == 3, 'binsrc 3')
+    k = binary_search(n, b, 7); e = test(k == 4, 'binsrc 4')
+    k = binary_search(n, b, 7, 4); e = test(k == 4, 'binsrc 5')
+    k = binary_search(n, b, 7, 5); e = test(k == 4, 'binsrc 6')
+    k = binary_search(n, b, 0, 15); e = test(k == -1, 'binsrc 7')
 
     lat1 = -pi/3
     lon1 = pi/2
