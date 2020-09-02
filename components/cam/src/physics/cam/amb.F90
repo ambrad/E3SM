@@ -155,27 +155,33 @@ contains
   end subroutine array_realloc
 
   subroutine make_unique(n, a, ua)
+    use m_MergeSorts, only: IndexSet, IndexSort
+
     integer, intent(in) :: n, a(n)
     integer, pointer, intent(out) :: ua(:)
 
     integer, allocatable :: idxs(:)
     integer :: cnt, prev, i
+    logical :: e
 
+    e = assert(n > 0, 'make_unique: n > 0')
+    allocate(idxs(n))
     call IndexSet(n, idxs)
     call IndexSort(n, idxs, a)
     ! Count unique entries.
-    cnt = 0
-    prev = -1
-    do i = 1, n
+    cnt = 1
+    prev = a(idxs(1))
+    do i = 2, n
        if (a(idxs(i)) == prev) cycle
        cnt = cnt + 1
        prev = a(idxs(i))
     end do
     ! Fill unique list.
     allocate(ua(cnt))
-    cnt = 0
-    prev = -1
-    do i = 1, n
+    cnt = 1
+    prev = a(idxs(1))
+    ua(cnt) = prev
+    do i = 2, n
        if (a(idxs(i)) == prev) cycle
        cnt = cnt + 1
        prev = a(idxs(i))
@@ -241,6 +247,8 @@ contains
 
     call make_unique(m, c, uc)
     e = test(size(uc) == 4, 'uc length')
+    e = test(uc(1) == -1, 'first(uc)')
+    e = test(uc(4) == 3, 'last(uc)')
     do k = 2, size(uc)
        e = test(uc(k) > uc(k-1), 'uc sorted')
     end do
