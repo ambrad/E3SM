@@ -1103,7 +1103,7 @@ contains
           i   = pgcols(curgcol)%ccol
           owner_p   = chunks(cid)%owner
           if (use_nbrhd .and. curp > 0 .and. curp /= owner_p) then
-             call nbrhd_set_btofc_blk(cpe2nbrs, curp, curcnt, glbcnt)
+             call nbrhd_set_btoc_blk(cpe2nbrs, curp, curcnt, glbcnt)
           end if
           do while (curp < owner_p)
              btofc_blk_num(curp) = curcnt
@@ -6675,17 +6675,18 @@ logical function phys_grid_initialized ()
    ! x cpe2nbrs to supply chunks nbrhds
    ! x find_nbrhds of gcol for my chunks
    ! x bpe2nbrs to supply chunks nbrhds
+   ! - set_btoc_chk
    ! - alias or unique btofc_* to btoc_*, bfoc_* to handle asymmetric b->c, c->b
 
    subroutine nbrhd_make_cpe2nbrs(max_angle, cpe2nbrs)
-     ! Make the map of chunking-owning pe to gcols, where the gcols are
-     ! neighbors of a column in a chunk, each gcol belongs to a block that iam
-     ! owns, and neighbor is defined in nbrhd_find_nbrhds. On output, cpe2nbrs
-     ! has these entries:
+     ! Make the map of chunk-owning pe to gcols, where the gcols are neighbors
+     ! of a column in a chunk, each gcol belongs to a block that iam owns, and
+     ! neighbor is defined in nbrhd_find_nbrhds. On output, cpe2nbrs has these
+     ! entries:
      !     xs: sorted list of chunk-owning pes;
      !     yptr: pointers into ys;
-     !     ys: for each pe, the list of iam-owning blocks' sorted gcols that are
-     !         neighbors.
+     !     ys: for each pe, the list of iam-owning blocks' neighbors, as
+     !         sorted gcols.
 
      use dyn_grid, only: get_gcol_block_cnt_d, get_block_owner_d, get_gcol_block_d
 
@@ -6813,7 +6814,7 @@ logical function phys_grid_initialized ()
      end if
    end subroutine nbrhd_make_cpe2nbrs
 
-   subroutine nbrhd_set_btofc_blk(cpe2nbrs, cpe, curcnt, glbcnt)
+   subroutine nbrhd_set_btoc_blk(cpe2nbrs, cpe, curcnt, glbcnt)
      ! For pe cpe that owns a chunk having a gcol nbr to one of iam's gcols, add
      ! the associated entries for btofc_blk_offset.
 
@@ -6852,9 +6853,12 @@ logical function phys_grid_initialized ()
            glbcnt = glbcnt + 1
         enddo
      end do
-   end subroutine nbrhd_set_btofc_blk
+   end subroutine nbrhd_set_btoc_blk
 
    subroutine nbrhd_find_chunk_nbrhds(max_angle, nbrhd_ptr, nbrhds)
+     ! For each gcol in an iam-owning chunk, find its list of neighbors as
+     ! sorted gcols.
+
      real(r8), intent(in) :: max_angle
      integer, pointer, intent(out) :: nbrhd_ptr(:), nbrhds(:)
 
@@ -6887,6 +6891,15 @@ logical function phys_grid_initialized ()
    end subroutine nbrhd_find_chunk_nbrhds
 
    subroutine nbrhd_make_dpe2nbrs(max_angle, nbrhd_ptr, nbrhds, dpe2nbrs)
+     ! Make the map of block-owning pe to gcols, where the gcols are neighbors
+     ! of a column in a block, each gcol belongs to a chunk that iam owns, and
+     ! neighbor is defined in nbrhd_find_nbrhds. On output, dpe2nbrs has these
+     ! entries:
+     !     xs: sorted list of block-owning pes;
+     !     yptr: pointers into ys;
+     !     ys: for each pe, the list of iam-owning chunks' neighbors, as
+     !         sorted gcols.
+
      use dyn_grid, only: get_gcol_block_cnt_d, get_block_owner_d, get_gcol_block_d
 
      real(r8), intent(in) :: max_angle
@@ -6959,10 +6972,15 @@ logical function phys_grid_initialized ()
      end if
    end subroutine nbrhd_make_dpe2nbrs
 
+   subroutine nbrhd_set_btoc_chk()
+     
+   end subroutine nbrhd_set_btoc_chk
+
    function nbrhd_find_gcol_nbrhd(max_angle, gcol, nbrhd, ptr, cap) result(cnt)
-     ! Geometric query to find all columns having center within max_angle of
-     ! gcol. Append entries to nbrhd(ptr:), reallocating as necessary. cap is
-     ! nbrhd's capacity at input, and it is updated when reallocation occurs.
+     ! Find all columns having center within max_angle of gcol. Append entries
+     ! to nbrhd(ptr:), reallocating as necessary. cap is nbrhd's capacity at
+     ! input, and it is updated when reallocation occurs. The gcols list is
+     ! sorted.
 
      real(r8), intent(in) :: max_angle
      integer, intent(in) :: gcol, ptr

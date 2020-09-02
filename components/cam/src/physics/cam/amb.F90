@@ -11,6 +11,8 @@ module amb !todo rename phys_grid_nbrhd_utils
 
 contains
   function test(cond, message) result(out)
+    ! Assertion that is always enabled, for use in unit tests.
+
     logical, intent(in) :: cond
     character(len=*), intent(in) :: message
     logical :: out
@@ -20,6 +22,8 @@ contains
   end function test
 
   function assert(cond, message) result(out)
+    ! Assertion that can be disabled.
+
     logical, intent(in) :: cond
     character(len=*), intent(in) :: message
     logical :: out
@@ -50,6 +54,8 @@ contains
   end subroutine latlon2xyz
 
   function unit_sphere_angle(x1,y1,z1,lat,lon) result(angle)
+    ! Angle between (x1,y1,z1) and (lat,lon).
+
     real(r8), intent(in) :: x1,y1,z1,lat,lon
 
     real(r8) :: x2,y2,z2,angle
@@ -64,7 +70,8 @@ contains
     ! Find k such that
     !   if k > 1 then a(k-1) <= val
     !   if k < n then           val < a(k)
-    ! where a(1:n) has unique elements and is ascending.
+    ! where a(1:n) has unique elements and is ascending. k_in is an
+    ! optional hint.
 
     integer, intent(in) :: n
     integer, intent(in), optional :: k_in
@@ -97,6 +104,9 @@ contains
   end function upper_bound_or_in_range
 
   function binary_search(n, a, val, k_in) result (k)
+    ! Find position of val in a(1:n), or return -1 if val is not in
+    ! a. k_in is an optional hint.
+
     integer, intent(in) :: n, a(n), val
     integer, intent(in), optional :: k_in
 
@@ -132,6 +142,9 @@ contains
   end function binary_search
 
   subroutine array_realloc(a, n, n_new)
+    ! Reallocate a to size n_new, preserving the first min(n,n_new)
+    ! values.
+
     integer, pointer, intent(inout) :: a(:)
     integer, intent(in) :: n, n_new
 
@@ -155,6 +168,8 @@ contains
   end subroutine array_realloc
 
   subroutine make_unique(n, a, ua)
+    ! On exit, ua is the sorted list of unique entries in a(1:n)
+
     use m_MergeSorts, only: IndexSet, IndexSort
 
     integer, intent(in) :: n, a(n)
@@ -204,6 +219,7 @@ contains
   end subroutine SparseTriple_deallocate
 
   function SparseTriple_in_xs(st, x) result(k)
+    ! Find the position of x in st%xs(:) or -1 if not present.
     type (SparseTriple), intent(in) :: st
     integer, intent(in) :: x
     integer :: k
@@ -211,6 +227,8 @@ contains
   end function SparseTriple_in_xs
 
   subroutine run_unit_tests()
+    ! Unit tests for nbrhd_* helper routines.
+
     use shr_const_mod, only: pi => shr_const_pi
 
     integer, parameter :: n = 4, b(n) = (/ -2, -1, 3, 7 /), &
