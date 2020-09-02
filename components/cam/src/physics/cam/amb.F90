@@ -154,6 +154,36 @@ contains
     deallocate(buf)
   end subroutine array_realloc
 
+  subroutine make_unique(n, a, ua)
+    integer, intent(in) :: n, a(n)
+    integer, pointer, intent(out) :: ua(:)
+
+    integer, allocatable :: idxs(:)
+    integer :: cnt, prev, i
+
+    call IndexSet(n, idxs)
+    call IndexSort(n, idxs, a)
+    ! Count unique entries.
+    cnt = 0
+    prev = -1
+    do i = 1, n
+       if (a(idxs(i)) == prev) cycle
+       cnt = cnt + 1
+       prev = a(idxs(i))
+    end do
+    ! Fill unique list.
+    allocate(ua(cnt))
+    cnt = 0
+    prev = -1
+    do i = 1, n
+       if (a(idxs(i)) == prev) cycle
+       cnt = cnt + 1
+       prev = a(idxs(i))
+       ua(cnt) = prev
+    end do
+    deallocate(idxs)
+  end subroutine make_unique
+
   subroutine SparseTriple_nullify(st)
     type (SparseTriple), intent(out) :: st
     st%xs => null()
@@ -177,12 +207,14 @@ contains
   subroutine run_unit_tests()
     use shr_const_mod, only: pi => shr_const_pi
 
-    integer, parameter :: n = 4, b(n) = (/ -2, -1, 3, 7 /)
+    integer, parameter :: n = 4, b(n) = (/ -2, -1, 3, 7 /), &
+         m = 6, c(m) = (/ 1, 3, 2, -1, 2, 3 /)
     real(r8), parameter :: a(n) = (/ -1.0_r8, 1.0_r8, 1.5_r8, 3.0_r8 /), &
          tol = epsilon(1.0_r8)
 
-    integer :: k
+    integer, pointer :: uc(:)
     real(r8) :: lat1, lon1, lat2, lon2, x1, y1, z1, x2, y2, z2, angle
+    integer :: k
     logical :: e
 
     k = upper_bound_or_in_range(n, a, -1.0_r8); e = test(k == 2, 'uboir 1')
@@ -206,5 +238,12 @@ contains
     lon2 = lon1
     angle = unit_sphere_angle(x1, y1, z1, lat2, lon2)
     e = test(reldif(0.1_r8,angle) <= 10*tol, 'usa 1')
+
+    call make_unique(m, c, uc)
+    e = test(size(uc) == 4, 'uc length')
+    do k = 2, size(uc)
+       e = test(uc(k) > uc(k-1), 'uc sorted')
+    end do
+    deallocate(uc)
   end subroutine run_unit_tests
 end module amb
