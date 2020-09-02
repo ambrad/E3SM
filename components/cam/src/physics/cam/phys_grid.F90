@@ -1145,6 +1145,7 @@ contains
           btofc_chk_offset(lcid)%nlvls = pver+1
           allocate( btofc_chk_offset(lcid)%pter(ncols,pver+1) )
        enddo
+       if (use_nbrhd) nullify(btofc_chk_offset(endchunk+1)%pter)
        !
        curcnt = 0
        glbcnt = 0
@@ -6980,8 +6981,8 @@ logical function phys_grid_initialized ()
      ! For pe dpe that owns a block having a gcol nbr to one of iam's
      ! chunk's gcols, add the associated entries for btofc_chk_offset.
 
-     use dyn_grid, only: get_gcol_block_cnt_d, get_block_owner_d, get_gcol_block_d, &
-          get_block_gcol_cnt_d, get_block_lvl_cnt_d
+     use dyn_grid, only: get_gcol_block_cnt_d, get_gcol_block_d, &
+          get_block_lvl_cnt_d, get_block_levels_d
      use pmgrid, only: plev
 
      type(SparseTriple), intent(in) :: dpe2nbrs
@@ -6997,10 +6998,12 @@ logical function phys_grid_initialized ()
      e = assert(dpe == dpe2nbrs%xs(j), 'dpe found')
      lcid = endchunk+1
 
+     e = assert(size(btofc_chk_offset) == endchunk-begchunk+2, 'btofc_chk_offset size')
      if (.not. associated(btofc_chk_offset(lcid)%pter)) then
         ncols = size(dpe2nbrs%ys)
         btofc_chk_offset(lcid)%ncols = ncols
         btofc_chk_offset(lcid)%nlvls = pver+1
+        if (nbrhd_verbose) print *,'amb> set_btoc_chk ncols, nlvls', ncols, pver+1
         allocate(btofc_chk_offset(lcid)%pter(ncols,pver+1))
      end if
 
@@ -7013,7 +7016,7 @@ logical function phys_grid_initialized ()
         numlvl = get_block_lvl_cnt_d(blockids(jb), bcids(jb))
         call get_block_levels_d(blockids(jb),bcids(jb), numlvl, levels)
         do k = 1, numlvl
-           btofc_blk_offset(blockids(jb))%pter(i,levels(k)+1) = glbcnt
+           btofc_chk_offset(lcid)%pter(i,levels(k)+1) = glbcnt
            curcnt = curcnt + 1
            glbcnt = glbcnt + 1
         enddo
