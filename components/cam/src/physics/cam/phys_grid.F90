@@ -964,7 +964,7 @@ contains
        max_angle = 0.06d0
        call nbrhd_make_cpe2nbrs(max_angle, cpe2nbrs)
        call nbrhd_find_chunk_nbrhds(max_angle, nbrhd_ptr, nbrhds)
-       !call nbrhd_make_dpe2nbrs(max_angle, nbrhd_ptr, nbrhds, dpe2nbrs)
+       call nbrhd_make_dpe2nbrs(max_angle, nbrhd_ptr, nbrhds, dpe2nbrs)
     end if
 
     !
@@ -1391,7 +1391,7 @@ contains
 
     deallocate(nbrhd_ptr, nbrhds)
     call SparseTriple_deallocate(cpe2nbrs)
-    !call SparseTriple_deallocate(dpe2nbrs)
+    call SparseTriple_deallocate(dpe2nbrs)
     call endrun('amb> exit')
     return
   end subroutine phys_grid_init
@@ -6806,7 +6806,7 @@ logical function phys_grid_initialized ()
      call array_realloc(cpe2nbrs%ys, cnt, cnt) ! compact memory
      deallocate(apes, agcols, idxs, gidxs, gcols, ugcols)
      if (nbrhd_verbose) then
-        print *,'amb> #pes',size(cpe2nbrs%xs)
+        print *,'amb> nbrhd_make_cpe2nbrs #pes',size(cpe2nbrs%xs)
         do i = 1, size(cpe2nbrs%xs)
            print *,'amb> pe',cpe2nbrs%xs(i),cpe2nbrs%yptr(i+1)-cpe2nbrs%yptr(i)
         end do
@@ -6898,19 +6898,21 @@ logical function phys_grid_initialized ()
      integer :: i, j, k, n, gcol, block_cnt, blockids(1), bcids(1), cnt, prev
      logical :: e
 
-     e = assert(size(nbrhd_ptr) == nlcols, 'nlcols')
+     e = assert(size(nbrhd_ptr)-1 == nlcols, 'nlcols')
      ! Unlike for cpe2nbrs, we are filling a 1-1 map, so we just need the unique
      ! neighbor gcols.
      call make_unique(nbrhd_ptr(nlcols+1)-1, nbrhds, unbrs)
      n = size(unbrs)
+     if (nbrhd_verbose) print *,'amb> dpe2nbrs', nbrhd_ptr(nlcols+1)-1, n
      ! For each gcol, get the pe of owning block.
      allocate(pes(n), idxs(n))
      do i = 1, n
         gcol = unbrs(i)
         block_cnt = get_gcol_block_cnt_d(gcol)
-        call get_gcol_block_d(gcol, block_cnt, blockids, bcids)
         e = assert(block_cnt == 1, 'only block_cnt=1 is supported')
+        call get_gcol_block_d(gcol, block_cnt, blockids, bcids)
         pes(i) = get_block_owner_d(blockids(1))
+        e = assert(pes(i) >= 0 .and. pes(i) <= npes-1, 'dpe2nbrs pes')
      end do
      ! Count unique pes.
      call IndexSet(n, idxs)
@@ -6933,7 +6935,7 @@ logical function phys_grid_initialized ()
         do while (i <= n .and. pes(idxs(i)) == dpe2nbrs%xs(j))
            dpe2nbrs%ys(dpe2nbrs%yptr(j)+k) = unbrs(idxs(i))
            k = k + 1
-           i = k + 1
+           i = i + 1
         end do
         dpe2nbrs%yptr(j+1) = dpe2nbrs%yptr(j) + k
      end do
@@ -6950,7 +6952,10 @@ logical function phys_grid_initialized ()
      end do
      deallocate(unbrs, idxs, pes)
      if (nbrhd_verbose) then
-        
+        print *,'amb> nbrhd_make_dpe2nbrs #pes',size(dpe2nbrs%xs)
+        do i = 1, size(dpe2nbrs%xs)
+           print *,'amb> pe',dpe2nbrs%xs(i),dpe2nbrs%yptr(i+1)-dpe2nbrs%yptr(i)
+        end do
      end if
    end subroutine nbrhd_make_dpe2nbrs
 
