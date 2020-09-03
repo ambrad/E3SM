@@ -1102,9 +1102,6 @@ contains
           cid = pgcols(curgcol)%chunk
           i   = pgcols(curgcol)%ccol
           owner_p   = chunks(cid)%owner
-          if (use_nbrhd .and. curp > 0 .and. curp /= owner_p) then
-             call nbrhd_set_btoc_blk_offset(cpe2nbrs, curp, curcnt, glbcnt)
-          end if
           do while (curp < owner_p)
              btofc_blk_num(curp) = curcnt
              curcnt = 0
@@ -1122,7 +1119,6 @@ contains
                    btofc_blk_offset(blockids(jb))%ncols = blksiz
                    btofc_blk_offset(blockids(jb))%nlvls = numlvl
                    allocate( btofc_blk_offset(blockids(jb))%pter(blksiz,numlvl) )
-                   btofc_blk_offset(blockids(jb))%pter(:,:) = -1
                 endif
                 do k=1,btofc_blk_offset(blockids(jb))%nlvls
                    btofc_blk_offset(blockids(jb))%pter(bcids(jb),k) = glbcnt
@@ -1145,7 +1141,6 @@ contains
           btofc_chk_offset(lcid)%nlvls = pver+1
           allocate( btofc_chk_offset(lcid)%pter(ncols,pver+1) )
        enddo
-       if (use_nbrhd) nullify(btofc_chk_offset(endchunk+1)%pter)
        !
        curcnt = 0
        glbcnt = 0
@@ -1173,9 +1168,6 @@ contains
                 enddo
              endif
           enddo
-          if (use_nbrhd) then
-             call nbrhd_set_btoc_chk_offset(dpe2nbrs, p, curcnt, glbcnt)
-          end if
           btofc_chk_num(p) = curcnt
           curcnt = 0
        enddo
@@ -7023,96 +7015,5 @@ logical function phys_grid_initialized ()
      end do
      deallocate(idxs, buf)
    end function nbrhd_find_gcol_nbrhd
-
-   subroutine nbrhd_set_btoc_blk_offset(cpe2nbrs, cpe, curcnt, glbcnt)
-     ! For pe cpe that owns a chunk having a gcol nbr to one of iam's gcols, add
-     ! the associated entries for btofc_blk_offset.
-
-     use dyn_grid, only: get_gcol_block_cnt_d, get_block_owner_d, get_gcol_block_d, &
-          get_block_gcol_cnt_d, get_block_lvl_cnt_d
-
-     type(SparseTriple), intent(in) :: cpe2nbrs
-     integer, intent(in) :: cpe ! current chunks-owning pe being considered
-     integer, intent(inout):: curcnt, glbcnt
-
-     integer :: i, j, k, jb, gcol, block_cnt, blockids(1), bcids(1), owner_d, &
-          blksiz, numlvl
-     logical :: e
-
-     j = SparseTriple_in_xs(cpe2nbrs, cpe)
-     if (j == -1) return
-     e = assert(cpe == cpe2nbrs%xs(j), 'cpe found')
-     do i = cpe2nbrs%yptr(j), cpe2nbrs%yptr(j+1)-1
-        gcol = cpe2nbrs%ys(i)
-        block_cnt = get_gcol_block_cnt_d(gcol)
-        call get_gcol_block_d(gcol, block_cnt, blockids, bcids)
-        e = assert(block_cnt == 1, 'only block_cnt=1 is supported')
-        jb = 1
-        owner_d = get_block_owner_d(blockids(jb))
-        e = assert(owner_d == iam, 'owner_d by construction')
-        if (.not. associated(btofc_blk_offset(blockids(jb))%pter)) then
-           blksiz = get_block_gcol_cnt_d(blockids(jb))
-           numlvl = get_block_lvl_cnt_d(blockids(jb), bcids(jb))
-           btofc_blk_offset(blockids(jb))%ncols = blksiz
-           btofc_blk_offset(blockids(jb))%nlvls = numlvl
-           allocate(btofc_blk_offset(blockids(jb))%pter(blksiz,numlvl))
-           btofc_blk_offset(blockids(jb))%pter(:,:) = -1
-        end if
-        e = assert(btofc_blk_offset(blockids(jb))%pter(bcids(jb),1) == -1, &
-                   'do not overwrite existing')
-        if (.not. e) call endrun('amb> um not yet')
-        do k = 1, btofc_blk_offset(blockids(jb))%nlvls
-           btofc_blk_offset(blockids(jb))%pter(bcids(jb),k) = glbcnt
-           curcnt = curcnt + 1
-           glbcnt = glbcnt + 1
-        enddo
-     end do
-   end subroutine nbrhd_set_btoc_blk_offset
-
-   subroutine nbrhd_set_btoc_chk_offset(dpe2nbrs, dpe, curcnt, glbcnt)
-     ! For pe dpe that owns a block having a gcol nbr to one of iam's chunk's
-     ! gcols, add the associated entries for btofc_chk_offset.
-
-     use dyn_grid, only: get_gcol_block_cnt_d, get_gcol_block_d, &
-          get_block_lvl_cnt_d, get_block_levels_d
-     use pmgrid, only: plev
-
-     type(SparseTriple), intent(in) :: dpe2nbrs
-     integer, intent(in) :: dpe ! current blocks-owning pe being considered
-     integer, intent(inout):: curcnt, glbcnt
-
-     integer :: jb, gcol, block_cnt, blockids(1), bcids(1), ncols, numlvl, &
-          levels(plev+1), lcid, i, j, k
-     logical :: e
-
-     j = SparseTriple_in_xs(dpe2nbrs, dpe)
-     if (j == -1) return
-     e = assert(dpe == dpe2nbrs%xs(j), 'dpe found')
-     lcid = endchunk+1
-
-     e = assert(size(btofc_chk_offset) == endchunk-begchunk+2, 'btofc_chk_offset size')
-     if (.not. associated(btofc_chk_offset(lcid)%pter)) then
-        ncols = size(dpe2nbrs%ys)
-        btofc_chk_offset(lcid)%ncols = ncols
-        btofc_chk_offset(lcid)%nlvls = pver+1
-        if (nbrhd_verbose) print *,'amb> set_btoc_chk ncols, nlvls', ncols, pver+1
-        allocate(btofc_chk_offset(lcid)%pter(ncols,pver+1))
-     end if
-
-     do i = dpe2nbrs%yptr(j), dpe2nbrs%yptr(j+1)-1
-        gcol = dpe2nbrs%ys(i)
-        block_cnt = get_gcol_block_cnt_d(gcol)
-        call get_gcol_block_d(gcol, block_cnt, blockids, bcids)
-        e = assert(block_cnt == 1, 'only block_cnt=1 is supported')
-        jb = 1
-        numlvl = get_block_lvl_cnt_d(blockids(jb), bcids(jb))
-        call get_block_levels_d(blockids(jb),bcids(jb), numlvl, levels)
-        do k = 1, numlvl
-           btofc_chk_offset(lcid)%pter(i,levels(k)+1) = glbcnt
-           curcnt = curcnt + 1
-           glbcnt = glbcnt + 1
-        enddo
-     end do     
-   end subroutine nbrhd_set_btoc_chk_offset
 
 end module phys_grid
