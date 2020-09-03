@@ -107,7 +107,8 @@ module phys_grid
    use shr_const_mod,    only: SHR_CONST_PI
    use dycore,           only: dycore_is
    use units,            only: getunit, freeunit
-   use amb
+   use phys_grid_types
+   use phys_grid_nbrhd
 
    implicit none
    save
@@ -169,17 +170,6 @@ module phys_grid
    integer, dimension(:), allocatable, private :: lon_p      ! index into list of unique column longitudes
 
 ! chunk data structures
-   type chunk
-     integer  :: ncols                 ! number of vertical columns
-     integer, allocatable :: gcol(:)   ! global physics column indices
-     integer, allocatable :: lon(:)    ! global longitude indices
-     integer, allocatable :: lat(:)    ! global latitude indices
-     integer  :: owner                 ! id of process where chunk assigned
-     integer  :: lcid                  ! local chunk index
-     integer  :: dcols                 ! number of columns in common with co-located dynamics blocks
-     real(r8) :: estcost               ! estimated computational cost (normalized)
-   end type chunk
-
    integer :: nchunks                  ! global chunk count
    type (chunk), dimension(:), allocatable, public :: chunks  
                                        ! global computational grid
@@ -190,23 +180,9 @@ module phys_grid
 !!XXgoldyXX: ^ this should be private
                                        ! number of chunks assigned to each process
 
-   type lchunk
-     integer  :: ncols                 ! number of vertical columns
-     integer  :: cid                   ! global chunk index
-     integer,  allocatable :: gcol(:)  ! global physics column indices
-     real(r8), allocatable :: area(:)  ! column surface area (from dynamics)
-     real(r8), allocatable :: wght(:)  ! column integration weight (from dynamics)
-     real(r8) :: cost                  ! measured computational cost (seconds)
-   end type lchunk
-
    integer, private :: nlchunks        ! local chunk count
    type (lchunk), dimension(:), allocatable, private :: lchunks  
                                        ! local chunks
-
-   type knuhc
-     integer  :: chunkid               ! chunk id
-     integer  :: col                   ! column index in chunk
-   end type knuhc
 
    type (knuhc), dimension(:), allocatable, public :: knuhcs !now beingh used in RRTMG radiation.F90
                                        ! map from global column indices
@@ -360,7 +336,7 @@ module phys_grid
 ! (running total of time measured over loops over chunks in physpkg.F90)
    real(r8), public :: phys_proc_cost = 0.0_r8
 
-   logical, parameter, private :: nbrhd_verbose = .true.
+   type (ColumnNeighborhoods), private :: cns
 
 contains
 !========================================================================
@@ -476,7 +452,7 @@ contains
     real(r8)                            :: lonmin, latmin
 
     logical, parameter :: use_nbrhd = .true.
-    type(SparseTriple) :: cnbrhds, cpe2nbrs, dpe2nbrs
+    type(SparseTriple) :: cpe2nbrs, dpe2nbrs
     real(r8) :: max_angle
     logical :: e
 
@@ -959,12 +935,13 @@ contains
     enddo
 
     if (use_nbrhd) then
+       cns%verbose = .true.
        nbrhdchunk = 1
        nlcols = gs_col_num(iam)
-       max_angle = 0.06d0
-       call nbrhd_make_cpe2nbrs(max_angle, cpe2nbrs)
-       call nbrhd_find_chunk_nbrhds(max_angle, cnbrhds)
-       call nbrhd_make_dpe2nbrs(max_angle, cnbrhds, dpe2nbrs)
+       cns%max_angle = 0.06d0
+       call nbrhd_make_cpe2nbrs(cns, cpe2nbrs)
+       call nbrhd_find_chunk_nbrhds(cns, cns%chk_nbrhds)
+       call nbrhd_make_dpe2nbrs(cns, cns%chk_nbrhds, dpe2nbrs)
     end if
 
     !
@@ -1386,7 +1363,6 @@ contains
     call t_stopf("phys_grid_init")
     call t_adj_detailf(+2)
 
-    call SparseTriple_deallocate(cnbrhds)
     call SparseTriple_deallocate(cpe2nbrs)
     call SparseTriple_deallocate(dpe2nbrs)
     call endrun('amb> exit')
@@ -6663,11 +6639,11 @@ logical function phys_grid_initialized ()
 
 !#######################################################################
 
-   subroutine nbrhd_find_chunk_nbrhds(max_angle, cnbrhds)
+   subroutine nbrhd_find_chunk_nbrhds(cns, cnbrhds)
      ! For each gcol in an iam-owning chunk, find its list of neighbors as
      ! sorted gcols.
 
-     real(r8), intent(in) :: max_angle
+     type (ColumnNeighborhoods), intent(in) :: cns
      type(SparseTriple), intent(out) :: cnbrhds
 
      integer, allocatable :: idxs(:), xs(:)
@@ -6677,7 +6653,7 @@ logical function phys_grid_initialized ()
 
      call run_unit_tests()
 
-     if (nbrhd_verbose) print *,'amb> nlcols',nlcols
+     if (cns%verbose) print *,'amb> nlcols',nlcols
      cap = nlcols
      allocate(cnbrhds%xs(nlcols), cnbrhds%yptr(nlcols+1), cnbrhds%ys(cap))
      ! Get sorted iam-owning chunks' gcols.
@@ -6706,13 +6682,13 @@ logical function phys_grid_initialized ()
         cnt = 0
         ptr = cnbrhds%yptr(lcolid)
         gcol = cnbrhds%xs(lcolid)
-        cnt = nbrhd_find_gcol_nbrhd(max_angle, gcol, cnbrhds%ys, ptr, cap)
+        cnt = nbrhd_find_gcol_nbrhd(cns%max_angle, gcol, cnbrhds%ys, ptr, cap)
         cnbrhds%yptr(lcolid+1) = cnbrhds%yptr(lcolid) + cnt
      end do
      call array_realloc(cnbrhds%ys, cnbrhds%yptr(nlcols+1)-1, cnbrhds%yptr(nlcols+1)-1)
    end subroutine nbrhd_find_chunk_nbrhds
 
-   subroutine nbrhd_make_cpe2nbrs(max_angle, cpe2nbrs, exclude_existing_in)
+   subroutine nbrhd_make_cpe2nbrs(cns, cpe2nbrs, exclude_existing_in)
      ! Make the map of chunk-owning pe to gcols, where the gcols are neighbors
      ! of a column in a chunk, each gcol belongs to a block that iam owns, and
      ! neighbor is defined in nbrhd_find_nbrhds. On output, cpe2nbrs has these
@@ -6726,7 +6702,7 @@ logical function phys_grid_initialized ()
 
      use dyn_grid, only: get_gcol_block_cnt_d, get_block_owner_d, get_gcol_block_d
 
-     real(r8), intent(in) :: max_angle
+     type (ColumnNeighborhoods), intent(in) :: cns
      type (SparseTriple), intent(out) :: cpe2nbrs
      logical, optional, intent(in) :: exclude_existing_in
 
@@ -6751,7 +6727,7 @@ logical function phys_grid_initialized ()
         e = assert(block_cnt == 1, 'only block_cnt=1 is supported')
         call get_gcol_block_d(gcol, block_cnt, blockids, bcids)
         if (get_block_owner_d(blockids(1)) /= iam) cycle
-        cnt = nbrhd_find_gcol_nbrhd(max_angle, gcol, nbrhd, 1, cap)
+        cnt = nbrhd_find_gcol_nbrhd(cns%max_angle, gcol, nbrhd, 1, cap)
         if (cnt == 0) cycle
         if (cap > size(pes)) then
            deallocate(idxs, pes, upes)
@@ -6848,7 +6824,7 @@ logical function phys_grid_initialized ()
      cnt = cpe2nbrs%yptr(nupes+1)-1
      call array_realloc(cpe2nbrs%ys, cnt, cnt) ! compact memory
      deallocate(apes, agcols, idxs, gidxs, gcols, ugcols)
-     if (nbrhd_verbose) then
+     if (cns%verbose) then
         print *,'amb> nbrhd_make_cpe2nbrs #pes',size(cpe2nbrs%xs)
         do i = 1, size(cpe2nbrs%xs)
            print *,'amb> pe',cpe2nbrs%xs(i),cpe2nbrs%yptr(i+1)-cpe2nbrs%yptr(i)
@@ -6856,7 +6832,7 @@ logical function phys_grid_initialized ()
      end if
    end subroutine nbrhd_make_cpe2nbrs
 
-   subroutine nbrhd_make_dpe2nbrs(max_angle, cnbrhds, dpe2nbrs, exclude_existing_in)
+   subroutine nbrhd_make_dpe2nbrs(cns, cnbrhds, dpe2nbrs, exclude_existing_in)
      ! Make the map of block-owning pe to gcols, where the gcols are neighbors
      ! of a column in a block, each gcol belongs to a chunk that iam owns, and
      ! neighbor is defined in nbrhd_find_nbrhds. On output, dpe2nbrs has these
@@ -6868,8 +6844,8 @@ logical function phys_grid_initialized ()
 
      use dyn_grid, only: get_gcol_block_cnt_d, get_block_owner_d, get_gcol_block_d
 
-     real(r8), intent(in) :: max_angle
-     type(SparseTriple), intent(in) :: cnbrhds
+     type (ColumnNeighborhoods), intent(in) :: cns
+     type (SparseTriple), intent(in) :: cnbrhds
      type (SparseTriple), intent(out) :: dpe2nbrs
      logical, optional, intent(in) :: exclude_existing_in
 
@@ -6885,7 +6861,7 @@ logical function phys_grid_initialized ()
      ! neighbor gcols.
      call make_unique(cnbrhds%yptr(nlcols+1)-1, cnbrhds%ys, unbrs)
      if (exclude_existing) then
-        ! Filter out any gcol that iam' chunks' own, as these are already going
+        ! Filter out any gcol that iam's chunks' own, as these are already going
         ! to be communicated.
         allocate(wrk(size(unbrs)))
         wrk(:) = unbrs(:)
@@ -6896,11 +6872,11 @@ logical function phys_grid_initialized ()
            unbrs(n) = wrk(i)
         end do
         deallocate(wrk)
-        if (nbrhd_verbose) print *,'amb> unbrs',size(unbrs),n
+        if (cns%verbose) print *,'amb> unbrs',size(unbrs),n
      else
         n = size(unbrs)
      end if
-     if (nbrhd_verbose) print *,'amb> dpe2nbrs', cnbrhds%yptr(nlcols+1)-1, n
+     if (cns%verbose) print *,'amb> dpe2nbrs', cnbrhds%yptr(nlcols+1)-1, n
      ! For each gcol, get the pe of owning block.
      allocate(pes(n), idxs(n))
      do i = 1, n
@@ -6948,7 +6924,7 @@ logical function phys_grid_initialized ()
         end do
      end do
      deallocate(unbrs, idxs, pes)
-     if (nbrhd_verbose) then
+     if (cns%verbose) then
         print *,'amb> nbrhd_make_dpe2nbrs #pes',size(dpe2nbrs%xs)
         do i = 1, size(dpe2nbrs%xs)
            print *,'amb> pe',dpe2nbrs%xs(i),dpe2nbrs%yptr(i+1)-dpe2nbrs%yptr(i)

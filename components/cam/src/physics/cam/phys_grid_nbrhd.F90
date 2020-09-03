@@ -1,4 +1,4 @@
-module amb !todo rename phys_grid_nbrhd_utils
+module phys_grid_nbrhd
   use spmd_utils, only: iam, masterproc
   use shr_kind_mod, only: r8 => shr_kind_r8, r4 => shr_kind_r4
 
@@ -8,6 +8,17 @@ module amb !todo rename phys_grid_nbrhd_utils
      ! xs(i) maps to ys(yptr(i):yptr(i+1)-1)
      integer, pointer :: xs(:), yptr(:), ys(:)
   end type SparseTriple
+
+   type ColumnNeighborhoods
+      ! A neighborhood is a list of gcols neighboring a column. Neighborhoods,
+      ! plural, is a list of these of lists.
+      logical :: verbose
+      ! Radian angle defining neighborhood. Defines max between a column center
+      ! and column centers within its neighborhood.
+      real(r8) :: max_angle
+      ! For each gcol in iam's chunks, the list of gcols in its neighborhood.
+      type (SparseTriple) :: chk_nbrhds
+   end type ColumnNeighborhoods
 
 contains
   function test(cond, message) result(out)
@@ -271,4 +282,5 @@ contains
     end do
     deallocate(uc)
   end subroutine run_unit_tests
-end module amb
+
+end module phys_grid_nbrhd
