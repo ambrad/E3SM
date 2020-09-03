@@ -476,8 +476,7 @@ contains
     real(r8)                            :: lonmin, latmin
 
     logical, parameter :: use_nbrhd = .true.
-    type(SparseTriple) :: cpe2nbrs, dpe2nbrs
-    integer, pointer, dimension(:) :: nbrhd_ptr, nbrhds
+    type(SparseTriple) :: cnbrhds, cpe2nbrs, dpe2nbrs
     real(r8) :: max_angle
     logical :: e
 
@@ -964,8 +963,8 @@ contains
        nlcols = gs_col_num(iam)
        max_angle = 0.06d0
        call nbrhd_make_cpe2nbrs(max_angle, cpe2nbrs)
-       call nbrhd_find_chunk_nbrhds(max_angle, nbrhd_ptr, nbrhds)
-       call nbrhd_make_dpe2nbrs(max_angle, nbrhd_ptr, nbrhds, dpe2nbrs)
+       call nbrhd_find_chunk_nbrhds(max_angle, cnbrhds)
+       call nbrhd_make_dpe2nbrs(max_angle, cnbrhds, dpe2nbrs)
     end if
 
     !
@@ -1395,7 +1394,7 @@ contains
     call t_stopf("phys_grid_init")
     call t_adj_detailf(+2)
 
-    deallocate(nbrhd_ptr, nbrhds)
+    call SparseTriple_deallocate(cnbrhds)
     call SparseTriple_deallocate(cpe2nbrs)
     call SparseTriple_deallocate(dpe2nbrs)
     call endrun('amb> exit')
@@ -6672,42 +6671,56 @@ logical function phys_grid_initialized ()
 
 !#######################################################################
 
-   subroutine nbrhd_find_chunk_nbrhds(max_angle, nbrhd_ptr, nbrhds)
+   subroutine nbrhd_find_chunk_nbrhds(max_angle, cnbrhds)
      ! For each gcol in an iam-owning chunk, find its list of neighbors as
      ! sorted gcols.
 
      real(r8), intent(in) :: max_angle
-     integer, pointer, intent(out) :: nbrhd_ptr(:), nbrhds(:)
+     type(SparseTriple), intent(out) :: cnbrhds
 
-     integer :: cid, ncols, gcol, i, j, j_lo, j_up, jl, jl_lim, jgcol, jcid, jcol, &
-          cap, lcolid, cnt, ptr
+     integer, allocatable :: idxs(:), xs(:)
+     integer :: cid, ncols, gcol, i, cap, lcolid, cnt, ptr
      real(r8) :: lat, lon, xi, yi, zi, angle
      logical :: e
 
      call run_unit_tests()
 
      if (nbrhd_verbose) print *,'amb> nlcols',nlcols
-     allocate(nbrhd_ptr(nlcols+1), nbrhds(nlcols))
      cap = nlcols
+     allocate(cnbrhds%xs(nlcols), cnbrhds%yptr(nlcols+1), cnbrhds%ys(cap))
+     ! Get sorted iam-owning chunks' gcols.
      lcolid = 1
-     nbrhd_ptr(lcolid) = 1
      do cid = 1, nchunks
         if (chunks(cid)%owner /= iam) cycle
         ncols = chunks(cid)%ncols
         e = assert(ncols >= 1, 'ncols')
         do i = 1, ncols
-           cnt = 0
-           ptr = nbrhd_ptr(lcolid)
-           gcol = chunks(cid)%gcol(i)
-           cnt = nbrhd_find_gcol_nbrhd(max_angle, gcol, nbrhds, ptr, cap)
-           nbrhd_ptr(lcolid+1) = nbrhd_ptr(lcolid) + cnt
+           cnbrhds%xs(lcolid) = chunks(cid)%gcol(i)
            lcolid = lcolid + 1
         end do
      end do
-     call array_realloc(nbrhds, nbrhd_ptr(nlcols+1)-1, nbrhd_ptr(nlcols+1)-1)
+     e = assert(lcolid-1 == nlcols, 'lcolid post')
+     allocate(idxs(nlcols), xs(nlcols))
+     call IndexSet(nlcols, idxs)
+     xs(:) = cnbrhds%xs(:)
+     call IndexSort(nlcols, idxs, xs)
+     do i = 1, nlcols
+        cnbrhds%xs(i) = xs(idxs(i))
+     end do
+     deallocate(idxs, xs)
+     ! Get each gcol's neighborhood.
+     cnbrhds%yptr(1) = 1
+     do lcolid = 1, nlcols
+        cnt = 0
+        ptr = cnbrhds%yptr(lcolid)
+        gcol = cnbrhds%xs(lcolid)
+        cnt = nbrhd_find_gcol_nbrhd(max_angle, gcol, cnbrhds%ys, ptr, cap)
+        cnbrhds%yptr(lcolid+1) = cnbrhds%yptr(lcolid) + cnt
+     end do
+     call array_realloc(cnbrhds%ys, cnbrhds%yptr(nlcols+1)-1, cnbrhds%yptr(nlcols+1)-1)
    end subroutine nbrhd_find_chunk_nbrhds
 
-   subroutine nbrhd_make_cpe2nbrs(max_angle, cpe2nbrs)
+   subroutine nbrhd_make_cpe2nbrs(max_angle, cpe2nbrs, exclude_existing_in)
      ! Make the map of chunk-owning pe to gcols, where the gcols are neighbors
      ! of a column in a chunk, each gcol belongs to a block that iam owns, and
      ! neighbor is defined in nbrhd_find_nbrhds. On output, cpe2nbrs has these
@@ -6716,21 +6729,27 @@ logical function phys_grid_initialized ()
      !     yptr: pointers into ys;
      !     ys: for each pe, the list of iam-owning blocks' neighbors, as
      !         sorted gcols.
+     ! If exclude_existing_in, which is true by default, exclude from ys any
+     ! gcol that is already available to the pe from the regular comm pattern.
 
      use dyn_grid, only: get_gcol_block_cnt_d, get_block_owner_d, get_gcol_block_d
 
      real(r8), intent(in) :: max_angle
      type (SparseTriple), intent(out) :: cpe2nbrs
+     logical, optional, intent(in) :: exclude_existing_in
 
      integer, parameter :: cap_init = 128
 
      integer :: ptr, cap, gcol, block_cnt, blockids(1), bcids(1), cnt, ucnt, &
-          i, j, pe, prev, acap, aptr, ng, max_ng, jprev, nupes
+          i, j, pe, prev, acap, aptr, ng, max_ng, jprev, nupes, chunk_owner
      integer, pointer :: nbrhd(:), apes(:), agcols(:)
      integer, allocatable, dimension(:) :: idxs, pes, upes, gcols, ugcols, gidxs
-     logical :: e, same
+     logical :: e, same, exclude_existing
 
-     ! Collect (pe,gcol) pairs where gcol is in one of my owned blocks.
+     exclude_existing = .true.
+     if (present(exclude_existing_in)) exclude_existing = exclude_existing_in
+     ! Collect (pe,gcol) pairs where gcol is in one of my owned blocks and pe is
+     ! the chunk owner.
      cap = cap_init
      acap = cap_init
      allocate(nbrhd(cap), idxs(cap), pes(cap), upes(cap), apes(acap), agcols(acap))
@@ -6768,7 +6787,9 @@ logical function phys_grid_initialized ()
            call array_realloc(apes, aptr-1, acap)
            call array_realloc(agcols, aptr-1, acap)
         end if
+        if (exclude_existing) chunk_owner = chunks(knuhcs(gcol)%chunkid)%owner
         do i = 1, ucnt
+           if (exclude_existing .and. upes(i) == chunk_owner) cycle
            apes(aptr) = upes(i)
            agcols(aptr) = gcol
            aptr = aptr + 1
@@ -6843,7 +6864,7 @@ logical function phys_grid_initialized ()
      end if
    end subroutine nbrhd_make_cpe2nbrs
 
-   subroutine nbrhd_make_dpe2nbrs(max_angle, nbrhd_ptr, nbrhds, dpe2nbrs)
+   subroutine nbrhd_make_dpe2nbrs(max_angle, cnbrhds, dpe2nbrs, exclude_existing_in)
      ! Make the map of block-owning pe to gcols, where the gcols are neighbors
      ! of a column in a block, each gcol belongs to a chunk that iam owns, and
      ! neighbor is defined in nbrhd_find_nbrhds. On output, dpe2nbrs has these
@@ -6856,20 +6877,38 @@ logical function phys_grid_initialized ()
      use dyn_grid, only: get_gcol_block_cnt_d, get_block_owner_d, get_gcol_block_d
 
      real(r8), intent(in) :: max_angle
-     integer, dimension(:), intent(in) :: nbrhd_ptr, nbrhds
+     type(SparseTriple), intent(in) :: cnbrhds
      type (SparseTriple), intent(out) :: dpe2nbrs
+     logical, optional, intent(in) :: exclude_existing_in
 
-     integer, pointer, dimension(:) :: unbrs
+     integer, pointer, dimension(:) :: unbrs, wrk(:)
      integer, allocatable, dimension(:) :: pes, idxs
      integer :: i, j, k, n, gcol, block_cnt, blockids(1), bcids(1), cnt, prev
-     logical :: e
+     logical :: e, exclude_existing
 
-     e = assert(size(nbrhd_ptr)-1 == nlcols, 'nlcols')
+     exclude_existing = .true.
+     if (present(exclude_existing_in)) exclude_existing = exclude_existing_in
+     e = assert(size(cnbrhds%yptr)-1 == nlcols, 'nlcols')
      ! Unlike for cpe2nbrs, we are filling a 1-1 map, so we just need the unique
      ! neighbor gcols.
-     call make_unique(nbrhd_ptr(nlcols+1)-1, nbrhds, unbrs)
-     n = size(unbrs)
-     if (nbrhd_verbose) print *,'amb> dpe2nbrs', nbrhd_ptr(nlcols+1)-1, n
+     call make_unique(cnbrhds%yptr(nlcols+1)-1, cnbrhds%ys, unbrs)
+     if (exclude_existing) then
+        ! Filter out any gcol that iam' chunks' own, as these are already going
+        ! to be communicated.
+        allocate(wrk(size(unbrs)))
+        wrk(:) = unbrs(:)
+        n = 0
+        do i = 1, size(unbrs)
+           if (SparseTriple_in_xs(cnbrhds, wrk(i)) /= -1) cycle
+           n = n + 1
+           unbrs(n) = wrk(i)
+        end do
+        deallocate(wrk)
+        if (nbrhd_verbose) print *,'amb> unbrs',size(unbrs),n
+     else
+        n = size(unbrs)
+     end if
+     if (nbrhd_verbose) print *,'amb> dpe2nbrs', cnbrhds%yptr(nlcols+1)-1, n
      ! For each gcol, get the pe of owning block.
      allocate(pes(n), idxs(n))
      do i = 1, n
@@ -6963,7 +7002,7 @@ logical function phys_grid_initialized ()
            jgcol = latlon_to_dyn_gcol_map(clat_p_idx(j) + jl - 1)
            if (jgcol == -1 .or. jgcol == gcol) cycle
            angle = unit_sphere_angle(xi, yi, zi, &
-                clat_p(lat_p(jgcol)), clon_p(lon_p(jgcol)))
+                                     clat_p(lat_p(jgcol)), clon_p(lon_p(jgcol)))
            if (angle > max_angle) cycle
            if (ptr + cnt > cap) then
               new_cap = max(2*cap, ptr + cnt)
@@ -7019,6 +7058,9 @@ logical function phys_grid_initialized ()
            allocate(btofc_blk_offset(blockids(jb))%pter(blksiz,numlvl))
            btofc_blk_offset(blockids(jb))%pter(:,:) = -1
         end if
+        e = assert(btofc_blk_offset(blockids(jb))%pter(bcids(jb),1) == -1, &
+                   'do not overwrite existing')
+        if (.not. e) call endrun('amb> um not yet')
         do k = 1, btofc_blk_offset(blockids(jb))%nlvls
            btofc_blk_offset(blockids(jb))%pter(bcids(jb),k) = glbcnt
            curcnt = curcnt + 1
@@ -7028,8 +7070,8 @@ logical function phys_grid_initialized ()
    end subroutine nbrhd_set_btoc_blk_offset
 
    subroutine nbrhd_set_btoc_chk_offset(dpe2nbrs, dpe, curcnt, glbcnt)
-     ! For pe dpe that owns a block having a gcol nbr to one of iam's
-     ! chunk's gcols, add the associated entries for btofc_chk_offset.
+     ! For pe dpe that owns a block having a gcol nbr to one of iam's chunk's
+     ! gcols, add the associated entries for btofc_chk_offset.
 
      use dyn_grid, only: get_gcol_block_cnt_d, get_gcol_block_d, &
           get_block_lvl_cnt_d, get_block_levels_d
@@ -7065,7 +7107,6 @@ logical function phys_grid_initialized ()
         jb = 1
         numlvl = get_block_lvl_cnt_d(blockids(jb), bcids(jb))
         call get_block_levels_d(blockids(jb),bcids(jb), numlvl, levels)
-        e = assert(btofc_chk_offset(lcid)%pter(i,1) == -1, 'do not overwrite existing')
         do k = 1, numlvl
            btofc_chk_offset(lcid)%pter(i,levels(k)+1) = glbcnt
            curcnt = curcnt + 1

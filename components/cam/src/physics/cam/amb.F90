@@ -70,8 +70,8 @@ contains
     ! Find k such that
     !   if k > 1 then a(k-1) <= val
     !   if k < n then           val < a(k)
-    ! where a(1:n) has unique elements and is ascending. k_in is an
-    ! optional hint.
+    ! where a(1:n) has unique elements and is ascending. k_in is an optional
+    ! hint.
 
     integer, intent(in) :: n
     integer, intent(in), optional :: k_in
@@ -104,8 +104,8 @@ contains
   end function upper_bound_or_in_range
 
   function binary_search(n, a, val, k_in) result (k)
-    ! Find position of val in a(1:n), or return -1 if val is not in
-    ! a. k_in is an optional hint.
+    ! Find position of val in a(1:n), or return -1 if val is not in a. k_in is
+    ! an optional hint.
 
     integer, intent(in) :: n, a(n), val
     integer, intent(in), optional :: k_in
@@ -142,8 +142,7 @@ contains
   end function binary_search
 
   subroutine array_realloc(a, n, n_new)
-    ! Reallocate a to size n_new, preserving the first min(n,n_new)
-    ! values.
+    ! Reallocate a to size n_new, preserving the first min(n,n_new) values.
 
     integer, pointer, intent(inout) :: a(:)
     integer, intent(in) :: n, n_new
