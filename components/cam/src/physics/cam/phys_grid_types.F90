@@ -1,5 +1,6 @@
 module phys_grid_types
 
+   use shr_kind_mod,     only: r8 => shr_kind_r8
    implicit none
 
 ! chunk data structures
