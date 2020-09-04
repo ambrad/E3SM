@@ -45,9 +45,9 @@ module phys_grid_nbrhd
   type (ColumnNeighborhoods), private :: cns
 
   public :: &
-       nbrhd_init, &
-       nbrhd_transpose_block_to_chunk, &
-       nbrhd_block_to_chunk_send_pters, nbrhd_block_to_chunk_recv_pters
+       nbrhd_init, nbrhd_transpose_block_to_chunk, &
+       nbrhd_block_to_chunk_send_pters, nbrhd_block_to_chunk_recv_pters, &
+       nbrhd_get_block_nrecs, nbrhd_get_nbrhd_size, nbrhd_get_nbrhd
 
 contains
 
@@ -93,6 +93,22 @@ contains
 
   subroutine nbrhd_block_to_chunk_recv_pters()
   end subroutine nbrhd_block_to_chunk_recv_pters
+
+  subroutine nbrhd_get_block_nrecs()
+  end subroutine nbrhd_get_block_nrecs
+
+  function nbrhd_get_nbrhd_size(col_chunk_idx, col_col_idx) result(n)
+    integer, intent(in) :: col_chunk_idx, col_col_idx
+    integer :: n
+    n = -1
+  end function nbrhd_get_nbrhd_size
+
+  subroutine nbrhd_get_nbrhd(col_chunk_idx, col_col_idx, chunk_idxs, col_idxs)
+    integer, intent(in) :: col_chunk_idx, col_col_idx
+    integer, dimension(:), intent(out) :: chunk_idxs, col_idxs
+    chunk_idxs = -1
+    col_idxs = -1
+  end subroutine nbrhd_get_nbrhd
 
   !> -------------------------------------------------------------------
   !> Private routines.
@@ -456,19 +472,38 @@ contains
   end function find_gcol_nbrhd
 
   subroutine make_comm_schedule(cns, gd, cpe2nbrs, dpe2nbrs)
+    use dyn_grid, only: get_gcol_block_cnt_d, get_block_gcol_cnt_d, get_block_owner_d, &
+         get_block_lvl_cnt_d
+
     type (ColumnNeighborhoods), intent(inout) :: cns
     type (PhysGridData), intent(in) :: gd
     type (SparseTriple), intent(in) :: cpe2nbrs, dpe2nbrs
 
     integer, allocatable :: lcl_blocks(:)
+    integer :: i, j, pe, gcol
 
     call get_local_blocks(lcl_blocks)
-    print *,'amb> block IDs',size(lcl_blocks),lcl_blocks(1),lcl_blocks(size(lcl_blocks))
-    return
 
-    allocate(cns%blk_num(0:npes-1), cns%chk_num(0:npes-1))
+    allocate(cns%blk_num(0:npes-1), cns%chk_num(0:npes-1), &
+         cns%blk_offset(size(lcl_blocks)))
+
+    do i = 1, size(cpe2nbrs%xs)
+       pe = cpe2nbrs%xs(i)
+       do j = cpe2nbrs%yptr(i), cpe2nbrs%yptr(i+1)-1
+          gcol = cpe2nbrs%ys(j)
+          
+       end do
+    end do
 
     deallocate(lcl_blocks)
+
+    do i = 1, size(dpe2nbrs%xs)
+       pe = dpe2nbrs%xs(i)
+       do j = dpe2nbrs%yptr(i), dpe2nbrs%yptr(i+1)-1
+          gcol = dpe2nbrs%ys(j)
+          
+       end do
+    end do
   end subroutine make_comm_schedule
 
   subroutine get_local_blocks(lcl_blocks)
