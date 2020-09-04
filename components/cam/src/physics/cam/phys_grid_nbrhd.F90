@@ -36,8 +36,10 @@ module phys_grid_nbrhd
      real(r8) :: max_angle
      ! For each gcol in iam's chunks, the list of gcols in its neighborhood.
      type (SparseTriple) :: chk_nbrhds
+     ! blk_offset is index using local block ID, not global as in phys_grid.
      integer, allocatable, dimension(:) :: blk_num, chk_num
-     type (Offset), allocatable, dimension(:) :: blk_offset, chk_offset
+     type (Offset), allocatable, dimension(:) :: blk_offset
+     type (Offset) :: chk_offset
   end type ColumnNeighborhoods
 
   type (ColumnNeighborhoods), private :: cns
@@ -457,7 +459,56 @@ contains
     type (ColumnNeighborhoods), intent(inout) :: cns
     type (PhysGridData), intent(in) :: gd
     type (SparseTriple), intent(in) :: cpe2nbrs, dpe2nbrs
+
+    integer, allocatable :: lcl_blocks(:)
+
+    call get_local_blocks(lcl_blocks)
+    print *,'amb> block IDs',size(lcl_blocks),lcl_blocks(1),lcl_blocks(size(lcl_blocks))
+    return
+
+    allocate(cns%blk_num(0:npes-1), cns%chk_num(0:npes-1))
+
+    deallocate(lcl_blocks)
   end subroutine make_comm_schedule
+
+  subroutine get_local_blocks(lcl_blocks)
+    ! Get list of iam's owned global block IDs in block local ID order.
+
+    use dyn_grid, only: get_block_bounds_d, get_gcol_block_cnt_d, get_gcol_block_d, &
+         get_block_gcol_d, get_block_owner_d, get_block_gcol_cnt_d
+
+    integer, allocatable, intent(out) :: lcl_blocks(:)
+
+    integer, allocatable :: gcols(:)
+    integer :: bf, bl, bid, cnt, pe, nid, blockid(1), bcid(1), ie(1), ngcols
+    logical :: e
+
+    call get_block_bounds_d(bf, bl)
+    cnt = 0
+    do bid = bf, bl
+       pe = get_block_owner_d(bid)
+       if (pe == iam) cnt = cnt + 1
+    end do
+    allocate(lcl_blocks(cnt), gcols(128))
+    ! This seems a bit convoluted, but I'm not seeing an easier way to get block
+    ! IDs in local ID order.
+    do bid = bf, bl
+       pe = get_block_owner_d(bid)
+       if (pe /= iam) cycle
+       ngcols = get_block_gcol_cnt_d(bid)
+       if (ngcols < size(gcols)) then
+          deallocate(gcols)
+          allocate(gcols(ngcols))
+       end if
+       call get_block_gcol_d(bid, ngcols, gcols)
+       nid = get_gcol_block_cnt_d(gcols(1))
+       e = assert(nid == 1, 'only nid=1 is supported')
+       call get_gcol_block_d(gcols(1), nid, blockid, bcid, ie)
+       e = assert(ie(1) >= 1 .and. ie(1) <= cnt, 'ie in bounds')
+       lcl_blocks(ie(1)) = bid
+    end do
+    deallocate(gcols)
+  end subroutine get_local_blocks
 
   !> -------------------------------------------------------------------
   !> General utilities.
