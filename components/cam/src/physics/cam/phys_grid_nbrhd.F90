@@ -23,6 +23,10 @@ module phys_grid_nbrhd
      integer, pointer :: xs(:), yptr(:), ys(:)
   end type SparseTriple
 
+  type :: Offset
+     integer :: i
+  end type Offset
+
   type :: ColumnNeighborhoods
      ! A neighborhood is a list of gcols neighboring a column. Neighborhoods,
      ! plural, is a list of these of lists.
@@ -32,11 +36,16 @@ module phys_grid_nbrhd
      real(r8) :: max_angle
      ! For each gcol in iam's chunks, the list of gcols in its neighborhood.
      type (SparseTriple) :: chk_nbrhds
+     integer, allocatable, dimension(:) :: blk_num, chk_num
+     type (Offset), allocatable, dimension(:) :: blk_offset, chk_offset
   end type ColumnNeighborhoods
 
   type (ColumnNeighborhoods), private :: cns
 
-  public :: nbrhd_init, nbrhd_find_chunk_nbrhds, nbrhd_make_cpe2nbrs, nbrhd_make_dpe2nbrs
+  public :: &
+       nbrhd_init, &
+       nbrhd_transpose_block_to_chunk, &
+       nbrhd_block_to_chunk_send_pters, nbrhd_block_to_chunk_recv_pters
 
 contains
 
@@ -65,15 +74,28 @@ contains
     gd%clat_p_idx => clat_p_idx; gd%latlon_to_dyn_gcol_map => latlon_to_dyn_gcol_map
     gd%clat_p => clat_p; gd%clon_p => clon_p
 
-    call nbrhd_find_chunk_nbrhds(cns, gd, chunks, cns%chk_nbrhds)
-    call nbrhd_make_cpe2nbrs(cns, gd, chunks, knuhcs, cpe2nbrs)
-    call nbrhd_make_dpe2nbrs(cns, gd, cns%chk_nbrhds, dpe2nbrs)
+    call find_chunk_nbrhds(cns, gd, chunks, cns%chk_nbrhds)
+    call make_cpe2nbrs(cns, gd, chunks, knuhcs, cpe2nbrs)
+    call make_dpe2nbrs(cns, gd, cns%chk_nbrhds, dpe2nbrs)
+    call make_comm_schedule(cns, gd, cpe2nbrs, dpe2nbrs)
 
     call SparseTriple_deallocate(cpe2nbrs)
     call SparseTriple_deallocate(dpe2nbrs)
   end subroutine nbrhd_init
 
-  subroutine nbrhd_find_chunk_nbrhds(cns, gd, chunks, cnbrhds)
+  subroutine nbrhd_transpose_block_to_chunk()
+  end subroutine nbrhd_transpose_block_to_chunk
+
+  subroutine nbrhd_block_to_chunk_send_pters()
+  end subroutine nbrhd_block_to_chunk_send_pters
+
+  subroutine nbrhd_block_to_chunk_recv_pters()
+  end subroutine nbrhd_block_to_chunk_recv_pters
+
+  !> -------------------------------------------------------------------
+  !> Private routines.
+
+  subroutine find_chunk_nbrhds(cns, gd, chunks, cnbrhds)
     ! For each gcol in an iam-owning chunk, find its list of neighbors as
     ! sorted gcols.
 
@@ -117,16 +139,16 @@ contains
        cnt = 0
        ptr = cnbrhds%yptr(lcolid)
        gcol = cnbrhds%xs(lcolid)
-       cnt = nbrhd_find_gcol_nbrhd(gd, cns%max_angle, gcol, cnbrhds%ys, ptr, cap)
+       cnt = find_gcol_nbrhd(gd, cns%max_angle, gcol, cnbrhds%ys, ptr, cap)
        cnbrhds%yptr(lcolid+1) = cnbrhds%yptr(lcolid) + cnt
     end do
     call array_realloc(cnbrhds%ys, cnbrhds%yptr(gd%nlcols+1)-1, cnbrhds%yptr(gd%nlcols+1)-1)
-  end subroutine nbrhd_find_chunk_nbrhds
+  end subroutine find_chunk_nbrhds
 
-  subroutine nbrhd_make_cpe2nbrs(cns, gd, chunks, knuhcs, cpe2nbrs, exclude_existing_in)
+  subroutine make_cpe2nbrs(cns, gd, chunks, knuhcs, cpe2nbrs, exclude_existing_in)
     ! Make the map of chunk-owning pe to gcols, where the gcols are neighbors
     ! of a column in a chunk, each gcol belongs to a block that iam owns, and
-    ! neighbor is defined in nbrhd_find_nbrhds. On output, cpe2nbrs has these
+    ! neighbor is defined in find_gcol_nbrhd. On output, cpe2nbrs has these
     ! entries:
     !     xs: sorted list of chunk-owning pes;
     !     yptr: pointers into ys;
@@ -165,7 +187,7 @@ contains
        e = assert(block_cnt == 1, 'only block_cnt=1 is supported')
        call get_gcol_block_d(gcol, block_cnt, blockids, bcids)
        if (get_block_owner_d(blockids(1)) /= iam) cycle
-       cnt = nbrhd_find_gcol_nbrhd(gd, cns%max_angle, gcol, nbrhd, 1, cap)
+       cnt = find_gcol_nbrhd(gd, cns%max_angle, gcol, nbrhd, 1, cap)
        if (cnt == 0) cycle
        if (cap > size(pes)) then
           deallocate(idxs, pes, upes)
@@ -263,17 +285,17 @@ contains
     call array_realloc(cpe2nbrs%ys, cnt, cnt) ! compact memory
     deallocate(apes, agcols, idxs, gidxs, gcols, ugcols)
     if (cns%verbose) then
-       print *,'amb> nbrhd_make_cpe2nbrs #pes',size(cpe2nbrs%xs)
+       print *,'amb> make_cpe2nbrs #pes',size(cpe2nbrs%xs)
        do i = 1, size(cpe2nbrs%xs)
           print *,'amb> pe',cpe2nbrs%xs(i),cpe2nbrs%yptr(i+1)-cpe2nbrs%yptr(i)
        end do
     end if
-  end subroutine nbrhd_make_cpe2nbrs
+  end subroutine make_cpe2nbrs
 
-  subroutine nbrhd_make_dpe2nbrs(cns, gd, cnbrhds, dpe2nbrs, exclude_existing_in)
+  subroutine make_dpe2nbrs(cns, gd, cnbrhds, dpe2nbrs, exclude_existing_in)
     ! Make the map of block-owning pe to gcols, where the gcols are neighbors
     ! of a column in a block, each gcol belongs to a chunk that iam owns, and
-    ! neighbor is defined in nbrhd_find_nbrhds. On output, dpe2nbrs has these
+    ! neighbor is defined in find_gcol_nbrhd. On output, dpe2nbrs has these
     ! entries:
     !     xs: sorted list of block-owning pes;
     !     yptr: pointers into ys;
@@ -364,14 +386,14 @@ contains
     end do
     deallocate(unbrs, idxs, pes)
     if (cns%verbose) then
-       print *,'amb> nbrhd_make_dpe2nbrs #pes',size(dpe2nbrs%xs)
+       print *,'amb> make_dpe2nbrs #pes',size(dpe2nbrs%xs)
        do i = 1, size(dpe2nbrs%xs)
           print *,'amb> pe',dpe2nbrs%xs(i),dpe2nbrs%yptr(i+1)-dpe2nbrs%yptr(i)
        end do
     end if
-  end subroutine nbrhd_make_dpe2nbrs
+  end subroutine make_dpe2nbrs
 
-  function nbrhd_find_gcol_nbrhd(gd, max_angle, gcol, nbrhd, ptr, cap) result(cnt)
+  function find_gcol_nbrhd(gd, max_angle, gcol, nbrhd, ptr, cap) result(cnt)
     ! Find all columns having center within max_angle of gcol. Append entries
     ! to nbrhd(ptr:), reallocating as necessary. cap is nbrhd's capacity at
     ! input, and it is updated when reallocation occurs. The gcols list is
@@ -429,7 +451,16 @@ contains
        nbrhd(ptr+j-1) = buf(idxs(j))
     end do
     deallocate(idxs, buf)
-  end function nbrhd_find_gcol_nbrhd
+  end function find_gcol_nbrhd
+
+  subroutine make_comm_schedule(cns, gd, cpe2nbrs, dpe2nbrs)
+    type (ColumnNeighborhoods), intent(inout) :: cns
+    type (PhysGridData), intent(in) :: gd
+    type (SparseTriple), intent(in) :: cpe2nbrs, dpe2nbrs
+  end subroutine make_comm_schedule
+
+  !> -------------------------------------------------------------------
+  !> General utilities.
 
   function test(cond, message) result(out)
     ! Assertion that is always enabled, for use in unit tests.
@@ -647,7 +678,7 @@ contains
   end function SparseTriple_in_xs
 
   subroutine run_unit_tests()
-    ! Unit tests for nbrhd_* helper routines.
+    ! Unit tests for helper routines.
 
     use shr_const_mod, only: pi => shr_const_pi
 

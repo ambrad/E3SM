@@ -450,8 +450,6 @@ contains
     real(r8)                            :: lonmin, latmin
 
     logical, parameter :: use_nbrhd = .true.
-    real(r8) :: max_angle
-    logical :: e
 
 #if ( defined _OPENMP )
     integer omp_get_max_threads
@@ -1104,7 +1102,7 @@ contains
        !  
        allocate( btofc_chk_num(0:npes-1) )
        btofc_chk_num = 0
-       allocate( btofc_chk_offset(begchunk:endchunk+nbrhdchunk) )
+       allocate( btofc_chk_offset(begchunk:endchunk) )
        do lcid=begchunk,endchunk
           ncols = lchunks(lcid)%ncols
           btofc_chk_offset(lcid)%ncols = ncols
