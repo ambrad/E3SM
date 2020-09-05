@@ -38,8 +38,9 @@ module phys_grid_nbrhd
   end type Offsets
 
   type :: CommData
-     integer, allocatable, dimension(:) :: sndcnts, sdispls, rcvcnts, rdispls, pdispls
-     integer ::lopt,  prev_record_size
+     integer, allocatable, dimension(:) :: sndcnts, sdispls, rcvcnts, rdispls, &
+          pdispls, dp_coup_proc
+     integer :: lopt, prev_record_size, dp_coup_steps
   end type CommData
 
   type :: ColumnNeighborhoods
@@ -163,10 +164,34 @@ contains
     end do
   end subroutine nbrhd_block_to_chunk_send_pters
 
-  subroutine nbrhd_transpose_block_to_chunk(rcdsz)
+  subroutine nbrhd_transpose_block_to_chunk(rcdsz, blk_buf, chk_buf)
+    ! If running on just one pe or SPMD is not defined, then there are no comm
+    ! data, so this routine does nothing, and comm data have size 0.
+
+#if defined SPMD
+    use spmd_utils, only: mpicom, altalltoallv
+    use mpishorthand, only: mpir8
+#endif
+
     integer, intent(in) :: rcdsz
+    real(r8), intent(in) :: blk_buf(rcdsz*cns%blk_nrecs)
+    real(r8), intent(out) :: chk_buf(rcdsz*cns%chk_nrecs)
+
+#if defined SPMD
+    integer, parameter :: msgtag = 6042
+
+    integer :: ssz, rsz, lwindow
 
     call make_comm_data(cns, cns%comm_data, rcdsz)
+    ssz = rcdsz*cns%blk_nrecs
+    rsz = rcdsz*cns%chk_nrecs
+    lwindow = -1
+    call altalltoallv(cns%comm_data%lopt, iam, npes, &
+         cns%comm_data%dp_coup_steps, cns%comm_data%dp_coup_proc, &
+         blk_buf, ssz, cns%comm_data%sndcnts, cns%comm_data%sdispls, mpir8, &
+         chk_buf, rsz, cns%comm_data%rcvcnts, cns%comm_data%rdispls, mpir8, &
+         msgtag, cns%comm_data%pdispls, mpir8, lwindow, mpicom)
+#endif
   end subroutine nbrhd_transpose_block_to_chunk
 
   subroutine nbrhd_block_to_chunk_recv_pters(icol, rcdsz, numlev, ptr)
@@ -673,18 +698,41 @@ contains
   end subroutine make_comm_schedule
 
   subroutine init_comm_data(cns, cd, phys_alltoall)
+    use spmd_utils, only: pair, ceil2
+
     type (ColumnNeighborhoods), intent(in) :: cns
     type (CommData), intent(out) :: cd
     integer, intent(in) :: phys_alltoall
 
+    integer :: i, j, pe
+    logical :: e
+
     cd%lopt = phys_alltoall
+    if (cd%lopt < 0 .or. cd%lopt >= 4 .or. cd%lopt == 2) cd%lopt = 1
+    cd%prev_record_size = -1
     allocate(cd%sndcnts(0:npes-1), cd%sdispls(0:npes-1), cd%rcvcnts(0:npes-1), &
          cd%rdispls(0:npes-1), cd%pdispls(0:npes-1))
-    cd%prev_record_size = -1
+
+    do j = 1, 2 ! count, then fill
+       cd%dp_coup_steps = 0       
+       do i = 1, ceil2(npes)-1
+          pe = pair(npes, i, iam) ! pseudo-randomize order of comm partner pes
+          if (pe < 0) cycle
+          if (cns%blk_num(pe) > 0 .or. cns%chk_num(pe) > 0) then
+             cd%dp_coup_steps = cd%dp_coup_steps + 1
+             if (j == 2) cd%dp_coup_proc(cd%dp_coup_steps) = pe
+          end if
+       end do
+       if (j == 1) allocate(cd%dp_coup_proc(cd%dp_coup_steps))
+    end do
+
+    if (cns%verbose > 0) print *,'amb> dp_coup_steps', cd%dp_coup_steps
   end subroutine init_comm_data
 
   subroutine make_comm_data(cns, cd, rcdsz)
+#if defined SPMD
     use spmd_utils, only: mpicom
+#endif
 
     type (ColumnNeighborhoods), intent(in) :: cns
     type (CommData), intent(inout) :: cd
@@ -695,6 +743,7 @@ contains
     
     e = assert(rcdsz >= 1, 'comm_data: valid record size')
     if (rcdsz == cd%prev_record_size) return
+    cd%prev_record_size = rcdsz
     
     cd%sdispls(0) = 0
     cd%sndcnts(0) = rcdsz*cns%blk_num(0)
@@ -710,7 +759,9 @@ contains
        cd%rcvcnts(pe) = rcdsz*cns%chk_num(pe)
     enddo
 
+#if defined SPMD
     call mpialltoallint(cd%rdispls, 1, cd%pdispls, 1, mpicom)
+#endif
   end subroutine make_comm_data
 
   subroutine get_local_blocks(ie2gid, gid2ie)
