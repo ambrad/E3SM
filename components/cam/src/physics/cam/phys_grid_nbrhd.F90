@@ -28,7 +28,7 @@ module phys_grid_nbrhd
   end type IdMap
 
   type :: Offset
-     integer :: numlev, numrep
+     integer :: numrep
      ! offset for a pe x #pe needing the gcol (numrep)
      integer, allocatable :: os(:,:)
   end type Offset
@@ -45,7 +45,7 @@ module phys_grid_nbrhd
      ! blk_offset is index using local block ID, not global as in phys_grid.
      integer, allocatable, dimension(:) :: blk_num, chk_num
      type (Offset), allocatable, dimension(:) :: blk_offset
-     type (Offset) :: chk_offset
+     integer, allocatable :: chk_offset(:)
   end type ColumnNeighborhoods
 
   type (ColumnNeighborhoods), private :: cns
@@ -486,7 +486,8 @@ contains
 
     integer, allocatable :: ie2gid(:)
     type (IdMap) :: gid2ie
-    integer :: i, j, k, ie, gid, nlblk, gcol, blockid(1), bcid(1), pecnt, glbcnt
+    integer :: i, j, k, ie, gid, nlblk, gcol, blockid(1), bcid(1), pecnt, glbcnt, &
+         pe, numlev
     logical :: e
 
     ! We use local block IDs to keep our persistent arrays small. Get global <->
@@ -515,7 +516,6 @@ contains
     ! Allocate pter arrays.
     do ie = 1, nlblk
        gid = ie2gid(i)
-       cns%blk_offset(ie)%numlev = get_block_lvl_cnt_d(gid, 1)
        k = get_block_gcol_cnt_d(gid)
        allocate(cns%blk_offset(ie)%os(k, cns%blk_offset(ie)%numrep))
        cns%blk_offset(ie)%numrep = 0
@@ -533,19 +533,32 @@ contains
           k = cns%blk_offset(ie)%numrep + 1
           cns%blk_offset(ie)%os(bcid(1),k) = glbcnt
           cns%blk_offset(ie)%numrep = k
-          glbcnt = glbcnt + cns%blk_offset(ie)%numlev
-          pecnt = pecnt + cns%blk_offset(ie)%numlev
+          numlev = get_block_lvl_cnt_d(gid, bcid(1))
+          glbcnt = glbcnt + numlev
+          pecnt = pecnt + numlev
        end do
        cns%blk_num(cpe2nbrs%xs(i)) = pecnt
     end do
 
     deallocate(ie2gid, gid2ie%id1, gid2ie%id2)
 
+    allocate(cns%chk_offset(size(dpe2nbrs%ys)))
+    glbcnt = 0
+    cns%chk_num(:) = 0
     do i = 1, size(dpe2nbrs%xs)
+       pe = dpe2nbrs%xs(i)
+       pecnt = 0
        do j = dpe2nbrs%yptr(i), dpe2nbrs%yptr(i+1)-1
           gcol = dpe2nbrs%ys(j)
-          
+          call get_gcol_block_d(gcol, 1, blockid, bcid)
+          e = assert(get_block_owner_d(blockid(1)) == pe, &
+                     'comm_schedule: gcol pe association')
+          cns%chk_offset(j) = glbcnt
+          numlev = get_block_lvl_cnt_d(blockid(1), bcid(1))
+          glbcnt = glbcnt + numlev
+          pecnt = pecnt + numlev
        end do
+       cns%chk_num(pe) = pecnt
     end do
   end subroutine make_comm_schedule
 
