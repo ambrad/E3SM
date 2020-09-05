@@ -1,5 +1,6 @@
 module phys_grid_nbrhd
-  ! Provide a column with data in its neighborhood.
+  ! Communication schedule and data structures to supplement a column with data
+  ! in its neighborhood for use in scale-aware physics parameterizations.
   !
   ! AMB 2020/09 Initial
 
@@ -12,7 +13,7 @@ module phys_grid_nbrhd
   implicit none
   private
 
-  type :: PhysGridData
+  type :: PhysGridData ! collect phys_grid module data we need
      integer :: clat_p_tot, nlcols, ngcols, ngcols_p
      integer, pointer, dimension(:) :: lat_p, lon_p, latlon_to_dyn_gcol_map, clat_p_idx
      real(r8), pointer, dimension(:) :: clat_p, clon_p
@@ -27,15 +28,13 @@ module phys_grid_nbrhd
      integer, allocatable :: id1(:), id2(:)
   end type IdMap
 
-  type :: Offset
-     integer :: numlev, numrep
-     integer, allocatable :: os(:)
-  end type Offset
-
   type :: Offsets
+     integer :: ncol
      ! Offsets for the columns in a block. Each one can have a different number
      ! of repetitions in the send buffer than the others.
-     type (Offset), allocatable :: col(:)
+     integer, allocatable :: numlev(:), numrep(:)
+     ! os(col(i):col(i+1)-1) are offsets for all repetitions of a column.
+     integer, allocatable :: col(:), os(:)
   end type Offsets
 
   type :: ColumnNeighborhoods
@@ -57,15 +56,17 @@ module phys_grid_nbrhd
   type (ColumnNeighborhoods), private :: cns
 
   public :: &
-       ! phys_grid calls this.
+       ! phys_grid initialization
        nbrhd_init, &
-       ! Get max numlev, numrep to size pter arrays for *_pters routines.
+       ! dp_coupling communication
+       nbrhd_get_nrecs, &
        nbrhd_block_to_chunk_send_sizes, &
-       ! Get offsets into send buffer, with repetitions.
        nbrhd_block_to_chunk_send_pters, &
        nbrhd_transpose_block_to_chunk, &
        nbrhd_block_to_chunk_recv_pters, &
-       nbrhd_get_nrecs, nbrhd_get_nbrhd_size, nbrhd_get_nbrhd
+       ! API for parameterizations
+       nbrhd_get_nbrhd_size, &
+       nbrhd_get_nbrhd
 
 contains
 
@@ -107,7 +108,6 @@ contains
     if (cns%verbose > 0) then
        call nbrhd_get_nrecs(bnrec, cnrec)
        print *,'amb> nrec', bnrec, cnrec
-       e = assert(bnrec >= cnrec, '1-many map size >= 1-1 map')
        call test_comm_schedule(cns)
     end if
   end subroutine nbrhd_init
@@ -120,6 +120,8 @@ contains
   end subroutine nbrhd_get_nrecs
 
   subroutine nbrhd_block_to_chunk_send_sizes(max_numlev, max_numrep)
+    ! Get max numlev, numrep to size pter arrays for *_pters routines.
+
     integer, intent(out) :: max_numlev, max_numrep
 
     max_numlev = cns%max_numlev
@@ -137,16 +139,17 @@ contains
     integer, intent(out) :: numlev, numrep
     integer, intent(out) :: ptr(:,:) ! >= max_numlev x >= max_numrep
 
-    integer :: i, k
+    integer :: i, j, k
     logical :: e
 
     e = assert(ie >= 1 .and. ie <= size(cns%blk_offset), 'send_pters: ie')
-    e = assert(icol >= 1 .and. icol <= size(cns%blk_offset(ie)%col), 'send_pters: icol')
-    numlev = cns%blk_offset(ie)%col(icol)%numlev
-    numrep = cns%blk_offset(ie)%col(icol)%numrep
+    e = assert(icol >= 1 .and. icol <= cns%blk_offset(ie)%ncol, 'send_pters: icol')
+    numlev = cns%blk_offset(ie)%numlev(icol)
+    numrep = cns%blk_offset(ie)%numrep(icol)
     ptr(:,:) = -1
+    j = cns%blk_offset(ie)%col(icol)
     do i = 1, numrep
-       ptr(1,i) = cns%blk_offset(ie)%col(icol)%os(i) * rcdsz
+       ptr(1,i) = cns%blk_offset(ie)%os(j+i-1) * rcdsz
        do k = 2, numlev
           ptr(k,i) = ptr(i,1) + rcdsz*(k-1)
        end do
@@ -195,7 +198,7 @@ contains
     type (ColumnNeighborhoods), intent(in) :: cns
     type (PhysGridData), intent(in) :: gd
     type (chunk), intent(in) :: chunks(:)
-    type(SparseTriple), intent(out) :: cnbrhds
+    type (SparseTriple), intent(out) :: cnbrhds
 
     integer, allocatable :: idxs(:), xs(:)
     integer :: nchunks, cid, ncols, gcol, i, cap, lcolid, cnt, ptr
@@ -560,7 +563,7 @@ contains
     integer, allocatable :: ie2gid(:)
     type (IdMap) :: gid2ie
     integer :: i, j, k, ie, gid, nlblk, gcol, blockid(1), bcid(1), pecnt, glbcnt, &
-         pe, numlev
+         pe, numlev, ptr
     logical :: e
 
     ! We use local block IDs to keep our persistent arrays small. Get global <->
@@ -575,8 +578,11 @@ contains
     do ie = 1, nlblk
        gid = ie2gid(i)
        k = get_block_gcol_cnt_d(gid)
-       allocate(cns%blk_offset(ie)%col(k))
-       cns%blk_offset(ie)%col(:)%numrep = 0
+       cns%blk_offset(ie)%ncol = k
+       ! numrep is redundant wrt col, but it's useful
+       allocate(cns%blk_offset(ie)%numlev(k), cns%blk_offset(ie)%numrep(k), &
+            cns%blk_offset(ie)%col(k+1))
+       cns%blk_offset(ie)%numrep(:) = 0
     end do
     ! Get repetition counts. A gcol in a block is in general in the
     ! neighborhoods of multiple chunks' gcols on multiple pes.
@@ -589,16 +595,21 @@ contains
           k = binary_search(nlblk, gid2ie%id1, blockid(1))
           e = assert(k >= 1, 'comm_schedule: blockid is in map')
           ie = gid2ie%id2(k) ! local block ID providing data to the chunk
-          call incr(cns%blk_offset(ie)%col(bcid(1))%numrep)
+          e = assert(bcid(1) >= 1 .and. bcid(1) <= cns%blk_offset(ie)%ncol, &
+                     'comm_schedule: bcid is in range')
+          call incr(cns%blk_offset(ie)%numrep(bcid(1)+1))
        end do
     end do
     ! Allocate offset arrays.
     do ie = 1, nlblk
        gid = ie2gid(i)
-       do i = 1, size(cns%blk_offset(ie)%col)
-          allocate(cns%blk_offset(ie)%col(i)%os(cns%blk_offset(ie)%col(i)%numrep))
-          cns%blk_offset(ie)%col(i)%numrep = 0
+       allocate(cns%blk_offset(ie)%os(sum(cns%blk_offset(ie)%numrep)))
+       cns%blk_offset(ie)%col(1) = 1
+       do i = 1, cns%blk_offset(ie)%ncol
+          cns%blk_offset(ie)%col(i+1) = cns%blk_offset(ie)%col(i) + &
+               cns%blk_offset(ie)%numrep(i)
        end do
+       cns%blk_offset(ie)%numrep(:) = 0
     end do
     ! Get offsets and send counts.
     glbcnt = 0
@@ -612,12 +623,13 @@ contains
           call get_gcol_block_d(gcol, 1, blockid, bcid)
           k = binary_search(nlblk, gid2ie%id1, blockid(1))
           ie = gid2ie%id2(k)
-          k = cns%blk_offset(ie)%col(bcid(1))%numrep + 1
-          cns%blk_offset(ie)%col(bcid(1))%os(k) = glbcnt
-          cns%blk_offset(ie)%col(bcid(1))%numrep = k
-          cns%max_numrep = max(cns%max_numrep, k)
+          ptr = cns%blk_offset(ie)%col(bcid(1))
+          k = cns%blk_offset(ie)%numrep(bcid(1))
+          cns%blk_offset(ie)%os(ptr+k) = glbcnt
+          cns%blk_offset(ie)%numrep(bcid(1)) = k + 1
+          cns%max_numrep = max(cns%max_numrep, k + 1)
           numlev = get_block_lvl_cnt_d(gid, bcid(1))
-          cns%blk_offset(ie)%col(bcid(1))%numlev = numlev
+          cns%blk_offset(ie)%numlev(bcid(1)) = numlev
           cns%max_numlev = max(cns%max_numlev, numlev)
           glbcnt = glbcnt + numlev
           pecnt = pecnt + numlev
