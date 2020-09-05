@@ -23,8 +23,13 @@ module phys_grid_nbrhd
      integer, pointer :: xs(:), yptr(:), ys(:)
   end type SparseTriple
 
+  type :: IdMap
+     integer, allocatable :: id1(:), id2(:)
+  end type IdMap
+
   type :: Offset
-     integer :: i
+     integer :: numlev
+     integer, allocatable :: os(:)
   end type Offset
 
   type :: ColumnNeighborhoods
@@ -433,9 +438,7 @@ contains
     call latlon2xyz(lat, gd%clon_p(gd%lon_p(gcol)), xi, yi, zi)
     j_lo = upper_bound_or_in_range(gd%clat_p_tot, gd%clat_p, lat - max_angle)
     if (j_lo > 1) j_lo = j_lo - 1
-    e = assert(j_lo >= 1 .and. j_lo <= gd%clat_p_tot, 'gcol_nbrhd j_lo')
     j_up = upper_bound_or_in_range(gd%clat_p_tot, gd%clat_p, lat + max_angle, j_lo)
-    e = assert(j_up > j_lo .and. j_up <= gd%clat_p_tot, 'gcol_nbrhd j_up')
     cnt = 0
     ! Check each point within this latitude range for distance.
     do j = j_lo, j_up
@@ -445,7 +448,8 @@ contains
           jl_lim = gd%ngcols_p - gd%clat_p_idx(j) + 1
        end if
        do jl = 1, jl_lim
-          e = assert(gd%clat_p_idx(j) + jl - 1 <= gd%ngcols_p, 'gcol_nbrhd jgcol access')
+          e = assert(gd%clat_p_idx(j) + jl - 1 <= gd%ngcols_p, &
+                     'gcol_nbrhd jgcol access')
           jgcol = gd%latlon_to_dyn_gcol_map(gd%clat_p_idx(j) + jl - 1)
           if (jgcol == -1 .or. jgcol == gcol) cycle
           angle = unit_sphere_angle(xi, yi, zi, &
@@ -473,29 +477,55 @@ contains
 
   subroutine make_comm_schedule(cns, gd, cpe2nbrs, dpe2nbrs)
     use dyn_grid, only: get_gcol_block_cnt_d, get_block_gcol_cnt_d, get_block_owner_d, &
-         get_block_lvl_cnt_d
+         get_block_lvl_cnt_d, get_gcol_block_d
 
     type (ColumnNeighborhoods), intent(inout) :: cns
     type (PhysGridData), intent(in) :: gd
     type (SparseTriple), intent(in) :: cpe2nbrs, dpe2nbrs
 
-    integer, allocatable :: lcl_blocks(:)
-    integer :: i, j, pe, gcol
+    integer, allocatable :: ie2gid(:)
+    type (IdMap) :: gid2ie
+    integer :: i, j, k, ie, gid, pe, nlblk, gcol, blockid(1), bcid(1), pecnt, glbcnt
+    logical :: e
 
-    call get_local_blocks(lcl_blocks)
+    ! We use local block IDs to keep our persistent arrays small. Get global <->
+    ! local block ID maps.
+    call get_local_blocks(ie2gid, gid2ie)
+    nlblk = size(ie2gid)
 
     allocate(cns%blk_num(0:npes-1), cns%chk_num(0:npes-1), &
-         cns%blk_offset(size(lcl_blocks)))
+         cns%blk_offset(nlblk))
 
+    ! Allocate blk_offset pter arrays.
+    do ie = 1, nlblk
+       gid = ie2gid(i)
+       cns%blk_offset(ie)%numlev = get_block_lvl_cnt_d(gid, 1)
+       k = get_block_gcol_cnt_d(gid)
+       allocate(cns%blk_offset(ie)%os(k))
+       cns%blk_offset(ie)%os(:) = -1
+    end do
+    ! Get offsets and send counts.
+    glbcnt = 0
+    cns%blk_num(:) = 0
     do i = 1, size(cpe2nbrs%xs)
        pe = cpe2nbrs%xs(i)
+       pecnt = 0
        do j = cpe2nbrs%yptr(i), cpe2nbrs%yptr(i+1)-1
-          gcol = cpe2nbrs%ys(j)
-          
+          gcol = cpe2nbrs%ys(j) ! gcol in a chunk on pe
+          call get_gcol_block_d(gcol, 1, blockid, bcid)
+          e = assert(get_block_owner_d(blockid(1)) == iam, &
+                     'comm_schedule: gcol is owned')
+          k = binary_search(nlblk, gid2ie%id1, blockid(1))
+          e = assert(k >= 1, 'comm_schedule: blockid is in map')
+          ie = gid2ie%id2(k) ! local block ID providing data to the chunk
+          cns%blk_offset(ie)%os(bcid(1)) = glbcnt
+          glbcnt = glbcnt + cns%blk_offset(ie)%numlev
+          pecnt = pecnt + cns%blk_offset(ie)%numlev
        end do
+       cns%blk_num(pe) = pecnt
     end do
 
-    deallocate(lcl_blocks)
+    deallocate(ie2gid, gid2ie%id1, gid2ie%id2)
 
     do i = 1, size(dpe2nbrs%xs)
        pe = dpe2nbrs%xs(i)
@@ -506,16 +536,19 @@ contains
     end do
   end subroutine make_comm_schedule
 
-  subroutine get_local_blocks(lcl_blocks)
-    ! Get list of iam's owned global block IDs in block local ID order.
+  subroutine get_local_blocks(ie2gid, gid2ie)
+    ! id2gid is a list of iam's owned global block IDs in block local ID
+    ! order. gid2ie%id1 is the sorted list of global block IDs, and gid2ie%id2
+    ! is the list of corresponding local IDs.
 
     use dyn_grid, only: get_block_bounds_d, get_gcol_block_cnt_d, get_gcol_block_d, &
          get_block_gcol_d, get_block_owner_d, get_block_gcol_cnt_d
 
-    integer, allocatable, intent(out) :: lcl_blocks(:)
+    integer, allocatable, intent(out) :: ie2gid(:)
+    type (IdMap), intent(out) :: gid2ie
 
     integer, allocatable :: gcols(:)
-    integer :: bf, bl, bid, cnt, pe, nid, blockid(1), bcid(1), ie(1), ngcols
+    integer :: bf, bl, bid, cnt, pe, nid, blockid(1), bcid(1), ie(1), ngcols, i
     logical :: e
 
     call get_block_bounds_d(bf, bl)
@@ -524,7 +557,7 @@ contains
        pe = get_block_owner_d(bid)
        if (pe == iam) cnt = cnt + 1
     end do
-    allocate(lcl_blocks(cnt), gcols(128))
+    allocate(ie2gid(cnt), gcols(128))
     ! This seems a bit convoluted, but I'm not seeing an easier way to get block
     ! IDs in local ID order.
     do bid = bf, bl
@@ -540,9 +573,17 @@ contains
        e = assert(nid == 1, 'only nid=1 is supported')
        call get_gcol_block_d(gcols(1), nid, blockid, bcid, ie)
        e = assert(ie(1) >= 1 .and. ie(1) <= cnt, 'ie in bounds')
-       lcl_blocks(ie(1)) = bid
+       ie2gid(ie(1)) = bid
     end do
     deallocate(gcols)
+    ! Now the opposite direction.
+    allocate(gid2ie%id1(cnt), gid2ie%id2(cnt))
+    call IndexSet(cnt, gid2ie%id2)
+    gid2ie%id1(:) = ie2gid(:)
+    call IndexSort(cnt, gid2ie%id2, gid2ie%id1)
+    do i = 1, cnt
+       gid2ie%id1(i) = ie2gid(gid2ie%id2(i))
+    end do
   end subroutine get_local_blocks
 
   !> -------------------------------------------------------------------
