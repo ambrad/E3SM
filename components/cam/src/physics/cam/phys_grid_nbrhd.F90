@@ -28,7 +28,7 @@ module phys_grid_nbrhd
   end type IdMap
 
   type :: Offset
-     integer :: numrep
+     integer :: numlev, numrep
      integer, allocatable :: os(:)
   end type Offset
 
@@ -49,7 +49,7 @@ module phys_grid_nbrhd
      type (SparseTriple) :: chk_nbrhds
      ! blk_offset is index using local block ID, not global as in phys_grid.
      integer, allocatable, dimension(:) :: blk_num, chk_num
-     integer :: blk_nrecs, chk_nrecs
+     integer :: blk_nrecs, chk_nrecs, max_numrep, max_numlev
      type (Offsets), allocatable, dimension(:) :: blk_offset
      integer, allocatable :: chk_offset(:)
   end type ColumnNeighborhoods
@@ -57,8 +57,14 @@ module phys_grid_nbrhd
   type (ColumnNeighborhoods), private :: cns
 
   public :: &
-       nbrhd_init, nbrhd_transpose_block_to_chunk, &
-       nbrhd_block_to_chunk_send_pters, nbrhd_block_to_chunk_recv_pters, &
+       ! phys_grid calls this.
+       nbrhd_init, &
+       ! Get max numlev, numrep to size pter arrays for *_pters routines.
+       nbrhd_block_to_chunk_send_sizes, &
+       ! Get offsets into send buffer, with repetitions.
+       nbrhd_block_to_chunk_send_pters, &
+       nbrhd_transpose_block_to_chunk, &
+       nbrhd_block_to_chunk_recv_pters, &
        nbrhd_get_nrecs, nbrhd_get_nbrhd_size, nbrhd_get_nbrhd
 
 contains
@@ -112,9 +118,36 @@ contains
     chunk_buf_nrecs = cns%chk_nrecs
   end subroutine nbrhd_get_nrecs
 
-  subroutine nbrhd_block_to_chunk_send_pters(ie, fdim, ldim, rcdsz, ptr)
-    integer, intent(in) :: ie, fdim, ldim, rcdsz
-    integer, intent(out) :: ptr(fdim,ldim)
+  subroutine nbrhd_block_to_chunk_send_sizes(max_numlev, max_numrep)
+    integer, intent(out) :: max_numlev, max_numrep
+
+    max_numlev = cns%max_numlev
+    max_numrep = cns%max_numrep
+  end subroutine nbrhd_block_to_chunk_send_sizes
+
+  subroutine nbrhd_block_to_chunk_send_pters(ie, icol, rcdsz, numlev, numrep, ptr)
+    ! Set up the pointer array for column icol of block having local block ID
+    ! ie. rcdsz is the record size. On output, ptr(1:numlev, 1:numrep) is filled
+    ! with offsets. Since the map from dynamics blocks to chunks is 1-many,
+    ! numrep is >= 1 and not simply 1. This is different than in the basic
+    ! phys_grid send_pters routine.
+
+    integer, intent(in) :: ie, icol, rcdsz
+    integer, intent(out) :: numlev, numrep
+    integer, intent(out) :: ptr(:,:) ! >= max_numlev x >= max_numrep
+
+    integer :: i, k
+    logical :: e
+
+    e = assert(icol >= 1 .and. icol <= size(cns%blk_offset(ie)%col), 'send_pters: icol')
+    numlev = cns%blk_offset(ie)%col(icol)%numlev
+    numrep = cns%blk_offset(ie)%col(icol)%numrep
+    do i = 1, numrep
+       ptr(1,i) = cns%blk_offset(ie)%col(icol)%os(i) * rcdsz
+       do k = 2, numlev
+          ptr(k,i) = ptr(i,1) + rcdsz*(k-1)
+       end do
+    end do
   end subroutine nbrhd_block_to_chunk_send_pters
 
   subroutine nbrhd_transpose_block_to_chunk()
@@ -554,6 +587,8 @@ contains
     ! Get offsets and send counts.
     glbcnt = 0
     cns%blk_num(:) = 0
+    cns%max_numrep = 0
+    cns%max_numlev = 0
     do i = 1, size(cpe2nbrs%xs)
        pecnt = 0
        do j = cpe2nbrs%yptr(i), cpe2nbrs%yptr(i+1)-1
@@ -564,7 +599,10 @@ contains
           k = cns%blk_offset(ie)%col(bcid(1))%numrep + 1
           cns%blk_offset(ie)%col(bcid(1))%os(k) = glbcnt
           cns%blk_offset(ie)%col(bcid(1))%numrep = k
+          cns%max_numrep = max(cns%max_numrep, k)
           numlev = get_block_lvl_cnt_d(gid, bcid(1))
+          cns%blk_offset(ie)%col(bcid(1))%numlev = numlev
+          cns%max_numlev = max(cns%max_numlev, numlev)
           glbcnt = glbcnt + numlev
           pecnt = pecnt + numlev
        end do
