@@ -932,7 +932,7 @@ contains
     if (use_nbrhd) then
        call nbrhd_init(clat_p_tot, clat_p_idx, clat_p, clon_p, lat_p, lon_p, &
             latlon_to_dyn_gcol_map, gs_col_num(iam), ngcols, ngcols_p, &
-            chunks, knuhcs)
+            chunks, knuhcs, phys_alltoall)
     end if
 
     !

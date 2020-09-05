@@ -37,6 +37,11 @@ module phys_grid_nbrhd
      integer, allocatable :: col(:), os(:)
   end type Offsets
 
+  type :: CommData
+     integer, allocatable, dimension(:) :: sndcnts, sdispls, rcvcnts, rdispls, pdispls
+     integer ::lopt,  prev_record_size
+  end type CommData
+
   type :: ColumnNeighborhoods
      ! A neighborhood is a list of gcols neighboring a column. Neighborhoods,
      ! plural, is a list of these of lists.
@@ -51,6 +56,7 @@ module phys_grid_nbrhd
      integer :: blk_nrecs, chk_nrecs, max_numrep, max_numlev
      type (Offsets), allocatable, dimension(:) :: blk_offset
      integer, allocatable :: chk_numlev(:), chk_offset(:)
+     type (CommData) :: comm_data
   end type ColumnNeighborhoods
 
   type (ColumnNeighborhoods), private :: cns
@@ -71,9 +77,9 @@ module phys_grid_nbrhd
 contains
 
   subroutine nbrhd_init(clat_p_tot, clat_p_idx, clat_p, clon_p, lat_p, lon_p, &
-       latlon_to_dyn_gcol_map, nlcols, ngcols, ngcols_p, chunks, knuhcs)
+       latlon_to_dyn_gcol_map, nlcols, ngcols, ngcols_p, chunks, knuhcs, phys_alltoall)
 
-    integer, intent(in) :: clat_p_tot, nlcols, ngcols, ngcols_p
+    integer, intent(in) :: clat_p_tot, nlcols, ngcols, ngcols_p, phys_alltoall
     integer, target, dimension(:), intent(in) :: clat_p_idx, lat_p, lon_p, &
          latlon_to_dyn_gcol_map
     real(r8), target, dimension(:), intent(in) :: clat_p, clon_p
@@ -101,6 +107,7 @@ contains
     call make_cpe2nbrs(cns, gd, chunks, knuhcs, cpe2nbrs)
     call make_dpe2nbrs(cns, gd, cns%chk_nbrhds, dpe2nbrs)
     call make_comm_schedule(cns, gd, cpe2nbrs, dpe2nbrs)
+    call init_comm_data(cns, cns%comm_data, phys_alltoall)
 
     call SparseTriple_deallocate(cpe2nbrs)
     call SparseTriple_deallocate(dpe2nbrs)
@@ -156,7 +163,10 @@ contains
     end do
   end subroutine nbrhd_block_to_chunk_send_pters
 
-  subroutine nbrhd_transpose_block_to_chunk()
+  subroutine nbrhd_transpose_block_to_chunk(rcdsz)
+    integer, intent(in) :: rcdsz
+
+    call make_comm_data(cns, cns%comm_data, rcdsz)
   end subroutine nbrhd_transpose_block_to_chunk
 
   subroutine nbrhd_block_to_chunk_recv_pters(icol, rcdsz, numlev, ptr)
@@ -661,6 +671,47 @@ contains
     end do
     cns%chk_nrecs = glbcnt
   end subroutine make_comm_schedule
+
+  subroutine init_comm_data(cns, cd, phys_alltoall)
+    type (ColumnNeighborhoods), intent(in) :: cns
+    type (CommData), intent(out) :: cd
+    integer, intent(in) :: phys_alltoall
+
+    cd%lopt = phys_alltoall
+    allocate(cd%sndcnts(0:npes-1), cd%sdispls(0:npes-1), cd%rcvcnts(0:npes-1), &
+         cd%rdispls(0:npes-1), cd%pdispls(0:npes-1))
+    cd%prev_record_size = -1
+  end subroutine init_comm_data
+
+  subroutine make_comm_data(cns, cd, rcdsz)
+    use spmd_utils, only: mpicom
+
+    type (ColumnNeighborhoods), intent(in) :: cns
+    type (CommData), intent(inout) :: cd
+    integer, intent(in) :: rcdsz
+
+    integer :: pe
+    logical :: e
+    
+    e = assert(rcdsz >= 1, 'comm_data: valid record size')
+    if (rcdsz == cd%prev_record_size) return
+    
+    cd%sdispls(0) = 0
+    cd%sndcnts(0) = rcdsz*cns%blk_num(0)
+    do pe = 1, npes-1
+       cd%sdispls(pe) = cd%sdispls(pe-1) + cd%sndcnts(pe-1)
+       cd%sndcnts(pe) = rcdsz*cns%blk_num(pe)
+    enddo
+
+    cd%rdispls(0) = 0
+    cd%rcvcnts(0) = rcdsz*cns%chk_num(0)
+    do pe = 1, npes-1
+       cd%rdispls(pe) = cd%rdispls(pe-1) + cd%rcvcnts(pe-1)
+       cd%rcvcnts(pe) = rcdsz*cns%chk_num(pe)
+    enddo
+
+    call mpialltoallint(cd%rdispls, 1, cd%pdispls, 1, mpicom)
+  end subroutine make_comm_data
 
   subroutine get_local_blocks(ie2gid, gid2ie)
     ! id2gid is a list of iam's owned global block IDs in block local ID
