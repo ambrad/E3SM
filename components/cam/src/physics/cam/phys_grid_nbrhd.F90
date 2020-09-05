@@ -28,8 +28,9 @@ module phys_grid_nbrhd
   end type IdMap
 
   type :: Offset
-     integer :: numlev
-     integer, allocatable :: os(:)
+     integer :: numlev, numrep
+     ! offset for a pe x #pe needing the gcol (numrep)
+     integer, allocatable :: os(:,:)
   end type Offset
 
   type :: ColumnNeighborhoods
@@ -485,7 +486,7 @@ contains
 
     integer, allocatable :: ie2gid(:)
     type (IdMap) :: gid2ie
-    integer :: i, j, k, ie, gid, pe, nlblk, gcol, blockid(1), bcid(1), pecnt, glbcnt
+    integer :: i, j, k, ie, gid, nlblk, gcol, blockid(1), bcid(1), pecnt, glbcnt
     logical :: e
 
     ! We use local block IDs to keep our persistent arrays small. Get global <->
@@ -496,20 +497,10 @@ contains
     allocate(cns%blk_num(0:npes-1), cns%chk_num(0:npes-1), &
          cns%blk_offset(nlblk))
 
-    ! Allocate blk_offset pter arrays.
-    do ie = 1, nlblk
-       gid = ie2gid(i)
-       cns%blk_offset(ie)%numlev = get_block_lvl_cnt_d(gid, 1)
-       k = get_block_gcol_cnt_d(gid)
-       allocate(cns%blk_offset(ie)%os(k))
-       cns%blk_offset(ie)%os(:) = -1
-    end do
-    ! Get offsets and send counts.
-    glbcnt = 0
-    cns%blk_num(:) = 0
+    ! Get repetition counts. A block's gcol is in general in the neighborhoods
+    ! of multiple chunks' gcols on multiple pes.
+    cns%blk_offset(:)%numrep = 0
     do i = 1, size(cpe2nbrs%xs)
-       pe = cpe2nbrs%xs(i)
-       pecnt = 0
        do j = cpe2nbrs%yptr(i), cpe2nbrs%yptr(i+1)-1
           gcol = cpe2nbrs%ys(j) ! gcol in a chunk on pe
           call get_gcol_block_d(gcol, 1, blockid, bcid)
@@ -518,17 +509,39 @@ contains
           k = binary_search(nlblk, gid2ie%id1, blockid(1))
           e = assert(k >= 1, 'comm_schedule: blockid is in map')
           ie = gid2ie%id2(k) ! local block ID providing data to the chunk
-          cns%blk_offset(ie)%os(bcid(1)) = glbcnt
+          cns%blk_offset(ie)%numrep = cns%blk_offset(ie)%numrep + 1
+       end do
+    end do
+    ! Allocate pter arrays.
+    do ie = 1, nlblk
+       gid = ie2gid(i)
+       cns%blk_offset(ie)%numlev = get_block_lvl_cnt_d(gid, 1)
+       k = get_block_gcol_cnt_d(gid)
+       allocate(cns%blk_offset(ie)%os(k, cns%blk_offset(ie)%numrep))
+       cns%blk_offset(ie)%numrep = 0
+    end do
+    ! Get offsets and send counts.
+    glbcnt = 0
+    cns%blk_num(:) = 0
+    do i = 1, size(cpe2nbrs%xs)
+       pecnt = 0
+       do j = cpe2nbrs%yptr(i), cpe2nbrs%yptr(i+1)-1
+          gcol = cpe2nbrs%ys(j)
+          call get_gcol_block_d(gcol, 1, blockid, bcid)
+          k = binary_search(nlblk, gid2ie%id1, blockid(1))
+          ie = gid2ie%id2(k)
+          k = cns%blk_offset(ie)%numrep + 1
+          cns%blk_offset(ie)%os(bcid(1),k) = glbcnt
+          cns%blk_offset(ie)%numrep = k
           glbcnt = glbcnt + cns%blk_offset(ie)%numlev
           pecnt = pecnt + cns%blk_offset(ie)%numlev
        end do
-       cns%blk_num(pe) = pecnt
+       cns%blk_num(cpe2nbrs%xs(i)) = pecnt
     end do
 
     deallocate(ie2gid, gid2ie%id1, gid2ie%id2)
 
     do i = 1, size(dpe2nbrs%xs)
-       pe = dpe2nbrs%xs(i)
        do j = dpe2nbrs%yptr(i), dpe2nbrs%yptr(i+1)-1
           gcol = dpe2nbrs%ys(j)
           
