@@ -36,7 +36,7 @@ module phys_grid_nbrhd
   type :: ColumnNeighborhoods
      ! A neighborhood is a list of gcols neighboring a column. Neighborhoods,
      ! plural, is a list of these of lists.
-     logical :: verbose
+     integer :: verbose
      ! Radian angle defining neighborhood. Defines max between a column center
      ! and column centers within its neighborhood.
      real(r8) :: max_angle
@@ -44,6 +44,7 @@ module phys_grid_nbrhd
      type (SparseTriple) :: chk_nbrhds
      ! blk_offset is index using local block ID, not global as in phys_grid.
      integer, allocatable, dimension(:) :: blk_num, chk_num
+     integer :: blk_nrecs, chk_nrecs
      type (Offset), allocatable, dimension(:) :: blk_offset
      integer, allocatable :: chk_offset(:)
   end type ColumnNeighborhoods
@@ -53,7 +54,7 @@ module phys_grid_nbrhd
   public :: &
        nbrhd_init, nbrhd_transpose_block_to_chunk, &
        nbrhd_block_to_chunk_send_pters, nbrhd_block_to_chunk_recv_pters, &
-       nbrhd_get_block_nrecs, nbrhd_get_nbrhd_size, nbrhd_get_nbrhd
+       nbrhd_get_nrecs, nbrhd_get_nbrhd_size, nbrhd_get_nbrhd
 
 contains
 
@@ -69,10 +70,12 @@ contains
 
     type (PhysGridData) :: gd
     type (SparseTriple) :: cpe2nbrs, dpe2nbrs
+    integer :: bnrec, cnrec
+    logical :: e
 
     call run_unit_tests()
 
-    cns%verbose = .true.
+    cns%verbose = 1
     nbrhdchunk = 1
     cns%max_angle = 0.06d0
 
@@ -89,19 +92,29 @@ contains
 
     call SparseTriple_deallocate(cpe2nbrs)
     call SparseTriple_deallocate(dpe2nbrs)
+
+    if (cns%verbose > 0) then
+       call nbrhd_get_nrecs(bnrec, cnrec)
+       print *,'amb> nrec', bnrec, cnrec
+       e = assert(bnrec >= cnrec, '1-many map size >= 1-1 map')
+    end if
   end subroutine nbrhd_init
 
-  subroutine nbrhd_transpose_block_to_chunk()
-  end subroutine nbrhd_transpose_block_to_chunk
+  subroutine nbrhd_get_nrecs(block_buf_nrecs, chunk_buf_nrecs)
+    integer, intent(out) :: block_buf_nrecs, chunk_buf_nrecs
+
+    block_buf_nrecs = cns%blk_nrecs
+    chunk_buf_nrecs = cns%chk_nrecs
+  end subroutine nbrhd_get_nrecs
 
   subroutine nbrhd_block_to_chunk_send_pters()
   end subroutine nbrhd_block_to_chunk_send_pters
 
+  subroutine nbrhd_transpose_block_to_chunk()
+  end subroutine nbrhd_transpose_block_to_chunk
+
   subroutine nbrhd_block_to_chunk_recv_pters()
   end subroutine nbrhd_block_to_chunk_recv_pters
-
-  subroutine nbrhd_get_block_nrecs()
-  end subroutine nbrhd_get_block_nrecs
 
   function nbrhd_get_nbrhd_size(col_chunk_idx, col_col_idx) result(n)
     integer, intent(in) :: col_chunk_idx, col_col_idx
@@ -133,7 +146,7 @@ contains
     real(r8) :: lat, lon, xi, yi, zi, angle
     logical :: e
 
-    if (cns%verbose) print *, 'amb> nlcols', gd%nlcols
+    if (cns%verbose > 0) print *, 'amb> nlcols', gd%nlcols
     nchunks = size(chunks)
     cap = gd%nlcols
     allocate(cnbrhds%xs(gd%nlcols), cnbrhds%yptr(gd%nlcols+1), cnbrhds%ys(cap))
@@ -308,11 +321,13 @@ contains
     cnt = cpe2nbrs%yptr(nupes+1)-1
     call array_realloc(cpe2nbrs%ys, cnt, cnt) ! compact memory
     deallocate(apes, agcols, idxs, gidxs, gcols, ugcols)
-    if (cns%verbose) then
-       print *,'amb> make_cpe2nbrs #pes',size(cpe2nbrs%xs)
-       do i = 1, size(cpe2nbrs%xs)
-          print *,'amb> pe',cpe2nbrs%xs(i),cpe2nbrs%yptr(i+1)-cpe2nbrs%yptr(i)
-       end do
+    if (cns%verbose > 0) then
+       print *,'amb> cpe2nbrs #pes',size(cpe2nbrs%xs)
+       if (cns%verbose > 1) then
+          do i = 1, size(cpe2nbrs%xs)
+             print *,'amb> pe',cpe2nbrs%xs(i),cpe2nbrs%yptr(i+1)-cpe2nbrs%yptr(i)
+          end do
+       end if
     end if
   end subroutine make_cpe2nbrs
 
@@ -357,11 +372,11 @@ contains
           unbrs(n) = wrk(i)
        end do
        deallocate(wrk)
-       if (cns%verbose) print *,'amb> unbrs',size(unbrs),n
     else
        n = size(unbrs)
     end if
-    if (cns%verbose) print *,'amb> dpe2nbrs', cnbrhds%yptr(gd%nlcols+1)-1, n
+    if (cns%verbose > 0) &
+         print *,'amb> dpe2nbrs', cnbrhds%yptr(gd%nlcols+1)-1, size(unbrs), n
     ! For each gcol, get the pe of owning block.
     allocate(pes(n), idxs(n))
     do i = 1, n
@@ -409,11 +424,13 @@ contains
        end do
     end do
     deallocate(unbrs, idxs, pes)
-    if (cns%verbose) then
-       print *,'amb> make_dpe2nbrs #pes',size(dpe2nbrs%xs)
-       do i = 1, size(dpe2nbrs%xs)
-          print *,'amb> pe',dpe2nbrs%xs(i),dpe2nbrs%yptr(i+1)-dpe2nbrs%yptr(i)
-       end do
+    if (cns%verbose > 0) then
+       print *,'amb> dpe2nbrs #pes',size(dpe2nbrs%xs)
+       if (cns%verbose > 1) then
+          do i = 1, size(dpe2nbrs%xs)
+             print *,'amb> pe',dpe2nbrs%xs(i),dpe2nbrs%yptr(i+1)-dpe2nbrs%yptr(i)
+          end do
+       end if
     end if
   end subroutine make_dpe2nbrs
 
@@ -539,6 +556,7 @@ contains
        end do
        cns%blk_num(cpe2nbrs%xs(i)) = pecnt
     end do
+    cns%blk_nrecs = glbcnt
 
     deallocate(ie2gid, gid2ie%id1, gid2ie%id2)
 
@@ -560,6 +578,7 @@ contains
        end do
        cns%chk_num(pe) = pecnt
     end do
+    cns%chk_nrecs = glbcnt
   end subroutine make_comm_schedule
 
   subroutine get_local_blocks(ie2gid, gid2ie)
