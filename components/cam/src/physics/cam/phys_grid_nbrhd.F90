@@ -29,9 +29,14 @@ module phys_grid_nbrhd
 
   type :: Offset
      integer :: numrep
-     ! offset for a pe x #pe needing the gcol (numrep)
-     integer, allocatable :: os(:,:)
+     integer, allocatable :: os(:)
   end type Offset
+
+  type :: Offsets
+     ! Offsets for the columns in a block. Each one can have a different number
+     ! of repetitions in the send buffer than the others.
+     type (Offset), allocatable :: col(:)
+  end type Offsets
 
   type :: ColumnNeighborhoods
      ! A neighborhood is a list of gcols neighboring a column. Neighborhoods,
@@ -45,7 +50,7 @@ module phys_grid_nbrhd
      ! blk_offset is index using local block ID, not global as in phys_grid.
      integer, allocatable, dimension(:) :: blk_num, chk_num
      integer :: blk_nrecs, chk_nrecs
-     type (Offset), allocatable, dimension(:) :: blk_offset
+     type (Offsets), allocatable, dimension(:) :: blk_offset
      integer, allocatable :: chk_offset(:)
   end type ColumnNeighborhoods
 
@@ -107,7 +112,9 @@ contains
     chunk_buf_nrecs = cns%chk_nrecs
   end subroutine nbrhd_get_nrecs
 
-  subroutine nbrhd_block_to_chunk_send_pters()
+  subroutine nbrhd_block_to_chunk_send_pters(ie, fdim, ldim, rcdsz, ptr)
+    integer, intent(in) :: ie, fdim, ldim, rcdsz
+    integer, intent(out) :: ptr(fdim,ldim)
   end subroutine nbrhd_block_to_chunk_send_pters
 
   subroutine nbrhd_transpose_block_to_chunk()
@@ -515,9 +522,15 @@ contains
     allocate(cns%blk_num(0:npes-1), cns%chk_num(0:npes-1), &
          cns%blk_offset(nlblk))
 
-    ! Get repetition counts. A block's gcol is in general in the neighborhoods
-    ! of multiple chunks' gcols on multiple pes.
-    cns%blk_offset(:)%numrep = 0
+    ! Get column counts.
+    do ie = 1, nlblk
+       gid = ie2gid(i)
+       k = get_block_gcol_cnt_d(gid)
+       allocate(cns%blk_offset(ie)%col(k))
+       cns%blk_offset(ie)%col(:)%numrep = 0
+    end do
+    ! Get repetition counts. A gcol in a block is in general in the
+    ! neighborhoods of multiple chunks' gcols on multiple pes.
     do i = 1, size(cpe2nbrs%xs)
        do j = cpe2nbrs%yptr(i), cpe2nbrs%yptr(i+1)-1
           gcol = cpe2nbrs%ys(j) ! gcol in a chunk on pe
@@ -527,15 +540,16 @@ contains
           k = binary_search(nlblk, gid2ie%id1, blockid(1))
           e = assert(k >= 1, 'comm_schedule: blockid is in map')
           ie = gid2ie%id2(k) ! local block ID providing data to the chunk
-          cns%blk_offset(ie)%numrep = cns%blk_offset(ie)%numrep + 1
+          call incr(cns%blk_offset(ie)%col(bcid(1))%numrep)
        end do
     end do
-    ! Allocate pter arrays.
+    ! Allocate offset arrays.
     do ie = 1, nlblk
        gid = ie2gid(i)
-       k = get_block_gcol_cnt_d(gid)
-       allocate(cns%blk_offset(ie)%os(k, cns%blk_offset(ie)%numrep))
-       cns%blk_offset(ie)%numrep = 0
+       do i = 1, size(cns%blk_offset(ie)%col)
+          allocate(cns%blk_offset(ie)%col(i)%os(cns%blk_offset(ie)%col(i)%numrep))
+          cns%blk_offset(ie)%col(i)%numrep = 0
+       end do
     end do
     ! Get offsets and send counts.
     glbcnt = 0
@@ -547,9 +561,9 @@ contains
           call get_gcol_block_d(gcol, 1, blockid, bcid)
           k = binary_search(nlblk, gid2ie%id1, blockid(1))
           ie = gid2ie%id2(k)
-          k = cns%blk_offset(ie)%numrep + 1
-          cns%blk_offset(ie)%os(bcid(1),k) = glbcnt
-          cns%blk_offset(ie)%numrep = k
+          k = cns%blk_offset(ie)%col(bcid(1))%numrep + 1
+          cns%blk_offset(ie)%col(bcid(1))%os(k) = glbcnt
+          cns%blk_offset(ie)%col(bcid(1))%numrep = k
           numlev = get_block_lvl_cnt_d(gid, bcid(1))
           glbcnt = glbcnt + numlev
           pecnt = pecnt + numlev
@@ -849,6 +863,11 @@ contains
     k = binary_search(size(st%xs), st%xs, x, 1)
   end function SparseTriple_in_xs
 
+  subroutine incr(i)
+    integer, intent(inout) :: i
+    i = i + 1
+  end subroutine incr
+
   subroutine run_unit_tests()
     ! Unit tests for helper routines.
 
@@ -894,6 +913,10 @@ contains
        e = test(uc(k) > uc(k-1), 'uc sorted')
     end do
     deallocate(uc)
+
+    k = 3
+    call incr(k)
+    e = test(k == 4, 'incr')
   end subroutine run_unit_tests
 
 end module phys_grid_nbrhd
