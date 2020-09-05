@@ -51,7 +51,7 @@ module phys_grid_nbrhd
      integer, allocatable, dimension(:) :: blk_num, chk_num
      integer :: blk_nrecs, chk_nrecs, max_numrep, max_numlev
      type (Offsets), allocatable, dimension(:) :: blk_offset
-     integer, allocatable :: chk_offset(:)
+     integer, allocatable :: chk_numlev(:), chk_offset(:)
   end type ColumnNeighborhoods
 
   type (ColumnNeighborhoods), private :: cns
@@ -108,6 +108,7 @@ contains
        call nbrhd_get_nrecs(bnrec, cnrec)
        print *,'amb> nrec', bnrec, cnrec
        e = assert(bnrec >= cnrec, '1-many map size >= 1-1 map')
+       call test_comm_schedule(cns)
     end if
   end subroutine nbrhd_init
 
@@ -139,9 +140,11 @@ contains
     integer :: i, k
     logical :: e
 
+    e = assert(ie >= 1 .and. ie <= size(cns%blk_offset), 'send_pters: ie')
     e = assert(icol >= 1 .and. icol <= size(cns%blk_offset(ie)%col), 'send_pters: icol')
     numlev = cns%blk_offset(ie)%col(icol)%numlev
     numrep = cns%blk_offset(ie)%col(icol)%numrep
+    ptr(:,:) = -1
     do i = 1, numrep
        ptr(1,i) = cns%blk_offset(ie)%col(icol)%os(i) * rcdsz
        do k = 2, numlev
@@ -153,7 +156,20 @@ contains
   subroutine nbrhd_transpose_block_to_chunk()
   end subroutine nbrhd_transpose_block_to_chunk
 
-  subroutine nbrhd_block_to_chunk_recv_pters()
+  subroutine nbrhd_block_to_chunk_recv_pters(icol, rcdsz, numlev, ptr)
+    integer, intent(in) :: icol, rcdsz
+    integer, intent(out) :: numlev
+    integer, intent(out) :: ptr(:) ! >= max_numlev
+
+    integer :: k
+    logical :: e
+    
+    e = assert(icol >= 1 .and. icol <= size(cns%chk_offset), 'recv_pters: icol')
+    numlev = cns%chk_numlev(icol)
+    ptr(1) = cns%chk_offset(icol) * rcdsz
+    do k = 2, numlev
+       ptr(k) = ptr(1) + rcdsz*(k-1)
+    end do
   end subroutine nbrhd_block_to_chunk_recv_pters
 
   function nbrhd_get_nbrhd_size(col_chunk_idx, col_col_idx) result(n)
@@ -612,7 +628,7 @@ contains
 
     deallocate(ie2gid, gid2ie%id1, gid2ie%id2)
 
-    allocate(cns%chk_offset(size(dpe2nbrs%ys)))
+    allocate(cns%chk_offset(size(dpe2nbrs%ys)), cns%chk_numlev(size(dpe2nbrs%ys)))
     glbcnt = 0
     cns%chk_num(:) = 0
     do i = 1, size(dpe2nbrs%xs)
@@ -625,6 +641,7 @@ contains
                      'comm_schedule: gcol pe association')
           cns%chk_offset(j) = glbcnt
           numlev = get_block_lvl_cnt_d(blockid(1), bcid(1))
+          cns%chk_numlev(j) = numlev
           glbcnt = glbcnt + numlev
           pecnt = pecnt + numlev
        end do
@@ -682,6 +699,10 @@ contains
        gid2ie%id1(i) = ie2gid(gid2ie%id2(i))
     end do
   end subroutine get_local_blocks
+
+  subroutine test_comm_schedule(cns)
+    type (ColumnNeighborhoods), intent(in) :: cns
+  end subroutine test_comm_schedule
 
   !> -------------------------------------------------------------------
   !> General utilities.
