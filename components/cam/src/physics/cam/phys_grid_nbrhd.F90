@@ -164,7 +164,7 @@ contains
     ptr(:,:) = -1
     j = cns%blk_offset(ie)%col(icol)
     do i = 1, numrep
-       ptr(1,i) = cns%blk_offset(ie)%os(j+i-1) * rcdsz
+       ptr(1,i) = rcdsz*cns%blk_offset(ie)%os(j+i-1) + 1
        do k = 2, numlev
           ptr(k,i) = ptr(1,i) + rcdsz*(k-1)
        end do
@@ -211,7 +211,7 @@ contains
     
     e = assert(icol >= 1 .and. icol <= size(cns%chk_offset), 'recv_pters: icol')
     numlev = cns%chk_numlev(icol)
-    ptr(1) = cns%chk_offset(icol) * rcdsz
+    ptr(1) = rcdsz*cns%chk_offset(icol) + 1
     do k = 2, numlev
        ptr(k) = ptr(1) + rcdsz*(k-1)
     end do
@@ -633,7 +633,7 @@ contains
           ie = cns%bid2ie%id2(k) ! local block ID providing data to the chunk
           e = assert(bcid(1) >= 1 .and. bcid(1) <= cns%blk_offset(ie)%ncol, &
                      'comm_schedule: bcid is in range')
-          call incr(cns%blk_offset(ie)%numrep(bcid(1)+1))
+          call incr(cns%blk_offset(ie)%numrep(bcid(1)))
        end do
     end do
     ! Allocate offset arrays.
@@ -661,7 +661,7 @@ contains
           ie = cns%bid2ie%id2(k)
           ptr = cns%blk_offset(ie)%col(bcid(1))
           k = cns%blk_offset(ie)%numrep(bcid(1))
-          cns%blk_offset(ie)%os(ptr+k) = glbcnt + 1
+          cns%blk_offset(ie)%os(ptr+k) = glbcnt
           cns%blk_offset(ie)%numrep(bcid(1)) = k + 1
           cns%max_numrep = max(cns%max_numrep, k + 1)
           numlev = get_block_lvl_cnt_d(gid, bcid(1))
@@ -685,7 +685,7 @@ contains
           call get_gcol_block_d(gcol, 1, blockid, bcid)
           e = assert(get_block_owner_d(blockid(1)) == pe, &
                      'comm_schedule: gcol pe association')
-          cns%chk_offset(j) = glbcnt + 1
+          cns%chk_offset(j) = glbcnt
           numlev = get_block_lvl_cnt_d(blockid(1), bcid(1))
           cns%chk_numlev(j) = numlev
           glbcnt = glbcnt + numlev
@@ -827,7 +827,7 @@ contains
 
     real(r8), allocatable, dimension(:) :: lats, lons, bbuf, cbuf
     real(r8) :: lat, lon
-    integer, allocatable :: bptr(:,:)
+    integer, allocatable :: bptr(:,:), cptr(:)
     integer :: nchunks, cid, ncols, gcol, i, j, k, ie, bnrecs, cnrecs, icol, &
          max_numlev, max_numrep, numlev, numrep, bid, ngcols, gcols(16)
     logical :: e
@@ -851,6 +851,7 @@ contains
 
     call nbrhd_get_nrecs(bnrecs, cnrecs)
     allocate(bbuf(rcdsz*bnrecs), cbuf(rcdsz*cnrecs))
+    bbuf(:) = none; cbuf(:) = none
 
     ! Pack send buffer.
     call nbrhd_block_to_chunk_send_sizes(max_numlev, max_numrep)
@@ -858,30 +859,49 @@ contains
     do ie = 1, size(cns%ie2bid) ! caller knows this
        bid = cns%ie2bid(ie)
        ngcols = get_block_gcol_cnt_d(bid)
-       e = assert(size(gcols) >= ngcols, 'test: ngcols size')
-       e = assert(ngcols == cns%blk_offset(ie)%ncol, 'test: ngcols agrees')
+       e = test(size(gcols) >= ngcols, 'test: ngcols size')
+       e = test(ngcols == cns%blk_offset(ie)%ncol, 'test: ngcols agrees')
        call get_block_gcol_d(bid, ngcols, gcols)
+       e = assert(cns%blk_offset(ie)%ncol == size(cns%blk_offset(ie)%numlev), 'test:ncol')
        do icol = 1, cns%blk_offset(ie)%ncol ! ditto
           gcol = gcols(icol)
           lat = gd%clat_p(gd%lat_p(gcol))
           lon = gd%clon_p(gd%lon_p(gcol))
           call nbrhd_block_to_chunk_send_pters(ie, icol, rcdsz, numlev, numrep, bptr)
-          e = assert(numlev <= max_numlev .and. numrep <= max_numrep, 'test: bptr size')
+          e = test(numlev <= max_numlev .and. numrep <= max_numrep, 'test: bptr size')
+          e = test(all(bptr(:numlev,:numrep) >= 1), 'test: bptr >= 1')
           do j = 1, numrep
              do k = 1, numlev
-                e = assert(bptr(k,j) >= 1 .and. bptr(k,j) <= size(bbuf), 'test: bptr bbuf')
-                bbuf(bptr(k,j)+0) = lat + (k - 1)
-                bbuf(bptr(k,j)+1) = lon + (k - 1)
+                e = test(bptr(k,j) >= 1 .and. bptr(k,j) <= size(bbuf), 'test: bptr bbuf')
+                bbuf(bptr(k,j)+0) = lat + (k-1)
+                bbuf(bptr(k,j)+1) = lon + (k-1)
              end do
           end do
        end do
     end do
     deallocate(bptr)
 
+    e = test(.not. any(bbuf == none), 'bbuf has no none values')
     call nbrhd_transpose_block_to_chunk(rcdsz, bbuf, cbuf)
+    e = test(.not. any(cbuf == none), 'cbuf has no none values')
 
     ! Unpack recv buffer. We should never unpack into a slot having other than
     ! the none value.
+    allocate(cptr(max_numlev))
+    do icol = 1, size(cns%chk_offset) ! caller knows this from an lchunk query
+       call nbrhd_block_to_chunk_recv_pters(icol, rcdsz, numlev, cptr)
+       e = test(icol <= size(dpe2nbrs%ys), 'test: icol range')
+       gcol = dpe2nbrs%ys(icol) ! also from lchunk query
+       k = 1
+       e = test(lats(gcol) == none, 'test: lats(gcol) is none')
+       lats(gcol) = cbuf(cptr(k)+0)
+       lons(gcol) = cbuf(cptr(k)+1)
+       do k = 2, numlev
+          e = test(cbuf(cptr(k)+0) == lats(gcol) + (k-1) .and. &
+                   cbuf(cptr(k)+1) == lons(gcol) + (k-1), 'test: lat,lon')
+       end do
+    end do
+    deallocate(cptr)
 
     deallocate(bbuf, cbuf)
 
