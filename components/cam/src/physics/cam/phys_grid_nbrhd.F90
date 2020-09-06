@@ -6,6 +6,7 @@ module phys_grid_nbrhd
 
   use spmd_utils, only: iam, masterproc, npes
   use shr_kind_mod, only: r8 => shr_kind_r8, r4 => shr_kind_r4
+  use cam_logfile, only: iulog
   use ppgrid, only: pver, begchunk, endchunk, nbrhdchunk
   use m_MergeSorts, only: IndexSet, IndexSort
   use phys_grid_types
@@ -119,7 +120,7 @@ contains
 
     if (cns%verbose > 0) then
        call nbrhd_get_nrecs(bnrec, cnrec)
-       print *,'amb> nrec', bnrec, cnrec
+       write(iulog,*) 'amb> nrec', bnrec, cnrec
        call test_comm_schedule(cns, gd, chunks, knuhcs, cpe2nbrs, dpe2nbrs)
     end if
 
@@ -247,7 +248,7 @@ contains
     real(r8) :: lat, lon, xi, yi, zi, angle
     logical :: e
 
-    if (cns%verbose > 0) print *, 'amb> nlcols', gd%nlcols
+    if (cns%verbose > 0) write(iulog,*) 'amb> nlcols', gd%nlcols
     nchunks = size(chunks)
     cap = gd%nlcols
     allocate(cnbrhds%xs(gd%nlcols), cnbrhds%yptr(gd%nlcols+1), cnbrhds%ys(cap))
@@ -423,10 +424,10 @@ contains
     call array_realloc(cpe2nbrs%ys, cnt, cnt) ! compact memory
     deallocate(apes, agcols, idxs, gidxs, gcols, ugcols)
     if (cns%verbose > 0) then
-       print *,'amb> cpe2nbrs #pes',size(cpe2nbrs%xs)
+       write(iulog,*) 'amb> cpe2nbrs #pes',size(cpe2nbrs%xs)
        if (cns%verbose > 1) then
           do i = 1, size(cpe2nbrs%xs)
-             print *,'amb> pe',cpe2nbrs%xs(i),cpe2nbrs%yptr(i+1)-cpe2nbrs%yptr(i)
+             write(iulog,*) 'amb> pe',cpe2nbrs%xs(i),cpe2nbrs%yptr(i+1)-cpe2nbrs%yptr(i)
           end do
        end if
     end if
@@ -477,7 +478,7 @@ contains
        n = size(unbrs)
     end if
     if (cns%verbose > 0) &
-         print *,'amb> dpe2nbrs', cnbrhds%yptr(gd%nlcols+1)-1, size(unbrs), n
+         write(iulog,*) 'amb> dpe2nbrs', cnbrhds%yptr(gd%nlcols+1)-1, size(unbrs), n
     ! For each gcol, get the pe of owning block.
     allocate(pes(n), idxs(n))
     do i = 1, n
@@ -526,10 +527,10 @@ contains
     end do
     deallocate(unbrs, idxs, pes)
     if (cns%verbose > 0) then
-       print *,'amb> dpe2nbrs #pes',size(dpe2nbrs%xs)
+       write(iulog,*) 'amb> dpe2nbrs #pes',size(dpe2nbrs%xs)
        if (cns%verbose > 1) then
           do i = 1, size(dpe2nbrs%xs)
-             print *,'amb> pe',dpe2nbrs%xs(i),dpe2nbrs%yptr(i+1)-dpe2nbrs%yptr(i)
+             write(iulog,*) 'amb> pe',dpe2nbrs%xs(i),dpe2nbrs%yptr(i+1)-dpe2nbrs%yptr(i)
           end do
        end if
     end if
@@ -725,7 +726,7 @@ contains
        if (j == 1) allocate(cd%dp_coup_proc(cd%dp_coup_steps))
     end do
 
-    if (cns%verbose > 0) print *,'amb> dp_coup_steps', cd%dp_coup_steps
+    if (cns%verbose > 0) write(iulog,*) 'amb> dp_coup_steps', cd%dp_coup_steps
   end subroutine init_comm_data
 
   subroutine make_comm_data(cns, cd, rcdsz)
@@ -832,7 +833,7 @@ contains
          max_numlev, max_numrep, numlev, numrep, bid, ngcols, gcols(16), nerr
     logical :: e
 
-    print *,'amb> test_comm_schedule'
+    if (masterproc) write(iulog,*) 'amb> test_comm_schedule'
     nerr = 0
 
     allocate(lats(gd%ngcols), lons(gd%ngcols))
@@ -917,7 +918,7 @@ contains
 
     deallocate(lats, lons)
 
-    if (nerr > 0) print *,'amb> test_comm_schedule FAIL', nerr
+    if (nerr > 0) write(iulog,*) 'amb> test_comm_schedule FAIL', nerr
   end subroutine test_comm_schedule
 
   !> -------------------------------------------------------------------
@@ -932,7 +933,7 @@ contains
     logical :: out
 
     if (.not. cond) then
-       print *, 'amb> test ', trim(message)
+       write(iulog,*) 'amb> test ', trim(message)
        nerr = nerr + 1
     end if
     out = cond
@@ -945,7 +946,7 @@ contains
     character(len=*), intent(in) :: message
     logical :: out
 
-    if (.not. cond) print *, 'amb> assert ', trim(message)
+    if (.not. cond) write(iulog,*) 'amb> assert ', trim(message)
     out = cond
   end function assert
 
@@ -1200,7 +1201,7 @@ contains
     call incr(k)
     e = test(nerr, k == 4, 'incr')
 
-    if (nerr > 0) print *, 'amb> run_unit_tests FAIL', nerr
+    if (nerr > 0) write(iulog,*) 'amb> run_unit_tests FAIL', nerr
   end subroutine run_unit_tests
 
 end module phys_grid_nbrhd
