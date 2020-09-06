@@ -829,10 +829,12 @@ contains
     real(r8) :: lat, lon
     integer, allocatable :: bptr(:,:), cptr(:)
     integer :: nchunks, cid, ncols, gcol, i, j, k, ie, bnrecs, cnrecs, icol, &
-         max_numlev, max_numrep, numlev, numrep, bid, ngcols, gcols(16)
+         max_numlev, max_numrep, numlev, numrep, bid, ngcols, gcols(16), nerr
     logical :: e
 
     print *,'amb> test_comm_schedule'
+    nerr = 0
+
     allocate(lats(gd%ngcols), lons(gd%ngcols))
     lats(:) = none; lons(:) = none
 
@@ -859,20 +861,23 @@ contains
     do ie = 1, size(cns%ie2bid) ! caller knows this
        bid = cns%ie2bid(ie)
        ngcols = get_block_gcol_cnt_d(bid)
-       e = test(size(gcols) >= ngcols, 'test: ngcols size')
-       e = test(ngcols == cns%blk_offset(ie)%ncol, 'test: ngcols agrees')
+       e = test(nerr, size(gcols) >= ngcols, 'comm: ngcols size')
+       e = test(nerr, ngcols == cns%blk_offset(ie)%ncol, 'comm: ngcols agrees')
        call get_block_gcol_d(bid, ngcols, gcols)
-       e = assert(cns%blk_offset(ie)%ncol == size(cns%blk_offset(ie)%numlev), 'test:ncol')
+       e = test(nerr, cns%blk_offset(ie)%ncol == size(cns%blk_offset(ie)%numlev), &
+                'comm:ncol')
        do icol = 1, cns%blk_offset(ie)%ncol ! ditto
           gcol = gcols(icol)
           lat = gd%clat_p(gd%lat_p(gcol))
           lon = gd%clon_p(gd%lon_p(gcol))
           call nbrhd_block_to_chunk_send_pters(ie, icol, rcdsz, numlev, numrep, bptr)
-          e = test(numlev <= max_numlev .and. numrep <= max_numrep, 'test: bptr size')
-          e = test(all(bptr(:numlev,:numrep) >= 1), 'test: bptr >= 1')
+          e = test(nerr, numlev <= max_numlev .and. numrep <= max_numrep, &
+                   'comm: bptr size')
+          e = test(nerr, all(bptr(:numlev,:numrep) >= 1), 'comm: bptr >= 1')
           do j = 1, numrep
              do k = 1, numlev
-                e = test(bptr(k,j) >= 1 .and. bptr(k,j) <= size(bbuf), 'test: bptr bbuf')
+                e = test(nerr, bptr(k,j) >= 1 .and. bptr(k,j) <= size(bbuf), &
+                         'comm: bptr bbuf')
                 bbuf(bptr(k,j)+0) = lat + (k-1)
                 bbuf(bptr(k,j)+1) = lon + (k-1)
              end do
@@ -881,24 +886,24 @@ contains
     end do
     deallocate(bptr)
 
-    e = test(.not. any(bbuf == none), 'bbuf has no none values')
+    e = test(nerr, .not. any(bbuf == none), 'bbuf has no none values')
     call nbrhd_transpose_block_to_chunk(rcdsz, bbuf, cbuf)
-    e = test(.not. any(cbuf == none), 'cbuf has no none values')
+    e = test(nerr, .not. any(cbuf == none), 'cbuf has no none values')
 
     ! Unpack recv buffer. We should never unpack into a slot having other than
     ! the none value.
     allocate(cptr(max_numlev))
     do icol = 1, size(cns%chk_offset) ! caller knows this from an lchunk query
        call nbrhd_block_to_chunk_recv_pters(icol, rcdsz, numlev, cptr)
-       e = test(icol <= size(dpe2nbrs%ys), 'test: icol range')
+       e = test(nerr, icol <= size(dpe2nbrs%ys), 'comm: icol range')
        gcol = dpe2nbrs%ys(icol) ! also from lchunk query
        k = 1
-       e = test(lats(gcol) == none, 'test: lats(gcol) is none')
+       e = test(nerr, lats(gcol) == none, 'comm: lats(gcol) is none')
        lats(gcol) = cbuf(cptr(k)+0)
        lons(gcol) = cbuf(cptr(k)+1)
        do k = 2, numlev
-          e = test(cbuf(cptr(k)+0) == lats(gcol) + (k-1) .and. &
-                   cbuf(cptr(k)+1) == lons(gcol) + (k-1), 'test: lat,lon')
+          e = test(nerr, cbuf(cptr(k)+0) == lats(gcol) + (k-1) .and. &
+                         cbuf(cptr(k)+1) == lons(gcol) + (k-1), 'comm: lat,lon')
        end do
     end do
     deallocate(cptr)
@@ -911,19 +916,25 @@ contains
     ! * the angular distance is <= max_angle.
 
     deallocate(lats, lons)
+
+    if (nerr > 0) print *,'amb> test_comm_schedule FAIL', nerr
   end subroutine test_comm_schedule
 
   !> -------------------------------------------------------------------
   !> General utilities.
 
-  function test(cond, message) result(out)
+  function test(nerr, cond, message) result(out)
     ! Assertion that is always enabled, for use in unit tests.
     
+    integer, intent(inout) :: nerr
     logical, intent(in) :: cond
     character(len=*), intent(in) :: message
     logical :: out
 
-    if (.not. cond) print *, 'amb> assert ', trim(message)
+    if (.not. cond) then
+       print *, 'amb> test ', trim(message)
+       nerr = nerr + 1
+    end if
     out = cond
   end function test
 
@@ -934,7 +945,8 @@ contains
     character(len=*), intent(in) :: message
     logical :: out
 
-    out = test(cond, message)
+    if (.not. cond) print *, 'amb> assert ', trim(message)
+    out = cond
   end function assert
 
   function reldif(a, b) result(r)
@@ -1148,22 +1160,24 @@ contains
 
     integer, pointer :: uc(:)
     real(r8) :: lat1, lon1, lat2, lon2, x1, y1, z1, x2, y2, z2, angle
-    integer :: k
+    integer :: k, nerr
     logical :: e
 
-    k = upper_bound_or_in_range(n, a, -1.0_r8); e = test(k == 2, 'uboir 1')
-    k = upper_bound_or_in_range(n, a, -1.0_r8, 2); e = test(k == 2, 'uboir 2')
-    k = upper_bound_or_in_range(n, a, 3.0_r8, 2); e = test(k == n, 'uboir 3')
-    k = upper_bound_or_in_range(n, a, 3.0_r8, -11); e = test(k == n, 'uboir 4')
-    k = upper_bound_or_in_range(n, a, 1.2_r8); e = test(k == 3, 'uboir 5')
+    nerr = 0
 
-    k = binary_search(n, b, -22, -5); e = test(k == -1, 'binsrc 1')
-    k = binary_search(n, b, -2); e = test(k == 1, 'binsrc 2')
-    k = binary_search(n, b, 3, 2); e = test(k == 3, 'binsrc 3')
-    k = binary_search(n, b, 7); e = test(k == 4, 'binsrc 4')
-    k = binary_search(n, b, 7, 4); e = test(k == 4, 'binsrc 5')
-    k = binary_search(n, b, 7, 5); e = test(k == 4, 'binsrc 6')
-    k = binary_search(n, b, 0, 15); e = test(k == -1, 'binsrc 7')
+    k = upper_bound_or_in_range(n, a, -1.0_r8); e = test(nerr, k == 2, 'uboir 1')
+    k = upper_bound_or_in_range(n, a, -1.0_r8, 2); e = test(nerr, k == 2, 'uboir 2')
+    k = upper_bound_or_in_range(n, a, 3.0_r8, 2); e = test(nerr, k == n, 'uboir 3')
+    k = upper_bound_or_in_range(n, a, 3.0_r8, -11); e = test(nerr, k == n, 'uboir 4')
+    k = upper_bound_or_in_range(n, a, 1.2_r8); e = test(nerr, k == 3, 'uboir 5')
+
+    k = binary_search(n, b, -22, -5); e = test(nerr, k == -1, 'binsrc 1')
+    k = binary_search(n, b, -2); e = test(nerr, k == 1, 'binsrc 2')
+    k = binary_search(n, b, 3, 2); e = test(nerr, k == 3, 'binsrc 3')
+    k = binary_search(n, b, 7); e = test(nerr, k == 4, 'binsrc 4')
+    k = binary_search(n, b, 7, 4); e = test(nerr, k == 4, 'binsrc 5')
+    k = binary_search(n, b, 7, 5); e = test(nerr, k == 4, 'binsrc 6')
+    k = binary_search(n, b, 0, 15); e = test(nerr, k == -1, 'binsrc 7')
 
     lat1 = -pi/3
     lon1 = pi/2
@@ -1171,20 +1185,22 @@ contains
     lat2 = lat1 - 0.1_r8
     lon2 = lon1
     angle = unit_sphere_angle(x1, y1, z1, lat2, lon2)
-    e = test(reldif(0.1_r8,angle) <= 10*tol, 'usa 1')
+    e = test(nerr, reldif(0.1_r8,angle) <= 10*tol, 'usa 1')
 
     call make_unique(m, c, uc)
-    e = test(size(uc) == 4, 'uc length')
-    e = test(uc(1) == -1, 'first(uc)')
-    e = test(uc(4) == 3, 'last(uc)')
+    e = test(nerr, size(uc) == 4, 'uc length')
+    e = test(nerr, uc(1) == -1, 'first(uc)')
+    e = test(nerr, uc(4) == 3, 'last(uc)')
     do k = 2, size(uc)
-       e = test(uc(k) > uc(k-1), 'uc sorted')
+       e = test(nerr, uc(k) > uc(k-1), 'uc sorted')
     end do
     deallocate(uc)
 
     k = 3
     call incr(k)
-    e = test(k == 4, 'incr')
+    e = test(nerr, k == 4, 'incr')
+
+    if (nerr > 0) print *, 'amb> run_unit_tests FAIL', nerr
   end subroutine run_unit_tests
 
 end module phys_grid_nbrhd
