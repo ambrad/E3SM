@@ -815,7 +815,7 @@ contains
   end subroutine get_local_blocks
 
   subroutine test_comm_schedule(cns, gd, chunks, knuhcs, cpe2nbrs, dpe2nbrs)
-    use dyn_grid, only: get_block_gcol_cnt_d, get_block_gcol_d
+    use dyn_grid, only: get_block_gcol_cnt_d, get_block_gcol_d, get_horiz_grid_d
 
     type (ColumnNeighborhoods), intent(in) :: cns
     type (PhysGridData), intent(in) :: gd
@@ -826,11 +826,11 @@ contains
     real(r8), parameter :: none = -10000
     integer, parameter :: rcdsz = 2
 
-    real(r8), allocatable, dimension(:) :: lats, lons, bbuf, cbuf
-    real(r8) :: lat, lon
+    real(r8), allocatable, dimension(:) :: lats, lons, bbuf, cbuf, lats_d, lons_d
+    real(r8) :: lat, lon, x, y, z, angle
     integer, allocatable :: bptr(:,:), cptr(:)
     integer :: nchunks, cid, ncols, gcol, i, j, k, ie, bnrecs, cnrecs, icol, &
-         max_numlev, max_numrep, numlev, numrep, bid, ngcols, gcols(16), nerr
+         max_numlev, max_numrep, numlev, numrep, bid, ngcols, gcols(16), nerr, jgcol
     logical :: e
 
     if (masterproc) write(iulog,*) 'amb> test_comm_schedule'
@@ -915,6 +915,29 @@ contains
     ! * its nbrhd has all non-none values;
     ! * the values are correct;
     ! * the angular distance is <= max_angle.
+    allocate(lats_d(gd%ngcols), lons_d(gd%ngcols))
+    call get_horiz_grid_d(gd%ngcols, clat_d_out=lats_d, clon_d_out=lons_d)
+    do cid = 1, nchunks
+       if (chunks(cid)%owner /= iam) cycle
+       ncols = chunks(cid)%ncols
+       do i = 1, ncols
+          gcol = chunks(cid)%gcol(i)
+          k = SparseTriple_in_xs(cns%chk_nbrhds, gcol)
+          e = test(nerr, k >= 1, 'comm: gcol has a nbrhd')
+          call latlon2xyz(lats(gcol), lons(gcol), x, y, z)
+          do j = cns%chk_nbrhds%yptr(k), cns%chk_nbrhds%yptr(k+1)-1
+             jgcol = cns%chk_nbrhds%ys(j)
+             e = test(nerr, lats(jgcol) /= none, 'comm: lats(jgcol) has a value')
+             e = test(nerr, lats(jgcol) == lats_d(jgcol), 'comm: lat')
+             e = test(nerr, lons(jgcol) == lons_d(jgcol), 'comm: lon')
+             angle = unit_sphere_angle(x, y, z, lats(jgcol), lons(jgcol))
+             e = test(nerr, angle <= cns%max_angle, 'comm: angle')
+          end do
+          if (.not. e) exit
+       end do
+       if (.not. e) exit
+    end do
+    deallocate(lats_d, lons_d)
 
     deallocate(lats, lons)
 
