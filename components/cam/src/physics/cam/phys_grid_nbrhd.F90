@@ -52,6 +52,9 @@ module phys_grid_nbrhd
      real(r8) :: max_angle
      ! For each gcol in iam's chunks, the list of gcols in its neighborhood.
      type (SparseTriple) :: chk_nbrhds
+     ! Local <-> global block IDs
+     integer, allocatable :: ie2bid(:)
+     type (IdMap) :: bid2ie
      ! blk_offset is index using local block ID, not global as in phys_grid.
      integer, allocatable, dimension(:) :: blk_num, chk_num
      integer :: blk_nrecs, chk_nrecs, max_numrep, max_numlev
@@ -104,20 +107,24 @@ contains
     gd%clat_p_idx => clat_p_idx; gd%latlon_to_dyn_gcol_map => latlon_to_dyn_gcol_map
     gd%clat_p => clat_p; gd%clon_p => clon_p
 
+    ! We use local block IDs to keep our persistent arrays small. Get global <->
+    ! local block ID maps.
+    call get_local_blocks(cns%ie2bid, cns%bid2ie)
+
     call find_chunk_nbrhds(cns, gd, chunks, cns%chk_nbrhds)
     call make_cpe2nbrs(cns, gd, chunks, knuhcs, cpe2nbrs)
     call make_dpe2nbrs(cns, gd, cns%chk_nbrhds, dpe2nbrs)
     call make_comm_schedule(cns, gd, cpe2nbrs, dpe2nbrs)
     call init_comm_data(cns, cns%comm_data, phys_alltoall)
 
-    call SparseTriple_deallocate(cpe2nbrs)
-    call SparseTriple_deallocate(dpe2nbrs)
-
     if (cns%verbose > 0) then
        call nbrhd_get_nrecs(bnrec, cnrec)
        print *,'amb> nrec', bnrec, cnrec
-       call test_comm_schedule(cns)
+       call test_comm_schedule(cns, gd, chunks, knuhcs, cpe2nbrs, dpe2nbrs)
     end if
+
+    call SparseTriple_deallocate(cpe2nbrs)
+    call SparseTriple_deallocate(dpe2nbrs)
   end subroutine nbrhd_init
 
   subroutine nbrhd_get_nrecs(block_buf_nrecs, chunk_buf_nrecs)
@@ -159,7 +166,7 @@ contains
     do i = 1, numrep
        ptr(1,i) = cns%blk_offset(ie)%os(j+i-1) * rcdsz
        do k = 2, numlev
-          ptr(k,i) = ptr(i,1) + rcdsz*(k-1)
+          ptr(k,i) = ptr(1,i) + rcdsz*(k-1)
        end do
     end do
   end subroutine nbrhd_block_to_chunk_send_pters
@@ -595,23 +602,17 @@ contains
     type (PhysGridData), intent(in) :: gd
     type (SparseTriple), intent(in) :: cpe2nbrs, dpe2nbrs
 
-    integer, allocatable :: ie2gid(:)
-    type (IdMap) :: gid2ie
     integer :: i, j, k, ie, gid, nlblk, gcol, blockid(1), bcid(1), pecnt, glbcnt, &
          pe, numlev, ptr
     logical :: e
 
-    ! We use local block IDs to keep our persistent arrays small. Get global <->
-    ! local block ID maps.
-    call get_local_blocks(ie2gid, gid2ie)
-    nlblk = size(ie2gid)
-
+    nlblk = size(cns%ie2bid)
     allocate(cns%blk_num(0:npes-1), cns%chk_num(0:npes-1), &
          cns%blk_offset(nlblk))
 
     ! Get column counts.
     do ie = 1, nlblk
-       gid = ie2gid(i)
+       gid = cns%ie2bid(i)
        k = get_block_gcol_cnt_d(gid)
        cns%blk_offset(ie)%ncol = k
        ! numrep is redundant wrt col, but it's useful
@@ -627,9 +628,9 @@ contains
           call get_gcol_block_d(gcol, 1, blockid, bcid)
           e = assert(get_block_owner_d(blockid(1)) == iam, &
                      'comm_schedule: gcol is owned')
-          k = binary_search(nlblk, gid2ie%id1, blockid(1))
+          k = binary_search(nlblk, cns%bid2ie%id1, blockid(1))
           e = assert(k >= 1, 'comm_schedule: blockid is in map')
-          ie = gid2ie%id2(k) ! local block ID providing data to the chunk
+          ie = cns%bid2ie%id2(k) ! local block ID providing data to the chunk
           e = assert(bcid(1) >= 1 .and. bcid(1) <= cns%blk_offset(ie)%ncol, &
                      'comm_schedule: bcid is in range')
           call incr(cns%blk_offset(ie)%numrep(bcid(1)+1))
@@ -637,7 +638,7 @@ contains
     end do
     ! Allocate offset arrays.
     do ie = 1, nlblk
-       gid = ie2gid(i)
+       gid = cns%ie2bid(i)
        allocate(cns%blk_offset(ie)%os(sum(cns%blk_offset(ie)%numrep)))
        cns%blk_offset(ie)%col(1) = 1
        do i = 1, cns%blk_offset(ie)%ncol
@@ -656,11 +657,11 @@ contains
        do j = cpe2nbrs%yptr(i), cpe2nbrs%yptr(i+1)-1
           gcol = cpe2nbrs%ys(j)
           call get_gcol_block_d(gcol, 1, blockid, bcid)
-          k = binary_search(nlblk, gid2ie%id1, blockid(1))
-          ie = gid2ie%id2(k)
+          k = binary_search(nlblk, cns%bid2ie%id1, blockid(1))
+          ie = cns%bid2ie%id2(k)
           ptr = cns%blk_offset(ie)%col(bcid(1))
           k = cns%blk_offset(ie)%numrep(bcid(1))
-          cns%blk_offset(ie)%os(ptr+k) = glbcnt
+          cns%blk_offset(ie)%os(ptr+k) = glbcnt + 1
           cns%blk_offset(ie)%numrep(bcid(1)) = k + 1
           cns%max_numrep = max(cns%max_numrep, k + 1)
           numlev = get_block_lvl_cnt_d(gid, bcid(1))
@@ -673,8 +674,6 @@ contains
     end do
     cns%blk_nrecs = glbcnt
 
-    deallocate(ie2gid, gid2ie%id1, gid2ie%id2)
-
     allocate(cns%chk_offset(size(dpe2nbrs%ys)), cns%chk_numlev(size(dpe2nbrs%ys)))
     glbcnt = 0
     cns%chk_num(:) = 0
@@ -686,7 +685,7 @@ contains
           call get_gcol_block_d(gcol, 1, blockid, bcid)
           e = assert(get_block_owner_d(blockid(1)) == pe, &
                      'comm_schedule: gcol pe association')
-          cns%chk_offset(j) = glbcnt
+          cns%chk_offset(j) = glbcnt + 1
           numlev = get_block_lvl_cnt_d(blockid(1), bcid(1))
           cns%chk_numlev(j) = numlev
           glbcnt = glbcnt + numlev
@@ -764,16 +763,16 @@ contains
 #endif
   end subroutine make_comm_data
 
-  subroutine get_local_blocks(ie2gid, gid2ie)
+  subroutine get_local_blocks(ie2bid, bid2ie)
     ! id2gid is a list of iam's owned global block IDs in block local ID
-    ! order. gid2ie%id1 is the sorted list of global block IDs, and gid2ie%id2
+    ! order. bid2ie%id1 is the sorted list of global block IDs, and bid2ie%id2
     ! is the list of corresponding local IDs.
 
     use dyn_grid, only: get_block_bounds_d, get_gcol_block_cnt_d, get_gcol_block_d, &
          get_block_gcol_d, get_block_owner_d, get_block_gcol_cnt_d
 
-    integer, allocatable, intent(out) :: ie2gid(:)
-    type (IdMap), intent(out) :: gid2ie
+    integer, allocatable, intent(out) :: ie2bid(:)
+    type (IdMap), intent(out) :: bid2ie
 
     integer, allocatable :: gcols(:)
     integer :: bf, bl, bid, cnt, pe, nid, blockid(1), bcid(1), ie(1), ngcols, i
@@ -785,7 +784,7 @@ contains
        pe = get_block_owner_d(bid)
        if (pe == iam) cnt = cnt + 1
     end do
-    allocate(ie2gid(cnt), gcols(128))
+    allocate(ie2bid(cnt), gcols(128))
     ! This seems a bit convoluted, but I'm not seeing an easier way to get block
     ! IDs in local ID order.
     do bid = bf, bl
@@ -801,21 +800,97 @@ contains
        e = assert(nid == 1, 'only nid=1 is supported')
        call get_gcol_block_d(gcols(1), nid, blockid, bcid, ie)
        e = assert(ie(1) >= 1 .and. ie(1) <= cnt, 'ie in bounds')
-       ie2gid(ie(1)) = bid
+       ie2bid(ie(1)) = bid
     end do
     deallocate(gcols)
     ! Now the opposite direction.
-    allocate(gid2ie%id1(cnt), gid2ie%id2(cnt))
-    call IndexSet(cnt, gid2ie%id2)
-    gid2ie%id1(:) = ie2gid(:)
-    call IndexSort(cnt, gid2ie%id2, gid2ie%id1)
+    allocate(bid2ie%id1(cnt), bid2ie%id2(cnt))
+    call IndexSet(cnt, bid2ie%id2)
+    bid2ie%id1(:) = ie2bid(:)
+    call IndexSort(cnt, bid2ie%id2, bid2ie%id1)
     do i = 1, cnt
-       gid2ie%id1(i) = ie2gid(gid2ie%id2(i))
+       bid2ie%id1(i) = ie2bid(bid2ie%id2(i))
     end do
   end subroutine get_local_blocks
 
-  subroutine test_comm_schedule(cns)
+  subroutine test_comm_schedule(cns, gd, chunks, knuhcs, cpe2nbrs, dpe2nbrs)
+    use dyn_grid, only: get_block_gcol_cnt_d, get_block_gcol_d
+
     type (ColumnNeighborhoods), intent(in) :: cns
+    type (PhysGridData), intent(in) :: gd
+    type (chunk), intent(in) :: chunks(:)
+    type (knuhc), intent(in) :: knuhcs(:)
+    type (SparseTriple), intent(in) :: cpe2nbrs, dpe2nbrs
+
+    real(r8), parameter :: none = -10000
+    integer, parameter :: rcdsz = 2
+
+    real(r8), allocatable, dimension(:) :: lats, lons, bbuf, cbuf
+    real(r8) :: lat, lon
+    integer, allocatable :: bptr(:,:)
+    integer :: nchunks, cid, ncols, gcol, i, j, k, ie, bnrecs, cnrecs, icol, &
+         max_numlev, max_numrep, numlev, numrep, bid, ngcols, gcols(16)
+    logical :: e
+
+    print *,'amb> test_comm_schedule'
+    allocate(lats(gd%ngcols), lons(gd%ngcols))
+    lats(:) = none; lons(:) = none
+
+    ! Fill lats, lons with iam-owning chunks' gcols' data. These are available
+    ! from standard phys_grid comm.
+    nchunks = size(chunks)
+    do cid = 1, nchunks
+       if (chunks(cid)%owner /= iam) cycle
+       ncols = chunks(cid)%ncols
+       do i = 1, ncols
+          gcol = chunks(cid)%gcol(i)
+          lats(gcol) = gd%clat_p(gd%lat_p(gcol))
+          lons(gcol) = gd%clon_p(gd%lon_p(gcol))
+       end do
+    end do
+
+    call nbrhd_get_nrecs(bnrecs, cnrecs)
+    allocate(bbuf(rcdsz*bnrecs), cbuf(rcdsz*cnrecs))
+
+    ! Pack send buffer.
+    call nbrhd_block_to_chunk_send_sizes(max_numlev, max_numrep)
+    allocate(bptr(max_numlev,max_numrep))
+    do ie = 1, size(cns%ie2bid) ! caller knows this
+       bid = cns%ie2bid(ie)
+       ngcols = get_block_gcol_cnt_d(bid)
+       e = assert(size(gcols) >= ngcols, 'test: ngcols size')
+       e = assert(ngcols == cns%blk_offset(ie)%ncol, 'test: ngcols agrees')
+       call get_block_gcol_d(bid, ngcols, gcols)
+       do icol = 1, cns%blk_offset(ie)%ncol ! ditto
+          gcol = gcols(icol)
+          lat = gd%clat_p(gd%lat_p(gcol))
+          lon = gd%clon_p(gd%lon_p(gcol))
+          call nbrhd_block_to_chunk_send_pters(ie, icol, rcdsz, numlev, numrep, bptr)
+          e = assert(numlev <= max_numlev .and. numrep <= max_numrep, 'test: bptr size')
+          do j = 1, numrep
+             do k = 1, numlev
+                e = assert(bptr(k,j) >= 1 .and. bptr(k,j) <= size(bbuf), 'test: bptr bbuf')
+                bbuf(bptr(k,j)+0) = lat + (k - 1)
+                bbuf(bptr(k,j)+1) = lon + (k - 1)
+             end do
+          end do
+       end do
+    end do
+    deallocate(bptr)
+
+    call nbrhd_transpose_block_to_chunk(rcdsz, bbuf, cbuf)
+
+    ! Unpack recv buffer. We should never unpack into a slot having other than
+    ! the none value.
+
+    deallocate(bbuf, cbuf)
+
+    ! For each gcol in iam's chunks, check that
+    ! * its nbrhd has all non-none values;
+    ! * the values are correct;
+    ! * the angular distance is <= max_angle.
+
+    deallocate(lats, lons)
   end subroutine test_comm_schedule
 
   !> -------------------------------------------------------------------
