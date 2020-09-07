@@ -267,17 +267,30 @@ contains
     end do
   end subroutine nbrhd_block_to_chunk_recv_pters
 
-  function nbrhd_get_nbrhd_size(col_chunk_idx, col_col_idx) result(n)
-    integer, intent(in) :: col_chunk_idx, col_col_idx
+  function nbrhd_get_nbrhd_size(lcid, icol) result(n)
+    integer, intent(in) :: lcid, icol
     integer :: n
-    n = -1
+
+    logical :: e
+
+    e = assert(lcid >= begchunk .and. lcid <= endchunk, 'nbrhd_size: lcid')
+    e = assert(icol >= 1 .and. icol <= size(cns%c2n%chk(lcid)%col)-1, 'nbrhd_size: icol')
+    n = cns%c2n%chk(lcid)%col(icol+1) - cns%c2n%chk(lcid)%col(icol)
   end function nbrhd_get_nbrhd_size
 
-  subroutine nbrhd_get_nbrhd(col_chunk_idx, col_col_idx, chunk_idxs, col_idxs)
-    integer, intent(in) :: col_chunk_idx, col_col_idx
-    integer, dimension(:), intent(out) :: chunk_idxs, col_idxs
-    chunk_idxs = -1
-    col_idxs = -1
+  subroutine nbrhd_get_nbrhd(lcid, icol, lcids, icols)
+    integer, intent(in) :: lcid, icol
+    integer, dimension(:), intent(out) :: lcids, icols
+
+    integer :: i, j, k
+
+    i = 1
+    do j = cns%c2n%chk(lcid)%col(icol), cns%c2n%chk(lcid)%col(icol+1)-1
+       k = cns%c2n%chk(lcid)%nbrhd(j)
+       lcids(i) = cns%c2n%idx2cd(k)%lcid
+       icols(i) = cns%c2n%idx2cd(k)%icol
+       i = i + 1
+    end do
   end subroutine nbrhd_get_nbrhd
 
   !> -------------------------------------------------------------------
@@ -942,7 +955,7 @@ contains
     end do
     e = assert(all(c2n%idx2cd(:)%icol > 0), 'c2n: all written')
 
-    allocate(c2n%chk(begchunk:endchunk+nbrhdchunk))
+    allocate(c2n%chk(begchunk:endchunk))
     lcolid = 1
     do lcid = begchunk, endchunk
        cnt = 0
