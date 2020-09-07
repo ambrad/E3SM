@@ -69,7 +69,8 @@ module phys_grid_nbrhd
      ! Radian angle defining neighborhood. Defines max between a column center
      ! and column centers within its neighborhood.
      real(r8) :: max_angle
-     ! For each gcol in iam's chunks, the list of gcols in its neighborhood.
+     ! For each gcol in iam's chunks, the list of gcols in its neighborhood,
+     ! excluding itself.
      type (SparseTriple) :: chk_nbrhds
      ! Local <-> global block IDs
      integer, allocatable :: ie2bid(:)
@@ -139,6 +140,7 @@ contains
     call get_local_blocks(cns%ie2bid, cns%bid2ie)
 
     call find_chunk_nbrhds(cns, gd, chunks, cns%chk_nbrhds)
+    if (cns%verbose > 0) call test_nbrhds(cns, gd)
     call make_cpe2nbrs(cns, gd, chunks, knuhcs, cpe2nbrs)
     call make_dpe2nbrs(cns, gd, cns%chk_nbrhds, dpe2nbrs)
     call make_comm_schedule(cns, gd, cpe2nbrs, dpe2nbrs)
@@ -876,17 +878,66 @@ contains
     end do
   end subroutine init_chunk
 
+  subroutine test_nbrhds(cns, gd)
+    ! A chunk-owned column may not be in the neighborhood of any other
+    ! chunk-owned columns. Use this fact to brute-force check the neighborhood
+    ! lists.
+
+    type (ColumnNeighborhoods), intent(in) :: cns
+    type (PhysGridData), intent(in) :: gd
+
+    integer, allocatable, dimension(:) :: ugcols
+    real(r8) :: x, y, z, angle, min_angle
+    integer :: nlcols, nugcols, i, j, k, gcol, jgcol
+    logical :: e
+
+    nlcols = size(cns%chk_nbrhds%xs)
+    call make_unique(cns%chk_nbrhds%yptr(nlcols+1)-1, cns%chk_nbrhds%ys, ugcols)
+    nugcols = size(ugcols)
+    do i = 1, nlcols
+       gcol = cns%chk_nbrhds%xs(i)
+       k = binary_search(size(ugcols), ugcols, gcol)
+       if (k >= 1) cycle
+       ! This chunk-owned column is not in a neighborhood of any other
+       ! chunk-owned column. Check through brute force that this is correct.
+       call latlon2xyz(gd%clat_p(gd%lat_p(gcol)), gd%clon_p(gd%lon_p(gcol)), x, y, z)
+       min_angle = 100*cns%max_angle
+       do j = 1, nlcols
+          if (j == i) cycle
+          jgcol = cns%chk_nbrhds%xs(j)
+          angle = unit_sphere_angle(x, y, z, &
+               gd%clat_p(gd%lat_p(jgcol)), gd%clon_p(gd%lon_p(jgcol)))
+          e = assert(angle > cns%max_angle, 'test_nbrhds: angle')
+          angle = min(min_angle, angle)
+       end do
+    end do
+  end subroutine test_nbrhds
+
   subroutine make_c2n(cns, lchks, c2n)
     type (ColumnNeighborhoods), intent(in) :: cns
     type (lchunk), intent(in) :: lchks(begchunk:endchunk+nbrhdchunk)
     type (ColumnToNbrhdMap), intent(out) :: c2n
 
     integer, allocatable, dimension(:) :: ugcols
-    integer :: nlcols, lcid
+    integer :: nlcols, nugcols, lcid, k, icol, gcol
+    logical :: e
 
     ! Make idx2cd.
     nlcols = size(cns%chk_nbrhds%xs)
     call make_unique(cns%chk_nbrhds%yptr(nlcols+1)-1, cns%chk_nbrhds%ys, ugcols)
+    nugcols = size(ugcols)
+    allocate(c2n%idx2cd(nugcols))
+    c2n%idx2cd(:)%lcid = -1
+    c2n%idx2cd(:)%icol = -1
+    do lcid = begchunk, endchunk+nbrhdchunk
+       do icol = 1, lchks(lcid)%ncols
+          gcol = lchks(lcid)%gcol(icol)
+          k = binary_search(size(ugcols), ugcols, gcol)
+          if (k == -1) cycle ! see test_nbrhds
+          c2n%idx2cd(k)%lcid = lcid
+          c2n%idx2cd(k)%icol = icol
+       end do
+    end do
 
     allocate(c2n%chk(begchunk:endchunk+nbrhdchunk))
     do lcid = begchunk, endchunk+nbrhdchunk
