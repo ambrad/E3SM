@@ -147,11 +147,12 @@ contains
     call init_comm_data(cns, cns%comm_data, phys_alltoall)
     call init_chunk(cns, gd, dpe2nbrs, chunk_extra)
 
-    if (cns%verbose > 0) then
-       call nbrhd_get_nrecs(bnrec, cnrec)
-       write(iulog,*) 'amb> nrec', bnrec, cnrec
-       call test_comm_schedule(cns, gd, chunks, knuhcs, cpe2nbrs, dpe2nbrs)
-    end if
+    e = assert(cns%comm_data%dp_coup_steps >= &
+               ! -1 accounts for pe = iam
+               min(size(cpe2nbrs%xs), size(dpe2nbrs%xs)) - 1, &
+               'init: dp_coup_steps')
+    if (cns%verbose > 0) &
+         call test_comm_schedule(cns, gd, chunks, knuhcs, cpe2nbrs, dpe2nbrs)
     
     call SparseTriple_deallocate(cpe2nbrs)
     call SparseTriple_deallocate(dpe2nbrs)
@@ -767,7 +768,7 @@ contains
           end if
        end do
        if (j == 1) allocate(cd%dp_coup_proc(cd%dp_coup_steps))
-    end do
+    end do    
 
     if (cns%verbose > 0) write(iulog,*) 'amb> dp_coup_steps', cd%dp_coup_steps
   end subroutine init_comm_data
@@ -907,9 +908,9 @@ contains
           jgcol = cns%chk_nbrhds%xs(j)
           angle = unit_sphere_angle(x, y, z, &
                gd%clat_p(gd%lat_p(jgcol)), gd%clon_p(gd%lon_p(jgcol)))
-          e = assert(angle > cns%max_angle, 'test_nbrhds: angle')
-          angle = min(min_angle, angle)
+          min_angle = min(min_angle, angle)
        end do
+       e = assert(min_angle > cns%max_angle, 'test_nbrhds: angle')
     end do
   end subroutine test_nbrhds
 
