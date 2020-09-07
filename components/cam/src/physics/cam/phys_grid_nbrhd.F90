@@ -50,7 +50,7 @@ module phys_grid_nbrhd
   end type ColumnDesc
 
   type :: ChunkDesc
-     ! nbrhd(col(i):col(i)-1) is the neighbord of column i in this chunk. The
+     ! nbrhd(col(i):col(i)-1) is the neighborhood of column i in this chunk. The
      ! range is an index into the list of ColumnDescs, idx2cd.
      integer, allocatable, dimension(:) :: col(:), nbrhd(:)
   end type ChunkDesc
@@ -920,7 +920,7 @@ contains
     type (ColumnToNbrhdMap), intent(out) :: c2n
 
     integer, allocatable, dimension(:) :: ugcols
-    integer :: nlcols, nugcols, lcid, k, icol, gcol
+    integer :: nlcols, nugcols, lcid, i, j, k, icol, gcol, cnt, lcolid
     logical :: e
 
     ! Make idx2cd.
@@ -935,14 +935,40 @@ contains
           gcol = lchks(lcid)%gcol(icol)
           k = binary_search(size(ugcols), ugcols, gcol)
           if (k == -1) cycle ! see test_nbrhds
+          e = assert(c2n%idx2cd(k)%icol == -1, 'c2n: not written')
           c2n%idx2cd(k)%lcid = lcid
           c2n%idx2cd(k)%icol = icol
        end do
     end do
+    e = assert(all(c2n%idx2cd(:)%icol > 0), 'c2n: all written')
 
     allocate(c2n%chk(begchunk:endchunk+nbrhdchunk))
-    do lcid = begchunk, endchunk+nbrhdchunk
-       allocate(c2n%chk(lcid)%col(lchks(lcid)%ncols+1))
+    lcolid = 1
+    do lcid = begchunk, endchunk
+       cnt = 0
+       do icol = 1, lchks(lcid)%ncols
+          cnt = cnt + (cns%chk_nbrhds%yptr(lcolid+icol) - &
+                       cns%chk_nbrhds%yptr(lcolid+icol-1))
+       end do
+       allocate(c2n%chk(lcid)%col(lchks(lcid)%ncols+1), c2n%chk(lcid)%nbrhd(cnt))
+       c2n%chk(lcid)%nbrhd(:) = -1
+       c2n%chk(lcid)%col(1) = 1
+       i = 1
+       do icol = 1, lchks(lcid)%ncols
+          c2n%chk(lcid)%col(icol+1) = c2n%chk(lcid)%col(icol) + &
+               (cns%chk_nbrhds%yptr(lcolid+1) - cns%chk_nbrhds%yptr(lcolid))
+          do j = cns%chk_nbrhds%yptr(lcolid), cns%chk_nbrhds%yptr(lcolid+1)-1
+             gcol = cns%chk_nbrhds%ys(j)
+             k = binary_search(size(ugcols), ugcols, gcol)
+             e = assert(k > 0, 'c2n: nbr gcol')
+             c2n%chk(lcid)%nbrhd(i) = k
+             e = assert(lchks(c2n%idx2cd(k)%lcid)%gcol(c2n%idx2cd(k)%icol) == gcol, &
+                        'c2n: gcol association')
+             i = i + 1
+          end do
+          lcolid = lcolid + 1
+       end do
+       e = assert(all(c2n%chk(lcid)%nbrhd >= 1), 'c2n: nbrhd filled')
     end do
   end subroutine make_c2n
 
