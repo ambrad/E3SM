@@ -1011,7 +1011,7 @@ contains
     enddo
     lchunks(:)%cost = 0.0_r8
 
-    if (nbrhdchunk > 0) call nbrhd_init_lchunk(chunks(nchunks+1), lchunks(endchunk+1))
+    if (use_nbrhd) call nbrhd_init_lchunk(chunks(nchunks+1), lchunks(endchunk+1))
 
     deallocate( pchunkid )
     !deallocate( npchunks ) !do not deallocate as it is being used in RRTMG radiation.F90
@@ -1358,6 +1358,7 @@ contains
     call t_stopf("phys_grid_init")
     call t_adj_detailf(+2)
 
+    if (use_nbrhd) call nbrhd_test()
     call endrun('amb> exit')
     return
   end subroutine phys_grid_init

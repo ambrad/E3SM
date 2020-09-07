@@ -70,6 +70,7 @@ module phys_grid_nbrhd
        ! phys_grid initialization
        nbrhd_init, &
        nbrhd_init_lchunk, &
+       nbrhd_test, &
        ! dp_coupling communication
        nbrhd_get_nrecs, &
        nbrhd_block_to_chunk_send_sizes, &
@@ -124,13 +125,13 @@ contains
     call make_comm_schedule(cns, gd, cpe2nbrs, dpe2nbrs)
     call init_comm_data(cns, cns%comm_data, phys_alltoall)
     call init_chunk(cns, gd, dpe2nbrs, chunk_extra)
-    
+
     if (cns%verbose > 0) then
        call nbrhd_get_nrecs(bnrec, cnrec)
        write(iulog,*) 'amb> nrec', bnrec, cnrec
        call test_comm_schedule(cns, gd, chunks, knuhcs, cpe2nbrs, dpe2nbrs)
     end if
-
+    
     call SparseTriple_deallocate(cpe2nbrs)
     call SparseTriple_deallocate(dpe2nbrs)
   end subroutine nbrhd_init
@@ -146,6 +147,10 @@ contains
     lchk%gcol(:) = chk%gcol(:)
     ! area and wght will be set in phys_grid after this call.
   end subroutine nbrhd_init_lchunk
+
+  subroutine nbrhd_test()
+    call test_api()
+  end subroutine nbrhd_test
 
   subroutine nbrhd_get_nrecs(block_buf_nrecs, chunk_buf_nrecs)
     integer, intent(out) :: block_buf_nrecs, chunk_buf_nrecs
@@ -980,6 +985,10 @@ contains
 
     if (nerr > 0) write(iulog,*) 'amb> test_comm_schedule FAIL', nerr
   end subroutine test_comm_schedule
+
+  subroutine test_api()
+    
+  end subroutine test_api
 
   !> -------------------------------------------------------------------
   !> General utilities.
