@@ -22,7 +22,7 @@ module phys_grid_nbrhd
 
   type :: SparseTriple
      ! xs(i) maps to ys(yptr(i):yptr(i+1)-1)
-     integer, pointer :: xs(:), yptr(:), ys(:)
+     integer, allocatable :: xs(:), yptr(:), ys(:)
   end type SparseTriple
 
   type :: IdMap
@@ -44,10 +44,28 @@ module phys_grid_nbrhd
      integer :: lopt, prev_record_size, dp_coup_steps
   end type CommData
 
+  type :: ColumnDesc
+     ! The local chunk ID and column of the chunk for this column.
+     integer :: lcid, icol
+  end type ColumnDesc
+
+  type :: ChunkDesc
+     ! nbrhd(col(i):col(i)-1) is the neighbord of column i in this chunk. The
+     ! range is an index into the list of ColumnDescs, idx2cd.
+     integer, allocatable, dimension(:) :: col(:), nbrhd(:)
+  end type ChunkDesc
+
+  type :: ColumnToNbrhdMap
+     ! List of column descriptors relevant to iam's chunks.
+     type (ColumnDesc), allocatable, dimension(:) :: idx2cd
+     ! Index as chk(lcid).
+     type (ChunkDesc), allocatable, dimension(:) :: chk
+  end type ColumnToNbrhdMap
+
+  ! A neighborhood is a list of gcols neighboring a column. Neighborhoods,
+  ! plural, is a list of these of lists.
   type :: ColumnNeighborhoods
-     ! A neighborhood is a list of gcols neighboring a column. Neighborhoods,
-     ! plural, is a list of these of lists.
-     integer :: verbose
+     integer :: verbose, nchunks
      ! Radian angle defining neighborhood. Defines max between a column center
      ! and column centers within its neighborhood.
      real(r8) :: max_angle
@@ -56,12 +74,15 @@ module phys_grid_nbrhd
      ! Local <-> global block IDs
      integer, allocatable :: ie2bid(:)
      type (IdMap) :: bid2ie
+     ! Communication data.
      ! blk_offset is index using local block ID, not global as in phys_grid.
      integer, allocatable, dimension(:) :: blk_num, chk_num
-     integer :: nchunks, blk_nrecs, chk_nrecs, max_numrep, max_numlev
+     integer :: blk_nrecs, chk_nrecs, max_numrep, max_numlev
      type (Offsets), allocatable, dimension(:) :: blk_offset
      integer, allocatable :: chk_numlev(:), chk_offset(:)
      type (CommData) :: comm_data
+     ! Neighborhood API data.
+     type (ColumnToNbrhdMap) :: c2n
   end type ColumnNeighborhoods
 
   type (ColumnNeighborhoods), private :: cns
@@ -113,8 +134,6 @@ contains
     gd%clat_p_idx => clat_p_idx; gd%latlon_to_dyn_gcol_map => latlon_to_dyn_gcol_map
     gd%clat_p => clat_p; gd%clon_p => clon_p
 
-    e = assert(size(chunks) == cns%nchunks+1, 'init: room for extra chunk')
-
     ! We use local block IDs to keep our persistent arrays small. Get global <->
     ! local block ID maps.
     call get_local_blocks(cns%ie2bid, cns%bid2ie)
@@ -136,8 +155,9 @@ contains
     call SparseTriple_deallocate(dpe2nbrs)
   end subroutine nbrhd_init
 
-  subroutine nbrhd_init_lchunk(chk, lchk)
+  subroutine nbrhd_init_lchunk(chk, lchks, lchk)
     type (chunk), intent(in) :: chk
+    type (lchunk), intent(in) :: lchks(begchunk:endchunk+nbrhdchunk)
     type (lchunk), intent(out) :: lchk
 
     lchk%ncols = chk%ncols
@@ -146,6 +166,8 @@ contains
     allocate(lchk%gcol(lchk%ncols), lchk%area(lchk%ncols), lchk%wght(lchk%ncols))
     lchk%gcol(:) = chk%gcol(:)
     ! area and wght will be set in phys_grid after this call.
+
+    call make_c2n(cns, lchks, cns%c2n)
   end subroutine nbrhd_init_lchunk
 
   subroutine nbrhd_test()
@@ -332,7 +354,7 @@ contains
 
     integer :: ptr, cap, gcol, block_cnt, blockids(1), bcids(1), cnt, ucnt, &
          i, j, pe, prev, acap, aptr, ng, max_ng, jprev, nupes, chunk_owner
-    integer, pointer :: nbrhd(:), apes(:), agcols(:)
+    integer, allocatable :: nbrhd(:), apes(:), agcols(:)
     integer, allocatable, dimension(:) :: idxs, pes, upes, gcols, ugcols, gidxs
     logical :: e, same, exclude_existing
 
@@ -388,10 +410,7 @@ contains
     deallocate(nbrhd, idxs, pes, upes)
     cnt = aptr - 1
     ! If we didn't find any, return with empty output.
-    if (cnt == 0) then
-       call SparseTriple_nullify(cpe2nbrs)
-       return
-    end if
+    if (cnt == 0) return
     ! Count the number of unique pes and the max number of unique gcols per pe.
     allocate(idxs(cnt))
     call IndexSet(cnt, idxs)
@@ -473,7 +492,7 @@ contains
     type (SparseTriple), intent(out) :: dpe2nbrs
     logical, optional, intent(in) :: exclude_existing_in
 
-    integer, pointer, dimension(:) :: unbrs, wrk(:)
+    integer, allocatable, dimension(:) :: unbrs, wrk(:)
     integer, allocatable, dimension(:) :: pes, idxs
     integer :: i, j, k, n, gcol, block_cnt, blockids(1), bcids(1), cnt, prev
     logical :: e, exclude_existing
@@ -567,7 +586,7 @@ contains
     type (PhysGridData), intent(in) :: gd
     real(r8), intent(in) :: max_angle
     integer, intent(in) :: gcol, ptr
-    integer, pointer, intent(inout) :: nbrhd(:)
+    integer, allocatable, intent(inout) :: nbrhd(:)
     integer, intent(inout) :: cap
 
     integer, allocatable, dimension(:) :: idxs, buf
@@ -857,6 +876,24 @@ contains
     end do
   end subroutine init_chunk
 
+  subroutine make_c2n(cns, lchks, c2n)
+    type (ColumnNeighborhoods), intent(in) :: cns
+    type (lchunk), intent(in) :: lchks(begchunk:endchunk+nbrhdchunk)
+    type (ColumnToNbrhdMap), intent(out) :: c2n
+
+    integer, allocatable, dimension(:) :: ugcols
+    integer :: nlcols, lcid
+
+    ! Make idx2cd.
+    nlcols = size(cns%chk_nbrhds%xs)
+    call make_unique(cns%chk_nbrhds%yptr(nlcols+1)-1, cns%chk_nbrhds%ys, ugcols)
+
+    allocate(c2n%chk(begchunk:endchunk+nbrhdchunk))
+    do lcid = begchunk, endchunk+nbrhdchunk
+       allocate(c2n%chk(lcid)%col(lchks(lcid)%ncols+1))
+    end do
+  end subroutine make_c2n
+
   subroutine test_comm_schedule(cns, gd, chunks, knuhcs, cpe2nbrs, dpe2nbrs)
     use dyn_grid, only: get_block_gcol_cnt_d, get_block_gcol_d, get_horiz_grid_d
 
@@ -1132,7 +1169,7 @@ contains
   subroutine array_realloc(a, n, n_new)
     ! Reallocate a to size n_new, preserving the first min(n,n_new) values.
 
-    integer, pointer, intent(inout) :: a(:)
+    integer, allocatable, intent(inout) :: a(:)
     integer, intent(in) :: n, n_new
 
     integer, allocatable :: buf(:)
@@ -1160,7 +1197,7 @@ contains
     use m_MergeSorts, only: IndexSet, IndexSort
 
     integer, intent(in) :: n, a(n)
-    integer, pointer, intent(out) :: ua(:)
+    integer, allocatable, intent(out) :: ua(:)
 
     integer, allocatable :: idxs(:)
     integer :: cnt, prev, i
@@ -1192,17 +1229,9 @@ contains
     deallocate(idxs)
   end subroutine make_unique
 
-  subroutine SparseTriple_nullify(st)
-    type (SparseTriple), intent(out) :: st
-    st%xs => null()
-    st%yptr => null()
-    st%ys => null()
-  end subroutine SparseTriple_nullify
-
   subroutine SparseTriple_deallocate(st)
     type (SparseTriple), intent(out) :: st
-    deallocate(st%xs, st%yptr, st%ys)
-    call SparseTriple_nullify(st)
+    if (allocated(st%xs)) deallocate(st%xs, st%yptr, st%ys)
   end subroutine SparseTriple_deallocate
 
   function SparseTriple_in_xs(st, x) result(k)
@@ -1228,7 +1257,7 @@ contains
     real(r8), parameter :: a(n) = (/ -1.0_r8, 1.0_r8, 1.5_r8, 3.0_r8 /), &
          tol = epsilon(1.0_r8)
 
-    integer, pointer :: uc(:)
+    integer, allocatable :: uc(:)
     real(r8) :: lat1, lon1, lat2, lon2, x1, y1, z1, x2, y2, z2, angle
     integer :: k, nerr
     logical :: e

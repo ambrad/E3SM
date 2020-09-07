@@ -1011,7 +1011,7 @@ contains
     enddo
     lchunks(:)%cost = 0.0_r8
 
-    if (use_nbrhd) call nbrhd_init_lchunk(chunks(nchunks+1), lchunks(endchunk+1))
+    if (use_nbrhd) call nbrhd_init_lchunk(chunks(nchunks+1), lchunks, lchunks(endchunk+1))
 
     deallocate( pchunkid )
     !deallocate( npchunks ) !do not deallocate as it is being used in RRTMG radiation.F90
