@@ -934,7 +934,7 @@ contains
     if (use_nbrhd) then
        call nbrhd_init(clat_p_tot, clat_p_idx, clat_p, clon_p, lat_p, lon_p, &
             latlon_to_dyn_gcol_map, gs_col_num(iam), ngcols, ngcols_p, &
-            nchunks, chunks, knuhcs, phys_alltoall)
+            nchunks, chunks(1:nchunks), chunks(nchunks+1), knuhcs, phys_alltoall)
     end if
 
     !
@@ -1011,7 +1011,7 @@ contains
     enddo
     lchunks(:)%cost = 0.0_r8
 
-    if (nbrhdchunk > 0) call nbrhd_init_chunks(lchunks(endchunk+1), chunks(nchunks+1))
+    if (nbrhdchunk > 0) call nbrhd_init_lchunk(chunks(nchunks+1), lchunks(endchunk+1))
 
     deallocate( pchunkid )
     !deallocate( npchunks ) !do not deallocate as it is being used in RRTMG radiation.F90

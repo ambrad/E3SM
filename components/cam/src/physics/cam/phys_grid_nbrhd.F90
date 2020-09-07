@@ -55,7 +55,6 @@ module phys_grid_nbrhd
      type (SparseTriple) :: chk_nbrhds
      ! Local <-> global block IDs
      integer, allocatable :: ie2bid(:)
-     type (SparseTriple) :: dpe2nbrs
      type (IdMap) :: bid2ie
      ! blk_offset is index using local block ID, not global as in phys_grid.
      integer, allocatable, dimension(:) :: blk_num, chk_num
@@ -70,7 +69,7 @@ module phys_grid_nbrhd
   public :: &
        ! phys_grid initialization
        nbrhd_init, &
-       nbrhd_init_chunks, &
+       nbrhd_init_lchunk, &
        ! dp_coupling communication
        nbrhd_get_nrecs, &
        nbrhd_block_to_chunk_send_sizes, &
@@ -84,19 +83,20 @@ module phys_grid_nbrhd
 contains
 
   subroutine nbrhd_init(clat_p_tot, clat_p_idx, clat_p, clon_p, lat_p, lon_p, &
-       latlon_to_dyn_gcol_map, nlcols, ngcols, ngcols_p, nchunks, chunks, knuhcs, &
-       phys_alltoall)
+       latlon_to_dyn_gcol_map, nlcols, ngcols, ngcols_p, nchunks, chunks, chunk_extra, &
+       knuhcs, phys_alltoall)
 
     integer, intent(in) :: clat_p_tot, nlcols, ngcols, ngcols_p, phys_alltoall, nchunks
     integer, target, dimension(:), intent(in) :: clat_p_idx, lat_p, lon_p, &
          latlon_to_dyn_gcol_map
     real(r8), target, dimension(:), intent(in) :: clat_p, clon_p
     type (chunk), intent(in) :: chunks(:)
+    type (chunk), intent(out) :: chunk_extra
     type (knuhc), intent(in) :: knuhcs(:)
 
     type (PhysGridData) :: gd
-    type (SparseTriple) :: cpe2nbrs
-    integer :: bnrec, cnrec
+    type (SparseTriple) :: cpe2nbrs, dpe2nbrs
+    integer :: bnrec, cnrec, i
     logical :: e
 
     call run_unit_tests()
@@ -120,52 +120,32 @@ contains
 
     call find_chunk_nbrhds(cns, gd, chunks, cns%chk_nbrhds)
     call make_cpe2nbrs(cns, gd, chunks, knuhcs, cpe2nbrs)
-    call make_dpe2nbrs(cns, gd, cns%chk_nbrhds, cns%dpe2nbrs)
-    call make_comm_schedule(cns, gd, cpe2nbrs, cns%dpe2nbrs)
+    call make_dpe2nbrs(cns, gd, cns%chk_nbrhds, dpe2nbrs)
+    call make_comm_schedule(cns, gd, cpe2nbrs, dpe2nbrs)
     call init_comm_data(cns, cns%comm_data, phys_alltoall)
-
+    call init_chunk(cns, gd, dpe2nbrs, chunk_extra)
+    
     if (cns%verbose > 0) then
        call nbrhd_get_nrecs(bnrec, cnrec)
        write(iulog,*) 'amb> nrec', bnrec, cnrec
-       call test_comm_schedule(cns, gd, chunks, knuhcs, cpe2nbrs, cns%dpe2nbrs)
+       call test_comm_schedule(cns, gd, chunks, knuhcs, cpe2nbrs, dpe2nbrs)
     end if
 
     call SparseTriple_deallocate(cpe2nbrs)
+    call SparseTriple_deallocate(dpe2nbrs)
   end subroutine nbrhd_init
 
-  subroutine nbrhd_init_chunks(lchk, chk)
+  subroutine nbrhd_init_lchunk(chk, lchk)
+    type (chunk), intent(in) :: chk
     type (lchunk), intent(out) :: lchk
-    type (chunk), intent(out) :: chk
 
-    integer :: i
-    logical :: e
-
-    lchk%ncols = size(cns%chk_offset)
-    e = assert(size(cns%dpe2nbrs%ys) == lchk%ncols, 'lchunk: pre')
+    lchk%ncols = chk%ncols
     lchk%cid = cns%nchunks + 1
     lchk%cost = -1
     allocate(lchk%gcol(lchk%ncols), lchk%area(lchk%ncols), lchk%wght(lchk%ncols))
-
-    chk%ncols = lchk%ncols
-    chk%dcols = chk%ncols
-    chk%owner = iam
-    chk%lcid = endchunk + nbrhdchunk
-    chk%estcost = -1
-    allocate(chk%gcol(chk%ncols), chk%lat(chk%ncols), chk%lon(chk%ncols))
-
-    do i = 1, chk%ncols
-       lchk%gcol(i) = cns%dpe2nbrs%ys(i)
-       chk%gcol(i) = lchk%gcol(i)
-#if 0
-       lchk%area(i) = 
-       lchk%wght(i) = 
-       chk%lat(i) = 
-       chk%lon(i) = 
-#endif
-    end do
-
-    call SparseTriple_deallocate(cns%dpe2nbrs)
-  end subroutine nbrhd_init_chunks
+    lchk%gcol(:) = chk%gcol(:)
+    ! area and wght will be set in phys_grid after this call.
+  end subroutine nbrhd_init_lchunk
 
   subroutine nbrhd_get_nrecs(block_buf_nrecs, chunk_buf_nrecs)
     integer, intent(out) :: block_buf_nrecs, chunk_buf_nrecs
@@ -850,6 +830,27 @@ contains
        bid2ie%id1(i) = ie2bid(bid2ie%id2(i))
     end do
   end subroutine get_local_blocks
+
+  subroutine init_chunk(cns, gd, dpe2nbrs, chk)
+    type (ColumnNeighborhoods), intent(in) :: cns
+    type (PhysGridData), intent(in) :: gd
+    type (SparseTriple), intent(in) :: dpe2nbrs
+    type (chunk), intent(out) :: chk
+
+    integer :: i
+
+    chk%ncols = size(dpe2nbrs%ys)
+    chk%dcols = chk%ncols
+    chk%owner = iam
+    chk%lcid = endchunk + nbrhdchunk
+    chk%estcost = -1
+    allocate(chk%gcol(chk%ncols), chk%lat(chk%ncols), chk%lon(chk%ncols))
+    do i = 1, chk%ncols
+       chk%gcol(i) = dpe2nbrs%ys(i)
+       chk%lat(i) = gd%lat_p(chk%gcol(i))
+       chk%lon(i) = gd%lon_p(chk%gcol(i))
+    end do
+  end subroutine init_chunk
 
   subroutine test_comm_schedule(cns, gd, chunks, knuhcs, cpe2nbrs, dpe2nbrs)
     use dyn_grid, only: get_block_gcol_cnt_d, get_block_gcol_d, get_horiz_grid_d
