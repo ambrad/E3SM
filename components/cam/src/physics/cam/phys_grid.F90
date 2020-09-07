@@ -1358,7 +1358,6 @@ contains
     call t_stopf("phys_grid_init")
     call t_adj_detailf(+2)
 
-    if (use_nbrhd) call nbrhd_test()
     call endrun('amb> exit')
     return
   end subroutine phys_grid_init

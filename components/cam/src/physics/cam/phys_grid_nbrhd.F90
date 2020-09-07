@@ -92,7 +92,6 @@ module phys_grid_nbrhd
        ! phys_grid initialization
        nbrhd_init, &
        nbrhd_init_lchunk, &
-       nbrhd_test, &
        ! dp_coupling communication
        nbrhd_get_nrecs, &
        nbrhd_block_to_chunk_send_sizes, &
@@ -171,11 +170,8 @@ contains
     ! area and wght will be set in phys_grid after this call.
 
     call make_c2n(cns, lchks, cns%c2n)
+    if (cns%verbose > 0) call test_c2n(cns, lchks)
   end subroutine nbrhd_init_lchunk
-
-  subroutine nbrhd_test()
-    call test_api()
-  end subroutine nbrhd_test
 
   subroutine nbrhd_get_nrecs(block_buf_nrecs, chunk_buf_nrecs)
     integer, intent(out) :: block_buf_nrecs, chunk_buf_nrecs
@@ -691,7 +687,7 @@ contains
           ie = cns%bid2ie%id2(k) ! local block ID providing data to the chunk
           e = assert(bcid(1) >= 1 .and. bcid(1) <= cns%blk_offset(ie)%ncol, &
                      'comm_schedule: bcid is in range')
-          call incr(cns%blk_offset(ie)%numrep(bcid(1)))
+          cns%blk_offset(ie)%numrep(bcid(1)) = cns%blk_offset(ie)%numrep(bcid(1)) + 1
        end do
     end do
     ! Allocate offset arrays.
@@ -892,41 +888,6 @@ contains
     end do
   end subroutine init_chunk
 
-  subroutine test_nbrhds(cns, gd)
-    ! A chunk-owned column may not be in the neighborhood of any other
-    ! chunk-owned columns. Use this fact to brute-force check the neighborhood
-    ! lists.
-
-    type (ColumnNeighborhoods), intent(in) :: cns
-    type (PhysGridData), intent(in) :: gd
-
-    integer, allocatable, dimension(:) :: ugcols
-    real(r8) :: x, y, z, angle, min_angle
-    integer :: nlcols, nugcols, i, j, k, gcol, jgcol
-    logical :: e
-
-    nlcols = size(cns%chk_nbrhds%xs)
-    call make_unique(cns%chk_nbrhds%yptr(nlcols+1)-1, cns%chk_nbrhds%ys, ugcols)
-    nugcols = size(ugcols)
-    do i = 1, nlcols
-       gcol = cns%chk_nbrhds%xs(i)
-       k = binary_search(size(ugcols), ugcols, gcol)
-       if (k >= 1) cycle
-       ! This chunk-owned column is not in a neighborhood of any other
-       ! chunk-owned column. Check through brute force that this is correct.
-       call latlon2xyz(gd%clat_p(gd%lat_p(gcol)), gd%clon_p(gd%lon_p(gcol)), x, y, z)
-       min_angle = 100*cns%max_angle
-       do j = 1, nlcols
-          if (j == i) cycle
-          jgcol = cns%chk_nbrhds%xs(j)
-          angle = unit_sphere_angle(x, y, z, &
-               gd%clat_p(gd%lat_p(jgcol)), gd%clon_p(gd%lon_p(jgcol)))
-          min_angle = min(min_angle, angle)
-       end do
-       e = assert(min_angle > cns%max_angle, 'test_nbrhds: angle')
-    end do
-  end subroutine test_nbrhds
-
   subroutine make_c2n(cns, lchks, c2n)
     type (ColumnNeighborhoods), intent(in) :: cns
     type (lchunk), intent(in) :: lchks(begchunk:endchunk+nbrhdchunk)
@@ -983,140 +944,8 @@ contains
        end do
        e = assert(all(c2n%chk(lcid)%nbrhd >= 1), 'c2n: nbrhd filled')
     end do
+    deallocate(ugcols)
   end subroutine make_c2n
-
-  subroutine test_comm_schedule(cns, gd, chunks, knuhcs, cpe2nbrs, dpe2nbrs)
-    use dyn_grid, only: get_block_gcol_cnt_d, get_block_gcol_d, get_horiz_grid_d
-
-    type (ColumnNeighborhoods), intent(in) :: cns
-    type (PhysGridData), intent(in) :: gd
-    type (chunk), intent(in) :: chunks(:)
-    type (knuhc), intent(in) :: knuhcs(:)
-    type (SparseTriple), intent(in) :: cpe2nbrs, dpe2nbrs
-
-    real(r8), parameter :: none = -10000
-    integer, parameter :: rcdsz = 2
-
-    real(r8), allocatable, dimension(:) :: lats, lons, bbuf, cbuf, lats_d, lons_d
-    real(r8) :: lat, lon, x, y, z, angle
-    integer, allocatable :: bptr(:,:), cptr(:)
-    integer :: cid, ncols, gcol, i, j, k, ie, bnrecs, cnrecs, icol, max_numlev, &
-         max_numrep, numlev, numrep, bid, ngcols, gcols(16), nerr, jgcol
-    logical :: e
-
-    if (masterproc) write(iulog,*) 'amb> test_comm_schedule'
-    nerr = 0
-
-    allocate(lats(gd%ngcols), lons(gd%ngcols))
-    lats(:) = none; lons(:) = none
-
-    ! Fill lats, lons with iam-owning chunks' gcols' data. These are available
-    ! from standard phys_grid comm.
-    do cid = 1, cns%nchunks
-       if (chunks(cid)%owner /= iam) cycle
-       ncols = chunks(cid)%ncols
-       do i = 1, ncols
-          gcol = chunks(cid)%gcol(i)
-          lats(gcol) = gd%clat_p(gd%lat_p(gcol))
-          lons(gcol) = gd%clon_p(gd%lon_p(gcol))
-       end do
-    end do
-
-    call nbrhd_get_nrecs(bnrecs, cnrecs)
-    allocate(bbuf(rcdsz*bnrecs), cbuf(rcdsz*cnrecs))
-    bbuf(:) = none; cbuf(:) = none
-
-    ! Pack send buffer.
-    call nbrhd_block_to_chunk_send_sizes(max_numlev, max_numrep)
-    allocate(bptr(max_numlev,max_numrep))
-    do ie = 1, size(cns%ie2bid) ! caller knows this
-       bid = cns%ie2bid(ie)
-       ngcols = get_block_gcol_cnt_d(bid)
-       e = test(nerr, size(gcols) >= ngcols, 'comm: ngcols size')
-       e = test(nerr, ngcols == cns%blk_offset(ie)%ncol, 'comm: ngcols agrees')
-       call get_block_gcol_d(bid, ngcols, gcols)
-       e = test(nerr, cns%blk_offset(ie)%ncol == size(cns%blk_offset(ie)%numlev), &
-                'comm:ncol')
-       do icol = 1, cns%blk_offset(ie)%ncol ! ditto
-          gcol = gcols(icol)
-          lat = gd%clat_p(gd%lat_p(gcol))
-          lon = gd%clon_p(gd%lon_p(gcol))
-          call nbrhd_block_to_chunk_send_pters(ie, icol, rcdsz, numlev, numrep, bptr)
-          e = test(nerr, numlev <= max_numlev .and. numrep <= max_numrep, &
-                   'comm: bptr size')
-          e = test(nerr, all(bptr(:numlev,:numrep) >= 1), 'comm: bptr >= 1')
-          do j = 1, numrep
-             do k = 1, numlev
-                e = test(nerr, bptr(k,j) >= 1 .and. bptr(k,j) <= size(bbuf), &
-                         'comm: bptr bbuf')
-                bbuf(bptr(k,j)+0) = lat + (k-1)
-                bbuf(bptr(k,j)+1) = lon + (k-1)
-             end do
-          end do
-       end do
-    end do
-    deallocate(bptr)
-
-    e = test(nerr, .not. any(bbuf == none), 'bbuf has no none values')
-    call nbrhd_transpose_block_to_chunk(rcdsz, bbuf, cbuf)
-    e = test(nerr, .not. any(cbuf == none), 'cbuf has no none values')
-
-    ! Unpack recv buffer. We should never unpack into a slot having other than
-    ! the none value.
-    allocate(cptr(max_numlev))
-    do icol = 1, size(cns%chk_offset) ! caller knows this from an lchunk query
-       call nbrhd_block_to_chunk_recv_pters(icol, rcdsz, numlev, cptr)
-       e = test(nerr, icol <= size(dpe2nbrs%ys), 'comm: icol range')
-       gcol = dpe2nbrs%ys(icol) ! also from lchunk query
-       k = 1
-       e = test(nerr, lats(gcol) == none, 'comm: lats(gcol) is none')
-       lats(gcol) = cbuf(cptr(k)+0)
-       lons(gcol) = cbuf(cptr(k)+1)
-       do k = 2, numlev
-          e = test(nerr, cbuf(cptr(k)+0) == lats(gcol) + (k-1) .and. &
-                         cbuf(cptr(k)+1) == lons(gcol) + (k-1), 'comm: lat,lon')
-       end do
-    end do
-    deallocate(cptr)
-
-    deallocate(bbuf, cbuf)
-
-    ! For each gcol in iam's chunks, check that
-    ! * its nbrhd has all non-none values;
-    ! * the values are correct;
-    ! * the angular distance is <= max_angle.
-    allocate(lats_d(gd%ngcols), lons_d(gd%ngcols))
-    call get_horiz_grid_d(gd%ngcols, clat_d_out=lats_d, clon_d_out=lons_d)
-    do cid = 1, cns%nchunks
-       if (chunks(cid)%owner /= iam) cycle
-       ncols = chunks(cid)%ncols
-       do i = 1, ncols
-          gcol = chunks(cid)%gcol(i)
-          k = SparseTriple_in_xs(cns%chk_nbrhds, gcol)
-          e = test(nerr, k >= 1, 'comm: gcol has a nbrhd')
-          call latlon2xyz(lats(gcol), lons(gcol), x, y, z)
-          do j = cns%chk_nbrhds%yptr(k), cns%chk_nbrhds%yptr(k+1)-1
-             jgcol = cns%chk_nbrhds%ys(j)
-             e = test(nerr, lats(jgcol) /= none, 'comm: lats(jgcol) has a value')
-             e = test(nerr, lats(jgcol) == lats_d(jgcol), 'comm: lat')
-             e = test(nerr, lons(jgcol) == lons_d(jgcol), 'comm: lon')
-             angle = unit_sphere_angle(x, y, z, lats(jgcol), lons(jgcol))
-             e = test(nerr, angle <= cns%max_angle, 'comm: angle')
-          end do
-          if (.not. e) exit
-       end do
-       if (.not. e) exit
-    end do
-    deallocate(lats_d, lons_d)
-
-    deallocate(lats, lons)
-
-    if (nerr > 0) write(iulog,*) 'amb> test_comm_schedule FAIL', nerr
-  end subroutine test_comm_schedule
-
-  subroutine test_api()
-    
-  end subroutine test_api
 
   !> -------------------------------------------------------------------
   !> General utilities.
@@ -1338,6 +1167,9 @@ contains
     i = i + 1
   end subroutine incr
 
+  !> -------------------------------------------------------------------
+  !> Internal tests.
+
   subroutine run_unit_tests()
     ! Unit tests for helper routines.
 
@@ -1392,5 +1224,203 @@ contains
 
     if (nerr > 0) write(iulog,*) 'amb> run_unit_tests FAIL', nerr
   end subroutine run_unit_tests
+
+  subroutine test_nbrhds(cns, gd)
+    ! A chunk-owned column may not be in the neighborhood of any other
+    ! chunk-owned columns. Use this fact to brute-force check the neighborhood
+    ! lists.
+
+    type (ColumnNeighborhoods), intent(in) :: cns
+    type (PhysGridData), intent(in) :: gd
+
+    integer, allocatable, dimension(:) :: ugcols
+    real(r8) :: x, y, z, angle, min_angle
+    integer :: nlcols, nugcols, i, j, k, gcol, jgcol
+    logical :: e
+
+    nlcols = size(cns%chk_nbrhds%xs)
+    call make_unique(cns%chk_nbrhds%yptr(nlcols+1)-1, cns%chk_nbrhds%ys, ugcols)
+    nugcols = size(ugcols)
+    do i = 1, nlcols
+       gcol = cns%chk_nbrhds%xs(i)
+       k = binary_search(size(ugcols), ugcols, gcol)
+       if (k >= 1) cycle
+       ! This chunk-owned column is not in a neighborhood of any other
+       ! chunk-owned column. Check through brute force that this is correct.
+       call latlon2xyz(gd%clat_p(gd%lat_p(gcol)), gd%clon_p(gd%lon_p(gcol)), x, y, z)
+       min_angle = 100*cns%max_angle
+       do j = 1, nlcols
+          if (j == i) cycle
+          jgcol = cns%chk_nbrhds%xs(j)
+          angle = unit_sphere_angle(x, y, z, &
+               gd%clat_p(gd%lat_p(jgcol)), gd%clon_p(gd%lon_p(jgcol)))
+          min_angle = min(min_angle, angle)
+       end do
+       e = assert(min_angle > cns%max_angle, 'test_nbrhds: angle')
+    end do
+  end subroutine test_nbrhds
+
+  subroutine test_comm_schedule(cns, gd, chunks, knuhcs, cpe2nbrs, dpe2nbrs)
+    use dyn_grid, only: get_block_gcol_cnt_d, get_block_gcol_d, get_horiz_grid_d
+
+    type (ColumnNeighborhoods), intent(in) :: cns
+    type (PhysGridData), intent(in) :: gd
+    type (chunk), intent(in) :: chunks(:)
+    type (knuhc), intent(in) :: knuhcs(:)
+    type (SparseTriple), intent(in) :: cpe2nbrs, dpe2nbrs
+
+    real(r8), parameter :: none = -10000
+    integer, parameter :: rcdsz = 2
+
+    real(r8), allocatable, dimension(:) :: lats, lons, bbuf, cbuf, lats_d, lons_d
+    real(r8) :: lat, lon, x, y, z, angle
+    integer, allocatable :: bptr(:,:), cptr(:)
+    integer :: cid, ncols, gcol, i, j, k, ie, bnrecs, cnrecs, icol, max_numlev, &
+         max_numrep, numlev, numrep, bid, ngcols, gcols(16), nerr, jgcol
+    logical :: e
+
+    if (masterproc) write(iulog,*) 'amb> test_comm_schedule'
+    nerr = 0
+
+    allocate(lats(gd%ngcols), lons(gd%ngcols))
+    lats(:) = none; lons(:) = none
+
+    ! Fill lats, lons with iam-owning chunks' gcols' data. These are available
+    ! from standard phys_grid comm.
+    do cid = 1, cns%nchunks
+       if (chunks(cid)%owner /= iam) cycle
+       ncols = chunks(cid)%ncols
+       do i = 1, ncols
+          gcol = chunks(cid)%gcol(i)
+          lats(gcol) = gd%clat_p(gd%lat_p(gcol))
+          lons(gcol) = gd%clon_p(gd%lon_p(gcol))
+       end do
+    end do
+
+    call nbrhd_get_nrecs(bnrecs, cnrecs)
+    allocate(bbuf(rcdsz*bnrecs), cbuf(rcdsz*cnrecs))
+    bbuf(:) = none; cbuf(:) = none
+
+    ! Pack send buffer.
+    call nbrhd_block_to_chunk_send_sizes(max_numlev, max_numrep)
+    allocate(bptr(max_numlev,max_numrep))
+    do ie = 1, size(cns%ie2bid) ! caller knows this
+       bid = cns%ie2bid(ie)
+       ngcols = get_block_gcol_cnt_d(bid)
+       e = test(nerr, size(gcols) >= ngcols, 'comm: ngcols size')
+       e = test(nerr, ngcols == cns%blk_offset(ie)%ncol, 'comm: ngcols agrees')
+       call get_block_gcol_d(bid, ngcols, gcols)
+       e = test(nerr, cns%blk_offset(ie)%ncol == size(cns%blk_offset(ie)%numlev), &
+                'comm:ncol')
+       do icol = 1, cns%blk_offset(ie)%ncol ! ditto
+          gcol = gcols(icol)
+          lat = gd%clat_p(gd%lat_p(gcol))
+          lon = gd%clon_p(gd%lon_p(gcol))
+          call nbrhd_block_to_chunk_send_pters(ie, icol, rcdsz, numlev, numrep, bptr)
+          e = test(nerr, numlev <= max_numlev .and. numrep <= max_numrep, &
+                   'comm: bptr size')
+          e = test(nerr, all(bptr(:numlev,:numrep) >= 1), 'comm: bptr >= 1')
+          do j = 1, numrep
+             do k = 1, numlev
+                e = test(nerr, bptr(k,j) >= 1 .and. bptr(k,j) <= size(bbuf), &
+                         'comm: bptr bbuf')
+                bbuf(bptr(k,j)+0) = lat + (k-1)
+                bbuf(bptr(k,j)+1) = lon + (k-1)
+             end do
+          end do
+       end do
+    end do
+    deallocate(bptr)
+
+    e = test(nerr, .not. any(bbuf == none), 'bbuf has no none values')
+    call nbrhd_transpose_block_to_chunk(rcdsz, bbuf, cbuf)
+    e = test(nerr, .not. any(cbuf == none), 'cbuf has no none values')
+
+    ! Unpack recv buffer. We should never unpack into a slot having other than
+    ! the none value.
+    allocate(cptr(max_numlev))
+    do icol = 1, size(cns%chk_offset) ! caller knows this from an lchunk query
+       call nbrhd_block_to_chunk_recv_pters(icol, rcdsz, numlev, cptr)
+       e = test(nerr, icol <= size(dpe2nbrs%ys), 'comm: icol range')
+       gcol = dpe2nbrs%ys(icol) ! also from lchunk query
+       k = 1
+       e = test(nerr, lats(gcol) == none, 'comm: lats(gcol) is none')
+       lats(gcol) = cbuf(cptr(k)+0)
+       lons(gcol) = cbuf(cptr(k)+1)
+       do k = 2, numlev
+          e = test(nerr, cbuf(cptr(k)+0) == lats(gcol) + (k-1) .and. &
+                         cbuf(cptr(k)+1) == lons(gcol) + (k-1), 'comm: lat,lon')
+       end do
+    end do
+    deallocate(cptr)
+
+    deallocate(bbuf, cbuf)
+
+    ! For each gcol in iam's chunks, check that
+    ! * its nbrhd has all non-none values;
+    ! * the values are correct;
+    ! * the angular distance is <= max_angle.
+    allocate(lats_d(gd%ngcols), lons_d(gd%ngcols))
+    call get_horiz_grid_d(gd%ngcols, clat_d_out=lats_d, clon_d_out=lons_d)
+    do cid = 1, cns%nchunks
+       if (chunks(cid)%owner /= iam) cycle
+       ncols = chunks(cid)%ncols
+       do i = 1, ncols
+          gcol = chunks(cid)%gcol(i)
+          k = SparseTriple_in_xs(cns%chk_nbrhds, gcol)
+          e = test(nerr, k >= 1, 'comm: gcol has a nbrhd')
+          call latlon2xyz(lats(gcol), lons(gcol), x, y, z)
+          do j = cns%chk_nbrhds%yptr(k), cns%chk_nbrhds%yptr(k+1)-1
+             jgcol = cns%chk_nbrhds%ys(j)
+             e = test(nerr, lats(jgcol) /= none, 'comm: lats(jgcol) has a value')
+             e = test(nerr, lats(jgcol) == lats_d(jgcol), 'comm: lat')
+             e = test(nerr, lons(jgcol) == lons_d(jgcol), 'comm: lon')
+             angle = unit_sphere_angle(x, y, z, lats(jgcol), lons(jgcol))
+             e = test(nerr, angle <= cns%max_angle, 'comm: angle')
+          end do
+          if (.not. e) exit
+       end do
+       if (.not. e) exit
+    end do
+    deallocate(lats_d, lons_d)
+
+    deallocate(lats, lons)
+
+    if (nerr > 0) write(iulog,*) 'amb> test_comm_schedule FAIL', nerr
+  end subroutine test_comm_schedule
+
+  subroutine test_c2n(cns, lchks)
+    type (ColumnNeighborhoods), intent(in) :: cns
+    type (lchunk), intent(in) :: lchks(begchunk:endchunk+nbrhdchunk)
+
+    integer, allocatable, dimension(:) :: lcids, icols
+    integer :: nerr, lcid, icol, n, i, k, j1, j2, lcolid, gcol
+    logical :: e
+
+    allocate(lcids(128), icols(128))
+    nerr = 0
+    lcolid = 0
+    do lcid = begchunk, endchunk
+       do icol = 1, lchks(lcid)%ncols
+          lcolid = lcolid + 1
+          n = nbrhd_get_nbrhd_size(lcid, icol)
+          j1 = cns%chk_nbrhds%yptr(lcolid)
+          j2 = cns%chk_nbrhds%yptr(lcolid+1)
+          e = test(nerr, n == j2 - j1, 'api: n')
+          if (n > size(lcids)) then
+             deallocate(lcids, icols)
+             allocate(lcids(2*n), icols(2*n))
+          end if
+          call nbrhd_get_nbrhd(lcid, icol, lcids, icols)
+          do i = 1, n
+             gcol = lchks(lcids(i))%gcol(icols(i))
+             k = binary_search(n, cns%chk_nbrhds%ys(j1:j2-1), gcol)
+             e = test(nerr, k /= -1, 'api: gcol found')
+          end do
+       end do
+    end do
+    deallocate(lcids, icols)
+    if (nerr > 0) write(iulog,*) 'amb> test_c2n FAIL', nerr
+  end subroutine test_c2n
 
 end module phys_grid_nbrhd
