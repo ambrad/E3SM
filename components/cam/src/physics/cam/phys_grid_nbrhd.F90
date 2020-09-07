@@ -55,10 +55,11 @@ module phys_grid_nbrhd
      type (SparseTriple) :: chk_nbrhds
      ! Local <-> global block IDs
      integer, allocatable :: ie2bid(:)
+     type (SparseTriple) :: dpe2nbrs
      type (IdMap) :: bid2ie
      ! blk_offset is index using local block ID, not global as in phys_grid.
      integer, allocatable, dimension(:) :: blk_num, chk_num
-     integer :: blk_nrecs, chk_nrecs, max_numrep, max_numlev
+     integer :: nchunks, blk_nrecs, chk_nrecs, max_numrep, max_numlev
      type (Offsets), allocatable, dimension(:) :: blk_offset
      integer, allocatable :: chk_numlev(:), chk_offset(:)
      type (CommData) :: comm_data
@@ -69,6 +70,7 @@ module phys_grid_nbrhd
   public :: &
        ! phys_grid initialization
        nbrhd_init, &
+       nbrhd_init_chunks, &
        ! dp_coupling communication
        nbrhd_get_nrecs, &
        nbrhd_block_to_chunk_send_sizes, &
@@ -82,9 +84,10 @@ module phys_grid_nbrhd
 contains
 
   subroutine nbrhd_init(clat_p_tot, clat_p_idx, clat_p, clon_p, lat_p, lon_p, &
-       latlon_to_dyn_gcol_map, nlcols, ngcols, ngcols_p, chunks, knuhcs, phys_alltoall)
+       latlon_to_dyn_gcol_map, nlcols, ngcols, ngcols_p, nchunks, chunks, knuhcs, &
+       phys_alltoall)
 
-    integer, intent(in) :: clat_p_tot, nlcols, ngcols, ngcols_p, phys_alltoall
+    integer, intent(in) :: clat_p_tot, nlcols, ngcols, ngcols_p, phys_alltoall, nchunks
     integer, target, dimension(:), intent(in) :: clat_p_idx, lat_p, lon_p, &
          latlon_to_dyn_gcol_map
     real(r8), target, dimension(:), intent(in) :: clat_p, clon_p
@@ -92,15 +95,16 @@ contains
     type (knuhc), intent(in) :: knuhcs(:)
 
     type (PhysGridData) :: gd
-    type (SparseTriple) :: cpe2nbrs, dpe2nbrs
+    type (SparseTriple) :: cpe2nbrs
     integer :: bnrec, cnrec
     logical :: e
 
     call run_unit_tests()
 
     cns%verbose = 1
-    nbrhdchunk = 1
     cns%max_angle = 0.06d0
+    cns%nchunks = nchunks
+    nbrhdchunk = 1
 
     gd%clat_p_tot = clat_p_tot
     gd%nlcols = nlcols; gd%ngcols = ngcols; gd%ngcols_p = ngcols_p
@@ -108,25 +112,60 @@ contains
     gd%clat_p_idx => clat_p_idx; gd%latlon_to_dyn_gcol_map => latlon_to_dyn_gcol_map
     gd%clat_p => clat_p; gd%clon_p => clon_p
 
+    e = assert(size(chunks) == cns%nchunks+1, 'init: room for extra chunk')
+
     ! We use local block IDs to keep our persistent arrays small. Get global <->
     ! local block ID maps.
     call get_local_blocks(cns%ie2bid, cns%bid2ie)
 
     call find_chunk_nbrhds(cns, gd, chunks, cns%chk_nbrhds)
     call make_cpe2nbrs(cns, gd, chunks, knuhcs, cpe2nbrs)
-    call make_dpe2nbrs(cns, gd, cns%chk_nbrhds, dpe2nbrs)
-    call make_comm_schedule(cns, gd, cpe2nbrs, dpe2nbrs)
+    call make_dpe2nbrs(cns, gd, cns%chk_nbrhds, cns%dpe2nbrs)
+    call make_comm_schedule(cns, gd, cpe2nbrs, cns%dpe2nbrs)
     call init_comm_data(cns, cns%comm_data, phys_alltoall)
 
     if (cns%verbose > 0) then
        call nbrhd_get_nrecs(bnrec, cnrec)
        write(iulog,*) 'amb> nrec', bnrec, cnrec
-       call test_comm_schedule(cns, gd, chunks, knuhcs, cpe2nbrs, dpe2nbrs)
+       call test_comm_schedule(cns, gd, chunks, knuhcs, cpe2nbrs, cns%dpe2nbrs)
     end if
 
     call SparseTriple_deallocate(cpe2nbrs)
-    call SparseTriple_deallocate(dpe2nbrs)
   end subroutine nbrhd_init
+
+  subroutine nbrhd_init_chunks(lchk, chk)
+    type (lchunk), intent(out) :: lchk
+    type (chunk), intent(out) :: chk
+
+    integer :: i
+    logical :: e
+
+    lchk%ncols = size(cns%chk_offset)
+    e = assert(size(cns%dpe2nbrs%ys) == lchk%ncols, 'lchunk: pre')
+    lchk%cid = cns%nchunks + 1
+    lchk%cost = -1
+    allocate(lchk%gcol(lchk%ncols), lchk%area(lchk%ncols), lchk%wght(lchk%ncols))
+
+    chk%ncols = lchk%ncols
+    chk%dcols = chk%ncols
+    chk%owner = iam
+    chk%lcid = endchunk + nbrhdchunk
+    chk%estcost = -1
+    allocate(chk%gcol(chk%ncols), chk%lat(chk%ncols), chk%lon(chk%ncols))
+
+    do i = 1, chk%ncols
+       lchk%gcol(i) = cns%dpe2nbrs%ys(i)
+       chk%gcol(i) = lchk%gcol(i)
+#if 0
+       lchk%area(i) = 
+       lchk%wght(i) = 
+       chk%lat(i) = 
+       chk%lon(i) = 
+#endif
+    end do
+
+    call SparseTriple_deallocate(cns%dpe2nbrs)
+  end subroutine nbrhd_init_chunks
 
   subroutine nbrhd_get_nrecs(block_buf_nrecs, chunk_buf_nrecs)
     integer, intent(out) :: block_buf_nrecs, chunk_buf_nrecs
@@ -244,17 +283,16 @@ contains
     type (SparseTriple), intent(out) :: cnbrhds
 
     integer, allocatable :: idxs(:), xs(:)
-    integer :: nchunks, cid, ncols, gcol, i, cap, lcolid, cnt, ptr
+    integer :: cid, ncols, gcol, i, cap, lcolid, cnt, ptr
     real(r8) :: lat, lon, xi, yi, zi, angle
     logical :: e
 
     if (cns%verbose > 0) write(iulog,*) 'amb> nlcols', gd%nlcols
-    nchunks = size(chunks)
     cap = gd%nlcols
     allocate(cnbrhds%xs(gd%nlcols), cnbrhds%yptr(gd%nlcols+1), cnbrhds%ys(cap))
     ! Get sorted iam-owning chunks' gcols.
     lcolid = 1
-    do cid = 1, nchunks
+    do cid = 1, cns%nchunks
        if (chunks(cid)%owner /= iam) cycle
        ncols = chunks(cid)%ncols
        e = assert(ncols >= 1, 'ncols')
@@ -440,8 +478,7 @@ contains
     ! entries:
     !     xs: sorted list of block-owning pes;
     !     yptr: pointers into ys;
-    !     ys: for each pe, the list of iam-owning chunks' neighbors, as
-    !         sorted gcols.
+    !     ys: for each pe, the list of iam-owning chunks' sorted gcols.
 
     use dyn_grid, only: get_gcol_block_cnt_d, get_block_owner_d, get_gcol_block_d
 
@@ -829,8 +866,8 @@ contains
     real(r8), allocatable, dimension(:) :: lats, lons, bbuf, cbuf, lats_d, lons_d
     real(r8) :: lat, lon, x, y, z, angle
     integer, allocatable :: bptr(:,:), cptr(:)
-    integer :: nchunks, cid, ncols, gcol, i, j, k, ie, bnrecs, cnrecs, icol, &
-         max_numlev, max_numrep, numlev, numrep, bid, ngcols, gcols(16), nerr, jgcol
+    integer :: cid, ncols, gcol, i, j, k, ie, bnrecs, cnrecs, icol, max_numlev, &
+         max_numrep, numlev, numrep, bid, ngcols, gcols(16), nerr, jgcol
     logical :: e
 
     if (masterproc) write(iulog,*) 'amb> test_comm_schedule'
@@ -841,8 +878,7 @@ contains
 
     ! Fill lats, lons with iam-owning chunks' gcols' data. These are available
     ! from standard phys_grid comm.
-    nchunks = size(chunks)
-    do cid = 1, nchunks
+    do cid = 1, cns%nchunks
        if (chunks(cid)%owner /= iam) cycle
        ncols = chunks(cid)%ncols
        do i = 1, ncols
@@ -917,7 +953,7 @@ contains
     ! * the angular distance is <= max_angle.
     allocate(lats_d(gd%ngcols), lons_d(gd%ngcols))
     call get_horiz_grid_d(gd%ngcols, clat_d_out=lats_d, clon_d_out=lons_d)
-    do cid = 1, nchunks
+    do cid = 1, cns%nchunks
        if (chunks(cid)%owner /= iam) cycle
        ncols = chunks(cid)%ncols
        do i = 1, ncols

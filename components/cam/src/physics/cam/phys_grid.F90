@@ -766,7 +766,9 @@ contains
        ! Allocate and initialize part of chunks data structure
        !
        allocate( cdex(1:maxblksiz) )
-       allocate( chunks(1:nchunks) )
+       cid = 0
+       if (use_nbrhd) cid = 1
+       allocate( chunks(1:nchunks+cid) )
        do cid=1,nchunks
           allocate( chunks(cid)%gcol(max_pcols) )
        enddo
@@ -864,7 +866,7 @@ contains
 
        call t_startf("create_chunks")
        call create_chunks(lbal_opt, chunks_per_thread, pcols_opt, &
-                          pcols_max, pcols_mult, pcols_proc)
+                          pcols_max, pcols_mult, use_nbrhd, pcols_proc)
 #ifndef PPCOLS
        pcols = pcols_proc(iam)
 #endif
@@ -932,7 +934,7 @@ contains
     if (use_nbrhd) then
        call nbrhd_init(clat_p_tot, clat_p_idx, clat_p, clon_p, lat_p, lon_p, &
             latlon_to_dyn_gcol_map, gs_col_num(iam), ngcols, ngcols_p, &
-            chunks, knuhcs, phys_alltoall)
+            nchunks, chunks, knuhcs, phys_alltoall)
     end if
 
     !
@@ -993,7 +995,7 @@ contains
     begchunk = pchunkid(iam)   + lastblock
     endchunk = pchunkid(iam+1) + lastblock - 1
     !
-    allocate( lchunks(begchunk:endchunk) )
+    allocate( lchunks(begchunk:endchunk+nbrhdchunk) )
     do cid=1,nchunks
        if (chunks(cid)%owner == iam) then
           lcid = chunks(cid)%lcid
@@ -1008,6 +1010,8 @@ contains
        endif
     enddo
     lchunks(:)%cost = 0.0_r8
+
+    if (nbrhdchunk > 0) call nbrhd_init_chunks(lchunks(endchunk+1), chunks(nchunks+1))
 
     deallocate( pchunkid )
     !deallocate( npchunks ) !do not deallocate as it is being used in RRTMG radiation.F90
@@ -1041,7 +1045,7 @@ contains
        call endrun('phys_grid')
     end if
 
-    do lcid=begchunk,endchunk
+    do lcid=begchunk,endchunk+nbrhdchunk
        do i=1,lchunks(lcid)%ncols
           lchunks(lcid)%area(i) = area_d(lchunks(lcid)%gcol(i))
           lchunks(lcid)%wght(i) = wght_d(lchunks(lcid)%gcol(i))
@@ -4637,7 +4641,7 @@ logical function phys_grid_initialized ()
 
    subroutine create_chunks(opt, chnks_per_thrd, cols_per_chnk, &
                             cols_per_chnk_max, cols_per_chnk_mult, &
-                            pcols_proc)
+                            use_nbrhd, pcols_proc)
 !----------------------------------------------------------------------- 
 ! 
 ! Purpose: Decompose physics computational grid into chunks, for
@@ -4696,6 +4700,8 @@ logical function phys_grid_initialized ()
       !      required to be a multiple of cols_per_chnk_mult. Otherwise
       !      it is ignored.
       ! <1: ignore
+   logical, intent(in)  :: use_nbrhd
+      ! Allocate extra chunk for use in column neighborhoods.
    integer, intent(out) :: pcols_proc(0:npes-1)
       ! pcols for all chunks assigned to each process
 !---------------------------Local workspace-----------------------------
@@ -5175,7 +5181,8 @@ logical function phys_grid_initialized ()
 !
 ! Allocate chunks and knuhcs data structures
 !
-      allocate( chunks(1:nchunks) )
+      if (use_nbrhd) cid = 1
+      allocate( chunks(1:nchunks+cid) )
       do cid=1,nchunks
          allocate( chunks(cid)%gcol(max_pcols) )
       enddo
