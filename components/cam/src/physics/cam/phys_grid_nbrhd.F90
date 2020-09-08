@@ -2,6 +2,22 @@ module phys_grid_nbrhd
   ! Communication schedule and data structures to supplement a column with data
   ! in its neighborhood for use in scale-aware physics parameterizations.
   !
+  ! Implementation notes.
+  !   nbrhdchunk is 0 if neighborhoods are not active; this is standard
+  ! behavior. It is 1 if they are. It is used to augment the range
+  ! begchunk:endchunk by one, like this: begchunk:endchunk+nbrhdchunk.
+  !   We keep endchunk the same as it was because most begchunk:endchunk
+  ! quantities and loops are unchanged. We add an extra lchunk, chunk, and
+  ! physics_state.
+  !   In dp_coupling, we call derived_physics on the extra physics_state, but we
+  ! omit the diagnostic energy calculations and so don't need an extra
+  ! physics_tend. Here the goal is to provide full physics_state data for the
+  ! neighborhood.
+  !   In physconst, we allocate rairv for the extra chunk because it is used in
+  ! derived_physics in the call to geopotential_t. But we ignore the other
+  ! physconst arrays because these are used only in calculations in which the
+  ! extra chunk is not involved.
+  !
   ! AMB 2020/09 Initial
 
   use spmd_utils, only: iam, masterproc, npes
@@ -65,7 +81,7 @@ module phys_grid_nbrhd
   ! A neighborhood is a list of gcols neighboring a column. Neighborhoods,
   ! plural, is a list of these of lists.
   type :: ColumnNeighborhoods
-     integer :: verbose, nchunks
+     integer :: verbose, nchunks, extra_chunk_ncol
      ! Radian angle defining neighborhood. Defines max between a column center
      ! and column centers within its neighborhood.
      real(r8) :: max_angle
@@ -92,6 +108,7 @@ module phys_grid_nbrhd
        ! phys_grid initialization
        nbrhd_init, &
        nbrhd_init_lchunk, &
+       nbrhd_get_extra_chunk_ncol, &
        ! dp_coupling communication
        nbrhd_get_nrecs, &
        nbrhd_block_to_chunk_send_sizes, &
@@ -142,6 +159,7 @@ contains
     if (cns%verbose > 0) call test_nbrhds(cns, gd)
     call make_cpe2nbrs(cns, gd, chunks, knuhcs, cpe2nbrs)
     call make_dpe2nbrs(cns, gd, cns%chk_nbrhds, dpe2nbrs)
+    cns%extra_chunk_ncol = size(dpe2nbrs%ys)
     call make_comm_schedule(cns, gd, cpe2nbrs, dpe2nbrs)
     call init_comm_data(cns, cns%comm_data, phys_alltoall)
     call init_chunk(cns, gd, dpe2nbrs, chunk_extra)
@@ -172,6 +190,11 @@ contains
     call make_c2n(cns, lchks, cns%c2n)
     if (cns%verbose > 0) call test_c2n(cns, lchks)
   end subroutine nbrhd_init_lchunk
+
+  function nbrhd_get_extra_chunk_ncol() result(n)
+    integer :: n
+    n = cns%extra_chunk_ncol
+  end function nbrhd_get_extra_chunk_ncol
 
   subroutine nbrhd_get_nrecs(block_buf_nrecs, chunk_buf_nrecs)
     integer, intent(out) :: block_buf_nrecs, chunk_buf_nrecs
@@ -875,7 +898,7 @@ contains
 
     integer :: i
 
-    chk%ncols = size(dpe2nbrs%ys)
+    chk%ncols = cns%extra_chunk_ncol
     chk%dcols = chk%ncols
     chk%owner = iam
     chk%lcid = endchunk + nbrhdchunk
