@@ -740,9 +740,13 @@ subroutine phys_init( phys_state, phys_tend, pbuf2d, cam_out )
 
     call physics_type_alloc(phys_state, phys_tend, begchunk, endchunk, nbrhdchunk, pcols)
 
-    do lchnk = begchunk, endchunk+nbrhdchunk
+    do lchnk = begchunk, endchunk
        call physics_state_set_grid(lchnk, phys_state(lchnk))
     end do
+    if (nbrhdchunk > 0) then
+       lchnk = endchunk+nbrhdchunk
+       call physics_state_set_grid(lchnk, phys_state(lchnk), nonstandard_pcols=.true.)
+    end if
 
     !-------------------------------------------------------------------------------------------
     ! Initialize any variables in physconst which are not temporally and/or spatially constant
