@@ -23,7 +23,7 @@ module physpkg
   use physics_update_mod,  only: physics_update, physics_update_init, hist_vars, nvars_prtrb_hist, get_var
   use phys_grid,        only: get_ncols_p, print_cost_p, update_cost_p, phys_proc_cost
   use phys_gmean,       only: gmean_mass
-  use ppgrid,           only: begchunk, endchunk, pcols, pver, pverp, psubcols
+  use ppgrid,           only: begchunk, endchunk, pcols, pver, pverp, psubcols, nbrhdchunk
   use constituents,     only: pcnst, cnst_name, cnst_get_ind
   use camsrfexch,       only: cam_out_t, cam_in_t
 
@@ -738,9 +738,9 @@ subroutine phys_init( phys_state, phys_tend, pbuf2d, cam_out )
 
     !-----------------------------------------------------------------------
 
-    call physics_type_alloc(phys_state, phys_tend, begchunk, endchunk, pcols)
+    call physics_type_alloc(phys_state, phys_tend, begchunk, endchunk, nbrhdchunk, pcols)
 
-    do lchnk = begchunk, endchunk
+    do lchnk = begchunk, endchunk+nbrhdchunk
        call physics_state_set_grid(lchnk, phys_state(lchnk))
     end do
 

@@ -10,6 +10,7 @@ module physics_types
   use physconst,    only: zvir, gravit, cpair, rair, cpairv, rairv
   use dycore,       only: dycore_is
   use phys_grid,    only: get_ncols_p, get_rlon_all_p, get_rlat_all_p, get_gcol_all_p
+  use phys_grid_nbrhd, only: nbrhd_get_extra_chunk_ncol
   use cam_logfile,  only: iulog
   use cam_abortutils,   only: endrun
   use phys_control, only: waccmx_is, use_mass_borrower
@@ -168,18 +169,18 @@ module physics_types
 !===============================================================================
 contains
 !===============================================================================
-  subroutine physics_type_alloc(phys_state, phys_tend, begchunk, endchunk, psetcols)
+  subroutine physics_type_alloc(phys_state, phys_tend, begchunk, endchunk, nbrhdchunk, psetcols)
     implicit none
     type(physics_state), pointer :: phys_state(:)
     type(physics_tend), pointer :: phys_tend(:)
-    integer, intent(in) :: begchunk, endchunk
+    integer, intent(in) :: begchunk, endchunk, nbrhdchunk
     integer, intent(in) :: psetcols
     
-    integer :: ierr=0, lchnk
+    integer :: ierr=0, lchnk, n
     type(physics_state), pointer :: state
     type(physics_tend), pointer :: tend
 
-    allocate(phys_state(begchunk:endchunk), stat=ierr)
+    allocate(phys_state(begchunk:endchunk+nbrhdchunk), stat=ierr)
     if( ierr /= 0 ) then
        write(iulog,*) 'physics_types: phys_state allocation error = ',ierr
        call endrun('physics_types: failed to allocate physics_state array')
@@ -188,6 +189,11 @@ contains
     do lchnk=begchunk,endchunk
        call physics_state_alloc(phys_state(lchnk),lchnk,pcols)
     end do
+    if (nbrhdchunk > 0) then
+       lchnk = endchunk+nbrhdchunk
+       n = nbrhd_get_extra_chunk_ncol()
+       call physics_state_alloc(phys_state(lchnk),lchnk,n)
+    end if
 
     allocate(phys_tend(begchunk:endchunk), stat=ierr)
     if( ierr /= 0 ) then

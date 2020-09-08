@@ -13,7 +13,7 @@ module dp_coupling
   use kinds,          only: real_kind, int_kind
   use shr_kind_mod,   only: r8=>shr_kind_r8
   use physics_types,  only: physics_state, physics_tend 
-  use ppgrid,         only: begchunk, endchunk, pcols, pver, pverp
+  use ppgrid,         only: begchunk, endchunk, pcols, pver, pverp, nbrhdchunk
   use cam_logfile,    only: iulog
   use spmd_dyn,       only: local_dp_map, block_buf_nrecs, chunk_buf_nrecs
   use spmd_utils,     only: mpicom, iam
@@ -25,6 +25,7 @@ module dp_coupling
                             transpose_block_to_chunk, transpose_chunk_to_block,   &
                             chunk_to_block_send_pters, chunk_to_block_recv_pters, &
                             block_to_chunk_recv_pters, block_to_chunk_send_pters
+  use phys_grid_nbrhd,only: nbrhd_get_nbrhd_size, nbrhd_get_nbrhd
   private
   public :: d_p_coupling, p_d_coupling
 
@@ -48,7 +49,7 @@ CONTAINS
     type(dyn_export_t), intent(inout)  :: dyn_out         ! dynamics export 
     type(physics_buffer_desc), pointer :: pbuf2d(:,:)     ! physics buffer
     ! OUTPUT PARAMETERS:
-    type(physics_state), intent(inout), dimension(begchunk:endchunk) :: phys_state
+    type(physics_state), intent(inout), dimension(begchunk:endchunk+nbrhdchunk) :: phys_state
     type(physics_tend ), intent(inout), dimension(begchunk:endchunk) :: phys_tend 
     ! LOCAL VARIABLES
     real(kind=real_kind), dimension(npsq,nelemd)            :: ps_tmp ! temp array to hold ps
@@ -529,7 +530,7 @@ CONTAINS
 
     ! Evaluate derived quantities
     !$omp parallel do private (lchnk, ncol, k, i, zvirv, pbuf_chnk)
-    do lchnk = begchunk,endchunk
+    do lchnk = begchunk,endchunk+nbrhdchunk
       ncol = get_ncols_p(lchnk)
       do k = 1,nlev
         do i = 1,ncol
@@ -597,6 +598,8 @@ CONTAINS
        ! Convert dry type constituents from moist to dry mixing ratio
        call set_state_pdry(phys_state(lchnk))	! First get dry pressure to use for this timestep
        call set_wet_to_dry(phys_state(lchnk)) ! Dynamics had moist, physics wants dry.
+
+       if (lchnk == endchunk+nbrhdchunk) cycle
 
        ! Compute energy and water integrals of input state
        pbuf_chnk => pbuf_get_chunk(pbuf2d, lchnk)

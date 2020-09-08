@@ -13,7 +13,7 @@ module physconst
                             shr_const_rearth, shr_const_sday,   shr_const_cday,   &
                             shr_const_spval,  shr_const_omega,  shr_const_cpvir,  &
                             shr_const_tktrip
-   use ppgrid,        only: pcols, pver, pverp, begchunk, endchunk   ! Dimensions and chunk bounds
+   use ppgrid,        only: pcols, pver, pverp, begchunk, endchunk, nbrhdchunk   ! Dimensions and chunk bounds
 
    implicit none
 
@@ -119,7 +119,7 @@ contains
 !  Allocate constituent dependent properties 
 !-------------------------------------------------------------------------------
     allocate( cpairv(pcols,pver,begchunk:endchunk), &
-              rairv(pcols,pver,begchunk:endchunk),  &
+              rairv(pcols,pver,begchunk:endchunk+nbrhdchunk),  &
               cappav(pcols,pver,begchunk:endchunk), &
               mbarv(pcols,pver,begchunk:endchunk),  &
               kmvis(pcols,pverp,begchunk:endchunk), &
