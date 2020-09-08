@@ -1357,8 +1357,7 @@ contains
 
     call t_stopf("phys_grid_init")
     call t_adj_detailf(+2)
-
-    call endrun('amb> exit')
+    if (use_nbrhd) print *,'amb> phys_grid_init done'
     return
   end subroutine phys_grid_init
 
