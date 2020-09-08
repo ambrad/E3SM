@@ -277,6 +277,10 @@ CONTAINS
     end if ! local_dp_map
     call t_stopf('dpcopy')
 
+    if (nbrhdchunk > 0) then
+       call d_p_coupling_nbrhd(ps_tmp, zs_tmp, T_tmp, om_tmp, uv_tmp, q_tmp, phys_state)
+    end if
+
     call t_startf('derived_phys')
     call derived_phys(phys_state,phys_tend,pbuf2d)
     call t_stopf('derived_phys')
@@ -640,6 +644,52 @@ CONTAINS
 #endif
 
   end subroutine derived_phys
+  !=================================================================================================
+  !=================================================================================================
+  subroutine d_p_coupling_nbrhd(ps_tmp, zs_tmp, T_tmp, om_tmp, uv_tmp, q_tmp, phys_state)
+    implicit none
+    !---------------------------------------------------------------------------
+    ! INPUT PARAMETERS:
+    real(kind=real_kind), intent(in), dimension(npsq,nelemd)            :: ps_tmp
+    real(kind=real_kind), intent(in), dimension(npsq,nelemd)            :: zs_tmp
+    real(kind=real_kind), intent(in), dimension(npsq,pver,nelemd)       :: T_tmp
+    real(kind=real_kind), intent(in), dimension(npsq,2,pver,nelemd)     :: uv_tmp
+    real(kind=real_kind), intent(in), dimension(npsq,pver,pcnst,nelemd) :: q_tmp
+    real(kind=real_kind), intent(in), dimension(npsq,pver,nelemd)       :: om_tmp
+    ! OUTPUT PARAMETERS:
+    type(physics_state), intent(inout), dimension(begchunk:endchunk+nbrhdchunk) :: phys_state
+    ! LOCAL VARIABLES:
+    type(element_t),          pointer :: elem(:)          ! pointer to dyn_out element array
+    integer(kind=int_kind)   :: ie                        ! indices over elements
+    integer(kind=int_kind)   :: lchnk, icol, ilyr         ! indices over chunks, columns, lay
+    integer                  :: nphys, nphys_sq           ! physics grid parameters
+    real (kind=real_kind)    :: temperature(np,np,nlev)   ! Temperature from dynamics
+    ! Transpose buffers
+    real (kind=real_kind), allocatable, dimension(:) :: bbuffer 
+    real (kind=real_kind), allocatable, dimension(:) :: cbuffer
+
+    call t_startf('dpcopy_nbrhd')
+    if (fv_nphys > 0) then
+       nphys = fv_nphys
+    else
+       nphys = np
+    end if
+    nphys_sq = nphys*nphys
+
+    if (par%dynproc) then
+
+    else
+       bbuffer(:) = 0._r8
+    end if
+
+    call t_startf ('nbrd_block_to_chunk')
+    call nbrhd_transpose_block_to_chunk(tsize, bbuffer, cbuffer)
+    call t_stopf  ('nbrhd_block_to_chunk')
+
+    lchnk = endchunk+nbrhdchunk
+
+    call t_stopf('dpcopy_nbrhd')
+  end subroutine d_p_coupling_nbrhd
   !=================================================================================================
   !=================================================================================================
 end module dp_coupling
