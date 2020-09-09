@@ -10,7 +10,6 @@ module physics_types
   use physconst,    only: zvir, gravit, cpair, rair, cpairv, rairv
   use dycore,       only: dycore_is
   use phys_grid,    only: get_ncols_p, get_rlon_all_p, get_rlat_all_p, get_gcol_all_p
-  use phys_grid_nbrhd, only: nbrhd_get_extra_chunk_ncol
   use cam_logfile,  only: iulog
   use cam_abortutils,   only: endrun
   use phys_control, only: waccmx_is, use_mass_borrower
@@ -191,7 +190,7 @@ contains
     end do
     if (nbrhdchunk > 0) then
        lchnk = endchunk+nbrhdchunk
-       n = nbrhd_get_extra_chunk_ncol()
+       n = get_ncols_p(lchnk)
        call physics_state_alloc(phys_state(lchnk),lchnk,n)
     end if
 

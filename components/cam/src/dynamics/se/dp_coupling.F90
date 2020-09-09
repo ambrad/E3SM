@@ -25,7 +25,7 @@ module dp_coupling
                             transpose_block_to_chunk, transpose_chunk_to_block,   &
                             chunk_to_block_send_pters, chunk_to_block_recv_pters, &
                             block_to_chunk_recv_pters, block_to_chunk_send_pters
-  use phys_grid_nbrhd,only: nbrhd_get_nrecs, nbrhd_block_to_chunk_send_sizes, &
+  use phys_grid_nbrhd,only: nbrhd_get_nrecs, nbrhd_block_to_chunk_sizes, &
                             nbrhd_block_to_chunk_send_pters, &
                             nbrhd_block_to_chunk_recv_pters, &
                             nbrhd_transpose_block_to_chunk
@@ -670,7 +670,7 @@ CONTAINS
     integer(kind=int_kind), allocatable :: bptr(:,:), cptr(:)
     real (kind=real_kind), allocatable, dimension(:) :: bbuf, cbuf ! transpose buffers
     integer(kind=int_kind)   :: bnrecs, cnrecs, max_numlev, max_numrep, numlev, numrep, &
-                                rcdsz, ncol, j, k, q, ptr
+                                num_recv_col, rcdsz, ncol, j, k, q, ptr
 
     call t_startf('dpcopy_nbrhd')
     if (fv_nphys > 0) then
@@ -684,8 +684,9 @@ CONTAINS
     call nbrhd_get_nrecs(bnrecs, cnrecs)
     allocate(bbuf(rcdsz*bnrecs), cbuf(rcdsz*cnrecs))
 
+    call nbrhd_block_to_chunk_sizes(max_numlev, max_numrep, num_recv_col)
+
     if (par%dynproc) then
-       call nbrhd_block_to_chunk_send_sizes(max_numlev, max_numrep)
        allocate(bptr(0:max_numlev-1,max_numrep))
        do ie = 1, nelemd
           if (fv_nphys > 0) then
@@ -725,8 +726,7 @@ CONTAINS
 
     allocate(cptr(max_numlev))
     lchnk = endchunk+nbrhdchunk
-    ncol = phys_state(lchnk)%ncol
-    do icol = 1, ncol
+    do icol = 1, num_recv_col
        call nbrhd_block_to_chunk_recv_pters(icol, rcdsz, numlev, cptr)
        ptr = cptr(0)
        phys_state(lchnk)%ps  (icol) = cbuf(ptr+0)
@@ -745,6 +745,9 @@ CONTAINS
     deallocate(cptr)
 
     deallocate(bbuf, cbuf)
+
+    !todo copy phys_state to extra
+
     call t_stopf('dpcopy_nbrhd')
     print *,'amb> d_p_coupling_nbrhd done'
   end subroutine d_p_coupling_nbrhd
