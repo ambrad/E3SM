@@ -65,18 +65,16 @@ module phys_grid_nbrhd
      integer :: lcid, icol
   end type ColumnDesc
 
+  type ColumnCopies
+     integer :: icol_begin ! first slot in the nbhrd chunk to write copies
+     type (ColumnDesc), allocatable :: cols(:) ! list of copy sources
+  end type ColumnCopies
+
   type :: ChunkDesc
      ! nbrhd(col(i):col(i)-1) is the neighborhood of column i in this chunk. The
      ! range is an index into the list of ColumnDescs, idx2cd.
-     integer, allocatable, dimension(:) :: col(:), nbrhd(:)
+     integer, allocatable :: col(:), nbrhd(:)
   end type ChunkDesc
-
-  type :: ColumnToNbrhdMap
-     ! List of column descriptors relevant to iam's chunks.
-     type (ColumnDesc), allocatable, dimension(:) :: idx2cd
-     ! Index as chk(lcid).
-     type (ChunkDesc), allocatable, dimension(:) :: chk
-  end type ColumnToNbrhdMap
 
   ! A neighborhood is a list of gcols neighboring a column. Neighborhoods,
   ! plural, is a list of these of lists.
@@ -99,7 +97,11 @@ module phys_grid_nbrhd
      integer, allocatable :: chk_numlev(:), chk_offset(:)
      type (CommData) :: comm_data
      ! Neighborhood API data.
-     type (ColumnToNbrhdMap) :: c2n
+     type (ColumnCopies) :: cc
+     ! c2n(lcid)%nbrhd(c2n(lcid)%col(icol) : c2n(lcid)%col(icol)-1) is the
+     ! neighborhood of column icol in lchunk lcid. The value of this array is
+     ! icol values into the extra chunk.
+     type (ChunkDesc), allocatable :: c2n(:)
   end type ColumnNeighborhoods
 
   type (ColumnNeighborhoods), private :: cns
@@ -107,7 +109,7 @@ module phys_grid_nbrhd
   public :: &
        ! phys_grid initialization
        nbrhd_init, &
-       nbrhd_init_lchunk, &
+       nbrhd_init_extra_chunk, &
        nbrhd_get_extra_chunk_ncol, &
        ! dp_coupling communication
        nbrhd_get_nrecs, &
@@ -159,9 +161,9 @@ contains
     if (cns%verbose > 0) call test_nbrhds(cns, gd)
     call make_cpe2nbrs(cns, gd, chunks, knuhcs, cpe2nbrs)
     call make_dpe2nbrs(cns, gd, cns%chk_nbrhds, dpe2nbrs)
-    cns%extra_chunk_ncol = size(dpe2nbrs%ys)
     call make_comm_schedule(cns, gd, cpe2nbrs, dpe2nbrs)
     call init_comm_data(cns, cns%comm_data, phys_alltoall)
+    cns%extra_chunk_ncol = size(dpe2nbrs%ys)
     call init_chunk(cns, gd, dpe2nbrs, chunk_extra)
 
     e = assert(cns%comm_data%dp_coup_steps >= &
@@ -175,10 +177,35 @@ contains
     call SparseTriple_deallocate(dpe2nbrs)
   end subroutine nbrhd_init
 
-  subroutine nbrhd_init_lchunk(chk, lchks, lchk)
-    type (chunk), intent(in) :: chk
+  subroutine nbrhd_init_extra_chunk(chks, lchks, chk, lchk)
+    type (chunk), intent(in) :: chks(:)
     type (lchunk), intent(in) :: lchks(begchunk:endchunk+nbrhdchunk)
+    type (chunk), intent(inout) :: chk
     type (lchunk), intent(out) :: lchk
+
+    integer :: ncol_prev, ncol_add, icol, i, cid, lcid, dicol
+
+    ! Map native local chunk columns to duplicate ones.
+    call make_cc(cns, lchks, cns%cc)
+
+    ! Append the duplicates to the nbrhd chunk.
+    ncol_prev = cns%extra_chunk_ncol
+    ncol_add = size(cns%cc%cols)
+    if (cns%verbose > 0) write(iulog,*) 'amb> extra:', ncol_prev, ncol_add
+    cns%extra_chunk_ncol = ncol_prev + ncol_add
+    chk%ncols = cns%extra_chunk_ncol
+    call array_realloc(chk%gcol, ncol_prev, chk%ncols)
+    call array_realloc(chk%lat , ncol_prev, chk%ncols)
+    call array_realloc(chk%lon , ncol_prev, chk%ncols)
+    do i = 1, ncol_add
+       lcid = cns%cc%cols(i)%lcid
+       icol = cns%cc%cols(i)%icol
+       cid = lchks(lcid)%cid
+       dicol = ncol_prev + i
+       chk%gcol(dicol) = chks(cid)%gcol(icol)
+       chk%lat (dicol) = chks(cid)%lat (icol)
+       chk%lon (dicol) = chks(cid)%lon (icol)
+    end do
 
     lchk%ncols = chk%ncols
     lchk%cid = cns%nchunks + 1
@@ -189,7 +216,7 @@ contains
 
     call make_c2n(cns, lchks, cns%c2n)
     if (cns%verbose > 0) call test_c2n(cns, lchks)
-  end subroutine nbrhd_init_lchunk
+  end subroutine nbrhd_init_extra_chunk
 
   function nbrhd_get_extra_chunk_ncol() result(n)
     integer :: n
@@ -293,23 +320,19 @@ contains
     logical :: e
 
     e = assert(lcid >= begchunk .and. lcid <= endchunk, 'nbrhd_size: lcid')
-    e = assert(icol >= 1 .and. icol <= size(cns%c2n%chk(lcid)%col)-1, 'nbrhd_size: icol')
-    n = cns%c2n%chk(lcid)%col(icol+1) - cns%c2n%chk(lcid)%col(icol)
+    e = assert(icol >= 1 .and. icol <= size(cns%c2n(lcid)%col)-1, 'nbrhd_size: icol')
+    n = cns%c2n(lcid)%col(icol+1) - cns%c2n(lcid)%col(icol)
   end function nbrhd_get_nbrhd_size
 
-  subroutine nbrhd_get_nbrhd(lcid, icol, lcids, icols)
+  subroutine nbrhd_get_nbrhd(lcid, icol, icols)
     integer, intent(in) :: lcid, icol
-    integer, dimension(:), intent(out) :: lcids, icols
+    integer, dimension(:), intent(out) :: icols
 
-    integer :: i, j, k
+    integer :: n
 
-    i = 1
-    do j = cns%c2n%chk(lcid)%col(icol), cns%c2n%chk(lcid)%col(icol+1)-1
-       k = cns%c2n%chk(lcid)%nbrhd(j)
-       lcids(i) = cns%c2n%idx2cd(k)%lcid
-       icols(i) = cns%c2n%idx2cd(k)%icol
-       i = i + 1
-    end do
+    n = nbrhd_get_nbrhd_size(lcid, icol)
+    icols(1:n) = cns%c2n(lcid)%nbrhd(cns%c2n(lcid)%col(icol) : &
+                                     cns%c2n(lcid)%col(icol+1)-1)
   end subroutine nbrhd_get_nbrhd
 
   !> -------------------------------------------------------------------
@@ -911,35 +934,72 @@ contains
     end do
   end subroutine init_chunk
 
-  subroutine make_c2n(cns, lchks, c2n)
+  subroutine make_cc(cns, lchks, cc)
     type (ColumnNeighborhoods), intent(in) :: cns
-    type (lchunk), intent(in) :: lchks(begchunk:endchunk+nbrhdchunk)
-    type (ColumnToNbrhdMap), intent(out) :: c2n
+    type (lchunk), intent(in) :: lchks(begchunk:endchunk)
+    type (ColumnCopies), intent(out) :: cc
 
-    integer, allocatable, dimension(:) :: ugcols
-    integer :: nlcols, nugcols, lcid, i, j, k, icol, gcol, cnt, lcolid
+    integer, allocatable, dimension(:) :: ugcols, lcids, icols
+    integer :: nlcols, nugcols, lcid, icol, gcol, cnt, cap, i, k
     logical :: e
 
-    ! Make idx2cd.
+    ! Unique neighborhood gcols.
     nlcols = size(cns%chk_nbrhds%xs)
     call make_unique(cns%chk_nbrhds%yptr(nlcols+1)-1, cns%chk_nbrhds%ys, ugcols)
     nugcols = size(ugcols)
-    allocate(c2n%idx2cd(nugcols))
-    c2n%idx2cd(:)%lcid = -1
-    c2n%idx2cd(:)%icol = -1
-    do lcid = begchunk, endchunk+nbrhdchunk
+
+    cap = 128
+    allocate(lcids(cap), icols(cap))
+    cnt = 0
+    do lcid = begchunk, endchunk
        do icol = 1, lchks(lcid)%ncols
           gcol = lchks(lcid)%gcol(icol)
           k = binary_search(size(ugcols), ugcols, gcol)
-          if (k == -1) cycle ! see test_nbrhds
-          e = assert(c2n%idx2cd(k)%icol == -1, 'c2n: not written')
-          c2n%idx2cd(k)%lcid = lcid
-          c2n%idx2cd(k)%icol = icol
+          if (k == -1) cycle ! not in a nbrhd
+          cnt = cnt + 1
+          if (cnt > cap) then
+             call array_realloc(lcids, cap, 2*cap)
+             call array_realloc(icols, cap, 2*cap)
+             cap = 2*cap
+          end if
+          lcids(cnt) = lcid
+          icols(cnt) = icol
        end do
     end do
-    e = assert(all(c2n%idx2cd(:)%icol > 0), 'c2n: all written')
+    deallocate(ugcols)
 
-    allocate(c2n%chk(begchunk:endchunk))
+    cc%icol_begin = cns%extra_chunk_ncol + 1
+    allocate(cc%cols(cnt))
+    do i = 1, cnt
+       cc%cols(i)%lcid = lcids(i)
+       cc%cols(i)%icol = icols(i)
+    end do
+
+    deallocate(lcids, icols)
+  end subroutine make_cc
+
+  subroutine make_c2n(cns, lchks, c2n)
+    type (ColumnNeighborhoods), intent(in) :: cns
+    type (lchunk), intent(in) :: lchks(begchunk:endchunk+nbrhdchunk)
+    type (ChunkDesc), allocatable, intent(out) :: c2n(:)
+
+    integer, allocatable, dimension(:) :: idxs, sgcols
+    integer :: lcid, i, j, k, icol, gcol, cnt, lcolid, n, extra
+    logical :: e
+
+    extra = endchunk+nbrhdchunk
+
+    ! Sorted list of extra gcols for search in the next step.
+    n = lchks(extra)%ncols
+    allocate(idxs(n), sgcols(n))
+    call IndexSet(n, idxs)
+    call IndexSort(n, idxs, lchks(extra)%gcol)
+    do i = 1, n
+       sgcols(i) = lchks(extra)%gcol(idxs(i))
+       if (i > 1) e = assert(sgcols(i) > sgcols(i-1), 'c2n: gcols are unique')
+    end do
+
+    allocate(c2n(begchunk:endchunk))
     lcolid = 1
     do lcid = begchunk, endchunk
        cnt = 0
@@ -947,27 +1007,27 @@ contains
           cnt = cnt + (cns%chk_nbrhds%yptr(lcolid+icol) - &
                        cns%chk_nbrhds%yptr(lcolid+icol-1))
        end do
-       allocate(c2n%chk(lcid)%col(lchks(lcid)%ncols+1), c2n%chk(lcid)%nbrhd(cnt))
-       c2n%chk(lcid)%nbrhd(:) = -1
-       c2n%chk(lcid)%col(1) = 1
+       allocate(c2n(lcid)%col(lchks(lcid)%ncols+1), c2n(lcid)%nbrhd(cnt))
+       c2n(lcid)%nbrhd(:) = -1
+       c2n(lcid)%col(1) = 1
        i = 1
        do icol = 1, lchks(lcid)%ncols
-          c2n%chk(lcid)%col(icol+1) = c2n%chk(lcid)%col(icol) + &
+          c2n(lcid)%col(icol+1) = c2n(lcid)%col(icol) + &
                (cns%chk_nbrhds%yptr(lcolid+1) - cns%chk_nbrhds%yptr(lcolid))
           do j = cns%chk_nbrhds%yptr(lcolid), cns%chk_nbrhds%yptr(lcolid+1)-1
              gcol = cns%chk_nbrhds%ys(j)
-             k = binary_search(size(ugcols), ugcols, gcol)
+             k = binary_search(size(sgcols), sgcols, gcol)
              e = assert(k > 0, 'c2n: nbr gcol')
-             c2n%chk(lcid)%nbrhd(i) = k
-             e = assert(lchks(c2n%idx2cd(k)%lcid)%gcol(c2n%idx2cd(k)%icol) == gcol, &
+             c2n(lcid)%nbrhd(i) = idxs(k)
+             e = assert(lchks(extra)%gcol(c2n(lcid)%nbrhd(i)) == gcol, &
                         'c2n: gcol association')
              i = i + 1
           end do
           lcolid = lcolid + 1
        end do
-       e = assert(all(c2n%chk(lcid)%nbrhd >= 1), 'c2n: nbrhd filled')
+       e = assert(all(c2n(lcid)%nbrhd >= 1), 'c2n: nbrhd filled')
     end do
-    deallocate(ugcols)
+    deallocate(idxs, sgcols)
   end subroutine make_c2n
 
   !> -------------------------------------------------------------------
@@ -990,12 +1050,16 @@ contains
 
   function assert(cond, message) result(out)
     ! Assertion that can be disabled.
+    use cam_abortutils, only: endrun
 
     logical, intent(in) :: cond
     character(len=*), intent(in) :: message
     logical :: out
 
-    if (.not. cond) write(iulog,*) 'amb> assert ', trim(message)
+    if (.not. cond) then
+       write(iulog,*) 'amb> assert ', trim(message)
+       call endrun('amb> assert')
+    end if
     out = cond
   end function assert
 
@@ -1359,14 +1423,14 @@ contains
     call nbrhd_transpose_block_to_chunk(rcdsz, bbuf, cbuf)
     e = test(nerr, .not. any(cbuf == none), 'cbuf has no none values')
 
-    ! Unpack recv buffer. We should never unpack into a slot having other than
-    ! the none value.
+    ! Unpack recv buffer.
     allocate(cptr(max_numlev))
     do icol = 1, size(cns%chk_offset) ! caller knows this from an lchunk query
        call nbrhd_block_to_chunk_recv_pters(icol, rcdsz, numlev, cptr)
        e = test(nerr, icol <= size(dpe2nbrs%ys), 'comm: icol range')
        gcol = dpe2nbrs%ys(icol) ! also from lchunk query
        k = 1
+       ! We should never unpack into a slot having other than the none value.
        e = test(nerr, lats(gcol) == none, 'comm: lats(gcol) is none')
        lats(gcol) = cbuf(cptr(k)+0)
        lons(gcol) = cbuf(cptr(k)+1)
@@ -1416,11 +1480,12 @@ contains
     type (ColumnNeighborhoods), intent(in) :: cns
     type (lchunk), intent(in) :: lchks(begchunk:endchunk+nbrhdchunk)
 
-    integer, allocatable, dimension(:) :: lcids, icols
-    integer :: nerr, lcid, icol, n, i, k, j1, j2, lcolid, gcol
+    integer, allocatable, dimension(:) :: icols
+    integer :: nerr, lcid, icol, n, i, k, j1, j2, lcolid, gcol, extra
     logical :: e
 
-    allocate(lcids(128), icols(128))
+    extra = endchunk+nbrhdchunk
+    allocate(icols(128))
     nerr = 0
     lcolid = 0
     do lcid = begchunk, endchunk
@@ -1430,19 +1495,19 @@ contains
           j1 = cns%chk_nbrhds%yptr(lcolid)
           j2 = cns%chk_nbrhds%yptr(lcolid+1)
           e = test(nerr, n == j2 - j1, 'api: n')
-          if (n > size(lcids)) then
-             deallocate(lcids, icols)
-             allocate(lcids(2*n), icols(2*n))
+          if (n > size(icols)) then
+             deallocate(icols)
+             allocate(icols(2*n))
           end if
-          call nbrhd_get_nbrhd(lcid, icol, lcids, icols)
+          call nbrhd_get_nbrhd(lcid, icol, icols)
           do i = 1, n
-             gcol = lchks(lcids(i))%gcol(icols(i))
+             gcol = lchks(extra)%gcol(icols(i))
              k = binary_search(n, cns%chk_nbrhds%ys(j1:j2-1), gcol)
              e = test(nerr, k /= -1, 'api: gcol found')
           end do
        end do
     end do
-    deallocate(lcids, icols)
+    deallocate(icols)
     if (nerr > 0) write(iulog,*) 'amb> test_c2n FAIL', nerr
   end subroutine test_c2n
 
