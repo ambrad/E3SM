@@ -66,7 +66,8 @@ module phys_grid_nbrhd
   end type ColumnDesc
 
   type ColumnCopies
-     integer :: icol_begin ! first slot in the nbhrd chunk to write copies
+     ! The first slot in the nbhrd chunk to write copies is one past this.
+     integer :: num_recv_col
      type (ColumnDesc), allocatable :: cols(:) ! list of copy sources
   end type ColumnCopies
 
@@ -110,10 +111,9 @@ module phys_grid_nbrhd
        ! phys_grid initialization
        nbrhd_init, &
        nbrhd_init_extra_chunk, &
-       nbrhd_get_extra_chunk_ncol, &
        ! dp_coupling communication
        nbrhd_get_nrecs, &
-       nbrhd_block_to_chunk_send_sizes, &
+       nbrhd_block_to_chunk_sizes, &
        nbrhd_block_to_chunk_send_pters, &
        nbrhd_transpose_block_to_chunk, &
        nbrhd_block_to_chunk_recv_pters, &
@@ -184,12 +184,14 @@ contains
     type (lchunk), intent(out) :: lchk
 
     integer :: ncol_prev, ncol_add, icol, i, cid, lcid, dicol
+    logical :: e
 
     ! Map native local chunk columns to duplicate ones.
     call make_cc(cns, lchks, cns%cc)
 
     ! Append the duplicates to the nbrhd chunk.
     ncol_prev = cns%extra_chunk_ncol
+    e = assert(cns%cc%num_recv_col == ncol_prev, 'num_recv_col')
     ncol_add = size(cns%cc%cols)
     if (cns%verbose > 0) write(iulog,*) 'amb> extra:', ncol_prev, ncol_add
     cns%extra_chunk_ncol = ncol_prev + ncol_add
@@ -218,11 +220,6 @@ contains
     if (cns%verbose > 0) call test_c2n(cns, lchks)
   end subroutine nbrhd_init_extra_chunk
 
-  function nbrhd_get_extra_chunk_ncol() result(n)
-    integer :: n
-    n = cns%extra_chunk_ncol
-  end function nbrhd_get_extra_chunk_ncol
-
   subroutine nbrhd_get_nrecs(block_buf_nrecs, chunk_buf_nrecs)
     integer, intent(out) :: block_buf_nrecs, chunk_buf_nrecs
 
@@ -230,14 +227,16 @@ contains
     chunk_buf_nrecs = cns%chk_nrecs
   end subroutine nbrhd_get_nrecs
 
-  subroutine nbrhd_block_to_chunk_send_sizes(max_numlev, max_numrep)
-    ! Get max numlev, numrep to size pter arrays for *_pters routines.
+  subroutine nbrhd_block_to_chunk_sizes(max_numlev, max_numrep, num_recv_col)
+    ! max_numlev, max_numrep are max sizes for pter arrays. num_recv_col is the
+    ! number of received columns.
 
-    integer, intent(out) :: max_numlev, max_numrep
+    integer, intent(out) :: max_numlev, max_numrep, num_recv_col
 
     max_numlev = cns%max_numlev
     max_numrep = cns%max_numrep
-  end subroutine nbrhd_block_to_chunk_send_sizes
+    num_recv_col = cns%cc%num_recv_col
+  end subroutine nbrhd_block_to_chunk_sizes
 
   subroutine nbrhd_block_to_chunk_send_pters(ie, icol, rcdsz, numlev, numrep, ptr)
     ! Set up the pointer array for column icol of block having local block ID
@@ -305,7 +304,7 @@ contains
     integer :: k
     logical :: e
     
-    e = assert(icol >= 1 .and. icol <= size(cns%chk_offset), 'recv_pters: icol')
+    e = assert(icol >= 1 .and. icol <= cns%extra_chunk_ncol, 'recv_pters: icol')
     numlev = cns%chk_numlev(icol)
     ptr(1) = rcdsz*cns%chk_offset(icol) + 1
     do k = 2, numlev
@@ -787,6 +786,7 @@ contains
                      'comm_schedule: gcol pe association')
           cns%chk_offset(j) = glbcnt
           numlev = get_block_lvl_cnt_d(blockid(1), bcid(1))
+          cns%max_numlev = max(cns%max_numlev, numlev)
           cns%chk_numlev(j) = numlev
           glbcnt = glbcnt + numlev
           pecnt = pecnt + numlev
@@ -968,7 +968,7 @@ contains
     end do
     deallocate(ugcols)
 
-    cc%icol_begin = cns%extra_chunk_ncol + 1
+    cc%num_recv_col = cns%extra_chunk_ncol
     allocate(cc%cols(cnt))
     do i = 1, cnt
        cc%cols(i)%lcid = lcids(i)
@@ -1363,7 +1363,7 @@ contains
     real(r8) :: lat, lon, x, y, z, angle
     integer, allocatable :: bptr(:,:), cptr(:)
     integer :: cid, ncols, gcol, i, j, k, ie, bnrecs, cnrecs, icol, max_numlev, &
-         max_numrep, numlev, numrep, bid, ngcols, gcols(16), nerr, jgcol
+         max_numrep, num_recv_col, numlev, numrep, bid, ngcols, gcols(16), nerr, jgcol
     logical :: e
 
     if (masterproc) write(iulog,*) 'amb> test_comm_schedule'
@@ -1388,8 +1388,9 @@ contains
     allocate(bbuf(rcdsz*bnrecs), cbuf(rcdsz*cnrecs))
     bbuf(:) = none; cbuf(:) = none
 
+    call nbrhd_block_to_chunk_sizes(max_numlev, max_numrep, num_recv_col)
+
     ! Pack send buffer.
-    call nbrhd_block_to_chunk_send_sizes(max_numlev, max_numrep)
     allocate(bptr(max_numlev,max_numrep))
     do ie = 1, size(cns%ie2bid) ! caller knows this
        bid = cns%ie2bid(ie)
@@ -1419,13 +1420,13 @@ contains
     end do
     deallocate(bptr)
 
-    e = test(nerr, .not. any(bbuf == none), 'bbuf has no none values')
+    e = test(nerr, .not. any(bbuf == none), 'comm: bbuf has no none values')
     call nbrhd_transpose_block_to_chunk(rcdsz, bbuf, cbuf)
-    e = test(nerr, .not. any(cbuf == none), 'cbuf has no none values')
+    e = test(nerr, .not. any(cbuf == none), 'comm: cbuf has no none values')
 
     ! Unpack recv buffer.
     allocate(cptr(max_numlev))
-    do icol = 1, size(cns%chk_offset) ! caller knows this from an lchunk query
+    do icol = 1, size(dpe2nbrs%ys) ! from nbrhd_block_to_chunk_sizes
        call nbrhd_block_to_chunk_recv_pters(icol, rcdsz, numlev, cptr)
        e = test(nerr, icol <= size(dpe2nbrs%ys), 'comm: icol range')
        gcol = dpe2nbrs%ys(icol) ! also from lchunk query
