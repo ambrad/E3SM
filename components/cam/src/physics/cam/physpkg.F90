@@ -959,7 +959,7 @@ subroutine phys_run1(phys_state, ztodt, phys_tend, pbuf2d,  cam_in, cam_out)
     !
     !---------------------------Local workspace-----------------------------
     !
-    integer :: c                                 ! indices
+    integer :: c, c_nbrhd                        ! indices
     integer :: ncol                              ! number of columns
     integer :: nstep                             ! current timestep number
 #if (! defined SPMD)
@@ -1030,6 +1030,7 @@ subroutine phys_run1(phys_state, ztodt, phys_tend, pbuf2d,  cam_in, cam_out)
 
        call system_clock(count=beg_proc_cnt)
        
+       c_nbrhd = endchunk+nbrhdchunk
 !$OMP PARALLEL DO SCHEDULE(STATIC,1) &
 !$OMP PRIVATE (c, beg_chnk_cnt, phys_buffer_chunk, end_chnk_cnt, sysclock_rate, sysclock_max, chunk_cost)
        do c=begchunk, endchunk
@@ -1047,7 +1048,7 @@ subroutine phys_run1(phys_state, ztodt, phys_tend, pbuf2d,  cam_in, cam_out)
 
           call tphysbc (ztodt, fsns(1,c), fsnt(1,c), flns(1,c), flnt(1,c), phys_state(c),        &
                        phys_tend(c), phys_buffer_chunk,  fsds(1,c), landm(1,c),          &
-                       sgh(1,c), sgh30(1,c), cam_out(c), cam_in(c) )
+                       sgh(1,c), sgh30(1,c), cam_out(c), cam_in(c), phys_state(c_nbrhd) )
 
           call system_clock(count=end_chnk_cnt, count_rate=sysclock_rate, count_max=sysclock_max)
           if ( end_chnk_cnt < beg_chnk_cnt ) end_chnk_cnt = end_chnk_cnt + sysclock_max
@@ -1218,7 +1219,7 @@ subroutine phys_run2(phys_state, ztodt, phys_tend, pbuf2d,  cam_out, &
     !-----------------------------------------------------------------------
     !---------------------------Local workspace-----------------------------
     !
-    integer :: c                                 ! chunk index
+    integer :: c, c_nbrhd                        ! chunk index
     integer :: ncol                              ! number of columns
     integer :: nstep                             ! current timestep number
 #if (! defined SPMD)
@@ -1270,6 +1271,7 @@ subroutine phys_run2(phys_state, ztodt, phys_tend, pbuf2d,  cam_out, &
 
     call system_clock(count=beg_proc_cnt)
 
+    c_nbrhd = endchunk+nbrhdchunk
 !$OMP PARALLEL DO SCHEDULE(STATIC,1) &
 !$OMP PRIVATE (c, beg_chnk_cnt, ncol, phys_buffer_chunk, end_chnk_cnt, sysclock_rate, sysclock_max, chunk_cost)
     do c=begchunk,endchunk
@@ -1297,7 +1299,7 @@ subroutine phys_run2(phys_state, ztodt, phys_tend, pbuf2d,  cam_out, &
        call tphysac(ztodt, cam_in(c),  &
             sgh(1,c), sgh30(1,c), cam_out(c),                              &
             phys_state(c), phys_tend(c), phys_buffer_chunk,&
-            fsds(1,c))
+            fsds(1,c), phys_state(c_nbrhd))
 
        call system_clock(count=end_chnk_cnt, count_rate=sysclock_rate, count_max=sysclock_max)
        if ( end_chnk_cnt < beg_chnk_cnt ) end_chnk_cnt = end_chnk_cnt + sysclock_max
@@ -1370,7 +1372,7 @@ end subroutine phys_final
 subroutine tphysac (ztodt,   cam_in,  &
        sgh,     sgh30,                                     &
        cam_out,  state,   tend,    pbuf,            &
-       fsds    )
+       fsds, state_nbrhd    )
     !----------------------------------------------------------------------- 
     ! 
     ! Purpose: 
@@ -1438,6 +1440,7 @@ subroutine tphysac (ztodt,   cam_in,  &
     type(physics_state), intent(inout) :: state
     type(physics_tend ), intent(inout) :: tend
     type(physics_buffer_desc), pointer :: pbuf(:)
+    type(physics_state), intent(in)    :: state_nbrhd   ! for column neighborhoods
 
     !
     !---------------------------Local workspace-----------------------------
@@ -1842,7 +1845,7 @@ end subroutine tphysac
 subroutine tphysbc (ztodt,               &
        fsns,    fsnt,    flns,    flnt,    state,   &
        tend,    pbuf,     fsds,    landm,            &
-       sgh, sgh30, cam_out, cam_in )
+       sgh, sgh30, cam_out, cam_in, state_nbrhd )
     !----------------------------------------------------------------------- 
     ! 
     ! Purpose: 
@@ -1930,7 +1933,7 @@ subroutine tphysbc (ztodt,               &
 
     type(cam_out_t),     intent(inout) :: cam_out
     type(cam_in_t),      intent(in)    :: cam_in
-
+    type(physics_state), intent(in)    :: state_nbrhd   ! for column neighborhoods
 
     !
     !---------------------------Local workspace-----------------------------
