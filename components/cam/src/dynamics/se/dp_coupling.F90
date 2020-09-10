@@ -85,6 +85,7 @@ CONTAINS
     ! Transpose buffers
     real (kind=real_kind), allocatable, dimension(:) :: bbuffer 
     real (kind=real_kind), allocatable, dimension(:) :: cbuffer
+    logical, parameter :: test = .true.
     !---------------------------------------------------------------------------
 
     nullify(pbuf_chnk)
@@ -157,6 +158,8 @@ CONTAINS
       end if
 
     end if ! par%dynproc
+
+    if (test) call init_test(elem, ps_tmp, zs_tmp, T_tmp, om_tmp, uv_tmp, q_tmp)
 
     call t_startf('dpcopy')
     if (local_dp_map) then
@@ -281,6 +284,11 @@ CONTAINS
 
     if (nbrhdchunk > 0) then
        call d_p_coupling_nbrhd(ps_tmp, zs_tmp, T_tmp, om_tmp, uv_tmp, q_tmp, phys_state)
+       if (test) then
+          call finish_test(phys_state)
+          call mpi_barrier(mpicom)
+          call endrun('amb> dp_coupling test')
+       end if
     end if
 
     call t_startf('derived_phys')
@@ -290,7 +298,7 @@ CONTAINS
 !for theta there is no need to multiply omega_p by p
 #ifndef MODEL_THETA_L
     !$omp parallel do private (lchnk, ncols, ilyr, icol)
-    do lchnk = begchunk,endchunk
+    do lchnk = begchunk,endchunk+nbrhdchunk
       ncols = get_ncols_p(lchnk)
       do ilyr = 1,pver
         do icol = 1,ncols
@@ -723,7 +731,7 @@ CONTAINS
     call nbrhd_transpose_block_to_chunk(rcdsz, bbuf, cbuf)
     call t_stopf ('nbrhd_block_to_chunk')
 
-    allocate(cptr(max_numlev))
+    allocate(cptr(0:max_numlev-1))
     lchnk = endchunk+nbrhdchunk
     do icol = 1, num_recv_col
        call nbrhd_block_to_chunk_recv_pters(icol, rcdsz, numlev, cptr)
@@ -748,7 +756,6 @@ CONTAINS
     call copy_to_nbrhd_chunk(phys_state)
 
     call t_stopf('dpcopy_nbrhd')
-    print *,'amb> d_p_coupling_nbrhd done'
   end subroutine d_p_coupling_nbrhd
   !=================================================================================================
   !=================================================================================================
@@ -760,7 +767,7 @@ CONTAINS
     ! OUTPUT PARAMETERS:
     type(physics_state), intent(inout), dimension(begchunk:endchunk+nbrhdchunk) :: phys_state
     ! LOCAL VARIABLES:
-    integer(kind=int_kind)   :: n, i, lchnk, lchnke, icol, icole
+    integer(kind=int_kind) :: n, i, lchnk, lchnke, icol, icole
 
     lchnke = endchunk+nbrhdchunk
     n = nbrhd_get_num_copies()
@@ -777,4 +784,90 @@ CONTAINS
   end subroutine copy_to_nbrhd_chunk
   !=================================================================================================
   !=================================================================================================
+  function assert(cond, message) result(out)
+    ! Assertion that can be disabled.
+    use cam_abortutils, only: endrun
+
+    logical, intent(in) :: cond
+    character(len=*), intent(in) :: message
+    logical :: out
+
+    if (.not. cond) then
+       write(iulog,*) 'amb> dp assert ', trim(message)
+       call endrun('amb> dp assert')
+    end if
+    out = cond
+  end function assert
+
+  subroutine init_test(elem, ps, zs, T, om, uv, q)
+    use dyn_grid, only: get_block_gcol_cnt_d, get_block_gcol_d, &
+         get_horiz_grid_dim_d, get_horiz_grid_d
+
+    type(element_t), intent(in) :: elem(:)
+    real(real_kind), intent(out) :: ps(npsq,nelemd), zs(npsq,nelemd), &
+         T(npsq,pver,nelemd), uv(npsq,2,pver,nelemd), q(npsq,pver,pcnst,nelemd), &
+         om(npsq,pver,nelemd)
+
+    real(real_kind), allocatable, dimension(:) :: lats_d, lons_d
+    real(real_kind) :: lat, lon
+    integer :: d1, d2, ie, i, p, bid, ngcols, gcols(16), cnt
+    logical :: e
+
+    if (.not. par%dynproc) return
+    e = assert(.not. local_dp_map, 'simple')
+
+    call get_horiz_grid_dim_d(d1, d2)
+    ngcols = d1*d2
+    allocate(lats_d(ngcols), lons_d(ngcols))
+    call get_horiz_grid_d(ngcols, clat_d_out=lats_d, clon_d_out=lons_d)
+    
+    do ie = 1, nelemd
+       bid = elem(ie)%GlobalID
+       cnt = get_block_gcol_cnt_d(bid)
+       call get_block_gcol_d(bid, cnt, gcols)
+       e = assert(cnt <= npsq, 'cnt')
+       do i = 1, cnt
+          lat = lats_d(gcols(i))
+          lon = lons_d(gcols(i))
+          ps(i,ie) = lat
+          zs(i,ie) = lon
+          do k = 1, pver
+             T (i,k,ie) = lat + k - 1
+             om(i,k,ie) = lon + k - 1
+             uv(i,1,k,ie) = lat + k - 1
+             uv(i,2,k,ie) = lon + k - 1
+             do p = 1, pcnst
+                q(i,k,p,ie) = p*(lat + lon) + k
+             end do
+          end do
+       end do
+    end do
+
+    deallocate(lats_d, lons_d)
+  end subroutine init_test
+
+  subroutine finish_test(s)
+    type(physics_state), intent(in), dimension(begchunk:endchunk+nbrhdchunk) :: s
+
+    real(real_kind) :: lat, lon
+    integer :: i, j, k, p
+
+    do i = begchunk, endchunk+nbrhdchunk
+       do j = 1, s(i)%ncol
+          lat = s(i)%lat(j)
+          lon = s(i)%lon(j)
+          e = assert(s(i)%ps  (j) == lat, 'ps')
+          e = assert(s(i)%phis(j) == lon, 'zs')
+          do k = 1, pver
+             e = assert(s(i)%T    (j,k) == lat + k - 1, 'T'  )
+             e = assert(s(i)%omega(j,k) == lon + k - 1, 'om' )
+             e = assert(s(i)%u    (j,k) == lat + k - 1, 'uv1')
+             e = assert(s(i)%v    (j,k) == lon + k - 1, 'uv2')
+             do p = 1, pcnst
+                e = assert(s(i)%q(j,k,p) == p*(lat + lon) + k, 'q')
+             end do
+          end do
+       end do
+    end do
+  end subroutine finish_test
 end module dp_coupling
