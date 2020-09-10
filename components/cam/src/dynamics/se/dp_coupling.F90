@@ -25,10 +25,9 @@ module dp_coupling
                             transpose_block_to_chunk, transpose_chunk_to_block,   &
                             chunk_to_block_send_pters, chunk_to_block_recv_pters, &
                             block_to_chunk_recv_pters, block_to_chunk_send_pters
-  use phys_grid_nbrhd,only: nbrhd_get_nrecs, nbrhd_block_to_chunk_sizes, &
-                            nbrhd_block_to_chunk_send_pters, &
-                            nbrhd_block_to_chunk_recv_pters, &
-                            nbrhd_transpose_block_to_chunk
+  use phys_grid_nbrhd,only: nbrhd_block_to_chunk_sizes, nbrhd_block_to_chunk_send_pters, &
+                            nbrhd_block_to_chunk_recv_pters, nbrhd_transpose_block_to_chunk, &
+                            nbrhd_get_num_copies, nbrhd_get_copy_idxs
   private
   public :: d_p_coupling, p_d_coupling
 
@@ -681,10 +680,10 @@ CONTAINS
     nphys_sq = nphys*nphys
     rcdsz = 4 + pcnst
 
-    call nbrhd_get_nrecs(bnrecs, cnrecs)
+    call nbrhd_block_to_chunk_sizes(bnrecs, cnrecs, &
+                                    max_numlev, max_numrep, &
+                                    num_recv_col)
     allocate(bbuf(rcdsz*bnrecs), cbuf(rcdsz*cnrecs))
-
-    call nbrhd_block_to_chunk_sizes(max_numlev, max_numrep, num_recv_col)
 
     if (par%dynproc) then
        allocate(bptr(0:max_numlev-1,max_numrep))
@@ -746,11 +745,36 @@ CONTAINS
 
     deallocate(bbuf, cbuf)
 
-    !todo copy phys_state to extra
+    call copy_to_nbrhd_chunk(phys_state)
 
     call t_stopf('dpcopy_nbrhd')
     print *,'amb> d_p_coupling_nbrhd done'
   end subroutine d_p_coupling_nbrhd
+  !=================================================================================================
+  !=================================================================================================
+  subroutine copy_to_nbrhd_chunk(phys_state)
+    ! Copy state from normal chunks to the extra neighborhood chunk. These are
+    ! neighborhood columns whose data already exist on this pe.
+    implicit none
+    !---------------------------------------------------------------------------
+    ! OUTPUT PARAMETERS:
+    type(physics_state), intent(inout), dimension(begchunk:endchunk+nbrhdchunk) :: phys_state
+    ! LOCAL VARIABLES:
+    integer(kind=int_kind)   :: n, i, lchnk, lchnke, icol, icole
+
+    lchnke = endchunk+nbrhdchunk
+    n = nbrhd_get_num_copies()
+    do i = 1, n
+       call nbrhd_get_copy_idxs(i, lchnk, icol, icole)
+       phys_state(lchnke)%ps   (icole  ) = phys_state(lchnk)%ps   (icol  )
+       phys_state(lchnke)%phis (icole  ) = phys_state(lchnk)%phis (icol  )
+       phys_state(lchnke)%T    (icole,:) = phys_state(lchnk)%T    (icol,:)
+       phys_state(lchnke)%u    (icole,:) = phys_state(lchnk)%u    (icol,:)
+       phys_state(lchnke)%v    (icole,:) = phys_state(lchnk)%v    (icol,:)
+       phys_state(lchnke)%omega(icole,:) = phys_state(lchnk)%omega(icol,:)
+       phys_state(lchnke)%q(icole,:,1:pcnst) = phys_state(lchnk)%q(icol,:,1:pcnst)
+    end do
+  end subroutine copy_to_nbrhd_chunk
   !=================================================================================================
   !=================================================================================================
 end module dp_coupling
