@@ -17,6 +17,12 @@ module phys_grid_nbrhd
   ! derived_physics in the call to geopotential_t. But we ignore the other
   ! physconst arrays because these are used only in calculations in which the
   ! extra chunk is not involved.
+  !   Currently we support a dynamics blocks -> owned chunks comm pattern. This
+  ! is efficient when the use case is a single call in dp_coupling.F90. Future
+  ! work may require multiple updates of physics_state(endchunk+nbrhdchunk).
+  ! This would require an owned-chunk -> nbrhd-of-owned-chunk pattern. To
+  ! support this, make_cpe2nbrs, make_dpe2nbrs, and make_comm_schedule would
+  ! have to be modified to support both owning blocks and owning chunks.
   !
   ! AMB 2020/09 Initial
 
@@ -112,11 +118,12 @@ module phys_grid_nbrhd
        nbrhd_init, &
        nbrhd_init_extra_chunk, &
        ! dp_coupling communication
-       nbrhd_get_nrecs, &
        nbrhd_block_to_chunk_sizes, &
        nbrhd_block_to_chunk_send_pters, &
        nbrhd_transpose_block_to_chunk, &
        nbrhd_block_to_chunk_recv_pters, &
+       nbrhd_get_num_copies, &
+       nbrhd_get_copy_idxs, &
        ! API for parameterizations
        nbrhd_get_nbrhd_size, &
        nbrhd_get_nbrhd
@@ -220,19 +227,16 @@ contains
     if (cns%verbose > 0) call test_c2n(cns, lchks)
   end subroutine nbrhd_init_extra_chunk
 
-  subroutine nbrhd_get_nrecs(block_buf_nrecs, chunk_buf_nrecs)
-    integer, intent(out) :: block_buf_nrecs, chunk_buf_nrecs
-
-    block_buf_nrecs = cns%blk_nrecs
-    chunk_buf_nrecs = cns%chk_nrecs
-  end subroutine nbrhd_get_nrecs
-
-  subroutine nbrhd_block_to_chunk_sizes(max_numlev, max_numrep, num_recv_col)
+  subroutine nbrhd_block_to_chunk_sizes(block_buf_nrecs, chunk_buf_nrecs, &
+       max_numlev, max_numrep, num_recv_col)
     ! max_numlev, max_numrep are max sizes for pter arrays. num_recv_col is the
     ! number of received columns.
 
-    integer, intent(out) :: max_numlev, max_numrep, num_recv_col
+    integer, intent(out) :: block_buf_nrecs, chunk_buf_nrecs, max_numlev, &
+         max_numrep, num_recv_col
 
+    block_buf_nrecs = cns%blk_nrecs
+    chunk_buf_nrecs = cns%chk_nrecs
     max_numlev = cns%max_numlev
     max_numrep = cns%max_numrep
     num_recv_col = cns%cc%num_recv_col
@@ -311,6 +315,24 @@ contains
        ptr(k) = ptr(1) + rcdsz*(k-1)
     end do
   end subroutine nbrhd_block_to_chunk_recv_pters
+
+  function nbrhd_get_num_copies() result(n)
+    integer :: n
+
+    n = size(cns%cc%cols)
+  end function nbrhd_get_num_copies
+
+  subroutine nbrhd_get_copy_idxs(i, lcid, icol, icole)
+    integer, intent(in) :: i
+    integer, intent(out) :: lcid, icol, icole
+
+    logical :: e
+
+    e = assert(i >= 1 .and. i <= nbrhd_get_num_copies(), 'copy_idxs: i')
+    lcid = cns%cc%cols(i)%lcid
+    icol = cns%cc%cols(i)%icol
+    icole = cns%cc%num_recv_col + i
+  end subroutine nbrhd_get_copy_idxs
 
   function nbrhd_get_nbrhd_size(lcid, icol) result(n)
     integer, intent(in) :: lcid, icol
@@ -1384,11 +1406,12 @@ contains
        end do
     end do
 
-    call nbrhd_get_nrecs(bnrecs, cnrecs)
+    call nbrhd_block_to_chunk_sizes(bnrecs, cnrecs, &
+                                    max_numlev, max_numrep, &
+                                    num_recv_col)
     allocate(bbuf(rcdsz*bnrecs), cbuf(rcdsz*cnrecs))
     bbuf(:) = none; cbuf(:) = none
 
-    call nbrhd_block_to_chunk_sizes(max_numlev, max_numrep, num_recv_col)
 
     ! Pack send buffer.
     allocate(bptr(max_numlev,max_numrep))
