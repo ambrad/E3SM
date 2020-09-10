@@ -420,7 +420,7 @@ contains
     ! If exclude_existing_in, which is true by default, exclude from ys any
     ! gcol that is already available to the pe from the regular comm pattern.
 
-    use dyn_grid, only: get_gcol_block_cnt_d, get_block_owner_d, get_gcol_block_d
+    use dyn_grid, only: get_block_owner_d
 
     type (ColumnNeighborhoods), intent(in) :: cns
     type (PhysGridData), intent(in) :: gd
@@ -431,8 +431,8 @@ contains
 
     integer, parameter :: cap_init = 128
 
-    integer :: ptr, cap, gcol, block_cnt, blockids(1), bcids(1), cnt, ucnt, &
-         i, j, pe, prev, acap, aptr, ng, max_ng, jprev, nupes, chunk_owner
+    integer :: ptr, cap, gcol, bid, cnt, ucnt, i, j, pe, prev, acap, aptr, ng, max_ng, &
+         jprev, nupes, chunk_owner
     integer, allocatable :: nbrhd(:), apes(:), agcols(:)
     integer, allocatable, dimension(:) :: idxs, pes, upes, gcols, ugcols, gidxs
     logical :: e, same, exclude_existing
@@ -446,10 +446,8 @@ contains
     allocate(nbrhd(cap), idxs(cap), pes(cap), upes(cap), apes(acap), agcols(acap))
     aptr = 1
     do gcol = 1, gd%ngcols
-       block_cnt = get_gcol_block_cnt_d(gcol)
-       e = assert(block_cnt == 1, 'only block_cnt=1 is supported')
-       call get_gcol_block_d(gcol, block_cnt, blockids, bcids)
-       if (get_block_owner_d(blockids(1)) /= iam) cycle
+       call gcol2bid(gcol, bid)
+       if (get_block_owner_d(bid) /= iam) cycle
        cnt = find_gcol_nbrhd(gd, cns%max_angle, gcol, nbrhd, 1, cap)
        if (cnt == 0) cycle
        if (cap > size(pes)) then
@@ -563,7 +561,7 @@ contains
     !     yptr: pointers into ys;
     !     ys: for each pe, the list of iam-owning chunks' sorted gcols.
 
-    use dyn_grid, only: get_gcol_block_cnt_d, get_block_owner_d, get_gcol_block_d
+    use dyn_grid, only: get_block_owner_d
 
     type (ColumnNeighborhoods), intent(in) :: cns
     type (PhysGridData), intent(in) :: gd
@@ -573,7 +571,7 @@ contains
 
     integer, allocatable, dimension(:) :: unbrs, wrk(:)
     integer, allocatable, dimension(:) :: pes, idxs
-    integer :: i, j, k, n, gcol, block_cnt, blockids(1), bcids(1), cnt, prev
+    integer :: i, j, k, n, gcol, bid, cnt, prev
     logical :: e, exclude_existing
 
     exclude_existing = .true.
@@ -603,10 +601,8 @@ contains
     allocate(pes(n), idxs(n))
     do i = 1, n
        gcol = unbrs(i)
-       block_cnt = get_gcol_block_cnt_d(gcol)
-       e = assert(block_cnt == 1, 'only block_cnt=1 is supported')
-       call get_gcol_block_d(gcol, block_cnt, blockids, bcids)
-       pes(i) = get_block_owner_d(blockids(1))
+       call gcol2bid(gcol, bid)
+       pes(i) = get_block_owner_d(bid)
        e = assert(pes(i) >= 0 .and. pes(i) <= npes-1, 'dpe2nbrs pes')
     end do
     ! Count unique pes.
@@ -716,14 +712,13 @@ contains
   end function find_gcol_nbrhd
 
   subroutine make_comm_schedule(cns, gd, cpe2nbrs, dpe2nbrs)
-    use dyn_grid, only: get_gcol_block_cnt_d, get_block_gcol_cnt_d, get_block_owner_d, &
-         get_block_lvl_cnt_d, get_gcol_block_d
+    use dyn_grid, only: get_block_gcol_cnt_d, get_block_owner_d, get_block_lvl_cnt_d
 
     type (ColumnNeighborhoods), intent(inout) :: cns
     type (PhysGridData), intent(in) :: gd
     type (SparseTriple), intent(in) :: cpe2nbrs, dpe2nbrs
 
-    integer :: i, j, k, ie, gid, nlblk, gcol, blockid(1), bcid(1), pecnt, glbcnt, &
+    integer :: i, j, k, ie, gid, nlblk, gcol, blockid, bcid, pecnt, glbcnt, &
          pe, numlev, ptr
     logical :: e
 
@@ -746,15 +741,15 @@ contains
     do i = 1, size(cpe2nbrs%xs)
        do j = cpe2nbrs%yptr(i), cpe2nbrs%yptr(i+1)-1
           gcol = cpe2nbrs%ys(j) ! gcol in a chunk on pe
-          call get_gcol_block_d(gcol, 1, blockid, bcid)
-          e = assert(get_block_owner_d(blockid(1)) == iam, &
+          call gcol2bid(gcol, blockid, bcid)
+          e = assert(get_block_owner_d(blockid) == iam, &
                      'comm_schedule: gcol is owned')
-          k = binary_search(nlblk, cns%bid2ie%id1, blockid(1))
+          k = binary_search(nlblk, cns%bid2ie%id1, blockid)
           e = assert(k >= 1, 'comm_schedule: blockid is in map')
           ie = cns%bid2ie%id2(k) ! local block ID providing data to the chunk
-          e = assert(bcid(1) >= 1 .and. bcid(1) <= cns%blk_offset(ie)%ncol, &
+          e = assert(bcid >= 1 .and. bcid <= cns%blk_offset(ie)%ncol, &
                      'comm_schedule: bcid is in range')
-          cns%blk_offset(ie)%numrep(bcid(1)) = cns%blk_offset(ie)%numrep(bcid(1)) + 1
+          cns%blk_offset(ie)%numrep(bcid) = cns%blk_offset(ie)%numrep(bcid) + 1
        end do
     end do
     ! Allocate offset arrays.
@@ -777,16 +772,16 @@ contains
        pecnt = 0
        do j = cpe2nbrs%yptr(i), cpe2nbrs%yptr(i+1)-1
           gcol = cpe2nbrs%ys(j)
-          call get_gcol_block_d(gcol, 1, blockid, bcid)
-          k = binary_search(nlblk, cns%bid2ie%id1, blockid(1))
+          call gcol2bid(gcol, blockid, bcid)
+          k = binary_search(nlblk, cns%bid2ie%id1, blockid)
           ie = cns%bid2ie%id2(k)
-          ptr = cns%blk_offset(ie)%col(bcid(1))
-          k = cns%blk_offset(ie)%numrep(bcid(1))
+          ptr = cns%blk_offset(ie)%col(bcid)
+          k = cns%blk_offset(ie)%numrep(bcid)
           cns%blk_offset(ie)%os(ptr+k) = glbcnt
-          cns%blk_offset(ie)%numrep(bcid(1)) = k + 1
+          cns%blk_offset(ie)%numrep(bcid) = k + 1
           cns%max_numrep = max(cns%max_numrep, k + 1)
-          numlev = get_block_lvl_cnt_d(gid, bcid(1))
-          cns%blk_offset(ie)%numlev(bcid(1)) = numlev
+          numlev = get_block_lvl_cnt_d(gid, bcid)
+          cns%blk_offset(ie)%numlev(bcid) = numlev
           cns%max_numlev = max(cns%max_numlev, numlev)
           glbcnt = glbcnt + numlev
           pecnt = pecnt + numlev
@@ -803,11 +798,11 @@ contains
        pecnt = 0
        do j = dpe2nbrs%yptr(i), dpe2nbrs%yptr(i+1)-1
           gcol = dpe2nbrs%ys(j)
-          call get_gcol_block_d(gcol, 1, blockid, bcid)
-          e = assert(get_block_owner_d(blockid(1)) == pe, &
+          call gcol2bid(gcol, blockid, bcid)
+          e = assert(get_block_owner_d(blockid) == pe, &
                      'comm_schedule: gcol pe association')
           cns%chk_offset(j) = glbcnt
-          numlev = get_block_lvl_cnt_d(blockid(1), bcid(1))
+          numlev = get_block_lvl_cnt_d(blockid, bcid)
           cns%max_numlev = max(cns%max_numlev, numlev)
           cns%chk_numlev(j) = numlev
           glbcnt = glbcnt + numlev
@@ -890,14 +885,14 @@ contains
     ! order. bid2ie%id1 is the sorted list of global block IDs, and bid2ie%id2
     ! is the list of corresponding local IDs.
 
-    use dyn_grid, only: get_block_bounds_d, get_gcol_block_cnt_d, get_gcol_block_d, &
-         get_block_gcol_d, get_block_owner_d, get_block_gcol_cnt_d
+    use dyn_grid, only: get_block_bounds_d, get_block_gcol_d, get_block_owner_d, &
+         get_block_gcol_cnt_d
 
     integer, allocatable, intent(out) :: ie2bid(:)
     type (IdMap), intent(out) :: bid2ie
 
     integer, allocatable :: gcols(:)
-    integer :: bf, bl, bid, cnt, pe, nid, blockid(1), bcid(1), ie(1), ngcols, i
+    integer :: bf, bl, bid, cnt, pe, nid, blockid, bcid, ie, ngcols, i
     logical :: e
 
     call get_block_bounds_d(bf, bl)
@@ -918,11 +913,9 @@ contains
           allocate(gcols(ngcols))
        end if
        call get_block_gcol_d(bid, ngcols, gcols)
-       nid = get_gcol_block_cnt_d(gcols(1))
-       e = assert(nid == 1, 'only nid=1 is supported')
-       call get_gcol_block_d(gcols(1), nid, blockid, bcid, ie)
-       e = assert(ie(1) >= 1 .and. ie(1) <= cnt, 'ie in bounds')
-       ie2bid(ie(1)) = bid
+       call gcol2bid(gcols(1), blockid, bcid, ie)
+       e = assert(ie >= 1 .and. ie <= cnt, 'ie in bounds')
+       ie2bid(ie) = bid
     end do
     deallocate(gcols)
     ! Now the opposite direction.
@@ -1051,6 +1044,31 @@ contains
     end do
     deallocate(idxs, sgcols)
   end subroutine make_c2n
+
+  subroutine gcol2bid(gcol, block_id, bcid, ie)
+    ! Map gcol_d to global block ID and optionally the column within the block
+    ! and the block's local ID. The local ID is expensive to compute.
+
+    use dyn_grid, only: get_gcol_block_cnt_d, get_gcol_block_d
+
+    integer, intent(in) :: gcol
+    integer, intent(out) :: block_id
+    integer, optional, intent(out) :: bcid, ie
+
+    integer :: block_cnt, blockids(1), bcids(1), ies(1)
+    logical :: e
+
+    block_cnt = get_gcol_block_cnt_d(gcol)
+    e = assert(block_cnt == 1, 'only block_cnt=1 is supported')
+    if (present(ie)) then
+       call get_gcol_block_d(gcol, block_cnt, blockids, bcids, ies)
+       ie = ies(1)
+    else
+       call get_gcol_block_d(gcol, block_cnt, blockids, bcids)
+    end if
+    block_id = blockids(1)
+    if (present(bcid)) bcid = bcids(1)
+  end subroutine gcol2bid
 
   !> -------------------------------------------------------------------
   !> General utilities.
