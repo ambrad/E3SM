@@ -87,6 +87,7 @@ module phys_grid_nbrhd
   ! A neighborhood is a list of gcols neighboring a column. Neighborhoods,
   ! plural, is a list of these of lists.
   type :: ColumnNeighborhoods
+     logical :: make_b2c, make_c2c
      integer :: verbose, nchunks, extra_chunk_ncol
      ! Radian angle defining neighborhood. Defines max between a column center
      ! and column centers within its neighborhood.
@@ -97,10 +98,10 @@ module phys_grid_nbrhd
      ! Local <-> global block IDs
      integer, allocatable :: ie2bid(:)
      type (IdMap) :: bid2ie
-     ! Communication data.
-     ! snd_offset is index using local block ID, not global as in phys_grid.
-     type (CommSchedule) :: b2cs
-     type (CommData) :: b2cd
+     ! Communication data. In b2cs, snd_offset is index using local block ID,
+     ! not global as in phys_grid.
+     type (CommSchedule) :: b2cs, c2cs
+     type (CommData) :: b2cd, c2cd
      ! Neighborhood API data.
      type (ColumnCopies) :: cc
      ! c2n(lcid)%nbrhd(c2n(lcid)%col(icol) : c2n(lcid)%col(icol)-1) is the
@@ -147,6 +148,8 @@ contains
 
     call run_unit_tests()
 
+    cns%make_b2c = .true.
+    cns%make_c2c = .false.
     cns%verbose = 1
     cns%max_angle = 0.06d0
     cns%nchunks = nchunks
@@ -164,22 +167,43 @@ contains
 
     call find_chunk_nbrhds(cns, gd, chunks, cns%chk_nbrhds)
     if (cns%verbose > 0) call test_nbrhds(cns, gd)
-    call make_rpe2nbrs(cns, gd, chunks, knuhcs, rpe2nbrs)
-    call make_spe2nbrs(cns, gd, cns%chk_nbrhds, spe2nbrs)
-    call make_b2c_comm_schedule(cns, gd, rpe2nbrs, spe2nbrs, cns%b2cs)
-    call init_comm_data(cns, cns%b2cs, cns%b2cd, phys_alltoall)
-    cns%extra_chunk_ncol = size(spe2nbrs%ys)
-    call init_chunk(cns, gd, spe2nbrs, chunk_extra)
 
-    e = assert(cns%b2cd%dp_coup_steps >= &
-               ! -1 accounts for pe = iam
-               min(size(rpe2nbrs%xs), size(spe2nbrs%xs)) - 1, &
-               'init: dp_coup_steps')
-    if (cns%verbose > 0) &
-         call test_b2c_comm_schedule(cns, gd, chunks, knuhcs, rpe2nbrs, spe2nbrs)
-    
-    call SparseTriple_deallocate(rpe2nbrs)
-    call SparseTriple_deallocate(spe2nbrs)
+    !todo-sort Need to make the order of the comm'ed gcols in the extra chunk
+    !          independent of comm schedule.
+    if (cns%make_b2c) then
+       call make_rpe2nbrs(cns, gd, chunks, knuhcs, rpe2nbrs)
+       call make_spe2nbrs(cns, gd, chunks, knuhcs, cns%chk_nbrhds, spe2nbrs)
+       call make_b2c_comm_schedule(cns, gd, rpe2nbrs, spe2nbrs, cns%b2cs)
+       call init_comm_data(cns, cns%b2cs, cns%b2cd, phys_alltoall)
+       cns%extra_chunk_ncol = size(spe2nbrs%ys)
+       call init_chunk(cns, gd, spe2nbrs%ys, chunk_extra)
+       e = assert(cns%b2cd%dp_coup_steps >= &
+                  ! -1 accounts for pe = iam
+                  min(size(rpe2nbrs%xs), size(spe2nbrs%xs)) - 1, &
+                  'init: dp_coup_steps')
+       if (cns%verbose > 0) then
+          call test_b2c_comm_schedule(cns, gd, chunks, knuhcs, rpe2nbrs, spe2nbrs)
+       end if
+       call SparseTriple_deallocate(rpe2nbrs)
+       call SparseTriple_deallocate(spe2nbrs)
+    end if
+
+    if (cns%make_c2c) then
+       call make_rpe2nbrs(cns, gd, chunks, knuhcs, rpe2nbrs)
+       call make_spe2nbrs(cns, gd, chunks, knuhcs, cns%chk_nbrhds, spe2nbrs)
+       !call make_c2c_comm_schedule(cns, gd, rpe2nbrs, spe2nbrs, cns%c2cs)
+       call init_comm_data(cns, cns%c2cs, cns%c2cd, phys_alltoall)
+       e = assert(cns%extra_chunk_ncol == size(spe2nbrs%ys), 'same as for b2c')
+       e = assert(cns%c2cd%dp_coup_steps >= &
+                  ! -1 accounts for pe = iam
+                  min(size(rpe2nbrs%xs), size(spe2nbrs%xs)) - 1, &
+                  'init: dp_coup_steps')
+       if (cns%verbose > 0) then
+          !call test_c2c_comm_schedule(cns, gd, chunks, knuhcs, rpe2nbrs, spe2nbrs)
+       end if
+       call SparseTriple_deallocate(rpe2nbrs)
+       call SparseTriple_deallocate(spe2nbrs)
+    end if
   end subroutine nbrhd_init
 
   subroutine nbrhd_init_extra_chunk(chks, lchks, chk, lchk)
@@ -406,8 +430,8 @@ contains
     call array_realloc(cnbrhds%ys, cnbrhds%yptr(gd%nlcols+1)-1, cnbrhds%yptr(gd%nlcols+1)-1)
   end subroutine find_chunk_nbrhds
 
-  subroutine make_rpe2nbrs(cns, gd, chunks, knuhcs, rpe2nbrs, exclude_existing_in, &
-       owning_blocks_in)
+  subroutine make_rpe2nbrs(cns, gd, chunks, knuhcs, rpe2nbrs, &
+       exclude_existing_in, owning_blocks_in)
     ! Make the map of chunk-owning pe to gcols, where the gcols are neighbors of
     ! a column in a chunk, each gcol belongs to a block or chunk that iam owns,
     ! and neighbor is defined in find_gcol_nbrhd. On output, rpe2nbrs has these
@@ -557,8 +581,8 @@ contains
     end if
   end subroutine make_rpe2nbrs
 
-  subroutine make_spe2nbrs(cns, gd, cnbrhds, spe2nbrs, exclude_existing_in, &
-       owning_blocks_in)
+  subroutine make_spe2nbrs(cns, gd, chunks, knuhcs, cnbrhds, spe2nbrs, &
+       exclude_existing_in, owning_blocks_in)
     ! Make the map of owning pe to gcols, where the gcols are neighbors of a
     ! column in a block, each gcol belongs to a chunk that iam owns, and
     ! neighbor is defined in find_gcol_nbrhd. On output, spe2nbrs has these
@@ -571,6 +595,8 @@ contains
 
     type (ColumnNeighborhoods), intent(in) :: cns
     type (PhysGridData), intent(in) :: gd
+    type (chunk), intent(in) :: chunks(:)
+    type (knuhc), intent(in) :: knuhcs(:)
     type (SparseTriple), intent(in) :: cnbrhds
     type (SparseTriple), intent(out) :: spe2nbrs
     logical, optional, intent(in) :: exclude_existing_in, owning_blocks_in
@@ -605,12 +631,16 @@ contains
     end if
     if (cns%verbose > 0) &
          write(iulog,*) 'amb> spe2nbrs', cnbrhds%yptr(gd%nlcols+1)-1, size(unbrs), n
-    ! For each gcol, get the pe of owning block.
+    ! For each gcol, get the pe of the owning block or chunk.
     allocate(pes(n), idxs(n))
     do i = 1, n
        gcol = unbrs(i)
-       call gcol2bid(gcol, bid)
-       pes(i) = get_block_owner_d(bid)
+       if (owning_blocks) then
+          call gcol2bid(gcol, bid)
+          pes(i) = get_block_owner_d(bid)
+       else
+          pes(i) = chunks(knuhcs(gcol)%chunkid)%owner
+       end if
        e = assert(pes(i) >= 0 .and. pes(i) <= npes-1, 'spe2nbrs pes')
     end do
     ! Count unique pes.
@@ -939,25 +969,39 @@ contains
     end do
   end subroutine get_local_blocks
 
-  subroutine init_chunk(cns, gd, spe2nbrs, chk)
+  subroutine init_chunk(cns, gd, gcols, chk)
     type (ColumnNeighborhoods), intent(in) :: cns
     type (PhysGridData), intent(in) :: gd
-    type (SparseTriple), intent(in) :: spe2nbrs
+    integer, intent(in) :: gcols(:)
     type (chunk), intent(out) :: chk
 
+    integer, allocatable :: idxs(:)
     integer :: i
 
+    ! Sort the gcols so we have an order independent of comm schedule.
     chk%ncols = cns%extra_chunk_ncol
+    allocate(idxs(chk%ncols))
+    !todo-sort
+#if 0
+    call IndexSet(chk%ncols, idxs)
+    call IndexSort(chk%ncols, idxs, gcols)
+#else
+    do i = 1, chk%ncols
+       idxs(i) = i
+    end do
+#endif
+    ! Fill the chunk.
     chk%dcols = chk%ncols
     chk%owner = iam
     chk%lcid = endchunk + nbrhdchunk
     chk%estcost = -1
     allocate(chk%gcol(chk%ncols), chk%lat(chk%ncols), chk%lon(chk%ncols))
     do i = 1, chk%ncols
-       chk%gcol(i) = spe2nbrs%ys(i)
+       chk%gcol(i) = gcols(idxs(i))
        chk%lat(i) = gd%lat_p(chk%gcol(i))
        chk%lon(i) = gd%lon_p(chk%gcol(i))
     end do
+    deallocate(idxs)
   end subroutine init_chunk
 
   subroutine make_cc(cns, lchks, cc)
@@ -1451,7 +1495,7 @@ contains
        e = test(nerr, ngcols == cns%b2cs%snd_offset(ie)%ncol, 'comm: ngcols agrees')
        call get_block_gcol_d(bid, ngcols, gcols)
        e = test(nerr, cns%b2cs%snd_offset(ie)%ncol == size(cns%b2cs%snd_offset(ie)%numlev), &
-                'comm:ncol')
+                'comm: ncol')
        do icol = 1, cns%b2cs%snd_offset(ie)%ncol ! ditto
           gcol = gcols(icol)
           lat = gd%clat_p(gd%lat_p(gcol))
