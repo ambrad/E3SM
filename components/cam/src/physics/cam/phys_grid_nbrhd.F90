@@ -22,11 +22,12 @@ module phys_grid_nbrhd
   ! extra phys_state. The extra lchunk and chunk support phys_grid-type queries.
   !   There are two supported communication schedules:
   !   1. Dynamics blocks -> nbrhd columns. This mimics the d_p_coupling comm
-  ! round and is at least as efficient as 2.
+  ! round and is at least as efficient as 2. In the code, this is indicated by
+  ! owning_blocks = .true.
   !   2. There may be a desire to update nbrhd state during a physics time
   ! step. The second schedule supports this: owned-columns -> nbrhd
   ! columns. This is the only correct way to update nbrhd columns during a
-  ! physics time step.
+  ! physics time step. In the code, owning_blocks = .false.
   !   In dp_coupling, we call derived_physics on the extra physics_state, but we
   ! omit the diagnostic energy calculations and so don't need an extra
   ! physics_tend. Here the goal is to provide full physics_state data for the
@@ -65,8 +66,8 @@ module phys_grid_nbrhd
 
   type :: Offsets
      integer :: ncol
-     ! Offsets for the columns in a block. Each one can have a different number
-     ! of repetitions in the send buffer than the others.
+     ! Offsets for the columns in a block or chunk. Each one can have a
+     ! different number of repetitions in the send buffer than the others.
      integer, allocatable :: numlev(:), numrep(:)
      ! os(col(i):col(i+1)-1) are offsets for all repetitions of a column.
      integer, allocatable :: col(:), os(:)
@@ -167,7 +168,7 @@ contains
     call run_unit_tests()
 
     cns%make_b2c = .true.
-    cns%make_c2c = .false.
+    cns%make_c2c = .true.
     cns%verbose = 1
     cns%max_angle = 0.06d0
     cns%nchunks = nchunks
@@ -187,9 +188,10 @@ contains
     if (cns%verbose > 0) call test_nbrhds(cns, gd)
 
     if (cns%make_b2c) then
-       call make_rpe2nbrs(cns, gd, chunks, knuhcs, rpe2nbrs)
-       call make_spe2nbrs(cns, gd, chunks, knuhcs, cns%chk_nbrhds, spe2nbrs)
-       call make_b2c_comm_schedule(cns, gd, rpe2nbrs, spe2nbrs, cns%b2cs)
+       call make_rpe2nbrs(cns, gd, chunks, knuhcs, rpe2nbrs, .true.)
+       call make_spe2nbrs(cns, gd, chunks, knuhcs, cns%chk_nbrhds, spe2nbrs, .true.)
+       call make_comm_schedule(cns, gd, chunks, knuhcs, rpe2nbrs, spe2nbrs, &
+            cns%b2cs, .true.)
        call init_comm_data(cns, cns%b2cs, cns%b2cd, phys_alltoall)
        cns%extra_chunk_ncol = size(spe2nbrs%ys)
        call init_chunk(cns, gd, spe2nbrs%ys, chunk_extra)
@@ -205,18 +207,21 @@ contains
     end if
 
     if (cns%make_c2c) then
-       call make_rpe2nbrs(cns, gd, chunks, knuhcs, rpe2nbrs)
-       call make_spe2nbrs(cns, gd, chunks, knuhcs, cns%chk_nbrhds, spe2nbrs)
-       !call make_c2c_comm_schedule(cns, gd, rpe2nbrs, spe2nbrs, cns%c2cs)
+       call make_rpe2nbrs(cns, gd, chunks, knuhcs, rpe2nbrs, .false.)
+       call make_spe2nbrs(cns, gd, chunks, knuhcs, cns%chk_nbrhds, spe2nbrs, .false.)
+       call make_comm_schedule(cns, gd, chunks, knuhcs, rpe2nbrs, spe2nbrs, &
+            cns%c2cs, .false.)
        call init_comm_data(cns, cns%c2cs, cns%c2cd, phys_alltoall)
        e = assert(cns%extra_chunk_ncol == size(spe2nbrs%ys), 'same as for b2c')
        e = assert(cns%c2cd%dp_coup_steps >= &
                   ! -1 accounts for pe = iam
                   min(size(rpe2nbrs%xs), size(spe2nbrs%xs)) - 1, &
                   'init: dp_coup_steps')
+#if 0
        if (cns%verbose > 0) then
-          !call test_c2c_comm_schedule(cns, gd, chunks, knuhcs, rpe2nbrs, spe2nbrs)
+          call test_c2c_comm_schedule(cns, gd, chunks, knuhcs, rpe2nbrs, spe2nbrs)
        end if
+#endif
        call SparseTriple_deallocate(rpe2nbrs)
        call SparseTriple_deallocate(spe2nbrs)
     end if
@@ -446,8 +451,7 @@ contains
     call array_realloc(cnbrhds%ys, cnbrhds%yptr(gd%nlcols+1)-1, cnbrhds%yptr(gd%nlcols+1)-1)
   end subroutine find_chunk_nbrhds
 
-  subroutine make_rpe2nbrs(cns, gd, chunks, knuhcs, rpe2nbrs, &
-       exclude_existing_in, owning_blocks_in)
+  subroutine make_rpe2nbrs(cns, gd, chunks, knuhcs, rpe2nbrs, owning_blocks)
     ! Make the map of chunk-owning pe ((r)eceiving (pe)s) to gcols, where the
     ! gcols are neighbors of a column in a chunk, each gcol belongs to a block
     ! or chunk that iam owns, and neighbor is defined in find_gcol_nbrhd. On
@@ -455,8 +459,8 @@ contains
     !     xs: sorted list of chunk-owning pes;
     !     yptr: pointers into ys;
     !     ys: for each pe, the list of iam-owning neighbors, as sorted gcols.
-    ! If exclude_existing_in, which is true by default, exclude from ys any
-    ! gcol that is already available to the pe from the regular comm pattern.
+    ! Exclude from ys any gcol that is already available to the pe from the
+    ! regular comm pattern.
 
     use dyn_grid, only: get_block_owner_d
 
@@ -465,20 +469,17 @@ contains
     type (chunk), intent(in) :: chunks(:)
     type (knuhc), intent(in) :: knuhcs(:)
     type (SparseTriple), intent(out) :: rpe2nbrs
-    logical, optional, intent(in) :: exclude_existing_in, owning_blocks_in
+    logical, intent(in) :: owning_blocks
 
     integer, parameter :: cap_init = 128
+    logical, parameter :: exclude_existing = .true.
 
     integer :: ptr, cap, gcol, bid, cnt, ucnt, i, j, pe, prev, acap, aptr, ng, max_ng, &
          jprev, nupes, chunk_owner
     integer, allocatable :: nbrhd(:), apes(:), agcols(:)
     integer, allocatable, dimension(:) :: idxs, pes, upes, gcols, ugcols, gidxs
-    logical :: e, same, exclude_existing, owning_blocks
+    logical :: e, same
 
-    exclude_existing = .true.
-    if (present(exclude_existing_in)) exclude_existing = exclude_existing_in
-    owning_blocks = .true.
-    if (present(owning_blocks_in)) owning_blocks = owning_blocks_in
     ! Collect (pe,gcol) pairs where gcol is in one of iam's owned blocks or
     ! chunks and pe is the chunk owner of a column having gcol in its nbrhd.
     cap = cap_init
@@ -597,8 +598,7 @@ contains
     end if
   end subroutine make_rpe2nbrs
 
-  subroutine make_spe2nbrs(cns, gd, chunks, knuhcs, cnbrhds, spe2nbrs, &
-       exclude_existing_in, owning_blocks_in)
+  subroutine make_spe2nbrs(cns, gd, chunks, knuhcs, cnbrhds, spe2nbrs, owning_blocks)
     ! Make the map of owning pe ((s)ending (pe)s) to gcols, where the gcols are
     ! neighbors of a column in a block, each gcol belongs to a chunk that iam
     ! owns, and neighbor is defined in find_gcol_nbrhd. On output, spe2nbrs has
@@ -615,17 +615,15 @@ contains
     type (knuhc), intent(in) :: knuhcs(:)
     type (SparseTriple), intent(in) :: cnbrhds
     type (SparseTriple), intent(out) :: spe2nbrs
-    logical, optional, intent(in) :: exclude_existing_in, owning_blocks_in
+    logical, intent(in) :: owning_blocks
+
+    logical, parameter :: exclude_existing = .true.
 
     integer, allocatable, dimension(:) :: unbrs, wrk(:)
     integer, allocatable, dimension(:) :: pes, idxs
     integer :: i, j, k, n, gcol, bid, cnt, prev
-    logical :: e, exclude_existing, owning_blocks
+    logical :: e
 
-    exclude_existing = .true.
-    if (present(exclude_existing_in)) exclude_existing = exclude_existing_in
-    owning_blocks = .true.
-    if (present(owning_blocks_in)) owning_blocks = owning_blocks_in
     e = assert(size(cnbrhds%yptr)-1 == gd%nlcols, 'nlcols')
     ! Unlike for rpe2nbrs, we are filling a 1-1 map, so we just need the unique
     ! neighbor gcols.
@@ -765,87 +763,125 @@ contains
     deallocate(idxs, buf)
   end function find_gcol_nbrhd
 
-  subroutine make_b2c_comm_schedule(cns, gd, rpe2nbrs, spe2nbrs, b2cs)
+  subroutine make_comm_schedule(cns, gd, chunks, knuhcs, rpe2nbrs, spe2nbrs, cs, &
+       owning_blocks)
     use dyn_grid, only: get_block_gcol_cnt_d, get_block_owner_d, get_block_lvl_cnt_d
 
     type (ColumnNeighborhoods), intent(in) :: cns
     type (PhysGridData), intent(in) :: gd
+    type (chunk), intent(in) :: chunks(:)
+    type (knuhc), intent(in) :: knuhcs(:)
     type (SparseTriple), intent(in) :: rpe2nbrs, spe2nbrs
-    type (CommSchedule), intent(out) :: b2cs
+    type (CommSchedule), intent(out) :: cs
+    logical, intent(in) :: owning_blocks
 
-    integer, allocatable :: sgcols(:)
-    integer :: i, j, k, ie, gid, nlblk, gcol, blockid, bcid, pecnt, glbcnt, &
-         pe, numlev, ptr, n
+    integer, allocatable :: sgcols(:), l2cids(:)
+    integer :: i, j, k, lid, cid, gid, nlcl, gcol, blockid, pecnt, glbcnt, &
+         pe, numlev, ptr, n, icol
     logical :: e
 
-    print *,'amb> make_b2c_comm_schedule'
-    nlblk = size(cns%ie2bid)
-    allocate(b2cs%snd_num(0:npes-1), b2cs%rcv_num(0:npes-1), &
-         b2cs%snd_offset(nlblk))
+    if (owning_blocks) then
+       nlcl = size(cns%ie2bid)
+    else
+       nlcl = 0
+       do cid = 1, cns%nchunks
+          if (chunks(cid)%owner /= iam) cycle
+          nlcl = nlcl + 1
+       end do
+       allocate(l2cids(nlcl))
+       lid = 0
+       do cid = 1, cns%nchunks
+          if (chunks(cid)%owner /= iam) cycle
+          lid = lid + 1
+          l2cids(lid) = cid
+       end do
+    end if
+    allocate(cs%snd_num(0:npes-1), cs%rcv_num(0:npes-1), &
+         cs%snd_offset(nlcl))
 
     ! Get column counts.
-    do ie = 1, nlblk
-       gid = cns%ie2bid(i)
-       k = get_block_gcol_cnt_d(gid)
-       b2cs%snd_offset(ie)%ncol = k
+    do lid = 1, nlcl
+       if (owning_blocks) then
+          gid = cns%ie2bid(lid)
+          n = get_block_gcol_cnt_d(gid)
+       else
+          n = chunks(cid)%ncols
+       end if
+       cs%snd_offset(lid)%ncol = n
        ! numrep is redundant wrt col, but it's useful
-       allocate(b2cs%snd_offset(ie)%numlev(k), b2cs%snd_offset(ie)%numrep(k), &
-            b2cs%snd_offset(ie)%col(k+1))
-       b2cs%snd_offset(ie)%numrep(:) = 0
+       allocate(cs%snd_offset(lid)%numlev(n), cs%snd_offset(lid)%numrep(n), &
+            cs%snd_offset(lid)%col(n+1))
+       cs%snd_offset(lid)%numrep(:) = 0
     end do
     ! Get repetition counts. A gcol in a block is in general in the
     ! neighborhoods of multiple chunks' gcols on multiple pes.
     do i = 1, size(rpe2nbrs%xs)
        do j = rpe2nbrs%yptr(i), rpe2nbrs%yptr(i+1)-1
-          gcol = rpe2nbrs%ys(j) ! gcol in a chunk on pe
-          call gcol2bid(gcol, blockid, bcid)
-          e = assert(get_block_owner_d(blockid) == iam, &
-                     'comm_schedule: gcol is owned')
-          k = binary_search(nlblk, cns%bid2ie%id1, blockid)
-          e = assert(k >= 1, 'comm_schedule: blockid is in map')
-          ie = cns%bid2ie%id2(k) ! local block ID providing data to the chunk
-          e = assert(bcid >= 1 .and. bcid <= b2cs%snd_offset(ie)%ncol, &
-                     'comm_schedule: bcid is in range')
-          b2cs%snd_offset(ie)%numrep(bcid) = b2cs%snd_offset(ie)%numrep(bcid) + 1
+          if (owning_blocks) then
+             gcol = rpe2nbrs%ys(j) ! gcol in a chunk on pe
+             call gcol2bid(gcol, blockid, icol)
+             e = assert(get_block_owner_d(blockid) == iam, &
+                        'sched: gcol is owned')
+             k = binary_search(nlcl, cns%bid2ie%id1, blockid)
+             e = assert(k >= 1, 'sched: blockid is in map')
+             lid = cns%bid2ie%id2(k) ! local block ID providing data to the chunk
+             e = assert(icol >= 1 .and. icol <= cs%snd_offset(lid)%ncol, &
+                        'sched: icol is in range')
+          else
+             gcol = rpe2nbrs%ys(j)
+             e = assert(chunks(knuhcs(gcol)%chunkid)%owner == iam, &
+                  'c2c sched: gcol is owned')
+             cid = knuhcs(gcol)%chunkid
+             k = binary_search(nlcl, l2cids, cid)
+             e = assert(k >= 1, 'c2c sched: cid is in map')
+             icol = knuhcs(gcol)%col
+          end if
+          cs%snd_offset(lid)%numrep(icol) = cs%snd_offset(lid)%numrep(icol) + 1
        end do
     end do
     ! Allocate offset arrays.
-    do ie = 1, nlblk
-       gid = cns%ie2bid(i)
-       allocate(b2cs%snd_offset(ie)%os(sum(b2cs%snd_offset(ie)%numrep)))
-       b2cs%snd_offset(ie)%col(1) = 1
-       do i = 1, b2cs%snd_offset(ie)%ncol
-          b2cs%snd_offset(ie)%col(i+1) = b2cs%snd_offset(ie)%col(i) + &
-               b2cs%snd_offset(ie)%numrep(i)
+    do lid = 1, nlcl
+       allocate(cs%snd_offset(lid)%os(sum(cs%snd_offset(lid)%numrep)))
+       cs%snd_offset(lid)%col(1) = 1
+       do i = 1, cs%snd_offset(lid)%ncol
+          cs%snd_offset(lid)%col(i+1) = cs%snd_offset(lid)%col(i) + &
+               cs%snd_offset(lid)%numrep(i)
        end do
-       b2cs%snd_offset(ie)%numrep(:) = 0
+       cs%snd_offset(lid)%numrep(:) = 0
     end do
     ! Get offsets and send counts.
     glbcnt = 0
-    b2cs%snd_num(:) = 0
-    b2cs%max_numrep = 0
-    b2cs%max_numlev = 0
+    cs%snd_num(:) = 0
+    cs%max_numrep = 0
+    cs%max_numlev = 0
     do i = 1, size(rpe2nbrs%xs)
        pecnt = 0
        do j = rpe2nbrs%yptr(i), rpe2nbrs%yptr(i+1)-1
           gcol = rpe2nbrs%ys(j)
-          call gcol2bid(gcol, blockid, bcid)
-          k = binary_search(nlblk, cns%bid2ie%id1, blockid)
-          ie = cns%bid2ie%id2(k)
-          ptr = b2cs%snd_offset(ie)%col(bcid)
-          k = b2cs%snd_offset(ie)%numrep(bcid)
-          b2cs%snd_offset(ie)%os(ptr+k) = glbcnt
-          b2cs%snd_offset(ie)%numrep(bcid) = k + 1
-          b2cs%max_numrep = max(b2cs%max_numrep, k + 1)
-          numlev = get_block_lvl_cnt_d(gid, bcid)
-          b2cs%snd_offset(ie)%numlev(bcid) = numlev
-          b2cs%max_numlev = max(b2cs%max_numlev, numlev)
+          if (owning_blocks) then
+             call gcol2bid(gcol, blockid, icol)
+             k = binary_search(nlcl, cns%bid2ie%id1, blockid)
+             lid = cns%bid2ie%id2(k)
+             numlev = get_block_lvl_cnt_d(gid, icol)
+          else
+             cid = knuhcs(gcol)%chunkid
+             lid = binary_search(nlcl, l2cids, cid)
+             icol = knuhcs(gcol)%col
+             numlev = pver + 1
+          end if
+          ptr = cs%snd_offset(lid)%col(icol)
+          k = cs%snd_offset(lid)%numrep(icol)
+          cs%snd_offset(lid)%os(ptr+k) = glbcnt
+          cs%snd_offset(lid)%numrep(icol) = k + 1
+          cs%max_numrep = max(cs%max_numrep, k + 1)
+          cs%snd_offset(lid)%numlev(icol) = numlev
+          cs%max_numlev = max(cs%max_numlev, numlev)
           glbcnt = glbcnt + numlev
           pecnt = pecnt + numlev
        end do
-       b2cs%snd_num(rpe2nbrs%xs(i)) = pecnt
+       cs%snd_num(rpe2nbrs%xs(i)) = pecnt
     end do
-    b2cs%snd_nrecs = glbcnt
+    cs%snd_nrecs = glbcnt
 
     ! Sort the received gcols so that the order is independent of comm
     ! schedule. Then we can use multiple comm schedules for the same icol
@@ -853,32 +889,37 @@ contains
     call sort(spe2nbrs%ys, sgcols)
 
     n = size(sgcols)
-    allocate(b2cs%rcv_offset(n), b2cs%rcv_numlev(n))
+    allocate(cs%rcv_offset(n), cs%rcv_numlev(n))
     glbcnt = 0
-    b2cs%rcv_num(:) = 0
+    cs%rcv_num(:) = 0
     do i = 1, size(spe2nbrs%xs)
        pe = spe2nbrs%xs(i)
        pecnt = 0
        do j = spe2nbrs%yptr(i), spe2nbrs%yptr(i+1)-1
           gcol = spe2nbrs%ys(j)
-          call gcol2bid(gcol, blockid, bcid)
-          e = assert(get_block_owner_d(blockid) == pe, &
-                     'comm_schedule: gcol pe association')
+          if (owning_blocks) then
+             call gcol2bid(gcol, blockid, icol)
+             e = assert(get_block_owner_d(blockid) == pe, &
+                        'sched: gcol pe association')
+             numlev = get_block_lvl_cnt_d(blockid, icol)
+          else
+             icol = knuhcs(gcol)%col
+             numlev = pver + 1
+          end if
           k = binary_search(n, sgcols, gcol)
-          b2cs%rcv_offset(k) = glbcnt
-          numlev = get_block_lvl_cnt_d(blockid, bcid)
-          b2cs%max_numlev = max(b2cs%max_numlev, numlev)
-          b2cs%rcv_numlev(k) = numlev
+          cs%rcv_offset(k) = glbcnt
+          cs%max_numlev = max(cs%max_numlev, numlev)
+          cs%rcv_numlev(k) = numlev
           glbcnt = glbcnt + numlev
           pecnt = pecnt + numlev
        end do
-       b2cs%rcv_num(pe) = pecnt
+       cs%rcv_num(pe) = pecnt
     end do
-    b2cs%rcv_nrecs = glbcnt
+    cs%rcv_nrecs = glbcnt
 
     deallocate(sgcols)
-    print *,'amb> make_b2c_comm_schedule done'
-  end subroutine make_b2c_comm_schedule
+    if (.not. owning_blocks) deallocate(l2cids)
+  end subroutine make_comm_schedule
 
   subroutine init_comm_data(cns, cs, cd, phys_alltoall)
     use spmd_utils, only: pair, ceil2
