@@ -50,7 +50,7 @@ module phys_grid_nbrhd
   private
 
   type :: PhysGridData ! collect phys_grid module data we need
-     integer :: clat_p_tot, nlcols, ngcols, ngcols_p
+     integer :: clat_p_tot, nlcols, ngcols, ngcols_p, phys_alltoall
      integer, pointer, dimension(:) :: lat_p, lon_p, latlon_to_dyn_gcol_map, clat_p_idx
      real(r8), pointer, dimension(:) :: clat_p, clon_p
   end type PhysGridData
@@ -161,9 +161,7 @@ contains
     type (knuhc), intent(in) :: knuhcs(:)
 
     type (PhysGridData) :: gd
-    type (SparseTriple) :: rpe2nbrs, spe2nbrs
-    integer :: bnrec, cnrec, i
-    logical :: e
+    logical :: call_init_chunk
 
     call run_unit_tests()
 
@@ -176,6 +174,7 @@ contains
 
     gd%clat_p_tot = clat_p_tot
     gd%nlcols = nlcols; gd%ngcols = ngcols; gd%ngcols_p = ngcols_p
+    gd%phys_alltoall = phys_alltoall
     gd%lat_p => lat_p; gd%lon_p => lon_p
     gd%clat_p_idx => clat_p_idx; gd%latlon_to_dyn_gcol_map => latlon_to_dyn_gcol_map
     gd%clat_p => clat_p; gd%clon_p => clon_p
@@ -187,41 +186,19 @@ contains
     call find_chunk_nbrhds(cns, gd, chunks, cns%chk_nbrhds)
     if (cns%verbose > 0) call test_nbrhds(cns, gd)
 
+    call_init_chunk = .true.
+    ! Dynamics blocks -> nbrhd columns for use in dp_coupling.F90.
     if (cns%make_b2c) then
-       call make_rpe2nbrs(cns, gd, chunks, knuhcs, rpe2nbrs, .true.)
-       call make_spe2nbrs(cns, gd, chunks, knuhcs, cns%chk_nbrhds, spe2nbrs, .true.)
-       call make_comm_schedule(cns, gd, chunks, knuhcs, rpe2nbrs, spe2nbrs, &
-            cns%b2cs, .true.)
-       call init_comm_data(cns, cns%b2cs, cns%b2cd, phys_alltoall)
-       cns%extra_chunk_ncol = size(spe2nbrs%ys)
-       call init_chunk(cns, gd, spe2nbrs%ys, chunk_extra)
-       e = assert(cns%b2cd%dp_coup_steps >= &
-                  ! -1 accounts for pe = iam
-                  min(size(rpe2nbrs%xs), size(spe2nbrs%xs)) - 1, &
-                  'init: dp_coup_steps')
-       if (cns%verbose > 0) then
-          call test_comm_schedule(cns, gd, chunks, knuhcs, rpe2nbrs, spe2nbrs, .true.)
-       end if
-       call SparseTriple_deallocate(rpe2nbrs)
-       call SparseTriple_deallocate(spe2nbrs)
+       call nbrhd_inith(cns, gd, chunks, knuhcs, .true., call_init_chunk, &
+            chunk_extra, cns%b2cs, cns%b2cd)
+       call_init_chunk = .false.
     end if
 
+    ! Owning chunks -> nbrhd columns for use in additional rounds within a
+    ! physics time step.
     if (cns%make_c2c) then
-       call make_rpe2nbrs(cns, gd, chunks, knuhcs, rpe2nbrs, .false.)
-       call make_spe2nbrs(cns, gd, chunks, knuhcs, cns%chk_nbrhds, spe2nbrs, .false.)
-       call make_comm_schedule(cns, gd, chunks, knuhcs, rpe2nbrs, spe2nbrs, &
-            cns%c2cs, .false.)
-       call init_comm_data(cns, cns%c2cs, cns%c2cd, phys_alltoall)
-       e = assert(cns%extra_chunk_ncol == size(spe2nbrs%ys), 'same as for b2c')
-       e = assert(cns%c2cd%dp_coup_steps >= &
-                  ! -1 accounts for pe = iam
-                  min(size(rpe2nbrs%xs), size(spe2nbrs%xs)) - 1, &
-                  'init: dp_coup_steps')
-       if (cns%verbose > 0) then
-          call test_comm_schedule(cns, gd, chunks, knuhcs, rpe2nbrs, spe2nbrs, .false.)
-       end if
-       call SparseTriple_deallocate(rpe2nbrs)
-       call SparseTriple_deallocate(spe2nbrs)
+       call nbrhd_inith(cns, gd, chunks, knuhcs, .false., call_init_chunk, &
+            chunk_extra, cns%c2cs, cns%c2cd)
     end if
   end subroutine nbrhd_init
 
@@ -399,6 +376,42 @@ contains
 
   !> -------------------------------------------------------------------
   !> Private routines.
+
+  subroutine nbrhd_inith(cns, gd, chunks, knuhcs, owning_blocks, call_init_chunk, &
+       chunk_extra, cs, cd)
+    type (ColumnNeighborhoods), intent(inout) :: cns
+    type (PhysGridData), intent(in) :: gd
+    type (chunk), intent(in) :: chunks(:)
+    type (knuhc), intent(in) :: knuhcs(:)
+    logical, intent(in) :: owning_blocks, call_init_chunk
+    type (chunk), intent(inout) :: chunk_extra
+    type (CommSchedule), intent(out) :: cs
+    type (CommData), intent(out) :: cd
+
+    type (SparseTriple) :: rpe2nbrs, spe2nbrs
+    logical :: e
+
+    call make_rpe2nbrs(cns, gd, chunks, knuhcs, rpe2nbrs, owning_blocks)
+    call make_spe2nbrs(cns, gd, chunks, knuhcs, cns%chk_nbrhds, spe2nbrs, owning_blocks)
+    call make_comm_schedule(cns, gd, chunks, knuhcs, rpe2nbrs, spe2nbrs, cs, owning_blocks)
+    call init_comm_data(cns, cs, cd, gd%phys_alltoall)
+    e = assert(cd%dp_coup_steps >= &
+               ! -1 accounts for pe = iam
+               min(size(rpe2nbrs%xs), size(spe2nbrs%xs)) - 1, &
+               'init: dp_coup_steps')
+    if (call_init_chunk) then
+       cns%extra_chunk_ncol = size(spe2nbrs%ys)
+       call init_chunk(cns, gd, spe2nbrs%ys, chunk_extra)
+    else
+       e = assert(cns%extra_chunk_ncol == size(spe2nbrs%ys), 'inith: extra_chunk_ncol')
+    end if
+    if (cns%verbose > 0) then
+       call test_comm_schedule(cns, gd, chunks, knuhcs, rpe2nbrs, spe2nbrs, cd, cs, &
+            owning_blocks)
+    end if
+    call SparseTriple_deallocate(rpe2nbrs)
+    call SparseTriple_deallocate(spe2nbrs)
+  end subroutine nbrhd_inith
 
   subroutine find_chunk_nbrhds(cns, gd, chunks, cnbrhds)
     ! For each gcol in an iam-owning chunk, find its list of neighbors as
@@ -1524,7 +1537,8 @@ contains
     end do
   end subroutine test_nbrhds
 
-  subroutine test_comm_schedule(cns, gd, chunks, knuhcs, rpe2nbrs, spe2nbrs, owning_blocks)
+  subroutine test_comm_schedule(cns, gd, chunks, knuhcs, rpe2nbrs, spe2nbrs, cd, cs, &
+       owning_blocks)
     use dyn_grid, only: get_block_gcol_cnt_d, get_block_gcol_d, get_horiz_grid_d
 
     type (ColumnNeighborhoods), intent(in) :: cns
@@ -1532,6 +1546,8 @@ contains
     type (chunk), intent(in) :: chunks(:)
     type (knuhc), intent(in) :: knuhcs(:)
     type (SparseTriple), intent(in) :: rpe2nbrs, spe2nbrs
+    type (CommSchedule), intent(in) :: cs
+    type (CommData), intent(in) :: cd
     logical, intent(in) :: owning_blocks
 
     real(r8), parameter :: none = -10000
@@ -1545,7 +1561,7 @@ contains
          jgcol, lcide
     logical :: e
 
-    if (.not. owning_blocks) print *,'amb> SKIPPING C2C NEED TO IMPL'
+    if (.not. owning_blocks) return
 
     if (masterproc) write(iulog,*) 'amb> test_comm_schedule'
     nerr = 0
@@ -1578,11 +1594,11 @@ contains
        bid = cns%ie2bid(ie)
        ngcols = get_block_gcol_cnt_d(bid)
        e = test(nerr, size(gcols) >= ngcols, 'comm: ngcols size')
-       e = test(nerr, ngcols == cns%b2cs%snd_offset(ie)%ncol, 'comm: ngcols agrees')
+       e = test(nerr, ngcols == cs%snd_offset(ie)%ncol, 'comm: ngcols = ncol')
        call get_block_gcol_d(bid, ngcols, gcols)
-       e = test(nerr, cns%b2cs%snd_offset(ie)%ncol == size(cns%b2cs%snd_offset(ie)%numlev), &
+       e = test(nerr, cs%snd_offset(ie)%ncol == size(cs%snd_offset(ie)%numlev), &
                 'comm: ncol')
-       do icol = 1, cns%b2cs%snd_offset(ie)%ncol ! ditto
+       do icol = 1, cs%snd_offset(ie)%ncol ! ditto
           gcol = gcols(icol)
           lat = gd%clat_p(gd%lat_p(gcol))
           lon = gd%clon_p(gd%lon_p(gcol))
