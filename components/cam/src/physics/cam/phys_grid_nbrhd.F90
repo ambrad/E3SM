@@ -9,6 +9,24 @@ module phys_grid_nbrhd
   !   We keep endchunk the same as it was because most begchunk:endchunk
   ! quantities and loops are unchanged. We add an extra lchunk, chunk, and
   ! physics_state.
+  !   There are three data structures outside of this module that are modified:
+  ! extra chunk, lchunk, and phys_state. All three have arrays whose entries are
+  ! 1-1 with each other. The column order of these arrays is: [sorted received
+  ! gcols, sorted already-present gcols]. The already-present gcols must be
+  ! duplicated because parameterizations update local state; the duplicate is
+  ! not updated but rather reflects state at the last comm round. Consider the
+  ! alternative of not duplicating these columns: the simulation would not be
+  ! BFB-invariant to pe layout. Neighborhood physics state can be updated only
+  ! through neighborhood communication rounds.
+  !   A physics parameterization accesses the neighborhood data through the
+  ! extra phys_state. The extra lchunk and chunk support phys_grid-type queries.
+  !   There are two supported communication schedules:
+  !   1. Dynamics blocks -> nbrhd columns. This mimics the d_p_coupling comm
+  ! round and is at least as efficient as 2.
+  !   2. There may be a desire to update nbrhd state during a physics time
+  ! step. The second schedule supports this: owned-columns -> nbrhd
+  ! columns. This is the only correct way to update nbrhd columns during a
+  ! physics time step.
   !   In dp_coupling, we call derived_physics on the extra physics_state, but we
   ! omit the diagnostic energy calculations and so don't need an extra
   ! physics_tend. Here the goal is to provide full physics_state data for the
@@ -168,8 +186,6 @@ contains
     call find_chunk_nbrhds(cns, gd, chunks, cns%chk_nbrhds)
     if (cns%verbose > 0) call test_nbrhds(cns, gd)
 
-    !todo-sort Need to make the order of the comm'ed gcols in the extra chunk
-    !          independent of comm schedule.
     if (cns%make_b2c) then
        call make_rpe2nbrs(cns, gd, chunks, knuhcs, rpe2nbrs)
        call make_spe2nbrs(cns, gd, chunks, knuhcs, cns%chk_nbrhds, spe2nbrs)
@@ -432,10 +448,10 @@ contains
 
   subroutine make_rpe2nbrs(cns, gd, chunks, knuhcs, rpe2nbrs, &
        exclude_existing_in, owning_blocks_in)
-    ! Make the map of chunk-owning pe to gcols, where the gcols are neighbors of
-    ! a column in a chunk, each gcol belongs to a block or chunk that iam owns,
-    ! and neighbor is defined in find_gcol_nbrhd. On output, rpe2nbrs has these
-    ! entries:
+    ! Make the map of chunk-owning pe ((r)eceiving (pe)s) to gcols, where the
+    ! gcols are neighbors of a column in a chunk, each gcol belongs to a block
+    ! or chunk that iam owns, and neighbor is defined in find_gcol_nbrhd. On
+    ! output, rpe2nbrs has these entries:
     !     xs: sorted list of chunk-owning pes;
     !     yptr: pointers into ys;
     !     ys: for each pe, the list of iam-owning neighbors, as sorted gcols.
@@ -583,10 +599,10 @@ contains
 
   subroutine make_spe2nbrs(cns, gd, chunks, knuhcs, cnbrhds, spe2nbrs, &
        exclude_existing_in, owning_blocks_in)
-    ! Make the map of owning pe to gcols, where the gcols are neighbors of a
-    ! column in a block, each gcol belongs to a chunk that iam owns, and
-    ! neighbor is defined in find_gcol_nbrhd. On output, spe2nbrs has these
-    ! entries:
+    ! Make the map of owning pe ((s)ending (pe)s) to gcols, where the gcols are
+    ! neighbors of a column in a block, each gcol belongs to a chunk that iam
+    ! owns, and neighbor is defined in find_gcol_nbrhd. On output, spe2nbrs has
+    ! these entries:
     !     xs: sorted list of owning pes;
     !     yptr: pointers into ys;
     !     ys: for each pe, the list of iam-owning sorted gcols.
@@ -757,10 +773,12 @@ contains
     type (SparseTriple), intent(in) :: rpe2nbrs, spe2nbrs
     type (CommSchedule), intent(out) :: b2cs
 
+    integer, allocatable :: sgcols(:)
     integer :: i, j, k, ie, gid, nlblk, gcol, blockid, bcid, pecnt, glbcnt, &
-         pe, numlev, ptr
+         pe, numlev, ptr, n
     logical :: e
 
+    print *,'amb> make_b2c_comm_schedule'
     nlblk = size(cns%ie2bid)
     allocate(b2cs%snd_num(0:npes-1), b2cs%rcv_num(0:npes-1), &
          b2cs%snd_offset(nlblk))
@@ -829,7 +847,13 @@ contains
     end do
     b2cs%snd_nrecs = glbcnt
 
-    allocate(b2cs%rcv_offset(size(spe2nbrs%ys)), b2cs%rcv_numlev(size(spe2nbrs%ys)))
+    ! Sort the received gcols so that the order is independent of comm
+    ! schedule. Then we can use multiple comm schedules for the same icol
+    ! ordering in the extra chunk.
+    call sort(spe2nbrs%ys, sgcols)
+
+    n = size(sgcols)
+    allocate(b2cs%rcv_offset(n), b2cs%rcv_numlev(n))
     glbcnt = 0
     b2cs%rcv_num(:) = 0
     do i = 1, size(spe2nbrs%xs)
@@ -840,16 +864,20 @@ contains
           call gcol2bid(gcol, blockid, bcid)
           e = assert(get_block_owner_d(blockid) == pe, &
                      'comm_schedule: gcol pe association')
-          b2cs%rcv_offset(j) = glbcnt
+          k = binary_search(n, sgcols, gcol)
+          b2cs%rcv_offset(k) = glbcnt
           numlev = get_block_lvl_cnt_d(blockid, bcid)
           b2cs%max_numlev = max(b2cs%max_numlev, numlev)
-          b2cs%rcv_numlev(j) = numlev
+          b2cs%rcv_numlev(k) = numlev
           glbcnt = glbcnt + numlev
           pecnt = pecnt + numlev
        end do
        b2cs%rcv_num(pe) = pecnt
     end do
     b2cs%rcv_nrecs = glbcnt
+
+    deallocate(sgcols)
+    print *,'amb> make_b2c_comm_schedule done'
   end subroutine make_b2c_comm_schedule
 
   subroutine init_comm_data(cns, cs, cd, phys_alltoall)
@@ -978,18 +1006,11 @@ contains
     integer, allocatable :: idxs(:)
     integer :: i
 
-    ! Sort the gcols so we have an order independent of comm schedule.
+    ! Sort the received gcols so we have an order independent of comm schedule.
     chk%ncols = cns%extra_chunk_ncol
     allocate(idxs(chk%ncols))
-    !todo-sort
-#if 0
     call IndexSet(chk%ncols, idxs)
     call IndexSort(chk%ncols, idxs, gcols)
-#else
-    do i = 1, chk%ncols
-       idxs(i) = i
-    end do
-#endif
     ! Fill the chunk.
     chk%dcols = chk%ncols
     chk%owner = iam
@@ -1331,6 +1352,26 @@ contains
     deallocate(idxs)
   end subroutine make_unique
 
+  subroutine sort(a, b)
+    ! Simple sort wrapper for when idxs is not needed.
+
+    integer, intent(in) :: a(:)
+    integer, allocatable, intent(out) :: b(:)
+
+    integer, allocatable :: idxs(:)
+    integer :: n, i
+    logical :: e
+
+    n = size(a)
+    allocate(idxs(n), b(n))
+    call IndexSet(n, idxs)
+    call IndexSort(n, idxs, a)
+    do i = 1, n
+       b(i) = a(idxs(i))
+    end do
+    deallocate(idxs)
+  end subroutine sort
+
   subroutine SparseTriple_deallocate(st)
     type (SparseTriple), intent(out) :: st
     if (allocated(st%xs)) deallocate(st%xs, st%yptr, st%ys)
@@ -1456,9 +1497,10 @@ contains
 
     real(r8), allocatable, dimension(:) :: lats, lons, bbuf, cbuf, lats_d, lons_d
     real(r8) :: lat, lon, x, y, z, angle
-    integer, allocatable :: bptr(:,:), cptr(:)
+    integer, allocatable :: bptr(:,:), cptr(:), sgcols(:)
     integer :: cid, ncols, gcol, i, j, k, ie, bnrecs, cnrecs, icol, max_numlev, &
-         max_numrep, num_recv_col, numlev, numrep, bid, ngcols, gcols(16), nerr, jgcol
+         max_numrep, num_recv_col, numlev, numrep, bid, ngcols, gcols(16), nerr, &
+         jgcol, lcide
     logical :: e
 
     if (masterproc) write(iulog,*) 'amb> test_b2c_comm_schedule'
@@ -1521,11 +1563,13 @@ contains
     e = test(nerr, .not. any(cbuf == none), 'comm: cbuf has no none values')
 
     ! Unpack recv buffer.
+    call sort(spe2nbrs%ys, sgcols)
     allocate(cptr(max_numlev))
+    lcide = endchunk+nbrhdchunk
     do icol = 1, size(spe2nbrs%ys) ! from nbrhd_block_to_chunk_sizes
        call nbrhd_block_to_chunk_recv_pters(icol, rcdsz, numlev, cptr)
        e = test(nerr, icol <= size(spe2nbrs%ys), 'comm: icol range')
-       gcol = spe2nbrs%ys(icol) ! also from lchunk query
+       gcol = sgcols(icol) ! also from chunk query
        k = 1
        ! We should never unpack into a slot having other than the none value.
        e = test(nerr, lats(gcol) == none, 'comm: lats(gcol) is none')
@@ -1534,9 +1578,10 @@ contains
        do k = 2, numlev
           e = test(nerr, cbuf(cptr(k)+0) == lats(gcol) + (k-1) .and. &
                          cbuf(cptr(k)+1) == lons(gcol) + (k-1), 'comm: lat,lon')
+          e = assert(e,'')
        end do
     end do
-    deallocate(cptr)
+    deallocate(cptr, sgcols)
 
     deallocate(bbuf, cbuf)
 
