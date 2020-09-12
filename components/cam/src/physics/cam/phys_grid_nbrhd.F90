@@ -200,7 +200,7 @@ contains
                   min(size(rpe2nbrs%xs), size(spe2nbrs%xs)) - 1, &
                   'init: dp_coup_steps')
        if (cns%verbose > 0) then
-          call test_b2c_comm_schedule(cns, gd, chunks, knuhcs, rpe2nbrs, spe2nbrs)
+          call test_comm_schedule(cns, gd, chunks, knuhcs, rpe2nbrs, spe2nbrs, .true.)
        end if
        call SparseTriple_deallocate(rpe2nbrs)
        call SparseTriple_deallocate(spe2nbrs)
@@ -217,11 +217,9 @@ contains
                   ! -1 accounts for pe = iam
                   min(size(rpe2nbrs%xs), size(spe2nbrs%xs)) - 1, &
                   'init: dp_coup_steps')
-#if 0
        if (cns%verbose > 0) then
-          call test_c2c_comm_schedule(cns, gd, chunks, knuhcs, rpe2nbrs, spe2nbrs)
+          call test_comm_schedule(cns, gd, chunks, knuhcs, rpe2nbrs, spe2nbrs, .false.)
        end if
-#endif
        call SparseTriple_deallocate(rpe2nbrs)
        call SparseTriple_deallocate(spe2nbrs)
     end if
@@ -821,19 +819,19 @@ contains
              gcol = rpe2nbrs%ys(j) ! gcol in a chunk on pe
              call gcol2bid(gcol, blockid, icol)
              e = assert(get_block_owner_d(blockid) == iam, &
-                        'sched: gcol is owned')
+                        'b2c sched: gcol is owned')
              k = binary_search(nlcl, cns%bid2ie%id1, blockid)
              e = assert(k >= 1, 'sched: blockid is in map')
              lid = cns%bid2ie%id2(k) ! local block ID providing data to the chunk
              e = assert(icol >= 1 .and. icol <= cs%snd_offset(lid)%ncol, &
-                        'sched: icol is in range')
+                        'b2c sched: icol is in range')
           else
              gcol = rpe2nbrs%ys(j)
              e = assert(chunks(knuhcs(gcol)%chunkid)%owner == iam, &
                   'c2c sched: gcol is owned')
              cid = knuhcs(gcol)%chunkid
-             k = binary_search(nlcl, l2cids, cid)
-             e = assert(k >= 1, 'c2c sched: cid is in map')
+             lid = binary_search(nlcl, l2cids, cid)
+             e = assert(lid >= 1, 'c2c sched: cid is in map')
              icol = knuhcs(gcol)%col
           end if
           cs%snd_offset(lid)%numrep(icol) = cs%snd_offset(lid)%numrep(icol) + 1
@@ -900,9 +898,11 @@ contains
           if (owning_blocks) then
              call gcol2bid(gcol, blockid, icol)
              e = assert(get_block_owner_d(blockid) == pe, &
-                        'sched: gcol pe association')
+                        'b2c sched: gcol pe association')
              numlev = get_block_lvl_cnt_d(blockid, icol)
           else
+             e = assert(chunks(knuhcs(gcol)%chunkid)%owner == pe, &
+                        'c2c sched: gcol pe association')
              icol = knuhcs(gcol)%col
              numlev = pver + 1
           end if
@@ -1524,7 +1524,7 @@ contains
     end do
   end subroutine test_nbrhds
 
-  subroutine test_b2c_comm_schedule(cns, gd, chunks, knuhcs, rpe2nbrs, spe2nbrs)
+  subroutine test_comm_schedule(cns, gd, chunks, knuhcs, rpe2nbrs, spe2nbrs, owning_blocks)
     use dyn_grid, only: get_block_gcol_cnt_d, get_block_gcol_d, get_horiz_grid_d
 
     type (ColumnNeighborhoods), intent(in) :: cns
@@ -1532,6 +1532,7 @@ contains
     type (chunk), intent(in) :: chunks(:)
     type (knuhc), intent(in) :: knuhcs(:)
     type (SparseTriple), intent(in) :: rpe2nbrs, spe2nbrs
+    logical, intent(in) :: owning_blocks
 
     real(r8), parameter :: none = -10000
     integer, parameter :: rcdsz = 2
@@ -1544,7 +1545,9 @@ contains
          jgcol, lcide
     logical :: e
 
-    if (masterproc) write(iulog,*) 'amb> test_b2c_comm_schedule'
+    if (.not. owning_blocks) print *,'amb> SKIPPING C2C NEED TO IMPL'
+
+    if (masterproc) write(iulog,*) 'amb> test_comm_schedule'
     nerr = 0
 
     allocate(lats(gd%ngcols), lons(gd%ngcols))
@@ -1657,7 +1660,7 @@ contains
     deallocate(lats, lons)
 
     if (nerr > 0) write(iulog,*) 'amb> test_b2c_comm_schedule FAIL', nerr
-  end subroutine test_b2c_comm_schedule
+  end subroutine test_comm_schedule
 
   subroutine test_c2n(cns, lchks)
     type (ColumnNeighborhoods), intent(in) :: cns
