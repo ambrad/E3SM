@@ -294,7 +294,7 @@ CONTAINS
        if (test) then
           call finish_test(phys_state)
           call mpi_barrier(mpicom)
-          call endrun('amb> dp_coupling test')
+          call endrun('nbr> dp_coupling test')
        end if
     end if
 
