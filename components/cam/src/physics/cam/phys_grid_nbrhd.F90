@@ -9,9 +9,9 @@ module phys_grid_nbrhd
   !     ! size(icols) must be >= nbrhd_size
   !     call nbrhd_get_nbrhd(state%lchnk, icol, icols)
   ! Now access data in the neighborhood like this:
-  !     state_nbrhd%X(icols(i)),
+  !     state_nbrhd%X(icols(i),...),
   ! where state_nbrhd is the extra physics_state containing neighborhood data
-  ! and 1 <= i <= nbrhd_size.
+  ! and 1 <= i <= nbrhd_size and X is a physics_state field.
   !   Not all state is necessarily available for communication efficiency. Call
   !     nbrhd_pcnst = nbrhd_get_option_pcnst()
   ! to determine the range 1:nbrhd_pcnst of 1:pcnst for which there are
@@ -64,22 +64,22 @@ module phys_grid_nbrhd
   implicit none
   private
 
-  type :: PhysGridData ! collect phys_grid module data we need
+  type PhysGridData ! collect phys_grid module data we need
      integer :: clat_p_tot, nlcols, ngcols, ngcols_p, phys_alltoall
      integer, pointer, dimension(:) :: lat_p, lon_p, latlon_to_dyn_gcol_map, clat_p_idx
      real(r8), pointer, dimension(:) :: clat_p, clon_p
   end type PhysGridData
 
-  type :: SparseTriple
+  type SparseTriple
      ! xs(i) maps to ys(yptr(i):yptr(i+1)-1)
      integer, allocatable :: xs(:), yptr(:), ys(:)
   end type SparseTriple
 
-  type :: IdMap
+  type IdMap
      integer, allocatable :: id1(:), id2(:)
   end type IdMap
 
-  type :: Offsets
+  type Offsets
      integer :: ncol
      ! Offsets for the columns in a block or chunk. Each one can have a
      ! different number of repetitions in the send buffer than the others.
@@ -88,13 +88,13 @@ module phys_grid_nbrhd
      integer, allocatable :: col(:), os(:)
   end type Offsets
 
-  type :: CommData
+  type CommData
      integer, allocatable, dimension(:) :: sndcnts, sdispls, rcvcnts, rdispls, &
           pdispls, dp_coup_proc
      integer :: lopt, prev_record_size, dp_coup_steps
   end type CommData
 
-  type :: ColumnDesc
+  type ColumnDesc
      ! The local chunk ID and column of the chunk for this column.
      integer :: lcid, icol
   end type ColumnDesc
@@ -105,13 +105,13 @@ module phys_grid_nbrhd
      type (ColumnDesc), allocatable :: cols(:) ! list of copy sources
   end type ColumnCopies
 
-  type :: ChunkDesc
+  type ChunkDesc
      ! nbrhd(col(i):col(i)-1) is the neighborhood of column i in this chunk. The
      ! range is an index into the list of ColumnDescs, idx2cd.
      integer, allocatable :: col(:), nbrhd(:)
   end type ChunkDesc
 
-  type :: CommSchedule
+  type CommSchedule
      integer :: max_numrep, max_numlev, snd_nrecs, rcv_nrecs
      integer, allocatable :: snd_num(:), rcv_num(:)
      type (Offsets), allocatable :: snd_offset(:)
@@ -120,7 +120,7 @@ module phys_grid_nbrhd
 
   ! A neighborhood is a list of gcols neighboring a column. Neighborhoods,
   ! plural, is a list of these of lists.
-  type :: ColumnNeighborhoods
+  type ColumnNeighborhoods
      logical :: make_b2c, make_c2c
      integer :: verbose, pcnst, nchunks, extra_chunk_ncol
      ! Radian angle defining neighborhood. Defines max between a column center
