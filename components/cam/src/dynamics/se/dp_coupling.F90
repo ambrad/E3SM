@@ -27,7 +27,7 @@ module dp_coupling
                             block_to_chunk_recv_pters, block_to_chunk_send_pters
   use phys_grid_nbrhd,only: nbrhd_block_to_chunk_sizes, nbrhd_block_to_chunk_send_pters, &
                             nbrhd_block_to_chunk_recv_pters, nbrhd_transpose_block_to_chunk, &
-                            nbrhd_get_num_copies, nbrhd_get_copy_idxs
+                            nbrhd_get_num_copies, nbrhd_get_copy_idxs, nbrhd_get_option_pcnst
   private
   public :: d_p_coupling, p_d_coupling
 
@@ -677,7 +677,7 @@ CONTAINS
     integer(kind=int_kind), allocatable :: bptr(:,:), cptr(:)
     real (kind=real_kind), allocatable, dimension(:) :: bbuf, cbuf ! transpose buffers
     integer(kind=int_kind)   :: bnrecs, cnrecs, max_numlev, max_numrep, numlev, numrep, &
-                                num_recv_col, rcdsz, ncol, j, k, q, ptr
+                                num_recv_col, rcdsz, ncol, j, k, q, ptr, nbrhd_pcnst
 
     call t_startf('dpcopy_nbrhd')
     if (fv_nphys > 0) then
@@ -686,7 +686,8 @@ CONTAINS
        nphys = np
     end if
     nphys_sq = nphys*nphys
-    rcdsz = 4 + pcnst
+    nbrhd_pcnst = nbrhd_get_option_pcnst()
+    rcdsz = 4 + nbrhd_pcnst
 
     call nbrhd_block_to_chunk_sizes(bnrecs, cnrecs, &
                                     max_numlev, max_numrep, &
@@ -715,7 +716,7 @@ CONTAINS
                    bbuf(ptr+1) = uv_tmp(icol,1,k,ie)
                    bbuf(ptr+2) = uv_tmp(icol,2,k,ie)
                    bbuf(ptr+3) = om_tmp(icol,  k,ie)
-                   do q = 1, pcnst
+                   do q = 1, nbrhd_pcnst
                       bbuf(ptr+3+q) = q_tmp(icol,k,q,ie)
                    end do
                 end do
@@ -744,7 +745,7 @@ CONTAINS
           phys_state(lchnk)%u    (icol,k) = cbuf(ptr+1)
           phys_state(lchnk)%v    (icol,k) = cbuf(ptr+2)
           phys_state(lchnk)%omega(icol,k) = cbuf(ptr+3)
-          do q = 1, pcnst
+          do q = 1, nbrhd_pcnst
              phys_state(lchnk)%q(icol,k,q) = cbuf(ptr+3+q)
           end do
        end do
