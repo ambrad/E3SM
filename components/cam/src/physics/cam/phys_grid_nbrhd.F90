@@ -116,8 +116,8 @@ module phys_grid_nbrhd
      ! For each gcol in iam's chunks, the list of gcols in its neighborhood,
      ! excluding itself.
      type (SparseTriple) :: chk_nbrhds
-     ! Local <-> global block IDs
-     integer, allocatable :: ie2bid(:)
+     ! Local <-> global block IDs, chunks
+     integer, allocatable :: ie2bid(:), l2cid(:)
      type (IdMap) :: bid2ie
      ! Communication data. In b2cs, snd_offset is index using local block ID,
      ! not global as in phys_grid.
@@ -142,12 +142,12 @@ module phys_grid_nbrhd
        nbrhd_block_to_chunk_send_pters, &
        nbrhd_transpose_block_to_chunk, &
        nbrhd_block_to_chunk_recv_pters, &
-       ! chunk-to-chunk comm
+       ! chunk-to-chunk communication
        nbrhd_chunk_to_chunk_sizes, &
        nbrhd_chunk_to_chunk_send_pters, &
        nbrhd_transpose_chunk_to_chunk, &
        nbrhd_chunk_to_chunk_recv_pters, &
-       ! post-comm copying
+       ! post-communication copying
        nbrhd_get_num_copies, &
        nbrhd_get_copy_idxs, &
        ! API for parameterizations
@@ -194,16 +194,15 @@ contains
     gd%clat_p_idx => clat_p_idx; gd%latlon_to_dyn_gcol_map => latlon_to_dyn_gcol_map
     gd%clat_p => clat_p; gd%clon_p => clon_p
 
-    ! We use local block IDs to keep our persistent arrays small. Get global <->
-    ! local block ID maps.
-    call get_local_blocks(cns%ie2bid, cns%bid2ie)
-
     call find_chunk_nbrhds(cns, gd, chunks, cns%chk_nbrhds)
     if (cns%verbose > 0) call test_nbrhds(cns, gd)
 
     call_init_chunk = .true.
     ! Dynamics blocks -> nbrhd columns for use in dp_coupling.F90.
     if (cns%make_b2c) then
+       ! We use local block IDs to keep our persistent arrays small. Get global
+       ! <-> local block ID maps.
+       call make_ie2bid(cns%ie2bid, cns%bid2ie)
        call nbrhd_inith(cns, gd, chunks, knuhcs, .true., call_init_chunk, &
             chunk_extra, cns%b2cs, cns%b2cd)
        call_init_chunk = .false.
@@ -212,6 +211,7 @@ contains
     ! Owning chunks -> nbrhd columns for use in additional rounds within a
     ! physics time step.
     if (cns%make_c2c) then
+       call make_l2cid(cns%nchunks, chunks, cns%l2cid)
        call nbrhd_inith(cns, gd, chunks, knuhcs, .false., call_init_chunk, &
             chunk_extra, cns%c2cs, cns%c2cd)
     end if
@@ -803,18 +803,7 @@ contains
     if (owning_blocks) then
        nlcl = size(cns%ie2bid)
     else
-       nlcl = 0
-       do cid = 1, cns%nchunks
-          if (chunks(cid)%owner /= iam) cycle
-          nlcl = nlcl + 1
-       end do
-       allocate(l2cids(nlcl))
-       lid = 0
-       do cid = 1, cns%nchunks
-          if (chunks(cid)%owner /= iam) cycle
-          lid = lid + 1
-          l2cids(lid) = cid
-       end do
+       nlcl = size(cns%l2cid)
     end if
     allocate(cs%snd_num(0:npes-1), cs%rcv_num(0:npes-1), &
          cs%snd_offset(nlcl))
@@ -825,6 +814,7 @@ contains
           gid = cns%ie2bid(lid)
           n = get_block_gcol_cnt_d(gid)
        else
+          cid = cns%l2cid(lid)
           n = chunks(cid)%ncols
        end if
        cs%snd_offset(lid)%ncol = n
@@ -852,7 +842,7 @@ contains
              e = assert(chunks(knuhcs(gcol)%chunkid)%owner == iam, &
                   'c2c sched: gcol is owned')
              cid = knuhcs(gcol)%chunkid
-             lid = binary_search(nlcl, l2cids, cid)
+             lid = binary_search(nlcl, cns%l2cid, cid)
              e = assert(lid >= 1, 'c2c sched: cid is in map')
              icol = knuhcs(gcol)%col
           end if
@@ -885,7 +875,7 @@ contains
              numlev = get_block_lvl_cnt_d(gid, icol)
           else
              cid = knuhcs(gcol)%chunkid
-             lid = binary_search(nlcl, l2cids, cid)
+             lid = binary_search(nlcl, cns%l2cid, cid)
              icol = knuhcs(gcol)%col
              numlev = pver + 1
           end if
@@ -940,7 +930,6 @@ contains
     cs%rcv_nrecs = glbcnt
 
     deallocate(sgcols)
-    if (.not. owning_blocks) deallocate(l2cids)
   end subroutine make_comm_schedule
 
   subroutine init_comm_data(cns, cs, cd, phys_alltoall)
@@ -1012,7 +1001,7 @@ contains
 #endif
   end subroutine make_comm_data
 
-  subroutine get_local_blocks(ie2bid, bid2ie)
+  subroutine make_ie2bid(ie2bid, bid2ie)
     ! id2gid is a list of iam's owned global block IDs in block local ID
     ! order. bid2ie%id1 is the sorted list of global block IDs, and bid2ie%id2
     ! is the list of corresponding local IDs.
@@ -1058,7 +1047,28 @@ contains
     do i = 1, cnt
        bid2ie%id1(i) = ie2bid(bid2ie%id2(i))
     end do
-  end subroutine get_local_blocks
+  end subroutine make_ie2bid
+  
+  subroutine make_l2cid(nchunks, chunks, l2cid)
+    integer, intent(in) :: nchunks
+    type (chunk), intent(in) :: chunks(:)
+    integer, allocatable, intent(out) :: l2cid(:)
+
+    integer :: nlcl, cid, lid
+
+    nlcl = 0
+    do cid = 1, nchunks
+       if (chunks(cid)%owner /= iam) cycle
+       nlcl = nlcl + 1
+    end do
+    allocate(l2cid(nlcl))
+    lid = 0
+    do cid = 1, nchunks
+       if (chunks(cid)%owner /= iam) cycle
+       lid = lid + 1
+       l2cid(lid) = cid
+    end do
+  end subroutine make_l2cid
 
   subroutine init_chunk(cns, gd, gcols, chk)
     type (ColumnNeighborhoods), intent(in) :: cns
@@ -1646,17 +1656,15 @@ contains
     real(r8), parameter :: none = -10000
     integer, parameter :: rcdsz = 2
 
-    real(r8), allocatable, dimension(:) :: lats, lons, bbuf, cbuf, lats_d, lons_d
+    real(r8), allocatable, dimension(:) :: lats, lons, sbuf, rbuf, lats_d, lons_d
     real(r8) :: lat, lon, x, y, z, angle
-    integer, allocatable :: bptr(:,:), cptr(:), sgcols(:)
-    integer :: cid, ncols, gcol, i, j, k, ie, bnrecs, cnrecs, icol, max_numlev, &
+    integer, allocatable :: sptr(:,:), rptr(:), sgcols(:)
+    integer :: cid, ncols, gcol, i, j, k, lid, bnrecs, cnrecs, icol, max_numlev, &
          max_numrep, num_recv_col, numlev, numrep, bid, ngcols, gcols(16), nerr, &
          jgcol, lcide
     logical :: e
 
-    if (.not. owning_blocks) return
-
-    if (masterproc) write(iulog,*) 'amb> test_comm_schedule'
+    if (masterproc) write(iulog,*) 'amb> test_comm_schedule', owning_blocks
     nerr = 0
 
     allocate(lats(gd%ngcols), lons(gd%ngcols))
@@ -1677,67 +1685,88 @@ contains
     if (owning_blocks) then
        call nbrhd_block_to_chunk_sizes(bnrecs, cnrecs, max_numlev, max_numrep, num_recv_col)
     else
-       !call nbrhd_chunk_to_chunk_sizes(bnrecs, cnrecs, max_numlev, max_numrep, num_recv_col)
+       call nbrhd_chunk_to_chunk_sizes(bnrecs, cnrecs, max_numlev, max_numrep, num_recv_col)
     end if
-    allocate(bbuf(rcdsz*bnrecs), cbuf(rcdsz*cnrecs))
-    bbuf(:) = none; cbuf(:) = none
+    allocate(sbuf(rcdsz*bnrecs), rbuf(rcdsz*cnrecs))
+    sbuf(:) = none; rbuf(:) = none
 
     ! Pack send buffer.
-    allocate(bptr(max_numlev,max_numrep))
-    do ie = 1, size(cns%ie2bid) ! caller knows this
-       bid = cns%ie2bid(ie)
-       ngcols = get_block_gcol_cnt_d(bid)
-       e = test(nerr, size(gcols) >= ngcols, 'comm: ngcols size')
-       e = test(nerr, ngcols == cs%snd_offset(ie)%ncol, 'comm: ngcols = ncol')
-       call get_block_gcol_d(bid, ngcols, gcols)
-       e = test(nerr, cs%snd_offset(ie)%ncol == size(cs%snd_offset(ie)%numlev), &
+    allocate(sptr(max_numlev,max_numrep))
+    do lid = 1, size(cs%snd_offset) ! caller knows this
+       if (owning_blocks) then
+          bid = cns%ie2bid(lid)
+          ngcols = get_block_gcol_cnt_d(bid)
+          e = test(nerr, size(gcols) >= ngcols, 'comm: ngcols size')
+          call get_block_gcol_d(bid, ngcols, gcols)
+       else
+          cid = cns%l2cid(lid)
+          ngcols = chunks(cid)%ncols
+       end if
+       e = test(nerr, ngcols == cs%snd_offset(lid)%ncol, 'comm: ngcols = ncol')
+       e = test(nerr, cs%snd_offset(lid)%ncol == size(cs%snd_offset(lid)%numlev), &
                 'comm: ncol')
-       do icol = 1, cs%snd_offset(ie)%ncol ! ditto
-          gcol = gcols(icol)
+       do icol = 1, cs%snd_offset(lid)%ncol ! ditto
+          if (owning_blocks) then
+             gcol = gcols(icol)
+          else
+             gcol = chunks(cid)%gcol(icol)
+          end if
           lat = gd%clat_p(gd%lat_p(gcol))
           lon = gd%clon_p(gd%lon_p(gcol))
-          call nbrhd_block_to_chunk_send_pters(ie, icol, rcdsz, numlev, numrep, bptr)
+          if (owning_blocks) then
+             call nbrhd_block_to_chunk_send_pters(lid, icol, rcdsz, numlev, numrep, sptr)
+          else
+             call nbrhd_chunk_to_chunk_send_pters(lid, icol, rcdsz, numlev, numrep, sptr)
+          end if
           e = test(nerr, numlev <= max_numlev .and. numrep <= max_numrep, &
-                   'comm: bptr size')
-          e = test(nerr, all(bptr(:numlev,:numrep) >= 1), 'comm: bptr >= 1')
+                   'comm: sptr size')
+          e = test(nerr, all(sptr(:numlev,:numrep) >= 1), 'comm: sptr >= 1')
           do j = 1, numrep
              do k = 1, numlev
-                e = test(nerr, bptr(k,j) >= 1 .and. bptr(k,j) <= size(bbuf), &
-                         'comm: bptr bbuf')
-                bbuf(bptr(k,j)+0) = lat + (k-1)
-                bbuf(bptr(k,j)+1) = lon + (k-1)
+                e = test(nerr, sptr(k,j) >= 1 .and. sptr(k,j) <= size(sbuf), &
+                         'comm: sptr sbuf')
+                sbuf(sptr(k,j)+0) = lat + (k-1)
+                sbuf(sptr(k,j)+1) = lon + (k-1)
              end do
           end do
        end do
     end do
-    deallocate(bptr)
+    deallocate(sptr)
 
-    e = test(nerr, .not. any(bbuf == none), 'comm: bbuf has no none values')
-    call nbrhd_transpose_block_to_chunk(rcdsz, bbuf, cbuf)
-    e = test(nerr, .not. any(cbuf == none), 'comm: cbuf has no none values')
+    e = test(nerr, .not. any(sbuf == none), 'comm: sbuf has no none values')
+    if (owning_blocks) then
+       call nbrhd_transpose_block_to_chunk(rcdsz, sbuf, rbuf)
+    else
+       call nbrhd_transpose_chunk_to_chunk(rcdsz, sbuf, rbuf)
+    end if
+    e = test(nerr, .not. any(rbuf == none), 'comm: rbuf has no none values')
 
     ! Unpack recv buffer.
     call sort(spe2nbrs%ys, sgcols)
-    allocate(cptr(max_numlev))
+    allocate(rptr(max_numlev))
     lcide = endchunk+nbrhdchunk
     do icol = 1, size(spe2nbrs%ys) ! from nbrhd_block_to_chunk_sizes
-       call nbrhd_block_to_chunk_recv_pters(icol, rcdsz, numlev, cptr)
+       if (owning_blocks) then
+          call nbrhd_block_to_chunk_recv_pters(icol, rcdsz, numlev, rptr)
+       else
+          call nbrhd_chunk_to_chunk_recv_pters(icol, rcdsz, numlev, rptr)
+       end if
        e = test(nerr, icol <= size(spe2nbrs%ys), 'comm: icol range')
        gcol = sgcols(icol) ! also from chunk query
        k = 1
        ! We should never unpack into a slot having other than the none value.
        e = test(nerr, lats(gcol) == none, 'comm: lats(gcol) is none')
-       lats(gcol) = cbuf(cptr(k)+0)
-       lons(gcol) = cbuf(cptr(k)+1)
+       lats(gcol) = rbuf(rptr(k)+0)
+       lons(gcol) = rbuf(rptr(k)+1)
        do k = 2, numlev
-          e = test(nerr, cbuf(cptr(k)+0) == lats(gcol) + (k-1) .and. &
-                         cbuf(cptr(k)+1) == lons(gcol) + (k-1), 'comm: lat,lon')
+          e = test(nerr, rbuf(rptr(k)+0) == lats(gcol) + (k-1) .and. &
+                         rbuf(rptr(k)+1) == lons(gcol) + (k-1), 'comm: lat,lon')
           e = assert(e,'')
        end do
     end do
-    deallocate(cptr, sgcols)
+    deallocate(rptr, sgcols)
 
-    deallocate(bbuf, cbuf)
+    deallocate(sbuf, rbuf)
 
     ! For each gcol in iam's chunks, check that
     ! * its nbrhd has all non-none values;
