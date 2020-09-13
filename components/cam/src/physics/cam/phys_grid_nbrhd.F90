@@ -592,6 +592,7 @@ contains
     ucnt = 0
     prev = -1
     max_ng = 1
+    ng = 0
     do i = 1, cnt
        same = apes(idxs(i)) == prev
        if (same) ng = ng + 1
@@ -612,10 +613,11 @@ contains
     do ucnt = 1, nupes
        rpe2nbrs%xs(ucnt) = apes(idxs(i))
        ng = 0
-       do while (i <= cnt .and. apes(idxs(i)) == rpe2nbrs%xs(ucnt))
+       do while (apes(idxs(i)) == rpe2nbrs%xs(ucnt))
           ng = ng + 1
           gcols(ng) = agcols(idxs(i))
           i = i + 1
+          if (i > cnt) exit
        end do
        call IndexSet(ng, gidxs)
        call IndexSort(ng, gidxs, gcols)
@@ -726,10 +728,11 @@ contains
     do j = 1, cnt
        spe2nbrs%xs(j) = pes(idxs(i))
        k = 0
-       do while (i <= n .and. pes(idxs(i)) == spe2nbrs%xs(j))
+       do while (pes(idxs(i)) == spe2nbrs%xs(j))
           spe2nbrs%ys(spe2nbrs%yptr(j)+k) = unbrs(idxs(i))
           k = k + 1
           i = i + 1
+          if (i > n) exit
        end do
        spe2nbrs%yptr(j+1) = spe2nbrs%yptr(j) + k
     end do
@@ -1435,8 +1438,9 @@ contains
        end if
     end do
     k = hi
-    e = assert((k == 1 .or. a(k-1) <= val) .and. (k == n .or. val < a(k)), &
-         'upper_bound_or_in_range post')
+    e = assert((k == 1 .or. a(max(1,k-1)) <= val) .and. &
+               (k == n .or. val < a(min(n,k))), &
+               'upper_bound_or_in_range post')
   end function upper_bound_or_in_range
 
   function binary_search(n, a, val, k_in) result (k)
