@@ -796,7 +796,6 @@ CONTAINS
     integer :: d1, d2, ie, i, p, bid, ngcols, gcols(16), cnt
     logical :: e
 
-    if (.not. par%dynproc) return
     e = assert(.not. local_dp_map, 'simple')
 
     call get_horiz_grid_dim_d(d1, d2)
