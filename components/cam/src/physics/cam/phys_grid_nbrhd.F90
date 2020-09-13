@@ -2,7 +2,20 @@ module phys_grid_nbrhd
   ! Communication schedule and data structures to supplement a column with data
   ! in its neighborhood for use in scale-aware physics parameterizations.
   !
-  ! Usage.
+  ! Parameterization usage.
+  !   In a parameterization, to get a column's neighborhood, make these calls,
+  ! where icol is the current column of the chunk:
+  !     nbrhd_size = nbrhd_get_nbrhd_size(state%lchnk, icol)
+  !     ! size(icols) must be >= nbrhd_size
+  !     call nbrhd_get_nbrhd(state%lchnk, icol, icols)
+  ! Now access data in the neighborhood like this:
+  !     state_nbrhd%X(icols(i)),
+  ! where state_nbrhd is the extra physics_state containing neighborhood data
+  ! and 1 <= i <= nbrhd_size.
+  !   Not all state is necessarily available for communication efficiency. Call
+  !     nbrhd_pcnst = nbrhd_get_option_pcnst()
+  ! to determine the range 1:nbrhd_pcnst of 1:pcnst for which there are
+  ! neighborhood data. T, om, uv, ps, phis are always available.
   !
   ! Implementation notes.
   !   nbrhdchunk is 0 if neighborhoods are not active; this is standard
@@ -1279,10 +1292,10 @@ contains
     rsz = rcdsz*cs%rcv_nrecs
     lwindow = -1
     call altalltoallv(cd%lopt, iam, npes, &
-         cd%dp_coup_steps, cd%dp_coup_proc, &
-         snd_buf, ssz, cd%sndcnts, cd%sdispls, mpir8, &
-         rcv_buf, rsz, cd%rcvcnts, cd%rdispls, mpir8, &
-         msgtag, cd%pdispls, mpir8, lwindow, mpicom)
+                      cd%dp_coup_steps, cd%dp_coup_proc, &
+                      snd_buf, ssz, cd%sndcnts, cd%sdispls, mpir8, &
+                      rcv_buf, rsz, cd%rcvcnts, cd%rdispls, mpir8, &
+                      msgtag, cd%pdispls, mpir8, lwindow, mpicom)
 #endif
   end subroutine comm_transpose
 
@@ -1761,7 +1774,6 @@ contains
        do k = 2, numlev
           e = test(nerr, rbuf(rptr(k)+0) == lats(gcol) + (k-1) .and. &
                          rbuf(rptr(k)+1) == lons(gcol) + (k-1), 'comm: lat,lon')
-          e = assert(e,'')
        end do
     end do
     deallocate(rptr, sgcols)
