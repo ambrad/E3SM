@@ -2,6 +2,8 @@ module phys_grid_nbrhd
   ! Communication schedule and data structures to supplement a column with data
   ! in its neighborhood for use in scale-aware physics parameterizations.
   !
+  ! Usage.
+  !
   ! Implementation notes.
   !   nbrhdchunk is 0 if neighborhoods are not active; this is standard
   ! behavior. It is 1 if they are. It is used to augment the range
@@ -107,7 +109,7 @@ module phys_grid_nbrhd
   ! plural, is a list of these of lists.
   type :: ColumnNeighborhoods
      logical :: make_b2c, make_c2c
-     integer :: verbose, nchunks, extra_chunk_ncol
+     integer :: verbose, pcnst, nchunks, extra_chunk_ncol
      ! Radian angle defining neighborhood. Defines max between a column center
      ! and column centers within its neighborhood.
      real(r8) :: max_angle
@@ -140,17 +142,26 @@ module phys_grid_nbrhd
        nbrhd_block_to_chunk_send_pters, &
        nbrhd_transpose_block_to_chunk, &
        nbrhd_block_to_chunk_recv_pters, &
+       ! chunk-to-chunk comm
+       nbrhd_chunk_to_chunk_sizes, &
+       nbrhd_chunk_to_chunk_send_pters, &
+       nbrhd_transpose_chunk_to_chunk, &
+       nbrhd_chunk_to_chunk_recv_pters, &
+       ! post-comm copying
        nbrhd_get_num_copies, &
        nbrhd_get_copy_idxs, &
        ! API for parameterizations
        nbrhd_get_nbrhd_size, &
-       nbrhd_get_nbrhd
+       nbrhd_get_nbrhd, &
+       ! Options
+       nbrhd_get_option_pcnst
 
 contains
 
   subroutine nbrhd_init(clat_p_tot, clat_p_idx, clat_p, clon_p, lat_p, lon_p, &
        latlon_to_dyn_gcol_map, nlcols, ngcols, ngcols_p, nchunks, chunks, chunk_extra, &
        knuhcs, phys_alltoall)
+    use constituents, only: pcnst
 
     integer, intent(in) :: clat_p_tot, nlcols, ngcols, ngcols_p, phys_alltoall, nchunks
     integer, target, dimension(:), intent(in) :: clat_p_idx, lat_p, lon_p, &
@@ -161,14 +172,18 @@ contains
     type (knuhc), intent(in) :: knuhcs(:)
 
     type (PhysGridData) :: gd
-    logical :: call_init_chunk
+    logical :: call_init_chunk, e
 
     call run_unit_tests()
+
+    cns%max_angle = 0.06d0
+    cns%pcnst = pcnst
+
+    e = assert(cns%pcnst >= 1, 'nbrhd%pcnst must be >= 1 to include qv')
 
     cns%make_b2c = .true.
     cns%make_c2c = .true.
     cns%verbose = 1
-    cns%max_angle = 0.06d0
     cns%nchunks = nchunks
     nbrhdchunk = 1
 
@@ -253,11 +268,8 @@ contains
     integer, intent(out) :: block_buf_nrecs, chunk_buf_nrecs, max_numlev, &
          max_numrep, num_recv_col
 
-    block_buf_nrecs = cns%b2cs%snd_nrecs
-    chunk_buf_nrecs = cns%b2cs%rcv_nrecs
-    max_numlev = cns%b2cs%max_numlev
-    max_numrep = cns%b2cs%max_numrep
-    num_recv_col = cns%cc%num_recv_col
+    call comm_sizes(cns, cns%b2cs, block_buf_nrecs, chunk_buf_nrecs, max_numlev, &
+         max_numrep, num_recv_col)
   end subroutine nbrhd_block_to_chunk_sizes
 
   subroutine nbrhd_block_to_chunk_send_pters(ie, icol, rcdsz, numlev, numrep, ptr)
@@ -271,51 +283,18 @@ contains
     integer, intent(out) :: numlev, numrep
     integer, intent(out) :: ptr(:,:) ! >= max_numlev x >= max_numrep
 
-    integer :: i, j, k
-    logical :: e
-
-    e = assert(ie >= 1 .and. ie <= size(cns%b2cs%snd_offset), 'send_pters: ie')
-    e = assert(icol >= 1 .and. icol <= cns%b2cs%snd_offset(ie)%ncol, 'send_pters: icol')
-    numlev = cns%b2cs%snd_offset(ie)%numlev(icol)
-    numrep = cns%b2cs%snd_offset(ie)%numrep(icol)
-    ptr(:,:) = -1
-    j = cns%b2cs%snd_offset(ie)%col(icol)
-    do i = 1, numrep
-       ptr(1,i) = rcdsz*cns%b2cs%snd_offset(ie)%os(j+i-1) + 1
-       do k = 2, numlev
-          ptr(k,i) = ptr(1,i) + rcdsz*(k-1)
-       end do
-    end do
+    call comm_send_pters(cns%b2cs, ie, icol, rcdsz, numlev, numrep, ptr)
   end subroutine nbrhd_block_to_chunk_send_pters
 
   subroutine nbrhd_transpose_block_to_chunk(rcdsz, blk_buf, chk_buf)
     ! If running on just one pe or SPMD is not defined, then there are no comm
     ! data, so this routine does nothing, and comm data have size 0.
 
-#if defined SPMD
-    use spmd_utils, only: mpicom, altalltoallv
-    use mpishorthand, only: mpir8
-#endif
-
     integer, intent(in) :: rcdsz
     real(r8), intent(in) :: blk_buf(rcdsz*cns%b2cs%snd_nrecs)
     real(r8), intent(out) :: chk_buf(rcdsz*cns%b2cs%rcv_nrecs)
 
-#if defined SPMD
-    integer, parameter :: msgtag = 6042
-
-    integer :: ssz, rsz, lwindow
-
-    call make_comm_data(cns, cns%b2cs, cns%b2cd, rcdsz)
-    ssz = rcdsz*cns%b2cs%snd_nrecs
-    rsz = rcdsz*cns%b2cs%rcv_nrecs
-    lwindow = -1
-    call altalltoallv(cns%b2cd%lopt, iam, npes, &
-         cns%b2cd%dp_coup_steps, cns%b2cd%dp_coup_proc, &
-         blk_buf, ssz, cns%b2cd%sndcnts, cns%b2cd%sdispls, mpir8, &
-         chk_buf, rsz, cns%b2cd%rcvcnts, cns%b2cd%rdispls, mpir8, &
-         msgtag, cns%b2cd%pdispls, mpir8, lwindow, mpicom)
-#endif
+    call comm_transpose(cns, cns%b2cs, cns%b2cd, rcdsz, blk_buf, chk_buf)
   end subroutine nbrhd_transpose_block_to_chunk
 
   subroutine nbrhd_block_to_chunk_recv_pters(icol, rcdsz, numlev, ptr)
@@ -323,16 +302,41 @@ contains
     integer, intent(out) :: numlev
     integer, intent(out) :: ptr(:) ! >= max_numlev
 
-    integer :: k
-    logical :: e
-    
-    e = assert(icol >= 1 .and. icol <= cns%extra_chunk_ncol, 'recv_pters: icol')
-    numlev = cns%b2cs%rcv_numlev(icol)
-    ptr(1) = rcdsz*cns%b2cs%rcv_offset(icol) + 1
-    do k = 2, numlev
-       ptr(k) = ptr(1) + rcdsz*(k-1)
-    end do
+    call comm_recv_pters(cns%b2cs, icol, rcdsz, numlev, ptr)
   end subroutine nbrhd_block_to_chunk_recv_pters
+
+  subroutine nbrhd_chunk_to_chunk_sizes(block_buf_nrecs, chunk_buf_nrecs, &
+       max_numlev, max_numrep, num_recv_col)
+    integer, intent(out) :: block_buf_nrecs, chunk_buf_nrecs, max_numlev, &
+         max_numrep, num_recv_col
+
+    call comm_sizes(cns, cns%c2cs, block_buf_nrecs, chunk_buf_nrecs, max_numlev, &
+         max_numrep, num_recv_col)
+  end subroutine nbrhd_chunk_to_chunk_sizes
+
+  subroutine nbrhd_chunk_to_chunk_send_pters(ie, icol, rcdsz, numlev, numrep, ptr)
+    integer, intent(in) :: ie, icol, rcdsz
+    integer, intent(out) :: numlev, numrep
+    integer, intent(out) :: ptr(:,:) ! >= max_numlev x >= max_numrep
+
+    call comm_send_pters(cns%c2cs, ie, icol, rcdsz, numlev, numrep, ptr)
+  end subroutine nbrhd_chunk_to_chunk_send_pters
+
+  subroutine nbrhd_transpose_chunk_to_chunk(rcdsz, snd_buf, rcv_buf)
+    integer, intent(in) :: rcdsz
+    real(r8), intent(in) :: snd_buf(rcdsz*cns%c2cs%snd_nrecs)
+    real(r8), intent(out) :: rcv_buf(rcdsz*cns%c2cs%rcv_nrecs)
+
+    call comm_transpose(cns, cns%c2cs, cns%c2cd, rcdsz, snd_buf, rcv_buf)
+  end subroutine nbrhd_transpose_chunk_to_chunk
+
+  subroutine nbrhd_chunk_to_chunk_recv_pters(icol, rcdsz, numlev, ptr)
+    integer, intent(in) :: icol, rcdsz
+    integer, intent(out) :: numlev
+    integer, intent(out) :: ptr(:) ! >= max_numlev
+
+    call comm_recv_pters(cns%c2cs, icol, rcdsz, numlev, ptr)
+  end subroutine nbrhd_chunk_to_chunk_recv_pters
 
   function nbrhd_get_num_copies() result(n)
     integer :: n
@@ -373,6 +377,11 @@ contains
     icols(1:n) = cns%c2n(lcid)%nbrhd(cns%c2n(lcid)%col(icol) : &
                                      cns%c2n(lcid)%col(icol+1)-1)
   end subroutine nbrhd_get_nbrhd
+
+  function nbrhd_get_option_pcnst() result(n)
+    integer :: n
+    n = cns%pcnst
+  end function nbrhd_get_option_pcnst
 
   !> -------------------------------------------------------------------
   !> Private routines.
@@ -1200,6 +1209,90 @@ contains
     if (present(bcid)) bcid = bcids(1)
   end subroutine gcol2bid
 
+  subroutine comm_sizes(cns, cs, block_buf_nrecs, chunk_buf_nrecs, &
+       max_numlev, max_numrep, num_recv_col)
+    type (ColumnNeighborhoods), intent(in) :: cns
+    type (CommSchedule), intent(in) :: cs
+    integer, intent(out) :: block_buf_nrecs, chunk_buf_nrecs, max_numlev, &
+         max_numrep, num_recv_col
+
+    block_buf_nrecs = cs%snd_nrecs
+    chunk_buf_nrecs = cs%rcv_nrecs
+    max_numlev = cs%max_numlev
+    max_numrep = cs%max_numrep
+    num_recv_col = cns%cc%num_recv_col
+  end subroutine comm_sizes
+
+  subroutine comm_send_pters(cs, lid, icol, rcdsz, numlev, numrep, ptr)
+    type (CommSchedule), intent(in) :: cs
+    integer, intent(in) :: lid, icol, rcdsz
+    integer, intent(out) :: numlev, numrep
+    integer, intent(out) :: ptr(:,:) ! >= max_numlev x >= max_numrep
+
+    integer :: i, j, k
+    logical :: e
+
+    e = assert(lid >= 1 .and. lid <= size(cs%snd_offset), 'send_pters: lid')
+    e = assert(icol >= 1 .and. icol <= cs%snd_offset(lid)%ncol, 'send_pters: icol')
+    numlev = cs%snd_offset(lid)%numlev(icol)
+    numrep = cs%snd_offset(lid)%numrep(icol)
+    ptr(:,:) = -1
+    j = cs%snd_offset(lid)%col(icol)
+    do i = 1, numrep
+       ptr(1,i) = rcdsz*cs%snd_offset(lid)%os(j+i-1) + 1
+       do k = 2, numlev
+          ptr(k,i) = ptr(1,i) + rcdsz*(k-1)
+       end do
+    end do
+  end subroutine comm_send_pters
+
+  subroutine comm_transpose(cns, cs, cd, rcdsz, snd_buf, rcv_buf)
+#if defined SPMD
+    use spmd_utils, only: mpicom, altalltoallv
+    use mpishorthand, only: mpir8
+#endif
+
+    type (ColumnNeighborhoods), intent(in) :: cns
+    type (CommSchedule), intent(in) :: cs
+    type (CommData), intent(inout) :: cd
+    integer, intent(in) :: rcdsz
+    real(r8), intent(in) :: snd_buf(rcdsz*cs%snd_nrecs)
+    real(r8), intent(out) :: rcv_buf(rcdsz*cs%rcv_nrecs)
+
+#if defined SPMD
+    integer, parameter :: msgtag = 6042
+
+    integer :: ssz, rsz, lwindow
+
+    call make_comm_data(cns, cs, cd, rcdsz)
+    ssz = rcdsz*cs%snd_nrecs
+    rsz = rcdsz*cs%rcv_nrecs
+    lwindow = -1
+    call altalltoallv(cd%lopt, iam, npes, &
+         cd%dp_coup_steps, cd%dp_coup_proc, &
+         snd_buf, ssz, cd%sndcnts, cd%sdispls, mpir8, &
+         rcv_buf, rsz, cd%rcvcnts, cd%rdispls, mpir8, &
+         msgtag, cd%pdispls, mpir8, lwindow, mpicom)
+#endif
+  end subroutine comm_transpose
+
+  subroutine comm_recv_pters(cs, icol, rcdsz, numlev, ptr)
+    type (CommSchedule), intent(in) :: cs
+    integer, intent(in) :: icol, rcdsz
+    integer, intent(out) :: numlev
+    integer, intent(out) :: ptr(:)
+
+    integer :: k
+    logical :: e
+    
+    e = assert(icol >= 1 .and. icol <= cns%extra_chunk_ncol, 'recv_pters: icol')
+    numlev = cs%rcv_numlev(icol)
+    ptr(1) = rcdsz*cs%rcv_offset(icol) + 1
+    do k = 2, numlev
+       ptr(k) = ptr(1) + rcdsz*(k-1)
+    end do
+  end subroutine comm_recv_pters
+
   !> -------------------------------------------------------------------
   !> General utilities.
 
@@ -1581,12 +1674,13 @@ contains
        end do
     end do
 
-    call nbrhd_block_to_chunk_sizes(bnrecs, cnrecs, &
-                                    max_numlev, max_numrep, &
-                                    num_recv_col)
+    if (owning_blocks) then
+       call nbrhd_block_to_chunk_sizes(bnrecs, cnrecs, max_numlev, max_numrep, num_recv_col)
+    else
+       !call nbrhd_chunk_to_chunk_sizes(bnrecs, cnrecs, max_numlev, max_numrep, num_recv_col)
+    end if
     allocate(bbuf(rcdsz*bnrecs), cbuf(rcdsz*cnrecs))
     bbuf(:) = none; cbuf(:) = none
-
 
     ! Pack send buffer.
     allocate(bptr(max_numlev,max_numrep))
