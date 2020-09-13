@@ -273,6 +273,11 @@ contains
     if (cns%verbose > 0) call test_c2n(cns, lchks)
   end subroutine nbrhd_init_extra_chunk
 
+  subroutine nbrhd_test_api()
+    if (cns%verbose == 0) return
+    call test_api(cns)
+  end subroutine nbrhd_test_api
+
   subroutine nbrhd_block_to_chunk_sizes(block_buf_nrecs, chunk_buf_nrecs, &
        max_numlev, max_numrep, num_recv_col)
     ! max_numlev, max_numrep are max sizes for pter arrays. num_recv_col is the
