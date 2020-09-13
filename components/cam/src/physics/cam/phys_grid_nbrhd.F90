@@ -55,7 +55,7 @@ module phys_grid_nbrhd
   ! AMB 2020/09 Initial
 
   use spmd_utils, only: iam, masterproc, npes
-  use shr_kind_mod, only: r8 => shr_kind_r8, r4 => shr_kind_r4
+  use shr_kind_mod, only: r8 => shr_kind_r8
   use cam_logfile, only: iulog
   use ppgrid, only: pver, begchunk, endchunk, nbrhdchunk
   use m_MergeSorts, only: IndexSet, IndexSort
@@ -121,7 +121,7 @@ module phys_grid_nbrhd
   ! A neighborhood is a list of gcols neighboring a column. Neighborhoods,
   ! plural, is a list of these of lists.
   type ColumnNeighborhoods
-     logical :: make_b2c, make_c2c
+     logical :: b2c_on, c2c_on
      integer :: verbose, pcnst, nchunks, extra_chunk_ncol
      ! Radian angle defining neighborhood. Defines max between a column center
      ! and column centers within its neighborhood.
@@ -167,7 +167,10 @@ module phys_grid_nbrhd
        nbrhd_get_nbrhd_size, &
        nbrhd_get_nbrhd, &
        ! Options
-       nbrhd_get_option_pcnst
+       nbrhd_get_option_angle, &
+       nbrhd_get_option_pcnst, &
+       nbrhd_get_option_block_to_chunk_on, &
+       nbrhd_get_option_chunk_to_chunk_on
 
 contains
 
@@ -194,8 +197,8 @@ contains
 
     e = assert(cns%pcnst >= 1, 'nbrhd%pcnst must be >= 1 to include qv')
 
-    cns%make_b2c = .true.
-    cns%make_c2c = .true.
+    cns%b2c_on = .true.
+    cns%c2c_on = .true.
     cns%verbose = 1
     cns%nchunks = nchunks
     nbrhdchunk = 1
@@ -212,7 +215,7 @@ contains
 
     call_init_chunk = .true.
     ! Dynamics blocks -> nbrhd columns for use in dp_coupling.F90.
-    if (cns%make_b2c) then
+    if (cns%b2c_on) then
        ! We use local block IDs to keep our persistent arrays small. Get global
        ! <-> local block ID maps.
        call make_ie2bid(cns%ie2bid, cns%bid2ie)
@@ -223,7 +226,7 @@ contains
 
     ! Owning chunks -> nbrhd columns for use in additional rounds within a
     ! physics time step.
-    if (cns%make_c2c) then
+    if (cns%c2c_on) then
        call make_l2cid(cns%nchunks, chunks, cns%l2cid)
        call nbrhd_inith(cns, gd, chunks, knuhcs, .false., call_init_chunk, &
             chunk_extra, cns%c2cs, cns%c2cd)
@@ -246,7 +249,7 @@ contains
     ncol_prev = cns%extra_chunk_ncol
     e = assert(cns%cc%num_recv_col == ncol_prev, 'num_recv_col')
     ncol_add = size(cns%cc%cols)
-    if (cns%verbose > 0) write(iulog,*) 'amb> extra:', ncol_prev, ncol_add
+    if (cns%verbose > 0) write(iulog,*) 'nbr> extra:', ncol_prev, ncol_add
     cns%extra_chunk_ncol = ncol_prev + ncol_add
     chk%ncols = cns%extra_chunk_ncol
     call array_realloc(chk%gcol, ncol_prev, chk%ncols)
@@ -391,10 +394,25 @@ contains
                                      cns%c2n(lcid)%col(icol+1)-1)
   end subroutine nbrhd_get_nbrhd
 
+  function nbrhd_get_option_angle() result(angle)
+    real(r8) :: angle
+    angle = cns%max_angle
+  end function nbrhd_get_option_angle
+
   function nbrhd_get_option_pcnst() result(n)
     integer :: n
     n = cns%pcnst
   end function nbrhd_get_option_pcnst
+
+  function nbrhd_get_option_block_to_chunk_on() result(on)
+    logical :: on
+    on = cns%b2c_on
+  end function nbrhd_get_option_block_to_chunk_on
+
+  function nbrhd_get_option_chunk_to_chunk_on() result(on)
+    logical :: on
+    on = cns%c2c_on
+  end function nbrhd_get_option_chunk_to_chunk_on
 
   !> -------------------------------------------------------------------
   !> Private routines.
@@ -449,7 +467,7 @@ contains
     real(r8) :: lat, lon, xi, yi, zi, angle
     logical :: e
 
-    if (cns%verbose > 0) write(iulog,*) 'amb> nlcols', gd%nlcols
+    if (cns%verbose > 0) write(iulog,*) 'nbr> nlcols', gd%nlcols
     cap = gd%nlcols
     allocate(cnbrhds%xs(gd%nlcols), cnbrhds%yptr(gd%nlcols+1), cnbrhds%ys(cap))
     ! Get sorted iam-owning chunks' gcols.
@@ -622,10 +640,10 @@ contains
     call array_realloc(rpe2nbrs%ys, cnt, cnt) ! compact memory
     deallocate(apes, agcols, idxs, gidxs, gcols, ugcols)
     if (cns%verbose > 0) then
-       write(iulog,*) 'amb> rpe2nbrs #pes',size(rpe2nbrs%xs)
+       write(iulog,*) 'nbr> rpe2nbrs #pes',size(rpe2nbrs%xs)
        if (cns%verbose > 1) then
           do i = 1, size(rpe2nbrs%xs)
-             write(iulog,*) 'amb> pe',rpe2nbrs%xs(i),rpe2nbrs%yptr(i+1)-rpe2nbrs%yptr(i)
+             write(iulog,*) 'nbr> pe',rpe2nbrs%xs(i),rpe2nbrs%yptr(i+1)-rpe2nbrs%yptr(i)
           end do
        end if
     end if
@@ -677,7 +695,7 @@ contains
        n = size(unbrs)
     end if
     if (cns%verbose > 0) &
-         write(iulog,*) 'amb> spe2nbrs', cnbrhds%yptr(gd%nlcols+1)-1, size(unbrs), n
+         write(iulog,*) 'nbr> spe2nbrs', cnbrhds%yptr(gd%nlcols+1)-1, size(unbrs), n
     ! For each gcol, get the pe of the owning block or chunk.
     allocate(pes(n), idxs(n))
     do i = 1, n
@@ -728,10 +746,10 @@ contains
     end do
     deallocate(unbrs, idxs, pes)
     if (cns%verbose > 0) then
-       write(iulog,*) 'amb> spe2nbrs #pes',size(spe2nbrs%xs)
+       write(iulog,*) 'nbr> spe2nbrs #pes',size(spe2nbrs%xs)
        if (cns%verbose > 1) then
           do i = 1, size(spe2nbrs%xs)
-             write(iulog,*) 'amb> pe',spe2nbrs%xs(i),spe2nbrs%yptr(i+1)-spe2nbrs%yptr(i)
+             write(iulog,*) 'nbr> pe',spe2nbrs%xs(i),spe2nbrs%yptr(i+1)-spe2nbrs%yptr(i)
           end do
        end if
     end if
@@ -975,7 +993,7 @@ contains
        if (j == 1) allocate(cd%dp_coup_proc(cd%dp_coup_steps))
     end do    
 
-    if (cns%verbose > 0) write(iulog,*) 'amb> dp_coup_steps', cd%dp_coup_steps
+    if (cns%verbose > 0) write(iulog,*) 'nbr> dp_coup_steps', cd%dp_coup_steps
   end subroutine init_comm_data
 
   subroutine make_comm_data(cns, cs, cd, rcdsz)
@@ -1328,7 +1346,7 @@ contains
     logical :: out
 
     if (.not. cond) then
-       write(iulog,*) 'amb> test ', trim(message)
+       write(iulog,*) 'nbr> test ', trim(message)
        nerr = nerr + 1
     end if
     out = cond
@@ -1343,8 +1361,8 @@ contains
     logical :: out
 
     if (.not. cond) then
-       write(iulog,*) 'amb> assert ', trim(message)
-       call endrun('amb> assert')
+       write(iulog,*) 'nbr> assert ', trim(message)
+       call endrun('nbr> assert')
     end if
     out = cond
   end function assert
@@ -1615,7 +1633,7 @@ contains
     call incr(k)
     e = test(nerr, k == 4, 'incr')
 
-    if (nerr > 0) write(iulog,*) 'amb> run_unit_tests FAIL', nerr
+    if (nerr > 0) write(iulog,*) 'nbr> run_unit_tests FAIL', nerr
   end subroutine run_unit_tests
 
   subroutine test_nbrhds(cns, gd)
@@ -1677,7 +1695,7 @@ contains
          jgcol, lcide
     logical :: e
 
-    if (masterproc) write(iulog,*) 'amb> test_comm_schedule', owning_blocks
+    if (masterproc) write(iulog,*) 'nbr> test_comm_schedule', owning_blocks
     nerr = 0
 
     allocate(lats(gd%ngcols), lons(gd%ngcols))
@@ -1810,7 +1828,7 @@ contains
 
     deallocate(lats, lons)
 
-    if (nerr > 0) write(iulog,*) 'amb> test_b2c_comm_schedule FAIL', nerr
+    if (nerr > 0) write(iulog,*) 'nbr> test_b2c_comm_schedule FAIL', nerr
   end subroutine test_comm_schedule
 
   subroutine test_c2n(cns, lchks)
@@ -1845,7 +1863,7 @@ contains
        end do
     end do
     deallocate(icols)
-    if (nerr > 0) write(iulog,*) 'amb> test_c2n FAIL', nerr
+    if (nerr > 0) write(iulog,*) 'nbr> test_c2n FAIL', nerr
   end subroutine test_c2n
 
 end module phys_grid_nbrhd
