@@ -28,6 +28,7 @@ module dp_coupling
   use phys_grid_nbrhd,only: nbrhd_block_to_chunk_sizes, nbrhd_block_to_chunk_send_pters, &
                             nbrhd_block_to_chunk_recv_pters, nbrhd_transpose_block_to_chunk, &
                             nbrhd_get_num_copies, nbrhd_get_copy_idxs, nbrhd_get_option_pcnst
+  use phys_grid_nbrhd_test, only: nbrhd_test_api
   private
   public :: d_p_coupling, p_d_coupling
 
@@ -86,7 +87,13 @@ CONTAINS
     real (kind=real_kind), allocatable, dimension(:) :: bbuffer 
     real (kind=real_kind), allocatable, dimension(:) :: cbuffer
     logical, parameter :: test = .true.
+    logical, save :: first = .true.
     !---------------------------------------------------------------------------
+
+    if (first) then
+       call nbrhd_test_api()
+       first = .false.
+    end if
 
     nullify(pbuf_chnk)
     nullify(pbuf_frontgf)
