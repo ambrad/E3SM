@@ -91,7 +91,7 @@ CONTAINS
     !---------------------------------------------------------------------------
 
     if (first) then
-       call nbrhd_test_api(elem, phys_state)
+       call nbrhd_test_api(dyn_out%elem, phys_state)
        first = .false.
     end if
 
