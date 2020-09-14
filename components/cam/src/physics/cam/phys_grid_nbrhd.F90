@@ -122,7 +122,7 @@ module phys_grid_nbrhd
   ! plural, is a list of these of lists.
   type ColumnNeighborhoods
      logical :: b2c_on, c2c_on
-     integer :: verbose, pcnst, nchunks, extra_chunk_ncol
+     integer :: verbose, test, pcnst, nchunks, extra_chunk_ncol
      ! Radian angle defining neighborhood. Defines max between a column center
      ! and column centers within its neighborhood.
      real(r8) :: max_angle
@@ -201,7 +201,8 @@ contains
 
     cns%b2c_on = .true.
     cns%c2c_on = .true.
-    cns%verbose = 1
+    cns%verbose = 0
+    cns%test = 2
     cns%nchunks = nchunks
     nbrhdchunk = 1
 
@@ -213,7 +214,7 @@ contains
     gd%clat_p => clat_p; gd%clon_p => clon_p
 
     call find_chunk_nbrhds(cns, gd, chunks, cns%chk_nbrhds)
-    if (cns%verbose > 0) call test_nbrhds(cns, gd)
+    if (cns%test > 0) call test_nbrhds(cns, gd)
 
     call_init_chunk = .true.
     ! Dynamics blocks -> nbrhd columns for use in dp_coupling.F90.
@@ -244,7 +245,7 @@ contains
     integer :: ncol_prev, ncol_add, icol, i, cid, lcid, dicol
     logical :: e
 
-    if (cns%verbose > 0) then
+    if (cns%test > 0) then
        do lcid = begchunk+1, endchunk
           e = assert(lchks(lcid)%cid > lchks(lcid-1)%cid, 'lcid, cid sorted')
        end do
@@ -281,7 +282,7 @@ contains
     ! area and wght will be set in phys_grid after this call.
 
     call make_c2n(cns, lchks, cns%c2n)
-    if (cns%verbose > 0) call test_c2n(cns, lchks)
+    if (cns%test > 0) call test_c2n(cns, lchks)
   end subroutine nbrhd_init_extra_chunk
 
   subroutine nbrhd_block_to_chunk_sizes(block_buf_nrecs, chunk_buf_nrecs, &
@@ -453,7 +454,7 @@ contains
     else
        e = assert(cns%extra_chunk_ncol == size(spe2nbrs%ys), 'inith: extra_chunk_ncol')
     end if
-    if (cns%verbose > 0) then
+    if (cns%test > 1) then
        call test_comm_schedule(cns, gd, chunks, knuhcs, rpe2nbrs, spe2nbrs, cd, cs, &
             owning_blocks)
     end if
