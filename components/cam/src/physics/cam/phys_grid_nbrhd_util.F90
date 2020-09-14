@@ -77,11 +77,11 @@ contains
     real(r8), parameter :: none = -10000
 
     real(r8), allocatable :: lats(:,:), lons(:,:), sbuf(:), rbuf(:)
-    integer, allocatable :: sptr(:,:), rptr(:), gcols(:)
-    real(r8) :: lat, lon
-    integer :: nerr, bid, cnt, k, lid, ncol, icol, rcdsz, gcol, nphys, nphys_sq, &
+    integer, allocatable :: sptr(:,:), rptr(:), gcols(:), icols(:)
+    real(r8) :: lat, lon, x, y, z, angle, max_angle
+    integer :: nerr, test, bid, n, k, lid, ncol, icol, rcdsz, gcol, nphys, nphys_sq, &
          numlev, numrep, max_numlev, max_numrep, snrecs, rnrecs, j, p, lchnk, ptr, &
-         nbrhd_pcnst, num_recv_col
+         nbrhd_pcnst, num_recv_col, lide, icole
     logical :: e
 
     if (masterproc) write(iulog,*) 'nbr> test_api', owning_blocks
@@ -118,6 +118,7 @@ contains
     end if
     nphys_sq = nphys*nphys
     nbrhd_pcnst = nbrhd_get_option_pcnst()
+    e = test(nerr, ntest, nbrhd_pcnst >= 1 .and. nbrhd_pcnst <= pcnst, 'nbrhd_pcnst')
     rcdsz = 4 + nbrhd_pcnst
 
     if (owning_blocks) then
@@ -137,31 +138,31 @@ contains
              ncol = elem(lid)%idxP%NumUniquePts
           end if
           call get_block_gcol_d(elem(lid)%GlobalID, ncol, gcols)
-       end do
-       do icol = 1, ncol
-          if (owning_blocks) then
-             call nbrhd_block_to_chunk_send_pters(lid, icol, rcdsz, &
-                  numlev, numrep, sptr)
-          else
-             call nbrhd_chunk_to_chunk_send_pters(lid, icol, rcdsz, &
-                  numlev, numrep, sptr)
-          end if
-          gcol = gcols(icol)
-          lat = lats_d(gcol)
-          lon = lons_d(gcol)
-          do j = 1, numrep
-             ptr = sptr(0,j)
-             sbuf(ptr+0) = lat
-             sbuf(ptr+1) = lon
-             sbuf(ptr+2:ptr+3) = 0.0_r8
-             do k = 1, numlev-1
-                ptr = sptr(k,j)
-                sbuf(ptr+0) = lat + k - 1
-                sbuf(ptr+1) = lat + k - 2
-                sbuf(ptr+2) = lon + k - 2
-                sbuf(ptr+3) = lon + k - 1
-                do p = 1, nbrhd_pcnst
-                   sbuf(ptr+3+p) = p*(lat + lon) + k
+          do icol = 1, ncol
+             if (owning_blocks) then
+                call nbrhd_block_to_chunk_send_pters(lid, icol, rcdsz, &
+                     numlev, numrep, sptr)
+             else
+                call nbrhd_chunk_to_chunk_send_pters(lid, icol, rcdsz, &
+                     numlev, numrep, sptr)
+             end if
+             gcol = gcols(icol)
+             lat = lats_d(gcol)
+             lon = lons_d(gcol)
+             do j = 1, numrep
+                ptr = sptr(0,j)
+                sbuf(ptr+0) = lat
+                sbuf(ptr+1) = lon
+                sbuf(ptr+2:ptr+3) = 0.0_r8
+                do k = 1, numlev-1
+                   ptr = sptr(k,j)
+                   sbuf(ptr+0) = lat + k - 1
+                   sbuf(ptr+1) = lat + k - 2
+                   sbuf(ptr+2) = lon + k - 2
+                   sbuf(ptr+3) = lon + k - 1
+                   do p = 1, nbrhd_pcnst
+                      sbuf(ptr+3+p) = p*(lat + lon) + k
+                   end do
                 end do
              end do
           end do
@@ -234,32 +235,52 @@ contains
        do icol = 1, state(lid)%ncol
           lat = state(lid)%lat(icol)
           lon = state(lid)%lon(icol)
-          e = test(nerr, state(lid)%ps  (icol) == lat, 'ps')
-          e = test(nerr, state(lid)%phis(icol) == lon, 'zs')
+          e = test(nerr, ntest, state(lid)%ps  (icol) == lat, 'ps')
+          e = test(nerr, ntest, state(lid)%phis(icol) == lon, 'zs')
           do k = 1, pver
-             e = test(nerr, state(lid)%T    (icol,k) == lat + k - 1, 'T'  )
-             e = test(nerr, state(lid)%omega(icol,k) == lon + k - 1, 'om' )
-             e = test(nerr, state(lid)%u    (icol,k) == lat + k - 2, 'uv1')
-             e = test(nerr, state(lid)%v    (icol,k) == lon + k - 2, 'uv2')
+             e = test(nerr, ntest, state(lid)%T    (icol,k) == lat + k - 1, 'T'  )
+             e = test(nerr, ntest, state(lid)%omega(icol,k) == lon + k - 1, 'om' )
+             e = test(nerr, ntest, state(lid)%u    (icol,k) == lat + k - 2, 'uv1')
+             e = test(nerr, ntest, state(lid)%v    (icol,k) == lon + k - 2, 'uv2')
              do p = 1, nbrhd_pcnst
-                e = test(nerr, state(lid)%q(icol,k,p) == p*(lat + lon) + k, 'q')
+                e = test(nerr, ntest, state(lid)%q(icol,k,p) == p*(lat + lon) + k, 'q')
              end do
           end do
        end do
     end do
 
     ! Check neighborhoods.
-    
+    max_angle = nbrhd_get_option_angle()
+    lide = endchunk+nbrhdchunk
+    allocate(icols(128))
+    do lid = begchunk, endchunk
+       do icol = 1, state(lid)%ncol
+          n = nbrhd_get_nbrhd_size(lid, icol)
+          if (n > size(icols)) then
+             deallocate(icols)
+             allocate(icols(2*n))
+          end if
+          call nbrhd_get_nbrhd(lid, icol, icols)
+          call latlon2xyz(state(lid)%lat(icol), state(lid)%lon(icol), x, y, z)
+          do icole = 1, n
+             angle = unit_sphere_angle(x, y, z, &
+                  state(lide)%lat(icole), state(lide)%lon(icole))
+             e = test(nerr, ntest, angle <= max_angle, 'angle')
+          end do
+       end do
+    end do
+    deallocate(icols)
 
-    if (nerr > 0) write(iulog,*) 'nbr> test_api FAIL', nerr
+    if (nerr >= 0) write(iulog,*) 'nbr> test_api FAIL', nerr, ntest
   end subroutine test_api
 
-  function test(nerr, cond, message) result(out)
-    integer, intent(inout) :: nerr
+  function test(nerr, ntest, cond, message) result(out)
+    integer, intent(inout) :: nerr, ntest
     logical, intent(in) :: cond
     character(len=*), intent(in) :: message
     logical :: out
 
+    ntest = ntest + 1
     if (.not. cond) then
        write(iulog,*) 'nbr> test ', trim(message)
        nerr = nerr + 1

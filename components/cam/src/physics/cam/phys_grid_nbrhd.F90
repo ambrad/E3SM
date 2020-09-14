@@ -170,7 +170,9 @@ module phys_grid_nbrhd
        nbrhd_get_option_angle, &
        nbrhd_get_option_pcnst, &
        nbrhd_get_option_block_to_chunk_on, &
-       nbrhd_get_option_chunk_to_chunk_on
+       nbrhd_get_option_chunk_to_chunk_on, &
+       ! For testing
+       latlon2xyz, unit_sphere_angle
 
 contains
 
