@@ -330,12 +330,12 @@ contains
          max_numrep, num_recv_col)
   end subroutine nbrhd_chunk_to_chunk_sizes
 
-  subroutine nbrhd_chunk_to_chunk_send_pters(ie, icol, rcdsz, numlev, numrep, ptr)
-    integer, intent(in) :: ie, icol, rcdsz
+  subroutine nbrhd_chunk_to_chunk_send_pters(lcid, icol, rcdsz, numlev, numrep, ptr)
+    integer, intent(in) :: lcid, icol, rcdsz
     integer, intent(out) :: numlev, numrep
     integer, intent(out) :: ptr(:,:) ! >= max_numlev x >= max_numrep
 
-    call comm_send_pters(cns%c2cs, ie, icol, rcdsz, numlev, numrep, ptr)
+    call comm_send_pters(cns%c2cs, lcid-begchunk+1, icol, rcdsz, numlev, numrep, ptr)
   end subroutine nbrhd_chunk_to_chunk_send_pters
 
   subroutine nbrhd_transpose_chunk_to_chunk(rcdsz, snd_buf, rcv_buf)
@@ -1751,7 +1751,8 @@ contains
           if (owning_blocks) then
              call nbrhd_block_to_chunk_send_pters(lid, icol, rcdsz, numlev, numrep, sptr)
           else
-             call nbrhd_chunk_to_chunk_send_pters(lid, icol, rcdsz, numlev, numrep, sptr)
+             call nbrhd_chunk_to_chunk_send_pters(begchunk+lid-1, icol, rcdsz, numlev, &
+                  numrep, sptr)
           end if
           e = test(nerr, numlev <= max_numlev .and. numrep <= max_numrep, &
                    'comm: sptr size')
