@@ -91,7 +91,7 @@ CONTAINS
     !---------------------------------------------------------------------------
 
     if (first) then
-       call nbrhd_test_api()
+       call nbrhd_test_api(elem, phys_state)
        first = .false.
     end if
 
@@ -293,6 +293,7 @@ CONTAINS
        call d_p_coupling_nbrhd(ps_tmp, zs_tmp, T_tmp, om_tmp, uv_tmp, q_tmp, phys_state)
        if (test) then
           call finish_test(phys_state)
+          print *,'nbr> hrmmm whats up'
           call mpi_barrier(mpicom)
           call endrun('nbr> dp_coupling test')
        end if
@@ -349,7 +350,7 @@ CONTAINS
       end if ! fv_nphys > 0
     end if ! write_inithist
 
-    call mpi_barrier(mpicom); call endrun('amb> exit d_p_coupling')   
+    call mpi_barrier(mpicom); call endrun('nbr> exit d_p_coupling')   
   end subroutine d_p_coupling
   !=================================================================================================
   !=================================================================================================
@@ -680,11 +681,11 @@ CONTAINS
     integer(kind=int_kind)   :: ie                        ! indices over elements
     integer(kind=int_kind)   :: lchnk, icol, ilyr         ! indices over chunks, columns, lay
     integer(kind=int_kind)   :: nphys, nphys_sq           ! physics grid parameters
-    real (kind=real_kind)    :: temperature(np,np,nlev)   ! temperature from dynamics
-    integer(kind=int_kind), allocatable :: bptr(:,:), cptr(:)
-    real (kind=real_kind), allocatable, dimension(:) :: bbuf, cbuf ! transpose buffers
+    real(kind=real_kind)     :: temperature(np,np,nlev)   ! temperature from dynamics
     integer(kind=int_kind)   :: bnrecs, cnrecs, max_numlev, max_numrep, numlev, numrep, &
                                 num_recv_col, rcdsz, ncol, j, k, q, ptr, nbrhd_pcnst
+    integer(kind=int_kind), allocatable :: bptr(:,:), cptr(:)
+    real(kind=real_kind), allocatable, dimension(:) :: bbuf, cbuf ! transpose buffers
 
     call t_startf('dpcopy_nbrhd')
     if (fv_nphys > 0) then
@@ -716,7 +717,7 @@ CONTAINS
                 ptr = bptr(0,j)
                 bbuf(ptr+0) = ps_tmp(icol,ie)
                 bbuf(ptr+1) = zs_tmp(icol,ie)
-                bbuf(ptr+2:ptr+rcdsz-1) = 0.0_r8
+                bbuf(ptr+2:ptr+3) = 0.0_r8
                 do k = 1, numlev-1
                    ptr = bptr(k,j)
                    bbuf(ptr+0) =  T_tmp(icol,  k,ie)
@@ -776,8 +777,8 @@ CONTAINS
     logical :: out
 
     if (.not. cond) then
-       write(iulog,*) 'amb> dp assert ', trim(message)
-       call endrun('amb> dp assert')
+       write(iulog,*) 'nbr> dp assert ', trim(message)
+       call endrun('nbr> dp assert')
     end if
     out = cond
   end function assert
