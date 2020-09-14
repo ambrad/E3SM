@@ -172,6 +172,7 @@ module phys_grid_nbrhd
        nbrhd_get_option_block_to_chunk_on, &
        nbrhd_get_option_chunk_to_chunk_on, &
        ! For testing
+       nbrhd_get_ie2bid, &
        latlon2xyz, unit_sphere_angle
 
 contains
@@ -422,6 +423,12 @@ contains
     logical :: on
     on = cns%c2c_on
   end function nbrhd_get_option_chunk_to_chunk_on
+
+  function nbrhd_get_ie2bid(ie) result(bid)
+    integer, intent(in) :: ie
+    integer :: bid
+    bid = cns%ie2bid(ie)
+  end function nbrhd_get_ie2bid
 
   !> -------------------------------------------------------------------
   !> Private routines.

@@ -13,7 +13,6 @@ module phys_grid_nbrhd_util
   use dyn_grid, only: get_horiz_grid_dim_d, get_horiz_grid_d, get_block_gcol_cnt_d, &
        get_block_gcol_d, get_gcol_block_d, fv_nphys
   use physics_types, only: physics_state
-  use element_mod, only: element_t
   use phys_grid_nbrhd ! all public routines
 
   implicit none
@@ -48,8 +47,7 @@ contains
     end do
   end subroutine nbrhd_copy_states
 
-  subroutine nbrhd_test_api(elem, state)
-    type (element_t), intent(in) :: elem(:)
+  subroutine nbrhd_test_api(state)
     type (physics_state), intent(inout) :: state(begchunk:endchunk+nbrhdchunk)
 
     real(r8), allocatable, dimension(:) :: lats_d, lons_d
@@ -61,16 +59,15 @@ contains
     call get_horiz_grid_d(ngcols, clat_d_out=lats_d, clon_d_out=lons_d)
 
     if (nbrhd_get_option_block_to_chunk_on()) &
-         call test_api(lats_d, lons_d, elem, state, .true. )
+         call test_api(lats_d, lons_d, state, .true. )
     if (nbrhd_get_option_chunk_to_chunk_on()) &
-         call test_api(lats_d, lons_d, elem, state, .false.)
+         call test_api(lats_d, lons_d, state, .false.)
 
     deallocate(lats_d, lons_d)
   end subroutine nbrhd_test_api
 
-  subroutine test_api(lats_d, lons_d, elem, state, owning_blocks)
+  subroutine test_api(lats_d, lons_d, state, owning_blocks)
     real(r8), intent(in) :: lats_d(:), lons_d(:)
-    type (element_t), intent(in) :: elem(:)
     type (physics_state), intent(inout) :: state(begchunk:endchunk+nbrhdchunk)
     logical, intent(in) :: owning_blocks
 
@@ -143,12 +140,9 @@ contains
     if (owning_blocks) then
        ! Dynamics blocks -> send buf.
        do lid = 1, nelemd
-          if (fv_nphys > 0) then
-             ncol = nphys_sq
-          else
-             ncol = elem(lid)%idxP%NumUniquePts
-          end if
-          call get_block_gcol_d(elem(lid)%GlobalID, ncol, gcols)
+          bid = nbrhd_get_ie2bid(lid)
+          ncol = get_block_gcol_cnt_d(bid)
+          call get_block_gcol_d(bid, ncol, gcols)
           do icol = 1, ncol
              if (owning_blocks) then
                 call nbrhd_block_to_chunk_send_pters(lid, icol, rcdsz, &
