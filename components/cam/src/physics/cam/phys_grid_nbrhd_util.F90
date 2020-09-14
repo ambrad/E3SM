@@ -77,16 +77,27 @@ contains
     real(r8), parameter :: none = -10000
 
     real(r8), allocatable :: lats(:,:), lons(:,:), sbuf(:), rbuf(:)
-    integer, allocatable :: sptr(:,:), rptr(:), gcols(:), icols(:)
+    integer, allocatable :: sptr(:,:), rptr(:), gcols(:), icols(:), used(:)
     real(r8) :: lat, lon, x, y, z, angle, max_angle
-    integer :: nerr, test, bid, n, k, lid, ncol, icol, rcdsz, gcol, nphys, nphys_sq, &
+    integer :: nerr, ntest, bid, n, k, lid, ncol, icol, rcdsz, gcol, nphys, nphys_sq, &
          numlev, numrep, max_numlev, max_numrep, snrecs, rnrecs, j, p, lchnk, ptr, &
          nbrhd_pcnst, num_recv_col, lide, icole
     logical :: e
 
     if (masterproc) write(iulog,*) 'nbr> test_api', owning_blocks
     nerr = 0
-    allocate(gcols(max(npsq, pcols)))
+    ntest = 0
+    allocate(gcols(max(get_ncols_p(endchunk+nbrhdchunk), max(npsq, pcols))))
+
+    do lid = begchunk, endchunk+nbrhdchunk
+       ncol = get_ncols_p(lid)
+       call get_gcol_all_p(lid, ncol, gcols)
+       do icol = 1, ncol
+          gcol = gcols(icol)
+          e = test(nerr, ntest, state(lid)%lat(icol) == lats_d(gcol), 'lat')
+          e = test(nerr, ntest, state(lid)%lon(icol) == lons_d(gcol), 'lon')
+       end do
+    end do
 
     ! Mimic the result of running the standard part of d_p_coupling: iam's
     ! columns' states get filled.
@@ -252,26 +263,30 @@ contains
     ! Check neighborhoods.
     max_angle = nbrhd_get_option_angle()
     lide = endchunk+nbrhdchunk
-    allocate(icols(128))
+    allocate(icols(128), used(state(lide)%ncol))
+    used(:) = 0
     do lid = begchunk, endchunk
        do icol = 1, state(lid)%ncol
+          call latlon2xyz(state(lid)%lat(icol), state(lid)%lon(icol), x, y, z)
           n = nbrhd_get_nbrhd_size(lid, icol)
           if (n > size(icols)) then
              deallocate(icols)
              allocate(icols(2*n))
           end if
           call nbrhd_get_nbrhd(lid, icol, icols)
-          call latlon2xyz(state(lid)%lat(icol), state(lid)%lon(icol), x, y, z)
-          do icole = 1, n
+          do k = 1, n
+             icole = icols(k)
+             used(icole) = used(icole) + 1
              angle = unit_sphere_angle(x, y, z, &
                   state(lide)%lat(icole), state(lide)%lon(icole))
              e = test(nerr, ntest, angle <= max_angle, 'angle')
           end do
        end do
     end do
-    deallocate(icols)
+    e = test(nerr, ntest, all(used > 0), 'all nbrhd cols used')
+    deallocate(icols, used)
 
-    if (nerr >= 0) write(iulog,*) 'nbr> test_api FAIL', nerr, ntest
+    if (nerr > 0) write(iulog,*) 'nbr> test_api FAIL', nerr, ntest
   end subroutine test_api
 
   function test(nerr, ntest, cond, message) result(out)

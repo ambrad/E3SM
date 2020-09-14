@@ -244,6 +244,12 @@ contains
     integer :: ncol_prev, ncol_add, icol, i, cid, lcid, dicol
     logical :: e
 
+    if (cns%verbose > 0) then
+       do lcid = begchunk+1, endchunk
+          e = assert(lchks(lcid)%cid > lchks(lcid-1)%cid, 'lcid, cid sorted')
+       end do
+    end if
+
     ! Map native local chunk columns to duplicate ones.
     call make_cc(cns, lchks, cns%cc)
 
@@ -1184,7 +1190,7 @@ contains
     type (ChunkDesc), allocatable, intent(out) :: c2n(:)
 
     integer, allocatable, dimension(:) :: idxs, sgcols
-    integer :: lcid, i, j, k, icol, gcol, cnt, lcolid, n, extra
+    integer :: lcid, i, j, k, icol, gcol, cnt, lcolid, n, extra, ncol
     logical :: e
 
     extra = endchunk+nbrhdchunk
@@ -1200,18 +1206,22 @@ contains
     end do
 
     allocate(c2n(begchunk:endchunk))
-    lcolid = 1
     do lcid = begchunk, endchunk
+       ncol = lchks(lcid)%ncols
        cnt = 0
-       do icol = 1, lchks(lcid)%ncols
-          cnt = cnt + (cns%chk_nbrhds%yptr(lcolid+icol) - &
-                       cns%chk_nbrhds%yptr(lcolid+icol-1))
+       do icol = 1, ncol
+          gcol = lchks(lcid)%gcol(icol)
+          lcolid = SparseTriple_in_xs(cns%chk_nbrhds, gcol)
+          e = assert(lcolid > 0, 'c2n: gcol present')
+          cnt = cnt + cns%chk_nbrhds%yptr(lcolid+1) - cns%chk_nbrhds%yptr(lcolid)
        end do
-       allocate(c2n(lcid)%col(lchks(lcid)%ncols+1), c2n(lcid)%nbrhd(cnt))
+       allocate(c2n(lcid)%col(ncol+1), c2n(lcid)%nbrhd(cnt))
        c2n(lcid)%nbrhd(:) = -1
        c2n(lcid)%col(1) = 1
        i = 1
-       do icol = 1, lchks(lcid)%ncols
+       do icol = 1, ncol
+          gcol = lchks(lcid)%gcol(icol)
+          lcolid = SparseTriple_in_xs(cns%chk_nbrhds, gcol)
           c2n(lcid)%col(icol+1) = c2n(lcid)%col(icol) + &
                (cns%chk_nbrhds%yptr(lcolid+1) - cns%chk_nbrhds%yptr(lcolid))
           do j = cns%chk_nbrhds%yptr(lcolid), cns%chk_nbrhds%yptr(lcolid+1)-1
@@ -1223,7 +1233,6 @@ contains
                         'c2n: gcol association')
              i = i + 1
           end do
-          lcolid = lcolid + 1
        end do
        e = assert(all(c2n(lcid)%nbrhd >= 1), 'c2n: nbrhd filled')
     end do
@@ -1849,10 +1858,9 @@ contains
     extra = endchunk+nbrhdchunk
     allocate(icols(128))
     nerr = 0
-    lcolid = 0
     do lcid = begchunk, endchunk
        do icol = 1, lchks(lcid)%ncols
-          lcolid = lcolid + 1
+          lcolid = SparseTriple_in_xs(cns%chk_nbrhds, lchks(lcid)%gcol(icol))
           n = nbrhd_get_nbrhd_size(lcid, icol)
           j1 = cns%chk_nbrhds%yptr(lcolid)
           j2 = cns%chk_nbrhds%yptr(lcolid+1)
@@ -1866,6 +1874,7 @@ contains
              gcol = lchks(extra)%gcol(icols(i))
              k = binary_search(n, cns%chk_nbrhds%ys(j1:j2-1), gcol)
              e = test(nerr, k /= -1, 'api: gcol found')
+             e = assert(e, 'going down?')
           end do
        end do
     end do
