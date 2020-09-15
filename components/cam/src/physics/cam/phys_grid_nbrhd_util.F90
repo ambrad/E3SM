@@ -8,13 +8,10 @@ module phys_grid_nbrhd_util
   use spmd_utils, only: iam, masterproc, npes
   use shr_kind_mod, only: r8 => shr_kind_r8
   use cam_logfile, only: iulog
-  use dimensions_mod, only: nelemd, np, npsq
-  use constituents, only: pcnst
+  use dimensions_mod, only: nelemd, npsq
   use ppgrid, only: begchunk, endchunk, nbrhdchunk, pcols, pver
   use kinds, only: real_kind, int_kind
   use phys_grid, only: get_ncols_p, get_gcol_all_p
-  use dyn_grid, only: get_horiz_grid_dim_d, get_horiz_grid_d, get_block_gcol_cnt_d, &
-       get_block_gcol_d, get_gcol_block_d, fv_nphys
   use physics_types, only: physics_state
   use phys_grid_nbrhd ! all public routines
 
@@ -31,6 +28,8 @@ module phys_grid_nbrhd_util
 contains
 
   subroutine nbrhd_d_p_coupling(ps, zs, T, om, uv, q, state)
+    use dyn_grid, only: get_block_gcol_cnt_d
+
     ! Dynamics blocks -> owned-chunk columns' neighborhods, for use in
     ! d_p_coupling.
 
@@ -206,6 +205,8 @@ contains
   end subroutine nbrhd_copy_states
 
   subroutine nbrhd_test_api(state)
+    use dyn_grid, only: get_horiz_grid_dim_d, get_horiz_grid_d
+
     type (physics_state), intent(inout) :: state(begchunk:endchunk+nbrhdchunk)
 
     real(r8), allocatable, dimension(:) :: lats_d, lons_d
@@ -225,6 +226,9 @@ contains
   end subroutine nbrhd_test_api
 
   subroutine test_api(lats_d, lons_d, state, owning_blocks)
+    use dyn_grid, only: get_block_gcol_cnt_d, get_block_gcol_d
+    use constituents, only: pcnst
+
     real(r8), intent(in) :: lats_d(:), lons_d(:)
     type (physics_state), intent(inout) :: state(begchunk:endchunk+nbrhdchunk)
     logical, intent(in) :: owning_blocks
@@ -357,7 +361,7 @@ contains
     e = test(nerr, ntest, all(used > 0), 'all nbrhd cols used')
     deallocate(icols, used)
 
-    if (nerr > 0) write(iulog,*) 'nbr> test_api FAIL', nerr, ntest
+    if (nerr > 0) write(iulog,*) 'nbr> test_api FAIL', owning_blocks, nerr, ntest
   end subroutine test_api
 
   function test(nerr, ntest, cond, message) result(out)
