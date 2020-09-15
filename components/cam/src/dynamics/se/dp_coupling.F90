@@ -28,7 +28,7 @@ module dp_coupling
   use phys_grid_nbrhd,only: nbrhd_block_to_chunk_sizes, nbrhd_block_to_chunk_send_pters, &
                             nbrhd_block_to_chunk_recv_pters, nbrhd_transpose_block_to_chunk, &
                             nbrhd_get_num_copies, nbrhd_get_copy_idxs, nbrhd_get_option_pcnst
-  use phys_grid_nbrhd_util, only: nbrhd_copy_states, nbrhd_test_api
+  use phys_grid_nbrhd_util, only: nbrhd_d_p_coupling, nbrhd_test_api
   private
   public :: d_p_coupling, p_d_coupling
 
@@ -287,7 +287,7 @@ CONTAINS
     call t_stopf('dpcopy')
 
     if (nbrhdchunk > 0) then
-       call d_p_coupling_nbrhd(ps_tmp, zs_tmp, T_tmp, om_tmp, uv_tmp, q_tmp, phys_state)
+       call nbrhd_d_p_coupling(ps_tmp, zs_tmp, T_tmp, om_tmp, uv_tmp, q_tmp, phys_state)
     end if
 
     call t_startf('derived_phys')
@@ -668,110 +668,6 @@ CONTAINS
 #endif
 
   end subroutine derived_phys
-  !=================================================================================================
-  !=================================================================================================
-  subroutine d_p_coupling_nbrhd(ps_tmp, zs_tmp, T_tmp, om_tmp, uv_tmp, q_tmp, phys_state)
-    implicit none
-    !---------------------------------------------------------------------------
-    ! INPUT PARAMETERS:
-    real(kind=real_kind), intent(in), dimension(npsq,nelemd)            :: ps_tmp
-    real(kind=real_kind), intent(in), dimension(npsq,nelemd)            :: zs_tmp
-    real(kind=real_kind), intent(in), dimension(npsq,pver,nelemd)       :: T_tmp
-    real(kind=real_kind), intent(in), dimension(npsq,2,pver,nelemd)     :: uv_tmp
-    real(kind=real_kind), intent(in), dimension(npsq,pver,pcnst,nelemd) :: q_tmp
-    real(kind=real_kind), intent(in), dimension(npsq,pver,nelemd)       :: om_tmp
-    ! OUTPUT PARAMETERS:
-    type(physics_state), intent(inout), dimension(begchunk:endchunk+nbrhdchunk) :: phys_state
-    ! LOCAL VARIABLES:
-    type(element_t),          pointer :: elem(:)          ! pointer to dyn_out element array
-    integer(kind=int_kind)   :: ie                        ! indices over elements
-    integer(kind=int_kind)   :: lchnk, icol, ilyr         ! indices over chunks, columns, lay
-    integer(kind=int_kind)   :: nphys, nphys_sq           ! physics grid parameters
-    real(kind=real_kind)     :: temperature(np,np,nlev)   ! temperature from dynamics
-    integer(kind=int_kind)   :: bnrecs, cnrecs, max_numlev, max_numrep, numlev, numrep, &
-                                num_recv_col, rcdsz, ncol, j, k, q, ptr, nbrhd_pcnst
-    integer(kind=int_kind), allocatable :: bptr(:,:), cptr(:)
-    real(kind=real_kind), allocatable, dimension(:) :: bbuf, cbuf ! transpose buffers
-
-    call t_startf('dpcopy_nbrhd')
-    if (fv_nphys > 0) then
-       nphys = fv_nphys
-    else
-       nphys = np
-    end if
-    nphys_sq = nphys*nphys
-    nbrhd_pcnst = nbrhd_get_option_pcnst()
-    rcdsz = 4 + nbrhd_pcnst
-
-    call nbrhd_block_to_chunk_sizes(bnrecs, cnrecs, &
-                                    max_numlev, max_numrep, &
-                                    num_recv_col)
-    allocate(bbuf(rcdsz*bnrecs), cbuf(rcdsz*cnrecs))
-
-    if (par%dynproc) then
-       allocate(bptr(0:max_numlev-1,max_numrep))
-       do ie = 1, nelemd
-          if (fv_nphys > 0) then
-             ncol = nphys_sq
-          else
-             ncol = elem(ie)%idxP%NumUniquePts
-          end if
-          do icol = 1, ncol
-             call nbrhd_block_to_chunk_send_pters(ie, icol, rcdsz, &
-                  numlev, numrep, bptr)
-             do j = 1, numrep
-                ptr = bptr(0,j)
-                bbuf(ptr+0) = ps_tmp(icol,ie)
-                bbuf(ptr+1) = zs_tmp(icol,ie)
-                bbuf(ptr+2:ptr+3) = 0.0_r8
-                do k = 1, numlev-1
-                   ptr = bptr(k,j)
-                   bbuf(ptr+0) =  T_tmp(icol,  k,ie)
-                   bbuf(ptr+1) = uv_tmp(icol,1,k,ie)
-                   bbuf(ptr+2) = uv_tmp(icol,2,k,ie)
-                   bbuf(ptr+3) = om_tmp(icol,  k,ie)
-                   do q = 1, nbrhd_pcnst
-                      bbuf(ptr+3+q) = q_tmp(icol,k,q,ie)
-                   end do
-                end do
-             end do
-          end do
-       end do
-       deallocate(bptr)
-    else
-       bbuf(:) = 0._r8
-    end if
-
-    call t_startf('nbrhd_block_to_chunk')
-    call nbrhd_transpose_block_to_chunk(rcdsz, bbuf, cbuf)
-    call t_stopf ('nbrhd_block_to_chunk')
-
-    allocate(cptr(0:max_numlev-1))
-    lchnk = endchunk+nbrhdchunk
-    do icol = 1, num_recv_col
-       call nbrhd_block_to_chunk_recv_pters(icol, rcdsz, numlev, cptr)
-       ptr = cptr(0)
-       phys_state(lchnk)%ps  (icol) = cbuf(ptr+0)
-       phys_state(lchnk)%phis(icol) = cbuf(ptr+1)
-       do k = 1, numlev-1
-          ptr = cptr(k)
-          phys_state(lchnk)%T    (icol,k) = cbuf(ptr+0)
-          phys_state(lchnk)%u    (icol,k) = cbuf(ptr+1)
-          phys_state(lchnk)%v    (icol,k) = cbuf(ptr+2)
-          phys_state(lchnk)%omega(icol,k) = cbuf(ptr+3)
-          do q = 1, nbrhd_pcnst
-             phys_state(lchnk)%q(icol,k,q) = cbuf(ptr+3+q)
-          end do
-       end do
-    end do
-    deallocate(cptr)
-
-    deallocate(bbuf, cbuf)
-
-    call nbrhd_copy_states(phys_state)
-
-    call t_stopf('dpcopy_nbrhd')
-  end subroutine d_p_coupling_nbrhd
   !=================================================================================================
   !=================================================================================================
 end module dp_coupling
