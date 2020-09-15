@@ -229,6 +229,8 @@ contains
     use dyn_grid, only: get_block_gcol_cnt_d, get_block_gcol_d
     use constituents, only: pcnst
 
+    real(r8), parameter :: none = -10000._r8
+
     real(r8), intent(in) :: lats_d(:), lons_d(:)
     type (physics_state), intent(inout) :: state(begchunk:endchunk+nbrhdchunk)
     logical, intent(in) :: owning_blocks
@@ -242,11 +244,23 @@ contains
     logical :: e
 
     if (masterproc) write(iulog,*) 'nbr> test_api', owning_blocks
+    
+    ! Zorch communicated state values.
+    do lid = begchunk, endchunk+nbrhdchunk
+       state(lid)%ps  (:) = none
+       state(lid)%phis(:) = none
+       state(lid)%T    (:,:) = none
+       state(lid)%u    (:,:) = none
+       state(lid)%v    (:,:) = none
+       state(lid)%omega(:,:) = none
+       state(lid)%q(:,:,:) = none
+    end do
+
     nerr = 0
     ntest = 0
     allocate(gcols(max(get_ncols_p(endchunk+nbrhdchunk), max(npsq, pcols))))
 
-    ! Test all states have the expected (lat,lon).
+    ! Check that all states have the expected (lat,lon).
     do lid = begchunk, endchunk+nbrhdchunk
        ncol = get_ncols_p(lid)
        call get_gcol_all_p(lid, ncol, gcols)
