@@ -19,16 +19,170 @@ module phys_grid_nbrhd_util
   private
 
   public :: &
+       nbrhd_d_p_coupling, &
+       nbrhd_p_p_coupling, &
        nbrhd_copy_states, &
        nbrhd_test_api
-
+  
 contains
 
-  subroutine nbrhd_copy_states(phys_state)
+  subroutine nbrhd_d_p_coupling(ps, zs, T, om, uv, q, state)
+    ! Dynamics blocks -> owned-chunk columns' neighborhods, for use in
+    ! d_p_coupling.
+
+    use parallel_mod, only: par
+    use perf_mod, only: t_startf, t_stopf
+
+    real(r8), intent(in) :: ps(:,:), zs(:,:), T(:,:,:), om(:,:,:), uv(:,:,:,:), q(:,:,:,:)
+    type (physics_state), intent(inout) :: state(begchunk:endchunk+nbrhdchunk)
+
+    real(r8), allocatable :: bbuf(:), cbuf(:)
+    integer, allocatable :: bptr(:,:), cptr(:)
+    integer :: nbrhd_pcnst, rcdsz, bnrecs, cnrecs, max_numlev, max_numrep, num_recv_col, &
+         numlev, numrep, ie, bid, ncol, j, k, p, lchnk, icol, ptr
+
+    call t_startf('dpcopy_nbrhd')
+
+    nbrhd_pcnst = nbrhd_get_option_pcnst()
+    rcdsz = 4 + nbrhd_pcnst
+    call nbrhd_block_to_chunk_sizes(bnrecs, cnrecs, max_numlev, max_numrep, num_recv_col)
+
+    allocate(bbuf(rcdsz*bnrecs), cbuf(rcdsz*cnrecs))
+
+    if (par%dynproc) then
+       allocate(bptr(0:max_numlev-1,max_numrep))
+       do ie = 1, nelemd
+          bid = nbrhd_get_ie2bid(ie)
+          ncol = get_block_gcol_cnt_d(bid)
+          do icol = 1, ncol
+             call nbrhd_block_to_chunk_send_pters(ie, icol, rcdsz, &
+                  numlev, numrep, bptr)
+             do j = 1, numrep
+                ptr = bptr(0,j)
+                bbuf(ptr+0) = ps(icol,ie)
+                bbuf(ptr+1) = zs(icol,ie)
+                bbuf(ptr+2:ptr+3) = 0.0_r8
+                do k = 1, numlev-1
+                   ptr = bptr(k,j)
+                   bbuf(ptr+0) =  T(icol,  k,ie)
+                   bbuf(ptr+1) = uv(icol,1,k,ie)
+                   bbuf(ptr+2) = uv(icol,2,k,ie)
+                   bbuf(ptr+3) = om(icol,  k,ie)
+                   do p = 1, nbrhd_pcnst
+                      bbuf(ptr+3+p) = q(icol,k,p,ie)
+                   end do
+                end do
+             end do
+          end do
+       end do
+       deallocate(bptr)
+    else
+       bbuf(:) = 0._r8
+    end if
+
+    call t_startf('nbrhd_block_to_chunk')
+    call nbrhd_transpose_block_to_chunk(rcdsz, bbuf, cbuf)
+    call t_stopf ('nbrhd_block_to_chunk')
+
+    allocate(cptr(0:max_numlev-1))
+    lchnk = endchunk+nbrhdchunk
+    do icol = 1, num_recv_col
+       call nbrhd_block_to_chunk_recv_pters(icol, rcdsz, numlev, cptr)
+       ptr = cptr(0)
+       state(lchnk)%ps  (icol) = cbuf(ptr+0)
+       state(lchnk)%phis(icol) = cbuf(ptr+1)
+       do k = 1, numlev-1
+          ptr = cptr(k)
+          state(lchnk)%T    (icol,k) = cbuf(ptr+0)
+          state(lchnk)%u    (icol,k) = cbuf(ptr+1)
+          state(lchnk)%v    (icol,k) = cbuf(ptr+2)
+          state(lchnk)%omega(icol,k) = cbuf(ptr+3)
+          do p = 1, nbrhd_pcnst
+             state(lchnk)%q(icol,k,p) = cbuf(ptr+3+p)
+          end do
+       end do
+    end do
+    deallocate(cptr)
+
+    deallocate(bbuf, cbuf)
+
+    call nbrhd_copy_states(state)
+    call t_stopf('dpcopy_nbrhd')
+  end subroutine nbrhd_d_p_coupling
+
+  subroutine nbrhd_p_p_coupling(state)
+    ! Owned-chunk -> owned-chunk columns' neighborhods, for use during a physics
+    ! time step, if this need ever arises.
+
+    type (physics_state), intent(inout) :: state(begchunk:endchunk+nbrhdchunk)
+
+    real(r8), allocatable :: sbuf(:), rbuf(:)
+    integer, allocatable :: sptr(:,:), rptr(:)
+    integer :: nbrhd_pcnst, rcdsz, snrecs, rnrecs, max_numlev, max_numrep, num_recv_col, &
+         numlev, numrep, lid, ncol, icol, j, k, p, lchnk, ptr
+
+    nbrhd_pcnst = nbrhd_get_option_pcnst()
+    rcdsz = 4 + nbrhd_pcnst
+    call nbrhd_chunk_to_chunk_sizes(snrecs, rnrecs, max_numlev, max_numrep, num_recv_col)
+    allocate(sbuf(rcdsz*snrecs), rbuf(rcdsz*rnrecs))
+
+    allocate(sptr(0:max_numlev-1,max_numrep))
+    do lid = begchunk, endchunk
+       ncol = get_ncols_p(lid)
+       do icol = 1, ncol
+          call nbrhd_chunk_to_chunk_send_pters(lid, icol, rcdsz, numlev, numrep, sptr)
+          do j = 1, numrep
+             ptr = sptr(0,j)
+             sbuf(ptr+0) = state(lid)%ps  (icol)
+             sbuf(ptr+1) = state(lid)%phis(icol)
+             sbuf(ptr+2:ptr+3) = 0.0_r8
+             do k = 1, numlev-1
+                ptr = sptr(k,j)
+                sbuf(ptr+0) = state(lid)%T(icol,k)
+                sbuf(ptr+1) = state(lid)%u(icol,k)
+                sbuf(ptr+2) = state(lid)%v(icol,k)
+                sbuf(ptr+3) = state(lid)%omega(icol,k)
+                do p = 1, nbrhd_pcnst
+                   sbuf(ptr+3+p) = state(lid)%q(icol,k,p)
+                end do
+             end do
+          end do
+       end do
+    end do
+    deallocate(sptr)
+
+    call nbrhd_transpose_chunk_to_chunk(rcdsz, sbuf, rbuf)
+
+    allocate(rptr(0:max_numlev-1))
+    lchnk = endchunk+nbrhdchunk
+    do icol = 1, num_recv_col
+       call nbrhd_chunk_to_chunk_recv_pters(icol, rcdsz, numlev, rptr)
+       ptr = rptr(0)
+       state(lchnk)%ps  (icol) = rbuf(ptr+0)
+       state(lchnk)%phis(icol) = rbuf(ptr+1)
+       do k = 1, numlev-1
+          ptr = rptr(k)
+          state(lchnk)%T    (icol,k) = rbuf(ptr+0)
+          state(lchnk)%u    (icol,k) = rbuf(ptr+1)
+          state(lchnk)%v    (icol,k) = rbuf(ptr+2)
+          state(lchnk)%omega(icol,k) = rbuf(ptr+3)
+          do p = 1, nbrhd_pcnst
+             state(lchnk)%q(icol,k,p) = rbuf(ptr+3+p)
+          end do
+       end do
+    end do
+    deallocate(rptr)
+
+    deallocate(sbuf, rbuf)
+
+    call nbrhd_copy_states(state)
+  end subroutine nbrhd_p_p_coupling
+
+  subroutine nbrhd_copy_states(state)
     ! Copy state from normal chunks to the extra neighborhood chunk. These are
     ! neighborhood columns whose data already exist on this pe.
 
-    type (physics_state), intent(inout) :: phys_state(begchunk:endchunk+nbrhdchunk)
+    type (physics_state), intent(inout) :: state(begchunk:endchunk+nbrhdchunk)
 
     integer (int_kind) :: n, i, lchnk, lchnke, icol, icole, pcnst
 
@@ -37,13 +191,13 @@ contains
     n = nbrhd_get_num_copies()
     do i = 1, n
        call nbrhd_get_copy_idxs(i, lchnk, icol, icole)
-       phys_state(lchnke)%ps   (icole  ) = phys_state(lchnk)%ps   (icol  )
-       phys_state(lchnke)%phis (icole  ) = phys_state(lchnk)%phis (icol  )
-       phys_state(lchnke)%T    (icole,:) = phys_state(lchnk)%T    (icol,:)
-       phys_state(lchnke)%u    (icole,:) = phys_state(lchnk)%u    (icol,:)
-       phys_state(lchnke)%v    (icole,:) = phys_state(lchnk)%v    (icol,:)
-       phys_state(lchnke)%omega(icole,:) = phys_state(lchnk)%omega(icol,:)
-       phys_state(lchnke)%q(icole,:,1:pcnst) = phys_state(lchnk)%q(icol,:,1:pcnst)
+       state(lchnke)%ps   (icole  ) = state(lchnk)%ps   (icol  )
+       state(lchnke)%phis (icole  ) = state(lchnk)%phis (icol  )
+       state(lchnke)%T    (icole,:) = state(lchnk)%T    (icol,:)
+       state(lchnke)%u    (icole,:) = state(lchnk)%u    (icol,:)
+       state(lchnke)%v    (icole,:) = state(lchnk)%v    (icol,:)
+       state(lchnke)%omega(icole,:) = state(lchnk)%omega(icol,:)
+       state(lchnke)%q(icole,:,1:pcnst) = state(lchnk)%q(icol,:,1:pcnst)
     end do
   end subroutine nbrhd_copy_states
 
@@ -76,8 +230,8 @@ contains
     real(r8), allocatable :: lats(:,:), lons(:,:), sbuf(:), rbuf(:)
     integer, allocatable :: sptr(:,:), rptr(:), gcols(:), icols(:), used(:)
     real(r8) :: lat, lon, x, y, z, angle, max_angle
-    integer :: nerr, ntest, bid, n, k, lid, ncol, icol, rcdsz, gcol, nphys, nphys_sq, &
-         numlev, numrep, max_numlev, max_numrep, snrecs, rnrecs, j, p, lchnk, ptr, &
+    integer ::  nerr, ntest, bid, n, k, lid, ncol, icol, rcdsz, gcol, & numlev, &
+         numrep, max_numlev, max_numrep, snrecs, rnrecs, j, p, lchnk, ptr, &
          nbrhd_pcnst, num_recv_col, lide, icole
     logical :: e
 
@@ -119,25 +273,24 @@ contains
        end do
     end do
 
-    if (fv_nphys > 0) then
-       nphys = fv_nphys
-    else
-       nphys = np
-    end if
-    nphys_sq = nphys*nphys
     nbrhd_pcnst = nbrhd_get_option_pcnst()
     e = test(nerr, ntest, nbrhd_pcnst >= 1 .and. nbrhd_pcnst <= pcnst, 'nbrhd_pcnst')
-    rcdsz = 4 + nbrhd_pcnst
 
     if (owning_blocks) then
-       call nbrhd_block_to_chunk_sizes(snrecs, rnrecs, max_numlev, max_numrep, num_recv_col)
+       !call nbrhd_d_p_coupling(state)
     else
-       call nbrhd_chunk_to_chunk_sizes(snrecs, rnrecs, max_numlev, max_numrep, num_recv_col)
+       call nbrhd_p_p_coupling(state)
     end if
-    allocate(sbuf(rcdsz*snrecs), rbuf(rcdsz*rnrecs))
 
-    allocate(sptr(0:max_numlev-1,max_numrep))
     if (owning_blocks) then
+       rcdsz = 4 + nbrhd_pcnst
+
+       call nbrhd_block_to_chunk_sizes(snrecs, rnrecs, max_numlev, max_numrep, num_recv_col)
+
+       allocate(sbuf(rcdsz*snrecs), rbuf(rcdsz*rnrecs))
+
+       allocate(sptr(0:max_numlev-1,max_numrep))
+
        ! Dynamics blocks -> send buf.
        do lid = 1, nelemd
           bid = nbrhd_get_ie2bid(lid)
@@ -172,68 +325,39 @@ contains
              end do
           end do
        end do
-    else
-       ! Owned state -> send buf.
-       do lid = begchunk, endchunk
-          ncol = get_ncols_p(lid)
-          do icol = 1, ncol
-             call nbrhd_chunk_to_chunk_send_pters(lid, icol, rcdsz, &
-                  numlev, numrep, sptr)
-             do j = 1, numrep
-                ptr = sptr(0,j)
-                sbuf(ptr+0) = state(lid)%ps  (icol)
-                sbuf(ptr+1) = state(lid)%phis(icol)
-                sbuf(ptr+2:ptr+3) = 0.0_r8
-                do k = 1, numlev-1
-                   ptr = sptr(k,j)
-                   sbuf(ptr+0) = state(lid)%T(icol,k)
-                   sbuf(ptr+1) = state(lid)%u(icol,k)
-                   sbuf(ptr+2) = state(lid)%v(icol,k)
-                   sbuf(ptr+3) = state(lid)%omega(icol,k)
-                   do p = 1, nbrhd_pcnst
-                      sbuf(ptr+3+p) = state(lid)%q(icol,k,p)
-                   end do
-                end do
+       deallocate(sptr, gcols)
+
+       call nbrhd_transpose_block_to_chunk(rcdsz, sbuf, rbuf)
+
+       ! Receive buf -> neighborhood columns' states.
+       allocate(rptr(0:max_numlev-1))
+       lchnk = endchunk+nbrhdchunk
+       do icol = 1, num_recv_col
+          if (owning_blocks) then
+             call nbrhd_block_to_chunk_recv_pters(icol, rcdsz, numlev, rptr)
+          else
+             call nbrhd_chunk_to_chunk_recv_pters(icol, rcdsz, numlev, rptr)
+          end if
+          ptr = rptr(0)
+          state(lchnk)%ps  (icol) = rbuf(ptr+0)
+          state(lchnk)%phis(icol) = rbuf(ptr+1)
+          do k = 1, numlev-1
+             ptr = rptr(k)
+             state(lchnk)%T    (icol,k) = rbuf(ptr+0)
+             state(lchnk)%u    (icol,k) = rbuf(ptr+1)
+             state(lchnk)%v    (icol,k) = rbuf(ptr+2)
+             state(lchnk)%omega(icol,k) = rbuf(ptr+3)
+             do p = 1, nbrhd_pcnst
+                state(lchnk)%q(icol,k,p) = rbuf(ptr+3+p)
              end do
           end do
        end do
+       deallocate(rptr)
+
+       deallocate(sbuf, rbuf)
+
+       call nbrhd_copy_states(state)
     end if
-    deallocate(sptr, gcols)
-
-    if (owning_blocks) then
-       call nbrhd_transpose_block_to_chunk(rcdsz, sbuf, rbuf)
-    else
-       call nbrhd_transpose_chunk_to_chunk(rcdsz, sbuf, rbuf)
-    end if
-
-    ! Receive buf -> neighborhood columns' states.
-    allocate(rptr(0:max_numlev-1))
-    lchnk = endchunk+nbrhdchunk
-    do icol = 1, num_recv_col
-       if (owning_blocks) then
-          call nbrhd_block_to_chunk_recv_pters(icol, rcdsz, numlev, rptr)
-       else
-          call nbrhd_chunk_to_chunk_recv_pters(icol, rcdsz, numlev, rptr)
-       end if
-       ptr = rptr(0)
-       state(lchnk)%ps  (icol) = rbuf(ptr+0)
-       state(lchnk)%phis(icol) = rbuf(ptr+1)
-       do k = 1, numlev-1
-          ptr = rptr(k)
-          state(lchnk)%T    (icol,k) = rbuf(ptr+0)
-          state(lchnk)%u    (icol,k) = rbuf(ptr+1)
-          state(lchnk)%v    (icol,k) = rbuf(ptr+2)
-          state(lchnk)%omega(icol,k) = rbuf(ptr+3)
-          do p = 1, nbrhd_pcnst
-             state(lchnk)%q(icol,k,p) = rbuf(ptr+3+p)
-          end do
-       end do
-    end do
-    deallocate(rptr)
-
-    deallocate(sbuf, rbuf)
-
-    call nbrhd_copy_states(state)
 
     ! Check that we have the expected values in all states.
     do lid = begchunk, endchunk+nbrhdchunk

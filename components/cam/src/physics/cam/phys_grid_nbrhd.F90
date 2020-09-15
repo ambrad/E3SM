@@ -42,7 +42,9 @@ module phys_grid_nbrhd
   !   2. There may be a desire to update nbrhd state during a physics time
   ! step. The second schedule supports this: owned-columns -> nbrhd
   ! columns. This is the only correct way to update nbrhd columns during a
-  ! physics time step. In the code, owning_blocks = .false.
+  ! physics time step. In the code, owning_blocks = .false. If this pattern is
+  ! ever used, to fully update physics_state, the equivalent of dp_coupling's
+  ! derived_state must be called on the extra physics_state chunk.
   !   In dp_coupling, we call derived_physics on the extra physics_state, but we
   ! omit the diagnostic energy calculations and so don't need an extra
   ! physics_tend. Here the goal is to provide full physics_state data for the
