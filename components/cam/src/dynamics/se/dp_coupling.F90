@@ -90,7 +90,7 @@ CONTAINS
     !---------------------------------------------------------------------------
 
     if (first) then
-       call nbrhd_test_api(dyn_out%elem, phys_state)
+       call nbrhd_test_api(phys_state)
        first = .false.
     end if
 
@@ -525,7 +525,7 @@ CONTAINS
     use phys_gmean,     only: gmean
     !---------------------------------------------------------------------------
     implicit none
-    type(physics_state), intent(inout), dimension(begchunk:endchunk) :: phys_state
+    type(physics_state), intent(inout), dimension(begchunk:endchunk+nbrhdchunk) :: phys_state
     type(physics_tend ), intent(inout), dimension(begchunk:endchunk) :: phys_tend 
     type(physics_buffer_desc), pointer :: pbuf2d(:,:)
 
@@ -540,6 +540,7 @@ CONTAINS
     real(r8) :: zvirv(pcols,pver)    ! Local zvir array pointer
     integer  :: m, i, k, ncol
     type(physics_buffer_desc), pointer :: pbuf_chnk(:)
+    real(r8), allocatable :: nbrhd_rairv(:,:), nbrhd_zvirv(:,:)
     !---------------------------------------------------------------------------
 
     ! Evaluate derived quantities
@@ -572,20 +573,34 @@ CONTAINS
         end do
       end do
 
-      !----------------------------------------------------
-      ! Need to fill zvirv 2D variables to be 
-      ! compatible with geopotential_t interface
-      !----------------------------------------------------
-      zvirv(:,:) = zvir
+      if (lchnk < endchunk+nbrhdchunk) then
+         !----------------------------------------------------
+         ! Need to fill zvirv 2D variables to be 
+         ! compatible with geopotential_t interface
+         !----------------------------------------------------
+         zvirv(:,:) = zvir
 
-      ! Compute initial geopotential heights
-      call geopotential_t(phys_state(lchnk)%lnpint, phys_state(lchnk)%lnpmid  ,&
-                          phys_state(lchnk)%pint  , phys_state(lchnk)%pmid    ,&
-                          phys_state(lchnk)%pdel  , phys_state(lchnk)%rpdel   ,&
-                          phys_state(lchnk)%t     , phys_state(lchnk)%q(:,:,1),&
-                          rairv(:,:,lchnk)        , gravit, zvirv             ,&
-                          phys_state(lchnk)%zi    , phys_state(lchnk)%zm      ,&
-                          ncol)
+         ! Compute initial geopotential heights
+         call geopotential_t(phys_state(lchnk)%lnpint, phys_state(lchnk)%lnpmid  ,&
+                             phys_state(lchnk)%pint  , phys_state(lchnk)%pmid    ,&
+                             phys_state(lchnk)%pdel  , phys_state(lchnk)%rpdel   ,&
+                             phys_state(lchnk)%t     , phys_state(lchnk)%q(:,:,1),&
+                             rairv(:,:,lchnk)        , gravit, zvirv             ,&
+                             phys_state(lchnk)%zi    , phys_state(lchnk)%zm      ,&
+                             ncol)
+      else
+         allocate(nbrhd_rairv(ncol,pver), nbrhd_zvirv(ncol,pver))
+         nbrhd_rairv(:,:) = rair
+         nbrhd_zvirv(:,:) = zvir
+         call geopotential_t(phys_state(lchnk)%lnpint, phys_state(lchnk)%lnpmid  ,&
+                             phys_state(lchnk)%pint  , phys_state(lchnk)%pmid    ,&
+                             phys_state(lchnk)%pdel  , phys_state(lchnk)%rpdel   ,&
+                             phys_state(lchnk)%t     , phys_state(lchnk)%q(:,:,1),&
+                             nbrhd_rairv,              gravit, nbrhd_zvirv       ,&
+                             phys_state(lchnk)%zi    , phys_state(lchnk)%zm      ,&
+                             ncol)
+         deallocate(nbrhd_rairv, nbrhd_zvirv)
+      end if
           
        ! Compute initial dry static energy s = g*z + c_p*T
        do k = 1, pver
