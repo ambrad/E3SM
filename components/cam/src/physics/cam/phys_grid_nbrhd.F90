@@ -173,7 +173,7 @@ module phys_grid_nbrhd
        nbrhd_get_option_pcnst, &
        nbrhd_get_option_block_to_chunk_on, &
        nbrhd_get_option_chunk_to_chunk_on, &
-       ! For testing
+       ! For API testing in phys_grid_nbrhd_util
        nbrhd_get_ie2bid, &
        latlon2xyz, unit_sphere_angle
 

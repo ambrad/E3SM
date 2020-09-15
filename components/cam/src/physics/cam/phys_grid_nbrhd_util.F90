@@ -1,5 +1,8 @@
 module phys_grid_nbrhd_util
-  ! These routines are in a separate module to resolve dependencies properly.
+  ! These routines are in a separate module to resolve dependencies
+  ! properly. See phys_grid_nbrhd.
+  !
+  ! AMB 2020/09 Initial
 
   use parallel_mod, only: par
   use spmd_utils, only: iam, masterproc, npes
@@ -19,9 +22,10 @@ module phys_grid_nbrhd_util
   private
 
   public :: &
+       ! API
        nbrhd_d_p_coupling, &
        nbrhd_p_p_coupling, &
-       nbrhd_copy_states, &
+       ! For testing
        nbrhd_test_api
   
 contains
@@ -225,14 +229,12 @@ contains
     type (physics_state), intent(inout) :: state(begchunk:endchunk+nbrhdchunk)
     logical, intent(in) :: owning_blocks
 
-    real(r8), parameter :: none = -10000
-
-    real(r8), allocatable :: lats(:,:), lons(:,:), sbuf(:), rbuf(:)
-    integer, allocatable :: sptr(:,:), rptr(:), gcols(:), icols(:), used(:)
+    real(r8), allocatable :: lats(:,:), lons(:,:), sbuf(:), rbuf(:), &
+         ps(:,:), zs(:,:), T(:,:,:), om(:,:,:), uv(:,:,:,:), q(:,:,:,:)
+    integer, allocatable :: gcols(:), icols(:), used(:)
     real(r8) :: lat, lon, x, y, z, angle, max_angle
-    integer ::  nerr, ntest, bid, n, k, lid, ncol, icol, rcdsz, gcol, & numlev, &
-         numrep, max_numlev, max_numrep, snrecs, rnrecs, j, p, lchnk, ptr, &
-         nbrhd_pcnst, num_recv_col, lide, icole
+    integer ::  nerr, ntest, ie, bid, ncol, icol, lid, gcol, k, p, nbrhd_pcnst, &
+         n, lide, icole
     logical :: e
 
     if (masterproc) write(iulog,*) 'nbr> test_api', owning_blocks
@@ -240,6 +242,7 @@ contains
     ntest = 0
     allocate(gcols(max(get_ncols_p(endchunk+nbrhdchunk), max(npsq, pcols))))
 
+    ! Test all states have the expected (lat,lon).
     do lid = begchunk, endchunk+nbrhdchunk
        ncol = get_ncols_p(lid)
        call get_gcol_all_p(lid, ncol, gcols)
@@ -251,7 +254,7 @@ contains
     end do
 
     ! Mimic the result of running the standard part of d_p_coupling: iam's
-    ! columns' states get filled.
+    ! columns' states get filled. Inject artificial, checkable values.
     do lid = begchunk, endchunk
        ncol = get_ncols_p(lid)
        call get_gcol_all_p(lid, pcols, gcols)
@@ -276,87 +279,37 @@ contains
     nbrhd_pcnst = nbrhd_get_option_pcnst()
     e = test(nerr, ntest, nbrhd_pcnst >= 1 .and. nbrhd_pcnst <= pcnst, 'nbrhd_pcnst')
 
+    ! Carry out a nbrhd comm round.
     if (owning_blocks) then
-       !call nbrhd_d_p_coupling(state)
-    else
-       call nbrhd_p_p_coupling(state)
-    end if
-
-    if (owning_blocks) then
-       rcdsz = 4 + nbrhd_pcnst
-
-       call nbrhd_block_to_chunk_sizes(snrecs, rnrecs, max_numlev, max_numrep, num_recv_col)
-
-       allocate(sbuf(rcdsz*snrecs), rbuf(rcdsz*rnrecs))
-
-       allocate(sptr(0:max_numlev-1,max_numrep))
-
-       ! Dynamics blocks -> send buf.
-       do lid = 1, nelemd
-          bid = nbrhd_get_ie2bid(lid)
+       allocate(ps(npsq,nelemd), zs(npsq,nelemd), &
+                T(npsq,pver,nelemd), om(npsq,pver,nelemd), &
+                uv(npsq,2,pver,nelemd), &
+                q(npsq,pver,nbrhd_pcnst,nelemd))
+       do ie = 1, nelemd
+          bid = nbrhd_get_ie2bid(ie)
           ncol = get_block_gcol_cnt_d(bid)
           call get_block_gcol_d(bid, ncol, gcols)
           do icol = 1, ncol
-             if (owning_blocks) then
-                call nbrhd_block_to_chunk_send_pters(lid, icol, rcdsz, &
-                     numlev, numrep, sptr)
-             else
-                call nbrhd_chunk_to_chunk_send_pters(lid, icol, rcdsz, &
-                     numlev, numrep, sptr)
-             end if
              gcol = gcols(icol)
              lat = lats_d(gcol)
              lon = lons_d(gcol)
-             do j = 1, numrep
-                ptr = sptr(0,j)
-                sbuf(ptr+0) = lat
-                sbuf(ptr+1) = lon
-                sbuf(ptr+2:ptr+3) = 0.0_r8
-                do k = 1, numlev-1
-                   ptr = sptr(k,j)
-                   sbuf(ptr+0) = lat + k - 1
-                   sbuf(ptr+1) = lat + k - 2
-                   sbuf(ptr+2) = lon + k - 2
-                   sbuf(ptr+3) = lon + k - 1
-                   do p = 1, nbrhd_pcnst
-                      sbuf(ptr+3+p) = p*(lat + lon) + k
-                   end do
+             ps(icol,ie) = lat
+             zs(icol,ie) = lon
+             do k = 1, pver
+                T (icol,k,  ie) = lat + k - 1
+                om(icol,k,  ie) = lon + k - 1
+                uv(icol,1,k,ie) = lat + k - 2
+                uv(icol,2,k,ie) = lon + k - 2
+                do p = 1, pcnst
+                   q(icol,k,p,ie) = p*(lat + lon) + k
                 end do
              end do
           end do
        end do
-       deallocate(sptr, gcols)
-
-       call nbrhd_transpose_block_to_chunk(rcdsz, sbuf, rbuf)
-
-       ! Receive buf -> neighborhood columns' states.
-       allocate(rptr(0:max_numlev-1))
-       lchnk = endchunk+nbrhdchunk
-       do icol = 1, num_recv_col
-          if (owning_blocks) then
-             call nbrhd_block_to_chunk_recv_pters(icol, rcdsz, numlev, rptr)
-          else
-             call nbrhd_chunk_to_chunk_recv_pters(icol, rcdsz, numlev, rptr)
-          end if
-          ptr = rptr(0)
-          state(lchnk)%ps  (icol) = rbuf(ptr+0)
-          state(lchnk)%phis(icol) = rbuf(ptr+1)
-          do k = 1, numlev-1
-             ptr = rptr(k)
-             state(lchnk)%T    (icol,k) = rbuf(ptr+0)
-             state(lchnk)%u    (icol,k) = rbuf(ptr+1)
-             state(lchnk)%v    (icol,k) = rbuf(ptr+2)
-             state(lchnk)%omega(icol,k) = rbuf(ptr+3)
-             do p = 1, nbrhd_pcnst
-                state(lchnk)%q(icol,k,p) = rbuf(ptr+3+p)
-             end do
-          end do
-       end do
-       deallocate(rptr)
-
-       deallocate(sbuf, rbuf)
-
-       call nbrhd_copy_states(state)
+       call nbrhd_d_p_coupling(ps, zs, T, om, uv, q, state)
+       deallocate(ps, zs, T, om, uv, q)
+    else
+       call nbrhd_p_p_coupling(state)
     end if
 
     ! Check that we have the expected values in all states.
