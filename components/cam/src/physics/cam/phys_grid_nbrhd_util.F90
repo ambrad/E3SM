@@ -212,6 +212,8 @@ contains
     real(r8), allocatable, dimension(:) :: lats_d, lons_d
     integer :: d1, d2, ngcols
 
+    if (nbrhd_get_option_test() == 0) return
+
     call get_horiz_grid_dim_d(d1, d2)
     ngcols = d1*d2
     allocate(lats_d(ngcols), lons_d(ngcols))

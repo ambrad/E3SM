@@ -189,6 +189,7 @@ module phys_grid_nbrhd
        ! Options
        nbrhd_get_option_angle, &
        nbrhd_get_option_pcnst, &
+       nbrhd_get_option_test, &
        nbrhd_get_option_block_to_chunk_on, &
        nbrhd_get_option_chunk_to_chunk_on, &
        ! For API testing in phys_grid_nbrhd_util
@@ -231,6 +232,11 @@ contains
     integer , optional, intent(in) :: phys_nbrhd_pcnst_in, phys_nbrhd_verbose_in, &
          phys_nbrhd_test_in
 
+    cns%max_angle = 0
+    cns%pcnst = pcnst
+    cns%verbose = 0
+    cns%test = 0
+
     if (present(phys_nbrhd_degrees_in)) then
        cns%max_angle = phys_nbrhd_degrees_in * (pi/180._r8)
        if (cns%max_angle < 0) then
@@ -261,9 +267,7 @@ contains
        end if
     end if
 
-    cns%verbose = 0
     if (present(phys_nbrhd_verbose_in)) cns%verbose = max(0, phys_nbrhd_verbose_in)
-    cns%test = 0
     if (present(phys_nbrhd_test_in)) cns%test = max(0, phys_nbrhd_test_in)
 
     if (cns%verbose > 0 .and. masterproc) then
@@ -297,7 +301,7 @@ contains
     cns%b2c_on = .true.
     ! Hard-coded off b/c we currently don't need comm w/in a physics time
     ! step. Set to .true. if nbrhd_p_p_coupling is needed.
-    cns%c2c_on = .false.
+    cns%c2c_on = .true.
     cns%nchunks = nchunks
 
     nbrhdchunk = 1
@@ -508,6 +512,11 @@ contains
     integer :: n
     n = cns%pcnst
   end function nbrhd_get_option_pcnst
+
+  function nbrhd_get_option_test() result(test)
+    integer :: test
+    test = cns%test
+  end function nbrhd_get_option_test
 
   function nbrhd_get_option_block_to_chunk_on() result(on)
     logical :: on
