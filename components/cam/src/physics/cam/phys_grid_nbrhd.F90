@@ -267,8 +267,8 @@ contains
     if (present(phys_nbrhd_test_in)) cns%test = max(0, phys_nbrhd_test_in)
 
     if (cns%verbose > 0 .and. masterproc) then
-       write(iulog,'(a,es13.4,a,i4,a,i2,a,i2)') 'nbrhd_setopts: angle', &
-            cns%max_angle * (180._r8/pi), '; pcnst', cns%pcnst, &
+       write(iulog,'(a,es13.4,a,i4,a,i2,a,i2)') 'nbr> nbrhd_setopts: angle', &
+            cns%max_angle * (180._r8/pi), ' degrees; pcnst', cns%pcnst, &
             '; verbosity', cns%verbose, '; test', cns%test
     end if
   end subroutine nbrhd_setopts
