@@ -231,8 +231,6 @@ contains
     integer , optional, intent(in) :: phys_nbrhd_pcnst_in, phys_nbrhd_verbose_in, &
          phys_nbrhd_test_in
 
-    print *,'nbr> setopts',phys_nbrhd_degrees_in, phys_nbrhd_pcnst_in
-
     if (present(phys_nbrhd_degrees_in)) then
        cns%max_angle = phys_nbrhd_degrees_in * (pi/180._r8)
        if (cns%max_angle < 0) then
@@ -267,6 +265,12 @@ contains
     if (present(phys_nbrhd_verbose_in)) cns%verbose = max(0, phys_nbrhd_verbose_in)
     cns%test = 0
     if (present(phys_nbrhd_test_in)) cns%test = max(0, phys_nbrhd_test_in)
+
+    if (cns%verbose > 0 .and. masterproc) then
+       write(iulog,'(a,es13.4,a,i4,a,i2,a,i2)') 'nbrhd_setopts: angle', &
+            cns%max_angle * (180._r8/pi), '; pcnst', cns%pcnst, &
+            '; verbosity', cns%verbose, '; test', cns%test
+    end if
   end subroutine nbrhd_setopts
 
   subroutine nbrhd_init(clat_p_tot, clat_p_idx, clat_p, clon_p, lat_p, lon_p, &
