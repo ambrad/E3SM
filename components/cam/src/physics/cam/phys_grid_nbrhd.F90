@@ -17,6 +17,21 @@ module phys_grid_nbrhd
   ! to determine the range 1:nbrhd_pcnst of 1:pcnst for which there are
   ! neighborhood data. T, om, uv, ps, phis are always available.
   !
+  ! Namelist.
+  !   This module has the following namelist options:
+  !     &cam_inparm
+  !      phys_nbrhd_degrees = 0.0d0   ! Radius of neighborhood in degrees
+  !      phys_nbrhd_pcnst = pcnst     ! Share 1:phys_nbrhd_pcnst tracers
+  !      phys_nbrhd_verbose = 0       ! 0 (none), 1, 2 (a lot)
+  !      phys_nbrhd_test = 0          ! 0 (none), 1, 2 (comprehensive tests)
+  !     /
+  ! The default value 0 of phys_nbrhd_degrees disables the neighborhood
+  ! feature. When enabled, phys_nbrhd_pcnst must be >= 1 and <=
+  ! pcnst. phys_nbrhd_verbose = 1 or 2 shows neighborhood size and rank
+  ! connectivity data, with more data output for 2. phys_nbrhd_test = 1 runs
+  ! small unit tests, and phys_nbrhd_test = 2 runs several communication rounds
+  ! to test for expected communicated values.
+  !
   ! Implementation notes.
   !   nbrhdchunk is 0 if neighborhoods are not active; this is standard
   ! behavior. It is 1 if they are. It is used to augment the range
@@ -277,7 +292,10 @@ contains
 
     e = assert(cns%pcnst >= 1, 'nbrhd%pcnst must be >= 1 to include qv')
 
+    ! Hard-coded on to support basic dp_coupling-based comm, nbrhd_d_p_coupling.
     cns%b2c_on = .true.
+    ! Hard-coded off b/c we currently don't need comm w/in a physics time
+    ! step. Set to .true. if nbrhd_p_p_coupling is needed.
     cns%c2c_on = .false.
     cns%nchunks = nchunks
     nbrhdchunk = 1
