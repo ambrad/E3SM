@@ -139,6 +139,8 @@ real(r8) :: phys_nbrhd_degrees
 ! Number of constituents to communicate, 1:phys_nbrhd_pcnst, with
 ! phys_nbrhd_pcnst <= pcnst.
 integer  :: phys_nbrhd_pcnst
+! Verbosity and test levels
+integer  :: phys_nbrhd_verbose, phys_nbrhd_test
 !
 ! 
 ! tracers_flag = .F.    If true, implement tracer test code. Number of tracers determined
@@ -333,7 +335,8 @@ contains
                      phys_chnk_per_thd, phys_chnk_cost_write
 
    ! physics column neighborhood
-   namelist /cam_inparm/ phys_nbrhd_degrees, phys_nbrhd_pcnst
+   namelist /cam_inparm/ phys_nbrhd_degrees, phys_nbrhd_pcnst, &
+                         phys_nbrhd_verbose, phys_nbrhd_test
 
    ! physics buffer
    namelist /cam_inparm/ pbuf_global_allocate
@@ -376,7 +379,9 @@ contains
 
    call nbrhd_defaultopts( &
       phys_nbrhd_degrees_out = phys_nbrhd_degrees, &
-      phys_nbrhd_pcnst_out   = phys_nbrhd_pcnst)
+      phys_nbrhd_pcnst_out   = phys_nbrhd_pcnst,   &
+      phys_nbrhd_verbose_out = phys_nbrhd_verbose, &
+      phys_nbrhd_test_out    = phys_nbrhd_test)
 
    ! conservation
    call check_energy_defaultopts( &
@@ -456,7 +461,9 @@ contains
    ! physics column neighborhood
    call nbrhd_setopts( &
        phys_nbrhd_degrees_in = phys_nbrhd_degrees, &
-       phys_nbrhd_pcnst_in   = phys_nbrhd_pcnst)
+       phys_nbrhd_pcnst_in   = phys_nbrhd_pcnst,   &
+       phys_nbrhd_verbose_in = phys_nbrhd_verbose, &
+       phys_nbrhd_test_in    = phys_nbrhd_test)
 
    ! conservation
    call check_energy_setopts( &
