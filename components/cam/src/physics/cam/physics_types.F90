@@ -1075,35 +1075,41 @@ end subroutine physics_ptend_copy
 
 !===============================================================================
 
-  subroutine physics_state_set_grid(lchnk, phys_state, nonstandard_pcols)
+  subroutine physics_state_set_grid(lchnk, phys_state, nonstandard_pcols_in)
 !-----------------------------------------------------------------------
 ! Set the grid components of the physics_state object
 !-----------------------------------------------------------------------
 
     integer,             intent(in)    :: lchnk
     type(physics_state), intent(inout) :: phys_state
-    logical, optional,   intent(in)    :: nonstandard_pcols
+    logical, optional,   intent(in)    :: nonstandard_pcols_in
 
     ! local variables
     integer  :: i, ncol
     real(r8), allocatable :: rlon(:)
     real(r8), allocatable :: rlat(:)
-    logical  :: skip_pcols_check
+    logical  :: nonstandard_pcols
 
-    skip_pcols_check = .false.
-    if (present(nonstandard_pcols)) skip_pcols_check = nonstandard_pcols
+    nonstandard_pcols = .false.
+    if (present(nonstandard_pcols_in)) nonstandard_pcols = nonstandard_pcols_in
 
     !-----------------------------------------------------------------------
     ! get_ncols_p requires a state which does not have sub-columns
-    if (.not. skip_pcols_check .and. phys_state%psetcols .ne. pcols) then
+    if (.not. nonstandard_pcols .and. phys_state%psetcols .ne. pcols) then
        call endrun('physics_state_set_grid: cannot pass in a state which has sub-columns')
     end if
 
     ncol = get_ncols_p(lchnk)
 
     if(ncol<=0) then
-       write(iulog,*) lchnk, ncol
-       call endrun('physics_state_set_grid')
+       if (nonstandard_pcols_in) then
+          phys_state%ncol  = ncol
+          phys_state%lchnk = lchnk
+          return
+       else
+          write(iulog,*) lchnk, ncol
+          call endrun('physics_state_set_grid')
+       end if
     end if
 
     allocate(rlon(ncol), rlat(ncol))
