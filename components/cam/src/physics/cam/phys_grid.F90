@@ -692,6 +692,9 @@ contains
     pcols_proc(:) = 0
     gs_col_num(:) = 0
 
+    ! Initialize phys_grid_nbrhd?
+    use_nbrhd = nbrhdchunk > 0
+
     !
     ! Option -1: each dynamics block is a single chunk
     !          
@@ -766,7 +769,6 @@ contains
        !
        ! Allocate and initialize part of chunks data structure
        !
-       use_nbrhd = nbrhdchunk > 0
        allocate( cdex(1:maxblksiz) )
        cid = 0
        if (use_nbrhd) cid = 1
@@ -5184,6 +5186,7 @@ logical function phys_grid_initialized ()
 !
 ! Allocate chunks and knuhcs data structures
 !
+      cid = 0
       if (use_nbrhd) cid = 1
       allocate( chunks(1:nchunks+cid) )
       do cid=1,nchunks
