@@ -149,6 +149,9 @@ module phys_grid_nbrhd
   type (ColumnNeighborhoods), private :: cns
 
   public :: &
+       ! Namelist
+       nbrhd_defaultopts, &
+       nbrhd_setopts, &
        ! phys_grid initialization
        nbrhd_init, &
        nbrhd_init_extra_chunk, &
@@ -179,6 +182,62 @@ module phys_grid_nbrhd
 
 contains
 
+  subroutine nbrhd_defaultopts(phys_nbrhd_degrees_out, phys_nbrhd_pcnst_out)
+    use constituents, only: pcnst
+    
+    ! Maximum angle in degrees between a column and a neighbor, measured at
+    ! column centers, the (lat,lon) from physics_state.
+    real(r8), optional, intent(out) :: phys_nbrhd_degrees_out
+    ! Number of constituents to communicate, 1:phys_nbrhd_pcnst,
+    ! phys_nbrhd_pcnst <= pcnst.    
+    integer , optional, intent(out) :: phys_nbrhd_pcnst_out         
+
+    ! Default the neighborhood diameter to 0 degrees, which means no
+    ! neighborhood.
+    if (present(phys_nbrhd_degrees_out)) phys_nbrhd_degrees_out = 0
+    if (present(phys_nbrhd_pcnst_out)) phys_nbrhd_pcnst_out = pcnst
+  end subroutine nbrhd_defaultopts
+
+  subroutine nbrhd_setopts(phys_nbrhd_degrees_in, phys_nbrhd_pcnst_in)
+    use constituents, only: pcnst
+    use shr_const_mod, only : pi => shr_const_pi
+
+    real(r8), optional, intent(in) :: phys_nbrhd_degrees_in
+    integer , optional, intent(in) :: phys_nbrhd_pcnst_in         
+
+    print *,'nbr> setopts',phys_nbrhd_degrees_in, phys_nbrhd_pcnst_in
+
+    if (present(phys_nbrhd_degrees_in)) then
+       cns%max_angle = phys_nbrhd_degrees_in * (pi/180._r8)
+       if (cns%max_angle < 0) then
+          if (masterproc) then
+             write(iulog,*) 'nbrhd_setopts: ERROR: phys_nbrhd_degrees=', &
+                  phys_nbrhd_degrees_in, &
+                  ' is out of range; must be >= 0; setting to 0'
+          end if
+          cns%max_angle = 0
+       end if
+    end if
+
+    if (cns%max_angle == 0) return
+
+    if (cns%max_angle > 0) nbrhdchunk = 1
+
+    if (present(phys_nbrhd_pcnst_in)) then
+       cns%pcnst = phys_nbrhd_pcnst_in
+       if (cns%pcnst < 1 .or. cns%pcnst > pcnst) then
+          if (cns%pcnst < 1) cns%pcnst = pcnst
+          if (cns%pcnst > pcnst) cns%pcnst = pcnst
+          if (masterproc) then
+             write(iulog,*) 'nbrhd_setopts: ERROR: phys_nbrhd_pcnst=', &
+                  phys_nbrhd_pcnst_in, &
+                  ' is out of range; must be in 1:pcnst; setting to', &
+                  cns%pcnst
+          end if
+       end if
+    end if
+  end subroutine nbrhd_setopts
+
   subroutine nbrhd_init(clat_p_tot, clat_p_idx, clat_p, clon_p, lat_p, lon_p, &
        latlon_to_dyn_gcol_map, nlcols, ngcols, ngcols_p, nchunks, chunks, chunk_extra, &
        knuhcs, phys_alltoall)
@@ -203,7 +262,7 @@ contains
     e = assert(cns%pcnst >= 1, 'nbrhd%pcnst must be >= 1 to include qv')
 
     cns%b2c_on = .true.
-    cns%c2c_on = .true.
+    cns%c2c_on = .false.
     cns%verbose = 0
     cns%test = 2
     cns%nchunks = nchunks

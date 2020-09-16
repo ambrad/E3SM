@@ -449,7 +449,8 @@ contains
     logical                             :: unstructured
     real(r8)                            :: lonmin, latmin
 
-    logical, parameter :: use_nbrhd = .true.
+    ! Column neighborhood
+    logical :: use_nbrhd
 
 #if ( defined _OPENMP )
     integer omp_get_max_threads
@@ -765,6 +766,7 @@ contains
        !
        ! Allocate and initialize part of chunks data structure
        !
+       use_nbrhd = nbrhdchunk > 0
        allocate( cdex(1:maxblksiz) )
        cid = 0
        if (use_nbrhd) cid = 1
