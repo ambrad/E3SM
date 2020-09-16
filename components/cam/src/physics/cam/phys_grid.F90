@@ -5417,7 +5417,9 @@ logical function phys_grid_initialized ()
 !
 ! Allocate chunks and knuhcs data structures
 !
-      allocate( chunks(1:nchunks) )
+      cid = 0
+      if (use_nbrhd) cid = 1
+      allocate( chunks(1:nchunks+cid) )
       do cid=1,nchunks
          allocate( chunks(cid)%gcol(max_pcols) )
       enddo
