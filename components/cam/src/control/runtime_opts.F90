@@ -690,6 +690,8 @@ subroutine distnl
    ! physics column neighborhood
    call mpibcast (phys_nbrhd_degrees, 1, mpir8 , 0, mpicom)
    call mpibcast (phys_nbrhd_pcnst  , 1, mpiint, 0, mpicom)
+   call mpibcast (phys_nbrhd_verbose, 1, mpiint, 0, mpicom)
+   call mpibcast (phys_nbrhd_test   , 1, mpiint, 0, mpicom)
 
    ! Physics buffer
    call mpibcast (pbuf_global_allocate, 1, mpilog, 0, mpicom)
