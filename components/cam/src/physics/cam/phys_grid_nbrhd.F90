@@ -201,6 +201,7 @@ contains
   subroutine nbrhd_defaultopts(phys_nbrhd_degrees_out, phys_nbrhd_pcnst_out, &
        phys_nbrhd_verbose_out, phys_nbrhd_test_out)
     use constituents, only: pcnst
+    use dimensions_mod, only: ne
     
     real(r8), optional, intent(out) :: &
          ! Maximum angle in degrees between a column and a neighbor, measured at
@@ -217,10 +218,10 @@ contains
 
     ! Default the neighborhood diameter to 0 degrees, which means no
     ! neighborhood.
-    if (present(phys_nbrhd_degrees_out)) phys_nbrhd_degrees_out = 0
+    if (present(phys_nbrhd_degrees_out)) phys_nbrhd_degrees_out = 1.0d0 !0
     if (present(phys_nbrhd_pcnst_out)) phys_nbrhd_pcnst_out = pcnst
     if (present(phys_nbrhd_verbose_out)) phys_nbrhd_verbose_out = 0
-    if (present(phys_nbrhd_test_out)) phys_nbrhd_test_out = 0
+    if (present(phys_nbrhd_test_out)) phys_nbrhd_test_out = 2 !0
   end subroutine nbrhd_defaultopts
 
   subroutine nbrhd_setopts(phys_nbrhd_degrees_in, phys_nbrhd_pcnst_in, &
@@ -270,7 +271,7 @@ contains
     if (present(phys_nbrhd_verbose_in)) cns%verbose = max(0, phys_nbrhd_verbose_in)
     if (present(phys_nbrhd_test_in)) cns%test = max(0, phys_nbrhd_test_in)
 
-    if (cns%verbose > 0 .and. masterproc) then
+    if (cns%verbose >= 0 .and. masterproc) then
        write(iulog,'(a,es13.4,a,i4,a,i2,a,i2)') 'nbr> nbrhd_setopts: angle', &
             cns%max_angle * (180._r8/pi), ' degrees; pcnst', cns%pcnst, &
             '; verbosity', cns%verbose, '; test', cns%test
@@ -281,6 +282,7 @@ contains
        latlon_to_dyn_gcol_map, nlcols, ngcols, ngcols_p, nchunks, chunks, chunk_extra, &
        knuhcs, phys_alltoall)
     use constituents, only: pcnst
+    use dimensions_mod, only: ne
 
     integer, intent(in) :: clat_p_tot, nlcols, ngcols, ngcols_p, phys_alltoall, nchunks
     integer, target, dimension(:), intent(in) :: clat_p_idx, lat_p, lon_p, &
@@ -292,6 +294,11 @@ contains
 
     type (PhysGridData) :: gd
     logical :: call_init_chunk, e
+
+    cns%max_angle = 2.0d0
+    if (ne > 0) cns%max_angle = (90.0d0/ne/2.0d0 + 0.1d0)*(3.141592653589793/180.0)
+    cns%test = 2
+    if (masterproc) print *,'nbr> max_angle',cns%max_angle
 
     if (cns%test > 0) call run_unit_tests()
 
