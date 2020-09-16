@@ -745,7 +745,9 @@ subroutine phys_init( phys_state, phys_tend, pbuf2d, cam_out )
     end do
     if (nbrhdchunk > 0) then
        lchnk = endchunk+nbrhdchunk
-       call physics_state_set_grid(lchnk, phys_state(lchnk), nonstandard_pcols=.true.)
+       if (phys_state(lchnk)%ncol > 0) then
+          call physics_state_set_grid(lchnk, phys_state(lchnk), nonstandard_pcols=.true.)
+       end if
     end if
 
     !-------------------------------------------------------------------------------------------
