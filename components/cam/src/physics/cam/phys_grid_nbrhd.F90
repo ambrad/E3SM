@@ -291,9 +291,6 @@ contains
 
     if (cns%test > 0) call run_unit_tests()
 
-    cns%max_angle = 0.06d0
-    cns%pcnst = pcnst
-
     e = assert(cns%pcnst >= 1, 'nbrhd%pcnst must be >= 1 to include qv')
 
     ! Hard-coded on to support basic dp_coupling-based comm, nbrhd_d_p_coupling.
@@ -302,6 +299,7 @@ contains
     ! step. Set to .true. if nbrhd_p_p_coupling is needed.
     cns%c2c_on = .false.
     cns%nchunks = nchunks
+
     nbrhdchunk = 1
 
     gd%clat_p_tot = clat_p_tot
@@ -968,6 +966,7 @@ contains
        ! numrep is redundant wrt col, but it's useful
        allocate(cs%snd_offset(lid)%numlev(n), cs%snd_offset(lid)%numrep(n), &
             cs%snd_offset(lid)%col(n+1))
+       cs%snd_offset(lid)%numlev(:) = 0
        cs%snd_offset(lid)%numrep(:) = 0
     end do
     ! Get repetition counts. A gcol in a block is in general in the
@@ -1607,7 +1606,7 @@ contains
     integer :: i, n_min
     logical :: e
 
-    e = assert(n_new >= 1 .and. size(a) >= n, 'array_realloc size(a)')
+    e = assert(size(a) >= n, 'array_realloc size(a)')
     if (n == 0) then
        deallocate(a)
        allocate(a(n_new))
@@ -1634,7 +1633,10 @@ contains
     integer :: cnt, prev, i
     logical :: e
 
-    e = assert(n > 0, 'make_unique: n > 0')
+    if (n == 0) then
+       allocate(ua(0))
+       return
+    end if
     allocate(idxs(n))
     call IndexSet(n, idxs)
     call IndexSort(n, idxs, a)
