@@ -318,7 +318,7 @@ contains
                 om(icol,k,  ie) = lon + k - 1
                 uv(icol,1,k,ie) = lat + k - 2
                 uv(icol,2,k,ie) = lon + k - 2
-                do p = 1, pcnst
+                do p = 1, nbrhd_pcnst
                    q(icol,k,p,ie) = p*(lat + lon) + k
                 end do
              end do
