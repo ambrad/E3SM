@@ -341,7 +341,6 @@ CONTAINS
       end if ! fv_nphys > 0
     end if ! write_inithist
 
-    call mpi_barrier(mpicom); call endrun('nbr> exit d_p_coupling')   
   end subroutine d_p_coupling
   !=================================================================================================
   !=================================================================================================
