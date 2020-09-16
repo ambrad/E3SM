@@ -182,28 +182,39 @@ module phys_grid_nbrhd
 
 contains
 
-  subroutine nbrhd_defaultopts(phys_nbrhd_degrees_out, phys_nbrhd_pcnst_out)
+  subroutine nbrhd_defaultopts(phys_nbrhd_degrees_out, phys_nbrhd_pcnst_out, &
+       phys_nbrhd_verbose_out, phys_nbrhd_test_out)
     use constituents, only: pcnst
     
-    ! Maximum angle in degrees between a column and a neighbor, measured at
-    ! column centers, the (lat,lon) from physics_state.
-    real(r8), optional, intent(out) :: phys_nbrhd_degrees_out
-    ! Number of constituents to communicate, 1:phys_nbrhd_pcnst,
-    ! phys_nbrhd_pcnst <= pcnst.    
-    integer , optional, intent(out) :: phys_nbrhd_pcnst_out         
+    real(r8), optional, intent(out) :: &
+         ! Maximum angle in degrees between a column and a neighbor, measured at
+         ! column centers, the (lat,lon) from physics_state.
+         phys_nbrhd_degrees_out
+    integer , optional, intent(out) :: &
+         ! Number of constituents to communicate, 1:phys_nbrhd_pcnst,
+         ! phys_nbrhd_pcnst <= pcnst.
+         phys_nbrhd_pcnst_out, &
+         ! Verbosity level, 0 for no output, >0 for some.
+         phys_nbrhd_verbose_out, &
+         ! Test level, 0 for none, > 0 for some.
+         phys_nbrhd_test_out
 
     ! Default the neighborhood diameter to 0 degrees, which means no
     ! neighborhood.
     if (present(phys_nbrhd_degrees_out)) phys_nbrhd_degrees_out = 0
     if (present(phys_nbrhd_pcnst_out)) phys_nbrhd_pcnst_out = pcnst
+    if (present(phys_nbrhd_verbose_out)) phys_nbrhd_verbose_out = 0
+    if (present(phys_nbrhd_test_out)) phys_nbrhd_test_out = 0
   end subroutine nbrhd_defaultopts
 
-  subroutine nbrhd_setopts(phys_nbrhd_degrees_in, phys_nbrhd_pcnst_in)
+  subroutine nbrhd_setopts(phys_nbrhd_degrees_in, phys_nbrhd_pcnst_in, &
+       phys_nbrhd_verbose_in, phys_nbrhd_test_in)
     use constituents, only: pcnst
     use shr_const_mod, only : pi => shr_const_pi
 
     real(r8), optional, intent(in) :: phys_nbrhd_degrees_in
-    integer , optional, intent(in) :: phys_nbrhd_pcnst_in         
+    integer , optional, intent(in) :: phys_nbrhd_pcnst_in, phys_nbrhd_verbose_in, &
+         phys_nbrhd_test_in
 
     print *,'nbr> setopts',phys_nbrhd_degrees_in, phys_nbrhd_pcnst_in
 
@@ -236,6 +247,11 @@ contains
           end if
        end if
     end if
+
+    cns%verbose = 0
+    if (present(phys_nbrhd_verbose_in)) cns%verbose = max(0, phys_nbrhd_verbose_in)
+    cns%test = 0
+    if (present(phys_nbrhd_test_in)) cns%test = max(0, phys_nbrhd_test_in)
   end subroutine nbrhd_setopts
 
   subroutine nbrhd_init(clat_p_tot, clat_p_idx, clat_p, clon_p, lat_p, lon_p, &
@@ -254,7 +270,7 @@ contains
     type (PhysGridData) :: gd
     logical :: call_init_chunk, e
 
-    call run_unit_tests()
+    if (cns%test > 0) call run_unit_tests()
 
     cns%max_angle = 0.06d0
     cns%pcnst = pcnst
@@ -263,8 +279,6 @@ contains
 
     cns%b2c_on = .true.
     cns%c2c_on = .false.
-    cns%verbose = 0
-    cns%test = 2
     cns%nchunks = nchunks
     nbrhdchunk = 1
 
