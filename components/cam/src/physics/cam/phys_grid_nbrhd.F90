@@ -1191,12 +1191,13 @@ contains
        pe = get_block_owner_d(bid)
        if (pe /= iam) cycle
        ngcols = get_block_gcol_cnt_d(bid)
-       if (ngcols < size(gcols)) then
+       if (ngcols > size(gcols)) then
           deallocate(gcols)
           allocate(gcols(ngcols))
        end if
        call get_block_gcol_d(bid, ngcols, gcols)
        call gcol2bid(gcols(1), blockid, bcid, ie)
+       e = assert(bid == blockid, 'bid == blockid')
        e = assert(ie >= 1 .and. ie <= cnt, 'ie in bounds')
        ie2bid(ie) = bid
     end do
