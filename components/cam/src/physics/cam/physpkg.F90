@@ -949,7 +949,7 @@ subroutine phys_run1(phys_state, ztodt, phys_tend, pbuf2d,  cam_in, cam_out)
     !
     ! Input/Output arguments
     !
-    type(physics_state), intent(inout), dimension(begchunk:endchunk) :: phys_state
+    type(physics_state), intent(inout), dimension(begchunk:endchunk+nbrhdchunk) :: phys_state
     type(physics_tend ), intent(inout), dimension(begchunk:endchunk) :: phys_tend
 
     type(physics_buffer_desc), pointer, dimension(:,:) :: pbuf2d
@@ -1209,7 +1209,7 @@ subroutine phys_run2(phys_state, ztodt, phys_tend, pbuf2d,  cam_out, &
     !
     ! Input/Output arguments
     !
-    type(physics_state), intent(inout), dimension(begchunk:endchunk) :: phys_state
+    type(physics_state), intent(inout), dimension(begchunk:endchunk+nbrhdchunk) :: phys_state
     type(physics_tend ), intent(inout), dimension(begchunk:endchunk) :: phys_tend
     type(physics_buffer_desc),pointer, dimension(:,:)     :: pbuf2d
 
