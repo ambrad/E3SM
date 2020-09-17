@@ -572,7 +572,7 @@ CONTAINS
         end do
       end do
 
-      if (lchnk < endchunk+nbrhdchunk) then
+      if (lchnk <= endchunk) then
          !----------------------------------------------------
          ! Need to fill zvirv 2D variables to be 
          ! compatible with geopotential_t interface
