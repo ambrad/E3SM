@@ -627,7 +627,7 @@ CONTAINS
        call set_state_pdry(phys_state(lchnk))	! First get dry pressure to use for this timestep
        call set_wet_to_dry(phys_state(lchnk)) ! Dynamics had moist, physics wants dry.
 
-       if (lchnk == endchunk+nbrhdchunk) cycle
+       if (lchnk > endchunk) cycle
 
        ! Compute energy and water integrals of input state
        pbuf_chnk => pbuf_get_chunk(pbuf2d, lchnk)
