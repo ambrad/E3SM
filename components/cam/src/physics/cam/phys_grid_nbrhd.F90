@@ -32,6 +32,12 @@ module phys_grid_nbrhd
   ! small unit tests, and phys_nbrhd_test = 2 runs several communication rounds
   ! to test for expected communicated values.
   !
+  ! phys_nbrhd_degrees is the most important parameter. It specifies the
+  ! neighborhood radius in degrees. For physics column i, any physics column j
+  ! such that angle(lat_i, lon_i, lat_j, lon_j) <= phys_nbrhd_degrees is
+  ! included in the neighborhood of i. This relationship is symmetric: i is in
+  ! the neighborhood of j.
+  !
   ! Implementation notes.
   !   nbrhdchunk is 0 if neighborhoods are not active; this is standard
   ! behavior. It is 1 if they are. It is used to augment the range
