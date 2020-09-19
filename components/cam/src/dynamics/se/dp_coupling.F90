@@ -28,7 +28,7 @@ module dp_coupling
   use phys_grid_nbrhd,only: nbrhd_block_to_chunk_sizes, nbrhd_block_to_chunk_send_pters, &
                             nbrhd_block_to_chunk_recv_pters, nbrhd_transpose_block_to_chunk, &
                             nbrhd_get_num_copies, nbrhd_get_copy_idxs, nbrhd_get_option_pcnst
-  use phys_grid_nbrhd_util, only: nbrhd_d_p_coupling, nbrhd_test_api
+  use phys_grid_nbrhd_util, only: nbrhd_p_p_coupling, nbrhd_test_api
   private
   public :: d_p_coupling, p_d_coupling
 
@@ -286,9 +286,7 @@ CONTAINS
     end if ! local_dp_map
     call t_stopf('dpcopy')
 
-    if (nbrhdchunk > 0) then
-       call nbrhd_d_p_coupling(ps_tmp, zs_tmp, T_tmp, om_tmp, uv_tmp, q_tmp, phys_state)
-    end if
+    if (nbrhdchunk > 0) call nbrhd_p_p_coupling(phys_state)
 
     call t_startf('derived_phys')
     call derived_phys(phys_state,phys_tend,pbuf2d)
