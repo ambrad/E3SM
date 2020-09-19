@@ -22,7 +22,7 @@ module phys_grid_nbrhd
   !     &cam_inparm
   !      phys_nbrhd_degrees = 0.0d0   ! Radius of neighborhood in degrees
   !      phys_nbrhd_pcnst = pcnst     ! Share 1:phys_nbrhd_pcnst tracers
-  !      phys_nbrhd_verbose = 0       ! 0 (none), 1, 2 (a lot)
+  !      phys_nbrhd_verbose = 0       ! 0 (none), 1 (a little), 2, 3 (a lot)
   !      phys_nbrhd_test = 0          ! 0 (none), 1, 2 (comprehensive tests)
   !     /
   ! The default value 0 of phys_nbrhd_degrees disables the neighborhood
@@ -66,6 +66,9 @@ module phys_grid_nbrhd
   ! physics time step. In the code, owning_blocks = .false. If this pattern is
   ! ever used, to fully update physics_state, the equivalent of dp_coupling's
   ! derived_state must be called on the extra physics_state chunk.
+  !   Performance testing shows 2 is actually the way to go
+  ! always. phys_loadbalance's pattern makes the c2c pattern comm with fewer
+  ! pes.
   !   In dp_coupling, we call derived_physics on the extra physics_state, but we
   ! omit the diagnostic energy calculations and so don't need an extra
   ! physics_tend. Here the goal is to provide full physics_state data for the
@@ -276,7 +279,7 @@ contains
     if (present(phys_nbrhd_verbose_in)) cns%verbose = max(0, phys_nbrhd_verbose_in)
     if (present(phys_nbrhd_test_in)) cns%test = max(0, phys_nbrhd_test_in)
 
-    if (cns%verbose >= 0 .and. masterproc) then
+    if (cns%verbose > 0 .and. masterproc) then
        write(iulog,'(a,es13.4,a,i4,a,i2,a,i2)') 'nbr> nbrhd_setopts: angle', &
             cns%max_angle * (180._r8/pi), ' degrees; pcnst', cns%pcnst, &
             '; verbosity', cns%verbose, '; test', cns%test
@@ -303,11 +306,8 @@ contains
 
     e = assert(cns%pcnst >= 1, 'nbrhd%pcnst must be >= 1 to include qv')
 
-    ! Hard-coded on to support basic dp_coupling-based comm, nbrhd_d_p_coupling.
-    cns%b2c_on = .true.
-    ! Hard-coded off b/c we currently don't need comm w/in a physics time
-    ! step. Set to .true. if nbrhd_p_p_coupling is needed.
-    cns%c2c_on = .true.
+    cns%b2c_on = .false. ! nbrhd_d_p_coupling
+    cns%c2c_on = .true.  ! nbrhd_p_p_coupling
     cns%nchunks = nchunks
 
     nbrhdchunk = 1
@@ -321,6 +321,7 @@ contains
 
     call find_chunk_nbrhds(cns, gd, chunks, cns%chk_nbrhds)
     if (cns%test > 0) call test_nbrhds(cns, gd)
+    if (cns%verbose > 0) call histogram_nbrhds(cns%chk_nbrhds)
 
     call_init_chunk = .true.
     ! Dynamics blocks -> nbrhd columns for use in dp_coupling.F90.
@@ -364,7 +365,7 @@ contains
     ncol_prev = cns%extra_chunk_ncol
     e = assert(cns%cc%num_recv_col == ncol_prev, 'num_recv_col')
     ncol_add = size(cns%cc%cols)
-    if (cns%verbose > 0) write(iulog,*) 'nbr> extra:', ncol_prev, ncol_add
+    if (cns%verbose > 1) write(iulog,*) 'nbr> extra:', ncol_prev, ncol_add
     cns%extra_chunk_ncol = ncol_prev + ncol_add
     chk%ncols = cns%extra_chunk_ncol
     call array_realloc(chk%gcol, ncol_prev, chk%ncols)
@@ -593,7 +594,7 @@ contains
     real(r8) :: lat, lon, xi, yi, zi, angle
     logical :: e
 
-    if (cns%verbose > 0) write(iulog,*) 'nbr> nlcols', gd%nlcols
+    if (cns%verbose > 1) write(iulog,*) 'nbr> nlcols', gd%nlcols
     cap = gd%nlcols
     allocate(cnbrhds%xs(gd%nlcols), cnbrhds%yptr(gd%nlcols+1), cnbrhds%ys(cap))
     ! Get sorted iam-owning chunks' gcols.
@@ -767,9 +768,9 @@ contains
     cnt = rpe2nbrs%yptr(nupes+1)-1
     call array_realloc(rpe2nbrs%ys, cnt, cnt) ! compact memory
     deallocate(apes, agcols, idxs, gidxs, gcols, ugcols)
-    if (cns%verbose > 0) then
+    if (cns%verbose > 1) then
        write(iulog,*) 'nbr> rpe2nbrs #pes',size(rpe2nbrs%xs)
-       if (cns%verbose > 1) then
+       if (cns%verbose > 2) then
           do i = 1, size(rpe2nbrs%xs)
              write(iulog,*) 'nbr> pe',rpe2nbrs%xs(i),rpe2nbrs%yptr(i+1)-rpe2nbrs%yptr(i)
           end do
@@ -822,7 +823,7 @@ contains
     else
        n = size(unbrs)
     end if
-    if (cns%verbose > 0) &
+    if (cns%verbose > 1) &
          write(iulog,*) 'nbr> spe2nbrs', cnbrhds%yptr(gd%nlcols+1)-1, size(unbrs), n
     ! For each gcol, get the pe of the owning block or chunk.
     allocate(pes(n), idxs(n))
@@ -874,9 +875,9 @@ contains
        end do
     end do
     deallocate(unbrs, idxs, pes)
-    if (cns%verbose > 0) then
+    if (cns%verbose > 1) then
        write(iulog,*) 'nbr> spe2nbrs #pes',size(spe2nbrs%xs)
-       if (cns%verbose > 1) then
+       if (cns%verbose > 2) then
           do i = 1, size(spe2nbrs%xs)
              write(iulog,*) 'nbr> pe',spe2nbrs%xs(i),spe2nbrs%yptr(i+1)-spe2nbrs%yptr(i)
           end do
@@ -1123,7 +1124,7 @@ contains
        if (j == 1) allocate(cd%dp_coup_proc(cd%dp_coup_steps))
     end do    
 
-    if (cns%verbose > 0) write(iulog,*) 'nbr> dp_coup_steps', cd%dp_coup_steps
+    if (cns%verbose > 1) write(iulog,*) 'nbr> dp_coup_steps', cd%dp_coup_steps
   end subroutine init_comm_data
 
   subroutine make_comm_data(cns, cs, cd, rcdsz)
@@ -1808,6 +1809,48 @@ contains
        e = assert(min_angle > cns%max_angle, 'test_nbrhds: angle')
     end do
   end subroutine test_nbrhds
+
+  subroutine histogram_nbrhds(n)
+#if defined SPMD
+    use spmd_utils, only: mpicom
+    use mpishorthand, only: mpiint
+#endif
+
+    type (SparseTriple), intent(in) :: n
+
+    integer, allocatable :: lhist(:), ghist(:)
+    integer :: lmaxsz, gmaxsz, i, idx, lmax(1), gmax(1)
+
+    lmaxsz = 0
+    do i = 1, size(n%xs)
+       lmaxsz = max(lmaxsz, n%yptr(i+1) - n%yptr(i))
+    end do
+    allocate(lhist(lmaxsz+1))
+    lhist(:) = 0
+    do i = 1, size(n%xs)
+       idx = n%yptr(i+1) - n%yptr(i) + 1
+       lhist(idx) = lhist(idx) + 1
+    end do
+#if defined SPMD
+    lmax(1) = lmaxsz
+    call mpiallmaxint(lmax, gmax, 1, mpicom)
+    gmaxsz = gmax(1)
+    call array_realloc(lhist, lmaxsz+1, gmaxsz+1)
+    lhist(lmaxsz+2:) = 0
+    allocate(ghist(gmaxsz+1))
+    call mpisum(lhist, ghist, gmaxsz+1, mpiint, 0, mpicom)
+#else
+    gmaxsz = lmaxsz
+    allocate(ghist(gmaxsz+1))
+    ghist(:) = lhist(:)
+#endif
+    if (masterproc) then
+       do i = 1, gmaxsz+1
+          if (ghist(i) > 0) write(iulog,'(a,i5,i10)') 'nbr> hist', i-1, ghist(i)
+       end do
+    end if
+    deallocate(lhist, ghist)
+  end subroutine histogram_nbrhds
 
   subroutine test_comm_schedule(cns, gd, chunks, knuhcs, rpe2nbrs, spe2nbrs, cd, cs, &
        owning_blocks)
