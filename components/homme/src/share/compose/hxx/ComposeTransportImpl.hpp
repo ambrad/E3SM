@@ -81,7 +81,7 @@ struct ComposeTransportImpl {
   TeamUtils<ExecSpace> m_tu_ne, m_tu_ne_qsize;
 
   std::shared_ptr<BoundaryExchange>
-    m_qdp_dss_be[Q_NUM_TIME_LEVELS], m_v_dss_be[2], m_Q_dss_be;
+    m_qdp_dss_be[Q_NUM_TIME_LEVELS], m_v_dss_be[2], m_hv_dss_be[2];
 
   KOKKOS_INLINE_FUNCTION
   size_t shmem_size (const int team_size) const {

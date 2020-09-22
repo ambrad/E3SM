@@ -109,12 +109,15 @@ void ComposeTransportImpl::init_boundary_exchanges () {
 
   // For optional HV applied to q.
   if (m_data.hv_q > 0) {
-    m_Q_dss_be = std::make_shared<BoundaryExchange>();
-    auto be = m_Q_dss_be;
-    be->set_buffers_manager(bm_exchange);
-    be->set_num_fields(0, 0, m_data.hv_q);
-    be->register_field(m_tracers.Q, m_data.hv_q, 0);
-    be->registration_completed();
+    for (int i = 0; i < 2; ++i) {
+      m_hv_dss_be[i] = std::make_shared<BoundaryExchange>();
+      auto be = m_hv_dss_be[i];
+      be->set_buffers_manager(bm_exchange);
+      be->set_num_fields(0, 0, m_data.hv_q);
+      be->register_field(i == 0 ? m_tracers.qtens_biharmonic : m_tracers.Q,
+                         m_data.hv_q, 0);
+      be->registration_completed();
+    }
   }
 }
 
