@@ -39,6 +39,9 @@ module sl_advection
   ! For testing
   public :: calc_trajectory, dep_points_all
 
+  ! For C++
+  public :: sl_get_params
+
   logical, parameter :: barrier = .false.
 
   integer :: amb_gpu_profile
@@ -136,6 +139,16 @@ contains
     call t_stopf('sl_init1')
 #endif
   end subroutine sl_init1
+
+  subroutine sl_get_params(hv_q, hv_subcycle_q) bind(c)
+    use control_mod, only: semi_lagrange_hv_q, hypervis_subcycle_q
+    use iso_c_binding, only: c_int
+
+    integer(c_int), intent(out) :: hv_q, hv_subcycle_q
+
+    hv_q = semi_lagrange_hv_q
+    hv_subcycle_q = hypervis_subcycle_q
+  end subroutine sl_get_params
 
   subroutine prim_advec_tracers_remap_ALE(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete)
     use coordinate_systems_mod, only : cartesian3D_t, cartesian2D_t

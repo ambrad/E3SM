@@ -51,7 +51,7 @@ contains
     hypervis_order = 2
     semi_lagrange_hv_q = hv_q
     nu_q = 1.0d15*(30.0d0/ne)**3.2
-    hypervis_subcycle_q = 1
+    hypervis_subcycle_q = 6
 
     call init_f90(ne, hyai, hybi, hyam, hybm, dvv, mp, ps0)
 

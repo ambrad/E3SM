@@ -7,6 +7,8 @@
 #include "ComposeTransportImpl.hpp"
 #include "compose_hommexx.hpp"
 
+extern "C" void sl_get_params(int* hv_q, int* hv_subcycle_q);
+
 namespace Homme {
 
 void ComposeTransportImpl::reset (const SimulationParams& params) {
@@ -14,10 +16,17 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
   if (m_data.nelemd == num_elems && m_data.qsize == params.qsize) return;
 
   m_data.qsize = params.qsize;
-  m_data.nelemd = num_elems;
   Errors::runtime_check(m_data.qsize > 0,
                         "SL transport requires qsize > 0; if qsize == 0, use Eulerian.");
+  m_data.nelemd = num_elems;
   m_data.limiter_option = params.limiter_option;
+  sl_get_params(&m_data.hv_q, &m_data.hv_subcycle_q);
+  Errors::runtime_check(m_data.hv_q >= 0 && m_data.hv_q <= m_data.qsize,
+                        "semi_lagrange_hv_q should be in [0, qsize].");
+  Errors::runtime_check(m_data.hv_subcycle_q >= 0,
+                        "hypervis_subcycle_q should be >= 0.");
+  m_data.hv_scaling = params.hypervis_scaling;
+  m_data.nu_q = params.nu_q;
 
   m_data.dep_pts = DeparturePoints("dep_pts", m_data.nelemd);
 
