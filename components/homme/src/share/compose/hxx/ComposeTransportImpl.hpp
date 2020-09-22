@@ -77,8 +77,8 @@ struct ComposeTransportImpl {
   SphereOperators m_sphere_ops;
   Data m_data;
 
-  TeamPolicy m_tp_ne, m_tp_ne_qsize;
-  TeamUtils<ExecSpace> m_tu_ne, m_tu_ne_qsize;
+  TeamPolicy m_tp_ne, m_tp_ne_qsize, m_tp_ne_hv_q;
+  TeamUtils<ExecSpace> m_tu_ne, m_tu_ne_qsize, m_tu_ne_hv_q;
 
   std::shared_ptr<BoundaryExchange>
     m_qdp_dss_be[Q_NUM_TIME_LEVELS], m_v_dss_be[2], m_hv_dss_be[2];
@@ -96,7 +96,8 @@ struct ComposeTransportImpl {
       m_tracers(Context::singleton().get<Tracers>()),
       m_sphere_ops(Context::singleton().get<SphereOperators>()),
       m_tp_ne(1,1,1), m_tu_ne(m_tp_ne), // throwaway settings
-      m_tp_ne_qsize(1,1,1), m_tu_ne_qsize(m_tp_ne_qsize) // throwaway settings
+      m_tp_ne_qsize(1,1,1), m_tu_ne_qsize(m_tp_ne_qsize), // throwaway settings
+      m_tp_ne_hv_q(1,1,1), m_tu_ne_hv_q(m_tp_ne_hv_q) // throwaway settings
   {}
 
   void reset(const SimulationParams& params);
@@ -213,9 +214,9 @@ struct ComposeTransportImpl {
   }
 
   template <int nlev, typename Fn>
-  void launch_ie_q_ij_nlev (Fn& f) const {
+  void launch_ie_q_ij_nlev (const int qsize, Fn& f) const {
     Kokkos::parallel_for(
-      Kokkos::RangePolicy<ExecSpace>(0, m_data.nelemd*m_data.qsize*np*np*nlev), f);
+      Kokkos::RangePolicy<ExecSpace>(0, m_data.nelemd*qsize*np*np*nlev), f);
   }
 
   template <typename V>

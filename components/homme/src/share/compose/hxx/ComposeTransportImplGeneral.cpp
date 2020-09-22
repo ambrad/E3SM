@@ -7,7 +7,9 @@
 #include "ComposeTransportImpl.hpp"
 #include "compose_hommexx.hpp"
 
-extern "C" void sl_get_params(int* hv_q, int* hv_subcycle_q, int* cdr_check);
+extern "C" void
+sl_get_params(double* nu_q, double* hv_scaling, int* hv_q, int* hv_subcycle_q,
+              int* limiter_option, int* cdr_check);
 
 namespace Homme {
 
@@ -19,14 +21,13 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
   Errors::runtime_check(m_data.qsize > 0,
                         "SL transport requires qsize > 0; if qsize == 0, use Eulerian.");
   m_data.nelemd = num_elems;
-  m_data.limiter_option = params.limiter_option;
-  sl_get_params(&m_data.hv_q, &m_data.hv_subcycle_q, &m_data.cdr_check);
+
+  sl_get_params(&m_data.nu_q, &m_data.hv_scaling, &m_data.hv_q, &m_data.hv_subcycle_q,
+                &m_data.limiter_option, &m_data.cdr_check);
   Errors::runtime_check(m_data.hv_q >= 0 && m_data.hv_q <= m_data.qsize,
                         "semi_lagrange_hv_q should be in [0, qsize].");
   Errors::runtime_check(m_data.hv_subcycle_q >= 0,
                         "hypervis_subcycle_q should be >= 0.");
-  m_data.hv_scaling = params.hypervis_scaling;
-  m_data.nu_q = params.nu_q;
 
   m_data.dep_pts = DeparturePoints("dep_pts", m_data.nelemd);
 
@@ -34,6 +35,10 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
   m_tp_ne_qsize = Homme::get_default_team_policy<ExecSpace>(m_data.nelemd * m_data.qsize);
   m_tu_ne = TeamUtils<ExecSpace>(m_tp_ne);
   m_tu_ne_qsize = TeamUtils<ExecSpace>(m_tp_ne_qsize);
+  if (m_data.nu_q > 0 && m_data.hv_q > 0) {
+    m_tp_ne_hv_q = Homme::get_default_team_policy<ExecSpace>(m_data.nelemd * m_data.hv_q);
+    m_tu_ne_hv_q = TeamUtils<ExecSpace>(m_tp_ne_hv_q);
+  }
 
   m_sphere_ops.allocate_buffers(m_tu_ne_qsize);
 
@@ -108,7 +113,7 @@ void ComposeTransportImpl::init_boundary_exchanges () {
   }
 
   // For optional HV applied to q.
-  if (m_data.hv_q > 0) {
+  if (m_data.hv_q > 0 && m_data.nu_q > 0) {
     for (int i = 0; i < 2; ++i) {
       m_hv_dss_be[i] = std::make_shared<BoundaryExchange>();
       auto be = m_hv_dss_be[i];
@@ -142,7 +147,7 @@ void ComposeTransportImpl::run (const TimeLevel& tl, const Real dt) {
       idx_ie_q_ij_nlev<num_lev_pack>(qsize, idx, ie, q, i, j, lev);
       qdp(ie,np1_qdp,q,i,j,lev) = Q(ie,q,i,j,lev)/dp3d(ie,np1,i,j,lev);
     };
-    launch_ie_q_ij_nlev<num_lev_pack>(f);
+    launch_ie_q_ij_nlev<num_lev_pack>(qsize, f);
   }
   { // DSS qdp and omega
     const auto qdp = m_tracers.qdp;
@@ -152,7 +157,7 @@ void ComposeTransportImpl::run (const TimeLevel& tl, const Real dt) {
       idx_ie_q_ij_nlev<num_lev_pack>(qsize, idx, ie, q, i, j, lev);
       qdp(ie,np1_qdp,q,i,j,lev) *= spheremp(ie,i,j);
     };
-    launch_ie_q_ij_nlev<num_lev_pack>(f1);
+    launch_ie_q_ij_nlev<num_lev_pack>(qsize, f1);
     const auto omega = m_derived.m_omega_p;
     const auto f2 = KOKKOS_LAMBDA (const int idx) {
       int ie, i, j, lev;

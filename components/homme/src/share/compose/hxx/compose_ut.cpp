@@ -33,9 +33,9 @@ extern int hommexx_catch2_argc;
 extern char** hommexx_catch2_argv;
 
 extern "C" {
-  void init_compose_f90(int ne, const Real* hyai, const Real* hybi,
-                        const Real* hyam, const Real* hybm, Real ps0,
-                        Real* dvv, Real* mp, int qsize, int hv_q, bool cdr_check);
+  void init_compose_f90(int ne, const Real* hyai, const Real* hybi, const Real* hyam,
+                        const Real* hybm, Real ps0, Real* dvv, Real* mp, int qsize,
+                        int hv_q, int limiter_option, bool cdr_check);
   void init_geometry_f90();
   void cleanup_compose_f90();
   void run_compose_standalone_test_f90(int* nmax, Real* eval);
@@ -122,6 +122,10 @@ struct Session {
     c.create<HybridVCoord>().random_init(seed);
     h = c.get<HybridVCoord>();
 
+    auto& p = c.create<SimulationParams>();
+    p.qsize = qsize;
+    p.limiter_option = 9;
+
     const auto hyai = cmvdc(h.hybrid_ai);
     const auto hybi = cmvdc(h.hybrid_bi);
     const auto hyam = cmvdc(h.hybrid_am);
@@ -129,7 +133,7 @@ struct Session {
     auto& ref_FE = c.create<ReferenceElement>();
     std::vector<Real> dvv(NP*NP), mp(NP*NP);
     init_compose_f90(ne, hyai.data(), hybi.data(), &hyam(0)[0], &hybm(0)[0], h.ps0,
-                     dvv.data(), mp.data(), qsize, hv_q, cdr_check);
+                     dvv.data(), mp.data(), qsize, hv_q, p.limiter_option, cdr_check);
     ref_FE.init_mass(mp.data());
     ref_FE.init_deriv(dvv.data());
 
@@ -140,11 +144,6 @@ struct Session {
     e = c.get_ptr<Elements>();
     c.create<Tracers>(nelemd, qsize);
     c.create<TimeLevel>();
-
-    auto& p = c.create<SimulationParams>();
-    p.hypervis_scaling = 0;
-    p.qsize = qsize;
-    p.limiter_option = 9;
 
     init_elems(nelemd, r, h, *e);
 
