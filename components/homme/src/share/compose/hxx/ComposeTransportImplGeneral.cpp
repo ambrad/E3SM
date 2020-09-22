@@ -67,7 +67,8 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
 
 int ComposeTransportImpl::requested_buffer_size () const {
   // FunctorsBuffersManager wants the size in terms of sizeof(Real).
-  return Buf1::shmem_size(m_data.nslot) + 2*Buf2::shmem_size(m_data.nslot);
+  return (  Buf1::shmem_size(m_data.nslot) +
+          2*Buf2::shmem_size(m_data.nslot))/sizeof(Real);
 }
 
 void ComposeTransportImpl::init_buffers (const FunctorsBuffersManager& fbm) {
@@ -122,7 +123,7 @@ void ComposeTransportImpl::run (const TimeLevel& tl, const Real dt) {
   m_data.np1_qdp = tl.np1_qdp;
   calc_trajectory(dt);
   homme::compose::advect(tl.np1, tl.n0_qdp, tl.np1_qdp);
-  //todo optional hypervis
+  if (m_data.hv_q > 0 && m_data.nu_q > 0) advance_hypervis_scalar(dt);
   const auto np1 = m_data.np1;
   const auto np1_qdp = m_data.np1_qdp;
   const auto qsize = m_data.qsize;

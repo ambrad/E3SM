@@ -108,6 +108,8 @@ struct ComposeTransportImpl {
 
   void calc_trajectory(const Real dt);
 
+  void advance_hypervis_scalar(const Real dt);
+
   ComposeTransport::TestDepView::HostMirror
   test_trajectory(Real t0, Real t1, const bool independent_time_steps);
 
