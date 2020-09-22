@@ -35,7 +35,7 @@ extern char** hommexx_catch2_argv;
 extern "C" {
   void init_compose_f90(int ne, const Real* hyai, const Real* hybi,
                         const Real* hyam, const Real* hybm, Real ps0,
-                        Real* dvv, Real* mp);
+                        Real* dvv, Real* mp, int qsize, int hv_q);
   void init_geometry_f90();
   void cleanup_compose_f90();
   void run_compose_standalone_test_f90(int* nmax, Real* eval);
@@ -99,7 +99,7 @@ static void init_elems (int nelemd, Random& r, const HybridVCoord& hvcoord,
 }
 
 struct Session {
-  int ne;
+  int ne, hv_q;
   HybridVCoord h;
   Random r;
   std::shared_ptr<Elements> e;
@@ -128,7 +128,7 @@ struct Session {
     auto& ref_FE = c.create<ReferenceElement>();
     std::vector<Real> dvv(NP*NP), mp(NP*NP);
     init_compose_f90(ne, hyai.data(), hybi.data(), &hyam(0)[0], &hybm(0)[0], h.ps0,
-                     dvv.data(), mp.data());
+                     dvv.data(), mp.data(), qsize, hv_q);
     ref_FE.init_mass(mp.data());
     ref_FE.init_deriv(dvv.data());
 
@@ -190,10 +190,12 @@ struct Session {
 private:
   static std::shared_ptr<Session> s_session;
 
+  // compose_ut hommexx -ne NE -qsize QSIZE -hvq HV_Q
   void parse_command_line () {
     const bool am_root = get_comm().root();
     ne = 2;
     qsize = QSIZE_D;
+    hv_q = 0;
     bool ok = true;
     int i;
     for (i = 0; i < hommexx_catch2_argc; ++i) {
@@ -201,28 +203,22 @@ private:
       if (tok == "-ne") {
         if (i+1 == hommexx_catch2_argc) { ok = false; break; }
         ne = std::atoi(hommexx_catch2_argv[++i]);
-        if (ne < 2 || ne > 128) {
-          if (am_root)
-            printf("compose_ut> ne must be between 2 and 128; got %d; "
-                   "switching to 2\n", ne);
-          ne = 2;
-        }
       } else if (tok == "-qsize") {
         if (i+1 == hommexx_catch2_argc) { ok = false; break; }
         qsize = std::atoi(hommexx_catch2_argv[++i]);
-        if (qsize < 1 || qsize > QSIZE_D) {
-          if (am_root)
-            printf("compose_ut> ne must be between 1 and %d; got %d; "
-                   "switching to %d\n", QSIZE_D, qsize, QSIZE_D);
-          qsize = QSIZE_D;
-        }
+      } else if (tok == "-hvq") {
+        if (i+1 == hommexx_catch2_argc) { ok = false; break; }
+        hv_q = std::atoi(hommexx_catch2_argv[++i]);
       }
     }
+    ne = std::max(2, std::min(128, ne));
+    qsize = std::max(1, std::min(QSIZE_D, qsize));
+    hv_q = std::max(0, std::min(qsize, hv_q));
     if ( ! ok && am_root)
       printf("compose_ut> Failed to parse command line, starting with: %s\n",
              hommexx_catch2_argv[i]);
     if (am_root)
-      printf("compose_ut> ne %d qsize %d\n", ne, qsize);
+      printf("compose_ut> ne %d qsize %d hv_q %d\n", ne, qsize, hv_q);
   }
 };
 
