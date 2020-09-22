@@ -160,6 +160,7 @@ SET(THETAL_DEPS_CXX
   ${SRC_SHARE_DIR}/cxx/ComposeTransport.cpp
   ${SRC_SHARE_DIR}/cxx/ComposeTransportImplGeneral.cpp
   ${SRC_SHARE_DIR}/cxx/ComposeTransportImplTrajectory.cpp
+  ${SRC_SHARE_DIR}/cxx/ComposeTransportImplHypervis.cpp
   ${SRC_SHARE_DIR}/cxx/ComposeTransportImplTest2D.cpp
   ${SRC_SHARE_DIR}/cxx/ExecSpaceDefs.cpp
   ${SRC_SHARE_DIR}/cxx/FunctorsBuffersManager.cpp
