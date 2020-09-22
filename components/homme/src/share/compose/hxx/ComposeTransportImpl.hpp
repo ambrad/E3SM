@@ -53,7 +53,7 @@ struct ComposeTransportImpl {
   using DeparturePoints = ExecViewManaged<Real*[NUM_PHYSICAL_LEV][NP][NP][3]>;
 
   struct Data {
-    int nelemd, qsize, np1, np1_qdp, limiter_option, hv_q, hv_subcycle_q;
+    int nelemd, qsize, np1, np1_qdp, limiter_option, cdr_check, hv_q, hv_subcycle_q;
     Real nu_q, hv_scaling;
     bool independent_time_steps;
 
@@ -64,8 +64,8 @@ struct ComposeTransportImpl {
     DeparturePoints dep_pts;
 
     Data ()
-      : nelemd(-1), qsize(-1), np1_qdp(-1), limiter_option(9), hv_q(0), hv_subcycle_q(0),
-        independent_time_steps(false), nu_q(0), hv_scaling(0)
+      : nelemd(-1), qsize(-1), np1_qdp(-1), limiter_option(9), cdr_check(0), hv_q(0),
+        hv_subcycle_q(0), independent_time_steps(false), nu_q(0), hv_scaling(0)
     {}
   };
 

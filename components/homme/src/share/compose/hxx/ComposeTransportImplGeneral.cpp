@@ -7,7 +7,7 @@
 #include "ComposeTransportImpl.hpp"
 #include "compose_hommexx.hpp"
 
-extern "C" void sl_get_params(int* hv_q, int* hv_subcycle_q);
+extern "C" void sl_get_params(int* hv_q, int* hv_subcycle_q, int* cdr_check);
 
 namespace Homme {
 
@@ -20,7 +20,7 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
                         "SL transport requires qsize > 0; if qsize == 0, use Eulerian.");
   m_data.nelemd = num_elems;
   m_data.limiter_option = params.limiter_option;
-  sl_get_params(&m_data.hv_q, &m_data.hv_subcycle_q);
+  sl_get_params(&m_data.hv_q, &m_data.hv_subcycle_q, &m_data.cdr_check);
   Errors::runtime_check(m_data.hv_q >= 0 && m_data.hv_q <= m_data.qsize,
                         "semi_lagrange_hv_q should be in [0, qsize].");
   Errors::runtime_check(m_data.hv_subcycle_q >= 0,
@@ -158,7 +158,7 @@ void ComposeTransportImpl::run (const TimeLevel& tl, const Real dt) {
     launch_ie_ij_nlev<num_lev_pack>(f2);
     m_qdp_dss_be[tl.np1_qdp]->exchange(m_elements.m_geometry.m_rspheremp);
   }
-  //todo semi_lagrange_cdr_check
+  if (m_data.cdr_check) homme::compose::property_preserve_check();
 }
 
 } // namespace Homme

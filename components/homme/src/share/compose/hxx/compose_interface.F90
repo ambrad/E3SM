@@ -22,7 +22,8 @@ module compose_interface
 
 contains
 
-  subroutine init_compose_f90(ne, hyai, hybi, hyam, hybm, ps0, dvv, mp, qsize_in, hv_q) bind(c)
+  subroutine init_compose_f90(ne, hyai, hybi, hyam, hybm, ps0, dvv, mp, qsize_in, hv_q, &
+       cdr_check) bind(c)
     use hybvcoord_mod, only: set_layer_locations
     use thetal_test_interface, only: init_f90
     use edge_mod_base, only: initEdgeBuffer, edge_g
@@ -36,15 +37,16 @@ contains
     use sl_advection, only: sl_init1
 
     real (real_kind), intent(in) :: hyai(nlevp), hybi(nlevp), hyam(nlev), hybm(nlev)
-    integer (kind=c_int), value, intent(in) :: ne, qsize_in, hv_q
+    integer (c_int), value, intent(in) :: ne, qsize_in, hv_q
     real (real_kind), value, intent(in) :: ps0
     real (real_kind), intent(out) :: dvv(np,np), mp(np,np)
+    logical (c_bool), value, intent(in) :: cdr_check
 
     integer :: ie
 
     transport_alg = 12
     semi_lagrange_cdr_alg = 30
-    semi_lagrange_cdr_check = semi_lagrange_cdr_alg /= 42
+    semi_lagrange_cdr_check = cdr_check
     qsize = qsize_in
     limiter_option = 9
 

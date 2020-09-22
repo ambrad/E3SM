@@ -9,6 +9,7 @@ islmpi::IslMpi<>::Ptr get_isl_mpi_singleton();
 bool cedr_should_run();
 void cedr_sl_run_global();
 void cedr_sl_run_local(const int limiter_option);
+void cedr_sl_check();
 
 void slmm_finalize();
 void cedr_finalize();
@@ -48,6 +49,10 @@ bool property_preserve (const int limiter_option) {
   homme::cedr_sl_run_global();
   homme::cedr_sl_run_local(limiter_option);
   return true;
+}
+
+void property_preserve_check () {
+  homme::cedr_sl_check();
 }
 
 void finalize () {

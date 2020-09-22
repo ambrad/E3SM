@@ -751,6 +751,10 @@ void cedr_sl_run_local (const int limiter_option) {
                        false, limiter_option);
 }
 
+void cedr_sl_check () {
+  homme::sl::check(*g_cdr, *g_sl, nullptr, nullptr, 0, g_sl->ta->nelemd - 1);
+}
+
 void cedr_finalize () {
   g_sl = nullptr;
   g_cdr = nullptr;

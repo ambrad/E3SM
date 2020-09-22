@@ -140,14 +140,16 @@ contains
 #endif
   end subroutine sl_init1
 
-  subroutine sl_get_params(hv_q, hv_subcycle_q) bind(c)
-    use control_mod, only: semi_lagrange_hv_q, hypervis_subcycle_q
+  subroutine sl_get_params(hv_q, hv_subcycle_q, cdr_check) bind(c)
+    use control_mod, only: semi_lagrange_hv_q, hypervis_subcycle_q, semi_lagrange_cdr_check
     use iso_c_binding, only: c_int
 
-    integer(c_int), intent(out) :: hv_q, hv_subcycle_q
+    integer(c_int), intent(out) :: hv_q, hv_subcycle_q, cdr_check
 
     hv_q = semi_lagrange_hv_q
     hv_subcycle_q = hypervis_subcycle_q
+    cdr_check = 0
+    if (semi_lagrange_cdr_check) cdr_check = 1
   end subroutine sl_get_params
 
   subroutine prim_advec_tracers_remap_ALE(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete)
