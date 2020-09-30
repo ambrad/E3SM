@@ -195,7 +195,7 @@ private:
     const bool am_root = get_comm().root();
     ne = 2;
     qsize = QSIZE_D;
-    hv_q = 0;
+    hv_q = 1;
     cdr_check = false;
     bool ok = true;
     int i;
