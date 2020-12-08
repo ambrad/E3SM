@@ -114,6 +114,7 @@ contains
     ! 
     ! compute scaling of sponge layer damping 
     !
+    !$OMP MASTER
     if (hybrid%masterthread) write(iulog,*) "sponge layer nu_top viscosity scaling factor"
     nlev_tom=0
     do k=1,nlev
@@ -156,6 +157,8 @@ contains
     if (hybrid%masterthread) then
        write(iulog,*) "  nlev_tom ",nlev_tom
     end if
+    !$OMP END MASTER
+    !$OMP BARRIER
 
   end subroutine 
 
