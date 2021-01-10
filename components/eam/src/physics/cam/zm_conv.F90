@@ -556,7 +556,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
    real(r8) :: t_nbd(pcols,100,pver)
    real(r8) :: qh_nbd(pcols,100,pver)
    real(r8) :: zm_nbd(pcols,100,pver)
-   real(r8) :: zi_nbd(pcols,100,pver)
+   !real(r8) :: zi_nbd(pcols,100,pver+1)
    real(r8) :: pap_nbd(pcols,100,pver)
    real(r8) :: paph_nbd(pcols,100,pver+1)
    real(r8) :: geos_nbd(pcols,100)
@@ -586,6 +586,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
    integer maximn(pcols)
 
    real(r8) sec(pcols)
+   real(r8) secg(pcols)
    !real(r8) lat_nbd(pcols,100)
    !real(r8) lon_nbd(pcols,100)
 !
@@ -600,13 +601,13 @@ subroutine zm_convr(lchnk   ,ncol    , &
       t_nbd(i,1:n_hd(i),:)    = state_nbrhd%t(icols(1:n_hd(i)),:)
       qh_nbd(i,1:n_hd(i),:)   = state_nbrhd%q(icols(1:n_hd(i)),:,1)
       zm_nbd(i,1:n_hd(i),:)   = state_nbrhd%zm(icols(1:n_hd(i)),:) 
-      zi_nbd(i,1:n_hd(i),:)   = state_nbrhd%zi(icols(1:n_hd(i)),:) 
+      !zi_nbd(i,1:n_hd(i),:)   = state_nbrhd%zi(icols(1:n_hd(i)),:) 
       geos_nbd(i,1:n_hd(i))   = state_nbrhd%phis(icols(1:n_hd(i))) 
       pap_nbd(i,1:n_hd(i),:)  = state_nbrhd%pmid(icols(1:n_hd(i)),:) 
       paph_nbd(i,1:n_hd(i),:) = state_nbrhd%pint(icols(1:n_hd(i)),:)
 
       !lat_nbd(i,1:n_hd(i))    = state_nbrhd%lat(icols(1:n_hd(i))) 
-      !lon_nbd(i,1:n_hd(i))    = state_nbrhd%lon(icols(1:n_hd(i))) 
+      !lon_nbd(i,1:n_hd(i))    = state_nbrhd%lon(icols(1:n_hd(i)))
    end do
    do i = 1,ncol
       do ii = 1,n_hd(i)
@@ -624,7 +625,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
          end do
       end do
    end do
-   print *,"XU: OK...01"   
+   !print *,"XU: OK...01"   
 !
 ! initialize necessary arrays.
 ! zero out variables not used in cam
@@ -755,28 +756,32 @@ subroutine zm_convr(lchnk   ,ncol    , &
         pmn(i,k)  = p(i,k)
         zmn(i,k)  = z(i,k)
         pfmn(i,k) = pf(i,k)
-        do ii = 1,n_hd(i)
-           qmn(i,k)  = qmn(i,k)+q_nbd(i,ii,k) 
-           tmn(i,k)  = tmn(i,k)+t_nbd(i,ii,k) 
-           pmn(i,k)  = pmn(i,k)+p_nbd(i,ii,k) 
-           zmn(i,k)  = zmn(i,k)+z_nbd(i,ii,k) 
-           pfmn(i,k) = pfmn(i,k)+pf_nbd(i,ii,k) 
-        end do
-        qmn(i,k)  = qmn(i,k)/(n_hd(i)+1)
-        tmn(i,k)  = tmn(i,k)/(n_hd(i)+1)
-        pmn(i,k)  = pmn(i,k)/(n_hd(i)+1)
-        zmn(i,k)  = zmn(i,k)/(n_hd(i)+1)
-        pfmn(i,k) = pfmn(i,k)/(n_hd(i)+1)
+        if(n_hd(i)>0) then
+          do ii = 1,n_hd(i)
+             qmn(i,k)  = qmn(i,k)+q_nbd(i,ii,k) 
+             tmn(i,k)  = tmn(i,k)+t_nbd(i,ii,k) 
+             pmn(i,k)  = pmn(i,k)+p_nbd(i,ii,k) 
+             zmn(i,k)  = zmn(i,k)+z_nbd(i,ii,k) 
+             pfmn(i,k) = pfmn(i,k)+pf_nbd(i,ii,k) 
+          end do
+          qmn(i,k)  = qmn(i,k)/(n_hd(i)+1)
+          tmn(i,k)  = tmn(i,k)/(n_hd(i)+1)
+          pmn(i,k)  = pmn(i,k)/(n_hd(i)+1)
+          zmn(i,k)  = zmn(i,k)/(n_hd(i)+1)
+          pfmn(i,k) = pfmn(i,k)/(n_hd(i)+1)
+        end if
      end do
   end do 
   do i = 1,ncol
      pfmn(i,pver+1) = pf(i,pver+1)
-     do ii = 1,n_hd(i)
-        pfmn(i,pver+1) = pfmn(i,pver+1)+pf_nbd(i,ii,pver+1)
-     end do
-     pfmn(i,pver+1) = pfmn(i,pver+1)/(n_hd(i)+1) 
+     if(n_hd(i)>0) then
+       do ii = 1,n_hd(i)
+          pfmn(i,pver+1) = pfmn(i,pver+1)+pf_nbd(i,ii,pver+1)
+       end do
+       pfmn(i,pver+1) = pfmn(i,pver+1)/(n_hd(i)+1) 
+     end if
   end do 
-  print *,"XU: OK...02"
+  !print *,"XU: OK...02"
   ! lchnk = -1 : Calculate base domain lel
   do i = 1,ncol
      lelmn(i) = pver
@@ -787,21 +792,23 @@ subroutine zm_convr(lchnk   ,ncol    , &
                   pblt    ,lclmn   ,lelmn   ,lonmn   ,maximn   , &
                   rgas    ,grav    ,cpres   ,msg     , &
                   tpert   ,iclosure)
-  print *,"XU: OK...03"
+  !print *,"XU: OK...03"
 ! Step 02: (FOR CAPE CLOSURE !!!) Calculate all CAPEs (Pos+Neg) in base domain
 ! For the neighborhood 
    do i = 1,ncol
       lel(i) = lelmn(i)
-      do ii = 1,n_hd(i)
-         call buoyan_dilute(lchnk ,1 , &
-                  q_nbd(i,ii,:) ,t_nbd(i,ii,:) ,p_nbd(i,ii,:) ,z_nbd(i,ii,:) ,pf_nbd(i,ii,:) , &
-                  tp(i,:)  ,qstp(i,:) ,tl(i)  ,rl     ,cape_nbd(i,ii) , &
-                  pblt(i)  ,lcl(i)    ,lel(i) ,lon(i) ,maxi(i)        , &
-                  rgas     ,grav      ,cpres  ,msg , &
-                  tpert(i) ,iclosure)
-      end do
+      if(n_hd(i)>0) then
+        do ii = 1,n_hd(i)
+           call buoyan_dilute(lchnk ,1 , &
+                    q_nbd(i,ii,:) ,t_nbd(i,ii,:) ,p_nbd(i,ii,:) ,z_nbd(i,ii,:) ,pf_nbd(i,ii,:) , &
+                    tp(i,:)  ,qstp(i,:) ,tl(i)  ,rl     ,cape_nbd(i,ii) , &
+                    pblt(i)  ,lcl(i)    ,lel(i) ,lon(i) ,maxi(i)        , &
+                    rgas     ,grav      ,cpres  ,msg , &
+                    tpert(i) ,iclosure)
+        end do
+      end if
    end do
-  print *,"XU: OK...04"
+  !print *,"XU_CHECK: lel:",p_nbd(1:3,:,lel)
 ! For the current column
          call buoyan_dilute(lchnk   ,ncol    , &
                   q       ,t       ,p       ,z       ,pf       , &
@@ -809,14 +816,20 @@ subroutine zm_convr(lchnk   ,ncol    , &
                   pblt    ,lcl     ,lel     ,lon     ,maxi     , &
                   rgas    ,grav    ,cpres   ,msg     , &
                   tpert   ,iclosure)
-  print *,"XU: OK...05"
+  !print *,"XU: lel:",p(1:3,lel)
+  !print *,"XU: OK...05"
 ! Step 03: (FOR CAPE CLOSURE !!!) Calculate the second term (SEC) with negtive contribution
-   !sec = 0._r8
-   !sec = 999._r8
-!
+   !print *,"XU_CHECK: START ..."
    do i = 1,ncol
-      call sec_wx(n_hd(i),cape_nbd(i,:),cape(i),sec(i))
-   end do 
+      if(n_hd(i)==0) then ! No neigborhood
+        sec(i) = 0._r8
+      end if
+      if(n_hd(i)>0) then
+        call sec_wx(n_hd(i),cape_nbd(i,:),cape(i),sec(i))
+      end if
+   end do
+   !print *,"XU_CHECK: ... END "
+   print *,"XU: sec(the second term) =",sec 
 !! wx: 06/12/2020 Finish !!     
       if (trigdcape_ull .or. trig_dcape_only) then
          if (.not. allocated(dcapemx)) then
@@ -892,10 +905,19 @@ subroutine zm_convr(lchnk   ,ncol    , &
            index(lengath) = i
        endif
      else
-      !if (cape(i) > capelmt) then
-      if (cape(i)+sec(i) > capelmt .and. sec(i) < 0._r8) then ! wx: 06/12/2020
+      ! wx: 01/08/2021
+      if(sec(i)==0) then ! No neighborhood or the smallest positive CAPE >
+                         ! abs(sum of all negative CAPE)
+        if (cape(i) > capelmt) then
          lengath = lengath + 1
          index(lengath) = i
+        end if
+      end if
+      if(n_hd(i)>0) then
+        if (cape(i)+sec(i) > capelmt .and. sec(i) < 0._r8) then ! wx: 06/12/2020
+           lengath = lengath + 1
+           index(lengath) = i
+        end if
       end if
      end if
 !>songxl 2014-05-20----------------
@@ -930,6 +952,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
       zfg(i,pver+1) = zf(ideep(i),pver+1)
    end do
    do i = 1,lengath
+      secg(i)  = sec(ideep(i))
       capeg(i) = cape(ideep(i))
       lclg(i) = lcl(ideep(i))
       lelg(i) = lel(ideep(i))
@@ -1013,8 +1036,9 @@ subroutine zm_convr(lchnk   ,ncol    , &
                 qlg     ,dsubcld ,mb      ,capeg   ,tlg     , &
                 lclg    ,lelg    ,jt      ,maxg    ,1       , &
                 lengath ,rgas    ,grav    ,cpres   ,rl      , &
-                msg     ,capelmt_wk ,sec) ! wx: 06/12/2020
+                msg     ,capelmt_wk ,secg) ! wx: 06/12/2020
                 !msg     ,capelmt_wk )
+   print *,"XU: mb =",mb
 !
 ! limit cloud base mass flux to theoretical upper bound.
 !
@@ -3290,9 +3314,14 @@ subroutine closure(lchnk   , &
       end do
    end do
    do i = il1g,il2g
-      !dltaa = -1._r8* (cape(i)-capelmt)
-      dltaa = -1._r8* (cape(i)+sec(i)-capelmt) ! wx: 06/12/2020
-      if(sec(i) > 0._r8) dltaa = 0._r8         ! Should be negative contribution
+      ! wx: 01/08/2021
+      if(sec(i)==0) then ! No neighborhood or min(+CAPE) > abs(sum(-CAPE))
+        dltaa = -1._r8* (cape(i)-capelmt)
+      end if
+      if(sec(i)/=0) then
+        dltaa = -1._r8* (cape(i)+sec(i)-capelmt) ! wx: 06/12/2020
+        if(sec(i) > 0._r8) dltaa = 0._r8         ! Should be negative contribution
+      end if
       if (dadt(i) /= 0._r8) mb(i) = max(dltaa/tau/dadt(i),0._r8)
    end do
 !
@@ -3467,50 +3496,50 @@ subroutine buoyan_dilute(lchnk   ,ncol    , &
 !
    integer, intent(in) :: lchnk                 ! chunk identifier
    integer, intent(in) :: ncol                  ! number of atmospheric columns
-
-   real(r8), intent(in) :: q(pcols,pver)        ! spec. humidity
-   real(r8), intent(in) :: t(pcols,pver)        ! temperature
-   real(r8), intent(in) :: p(pcols,pver)        ! pressure
-   real(r8), intent(in) :: z(pcols,pver)        ! height
-   real(r8), intent(in) :: pf(pcols,pver+1)     ! pressure at interfaces
-   real(r8), intent(in) :: pblt(pcols)          ! index of pbl depth
-   real(r8), intent(in) :: tpert(pcols)         ! perturbation temperature by pbl processes
+! wx: 2020-01-08 Redefine variables with ncol, but not pcols !!!
+   real(r8), intent(in) :: q(ncol,pver)        ! spec. humidity
+   real(r8), intent(in) :: t(ncol,pver)        ! temperature
+   real(r8), intent(in) :: p(ncol,pver)        ! pressure
+   real(r8), intent(in) :: z(ncol,pver)        ! height
+   real(r8), intent(in) :: pf(ncol,pver+1)     ! pressure at interfaces
+   real(r8), intent(in) :: pblt(ncol)          ! index of pbl depth
+   real(r8), intent(in) :: tpert(ncol)         ! perturbation temperature by pbl processes
    logical, intent(in) :: iclosure              ! true for normal procedure, otherwise use dcapemx from 1st call
 !
 ! output arguments
 !
-   real(r8), intent(out) :: tp(pcols,pver)       ! parcel temperature
-   real(r8), intent(out) :: qstp(pcols,pver)     ! saturation mixing ratio of parcel (only above lcl, just q below).
-   real(r8), intent(out) :: tl(pcols)            ! parcel temperature at lcl
-   real(r8), intent(out) :: cape(pcols)          ! convective aval. pot. energy.
-   integer lcl(pcols)        !
+   real(r8), intent(out) :: tp(ncol,pver)       ! parcel temperature
+   real(r8), intent(out) :: qstp(ncol,pver)     ! saturation mixing ratio of parcel (only above lcl, just q below).
+   real(r8), intent(out) :: tl(ncol)            ! parcel temperature at lcl
+   real(r8), intent(out) :: cape(ncol)          ! convective aval. pot. energy.
+   integer lcl(ncol)        !
    !integer lel(pcols)        !
-   integer, intent(inout) :: lel(pcols) ! wx: 06/12/2020
-   integer lon(pcols)        ! level of onset of deep convection
-   integer mx(pcols)         ! level of max moist static energy
+   integer, intent(inout) :: lel(ncol) ! wx: 06/12/2020
+   integer lon(ncol)        ! level of onset of deep convection
+   integer mx(ncol)         ! level of max moist static energy
 !
 !--------------------------Local Variables------------------------------
 !
-   real(r8) capeten(pcols,num_cin)     ! provisional value of cape
-   real(r8) tv(pcols,pver)       !
-   real(r8) tpv(pcols,pver)      !
-   real(r8) buoy(pcols,pver)
+   real(r8) capeten(ncol,num_cin)     ! provisional value of cape
+   real(r8) tv(ncol,pver)       !
+   real(r8) tpv(ncol,pver)      !
+   real(r8) buoy(ncol,pver)
 
-   real(r8) a1(pcols)
-   real(r8) a2(pcols)
-   real(r8) estp(pcols)
-   real(r8) pl(pcols)
-   real(r8) plexp(pcols)
-   real(r8) hmax(pcols)
-   real(r8) hmn(pcols)
-   real(r8) y(pcols)
+   real(r8) a1(ncol)
+   real(r8) a2(ncol)
+   real(r8) estp(ncol)
+   real(r8) pl(ncol)
+   real(r8) plexp(ncol)
+   real(r8) hmax(ncol)
+   real(r8) hmn(ncol)
+   real(r8) y(ncol)
 
-   logical plge600(pcols)
-   integer knt(pcols)
-   integer lelten(pcols,num_cin)
+   logical plge600(ncol)
+   integer knt(ncol)
+   integer lelten(ncol,num_cin)
 
 ! DCAPE-ULL
-   real(r8) pblt600(pcols)
+   real(r8) pblt600(ncol)
 
    real(r8) cp
    real(r8) e
@@ -3530,6 +3559,7 @@ subroutine buoyan_dilute(lchnk   ,ncol    , &
 !
 !-----------------------------------------------------------------------
 !
+!if(lchnk/=-1.and.ncol/=1) print *,"XU_CHECK: 01 ..."
    do n = 1,num_cin
       do i = 1,ncol
          lelten(i,n) = pver
@@ -3549,7 +3579,6 @@ subroutine buoyan_dilute(lchnk   ,ncol    , &
 
    tp(:ncol,:) = t(:ncol,:)
    qstp(:ncol,:) = q(:ncol,:)
-
 !DCAPE-ULL
    if (trigdcape_ull .or. trig_ull_only) then
       do k = pver - 1,msg + 1,-1
@@ -3631,7 +3660,7 @@ subroutine buoyan_dilute(lchnk   ,ncol    , &
       tl(i) = t(i,mx(i))
       pl(i) = p(i,mx(i))
    end do
-
+!if(lchnk/=-1.and.ncol/=1) print *,"XU_CHECK: 01 ... OK!"
 !
 ! main buoyancy calculation.
 !
@@ -3639,16 +3668,18 @@ subroutine buoyan_dilute(lchnk   ,ncol    , &
 !!! DILUTE PLUME CALCULATION USING ENTRAINING PLUME !!!
 !!!   RBN 9/9/04   !!!
 
+!if(lchnk/=-1.and.ncol/=1) print *,"XU_CHECK: 02 ..."
    call parcel_dilute(lchnk, ncol, msg, mx, p, t, q, tpert, tp, tpv, qstp, pl, tl, lcl)
+!if(lchnk/=-1.and.ncol/=1) print *,"XU_CHECK: 02 ... OK!"
 
 ! If lcl is above the nominal level of non-divergence (600 mbs),
 ! no deep convection is permitted (ensuing calculations
 ! skipped and cape retains initialized value of zero).
 !
+!if(lchnk/=-1.and.ncol/=1) print *,"XU_CHECK: 03 ..."
    do i = 1,ncol
       plge600(i) = pl(i).ge.600._r8 ! Just change to always allow buoy calculation.
    end do
-
 !
 ! Main buoyancy calculation.
 !
@@ -3665,13 +3696,9 @@ subroutine buoyan_dilute(lchnk   ,ncol    , &
       end do
    end do
 
-
-
 !-------------------------------------------------------------------------------
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-
 
 !
    do k = msg + 2,pver
@@ -3684,14 +3711,17 @@ subroutine buoyan_dilute(lchnk   ,ncol    , &
          end if
       end do
    end do
+!if(lchnk/=-1.and.ncol/=1) print *,"XU_CHECK: 03 ... OK!"
 ! wx: 06/12/2020
+!if(lchnk/=-1.and.ncol/=1) print *,"XU_CHECK: 04 ..."
    if(lchnk /= -1) then
      do n = 1,num_cin
         do i = 1,ncol
            lelten(i,n) = lel(i)
         end do   
      end do  
-   end if 
+   end if
+!if(lchnk/=-1.and.ncol/=1) print *,"XU_CHECK: 04-01 ..."
 !
 ! calculate convective available potential energy (cape).
 !
@@ -3704,6 +3734,9 @@ subroutine buoyan_dilute(lchnk   ,ncol    , &
          end do
       end do
    end do
+!if(lchnk/=-1) then
+!  print *,"XU_CHECK: capeten =",capeten
+!end if  
 !
 ! find maximum cape from all possible tentative capes from
 ! one sounding,
@@ -3724,6 +3757,7 @@ subroutine buoyan_dilute(lchnk   ,ncol    , &
    !do i = 1,ncol
    !   cape(i) = max(cape(i), 0._r8)
    !end do
+!if(lchnk/=-1.and.ncol/=1) print *,"XU_CHECK: 04 ... OK!"
 !
    return
 end subroutine buoyan_dilute
@@ -3741,21 +3775,21 @@ integer, intent(in) :: lchnk
 integer, intent(in) :: ncol
 integer, intent(in) :: msg
 
-integer, intent(in), dimension(pcols) :: klaunch(pcols)
+integer, intent(in), dimension(ncol) :: klaunch(ncol)
 
-real(r8), intent(in), dimension(pcols,pver) :: p
-real(r8), intent(in), dimension(pcols,pver) :: t
-real(r8), intent(in), dimension(pcols,pver) :: q
-real(r8), intent(in), dimension(pcols) :: tpert ! PBL temperature perturbation.
+real(r8), intent(in), dimension(ncol,pver) :: p
+real(r8), intent(in), dimension(ncol,pver) :: t
+real(r8), intent(in), dimension(ncol,pver) :: q
+real(r8), intent(in), dimension(ncol) :: tpert ! PBL temperature perturbation.
 
-real(r8), intent(inout), dimension(pcols,pver) :: tp    ! Parcel temp.
-real(r8), intent(inout), dimension(pcols,pver) :: qstp  ! Parcel water vapour (sat value above lcl).
-real(r8), intent(inout), dimension(pcols) :: tl         ! Actual temp of LCL.
-real(r8), intent(inout), dimension(pcols) :: pl          ! Actual pressure of LCL. 
+real(r8), intent(inout), dimension(ncol,pver) :: tp    ! Parcel temp.
+real(r8), intent(inout), dimension(ncol,pver) :: qstp  ! Parcel water vapour (sat value above lcl).
+real(r8), intent(inout), dimension(ncol) :: tl         ! Actual temp of LCL.
+real(r8), intent(inout), dimension(ncol) :: pl          ! Actual pressure of LCL. 
 
-integer, intent(inout), dimension(pcols) :: lcl ! Lifting condesation level (first model level with saturation).
+integer, intent(inout), dimension(ncol) :: lcl ! Lifting condesation level (first model level with saturation).
 
-real(r8), intent(out), dimension(pcols,pver) :: tpv   ! Define tpv within this routine.
+real(r8), intent(out), dimension(ncol,pver) :: tpv   ! Define tpv within this routine.
 
 !--------------------
 
@@ -3766,21 +3800,21 @@ real(r8), intent(out), dimension(pcols,pver) :: tpv   ! Define tpv within this r
 ! loop then we need to dimension sp,atp,mp,xsh2o with ncol.
 
 
-real(r8) tmix(pcols,pver)        ! Tempertaure of the entraining parcel.
-real(r8) qtmix(pcols,pver)       ! Total water of the entraining parcel.
-real(r8) qsmix(pcols,pver)       ! Saturated mixing ratio at the tmix.
-real(r8) smix(pcols,pver)        ! Entropy of the entraining parcel.
-real(r8) xsh2o(pcols,pver)       ! Precipitate lost from parcel.
-real(r8) ds_xsh2o(pcols,pver)    ! Entropy change due to loss of condensate.
-real(r8) ds_freeze(pcols,pver)   ! Entropy change sue to freezing of precip.
+real(r8) tmix(ncol,pver)        ! Tempertaure of the entraining parcel.
+real(r8) qtmix(ncol,pver)       ! Total water of the entraining parcel.
+real(r8) qsmix(ncol,pver)       ! Saturated mixing ratio at the tmix.
+real(r8) smix(ncol,pver)        ! Entropy of the entraining parcel.
+real(r8) xsh2o(ncol,pver)       ! Precipitate lost from parcel.
+real(r8) ds_xsh2o(ncol,pver)    ! Entropy change due to loss of condensate.
+real(r8) ds_freeze(ncol,pver)   ! Entropy change sue to freezing of precip.
 
-real(r8) mp(pcols)    ! Parcel mass flux.
-real(r8) qtp(pcols)   ! Parcel total water.
-real(r8) sp(pcols)    ! Parcel entropy.
+real(r8) mp(ncol)    ! Parcel mass flux.
+real(r8) qtp(ncol)   ! Parcel total water.
+real(r8) sp(ncol)    ! Parcel entropy.
 
-real(r8) sp0(pcols)    ! Parcel launch entropy.
-real(r8) qtp0(pcols)   ! Parcel launch total water.
-real(r8) mp0(pcols)    ! Parcel launch relative mass flux.
+real(r8) sp0(ncol)    ! Parcel launch entropy.
+real(r8) qtp0(ncol)   ! Parcel launch total water.
+real(r8) mp0(ncol)    ! Parcel launch relative mass flux.
 
 real(r8) lwmax      ! Maximum condesate that can be held in cloud before rainout.
 real(r8) dmpdp      ! Parcel fractional mass entrainment rate (/mb).
@@ -3817,7 +3851,7 @@ integer i,k,ii   ! Loop counters.
 !
 ! Set some values that may be changed frequently.
 !
-
+!if(lchnk/=-1) print *,"XU_CHECK: 02-01 ..."
 nit_lheat = 2 ! iterations for ds,dq changes from condensation freezing.
 
 
@@ -3843,27 +3877,37 @@ mp = 0._r8
 
 new_q = 0._r8
 new_s = 0._r8
-
+!if(lchnk/=-1) print *,"XU_CHECK: 02-01 ... OK!"
 ! **** Begin loops ****
 
+!if(lchnk/=-1) print *,"XU_CHECK: 02-02 ... "
 do k = pver, msg+1, -1
    do i=1,ncol 
 
 ! Initialize parcel values at launch level.
-
+      !if(lchnk/=-1) print *,"XU_CHECK: 02-02-01 ... "
       if (k == klaunch(i)) then 
          qtp0(i) = q(i,k)   ! Parcel launch total water (assuming subsaturated) - OK????.
+         !if(lchnk==-1) print *,"XU_CHECK: ncol =",ncol,"t =",t(i,k),"p =",p(i,k),"qtp0 =",qtp0(i)
          sp0(i)  = entropy(t(i,k),p(i,k),qtp0(i))  ! Parcel launch entropy.
+         !if(lchnk==-1) print *,"XU_CHECK: ncol =",ncol,"sp0 =",sp0(i)
          mp0(i)  = 1._r8       ! Parcel launch relative mass (i.e. 1 parcel stays 1 parcel for dmpdp=0, undilute). 
          smix(i,k)  = sp0(i)
          qtmix(i,k) = qtp0(i)
          tfguess = t(i,k)
          rcall = 1
+         !if(lchnk/=-1) then
+         !   print *,"XU_CHECK: i =",i,"k =",k
+         !   print *,"smix =",smix(i,k)
+         !   print *,"p =",p(i,k)
+         !   print *,"qtmix =",qtmix(i,k)
+         !   print *,"tfguess =",tfguess
+         !end if   
          call ientropy (rcall,i,lchnk,smix(i,k),p(i,k),qtmix(i,k),tmix(i,k),qsmix(i,k),tfguess)
       end if
-
+      !if(lchnk/=-1) print *,"XU_CHECK: 02-02-01 ... OK! "
 ! Entraining levels
-      
+      !if(lchnk/=-1) print *,"XU_CHECK: 02-02-02 ... "
       if (k < klaunch(i)) then 
 
 ! Set environmental values for this level.                 
@@ -3930,11 +3974,11 @@ do k = pver, msg+1, -1
          endif
 !         
       end if !  k < klaunch
-
- 
+      !if(lchnk/=-1) print *,"XU_CHECK: 02-02-02 ... OK! "
    end do ! Levels loop
 end do ! Columns loop
-
+!if(lchnk/=-1) print *,"XU_CHECK: 02-02 ... OK! "
+!if(lchnk/=-1) print *,"XU_CHECK: 02-03 ...  "
 !!!!!!!!!!!!!!!!!!!!!!!!!!END ENTRAINMENT LOOP!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 !! Could stop now and test with this as it will provide some estimate of buoyancy
@@ -4038,7 +4082,7 @@ do k = pver, msg+1, -1
    end do ! Loop for columns
    
 end do  ! Loop for vertical levels.
-
+!if(lchnk/=-1) print *,"XU_CHECK: 02-03 ... OK! "
 
 return
 end subroutine parcel_dilute
@@ -4272,14 +4316,18 @@ if(npos.gt.0) then
             sum_pos = sum_pos+cape_pos(jj)
          end do
        end if    
-       favg = -1.0*(sum_pos+sum_neg)/(npos-ii+nneg)
-       if(cape_pos(ii).gt.(favg*(ncol+1-ii)/ii)) then
-         sec = -1.0*favg*(ncol+1-ii)/ii
+       favg = -1.0_r8*(sum_pos+sum_neg)/(npos-ii+nneg)
+       if(favg>=0.and.cape_pos(ii).gt.(favg*(ncol+1-ii)/ii)) then
+         sec = -1.0_r8*favg*(ncol+1-ii)/ii
+       end if
+       if(ii==npos-1.and.favg<0) then ! the smallest positive CAPE also is
+                                      ! larger than the absolute of sum of
+                                      ! all negative CAPEs
+         sec = 0._r8
        end if
     end do
   end if  
 end if
-print *,"XU: SEC:",sec
 end subroutine sec_wx
 !
 end module zm_conv
