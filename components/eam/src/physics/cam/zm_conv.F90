@@ -830,6 +830,11 @@ subroutine zm_convr(lchnk   ,ncol    , &
    end do
    !print *,"XU_CHECK: ... END "
    print *,"XU: sec(the second term) =",sec 
+   ! Let CAPE >= 0 again after we got sec
+   do i = 1,ncol
+      cape(i) = max(cape(i), 0._r8)
+   end do   
+   print *,"XU: CAPE =",cape 
 !! wx: 06/12/2020 Finish !!     
       if (trigdcape_ull .or. trig_dcape_only) then
          if (.not. allocated(dcapemx)) then
@@ -906,14 +911,14 @@ subroutine zm_convr(lchnk   ,ncol    , &
        endif
      else
       ! wx: 01/08/2021
-      if(sec(i)==0) then ! No neighborhood or the smallest positive CAPE >
-                         ! abs(sum of all negative CAPE)
+      if(sec(i)==0._r8) then ! No neighborhood;  
         if (cape(i) > capelmt) then
          lengath = lengath + 1
          index(lengath) = i
         end if
       end if
-      if(n_hd(i)>0) then
+      !if(n_hd(i)>0) then
+      if(sec(i)/=0._r8) then ! if(sec(i)==999._r8) it means we can not find J, and the base domain CAPE < 0
         if (cape(i)+sec(i) > capelmt .and. sec(i) < 0._r8) then ! wx: 06/12/2020
            lengath = lengath + 1
            index(lengath) = i
@@ -3315,13 +3320,14 @@ subroutine closure(lchnk   , &
    end do
    do i = il1g,il2g
       ! wx: 01/08/2021
-      if(sec(i)==0) then ! No neighborhood or min(+CAPE) > abs(sum(-CAPE))
-        dltaa = -1._r8* (cape(i)-capelmt)
-      end if
-      if(sec(i)/=0) then
+      !if(sec(i)==0) then ! No neighborhood 
+      !  dltaa = -1._r8* (cape(i)-capelmt)
+      !end if
+      !if(sec(i)/=0) then
+      ! wx: Already selected the convective grids, so sec must < 0 
         dltaa = -1._r8* (cape(i)+sec(i)-capelmt) ! wx: 06/12/2020
-        if(sec(i) > 0._r8) dltaa = 0._r8         ! Should be negative contribution
-      end if
+        !if(sec(i) > 0._r8) dltaa = 0._r8         ! Should be negative contribution
+      !end if
       if (dadt(i) /= 0._r8) mb(i) = max(dltaa/tau/dadt(i),0._r8)
    end do
 !
@@ -4308,22 +4314,23 @@ if(npos.gt.0) then
     end do
   end if 
   ! Find J and get the sum of [(J+1)~NPOS] CAPEs
-  if(npos.gt.1) then ! At least two positive CAPEs or no need to calculate sec, sec = 999.
-    do ii = 1,npos-1 
-       sum_pos = 0._r8 ! if (NPOS-J) = 0
-       if((npos-ii).gt.0) then
+  if(npos.gt.0) then ! At least one positive CAPE or no need to calculate sec, sec = 999.
+    do ii = 1,npos 
+       if(ii/=npos) then
+         sum_pos = 0._r8  
          do jj = ii+1,npos
             sum_pos = sum_pos+cape_pos(jj)
          end do
-       end if    
-       favg = -1.0_r8*(sum_pos+sum_neg)/(npos-ii+nneg)
-       if(favg>=0.and.cape_pos(ii).gt.(favg*(ncol+1-ii)/ii)) then
-         sec = -1.0_r8*favg*(ncol+1-ii)/ii
+       else ! if(ii==npos)
+         sum_pos = 0._r8 ! because the rest of CAPEs are all negative.      
        end if
-       if(ii==npos-1.and.favg<0) then ! the smallest positive CAPE also is
-                                      ! larger than the absolute of sum of
-                                      ! all negative CAPEs
-         sec = 0._r8
+       if(nneg/=0) then ! wx: 2021-01-10 please notice that the nneg is also possible to be zero when ii=npos    
+         favg = (sum_pos+sum_neg)/(npos-ii+nneg) ! the average of the rest (N-J) CAPEs, should be negative
+         if(cape_pos(ii).gt.(-1._r8*favg*(ncol+1-ii))/ii) then
+           sec = favg*(ncol+1-ii)/ii
+         end if
+       else ! nneg=0: no negative CAPEs, only postive CAPEs
+         sec = 0._r8 ! no need to calculate sec      
        end if
     end do
   end if  
