@@ -821,11 +821,13 @@ subroutine zm_convr(lchnk   ,ncol    , &
 ! Step 03: (FOR CAPE CLOSURE !!!) Calculate the second term (SEC) with negtive contribution
    !print *,"XU_CHECK: START ..."
    do i = 1,ncol
+      sec(i) = 0._r8
       if(n_hd(i)==0) then ! No neigborhood
         sec(i) = 0._r8
       end if
       if(n_hd(i)>0) then
         call sec_wx(n_hd(i),cape_nbd(i,:),cape(i),sec(i))
+        !sec(i) = 0._r8 ! close sec_wx
       end if
    end do
    !print *,"XU_CHECK: ... END "
@@ -834,7 +836,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
    do i = 1,ncol
       cape(i) = max(cape(i), 0._r8)
    end do   
-   print *,"XU: CAPE =",cape 
+   !print *,"XU: CAPE =",cape 
 !! wx: 06/12/2020 Finish !!     
       if (trigdcape_ull .or. trig_dcape_only) then
          if (.not. allocated(dcapemx)) then
@@ -910,20 +912,14 @@ subroutine zm_convr(lchnk   ,ncol    , &
            index(lengath) = i
        endif
      else
-      ! wx: 01/08/2021
-      if(sec(i)==0._r8) then ! No neighborhood;  
-        if (cape(i) > capelmt) then
-         lengath = lengath + 1
-         index(lengath) = i
-        end if
-      end if
-      !if(n_hd(i)>0) then
-      if(sec(i)/=0._r8) then ! if(sec(i)==999._r8) it means we can not find J, and the base domain CAPE < 0
-        if (cape(i)+sec(i) > capelmt .and. sec(i) < 0._r8) then ! wx: 06/12/2020
+      !  if (cape(i) > capelmt) then
+      !   lengath = lengath + 1
+      !   index(lengath) = i
+      !  end if
+       if (cape(i)+sec(i) > capelmt .and. sec(i) <= 0._r8) then ! wx: 06/12/2020
            lengath = lengath + 1
            index(lengath) = i
-        end if
-      end if
+       end if
      end if
 !>songxl 2014-05-20----------------
    end do
@@ -1032,7 +1028,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
          evpg (i,k) = evpg (i,k)* (zfg(i,k)-zfg(i,k+1))/dp(i,k)
       end do
    end do
-
+   
    call closure(lchnk   , &
                 qg      ,tg      ,pg      ,zg      ,sg      , &
                 tpg     ,qs      ,qu      ,su      ,mc      , &
@@ -1043,7 +1039,6 @@ subroutine zm_convr(lchnk   ,ncol    , &
                 lengath ,rgas    ,grav    ,cpres   ,rl      , &
                 msg     ,capelmt_wk ,secg) ! wx: 06/12/2020
                 !msg     ,capelmt_wk )
-   print *,"XU: mb =",mb
 !
 ! limit cloud base mass flux to theoretical upper bound.
 !
@@ -1063,6 +1058,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
          mb(i) = 0._r8
       endif
    end do
+   print *,"XU: mb =",mb
    ! If no_deep_pbl = .true., don't allow convection entirely 
    ! within PBL (suggestion of Bjorn Stevens, 8-2000)
 
@@ -4270,6 +4266,7 @@ real(r8),dimension(ncol+1)::cape
 integer::i,ii,jj,npos,nneg
 real(r8)::cape_pos(ncol+1),cape_neg(ncol+1)
 real(r8)::ten_val,sum_pos,sum_neg,favg
+integer::Jval
 
 ! Get the current column CAPE and its neighborhood CAPEs in a base domain (1deg*1deg)
 ! Classify to the postive CAPEs and negative CAPEs (here negative CAPEs includes zero!)
@@ -4289,7 +4286,7 @@ end do
 ! Already got numbers of the positive and negative CAPEs 
 ! Next, rank positive CAPEs in descending order
 if(npos==0) then
-  sec = 999._r8 ! if there are no positive CAPEs, set SEC a large positive value.
+  sec = 999._r8 ! if there are no positive CAPEs, set sec a large positive value.
 end if
 if(npos.gt.0) then
   !if npos=1, then there is only one positive CAPE and no need to rank.
@@ -4314,25 +4311,42 @@ if(npos.gt.0) then
     end do
   end if 
   ! Find J and get the sum of [(J+1)~NPOS] CAPEs
-  if(npos.gt.0) then ! At least one positive CAPE or no need to calculate sec, sec = 999.
-    do ii = 1,npos 
+  if(nneg==0) then ! no negative CAPEs, no need to find J and calculate sec
+    sec = 0._r8
+  end if
+  if(nneg/=0) then 
+    ! Find J first
+    Jval = -1 ! as a missing value
+    do ii = 1,npos
        if(ii/=npos) then
-         sum_pos = 0._r8  
+         sum_pos = 0._r8
          do jj = ii+1,npos
             sum_pos = sum_pos+cape_pos(jj)
-         end do
-       else ! if(ii==npos)
-         sum_pos = 0._r8 ! because the rest of CAPEs are all negative.      
-       end if
-       if(nneg/=0) then ! wx: 2021-01-10 please notice that the nneg is also possible to be zero when ii=npos    
-         favg = (sum_pos+sum_neg)/(npos-ii+nneg) ! the average of the rest (N-J) CAPEs, should be negative
-         if(cape_pos(ii).gt.(-1._r8*favg*(ncol+1-ii))/ii) then
-           sec = favg*(ncol+1-ii)/ii
-         end if
-       else ! nneg=0: no negative CAPEs, only postive CAPEs
-         sec = 0._r8 ! no need to calculate sec      
-       end if
+         end do 
+       else 
+         sum_pos = 0._r8 ! because the rest of CAPEs are all negative.
+       end if 
+       favg = (sum_pos+sum_neg)/(npos-ii+nneg) ! the average of the rest (N-J) CAPEs, should be negative
+       if(cape_pos(ii).gt.(-1._r8*favg*(ncol+1-ii))/ii) then
+         Jval = ii
+       end if 
     end do
+    ! Already got J or J is missing value -1 
+    if(Jval==-1) then  ! if we can't find J,  
+      sec = 999._r8 ! it means the base domain CAPE < 0. We think there is no convection and set sec = 999.
+    else
+      ! Calculate favg from J+1 to N
+      if(Jval/=npos) then
+        sum_pos = 0._r8      
+        do ii = Jval+1,npos
+           sum_pos = sum_pos+cape_pos(ii)
+        end do
+      else
+        sum_pos = 0._r8
+      end if
+      favg = (sum_pos+sum_neg)/(npos-Jval+nneg)
+      sec = favg*(ncol+1-Jval)/Jval
+    end if  
   end if  
 end if
 end subroutine sec_wx
