@@ -111,6 +111,7 @@ struct ComposeTransportImpl {
 
   void advance_hypervis_scalar(const Real dt);
 
+  int run_trajectory_unit_tests();
   ComposeTransport::TestDepView::HostMirror
   test_trajectory(Real t0, Real t1, const bool independent_time_steps);
 

@@ -14,7 +14,7 @@ using CTI = ComposeTransportImpl;
 
 KOKKOS_FUNCTION
 static void ugradv_sphere (
-  const SphereOperators& sphere_ops, KernelVariables& kv,
+  const SphereOperators& sphere_ops, const KernelVariables& kv,
   const typename ViewConst<ExecViewUnmanaged<Real[2][3][NP][NP]> >::type& vec_sphere2cart,
   // velocity, latlon
   const typename ViewConst<ExecViewUnmanaged<Scalar[2][NP][NP][NUM_LEV]> >::type& u,
@@ -43,6 +43,28 @@ static void ugradv_sphere (
     };
     CTI::loop_ijk<NUM_LEV>(kv, f2);
   }
+}
+
+typedef typename ViewConst<ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV_P]> >::type CSNlevp;
+typedef typename ViewConst<ExecViewUnmanaged<Real[NP][NP][NUM_LEV_P*VECTOR_SIZE]> >::type CRNlevp;
+typedef ExecViewUnmanaged<Real[NP][NP][NUM_LEV_P*VECTOR_SIZE]> RNlevp;
+
+// Form a 3rd-degree Lagrange polynomial over (x(k-1:k+1), y(k-1:k+1)) and set
+// yi(k) to its derivative at x(k).
+KOKKOS_FUNCTION static void approx_derivative (
+  const KernelVariables& kv, const CSNlevp& xs, const CSNlevp& ys,
+  const ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV]>& ysi) // yi(:,:,0) is undefined
+{
+#if 0
+  CRNlevp x(static_cast<const Real*>(xs.data()));
+  CRNlevp y(static_cast<const Real*>(ys.data()));
+  RNlevp yi(static_cast<const Real*>(ysi.data()));
+  const auto f = [&] (const int i, const int j, const int k) {
+    if (k == 0) continue;
+    ((xs(i,j,k) - xs(i,j,k-1))/())*;
+  };
+  CTI::loop_ijk<num_phys_lev>(kv, f);
+#endif
 }
 
 /* Calculate the trajecotry at second order using Taylor series expansion. Also
@@ -148,6 +170,10 @@ void ComposeTransportImpl::calc_trajectory (const Real dt) {
     };
     Kokkos::parallel_for(m_tp_ne, calc_departure_point);
   }
+}
+
+int ComposeTransportImpl::run_trajectory_unit_tests () {
+  return 0;
 }
 
 ComposeTransport::TestDepView::HostMirror ComposeTransportImpl::

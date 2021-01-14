@@ -46,6 +46,9 @@ void ComposeTransport::run (const TimeLevel& tl, const Real dt) {
 std::vector<std::pair<std::string, int> >
 ComposeTransport::run_unit_tests () {
   std::vector<std::pair<std::string, int> > fails;
+  int nerr;
+  nerr = m_compose_impl->run_trajectory_unit_tests();
+  if (nerr) fails.push_back(std::make_pair("run_trajectory_unit_tests", nerr));
   return fails;
 }
 
