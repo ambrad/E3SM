@@ -60,8 +60,10 @@ interface
   subroutine init_elements_2d_c (ie, D_ptr, Dinv_ptr, elem_fcor_ptr,      &
                                  elem_spheremp_ptr, elem_rspheremp_ptr,   &
                                  elem_metdet_ptr, elem_metinv_ptr,        &
-                                 tensorvisc_ptr, vec_sph2cart_ptr) bind(c)
-    use iso_c_binding, only: c_int, c_ptr
+                                 tensorvisc_ptr, vec_sph2cart_ptr,        &
+                                 sphere_cart_vec, sphere_latlon_vec) bind(c)
+    use iso_c_binding, only: c_int, c_ptr, c_double
+    use dimensions_mod, only : np
     !
     ! Inputs
     !
@@ -70,6 +72,7 @@ interface
     type (c_ptr) , intent(in) :: elem_spheremp_ptr, elem_rspheremp_ptr
     type (c_ptr) , intent(in) :: elem_metdet_ptr, elem_metinv_ptr
     type (c_ptr) , intent(in) :: tensorvisc_ptr, vec_sph2cart_ptr
+    real (kind=c_double), intent(in) :: sphere_cart_vec(3,np,np), sphere_latlon_vec(2,np,np)
   end subroutine init_elements_2d_c
 
   ! Copies geopotential from f90 arrays to C++ views

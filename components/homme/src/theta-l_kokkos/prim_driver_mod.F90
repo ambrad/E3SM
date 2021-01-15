@@ -119,6 +119,7 @@ contains
     use iso_c_binding, only : c_ptr, c_loc
     use element_mod,   only : element_t
     use theta_f2c_mod, only : init_elements_2d_c
+    use coordinate_systems_mod, only : change_coordinates, cartesian3D_t
     !
     ! Input(s)
     !
@@ -136,7 +137,10 @@ contains
     type (c_ptr) :: elem_metdet_ptr, elem_metinv_ptr
     type (c_ptr) :: elem_tensorvisc_ptr, elem_vec_sph2cart_ptr
 
-    integer :: ie
+    type (cartesian3D_t) :: sphere_cart
+    real (kind=real_kind) :: sphere_cart_vec(3,np,np), sphere_latlon_vec(2,np,np)
+
+    integer :: ie, i, j
 
     elem_D_ptr            = c_loc(elem_D)
     elem_Dinv_ptr         = c_loc(elem_Dinv)
@@ -158,11 +162,22 @@ contains
       elem_metinv       = elem(ie)%metinv
       elem_tensorvisc   = elem(ie)%tensorVisc
       elem_vec_sph2cart = elem(ie)%vec_sphere2cart
+      do j = 1,np
+         do i = 1,np
+            sphere_cart = change_coordinates(elem(ie)%spherep(i,j))
+            sphere_cart_vec(1,i,j) = sphere_cart%x
+            sphere_cart_vec(2,i,j) = sphere_cart%y
+            sphere_cart_vec(3,i,j) = sphere_cart%z
+            sphere_latlon_vec(1,i,j) = elem(ie)%spherep(i,j)%lat
+            sphere_latlon_vec(2,i,j) = elem(ie)%spherep(i,j)%lon
+         end do
+      end do
       call init_elements_2d_c (ie-1,                                      &
                                elem_D_ptr, elem_Dinv_ptr, elem_fcor_ptr,  &
                                elem_spheremp_ptr, elem_rspheremp_ptr,     &
                                elem_metdet_ptr, elem_metinv_ptr,          &
-                               elem_tensorvisc_ptr, elem_vec_sph2cart_ptr)
+                               elem_tensorvisc_ptr, elem_vec_sph2cart_ptr,&
+                               sphere_cart_vec, sphere_latlon_vec)
     enddo
   end subroutine prim_init_grid_views
 

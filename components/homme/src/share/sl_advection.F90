@@ -11,9 +11,8 @@ module sl_advection
   use hybvcoord_mod, only      : hvcoord_t
   use time_mod, only           : TimeLevel_t, TimeLevel_Qdp
   use control_mod, only        : integration, test_case, hypervis_order, transport_alg, limiter_option
-  use edge_mod, only           : edgevpack_nlyr, edgevunpack_nlyr, edge_g, &
-       initghostbuffer3D, ghostVpack_unoriented, ghostVunpack_unoriented
-  use edgetype_mod, only       : EdgeDescriptor_t, EdgeBuffer_t, ghostbuffer3D_t
+  use edge_mod, only           : edgevpack_nlyr, edgevunpack_nlyr, edge_g
+  use edgetype_mod, only       : EdgeDescriptor_t, EdgeBuffer_t
   use hybrid_mod, only         : hybrid_t
   use bndry_mod, only          : bndry_exchangev
   use perf_mod, only           : t_startf, t_stopf, t_barrierf ! _EXTERNAL
@@ -29,16 +28,23 @@ module sl_advection
        half = 0.5_real_kind, one = 1.0_real_kind, two = 2.0_real_kind, &
        eps = epsilon(1.0_real_kind)
 
-  type (ghostBuffer3D_t)   :: ghostbuf_tr
   type (cartesian3D_t), allocatable :: dep_points_all(:,:,:,:) ! (np,np,nlev,nelemd)
   real(kind=real_kind), dimension(:,:,:,:,:), allocatable :: minq, maxq ! (np,np,nlev,qsize,nelemd)
 
   ! For use in make_positive.
   real(kind=real_kind) :: dp_tol
 
-  public :: Prim_Advec_Tracers_remap_ALE, sl_init1, sl_vertically_remap_tracers, sl_unittest
+  public :: prim_advec_tracers_remap_ALE, sl_init1, sl_vertically_remap_tracers, sl_unittest
+
+  ! For testing
+  public :: calc_trajectory, dep_points_all
+
+  ! For C++
+  public :: sl_get_params
 
   logical, parameter :: barrier = .false.
+
+  integer :: amb_gpu_profile
 
 contains
 
@@ -64,7 +70,7 @@ contains
   subroutine sl_init1(par, elem)
     use interpolate_mod,        only : interpolate_tracers_init
     use control_mod,            only : transport_alg, semi_lagrange_cdr_alg, cubed_sphere_map, &
-         nu_q, semi_lagrange_hv_q
+         nu_q, semi_lagrange_hv_q, semi_lagrange_cdr_check
     use element_state,          only : timelevels
     use coordinate_systems_mod, only : cartesian3D_t, change_coordinates
     use perf_mod, only: t_startf, t_stopf
@@ -76,6 +82,9 @@ contains
     integer :: nslots, ie, num_neighbors, need_conservation, i, j
     logical :: slmm, cisl, qos, sl_test, independent_time_steps
 
+    character (len=255) :: amb_experiment_str
+    integer :: env_gpu_profile
+
 #ifdef HOMME_ENABLE_COMPOSE
     call t_startf('sl_init1')
     if (transport_alg > 0) then
@@ -83,7 +92,6 @@ contains
        if (par%masterproc .and. nu_q > 0 .and. semi_lagrange_hv_q > 0) &
             write(iulog,*) 'COMPOSE> use HV; nu_q, all:', nu_q, semi_lagrange_hv_q
        nslots = nlev*qsize
-       call interpolate_tracers_init()
        ! Technically a memory leak, but the array persists for the entire
        ! run, so not a big deal for now.
        allocate(dep_points_all(np,np,nlev,size(elem)))
@@ -110,21 +118,61 @@ contains
        allocate(minq(np,np,nlev,qsize,size(elem)), maxq(np,np,nlev,qsize,size(elem)))
        dp_tol = -one
     endif
+
+    amb_gpu_profile = 0
+    call get_environment_variable("AMB_GPU_PROFILE", amb_experiment_str, status=ie)
+    if (ie /= 1) read(amb_experiment_str, *, iostat=ie) amb_gpu_profile
+    if (.not. (amb_gpu_profile == 0 .or. amb_gpu_profile == 1)) then
+       call abortmp('amb_gpu_profile must be 0 or 1')
+    end if
+    if (par%masterproc) then
+       print *,'amb> amb_gpu_profile',amb_gpu_profile
+    end if
+    if (amb_gpu_profile > 0) then
+       if (semi_lagrange_hv_q > 0 .and. nu_q /= 0) &
+            call abortmp('hv_q or nu_q must be 0 if amb_gpu_profile > 0')
+       if (semi_lagrange_cdr_check) &
+            call abortmp('cdr_check must be off if amb_gpu_profile > 0')
+       if (semi_lagrange_cdr_alg /= 2) &
+            call abortmp('cdr_alg must be 2 if amb_gpu_profile > 0')
+    end if
     call t_stopf('sl_init1')
 #endif
   end subroutine sl_init1
 
+  subroutine sl_get_params(nu_q_out, hv_scaling, hv_q, hv_subcycle_q, limiter_option_out, &
+       cdr_check) bind(c)
+    use control_mod, only: semi_lagrange_hv_q, hypervis_subcycle_q, semi_lagrange_cdr_check, &
+         hypervis_power, nu_q, hypervis_scaling, limiter_option
+    use iso_c_binding, only: c_int, c_double
+
+    real(c_double), intent(out) :: nu_q_out, hv_scaling
+    integer(c_int), intent(out) :: hv_q, hv_subcycle_q, limiter_option_out, cdr_check
+
+    nu_q_out = nu_q
+    hv_scaling = hypervis_scaling
+    hv_q = semi_lagrange_hv_q
+    hv_subcycle_q = hypervis_subcycle_q
+    limiter_option_out = limiter_option
+    cdr_check = 0
+    if (semi_lagrange_cdr_check) cdr_check = 1
+
+    ! Assert some things.
+    if (nu_q > 0 .and. hv_q > 0 .and. hypervis_power /= 0) &
+         call abortmp('SL transport: hypervis_power /= 0')
+  end subroutine sl_get_params
+
   subroutine prim_advec_tracers_remap_ALE(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete)
     use coordinate_systems_mod, only : cartesian3D_t, cartesian2D_t
     use dimensions_mod,         only : max_neigh_edges
-    use bndry_mod,              only : ghost_exchangevfull
     use interpolate_mod,        only : interpolate_tracers, minmax_tracers
     use control_mod,            only : dt_tracer_factor, nu_q, transport_alg, semi_lagrange_hv_q, &
          semi_lagrange_cdr_alg, semi_lagrange_cdr_check
     ! For DCMIP16 supercell test case.
     use control_mod,            only : dcmip16_mu_q
     use prim_advection_base,    only : advance_physical_vis
-    use vertremap_base,         only : remap1
+    use compose_mod,            only : compose_h2d, compose_d2h
+    use iso_c_binding,          only : c_bool
 
     implicit none
     type (element_t)     , intent(inout) :: elem(:)
@@ -139,17 +187,138 @@ contains
     type(cartesian3D_t)   :: dep_points  (np,np)
 
     integer :: i,j,k,l,n,q,ie,n0_qdp,np1_qdp
-    integer :: num_neighbors, scalar_q_bounds, info
+    integer :: scalar_q_bounds, info
     logical :: slmm, cisl, qos, sl_test, independent_time_steps
-    real(kind=real_kind) :: wr(np,np,nlev,2)
+    logical(kind=c_bool) :: h2d, d2h
 
 #ifdef HOMME_ENABLE_COMPOSE
     call t_barrierf('Prim_Advec_Tracers_remap_ALE', hybrid%par%comm)
     call t_startf('Prim_Advec_Tracers_remap_ALE')
 
     call sl_parse_transport_alg(transport_alg, slmm, cisl, qos, sl_test, independent_time_steps)
+    ! Until I get the DSS onto GPU, always need to h<->d.
+    !h2d = hybrid%par%nprocs > 1 .or. semi_lagrange_cdr_check .or. & (semi_lagrange_hv_q > 0 .and. nu_q > 0)
+    h2d = .true.
+    if (amb_gpu_profile > 0) h2d = .false.
+    d2h = compose_d2h .or. h2d
+    h2d = compose_h2d .or. h2d
 
     call TimeLevel_Qdp(tl, dt_tracer_factor, n0_qdp, np1_qdp)
+
+    call calc_trajectory(elem, deriv, hvcoord, hybrid, dt, tl, &
+         independent_time_steps, nets, nete)
+
+    call t_startf('SLMM_csl')
+    !todo Here and in the set-pointer loop for CEDR, do just in the first call.
+    do ie = nets, nete
+       call slmm_csl_set_elem_data(ie, elem(ie)%metdet, &
+            elem(ie)%state%Qdp, n0_qdp, &
+            elem(ie)%derived%dp, elem(ie)%state%Q, &
+            elem(ie)%desc%actual_neigh_edges + 1, &
+            h2d, d2h)
+    end do
+    ! edge_g buffers are shared by SLMM, CEDR, other places in HOMME, and
+    ! dp_coupling in EAM. Thus, we must take care to protected threaded
+    ! access. In the following, "No barrier needed" comments justify why a
+    ! barrier isn't needed.
+    ! No barrier needed: ale_rkdss has a horiz thread barrier at the end.
+    call slmm_csl(nets, nete, dep_points_all, minq, maxq, info)
+    ! No barrier needed: slmm_csl has a horiz thread barrier at the end.
+    if (info /= 0) then
+       call write_velocity_data(elem, nets, nete, hybrid, deriv, dt, tl)
+       call abortmp('slmm_csl returned -1; see output above for more information.')
+    end if
+    if (barrier) call perf_barrier(hybrid)
+    call t_stopf('SLMM_csl')
+
+    if (semi_lagrange_hv_q > 0 .and. nu_q > 0) then
+       n = semi_lagrange_hv_q
+       call advance_hypervis_scalar(elem, hvcoord, hybrid, deriv, tl%np1, np1_qdp, nets, nete, dt, n)
+       ! No barrier needed: advance_hypervis_scalar has a horiz thread barrier at the end.
+    end if
+
+    ! CEDR works with either classical SL or IR.
+    if (semi_lagrange_cdr_alg > 1 .and. semi_lagrange_cdr_alg /= 42) then
+       scalar_q_bounds = 0
+       call cedr_sl_set_pointers_begin(nets, nete)
+       do ie = nets, nete
+          call cedr_sl_set_spheremp(ie, elem(ie)%spheremp)
+          call cedr_sl_set_dp0(hvcoord%dp0)
+          call cedr_sl_set_Qdp(ie, elem(ie)%state%Qdp, n0_qdp, np1_qdp)
+          if (independent_time_steps) then
+             call cedr_sl_set_dp(ie, elem(ie)%derived%divdp) ! dp_star
+          else
+             call cedr_sl_set_dp3d(ie, elem(ie)%state%dp3d, tl%np1)
+          end if
+          call cedr_sl_set_Q(ie, elem(ie)%state%Q)
+       end do
+       call cedr_sl_set_pointers_end(h2d, d2h)
+       call t_startf('CEDR')
+       ! No barrier needed: A barrier was already called.
+       call cedr_sl_run_global(minq, maxq, nets, nete)
+       ! No barrier needed: run_cdr has a horiz thread barrier at the end.
+       if (barrier) call perf_barrier(hybrid)
+       call t_stopf('CEDR')
+       call t_startf('CEDR_local')
+       call cedr_sl_run_local(minq, maxq, nets, nete, scalar_q_bounds, limiter_option)
+       ! Barrier needed to protect edge_g buffers use in CEDR.
+#if (defined HORIZ_OPENMP)
+       !$omp barrier
+#endif
+       if (barrier) call perf_barrier(hybrid)
+       call t_stopf('CEDR_local')
+    else
+       do ie = nets, nete
+          do k = 1, nlev
+             do q = 1, qsize
+                elem(ie)%state%Qdp(:,:,k,q,np1_qdp) = elem(ie)%state%Q(:,:,k,q) * &
+                     elem(ie)%state%dp3d(:,:,k,tl%np1)
+             enddo
+          enddo
+       end do
+    end if
+    ! Technically, dss_Qdp is needed only if semi_lagrange_cdr_alg > 1;
+    ! otherwise, each Q(dp) field is already continuous. But SL transport would
+    ! be run without a CDR only by a specialist doing some debugging. Meanwhile,
+    ! dss_Qdp also DSSes derived%omega_p for diagnostics. It's important not to
+    ! forget to do that, and we don't need to optimize for the
+    ! semi_lagrange_cdr_alg <= 1 case, so just always call dss_Qdp.
+    if (amb_gpu_profile == 0) then
+       call t_startf('SL_dss')
+       call dss_Qdp(elem, nets, nete, hybrid, np1_qdp)
+       if (barrier) call perf_barrier(hybrid)
+       call t_stopf('SL_dss')
+    end if
+    if (semi_lagrange_cdr_check) then
+       call t_startf('CEDR_check')
+       call cedr_sl_check(minq, maxq, nets, nete)
+       if (barrier) call perf_barrier(hybrid)
+       call t_stopf('CEDR_check')
+    end if
+    ! physical viscosity for supercell test case
+    if (dcmip16_mu_q > 0) then
+       call advance_physical_vis(elem, hvcoord, hybrid, deriv, tl%np1, np1_qdp, nets, nete, dt, dcmip16_mu_q)
+    endif
+    call t_stopf('Prim_Advec_Tracers_remap_ALE')
+#endif
+  end subroutine prim_advec_tracers_remap_ALE
+  
+  subroutine calc_trajectory(elem, deriv, hvcoord, hybrid, dt, tl, &
+       independent_time_steps, nets, nete)
+    use vertremap_base, only : remap1
+
+    type (element_t)     , intent(inout) :: elem(:)
+    type (derivative_t)  , intent(in   ) :: deriv
+    type (hvcoord_t)     , intent(in   ) :: hvcoord
+    type (hybrid_t)      , intent(in   ) :: hybrid
+    real(kind=real_kind) , intent(in   ) :: dt
+    type (TimeLevel_t)   , intent(in   ) :: tl
+    logical              , intent(in   ) :: independent_time_steps
+    integer              , intent(in   ) :: nets
+    integer              , intent(in   ) :: nete
+
+    real(kind=real_kind) :: wr(np,np,nlev,2)
+    integer :: ie, k
 
     do ie = nets,nete
        elem(ie)%derived%vn0 = elem(ie)%state%v(:,:,:,:,tl%np1)
@@ -178,7 +347,6 @@ contains
     if (barrier) call perf_barrier(hybrid)
     call t_startf('SLMM_v2x')
     do ie = nets, nete
-       num_neighbors = elem(ie)%desc%actual_neigh_edges + 1
 #if (defined COLUMN_OPENMP)
        !$omp parallel do private(k)
 #endif
@@ -188,98 +356,7 @@ contains
        end do
     end do
     call t_stopf('SLMM_v2x')
-
-    call t_startf('SLMM_csl')
-    !todo Here and in the set-pointer loop for CEDR, do just in the first call.
-    do ie = nets, nete
-       call slmm_csl_set_elem_data(ie, elem(ie)%metdet, &
-            elem(ie)%state%Qdp(:,:,:,:,n0_qdp), &
-            elem(ie)%derived%dp, elem(ie)%state%Q, &
-            elem(ie)%desc%actual_neigh_edges + 1)
-    end do
-    ! edge_g buffers are shared by SLMM, CEDR, other places in HOMME, and
-    ! dp_coupling in EAM. Thus, we must take care to protected threaded
-    ! access. In the following, "No barrier needed" comments justify why a
-    ! barrier isn't needed.
-    ! No barrier needed: ale_rkdss has a horiz thread barrier at the end.
-    call slmm_csl(nets, nete, dep_points_all, minq, maxq, info)
-    ! No barrier needed: slmm_csl has a horiz thread barrier at the end.
-    if (info /= 0) then
-       call write_velocity_data(elem, nets, nete, hybrid, deriv, dt, tl)
-       call abortmp('slmm_csl returned -1; see output above for more information.')
-    end if
-    if (barrier) call perf_barrier(hybrid)
-    call t_stopf('SLMM_csl')
-
-    if (semi_lagrange_hv_q > 0 .and. nu_q > 0) then
-       n = semi_lagrange_hv_q
-       call advance_hypervis_scalar(elem, hvcoord, hybrid, deriv, tl%np1, np1_qdp, nets, nete, dt, n)
-       ! No barrier needed: advance_hypervis_scalar has a horiz thread barrier at the end.
-    end if
-
-    ! CEDR works with either classical SL or IR.
-    if (semi_lagrange_cdr_alg > 1) then
-       scalar_q_bounds = 0
-       call cedr_sl_set_pointers_begin(nets, nete)
-       do ie = nets, nete
-          call cedr_sl_set_spheremp(ie, elem(ie)%spheremp)
-          call cedr_sl_set_dp0(hvcoord%dp0)
-          call cedr_sl_set_Qdp(ie, elem(ie)%state%Qdp, n0_qdp, np1_qdp)
-          if (independent_time_steps) then
-             call cedr_sl_set_dp(ie, elem(ie)%derived%divdp) ! dp_star
-          else
-             call cedr_sl_set_dp3d(ie, elem(ie)%state%dp3d, tl%np1)
-          end if
-          call cedr_sl_set_Q(ie, elem(ie)%state%Q)
-       end do
-       call cedr_sl_set_pointers_end()
-       call t_startf('CEDR')
-       ! No barrier needed: A barrier was already called.
-       call cedr_sl_run(minq, maxq, nets, nete)
-       ! No barrier needed: run_cdr has a horiz thread barrier at the end.
-       if (barrier) call perf_barrier(hybrid)
-       call t_stopf('CEDR')
-       call t_startf('CEDR_local')
-       call cedr_sl_run_local(minq, maxq, nets, nete, scalar_q_bounds, limiter_option)
-       ! Barrier needed to protect edge_g buffers use in CEDR.
-#if (defined HORIZ_OPENMP)
-       !$omp barrier
-#endif
-       if (barrier) call perf_barrier(hybrid)
-       call t_stopf('CEDR_local')
-    else
-       do ie = nets, nete
-          do k = 1, nlev
-             do q = 1, qsize
-                elem(ie)%state%Qdp(:,:,k,q,np1_qdp) = elem(ie)%state%Q(:,:,k,q) * &
-                     elem(ie)%state%dp3d(:,:,k,tl%np1)
-             enddo
-          enddo
-       end do
-    end if
-    ! Technically, dss_Qdp is needed only if semi_lagrange_cdr_alg > 1;
-    ! otherwise, each Q(dp) field is already continuous. But SL transport would
-    ! be run without a CDR only by a specialist doing some debugging. Meanwhile,
-    ! dss_Qdp also DSSes derived%omega_p for diagnostics. It's important not to
-    ! forget to do that, and we don't need to optimize for the
-    ! semi_lagrange_cdr_alg <= 1 case, so just always call dss_Qdp.
-    call t_startf('SL_dss')
-    call dss_Qdp(elem, nets, nete, hybrid, np1_qdp)
-    if (barrier) call perf_barrier(hybrid)
-    call t_stopf('SL_dss')
-    if (semi_lagrange_cdr_check) then
-       call t_startf('CEDR_check')
-       call cedr_sl_check(minq, maxq, nets, nete)
-       if (barrier) call perf_barrier(hybrid)
-       call t_stopf('CEDR_check')
-    end if
-    ! physical viscosity for supercell test case
-    if (dcmip16_mu_q > 0) then
-       call advance_physical_vis(elem, hvcoord, hybrid, deriv, tl%np1, np1_qdp, nets, nete, dt, dcmip16_mu_q)
-    endif
-    call t_stopf('Prim_Advec_Tracers_remap_ALE')
-#endif
-  end subroutine prim_advec_tracers_remap_ALE
+  end subroutine calc_trajectory
 
   ! ----------------------------------------------------------------------------------!
   !SUBROUTINE ALE_RKDSS
@@ -353,15 +430,19 @@ contains
           elem(ie)%derived%vstar(:,:,:,k) = &
                (elem(ie)%derived%vn0(:,:,:,k) + elem(ie)%derived%vstar(:,:,:,k))/2 - dt*vtmp(:,:,:)/2
 
-          elem(ie)%derived%vstar(:,:,1,k) = elem(ie)%derived%vstar(:,:,1,k)*elem(ie)%spheremp*elem(ie)%rspheremp
-          elem(ie)%derived%vstar(:,:,2,k) = elem(ie)%derived%vstar(:,:,2,k)*elem(ie)%spheremp*elem(ie)%rspheremp
+          elem(ie)%derived%vstar(:,:,1,k) = elem(ie)%derived%vstar(:,:,1,k)* &
+               elem(ie)%spheremp*elem(ie)%rspheremp
+          elem(ie)%derived%vstar(:,:,2,k) = elem(ie)%derived%vstar(:,:,2,k)* &
+               elem(ie)%spheremp*elem(ie)%rspheremp
           if (independent_time_steps) then
              ! divdp contains the reconstructed dp.
-             elem(ie)%derived%divdp(:,:,k) = elem(ie)%derived%divdp(:,:,k)*elem(ie)%spheremp*elem(ie)%rspheremp
+             elem(ie)%derived%divdp(:,:,k) = elem(ie)%derived%divdp(:,:,k)*elem(ie)%spheremp* &
+                  elem(ie)%rspheremp
           end if
        enddo
        call edgeVpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%vstar,2*nlev,0,nlyr)
-       if (independent_time_steps) call edgeVpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%divdp,nlev,2*nlev,nlyr)
+       if (independent_time_steps) &
+            call edgeVpack_nlyr(edge_g,elem(ie)%desc,elem(ie)%derived%divdp,nlev,2*nlev,nlyr)
     enddo
 
     call t_startf('ALE_RKdss_bexchV')
@@ -523,63 +604,6 @@ contains
        end do
     end do
   end subroutine dss_Qdp
-
-  ! Replacement for edge_mod_base::ghostvpack_unoriented, which has a strange
-  ! 'threadsafe' module variable that causes a race condition when HORIZ and
-  ! COLUMN threading are on at the same time.
-  subroutine amb_ghostvpack_unoriented(edge,v,nc,vlyr,kptr,desc)
-    use edgetype_mod, only : edgedescriptor_t, ghostbuffer3d_t 
-    implicit none
-    type (Ghostbuffer3D_t),intent(inout) :: edge
-    integer,              intent(in)   :: vlyr
-    integer,              intent(in)   :: nc
-    real (kind=real_kind),intent(in)   :: v(nc,nc,vlyr)
-    integer,              intent(in)   :: kptr
-    type (EdgeDescriptor_t),intent(in) :: desc
-
-    integer :: k,l,l_local,is
-
-    do l_local=1,desc%actual_neigh_edges
-       l=desc%loc2buf(l_local)
-       is = desc%putmapP_ghost(l)
-       do k=1,vlyr
-          edge%buf(:,:,kptr+k,is) = v(:,:,k)  
-       enddo
-    end do
-  end subroutine amb_ghostvpack_unoriented
-
-  subroutine amb_ghostvunpack_unoriented(edge,v,nc,vlyr,kptr,desc,GlobalId,u)
-    use edgetype_mod, only : Ghostbuffer3d_t, EdgeDescriptor_t
-    implicit none
-
-    type (Ghostbuffer3D_t),intent(inout)  :: edge
-    integer,               intent(in)     :: vlyr
-    integer,               intent(in)     :: nc
-    real (kind=real_kind), intent(out)    :: v(nc,nc,vlyr,*)
-    integer,               intent(in)     :: kptr
-    type (EdgeDescriptor_t),intent(in)    :: desc
-    integer(kind=int_kind),intent(in)     :: GlobalId
-    real (kind=real_kind), intent(in)     :: u(nc,nc,vlyr)
-
-    integer :: k,l,n,is,m,pid,gid
-
-    m=0
-    gid = GlobalID
-    do n=1,desc%actual_neigh_edges+1
-       l = desc%loc2buf(m+1)
-       pid = desc%globalID(l)
-       if (m==desc%actual_neigh_edges .OR. pid < gid) then
-          gid = -1
-          v(:,:,:,n) = u(:,:,:)
-       else
-          m = m+1
-          is = desc%getmapP_ghost(l)
-          do k=1,vlyr
-             v(:,:,k,n) = edge%buf(:,:,kptr+k,is) 
-          enddo
-       end if
-    end do
-  end subroutine amb_ghostvunpack_unoriented
 
   subroutine perf_barrier(hybrid)
     use hybrid_mod, only : hybrid_t
@@ -829,6 +853,15 @@ contains
     real(real_kind) :: dp_neg_min
     integer :: i, j, k, k1, k2, d, t
 
+#ifndef NDEBUG
+    if (abs(hvcoord%hybi(1)) > 10*eps .or. hvcoord%hyai(nlevp) > 10*eps) then
+       if (hybrid%masterthread) &
+            print *, 'calc_vertically_lagrangian_levels: bi(1)', hvcoord%hybi(1), 'ai(nlevp)', &
+            hvcoord%hyai(nlevp)
+       call abortmp('hvcoord has unexpected non-0 entries at the bottom and/or top')
+    end if
+#endif
+
     ! Reconstruct an approximation to endpoint eta_dot_dpdn on
     ! Eulerian levels.
     do t = 1,2
@@ -893,6 +926,13 @@ contains
 
     dp_neg_min = reconstruct_and_limit_dp(elem%state%dp3d(:,:,:,tl%np1), &
          dt, dp_tol, eta_dot_dpdn(:,:,:,1), dprecon)
+#ifndef NDEBUG
+    if (dp_neg_min < dp_tol) then
+       write(iulog, '(a,i7,i7,es11.4)') &
+            'sl_advection: reconstruct_and_limit_dp (rank,ie) returned', &
+            hybrid%par%rank, ie, dp_neg_min
+    end if
+#endif
   end subroutine calc_vertically_lagrangian_levels
 
   subroutine eval_lagrange_poly_derivative(n, xs, ys, xi, yp)
