@@ -34,36 +34,6 @@ template <typename MT> using QExtremaConst = ko::Const<QExtrema<MT> >;
 
 struct Cartesian3D { Real x, y, z; };
 
-// When Homme is running with HORIZ_OPENMP enabled, we can't do
-//    const auto lv = gv; // gv is a managed view
-// within the impl because everything in our impl is within the top-level
-// HORIZ_OPENMP threaded region and the assignment above unsafely incr's and
-// decr's the shared pointer count. Thus, we must carefully always obtain
-// unmanaged Views to avoid the thread-unsafe ref-counting.
-
-template <typename View> View unmanaged (
-  const View& s, typename std::enable_if<View::rank_dynamic == 1>::type* = 0)
-{ return View(s.data(), s.extent(0)); }
-template <typename View> View unmanaged (
-  const View& s, typename std::enable_if<View::rank_dynamic == 2>::type* = 0)
-{ return View(s.data(), s.extent(0), s.extent(1)); }
-template <typename View> View unmanaged (
-  const View& s, typename std::enable_if<View::rank_dynamic == 3>::type* = 0)
-{ return View(s.data(), s.extent(0), s.extent(1), s.extent(2)); }
-template <typename View> View unmanaged (
-  const View& s, typename std::enable_if<View::rank_dynamic == 4>::type* = 0)
-{ return View(s.data(), s.extent(0), s.extent(1), s.extent(2), s.extent(3)); }
-template <typename View> View unmanaged (
-  const View& s, typename std::enable_if<View::rank_dynamic == 5>::type* = 0)
-{ return View(s.data(), s.extent(0), s.extent(1), s.extent(2), s.extent(3), s.extent(4)); }
-
-// For more complicated objects, use the following definitions.
-#ifdef COMPOSE_PORT
-# define AUTO_REF auto
-#else
-# define AUTO_REF auto&
-#endif
-
 template <typename VT> KOKKOS_FORCEINLINE_FUNCTION
 typename VT::value_type& idx_qext (const VT& qe, int ie, int q, int g, int lev) {
 #ifdef COMPOSE_PORT_DEV_VIEWS

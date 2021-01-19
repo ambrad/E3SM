@@ -89,10 +89,10 @@ void run_global (CDR<MT>& cdr, CDRT* cedr_cdr_p,
     const Int n = ta.nelemd*nlev*qsize*np2;
     ko::View<Real*> q_min_1d(q_min.data(), n);
     ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, n),
-                     KOKKOS_LAMBDA (const Int& idx)
+                     COMPOSE_LAMBDA (const Int& idx)
                      { q_min_1d(idx) = ko::max<Real>(q_min_1d(idx), 0); });
   }
-  const auto f = KOKKOS_LAMBDA (const Int& idx) {
+  const auto f = COMPOSE_LAMBDA (const Int& idx) {
     const Int ie = nets + idx/(nsuplev*qsize);
     const Int q = (idx / nsuplev) % qsize;
     const Int spli = idx % nsuplev;

@@ -231,7 +231,7 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const DepPoints<MT>& dep_poi
     const auto mylid_with_comm = cm.mylid_with_comm_d.unmanaged();
     ko::parallel_for(
       ko::RangePolicy<typename MT::DES>(start, end),
-      KOKKOS_LAMBDA (const Int& ptr) {
+      COMPOSE_LAMBDA (const Int& ptr) {
         const Int tci = mylid_with_comm(ptr);
         ed(tci).rmt.clear();
       });
@@ -247,7 +247,7 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const DepPoints<MT>& dep_poi
     const auto horiz_openmp = cm.horiz_openmp;
     const auto& ri_lidi_locks = cm.ri_lidi_locks;
 #endif
-    const auto f = KOKKOS_LAMBDA (const Int& ki) {
+    const auto f = COMPOSE_LAMBDA (const Int& ki) {
       const Int ptr = start + ki/(nlev*np2);
       const Int lev = (ki/np2) % nlev;
       const Int k = ki % np2;

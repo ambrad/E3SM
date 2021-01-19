@@ -162,7 +162,7 @@ void run_local (CDR<MT>& cdr, CDRT* cedr_cdr_p,
   const auto caas_in_suplev = cdr.caas_in_suplev;
   const auto ie2lci = unmanaged(cdr.ie2lci);
   const AUTO_REF cedr_cdr = *cedr_cdr_p;
-  const auto f = KOKKOS_LAMBDA (const Int& idx) {
+  const auto f = COMPOSE_LAMBDA (const Int& idx) {
     const Int ie = nets + idx/(nsuplev*qsize);
     const Int q = (idx / nsuplev) % qsize;
     const Int spli = idx % nsuplev;

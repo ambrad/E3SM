@@ -374,7 +374,7 @@ void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
   const auto& own_dep_list = cm.own_dep_list;
   const Int qsize = cm.qsize;
   static const Int blocksize = 8;
-  const auto f = KOKKOS_LAMBDA (const Int& it) {
+  const auto f = COMPOSE_LAMBDA (const Int& it) {
     const Int tci = own_dep_list(it,0);
     const Int tgt_lev = own_dep_list(it,1);
     const Int tgt_k = own_dep_list(it,2);
@@ -427,7 +427,7 @@ void copy_q (IslMpi<MT>& cm, const Int& nets,
   const auto& recvbufs = cm.recvbuf;
   const Int nlid = cm.mylid_with_comm_h.size();
   const Int qsize = cm.qsize, nlev = cm.nlev, np2 = cm.np2;
-  const auto f = KOKKOS_LAMBDA (const Int& it) {
+  const auto f = COMPOSE_LAMBDA (const Int& it) {
     const Int tci = mylid_with_comm(it/(np2*nlev));
     const Int rmt_id = it % (np2*nlev);
     auto& ed = ed_d(tci);
@@ -474,7 +474,7 @@ void calc_rmt_q_pass1_scan (IslMpi<MT>& cm) {
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
   Int cnt = 0, qcnt = 0;
   for (Int ri = 0; ri < nrmtrank; ++ri) {
-    const auto get_xos = KOKKOS_LAMBDA (const Int, Int& xos) {
+    const auto get_xos = COMPOSE_LAMBDA (const Int, Int& xos) {
       const auto&& xs = recvbuf(ri);
       Int nx_in_rank;
       getbuf(xs, 0, xos, nx_in_rank);
@@ -486,7 +486,7 @@ void calc_rmt_q_pass1_scan (IslMpi<MT>& cm) {
       cm.sendcount_h(ri) = 0;
       continue;
     }
-    const auto f = KOKKOS_LAMBDA (const Int& idx, Accum& a, const bool fin) {
+    const auto f = COMPOSE_LAMBDA (const Int& idx, Accum& a, const bool fin) {
       const auto&& xs = recvbuf(ri);
       Int lid;
       short lev, nx;
@@ -539,7 +539,7 @@ void calc_rmt_q_pass2 (IslMpi<MT>& cm) {
   const auto& recvbuf = cm.recvbuf;
   const Int qsize = cm.qsize;
 
-  const auto fqe = KOKKOS_LAMBDA (const Int& it) {
+  const auto fqe = COMPOSE_LAMBDA (const Int& it) {
     const Int
     ri = rmt_qs_extrema(4*it), lid = rmt_qs_extrema(4*it + 1),
     lev = rmt_qs_extrema(4*it + 2), qos = qsize*rmt_qs_extrema(4*it + 3);  
@@ -557,7 +557,7 @@ void calc_rmt_q_pass2 (IslMpi<MT>& cm) {
   const auto alg = cm.advecter->alg();
   static const Int blocksize = 8;
 
-  const auto fx = KOKKOS_LAMBDA (const Int& it) {
+  const auto fx = COMPOSE_LAMBDA (const Int& it) {
     const Int
     ri = rmt_xs(5*it), lid = rmt_xs(5*it + 1), lev = rmt_xs(5*it + 2),
     xos = rmt_xs(5*it + 3), qos = qsize*rmt_xs(5*it + 4);

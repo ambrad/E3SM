@@ -102,6 +102,43 @@ template <typename MT> using EnableIfSameSpace
 template <typename MT> using EnableIfDiffSpace
   = typename std::enable_if< ! SameSpace<MT>::value>::type;
 
+// When Homme is running with HORIZ_OPENMP enabled, we can't do
+//    const auto lv = gv; // gv is a managed view
+// within the impl because everything in our impl is within the top-level
+// HORIZ_OPENMP threaded region and the assignment above unsafely incr's and
+// decr's the shared pointer count. Thus, we must carefully always obtain
+// unmanaged Views to avoid the thread-unsafe ref-counting.
+
+template <typename View> View unmanaged (
+  const View& s, typename std::enable_if<View::rank_dynamic == 1>::type* = 0)
+{ return View(s.data(), s.extent(0)); }
+template <typename View> View unmanaged (
+  const View& s, typename std::enable_if<View::rank_dynamic == 2>::type* = 0)
+{ return View(s.data(), s.extent(0), s.extent(1)); }
+template <typename View> View unmanaged (
+  const View& s, typename std::enable_if<View::rank_dynamic == 3>::type* = 0)
+{ return View(s.data(), s.extent(0), s.extent(1), s.extent(2)); }
+template <typename View> View unmanaged (
+  const View& s, typename std::enable_if<View::rank_dynamic == 4>::type* = 0)
+{ return View(s.data(), s.extent(0), s.extent(1), s.extent(2), s.extent(3)); }
+template <typename View> View unmanaged (
+  const View& s, typename std::enable_if<View::rank_dynamic == 5>::type* = 0)
+{ return View(s.data(), s.extent(0), s.extent(1), s.extent(2), s.extent(3), s.extent(4)); }
+
+// For more complicated objects, use the following definitions.
+#ifdef COMPOSE_PORT
+# define AUTO_REF auto
+#else
+# define AUTO_REF auto&
+#endif
+
+// Copy by ref if not port build.
+#ifdef COMPOSE_PORT
+# define COMPOSE_LAMBDA KOKKOS_LAMBDA
+#else
+# define COMPOSE_LAMBDA [&]
+#endif
+
 } // namespace Kokkos
 
 #endif
