@@ -6,6 +6,8 @@
 
 #include "cedr_cdr.hpp"
 
+#include <vector>
+
 namespace cedr {
 // ClipAndAssuredSum.
 namespace caas {

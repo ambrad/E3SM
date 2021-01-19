@@ -6,6 +6,7 @@
 
 #include <cassert>
 #include <memory>
+#include <vector>
 
 namespace homme {
 typedef int Int;
@@ -130,8 +131,8 @@ struct TracerArrays {
   Int n0_qdp, n1_qdp, np1;
 
 #if defined COMPOSE_PORT_DEV_VIEWS
-  template <typename Datatype>
-  using View = ko::View<Datatype, ko::LayoutRight, typename MT::DDT>;
+  template <typename Datatype> using View =
+    ko::View<Datatype, ko::LayoutRight, typename MT::DDT>;
   View<Real**> spheremp;
   View<Real***>   dp;   // elem%derived%dp
   View<Real****>  dp3d; // elem%state%dp3d or the sl3d equivalent

@@ -16,13 +16,16 @@ void cedr_finalize();
 
 namespace compose {
 
+#ifdef COMPOSE_PORT
 template <typename DataType>
 using View = typename TracerArrays<ko::MachineTraits>::View<DataType>;
+#endif
 
 void set_views (const SetView<double***>& spheremp,
                 const SetView<double****>& dp, const SetView<double*****>& dp3d,
                 const SetView<double******>& qdp, const SetView<double*****>& q,
                 const SetView<double*****>& dep_points) {
+#ifdef COMPOSE_PORT
   auto& ta = *get_tracer_arrays();
   const auto nel = spheremp.extent_int(0);
   const auto np2 = spheremp.extent_int(1)*spheremp.extent_int(1);
@@ -34,6 +37,9 @@ void set_views (const SetView<double***>& spheremp,
   ta.qdp = View<Real*****>(qdp.data(), nel, qdp.extent_int(1), qsize_d, np2, nlev);
   ta.q = View<Real****>(q.data(), nel, qsize_d, np2, nlev);
   ta.dep_points = View<Real***[3]>(dep_points.data(), nel, dep_points.extent_int(1), np2);
+#else
+  slmm_assert(0);
+#endif
 }
 
 void advect (const int np1, const int n0_qdp, const int np1_qdp) {
