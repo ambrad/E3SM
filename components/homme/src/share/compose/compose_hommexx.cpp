@@ -38,7 +38,8 @@ void set_views (const SetView<double***>& spheremp,
   ta.q = View<Real****>(q.data(), nel, qsize_d, np2, nlev);
   ta.dep_points = View<Real***[3]>(dep_points.data(), nel, dep_points.extent_int(1), np2);
 #else
-  slmm_assert(0);
+  slmm_throw_if(true, "Running a Hommexx code path with the non-Hommexx build"
+                " is not supported.\n");
 #endif
 }
 
