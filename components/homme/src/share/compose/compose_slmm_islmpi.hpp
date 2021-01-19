@@ -216,7 +216,7 @@ struct FixedCapList {
     FixedCapList<T,DT> ufcl;
     ufcl.d_ = Array(d_.data(), d_.extent(0));
 #ifdef COMPOSE_PORT
-    ufcl.n_ = ko::View<Int, DT>(n_.data(), n_.extent(0));
+    ufcl.n_ = ko::View<Int, DT>(n_.data());
 #else
     ufcl.n_ = n_;
 #endif
