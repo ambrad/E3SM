@@ -756,8 +756,13 @@ void cedr_sl_check () {
 }
 
 void cedr_finalize () {
-  g_sl = nullptr;
-  g_cdr = nullptr;
+#if defined COMPOSE_HORIZ_OPENMP
+# pragma omp master
+#endif
+  {
+    g_sl = nullptr;
+    g_cdr = nullptr;
+  }
 }
 } // namespace homme
 

@@ -227,7 +227,7 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const DepPoints<MT>& dep_poi
     end = cm.mylid_with_comm_tid_ptr_h(tid+1);
 #endif
   {
-    auto ed = cm.ed_d;
+    auto ed = cm.ed_d.unmanaged();
     const auto mylid_with_comm = cm.mylid_with_comm_d.unmanaged();
     ko::parallel_for(
       ko::RangePolicy<typename MT::DES>(start, end),

@@ -220,9 +220,14 @@ static homme::HommeIslMpi::Ptr g_csl_mpi;
 HommeIslMpi::Ptr get_isl_mpi_singleton () { return g_csl_mpi; }
 
 void slmm_finalize () {
-  homme::g_csl_mpi = nullptr;
-  homme::g_advecter = nullptr;
-  homme::delete_tracer_arrays();
+#if defined COMPOSE_HORIZ_OPENMP
+# pragma omp master
+#endif
+  {
+    homme::g_csl_mpi = nullptr;
+    homme::g_advecter = nullptr;
+    homme::delete_tracer_arrays();
+  }
 }
 } // namespace homme
 
