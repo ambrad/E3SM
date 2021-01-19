@@ -228,7 +228,7 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const DepPoints<MT>& dep_poi
 #endif
   {
     auto ed = cm.ed_d;
-    const auto mylid_with_comm = cm.mylid_with_comm_d;
+    const auto mylid_with_comm = cm.mylid_with_comm_d.unmanaged();
     ko::parallel_for(
       ko::RangePolicy<typename MT::DES>(start, end),
       KOKKOS_LAMBDA (const Int& ptr) {
@@ -238,11 +238,11 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const DepPoints<MT>& dep_poi
   }
   {
     const Int np2 = cm.np2, nlev = cm.nlev, qsize = cm.qsize;
-    const auto ed_d = cm.ed_d;
-    const auto mylid_with_comm_d = cm.mylid_with_comm_d;
-    const auto sendbuf = cm.sendbuf;
-    const auto x_bulkdata_offset = cm.x_bulkdata_offset;
-    const auto bla = cm.bla;
+    const auto ed_d = cm.ed_d.unmanaged();
+    const auto mylid_with_comm_d = cm.mylid_with_comm_d.unmanaged();
+    const auto sendbuf = cm.sendbuf.unmanaged();
+    const auto x_bulkdata_offset = cm.x_bulkdata_offset.unmanaged();
+    const auto bla = cm.bla.unmanaged();
 #ifdef COMPOSE_HORIZ_OPENMP
     const auto horiz_openmp = cm.horiz_openmp;
     const auto& ri_lidi_locks = cm.ri_lidi_locks;

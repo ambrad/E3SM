@@ -212,6 +212,17 @@ struct FixedCapList {
   const Array& view () const { return d_; }
   void set_view (const Array v) { d_ = v; }
 
+  FixedCapList<T,DT> unmanaged () const {
+    FixedCapList<T,DT> ufcl;
+    ufcl.d_ = Array(d_.data(), d_.size());
+#ifdef COMPOSE_PORT
+    ufcl.n_ = ko::View<Int, DT>(n_.data(), n_.size());
+#else
+    ufcl.n_ = n_;
+#endif
+    return ufcl;
+  }
+
 private:
   Array d_;
 
@@ -310,6 +321,14 @@ struct ListOfLists {
   }
 
   SLMM_KIF T* data () const { return d_.data(); }
+
+  ListOfLists<T,DT> unmanaged () const {
+    ListOfLists<T,DT> ulol;
+    ulol.d_ = Array<T>(d_.data(), d_.size());
+    ulol.ptr_ = Array<Int>(ptr_.data(), ptr_.size());
+    ulol.ptr_h_ = typename Array<Int>::HostMirror(ptr_h_.data(), ptr_h_.size());
+    return ulol;
+  }
 
   // For device-host stuff:
 
@@ -415,6 +434,13 @@ struct BufferLayoutArray {
     return v;
   }
 
+  BufferLayoutArray<DT> unmanaged () const {
+    BufferLayoutArray<DT> ubla;
+    ubla.d_ = d_.unmanaged();
+    ubla.nlev_ = nlev_;
+    return ubla;
+  }
+
 private:
   ListOfLists<LayoutTriple, DT> d_;
   Int nlev_;
@@ -428,7 +454,7 @@ void deep_copy (BufferLayoutArray<DTD>& d, const BufferLayoutArray<DTS>& s) {
 
 struct GidRank {
   Int
-  gid,      // cell global ID
+    gid,      // cell global ID
     rank,     // the rank that owns the cell
     rank_idx, // index into list of ranks with whom I communicate, including me
     lid_on_rank,     // the local ID of the cell on the owning rank

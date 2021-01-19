@@ -363,15 +363,15 @@ template <Int np, typename MT>
 void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
                  const DepPoints<MT>& dep_points,
                  const QExtrema<MT>& q_min, const QExtrema<MT>& q_max) {
-  const auto dp_src = cm.tracer_arrays->dp;
-  const auto qdp_src = cm.tracer_arrays->qdp;
-  const auto qtl = cm.tracer_arrays->n0_qdp;
-  const auto q_tgt = cm.tracer_arrays->q;
-  const auto ed_d = cm.ed_d;
-  const auto s2r = cm.advecter->s2r();
-  const auto local_meshes = cm.advecter->local_meshes();
+  const auto& dp_src = cm.tracer_arrays->dp;
+  const auto& qdp_src = cm.tracer_arrays->qdp;
+  const auto& qtl = cm.tracer_arrays->n0_qdp;
+  const auto& q_tgt = cm.tracer_arrays->q;
+  const auto& ed_d = cm.ed_d;
+  const auto& s2r = cm.advecter->s2r();
+  const auto& local_meshes = cm.advecter->local_meshes();
   const auto alg = cm.advecter->alg();
-  const auto own_dep_list = cm.own_dep_list;
+  const auto& own_dep_list = cm.own_dep_list;
   const Int qsize = cm.qsize;
   static const Int blocksize = 8;
   const auto f = KOKKOS_LAMBDA (const Int& it) {
@@ -421,10 +421,10 @@ void copy_q (IslMpi<MT>& cm, const Int& nets,
              const QExtrema<MT>& q_min, const QExtrema<MT>& q_max) {
   slmm_assert(cm.mylid_with_comm_tid_ptr_h.size() == 2);
   const auto myrank = cm.p->rank();
-  const auto q_tgt = cm.tracer_arrays->q;
-  const auto mylid_with_comm = cm.mylid_with_comm_d;
-  const auto ed_d = cm.ed_d;
-  const auto recvbufs = cm.recvbuf;
+  const auto& q_tgt = cm.tracer_arrays->q;
+  const auto& mylid_with_comm = cm.mylid_with_comm_d;
+  const auto& ed_d = cm.ed_d;
+  const auto& recvbufs = cm.recvbuf;
   const Int nlid = cm.mylid_with_comm_h.size();
   const Int qsize = cm.qsize, nlev = cm.nlev, np2 = cm.np2;
   const auto f = KOKKOS_LAMBDA (const Int& it) {
@@ -468,9 +468,9 @@ struct Accum {
 
 template <Int np, typename MT>
 void calc_rmt_q_pass1_scan (IslMpi<MT>& cm) {
-  const auto recvbuf = cm.recvbuf;
-  const auto rmt_xs = cm.rmt_xs;
-  const auto rmt_qs_extrema = cm.rmt_qs_extrema;
+  const auto& recvbuf = cm.recvbuf;
+  const auto& rmt_xs = cm.rmt_xs;
+  const auto& rmt_qs_extrema = cm.rmt_qs_extrema;
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
   Int cnt = 0, qcnt = 0;
   for (Int ri = 0; ri < nrmtrank; ++ri) {
@@ -531,12 +531,12 @@ void calc_rmt_q_pass1_scan (IslMpi<MT>& cm) {
 
 template <Int np, typename MT>
 void calc_rmt_q_pass2 (IslMpi<MT>& cm) {
-  const auto q_src = cm.tracer_arrays->q;
-  const auto rmt_qs_extrema = cm.rmt_qs_extrema;
-  const auto rmt_xs = cm.rmt_xs;
-  const auto ed_d = cm.ed_d;
-  const auto sendbuf = cm.sendbuf;
-  const auto recvbuf = cm.recvbuf;
+  const auto& q_src = cm.tracer_arrays->q;
+  const auto& rmt_qs_extrema = cm.rmt_qs_extrema;
+  const auto& rmt_xs = cm.rmt_xs;
+  const auto& ed_d = cm.ed_d;
+  const auto& sendbuf = cm.sendbuf;
+  const auto& recvbuf = cm.recvbuf;
   const Int qsize = cm.qsize;
 
   const auto fqe = KOKKOS_LAMBDA (const Int& it) {
@@ -552,8 +552,8 @@ void calc_rmt_q_pass2 (IslMpi<MT>& cm) {
   ko::fence();
   ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, cm.nrmt_qs_extrema), fqe);
 
-  const auto s2r = cm.advecter->s2r();
-  const auto local_meshes = cm.advecter->local_meshes();
+  const auto& s2r = cm.advecter->s2r();
+  const auto& local_meshes = cm.advecter->local_meshes();
   const auto alg = cm.advecter->alg();
   static const Int blocksize = 8;
 

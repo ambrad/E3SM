@@ -32,6 +32,8 @@ template <typename MT> using QExtremaH = typename QExtrema<MT>::HostMirror;
 template <typename MT> using QExtremaHConst = ko::Const<QExtremaH<MT> >;
 template <typename MT> using QExtremaConst = ko::Const<QExtrema<MT> >;
 
+struct Cartesian3D { Real x, y, z; };
+
 template <typename VT> KOKKOS_FORCEINLINE_FUNCTION
 typename VT::value_type& idx_qext (const VT& qe, int ie, int q, int g, int lev) {
 #ifdef COMPOSE_PORT_DEV_VIEWS
@@ -41,7 +43,12 @@ typename VT::value_type& idx_qext (const VT& qe, int ie, int q, int g, int lev) 
 #endif
 }
 
-struct Cartesian3D { Real x, y, z; };
+// When Homme is running with HORIZ_OPENMP enabled, we can't do
+//    const auto lv = gv; // gv is a managed view
+// within the impl because everything in our impl is within the top-level
+// HORIZ_OPENMP threaded region and the assignment above unsafely incr's and
+// decr's the shared pointer count. Thus, we must carefully always obtain
+// unmanaged Views to avoid the thread-unsafe ref-counting.
 
 template <typename T, int rank_>
 struct HommeFormatArray {

@@ -152,10 +152,10 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
   {
     const Int nearest_point_permitted_lev_bdy =
       cm.advecter->nearest_point_permitted_lev_bdy();
-    const auto local_meshes = cm.advecter->local_meshes();
-    const auto ed_d = cm.ed_d;
-    const auto bla = cm.bla;
-    const auto nx_in_lid = cm.nx_in_lid;
+    const auto& local_meshes = cm.advecter->local_meshes();
+    const auto& ed_d = cm.ed_d;
+    const auto& bla = cm.bla;
+    const auto& nx_in_lid = cm.nx_in_lid;
     const auto horiz_openmp = cm.horiz_openmp;
     const auto& ri_lidi_locks = cm.ri_lidi_locks;
     ko::parallel_for(ko::RangePolicy<typename MT::DES>(nets, nete+1),
