@@ -132,8 +132,8 @@ template <typename View> View unmanaged (
 # define AUTO_REF auto&
 #endif
 
-// Copy by ref if not port build.
-#ifdef COMPOSE_PORT
+// Copy by ref if not Cuda build.
+#ifdef KOKKOS_ENABLE_CUDA
 # define COMPOSE_LAMBDA KOKKOS_LAMBDA
 #else
 # define COMPOSE_LAMBDA [&]

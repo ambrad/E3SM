@@ -63,8 +63,8 @@ void run_global (CDR<MT>& cdr, CDRT* cedr_cdr_p,
   cedr_assert(np <= 4);
   
 #ifdef COMPOSE_PORT_DEV_VIEWS
-  const auto q_min = ta.q_min;
-  const auto q_max = ta.q_max;
+  const auto q_min = unmanaged(ta.q_min);
+  const auto q_max = unmanaged(ta.q_max);
 #else
   const QExtremaH<MT>      q_min(q_min_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2);
   const QExtremaHConst<MT> q_max(q_max_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2);
@@ -78,7 +78,7 @@ void run_global (CDR<MT>& cdr, CDRT* cedr_cdr_p,
 
   const Int nsublev = cdr.nsublev;
   const Int nsuplev = cdr.nsuplev;
-  const auto nonnegs = cdr.nonneg;
+  const auto nonnegs = unmanaged(cdr.nonneg);
   const auto cdr_over_super_levels = cdr.cdr_over_super_levels;
   const auto caas_in_suplev = cdr.caas_in_suplev;
   const auto ie2lci = unmanaged(cdr.ie2lci);

@@ -141,8 +141,8 @@ void run_local (CDR<MT>& cdr, CDRT* cedr_cdr_p,
   const Int nlev = ta.nlev, qsize = ta.qsize, nlevwrem = cdr.nsuplev*cdr.nsublev;
 
 #ifdef COMPOSE_PORT_DEV_VIEWS
-  const auto q_min = ta.q_min;
-  const auto q_max = ta.q_max;
+  const auto q_min = unmanaged(ta.q_min);
+  const auto q_max = unmanaged(ta.q_max);
 #else
   const QExtremaH<ko::MachineTraits>
     q_min(q_min_r, ta.nelemd, ta.qsize, ta.nlev, np2);
