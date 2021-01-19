@@ -71,20 +71,20 @@ void run_global (CDR<MT>& cdr, CDRT* cedr_cdr_p,
 #endif
   const auto np1 = ta.np1;
   const auto n0_qdp = ta.n0_qdp;
-  const auto spheremp = ta.spheremp;
-  const auto dp3d_c = ta.dp3d;
-  const auto qdp_p = ta.qdp;
-  const auto q_c = ta.q;
+  const auto spheremp = unmanaged(ta.spheremp);
+  const auto dp3d_c = unmanaged(ta.dp3d);
+  const auto qdp_p = unmanaged(ta.qdp);
+  const auto q_c = unmanaged(ta.q);
 
   const Int nsublev = cdr.nsublev;
   const Int nsuplev = cdr.nsuplev;
   const auto nonnegs = cdr.nonneg;
   const auto cdr_over_super_levels = cdr.cdr_over_super_levels;
   const auto caas_in_suplev = cdr.caas_in_suplev;
-  const auto ie2lci = cdr.ie2lci;
-  const auto ie2gci = cdr.ie2gci;
+  const auto ie2lci = unmanaged(cdr.ie2lci);
+  const auto ie2gci = unmanaged(cdr.ie2gci);
   const auto rank = cdr.p->rank();
-  const auto cedr_cdr = *cedr_cdr_p;
+  const AUTO_REF cedr_cdr = *cedr_cdr_p;
   if (cedr::impl::OnGpu<typename MT::DES>::value) {
     const Int n = ta.nelemd*nlev*qsize*np2;
     ko::View<Real*> q_min_1d(q_min.data(), n);

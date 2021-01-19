@@ -214,9 +214,9 @@ struct FixedCapList {
 
   FixedCapList<T,DT> unmanaged () const {
     FixedCapList<T,DT> ufcl;
-    ufcl.d_ = Array(d_.data(), d_.size());
+    ufcl.d_ = Array(d_.data(), d_.extent(0));
 #ifdef COMPOSE_PORT
-    ufcl.n_ = ko::View<Int, DT>(n_.data(), n_.size());
+    ufcl.n_ = ko::View<Int, DT>(n_.data(), n_.extent(0));
 #else
     ufcl.n_ = n_;
 #endif
@@ -324,9 +324,9 @@ struct ListOfLists {
 
   ListOfLists<T,DT> unmanaged () const {
     ListOfLists<T,DT> ulol;
-    ulol.d_ = Array<T>(d_.data(), d_.size());
-    ulol.ptr_ = Array<Int>(ptr_.data(), ptr_.size());
-    ulol.ptr_h_ = typename Array<Int>::HostMirror(ptr_h_.data(), ptr_h_.size());
+    ulol.d_ = Array<T>(d_.data(), d_.extent(0));
+    ulol.ptr_ = Array<Int>(ptr_.data(), ptr_.extent(0));
+    ulol.ptr_h_ = typename Array<Int>::HostMirror(ptr_h_.data(), ptr_h_.extent(0));
     return ulol;
   }
 

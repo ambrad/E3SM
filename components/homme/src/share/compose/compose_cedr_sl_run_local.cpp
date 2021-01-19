@@ -151,17 +151,17 @@ void run_local (CDR<MT>& cdr, CDRT* cedr_cdr_p,
 #endif
   const auto np1 = ta.np1;
   const auto n1_qdp = ta.n1_qdp;
-  const auto spheremp = ta.spheremp;
-  const auto dp3d_c = ta.dp3d;
-  const auto qdp_c = ta.qdp;
-  const auto q_c = ta.q;
+  const auto spheremp = unmanaged(ta.spheremp);
+  const auto dp3d_c = unmanaged(ta.dp3d);
+  const auto qdp_c = unmanaged(ta.qdp);
+  const auto q_c = unmanaged(ta.q);
 
   const Int nsublev = cdr.nsublev;
   const Int nsuplev = cdr.nsuplev;
   const auto cdr_over_super_levels = cdr.cdr_over_super_levels;
   const auto caas_in_suplev = cdr.caas_in_suplev;
-  const auto ie2lci = cdr.ie2lci;
-  const auto cedr_cdr = *cedr_cdr_p;
+  const auto ie2lci = unmanaged(cdr.ie2lci);
+  const AUTO_REF cedr_cdr = *cedr_cdr_p;
   const auto f = KOKKOS_LAMBDA (const Int& idx) {
     const Int ie = nets + idx/(nsuplev*qsize);
     const Int q = (idx / nsuplev) % qsize;
