@@ -158,6 +158,36 @@ struct ComposeTransportImpl {
   }
 
   template <typename Fn>
+  KOKKOS_INLINE_FUNCTION
+  static void loop_ij (const KernelVariables& kv, const Fn& h) {
+    using Kokkos::parallel_for;
+    using Kokkos::single;
+    using Kokkos::PerThread;
+    using Kokkos::TeamThreadRange;
+
+    if (OnGpu<ExecSpace>::value) {
+      const auto ttr = TeamThreadRange(kv.team, NP*NP);
+      const auto f = [&] (const int idx) {
+        const int i = idx / NP, j = idx % NP;
+        const auto g = [&] () { h(i,j); };
+        single(PerThread(kv.team), g);
+      };
+      parallel_for(ttr, f);
+    } else if (kv.team.team_size() == 1) {
+      for (int i = 0; i < NP; ++i)
+        for (int j = 0; j < NP; ++j)
+          h(i,j);
+    } else {
+      const auto f = [&] () {
+        for (int i = 0; i < NP; ++i)
+          for (int j = 0; j < NP; ++j)
+            h(i,j);
+      };
+      single(PerTeam(kv.team), f);
+    }
+  }
+
+  template <typename Fn>
   void loop_host_ie_plev_ij (const Fn& f) const {
     for (int ie = 0; ie < m_data.nelemd; ++ie)
       for (int lev = 0; lev < num_phys_lev; ++lev)
