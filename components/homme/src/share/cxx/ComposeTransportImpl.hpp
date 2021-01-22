@@ -228,6 +228,11 @@ struct ComposeTransportImpl {
     deep_copy(h, v);
     return h;
   }
+
+  template <typename View> static KOKKOS_INLINE_FUNCTION
+  Real* pack2real (const View& v) { return &(*v.data())[0]; }
+  template <typename View> static KOKKOS_INLINE_FUNCTION
+  const Real* cpack2real (const View& v) { return &(*v.data())[0]; }
 };
 
 } // namespace Homme

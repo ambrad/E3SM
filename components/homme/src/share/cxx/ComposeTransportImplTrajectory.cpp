@@ -10,7 +10,7 @@
 #include "compose_test.hpp"
 
 namespace Homme {
-using CTI = ComposeTransportImpl;
+using cti = ComposeTransportImpl;
 
 KOKKOS_FUNCTION
 static void ugradv_sphere (
@@ -29,7 +29,7 @@ static void ugradv_sphere (
       v_cart(i,j,k) = (vec_sphere2cart(0,d_cart,i,j) * v(0,i,j,k) +
                        vec_sphere2cart(1,d_cart,i,j) * v(1,i,j,k));      
     };
-    CTI::loop_ijk<NUM_LEV>(kv, f1);
+    cti::loop_ijk<NUM_LEV>(kv, f1);
     kv.team_barrier();
 
     sphere_ops.gradient_sphere<NUM_LEV>(kv, v_cart, ugradv_cart);
@@ -41,33 +41,38 @@ static void ugradv_sphere (
           vec_sphere2cart(d_latlon,d_cart,i,j)*
           (u(0,i,j,k) * ugradv_cart(0,i,j,k) + u(1,i,j,k) * ugradv_cart(1,i,j,k));
     };
-    CTI::loop_ijk<NUM_LEV>(kv, f2);
+    cti::loop_ijk<NUM_LEV>(kv, f2);
   }
 }
 
 typedef typename ViewConst<ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV_P]> >::type CSNlevp;
 typedef typename ViewConst<ExecViewUnmanaged<Real[NP][NP][NUM_LEV_P*VECTOR_SIZE]> >::type CRNlevp;
-typedef ExecViewUnmanaged<Real[NP][NP][NUM_LEV_P*VECTOR_SIZE]> RNlevp;
+typedef ExecViewUnmanaged<Real[NP][NP][NUM_LEV*VECTOR_SIZE]> RNlev;
 
-// Form a 3rd-degree Lagrange polynomial over (x(k-1:k+1), y(k-1:k+1)) and set
-// yi(k) to its derivative at x(k).
+/* Form a 3rd-degree Lagrange polynomial over (x(k-1:k+1), y(k-1:k+1)) and set
+   yi(k) to its derivative at x(k).
+ */
 KOKKOS_FUNCTION static void approx_derivative (
   const KernelVariables& kv, const CSNlevp& xs, const CSNlevp& ys,
-  const ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV]>& ysi) // yi(:,:,0) is undefined
+  const ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV]>& yps) // yp(:,:,0) is undefined
 {
-#if 0
-  CRNlevp x(static_cast<const Real*>(xs.data()));
-  CRNlevp y(static_cast<const Real*>(ys.data()));
-  RNlevp yi(static_cast<const Real*>(ysi.data()));
+  CRNlevp x(cti::cpack2real(xs));
+  CRNlevp y(cti::cpack2real(ys));
+  RNlev yp(cti::pack2real(yps));
   const auto f = [&] (const int i, const int j, const int k) {
-    if (k == 0) continue;
-    ((xs(i,j,k) - xs(i,j,k-1))/())*;
+    if (k == 0) return;
+    const auto& xkm1 = x(i,j,k-1);
+    const auto& xk   = x(i,j,k  ); // also the interpolation point
+    const auto& xkp1 = x(i,j,k+1);
+    yp(i,j,k) = (y(i,j,k-1)*((         1 /(xkm1 - xk  ))*((xk - xkp1)/(xkm1 - xkp1))) +
+                 y(i,j,k  )*((         1 /(xk   - xkm1))*((xk - xkp1)/(xk   - xkp1)) +
+                             ((xk - xkm1)/(xk   - xkm1))*(         1 /(xk   - xkp1))) +
+                 y(i,j,k+1)*(((xk - xkm1)/(xkp1 - xkm1))*(         1 /(xkp1 - xk  ))));
   };
-  CTI::loop_ijk<num_phys_lev>(kv, f);
-#endif
+  cti::loop_ijk<cti::num_phys_lev>(kv, f);
 }
 
-/* Calculate the trajecotry at second order using Taylor series expansion. Also
+/* Calculate the trajectory at second order using Taylor series expansion. Also
    DSS the vertical velocity data if running the 3D algorithm.
 
    Derivation:
@@ -122,7 +127,7 @@ void ComposeTransportImpl::calc_trajectory (const Real dt) {
           vstar(d,i,j,k) = (((vn0(d,i,j,k) + vstar(d,i,j,k))/2 - dt*ugradv(d,i,j,k)/2)*
                             spheremp(i,j)*rspheremp(i,j));
       };
-      CTI::loop_ijk<num_lev_pack>(kv, f);
+      cti::loop_ijk<num_lev_pack>(kv, f);
     };
     Kokkos::parallel_for(m_tp_ne, calc_midpoint_velocity);
   }
@@ -140,7 +145,6 @@ void ComposeTransportImpl::calc_trajectory (const Real dt) {
     const auto calc_departure_point = KOKKOS_LAMBDA (const MT& team) {
       KernelVariables kv(team, m_tu_ne);
       const auto ie = kv.ie;
-
       const auto vstar = Homme::subview(m_vstar, ie);
       const auto vec_sphere2cart = Homme::subview(m_vec_sph2cart, ie);
       const auto sphere_cart = Homme::subview(m_sphere_cart, ie);
@@ -166,14 +170,65 @@ void ComposeTransportImpl::calc_trajectory (const Real dt) {
             dep_pts(oss,i,j,d) = dp[d][s]/r;
         }
       };
-      CTI::loop_ijk<num_lev_pack>(kv, f);
+      cti::loop_ijk<num_lev_pack>(kv, f);
     };
     Kokkos::parallel_for(m_tp_ne, calc_departure_point);
   }
 }
 
+static int test_approx_derivative () {
+  const Real a = 1.5, b = -0.7, c = 0.2;
+  int nerr = 0;
+  ExecView<Scalar[NP][NP][NUM_LEV_P]> xp("xp"), yp("yp");
+  ExecView<Real[NP][NP][NUM_LEV_P*VECTOR_SIZE]>
+    xs(cti::pack2real(xp)), ys(cti::pack2real(yp));
+  const auto policy = Homme::get_default_team_policy<ExecSpace>(1);
+  TeamUtils<ExecSpace> tu(policy);
+  { // Fill xs and ys with manufactured coordinates and function.
+    const auto f = KOKKOS_LAMBDA (const cti::MT& team) {
+      KernelVariables kv(team, tu);
+      const auto f = [&] (const int i, const int j, const int k) {
+        const Real x = 1.7*(k + 1e-1*i*k + 1e-2*j*k*k)/cti::num_phys_lev;
+        xs(i,j,k) = x;
+        ys(i,j,k) = (a*x + b)*x + c;
+      };
+      cti::loop_ijk<cti::num_phys_lev+1>(kv, f);
+    };
+    Kokkos::parallel_for(policy, f);
+  }
+  ExecView<Scalar[NP][NP][NUM_LEV]> yip("yp");
+  { // Run approx_derivative.
+    const auto f = KOKKOS_LAMBDA (const cti::MT& team) {
+      KernelVariables kv(team, tu);
+      approx_derivative(kv, xp, yp, yip);
+    };
+    Kokkos::fence();
+    Kokkos::parallel_for(policy, f);
+  }
+  { // Check answer.
+    Kokkos::fence();
+    const auto xsh = cti::cmvdc(xs);
+    ExecView<Real[NP][NP][NUM_LEV*VECTOR_SIZE]> yis(cti::pack2real(yip));
+    const auto yish = cti::cmvdc(yis);
+    for (int i = 0; i < cti::np; ++i)
+      for (int j = 0; j < cti::np; ++j)
+        for (int k = 1; // k = 0 is not written
+             k < cti::num_phys_lev; ++k) {
+          const Real x = xsh(i,j,k);
+          const Real ypp = 2*a*x + b;
+          const Real err = std::abs(yish(i,j,k) - ypp);
+          if (err > 50*std::numeric_limits<Real>::epsilon()) {
+            ++nerr;
+            printf("%2d %d %d %1.2f %6.2f %6.2f %9.2e\n",
+                   i, j, k, x, ypp, yish(i,j,k), err);
+          }
+        }
+  }
+  return nerr;
+}
+
 int ComposeTransportImpl::run_trajectory_unit_tests () {
-  return 0;
+  return test_approx_derivative();
 }
 
 ComposeTransport::TestDepView::HostMirror ComposeTransportImpl::
@@ -203,7 +258,7 @@ test_trajectory(Real t0, Real t1, const bool independent_time_steps) {
   calc_trajectory(t1 - t0);
   Kokkos::fence();
 
-  const auto deph = CTI::cmvdc(m_data.dep_pts);
+  const auto deph = cti::cmvdc(m_data.dep_pts);
   return deph;
 }
 
