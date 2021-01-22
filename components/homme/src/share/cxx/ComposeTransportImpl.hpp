@@ -54,7 +54,7 @@ struct ComposeTransportImpl {
 
   struct Data {
     int nelemd, qsize, np1, np1_qdp, limiter_option, cdr_check, hv_q, hv_subcycle_q;
-    Real nu_q, hv_scaling;
+    Real nu_q, hv_scaling, dp_tol;
     bool independent_time_steps;
 
     int nslot;
@@ -65,7 +65,8 @@ struct ComposeTransportImpl {
 
     Data ()
       : nelemd(-1), qsize(-1), np1_qdp(-1), limiter_option(9), cdr_check(0), hv_q(0),
-        hv_subcycle_q(0), independent_time_steps(false), nu_q(0), hv_scaling(0)
+        hv_subcycle_q(0), independent_time_steps(false), nu_q(0), hv_scaling(0),
+        dp_tol(-1)
     {}
   };
 
@@ -100,8 +101,11 @@ struct ComposeTransportImpl {
       m_tp_ne(1,1,1), m_tu_ne(m_tp_ne), // throwaway settings
       m_tp_ne_qsize(1,1,1), m_tu_ne_qsize(m_tp_ne_qsize), // throwaway settings
       m_tp_ne_hv_q(1,1,1), m_tu_ne_hv_q(m_tp_ne_hv_q) // throwaway settings
-  {}
+  {
+    set_dp_tol();
+  }
 
+  void set_dp_tol();
   void reset(const SimulationParams& params);
   int requested_buffer_size() const;
   void init_buffers(const FunctorsBuffersManager& fbm);

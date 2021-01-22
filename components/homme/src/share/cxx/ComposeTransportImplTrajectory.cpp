@@ -50,11 +50,11 @@ typedef typename ViewConst<ExecViewUnmanaged<Real[NP][NP][NUM_LEV_P*VECTOR_SIZE]
 typedef ExecViewUnmanaged<Real[NP][NP][NUM_LEV*VECTOR_SIZE]> RNlev;
 
 /* Form a 3rd-degree Lagrange polynomial over (x(k-1:k+1), y(k-1:k+1)) and set
-   yi(k) to its derivative at x(k).
+   yi(k) to its derivative at x(k). yps(:,:,0) is not written.
  */
 KOKKOS_FUNCTION static void approx_derivative (
   const KernelVariables& kv, const CSNlevp& xs, const CSNlevp& ys,
-  const ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV]>& yps) // yp(:,:,0) is undefined
+  const ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV]>& yps) // yps(:,:,0) is undefined
 {
   CRNlevp x(cti::cpack2real(xs));
   CRNlevp y(cti::cpack2real(ys));
@@ -70,6 +70,18 @@ KOKKOS_FUNCTION static void approx_derivative (
                  y(i,j,k+1)*(((xk - xkm1)/(xkp1 - xkm1))*(         1 /(xkp1 - xk  ))));
   };
   cti::loop_ijk<cti::num_phys_lev>(kv, f);
+}
+
+void ComposeTransportImpl::set_dp_tol () {
+  const auto dp0h = cmvdc(m_hvcoord.dp0);
+  const Real* dp0 = pack2real(dp0h);
+  Real min_dp0 = dp0[0];
+  for (int i = 1; i < num_phys_lev; ++i) min_dp0 = std::min(min_dp0, dp0[i]);
+  m_data.dp_tol = 10*std::numeric_limits<Real>::epsilon()*min_dp0;
+}
+
+KOKKOS_FUNCTION static void calc_p () {
+  
 }
 
 /* Calculate the trajectory at second order using Taylor series expansion. Also
