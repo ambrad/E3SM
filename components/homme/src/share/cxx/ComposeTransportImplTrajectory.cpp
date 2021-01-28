@@ -77,6 +77,7 @@ KOKKOS_FUNCTION static void approx_derivative (
   cti::loop_ijk<cti::num_phys_lev>(kv, f);
 }
 
+// Pad by an amount ~ smallest level to keep the computed dp > 0.
 void ComposeTransportImpl::set_dp_tol () {
   const auto dp0h = cmvdc(m_hvcoord.dp0);
   const Real* dp0 = pack2real(dp0h);
@@ -96,6 +97,45 @@ calc_p (const KernelVariables& kv, const Real& ps0, const Real& hybrid_ai0,
       p(i,j,k+1) = p(i,j,k) + dp(i,j,k);
   };
   cti::loop_ij(kv, f);
+}
+
+// Move mass around in a column as needed to make dp nonnegative.
+KOKKOS_FUNCTION static void
+reconstruct_and_limit_dp (const KernelVariables& kv, const CSNlev& dprefp, const Real& dt,
+                          const Real& dp_tol, const CSNlevp& eta_dot_dpdn_p,
+                          const SNlev& dpreconp) {
+  const CRNlev dpref(cti::cpack2real(dprefp));
+  const CRNlevp eta_dot_dpdn(cti::cpack2real(eta_dot_dpdn_p));
+  const RNlev dprecon(cti::pack2real(dpreconp));
+  const auto ttr = TeamThreadRange(kv.team, NP*NP);
+  const auto tvr = ThreadVectorRange(kv.team, NUM_PHYSICAL_LEV);
+  const auto f = [&] (const int idx) {
+    const int i = idx / NP, j = idx % NP;
+    const auto g1 = [&] (const int k, Kokkos::Real2& sums) {
+      // Store the full update rather than reconstructing eta_dot_dpdn. See
+      // comment in sl_vertically_remap_tracers for more.
+      dprecon(i,j,k) = dpref(i,j,k) + dt*(eta_dot_dpdn(i,j,k+1) - eta_dot_dpdn(i,j,k));
+      if (dprecon(i,j,k) < dp_tol) {
+        sums.v[0] += (dprecon(i,j,k) - dp_tol);
+        dprecon(i,j,k) = dp_tol;
+      } else {
+        sums.v[1] += dprecon(i,j,k) - dp_tol;
+      }
+    };
+    Kokkos::Real2 sums;
+    Dispatch<>::parallel_reduce(kv.team, tvr, g1, sums);
+    kv.team_barrier();
+    const Real nmass = sums.v[0];
+    if (nmass == 0) return;
+    // Compensate for clipping.
+    const Real wsum = sums.v[1];
+    const auto g2 = [&] (const int k) {
+      const Real w = dprecon(i,j,k) - dp_tol;
+      dprecon(i,j,k) += nmass*(w/wsum);
+    };
+    Kokkos::parallel_for(tvr, g2);
+  };
+  parallel_for(ttr, f);
 }
 
 /* Calculate the trajectory at second order using Taylor series expansion. Also
@@ -287,8 +327,74 @@ static int test_calc_p (const HybridVCoord& hvcoord) {
   return nerr;
 }
 
+int test_reconstruct_and_limit_dp () {
+  const Real eps = std::numeric_limits<Real>::epsilon(),
+    dt = 1800, p0 = 1e5, dp_tol = (p0/72)*eps, tol = 1e3*eps;
+  ExecView<Scalar[NP][NP][NUM_LEV]> dprefp("dprefp"), dp1limp("dp1limp");
+  HostView<Real[NP][NP][NUM_PHYSICAL_LEV]> dp1ul("dp1ul");
+  ExecView<Scalar[NP][NP][NUM_LEV_P]> eta_dot_dpdn_p("eta_dot_dpdn_p");
+  RNlev dpref(cti::pack2real(dprefp)), dp1lim(cti::pack2real(dp1limp));
+  RNlevp eta_dot_dpdn(cti::pack2real(eta_dot_dpdn_p));
+  const auto dprefh = Kokkos::create_mirror_view(dpref);
+  { // fill dpref, eta_dot_dpdn, and the resulting unlimited dp
+    const auto edd = Kokkos::create_mirror_view(eta_dot_dpdn);
+    for (int i = 0; i < cti::np; ++i)
+      for (int j = 0; j < cti::np; ++j) {
+        Real fac = 0;
+        for (int k = 0; k < cti::np; ++k) {
+          dprefh(i,j,k) = k+1 + 0.1*(i+1) + 0.01*j*j;
+          fac += dprefh(i,j,k);
+          edd(i,j,k) = (k % 2 == 0 ? -1 : 1)*0.1*(cti::num_phys_lev - k - 1);
+        }
+        fac = p0/fac;
+        for (int k = 0; k < cti::np; ++k) dprefh(i,j,k) *= fac;
+        for (int k = 0; k < cti::np; ++k) edd(i,j,k) *= fac;
+        edd(i,j,0) = edd(i,j,cti::num_phys_lev) = 0;
+      }
+    for (int i = 0; i < cti::np; ++i)
+      for (int j = 0; j < cti::np; ++j)
+        for (int k = 0; k < cti::np; ++k)
+          dp1ul(i,j,k) = dprefh(i,j,k) + dt*(edd(i,j,k+1) - edd(i,j,k));
+    Kokkos::deep_copy(dpref, dprefh);
+    Kokkos::deep_copy(eta_dot_dpdn, edd);
+  }
+  { // call function
+    const auto f = KOKKOS_LAMBDA (const cti::MT& team) {
+      KernelVariables kv(team);
+      reconstruct_and_limit_dp(kv, dprefp, dt, dp_tol, eta_dot_dpdn_p, dp1limp);
+    };
+    const auto policy = Homme::get_default_team_policy<ExecSpace>(1);
+    Kokkos::parallel_for(policy, f);
+    Kokkos::fence();
+  }
+  int nerr = 0;
+  { // tests
+    const auto dp1l = cti::cmvdc(dp1lim);
+    for (int i = 0; i < cti::np; ++i)
+      for (int j = 0; j < cti::np; ++j) {
+        // mass conservation
+        Real mass_ref = 0, mass_ul = 0, mass_lim = 0;
+        for (int k = 0; k < cti::num_phys_lev; ++k) mass_ref += dprefh(i,j,k);
+        for (int k = 0; k < cti::num_phys_lev; ++k) mass_ul += dp1ul(i,j,k);
+        for (int k = 0; k < cti::num_phys_lev; ++k) mass_lim += dp1l(i,j,k);
+        if (std::abs(mass_ul  - mass_ref) > tol*mass_ref) ++nerr;
+        if (std::abs(mass_lim - mass_ref) > tol*mass_ref) ++nerr;
+        // limiter needs to be active
+        bool found = false;
+        for (int k = 0; k < cti::num_phys_lev; ++k)
+          if (dp1ul(i,j,k) < 0) found = true;
+        if ( ! found) ++nerr;
+        // limiter succeeded
+        for (int k = 0; k < cti::num_phys_lev; ++k)
+          if (dp1l(i,j,k) < 0) ++nerr;
+      }
+  }
+  return nerr;
+}
+
 int ComposeTransportImpl::run_trajectory_unit_tests () {
-  return test_approx_derivative() + test_calc_p(m_hvcoord);
+  return (test_approx_derivative() + test_calc_p(m_hvcoord) +
+          test_reconstruct_and_limit_dp());
 }
 
 ComposeTransport::TestDepView::HostMirror ComposeTransportImpl::
