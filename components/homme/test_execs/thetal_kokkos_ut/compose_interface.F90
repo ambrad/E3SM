@@ -161,7 +161,7 @@ contains
     deallocate(dom_mt)
   end subroutine run_compose_standalone_test_f90
 
-  subroutine run_trajectory_f90(t0, t1, independent_time_steps, dep) bind(c)
+  subroutine run_trajectory_f90(t0, t1, independent_time_steps, dep, dprecon) bind(c)
     use time_mod, only: timelevel_t, timelevel_init_default
     use control_mod, only: qsplit
     use hybrid_mod, only: hybrid_t, hybrid_create
@@ -171,17 +171,20 @@ contains
 
     real(c_double), value, intent(in) :: t0, t1
     logical(c_bool), value, intent(in) :: independent_time_steps
-    real(c_double), intent(out) :: dep(3,np,np,nlev,nelemd)
+    real(c_double), intent(out) :: dep(3,np,np,nlev,nelemd), dprecon(np,np,nlev,nelemd)
 
     type (timelevel_t) :: tl
     type (hybrid_t) :: hybrid
-    real(real_kind) :: dt
-    integer :: ie, i, j, k
+    real(real_kind) :: dt, zi(np,np,nlevp)
+    integer :: ie, i, j, k, testno
     logical :: its
 
     call timelevel_init_default(tl)
-    call compose_stt_init(np, nlev, qsize, qsize_d, nelemd)
+    testno = 0
+    if (independent_time_steps) testno = 1
+    call compose_stt_init(np, nlev, qsize, qsize_d, nelemd, testno)
 
+    zi = 0
     do ie = 1, nelemd
        call compose_stt_fill_v(ie, elem(ie)%spherep, t0, &
             elem(ie)%derived%vstar)
@@ -200,6 +203,7 @@ contains
                 dep(1,i,j,k,ie) = dep_points_all(i,j,k,ie)%x
                 dep(2,i,j,k,ie) = dep_points_all(i,j,k,ie)%y
                 dep(3,i,j,k,ie) = dep_points_all(i,j,k,ie)%z
+                dprecon(i,j,k,ie) = elem(ie)%derived%divdp(i,j,k)
              end do
           end do
        end do

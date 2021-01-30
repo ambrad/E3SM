@@ -49,10 +49,13 @@ typedef typename ViewConst<ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV]> >::type CS
 typedef typename ViewConst<ExecViewUnmanaged<Real[NP][NP][NUM_LEV*VECTOR_SIZE]> >::type CRNlev;
 typedef typename ViewConst<ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV_P]> >::type CSNlevp;
 typedef typename ViewConst<ExecViewUnmanaged<Real[NP][NP][NUM_LEV_P*VECTOR_SIZE]> >::type CRNlevp;
+typedef typename ViewConst<ExecViewUnmanaged<Scalar[2][NP][NP][NUM_LEV]> >::type CS2Nlev;
 typedef ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV]> SNlev;
 typedef ExecViewUnmanaged<Real[NP][NP][NUM_LEV*VECTOR_SIZE]> RNlev;
 typedef ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV_P]> SNlevp;
 typedef ExecViewUnmanaged<Real[NP][NP][NUM_LEV_P*VECTOR_SIZE]> RNlevp;
+typedef ExecViewUnmanaged<Scalar[2][NP][NP][NUM_LEV]> S2Nlev;
+typedef ExecViewUnmanaged<Real[2][NP][NP][NUM_LEV*VECTOR_SIZE]> R2Nlev;
 
 /* Form a 3rd-degree Lagrange polynomial over (x(k-1:k+1), y(k-1:k+1)) and set
    yi(k) to its derivative at x(k). yps(:,:,0) is not written.
@@ -136,6 +139,180 @@ reconstruct_and_limit_dp (const KernelVariables& kv, const CSNlev& dprefp, const
     Kokkos::parallel_for(tvr, g2);
   };
   parallel_for(ttr, f);
+}
+
+/*
+  Reconstruct the vertically Lagrangian levels, thus permitting the dynamics
+  vertical remap time step to be shorter than the tracer time step.
+    Recall
+      p(eta,ps) = A(eta) p0 + B(eta) ps
+      => dp/dt = p_eta deta/dt + p_ps dps/dt
+               = (A_eta p0 + B_eta ps) deta/dt + B(eta) dps/dt
+  dp3d already accounts for B(eta) dps/dt, so it does not appear in what
+  follows. We use eta as the vertical coordinate in these calculations. But
+  here, to focus on the key ideas, consider a p = (x,z) system with
+  velocities v = (u,w). Let 0, h, 1, suffixes denote start, middle, and end
+  of the time step. The algorithm is as follows.
+    The trajectory is computed forward in time, so the departure 0 points
+  are on the grid. We need to compute z(x0,t1), the floating height at
+  horizontal grid point x0 at time t1. We start by computing z1 = z(x1,t1),
+  the floating height at the non-grid point x1 at time t1 or, in other
+  words, the non-grid arrival point:
+      z1 = z0 + dt/2 (w(p0,t0) + w(p1,t1)) + O(dt^3)
+      w(p1,t1) = w(p0,t1) + grad w(p0,t1) (p1 - p0) + O(dt^2)
+      x1 - x0 = dt u(p0,t0) + O(dt^2)
+      z1 - z0 = dt w(p0,t0) + O(dt^2)
+      z1 = z0 + dt/2 (w(p0,t0) + w(p0,t1) +
+                      dt (w_x(p0,t1) u(p0,t0) + w_z(p0,t1) w(p0,t0))) + O(dt^3)  (*)
+  Now we compute z(x0,t1). First, we need
+      x0 - x1 = -dt u(p0,t0) + O(dt^2)
+  and
+      z_x(x1,t1) = z0_x + dt w_x(p0,t1) + O(dt^2)
+                 = dt w_x(p0,t1) + O(dt^2).
+      z_xx(x1,t1) = z0_xx + dt w_xx(p0,t1) + O(dt^2)
+                  = dt w_xx(p0,t1) + O(dt^2).
+  Then we expand z(x0,t1) in Taylor series and substitute:
+      z(x0,t1) = z(x1,t1) + z_x(x1,t1) (x0 - x1) + z_xx(x1,t1) (x0 - x1)^2
+                 + O(|x0 - x1|^3)
+               = z(x1,t1) - dt z_x(x1,t1) u(p0,t0)
+                 + dt^2 z_xx(x1,t1) u(p0,t0)^2
+                 + O(dt^3) + O(|x0 - x1|^3)
+               = z(x1,t1) - dt^2 w_x(p0,t1) u(p0,t0)
+                 + dt^3 w_xx(x0,t1) u(p0,t0)^2
+                 + O(dt^3) + O(|x0 - x1|^3).
+  Gather all O(dt^3) terms, with O(|x0 - x1|^p) = O(dt^p):
+      z(x0,t1) = z(x1,t1) - dt^2 w_x(p0,t1) u(p0,t0) + O(dt^3).
+  Now substitute (*) for z(x1,t1):
+      z(x0,t1) = z0 + dt/2 (w(p0,t0) + w(p0,t1) +
+                            dt (w_x(p0,t1) u(p0,t0) + w_z(p0,t1) w(p0,t0)))
+                 - dt^2 w_x(p0,t1) u(p0,t0) + O(dt^3)
+               = z0 + dt/2 (w(p0,t0) + w(p0,t1) +
+                            dt (-w_x(p0,t1) u(p0,t0) + w_z(p0,t1) w(p0,t0)))
+                 + O(dt^3)
+  This is locally accurate to O(dt^3) and so globally 2nd-order
+  accurate. Notably, compared with (*), this formula differs only in a
+  sign. Note also that a straightforward first-order accurate formula is
+      z(x0,t1) = z0 + dt w(p0,th) + O(dt^2).
+ */
+KOKKOS_FUNCTION static void calc_vertically_lagrangian_levels (
+  const SphereOperators& sphere_ops, const KernelVariables& kv,
+  const Real& ps0, const Real& hybrid_ai0, const ExecViewUnmanaged<Scalar[NUM_LEV_P]>& hybrid_bi,
+  const CSNlev& dp3d, const CSNlev& dp, const CS2Nlev& vn0, const CS2Nlev& vstar,
+  const Real& dt, const Real& dp_tol,
+  SNlev& wrk1a, SNlev& wrk1b, SNlev& wrk1c, S2Nlev& wrk2,
+  SNlev& dprecon)
+{
+  using Kokkos::parallel_for;
+  using Kokkos::TeamThreadRange;
+  using Kokkos::ThreadVectorRange;
+
+  const auto ttr = TeamThreadRange(kv.team, NP*NP);
+  const auto tvr = ThreadVectorRange(kv.team, NUM_LEV);
+  
+  // Reconstruct an approximation to endpoint eta_dot_dpdn on Eulerian levels.
+  const auto& divdp = wrk1a;
+  const auto& vdp = wrk2;
+  SNlev* eta_dot_dpdn[] = {&wrk1b, &wrk1c};
+  for (int t = 0; t < 2; ++t) {
+    const auto& edd = *eta_dot_dpdn[t];
+    if (t == 0) {
+      const auto f = [&] (const int i, const int j, const int kp) {
+        for (int d = 0; d < 2; ++d)
+          vdp(d,i,j,kp) = vstar(d,i,j,kp)*dp(i,j,kp);
+      };
+      cti::loop_ijk<cti::num_lev_pack>(kv, f);
+    } else {
+      const auto f = [&] (const int i, const int j, const int kp) {
+        for (int d = 0; d < 2; ++d)
+          vdp(d,i,j,kp) = vn0(d,i,j,kp)*dp3d(i,j,kp);
+      };
+      cti::loop_ijk<cti::num_lev_pack>(kv, f);
+    }
+
+    sphere_ops.divergence_sphere(kv, vdp, divdp);
+
+    RNlev edds(cti::pack2real(edd)), divdps(cti::pack2real(divdp));
+    const auto f = [&] (const int idx) {
+      const int i = idx / NP, j = idx % NP;
+      const auto r = [&] (const int k, Real& dps, const bool final) {
+        assert(k != 0 || dps == 0);
+        if (final) edds(i,j,k) = dps;
+        dps += edds(i,j,k) + divdps(i,j,k);
+      };
+      Dispatch<>::parallel_scan(kv.team, cti::num_phys_lev, r);
+      const int kend = cti::num_phys_lev - 1;
+      const Real dps = edds(i,j,kend) + divdps(i,j,kend);
+      assert(hybrid_bi(0)[0] == 0);
+      const auto s = [&] (const int kp) {
+        edd(i,j,kp) = hybrid_bi(kp)*dps - edd(i,j,kp);
+        if (kp == 0) edd(i,j,kp)[0] = 0;
+      };
+      assert(edds(i,j,0) == 0);
+      parallel_for(tvr, s);
+    };
+    parallel_for(ttr, f);
+  }
+  
+  // Use p0 as the reference coordinate system. p0 differs from p1 by B(eta)
+  // (ps1 - ps0); dp3d already accounts for this term w.r.t. derived%dp. Recall
+  //     eta_dot_dpdn = p_eta eta_dot = (A_eta p0 + B_eta ps) deta/dt,
+  // except that in the code eta_dot_dpdn is actually dp deta/dt rather than
+  // dp/deta deta/dt. eta_dot_dpdn is the motion of a pressure level excluding
+  // its motion due to dps/dt.
+  const auto& pref = wrk1a;
+  calc_p(kv, ps0, hybrid_ai0, dp, pref);
+    
+  // Gradient of eta_dot_dpdn = p_eta deta/dt at final time
+  // w.r.t. horizontal sphere coords.
+  const auto& grad = wrk2;
+  sphere_ops.gradient_sphere(kv, *eta_dot_dpdn[1], grad);
+  
+  // Gradient of eta_dot_dpdn = p_eta deta/dt at final time w.r.t. p at initial
+  // time.
+  const auto& ptp0 = wrk1a;
+  approx_derivative(kv, pref, *eta_dot_dpdn[1], ptp0);
+
+  {
+    const auto& edd = *eta_dot_dpdn[0];
+    const R2Nlev vstars(cti::pack2real(vstar));
+#ifndef NDEBUG
+    RNlev edds(cti::pack2real(edd));    
+#endif
+    const auto f_v = [&] (const int i, const int j, const int kp) {
+      // Horizontal velocity at initial time.
+      Scalar v[2];
+      if (kp == 0) {
+        for (int d = 0; d < 2; ++d)
+          for (int s = 1; s < cti::packn; ++s)
+            v[d][s] = 0.5*(vstars(0,i,j,s-1) + vstars(0,i,j,s));
+      } else {
+        const int os = kp*cti::packn;
+        for (int d = 0; d < 2; ++d)
+          for (int s = 0; s < cti::packn; ++s)
+            v[d][s] = 0.5*(vstars(0,i,j,os+s-1) + vstars(0,i,j,os+s));
+      }
+      // Reconstruct eta_dot_dpdn over the time interval. Boundary points are
+      // always 0.
+#define OLD
+#ifdef OLD
+      // Reconstruct departure level coordinate at final time.
+      edd(i,j,kp) = (pref(i,j,kp) +
+                     0.5*dt*(edd(i,j,kp) + (*eta_dot_dpdn[1])(i,j,kp) +
+                             dt*(ptp0(i,j,kp)*edd(i,j,kp)
+                                 - grad(0,i,j,kp)*v[0] - grad(1,i,j,kp)*v[1])));
+      edd(i,j,kp) = (edd(i,j,kp) - pref(i,j,kp))/dt;
+#else
+      edd(i,j,kp) = (0.5*(edd(i,j,kp) + (*eta_dot_dpdn[1])(i,j,kp) +
+                          dt*(ptp0(i,j,kp)*edd(i,j,kp)
+                              - grad(0,i,j,kp)*v[0] - grad(1,i,j,kp)*v[1])));
+#endif
+      assert(edds(i,j,0) == 0);
+      assert(edds(i,j,NUM_PHYSICAL_LEV) == 0);
+    };
+    cti::loop_ijk<cti::num_lev_pack>(kv, f_v);
+  }
+
+  reconstruct_and_limit_dp(kv, dp3d, dt, dp_tol, *eta_dot_dpdn[0], dprecon);
 }
 
 /* Calculate the trajectory at second order using Taylor series expansion. Also
@@ -399,6 +576,7 @@ int ComposeTransportImpl::run_trajectory_unit_tests () {
 
 ComposeTransport::TestDepView::HostMirror ComposeTransportImpl::
 test_trajectory(Real t0, Real t1, const bool independent_time_steps) {
+  m_data.independent_time_steps = independent_time_steps;
   m_data.np1 = 0;
   const auto vstar = Kokkos::create_mirror_view(m_derived.m_vstar);
   const auto v = Kokkos::create_mirror_view(m_state.m_v);

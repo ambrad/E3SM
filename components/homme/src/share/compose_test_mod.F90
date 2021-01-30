@@ -12,9 +12,9 @@ interface
    subroutine compose_unittest() bind(c)
    end subroutine compose_unittest
 
-   subroutine compose_stt_init(np, nlev, qsize, qsize_d, nelemd) bind(c)
+   subroutine compose_stt_init(np, nlev, qsize, qsize_d, nelemd, testno) bind(c)
      use iso_c_binding, only: c_int
-     integer (kind=c_int), value, intent(in) :: np, nlev, qsize, qsize_d, nelemd
+     integer (kind=c_int), value, intent(in) :: np, nlev, qsize, qsize_d, nelemd, testno
    end subroutine compose_stt_init
 
    subroutine compose_stt_fill_uniform_density(ie, np1, dp3d, dp) bind(c)
@@ -216,7 +216,7 @@ contains
     ! Set up time stepping and initialize q and density.
     call timelevel_init_default(tl)
     call timelevel_qdp(tl, qsplit, np1_qdp, n0_qdp)
-    call compose_stt_init(np, nlev, qsize, qsize_d, nelemd)
+    call compose_stt_init(np, nlev, qsize, qsize_d, nelemd, 0)
     do ie = nets, nete
        call compose_stt_fill_uniform_density(ie, tl%np1, elem(ie)%state%dp3d, &
             elem(ie)%derived%dp)

@@ -41,9 +41,12 @@ extern "C" {
   void init_geometry_f90();
   void cleanup_compose_f90();
   void run_compose_standalone_test_f90(int* nmax, Real* eval);
-  void run_trajectory_f90(Real t0, Real t1, bool independent_time_steps, Real* dep);
+  void run_trajectory_f90(Real t0, Real t1, bool independent_time_steps, Real* dep,
+                          Real* dprecon);
 } // extern "C"
 
+using FA4d = Kokkos::View<Real****, Kokkos::LayoutLeft, Kokkos::HostSpace>;
+using CA4d = Kokkos::View<Real****, Kokkos::LayoutRight, Kokkos::HostSpace>;
 using FA5d = Kokkos::View<Real*****, Kokkos::LayoutLeft, Kokkos::HostSpace>;
 using CA5d = Kokkos::View<Real*****, Kokkos::LayoutRight, Kokkos::HostSpace>;
 
@@ -100,7 +103,6 @@ struct Session {
   Random r;
   std::shared_ptr<Elements> e;
   int nelemd, qsize, nlev, np;
-  bool independent_time_steps;
   FunctorsBuffersManager fbm;
 
   //Session () : r(269041989) {}
@@ -157,7 +159,6 @@ struct Session {
     assert(nlev > 0);
     np = NP;
     assert(np == 4);
-    independent_time_steps = false; // until impl'ed
   }
 
   void cleanup () {
@@ -260,12 +261,23 @@ TEST_CASE ("compose_transport_testing") {
   for (const auto& e : fails) printf("%s %d\n", e.first.c_str(), e.second);
   REQUIRE(fails.empty());
 
-  {
+  for (const bool independent_time_steps : {false, true}) {
     const Real twelve_days = 3600 * 24 * 12;
     const Real t0 = 0.13*twelve_days, t1 = 0.22*twelve_days;
     CA5d depf("depf", s.nelemd, s.nlev, s.np, s.np, 3);
-    run_trajectory_f90(t0, t1, s.independent_time_steps, depf.data());
-    const auto depc = ct.test_trajectory(t0, t1, s.independent_time_steps);
+    CA4d dpreconf("dpreconf", s.nelemd, s.nlev, s.np, s.np);
+    run_trajectory_f90(t0, t1, independent_time_steps, depf.data(),
+                       dpreconf.data());
+    if (independent_time_steps) {
+      for (int ie = 0; ie < 1/*s.nelemd*/; ++ie)
+        for (int lev = 0; lev < s.nlev; ++lev)
+          for (int i = 0; i < s.np; ++i)
+            for (int j = 0; j < s.np; ++j)
+              printf("%d %d %d %d %1.16e\n",ie,lev,i,j,dpreconf(ie,lev,i,j));
+      pr("UNDER CONSTRUCTION moving on");
+      continue;
+    }
+    const auto depc = ct.test_trajectory(t0, t1, independent_time_steps);
     REQUIRE(depc.extent_int(0) == s.nelemd);
     REQUIRE(depc.extent_int(2) == s.np);
     REQUIRE(depc.extent_int(4) == 3);
@@ -276,7 +288,8 @@ TEST_CASE ("compose_transport_testing") {
             for (int d = 0; d < 3; ++d)
               REQUIRE(equal(depf(ie,lev,i,j,d), depc(ie,lev,i,j,d), 10*tol));
   }
-  
+
+  if (0)
   {
     int nmax;
     std::vector<Real> eval_f((s.nlev+1)*s.qsize), eval_c(eval_f.size());

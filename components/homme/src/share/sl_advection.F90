@@ -912,14 +912,24 @@ contains
        v1 = half*(elem%derived%vstar(:,:,1,k1) + elem%derived%vstar(:,:,1,k2))
        v2 = half*(elem%derived%vstar(:,:,2,k1) + elem%derived%vstar(:,:,2,k2))
 
+#define OLD
+#ifdef OLD
        ! Reconstruct departure level coordinate at final time.
        p1r(:,:,k) = pref(:,:,k) + &
             half*dt*(eta_dot_dpdn(:,:,k,1) + eta_dot_dpdn(:,:,k,2) + &
-                     dt*(ptp0*eta_dot_dpdn(:,:,k,1) - grad(:,:,1)*v1 - grad(:,:,2)*v2))
+            dt*(ptp0*eta_dot_dpdn(:,:,k,1) - grad(:,:,1)*v1 - grad(:,:,2)*v2))
+#else
+       ! Reconstruct eta_dot_dpdn over the time interval.
+       eta_dot_dpdn(:,:,k,1) = &
+            half*(eta_dot_dpdn(:,:,k,1) + eta_dot_dpdn(:,:,k,2) + &
+            dt*(ptp0*eta_dot_dpdn(:,:,k,1) - grad(:,:,1)*v1 - grad(:,:,2)*v2))
+#endif
     end do
 
     ! Reconstruct eta_dot_dpdn over the time interval.
+#ifdef OLD
     eta_dot_dpdn(:,:,:,1) = (p1r - pref)/dt
+#endif
     ! Boundary points are always 0.
     eta_dot_dpdn(:,:,1,1) = zero
     eta_dot_dpdn(:,:,nlevp,1) = zero
