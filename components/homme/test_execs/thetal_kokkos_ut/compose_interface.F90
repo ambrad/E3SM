@@ -166,7 +166,8 @@ contains
     use control_mod, only: qsplit
     use hybrid_mod, only: hybrid_t, hybrid_create
     use thetal_test_interface, only: deriv, hvcoord
-    use compose_test_mod, only: compose_stt_init, compose_stt_fill_v, compose_stt_clear
+    use compose_test_mod, only: compose_stt_init, compose_stt_fill_v, compose_stt_clear, &
+         compose_stt_fill_uniform_density
     use sl_advection, only: calc_trajectory, dep_points_all
 
     real(c_double), value, intent(in) :: t0, t1
@@ -175,7 +176,7 @@ contains
 
     type (timelevel_t) :: tl
     type (hybrid_t) :: hybrid
-    real(real_kind) :: dt, zi(np,np,nlevp)
+    real(real_kind) :: dt
     integer :: ie, i, j, k, testno
     logical :: its
 
@@ -183,9 +184,9 @@ contains
     testno = 0
     if (independent_time_steps) testno = 1
     call compose_stt_init(np, nlev, qsize, qsize_d, nelemd, testno)
-
-    zi = 0
     do ie = 1, nelemd
+       call compose_stt_fill_uniform_density(ie, tl%np1, elem(ie)%state%dp3d, &
+            elem(ie)%derived%dp)
        call compose_stt_fill_v(ie, elem(ie)%spherep, t0, &
             elem(ie)%derived%vstar)
        call compose_stt_fill_v(ie, elem(ie)%spherep, t1, &

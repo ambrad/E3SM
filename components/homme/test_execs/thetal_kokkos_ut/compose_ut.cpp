@@ -263,7 +263,8 @@ TEST_CASE ("compose_transport_testing") {
 
   for (const bool independent_time_steps : {false, true}) {
     const Real twelve_days = 3600 * 24 * 12;
-    const Real t0 = 0.13*twelve_days, t1 = 0.22*twelve_days;
+    const Real t0 = 0.13*twelve_days;
+    const Real t1 = independent_time_steps ? t0 + 1800 : 0.22*twelve_days;
     CA5d depf("depf", s.nelemd, s.nlev, s.np, s.np, 3);
     CA4d dpreconf("dpreconf", s.nelemd, s.nlev, s.np, s.np);
     run_trajectory_f90(t0, t1, independent_time_steps, depf.data(),
@@ -273,7 +274,7 @@ TEST_CASE ("compose_transport_testing") {
         for (int lev = 0; lev < s.nlev; ++lev)
           for (int i = 0; i < s.np; ++i)
             for (int j = 0; j < s.np; ++j)
-              printf("%d %d %d %d %1.16e\n",ie,lev,i,j,dpreconf(ie,lev,i,j));
+              ; //printf("%d %d %d %d %1.16e\n",ie,lev,i,j,dpreconf(ie,lev,i,j));
       pr("UNDER CONSTRUCTION moving on");
       continue;
     }
