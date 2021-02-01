@@ -269,15 +269,6 @@ TEST_CASE ("compose_transport_testing") {
     CA4d dpreconf("dpreconf", s.nelemd, s.nlev, s.np, s.np);
     run_trajectory_f90(t0, t1, independent_time_steps, depf.data(),
                        dpreconf.data());
-    if (independent_time_steps) {
-      for (int ie = 0; ie < 1/*s.nelemd*/; ++ie)
-        for (int lev = 0; lev < s.nlev; ++lev)
-          for (int i = 0; i < s.np; ++i)
-            for (int j = 0; j < s.np; ++j)
-              ; //printf("%d %d %d %d %1.16e\n",ie,lev,i,j,dpreconf(ie,lev,i,j));
-      pr("UNDER CONSTRUCTION moving on");
-      continue;
-    }
     const auto depc = ct.test_trajectory(t0, t1, independent_time_steps);
     REQUIRE(depc.extent_int(0) == s.nelemd);
     REQUIRE(depc.extent_int(2) == s.np);
@@ -290,7 +281,6 @@ TEST_CASE ("compose_transport_testing") {
               REQUIRE(equal(depf(ie,lev,i,j,d), depc(ie,lev,i,j,d), 10*tol));
   }
 
-  if (0)
   {
     int nmax;
     std::vector<Real> eval_f((s.nlev+1)*s.qsize), eval_c(eval_f.size());

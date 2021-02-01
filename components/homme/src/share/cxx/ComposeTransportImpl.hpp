@@ -58,7 +58,7 @@ struct ComposeTransportImpl {
     bool independent_time_steps;
 
     int nslot;
-    Buf1 buf1;
+    Buf1 buf1[3];
     Buf2 buf2[2];
 
     DeparturePoints dep_pts;

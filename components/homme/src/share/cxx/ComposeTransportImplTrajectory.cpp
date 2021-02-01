@@ -199,8 +199,8 @@ KOKKOS_FUNCTION static void calc_vertically_lagrangian_levels (
   const Real& ps0, const Real& hybrid_ai0, const ExecViewUnmanaged<Scalar[NUM_LEV_P]>& hybrid_bi,
   const CSNlev& dp3d, const CSNlev& dp, const CS2Nlev& vn0, const CS2Nlev& vstar,
   const Real& dt, const Real& dp_tol,
-  SNlev& wrk1a, SNlev& wrk1b, SNlev& wrk1c, S2Nlev& wrk2,
-  SNlev& dprecon)
+  const SNlev& wrk1a, const SNlev& wrk1b, const SNlev& wrk1c, const S2Nlev& wrk2,
+  const SNlev& dprecon)
 {
   using Kokkos::parallel_for;
   using Kokkos::TeamThreadRange;
@@ -212,7 +212,7 @@ KOKKOS_FUNCTION static void calc_vertically_lagrangian_levels (
   // Reconstruct an approximation to endpoint eta_dot_dpdn on Eulerian levels.
   const auto& divdp = wrk1a;
   const auto& vdp = wrk2;
-  SNlev* eta_dot_dpdn[] = {&wrk1b, &wrk1c};
+  const SNlev* eta_dot_dpdn[] = {&wrk1b, &wrk1c};
   for (int t = 0; t < 2; ++t) {
     const auto& edd = *eta_dot_dpdn[t];
     if (t == 0) {
@@ -275,9 +275,6 @@ KOKKOS_FUNCTION static void calc_vertically_lagrangian_levels (
   {
     const auto& edd = *eta_dot_dpdn[0];
     const R2Nlev vstars(cti::pack2real(vstar));
-#ifndef NDEBUG
-    RNlev edds(cti::pack2real(edd));    
-#endif
     const auto f_v = [&] (const int i, const int j, const int kp) {
       // Horizontal velocity at initial time.
       Scalar v[2];
@@ -306,10 +303,16 @@ KOKKOS_FUNCTION static void calc_vertically_lagrangian_levels (
                           dt*(ptp0(i,j,kp)*edd(i,j,kp)
                               - grad(0,i,j,kp)*v[0] - grad(1,i,j,kp)*v[1])));
 #endif
-      assert(edds(i,j,0) == 0);
-      assert(edds(i,j,NUM_PHYSICAL_LEV) == 0);
     };
     cti::loop_ijk<cti::num_lev_pack>(kv, f_v);
+    { // Boundary points are always 0.
+      RNlev edds(cti::pack2real(edd));
+      const auto f = [&] (const int i, const int j) {
+        assert(edds(i,j,0) == 0);
+        edds(i,j,NUM_PHYSICAL_LEV) = 0;
+      };
+      cti::loop_ij(kv, f);
+    }
   }
 
   reconstruct_and_limit_dp(kv, dp3d, dt, dp_tol, *eta_dot_dpdn[0], dprecon);
@@ -332,34 +335,51 @@ KOKKOS_FUNCTION static void calc_vertically_lagrangian_levels (
    In the code, v(p1,t0) = vstar, v(p1,t1) is vn0.
  */
 void ComposeTransportImpl::calc_trajectory (const Real dt) {
-  assert( ! m_data.independent_time_steps); // until impl'ed
   const auto sphere_ops = m_sphere_ops;
   const auto geo = m_geometry;
   const auto m_vec_sph2cart = geo.m_vec_sph2cart;
   const auto m_vstar = m_derived.m_vstar;
   { // Calculate midpoint velocity.
+    const auto buf1a = m_data.buf1[0]; const auto buf1b = m_data.buf1[1];
+    const auto buf1c = m_data.buf1[2]; const auto buf2a = m_data.buf2[0];
+    const auto buf2b = m_data.buf2[1];
     const auto m_spheremp = geo.m_spheremp;
     const auto m_rspheremp = geo.m_rspheremp;
     const auto m_v = m_state.m_v;
     const auto m_vn0 = m_derived.m_vn0;
-    const auto buf1 = m_data.buf1;
-    const auto buf2a = m_data.buf2[0];
-    const auto buf2b = m_data.buf2[1];
     const auto np1 = m_data.np1;
     const auto independent_time_steps = m_data.independent_time_steps;
+    const Real dp_tol = m_data.dp_tol;
+    const Real ps0 = m_hvcoord.ps0;
+    const Real hybrid_ai0 = m_hvcoord.hybrid_ai0;
+    const auto hybrid_bi = m_hvcoord.hybrid_bi_packed;
+    const auto m_dp3d = m_state.m_dp3d;
+    const auto m_dp = m_derived.m_dp;
+    const auto m_divdp = m_derived.m_divdp;
     const auto calc_midpoint_velocity = KOKKOS_LAMBDA (const MT& team) {
       KernelVariables kv(team, m_tu_ne);
       const auto ie = kv.ie;
-
-      //todo independent_time_steps code here
 
       const auto vn0 = (independent_time_steps ?
                         Homme::subview(m_vn0, ie) :
                         Homme::subview(m_v, ie, np1));
       const auto vstar = Homme::subview(m_vstar, ie);
+
+      if (m_data.independent_time_steps) {
+        const auto dprecon = Homme::subview(m_divdp, ie);
+        calc_vertically_lagrangian_levels(
+          sphere_ops, kv, ps0, hybrid_ai0, hybrid_bi,
+          Homme::subview(m_dp3d, ie, np1), Homme::subview(m_dp, ie),
+          vn0, vstar, dt, dp_tol,
+          Homme::subview(buf1a, kv.team_idx), Homme::subview(buf1b, kv.team_idx),
+          Homme::subview(buf1c, kv.team_idx), Homme::subview(buf2a, kv.team_idx),
+          dprecon);
+        //todo rest of impl
+      }
+
       const auto ugradv = Homme::subview(buf2b, kv.team_idx);
       ugradv_sphere(sphere_ops, kv, Homme::subview(m_vec_sph2cart, ie), vn0, vstar,
-                    Homme::subview(buf1, kv.team_idx), Homme::subview(buf2a, kv.team_idx),
+                    Homme::subview(buf1a, kv.team_idx), Homme::subview(buf2a, kv.team_idx),
                     ugradv);
 
       // Write the midpoint velocity to vstar.
