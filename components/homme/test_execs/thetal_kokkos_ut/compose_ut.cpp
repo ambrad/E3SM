@@ -57,6 +57,9 @@ decltype(Kokkos::create_mirror_view(V())) cmvdc (const V& v) {
   return h;
 }
 
+template <typename View> static
+Real* pack2real (const View& v) { return &(*v.data())[0]; }
+
 class Random {
   using rngalg = std::mt19937_64;
   using rpdf = std::uniform_real_distribution<Real>;
@@ -247,6 +250,8 @@ static bool equal (const Real& a, const Real& b,
 #endif
 }
 
+typedef ExecViewUnmanaged<Real*[NP][NP][NUM_LEV*VECTOR_SIZE]> RNlev;
+
 TEST_CASE ("compose_transport_testing") {
   static constexpr Real tol = std::numeric_limits<Real>::epsilon();
 
@@ -262,6 +267,7 @@ TEST_CASE ("compose_transport_testing") {
   REQUIRE(fails.empty());
 
   for (const bool independent_time_steps : {false, true}) {
+    //if (independent_time_steps) continue;
     const Real twelve_days = 3600 * 24 * 12;
     const Real t0 = 0.13*twelve_days;
     const Real t1 = independent_time_steps ? t0 + 1800 : 0.22*twelve_days;
@@ -273,6 +279,14 @@ TEST_CASE ("compose_transport_testing") {
     REQUIRE(depc.extent_int(0) == s.nelemd);
     REQUIRE(depc.extent_int(2) == s.np);
     REQUIRE(depc.extent_int(4) == 3);
+    if (independent_time_steps) {
+      const auto dpreconc = cmvdc(RNlev(pack2real(s.e->m_derived.m_divdp), s.nelemd));
+      for (int ie = 0; ie < s.nelemd; ++ie)
+        for (int lev = 0; lev < s.nlev; ++lev)
+          for (int i = 0; i < s.np; ++i)
+            for (int j = 0; j < s.np; ++j)
+              REQUIRE(equal(dpreconf(ie,lev,i,j), dpreconc(ie,lev,i,j), 10*tol));
+    }
     for (int ie = 0; ie < s.nelemd; ++ie)
       for (int lev = 0; lev < s.nlev; ++lev)
         for (int i = 0; i < s.np; ++i)

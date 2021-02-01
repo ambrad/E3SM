@@ -595,11 +595,13 @@ int ComposeTransportImpl::run_trajectory_unit_tests () {
 }
 
 ComposeTransport::TestDepView::HostMirror ComposeTransportImpl::
-test_trajectory(Real t0, Real t1, const bool independent_time_steps) {
+test_trajectory (Real t0, Real t1, const bool independent_time_steps) {
   m_data.independent_time_steps = independent_time_steps;
   m_data.np1 = 0;
   const auto vstar = Kokkos::create_mirror_view(m_derived.m_vstar);
   const auto v = Kokkos::create_mirror_view(m_state.m_v);
+  const auto dp3d = Kokkos::create_mirror_view(m_state.m_dp3d);
+  const auto dp = Kokkos::create_mirror_view(m_derived.m_dp);
   const auto pll = cmvdc(m_geometry.m_sphere_latlon);
   const auto np1 = m_data.np1;
   const int packn = this->packn;
@@ -614,6 +616,8 @@ test_trajectory(Real t0, Real t1, const bool independent_time_steps) {
     for (int d = 0; d < 2; ++d) vstar(ie,d,i,j,p)[s] = uv[d];
     wf.eval(t1, latlon, uv);
     for (int d = 0; d < 2; ++d) v(ie,np1,d,i,j,p)[s] = uv[d];
+    for (int t = 0; t < NUM_TIME_LEVELS; ++t) dp3d(ie,t,i,j,p)[s] = 1;
+    dp(ie,i,j,p)[s] = 1;
   };
   loop_host_ie_plev_ij(f);
   Kokkos::deep_copy(m_derived.m_vstar, vstar);
