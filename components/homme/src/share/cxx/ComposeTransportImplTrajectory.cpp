@@ -56,6 +56,7 @@ typedef ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV_P]> SNlevp;
 typedef ExecViewUnmanaged<Real[NP][NP][NUM_LEV_P*VECTOR_SIZE]> RNlevp;
 typedef ExecViewUnmanaged<Scalar[2][NP][NP][NUM_LEV]> S2Nlev;
 typedef ExecViewUnmanaged<Real[2][NP][NP][NUM_LEV*VECTOR_SIZE]> R2Nlev;
+typedef ExecViewUnmanaged<Scalar[2][NP][NP][NUM_LEV_P]> S2Nlevp;
 
 /* Form a 3rd-degree Lagrange polynomial over (x(k-1:k+1), y(k-1:k+1)) and set
    yi(k) to its derivative at x(k). yps(:,:,0) is not written.
@@ -119,7 +120,7 @@ reconstruct_and_limit_dp (const KernelVariables& kv, const CSNlev& dprefp, const
       // comment in sl_vertically_remap_tracers for more.
       dprecon(i,j,k) = dpref(i,j,k) + dt*(eta_dot_dpdn(i,j,k+1) - eta_dot_dpdn(i,j,k));
       if (dprecon(i,j,k) < dp_tol) {
-        sums.v[0] += (dprecon(i,j,k) - dp_tol);
+        sums.v[0] += dprecon(i,j,k) - dp_tol;
         dprecon(i,j,k) = dp_tol;
       } else {
         sums.v[1] += dprecon(i,j,k) - dp_tol;
@@ -199,12 +200,14 @@ KOKKOS_FUNCTION static void calc_vertically_lagrangian_levels (
   const Real& ps0, const Real& hybrid_ai0, const ExecViewUnmanaged<Scalar[NUM_LEV_P]>& hybrid_bi,
   const CSNlev& dp3d, const CSNlev& dp, const CS2Nlev& vn0, const CS2Nlev& vstar,
   const Real& dt, const Real& dp_tol,
-  const SNlev& wrk1a, const SNlev& wrk1b, const SNlev& wrk1c, const S2Nlev& wrk2,
+  const SNlevp& wrk1a, const SNlevp& wrk1b, const SNlevp& wrk1c, const S2Nlevp& wrk2,
   const SNlev& dprecon)
 {
   using Kokkos::parallel_for;
   using Kokkos::TeamThreadRange;
   using Kokkos::ThreadVectorRange;
+
+  assert(hybrid_bi(0)[0] == 0);
 
   const auto ttr = TeamThreadRange(kv.team, NP*NP);
   const auto tvr = ThreadVectorRange(kv.team, NUM_LEV);
@@ -212,7 +215,7 @@ KOKKOS_FUNCTION static void calc_vertically_lagrangian_levels (
   // Reconstruct an approximation to endpoint eta_dot_dpdn on Eulerian levels.
   const auto& divdp = wrk1a;
   const auto& vdp = wrk2;
-  const SNlev* eta_dot_dpdn[] = {&wrk1b, &wrk1c};
+  const SNlevp* eta_dot_dpdn[] = {&wrk1b, &wrk1c};
   for (int t = 0; t < 2; ++t) {
     const auto& edd = *eta_dot_dpdn[t];
     if (t == 0) {
@@ -231,13 +234,13 @@ KOKKOS_FUNCTION static void calc_vertically_lagrangian_levels (
 
     sphere_ops.divergence_sphere(kv, vdp, divdp);
 
-    RNlev edds(cti::pack2real(edd)), divdps(cti::pack2real(divdp));
+    RNlevp edds(cti::pack2real(edd)), divdps(cti::pack2real(divdp));
     const auto f = [&] (const int idx) {
       const int i = idx / NP, j = idx % NP;
       const auto r = [&] (const int k, Real& dps, const bool final) {
         assert(k != 0 || dps == 0);
         if (final) edds(i,j,k) = dps;
-        dps += edds(i,j,k) + divdps(i,j,k);
+        dps += divdps(i,j,k);
       };
       Dispatch<>::parallel_scan(kv.team, cti::num_phys_lev, r);
       const int kend = cti::num_phys_lev - 1;
@@ -247,8 +250,10 @@ KOKKOS_FUNCTION static void calc_vertically_lagrangian_levels (
         edd(i,j,kp) = hybrid_bi(kp)*dps - edd(i,j,kp);
         if (kp == 0) edd(i,j,kp)[0] = 0;
       };
-      assert(edds(i,j,0) == 0);
       parallel_for(tvr, s);
+      assert(edds(i,j,0) == 0);
+      const int bottom = cti::num_phys_lev;
+      edds(i,j,bottom) = 0;
     };
     parallel_for(ttr, f);
   }
@@ -264,12 +269,12 @@ KOKKOS_FUNCTION static void calc_vertically_lagrangian_levels (
     
   // Gradient of eta_dot_dpdn = p_eta deta/dt at final time
   // w.r.t. horizontal sphere coords.
-  const auto& grad = wrk2;
+  const auto& grad = S2Nlev(wrk2.data());
   sphere_ops.gradient_sphere(kv, *eta_dot_dpdn[1], grad);
   
   // Gradient of eta_dot_dpdn = p_eta deta/dt at final time w.r.t. p at initial
   // time.
-  const auto& ptp0 = wrk1a;
+  const auto& ptp0 = dprecon;
   approx_derivative(kv, pref, *eta_dot_dpdn[1], ptp0);
 
   {
@@ -281,12 +286,12 @@ KOKKOS_FUNCTION static void calc_vertically_lagrangian_levels (
       if (kp == 0) {
         for (int d = 0; d < 2; ++d)
           for (int s = 1; s < cti::packn; ++s)
-            v[d][s] = 0.5*(vstars(0,i,j,s-1) + vstars(0,i,j,s));
+            v[d][s] = 0.5*(vstars(d,i,j,s-1) + vstars(d,i,j,s));
       } else {
         const int os = kp*cti::packn;
         for (int d = 0; d < 2; ++d)
           for (int s = 0; s < cti::packn; ++s)
-            v[d][s] = 0.5*(vstars(0,i,j,os+s-1) + vstars(0,i,j,os+s));
+            v[d][s] = 0.5*(vstars(d,i,j,os+s-1) + vstars(d,i,j,os+s));
       }
       // Reconstruct eta_dot_dpdn over the time interval. Boundary points are
       // always 0.
@@ -305,14 +310,6 @@ KOKKOS_FUNCTION static void calc_vertically_lagrangian_levels (
 #endif
     };
     cti::loop_ijk<cti::num_lev_pack>(kv, f_v);
-    { // Boundary points are always 0.
-      RNlev edds(cti::pack2real(edd));
-      const auto f = [&] (const int i, const int j) {
-        assert(edds(i,j,0) == 0);
-        edds(i,j,NUM_PHYSICAL_LEV) = 0;
-      };
-      cti::loop_ij(kv, f);
-    }
   }
 
   reconstruct_and_limit_dp(kv, dp3d, dt, dp_tol, *eta_dot_dpdn[0], dprecon);
@@ -377,9 +374,10 @@ void ComposeTransportImpl::calc_trajectory (const Real dt) {
         //todo rest of impl
       }
 
-      const auto ugradv = Homme::subview(buf2b, kv.team_idx);
+      const auto ugradv = S2Nlev(Homme::subview(buf2b, kv.team_idx).data());
       ugradv_sphere(sphere_ops, kv, Homme::subview(m_vec_sph2cart, ie), vn0, vstar,
-                    Homme::subview(buf1a, kv.team_idx), Homme::subview(buf2a, kv.team_idx),
+                    SNlev(Homme::subview(buf1a, kv.team_idx).data()),
+                    S2Nlev(Homme::subview(buf2a, kv.team_idx).data()),
                     ugradv);
 
       // Write the midpoint velocity to vstar.
@@ -479,7 +477,7 @@ static int test_approx_derivative () {
           const Real x = xsh(i,j,k);
           const Real ypp = 2*a*x + b;
           const Real err = std::abs(yish(i,j,k) - ypp);
-          if (err > 50*std::numeric_limits<Real>::epsilon()) {
+          if (err > 1e3*std::numeric_limits<Real>::epsilon()) {
             ++nerr;
             printf("%2d %d %d %1.2f %6.2f %6.2f %9.2e\n",
                    i, j, k, x, ypp, yish(i,j,k), err);
@@ -599,6 +597,7 @@ test_trajectory (Real t0, Real t1, const bool independent_time_steps) {
   m_data.independent_time_steps = independent_time_steps;
   m_data.np1 = 0;
   const auto vstar = Kokkos::create_mirror_view(m_derived.m_vstar);
+  const auto vn0 = Kokkos::create_mirror_view(m_derived.m_vn0);
   const auto v = Kokkos::create_mirror_view(m_state.m_v);
   const auto dp3d = Kokkos::create_mirror_view(m_state.m_dp3d);
   const auto dp = Kokkos::create_mirror_view(m_derived.m_dp);
@@ -616,11 +615,13 @@ test_trajectory (Real t0, Real t1, const bool independent_time_steps) {
     for (int d = 0; d < 2; ++d) vstar(ie,d,i,j,p)[s] = uv[d];
     wf.eval(t1, latlon, uv);
     for (int d = 0; d < 2; ++d) v(ie,np1,d,i,j,p)[s] = uv[d];
+    for (int d = 0; d < 2; ++d) vn0(ie,d,i,j,p)[s] = uv[d];
     for (int t = 0; t < NUM_TIME_LEVELS; ++t) dp3d(ie,t,i,j,p)[s] = 1;
     dp(ie,i,j,p)[s] = 1;
   };
   loop_host_ie_plev_ij(f);
   Kokkos::deep_copy(m_derived.m_vstar, vstar);
+  Kokkos::deep_copy(m_derived.m_vn0, vn0);
   Kokkos::deep_copy(m_state.m_v, v);
 
   calc_trajectory(t1 - t0);

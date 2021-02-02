@@ -47,8 +47,8 @@ struct ComposeTransportImpl {
   using TeamPolicy = Kokkos::TeamPolicy<ExecSpace>;
   using MT = typename TeamPolicy::member_type;
 
-  using Buf1 = ExecViewUnmanaged<Scalar*[NP][NP][NUM_LEV]>;
-  using Buf2 = ExecViewUnmanaged<Scalar*[2][NP][NP][NUM_LEV]>;
+  using Buf1 = ExecViewUnmanaged<Scalar*[NP][NP][NUM_LEV_P]>;
+  using Buf2 = ExecViewUnmanaged<Scalar*[2][NP][NP][NUM_LEV_P]>;
 
   using DeparturePoints = ExecViewManaged<Real*[NUM_PHYSICAL_LEV][NP][NP][3]>;
 
