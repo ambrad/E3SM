@@ -361,6 +361,8 @@ void ComposeTransportImpl::calc_trajectory (const Real dt) {
                         Homme::subview(m_vn0, ie) :
                         Homme::subview(m_v, ie, np1));
       const auto vstar = Homme::subview(m_vstar, ie);
+      const auto spheremp = Homme::subview(m_spheremp, ie);
+      const auto rspheremp = Homme::subview(m_rspheremp, ie);
 
       if (m_data.independent_time_steps) {
         const auto dprecon = Homme::subview(m_divdp, ie);
@@ -371,6 +373,10 @@ void ComposeTransportImpl::calc_trajectory (const Real dt) {
           Homme::subview(buf1a, kv.team_idx), Homme::subview(buf1b, kv.team_idx),
           Homme::subview(buf1c, kv.team_idx), Homme::subview(buf2a, kv.team_idx),
           dprecon);
+        const auto f = [&] (const int i, const int j, const int kp) {
+          dprecon(i,j,kp) = dprecon(i,j,kp)*spheremp(i,j)*rspheremp(i,j);
+        };
+        cti::loop_ijk<num_lev_pack>(kv, f);
         //todo rest of impl
       }
 
@@ -381,8 +387,6 @@ void ComposeTransportImpl::calc_trajectory (const Real dt) {
                     ugradv);
 
       // Write the midpoint velocity to vstar.
-      const auto spheremp = Homme::subview(m_spheremp, ie);
-      const auto rspheremp = Homme::subview(m_rspheremp, ie);
       const auto f = [&] (const int i, const int j, const int k) {
         for (int d = 0; d < 2; ++d)
           vstar(d,i,j,k) = (((vn0(d,i,j,k) + vstar(d,i,j,k))/2 - dt*ugradv(d,i,j,k)/2)*
@@ -394,7 +398,7 @@ void ComposeTransportImpl::calc_trajectory (const Real dt) {
   }
   { // DSS velocity.
     Kokkos::fence();
-    const auto be = m_data.independent_time_steps ? m_v_dss_be[1] : m_v_dss_be[0];
+    const auto be = m_v_dss_be[m_data.independent_time_steps ? 1 : 0];
     be->exchange();
   }
   { // Calculate departure point.
@@ -594,6 +598,7 @@ int ComposeTransportImpl::run_trajectory_unit_tests () {
 
 ComposeTransport::TestDepView::HostMirror ComposeTransportImpl::
 test_trajectory (Real t0, Real t1, const bool independent_time_steps) {
+  const bool its_save = m_data.independent_time_steps;
   m_data.independent_time_steps = independent_time_steps;
   m_data.np1 = 0;
   const auto vstar = Kokkos::create_mirror_view(m_derived.m_vstar);
@@ -627,6 +632,7 @@ test_trajectory (Real t0, Real t1, const bool independent_time_steps) {
   calc_trajectory(t1 - t0);
   Kokkos::fence();
 
+  m_data.independent_time_steps = its_save;
   const auto deph = cti::cmvdc(m_data.dep_pts);
   return deph;
 }
