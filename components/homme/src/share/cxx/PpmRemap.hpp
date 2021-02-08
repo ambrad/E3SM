@@ -173,6 +173,26 @@ struct PpmFixedMeans : public PpmBoundaryConditions {
   static constexpr const char *name() { return "Fixed Means PPM"; }
 };
 
+// Corresponds to remap alg = 10
+struct PpmLimitedExtrap : public PpmBoundaryConditions {
+  static constexpr int fortran_remap_alg = 10;
+
+  KOKKOS_INLINE_FUNCTION static void apply_ppm_boundary (
+    ExecViewUnmanaged<const Real[_ppm_consts::AO_PHYSICAL_LEV]> cell_means,
+    ExecViewUnmanaged<Real[3][NUM_PHYSICAL_LEV]> parabola_coeffs)
+  {
+    
+  }
+
+  KOKKOS_INLINE_FUNCTION static void fill_cell_means_gs (
+    KernelVariables &kv, ExecViewUnmanaged<Real[_ppm_consts::AO_PHYSICAL_LEV]> cell_means)
+  {
+
+  }
+
+  static constexpr const char* name () { return "PPM with limited extrapolation"; }
+};
+
 // Piecewise Parabolic Method stencil
 template <typename boundaries>
 struct PpmVertRemap : public VertRemapAlg {

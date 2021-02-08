@@ -377,7 +377,8 @@ void ComposeTransportImpl::calc_trajectory (const Real dt) {
           dprecon(i,j,kp) = dprecon(i,j,kp)*spheremp(i,j)*rspheremp(i,j);
         };
         cti::loop_ijk<num_lev_pack>(kv, f);
-        //todo rest of impl
+        //todo rest of impl. might need to movie out of this kernel to call VR
+        //     separately.
       }
 
       const auto ugradv = S2Nlev(Homme::subview(buf2b, kv.team_idx).data());

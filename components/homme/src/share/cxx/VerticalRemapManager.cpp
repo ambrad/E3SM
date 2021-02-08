@@ -51,6 +51,16 @@ struct VerticalRemapManager::Impl {
             false, PpmVertRemap<PpmMirrored>> >(
             params.qsize, e, t, h);
       }
+    } else if (params.remap_alg == RemapAlg::PPM_LIMITED_EXTRAP) {
+      if (params.rsplit != 0) {
+        remapper = std::make_shared<RemapFunctor<
+            true, PpmVertRemap<PpmLimitedExtrap>> >(
+            params.qsize, e, t, h);
+      } else {
+        remapper = std::make_shared<RemapFunctor<
+            false, PpmVertRemap<PpmLimitedExtrap>> >(
+            params.qsize, e, t, h);
+      }
     } else {
       Errors::runtime_abort(
           "Error in VerticalRemapManager: unknown remap algorithm.\n",
