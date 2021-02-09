@@ -111,8 +111,8 @@ reconstruct_and_limit_dp (const KernelVariables& kv, const CSNlev& dprefp, const
   const CRNlev dpref(cti::cpack2real(dprefp));
   const CRNlevp eta_dot_dpdn(cti::cpack2real(eta_dot_dpdn_p));
   const RNlev dprecon(cti::pack2real(dpreconp));
-  const auto ttr = TeamThreadRange(kv.team, NP*NP);
-  const auto tvr = ThreadVectorRange(kv.team, NUM_PHYSICAL_LEV);
+  const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
+  const auto tvr = Kokkos::ThreadVectorRange(kv.team, NUM_PHYSICAL_LEV);
   const auto f = [&] (const int idx) {
     const int i = idx / NP, j = idx % NP;
     const auto g1 = [&] (const int k, Kokkos::Real2& sums) {
@@ -139,7 +139,7 @@ reconstruct_and_limit_dp (const KernelVariables& kv, const CSNlev& dprefp, const
     };
     Kokkos::parallel_for(tvr, g2);
   };
-  parallel_for(ttr, f);
+  Kokkos::parallel_for(ttr, f);
 }
 
 /*

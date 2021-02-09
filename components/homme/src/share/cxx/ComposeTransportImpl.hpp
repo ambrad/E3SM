@@ -128,16 +128,12 @@ struct ComposeTransportImpl {
   // avoid non-bfb-ness in, e.g., trig functions.
   void test_2d(const bool bfb, const int nstep, std::vector<Real>& eval);
 
-  template <int KLIM, typename Fn>
-  KOKKOS_INLINE_FUNCTION
+  template <int KLIM, typename Fn> KOKKOS_INLINE_FUNCTION
   static void loop_ijk (const KernelVariables& kv, const Fn& h) {
     using Kokkos::parallel_for;
-    using Kokkos::TeamThreadRange;
-    using Kokkos::ThreadVectorRange;
-
     if (OnGpu<ExecSpace>::value) {
-      const auto ttr = TeamThreadRange(kv.team, NP*NP);
-      const auto tvr = ThreadVectorRange(kv.team, KLIM);
+      const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
+      const auto tvr = Kokkos::ThreadVectorRange(kv.team, KLIM);
       const auto f = [&] (const int idx) {
         const int i = idx / NP, j = idx % NP;
         const auto g = [&] (const int k) { h(i,j,k); };
@@ -150,7 +146,7 @@ struct ComposeTransportImpl {
           for (int k = 0; k < KLIM; ++k)
             h(i,j,k);
     } else {
-      const auto tr = TeamThreadRange(kv.team, KLIM);
+      const auto tr = Kokkos::TeamThreadRange(kv.team, KLIM);
       const auto f = [&] (const int k) {
         for (int i = 0; i < NP; ++i)
           for (int j = 0; j < NP; ++j)
@@ -160,22 +156,16 @@ struct ComposeTransportImpl {
     }
   }
 
-  template <typename Fn>
-  KOKKOS_INLINE_FUNCTION
+  template <typename Fn> KOKKOS_INLINE_FUNCTION
   static void loop_ij (const KernelVariables& kv, const Fn& h) {
-    using Kokkos::parallel_for;
-    using Kokkos::single;
-    using Kokkos::PerThread;
-    using Kokkos::TeamThreadRange;
-
     if (OnGpu<ExecSpace>::value) {
-      const auto ttr = TeamThreadRange(kv.team, NP*NP);
+      const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
       const auto f = [&] (const int idx) {
         const int i = idx / NP, j = idx % NP;
         const auto g = [&] () { h(i,j); };
-        single(PerThread(kv.team), g);
+        Kokkos::single(Kokkos::PerThread(kv.team), g);
       };
-      parallel_for(ttr, f);
+      Kokkos::parallel_for(ttr, f);
     } else if (kv.team.team_size() == 1) {
       for (int i = 0; i < NP; ++i)
         for (int j = 0; j < NP; ++j)
@@ -186,7 +176,7 @@ struct ComposeTransportImpl {
           for (int j = 0; j < NP; ++j)
             h(i,j);
       };
-      single(PerTeam(kv.team), f);
+      Kokkos::single(Kokkos::PerTeam(kv.team), f);
     }
   }
 
