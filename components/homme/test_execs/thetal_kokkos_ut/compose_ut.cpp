@@ -128,6 +128,7 @@ struct Session {
     p.limiter_option = 9;
     p.hypervis_scaling = 0;
     p.remap_alg = RemapAlg::PPM_LIMITED_EXTRAP;
+    p.rsplit = 1;
     p.params_set = true;
     const bool consthv = p.hypervis_scaling == 0;
 
