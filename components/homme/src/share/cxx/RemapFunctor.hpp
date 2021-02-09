@@ -245,6 +245,11 @@ struct Remapper {
   virtual void run_remap(int np1, int np1_qdp, double dt) = 0;
   virtual int requested_buffer_size () const = 0;
   virtual void init_buffers(const FunctorsBuffersManager& fbm) = 0;
+
+  // Interface equivalent to Homme's remap1.
+  virtual void remap1(ExecViewUnmanaged<const Scalar*[NUM_TIME_LEVELS][NP][NP][NUM_LEV]> dp_src,
+                      const int np1, ExecViewUnmanaged<const Scalar*[NP][NP][NUM_LEV]> dp_tgt,
+                      ExecViewUnmanaged<Scalar**[NP][NP][NUM_LEV]> v) = 0;
 };
 
 // The Remap functor
@@ -450,6 +455,25 @@ struct RemapFunctor : public Remapper {
 
     auto update_dp_policy = Kokkos::RangePolicy<ExecSpace,UpdateThicknessTag>(0,m_state.num_elems()*NP*NP*NUM_LEV);
     Kokkos::parallel_for(update_dp_policy, *this);
+  }
+
+  void remap1 (const ExecViewUnmanaged<const Scalar*[NUM_TIME_LEVELS][NP][NP][NUM_LEV]> dp_src,
+               const int np1, const ExecViewUnmanaged<const Scalar*[NP][NP][NUM_LEV]> dp_tgt,
+               const ExecViewUnmanaged<Scalar**[NP][NP][NUM_LEV]> v) override {
+    const int ne = dp_src.extent_int(0), nv = v.extent_int(1);
+    assert(nv < num_to_remap());
+    const auto remap = m_remap;
+    const auto g = [&] (const TeamMember& team) {
+      KernelVariables kv(team, m_tu_ne);
+      remap.compute_grids_phase(kv, Homme::subview(dp_src, kv.ie, np1),
+                                Homme::subview(dp_tgt, kv.ie));
+    };
+    Kokkos::parallel_for(get_default_team_policy<ExecSpace>(ne), g);
+    const auto r = [&] (const TeamMember& team) {
+      KernelVariables kv(team, nv, m_tu_ne_ntr);
+      remap.compute_remap_phase(kv, Homme::subview(v, kv.ie, kv.iq));
+    };
+    Kokkos::parallel_for(get_default_team_policy<ExecSpace>(ne*nv), r);
   }
 
   int requested_buffer_size () const {

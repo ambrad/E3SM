@@ -272,7 +272,6 @@ TEST_CASE ("compose_transport_testing") {
   REQUIRE(fails.empty());
 
   for (const bool independent_time_steps : {false, true}) {
-    printf("independent_time_steps %d\n", (int) independent_time_steps);
     const Real twelve_days = 3600 * 24 * 12;
     const Real t0 = 0.13*twelve_days;
     const Real t1 = independent_time_steps ? t0 + 1800 : 0.22*twelve_days;
@@ -291,8 +290,6 @@ TEST_CASE ("compose_transport_testing") {
           for (int i = 0; i < s.np; ++i)
             for (int j = 0; j < s.np; ++j)
               REQUIRE(equal(dpreconf(ie,lev,i,j), dpreconc(ie,i,j,lev), 10*tol));
-#pragma message "REMOVE WHEN IMPL'ed"
-      continue; // until the rest is impl'ed
     }
     for (int ie = 0; ie < s.nelemd; ++ie)
       for (int lev = 0; lev < s.nlev; ++lev)

@@ -367,15 +367,21 @@ void ComposeTransportImpl::calc_trajectory (const Real dt) {
           Homme::subview(buf1a, kv.team_idx), Homme::subview(buf1b, kv.team_idx),
           Homme::subview(buf1c, kv.team_idx), Homme::subview(buf2a, kv.team_idx),
           dprecon);
-        const auto spheremp = Homme::subview(m_spheremp, ie);
-        const auto rspheremp = Homme::subview(m_rspheremp, ie);
-        const auto f = [&] (const int i, const int j, const int kp) {
-          dprecon(i,j,kp) = dprecon(i,j,kp)*spheremp(i,j)*rspheremp(i,j);
-        };
-        cti::loop_ijk<num_lev_pack>(kv, f);      
       };
       Kokkos::parallel_for(m_tp_ne, calc_dprecon);
       remap_v(m_dp3d, np1, m_divdp, m_vn0);
+      const auto sphere = KOKKOS_LAMBDA (const MT& team) {
+        KernelVariables kv(team, m_tu_ne);
+        const auto ie = kv.ie;
+        const auto spheremp = Homme::subview(m_spheremp, ie);
+        const auto rspheremp = Homme::subview(m_rspheremp, ie);
+        const auto f = [&] (const int i, const int j, const int kp) {
+          const auto dprecon = Homme::subview(m_divdp, ie);
+          dprecon(i,j,kp) = dprecon(i,j,kp)*spheremp(i,j)*rspheremp(i,j);
+        };
+        cti::loop_ijk<num_lev_pack>(kv, f);
+      };
+      Kokkos::parallel_for(m_tp_ne, sphere);
     }
     const auto calc_midpoint_velocity = KOKKOS_LAMBDA (const MT& team) {
       KernelVariables kv(team, m_tu_ne);

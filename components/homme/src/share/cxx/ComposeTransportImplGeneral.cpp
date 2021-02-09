@@ -17,6 +17,7 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
   const auto num_elems = Context::singleton().get<Connectivity>().get_num_local_elements();
   if (m_data.nelemd == num_elems && m_data.qsize == params.qsize) return;
 
+  m_data.rsplit = params.rsplit;
   m_data.qsize = params.qsize;
   Errors::runtime_check(m_data.qsize > 0,
                         "SL transport requires qsize > 0; if qsize == 0, use Eulerian.");
