@@ -13,6 +13,8 @@ namespace Homme {
 
 class FunctorsBuffersManager;
 
+namespace Remap { class Remapper; }
+
 struct VerticalRemapManager {
   VerticalRemapManager();
 
@@ -20,6 +22,8 @@ struct VerticalRemapManager {
 
   int requested_buffer_size () const;
   void init_buffers(const FunctorsBuffersManager& fbm);
+
+  std::shared_ptr<Remap::Remapper> get_remapper() const;
 
 private:
   struct Impl;

@@ -353,18 +353,12 @@ void ComposeTransportImpl::calc_trajectory (const Real dt) {
     const auto m_dp3d = m_state.m_dp3d;
     const auto m_dp = m_derived.m_dp;
     const auto m_divdp = m_derived.m_divdp;
-    const auto calc_midpoint_velocity = KOKKOS_LAMBDA (const MT& team) {
-      KernelVariables kv(team, m_tu_ne);
-      const auto ie = kv.ie;
-
-      const auto vn0 = (independent_time_steps ?
-                        Homme::subview(m_vn0, ie) :
-                        Homme::subview(m_v, ie, np1));
-      const auto vstar = Homme::subview(m_vstar, ie);
-      const auto spheremp = Homme::subview(m_spheremp, ie);
-      const auto rspheremp = Homme::subview(m_rspheremp, ie);
-
-      if (m_data.independent_time_steps) {
+    if (m_data.independent_time_steps) {
+      const auto calc_dprecon = KOKKOS_LAMBDA (const MT& team) {
+        KernelVariables kv(team, m_tu_ne);
+        const auto ie = kv.ie;
+        const auto vn0 = Homme::subview(m_vn0, ie);
+        const auto vstar = Homme::subview(m_vstar, ie);
         const auto dprecon = Homme::subview(m_divdp, ie);
         calc_vertically_lagrangian_levels(
           sphere_ops, kv, ps0, hybrid_ai0, hybrid_bi,
@@ -373,20 +367,30 @@ void ComposeTransportImpl::calc_trajectory (const Real dt) {
           Homme::subview(buf1a, kv.team_idx), Homme::subview(buf1b, kv.team_idx),
           Homme::subview(buf1c, kv.team_idx), Homme::subview(buf2a, kv.team_idx),
           dprecon);
+        const auto spheremp = Homme::subview(m_spheremp, ie);
+        const auto rspheremp = Homme::subview(m_rspheremp, ie);
         const auto f = [&] (const int i, const int j, const int kp) {
           dprecon(i,j,kp) = dprecon(i,j,kp)*spheremp(i,j)*rspheremp(i,j);
         };
-        cti::loop_ijk<num_lev_pack>(kv, f);
-        //todo rest of impl. might need to movie out of this kernel to call VR
-        //     separately.
-      }
-
+        cti::loop_ijk<num_lev_pack>(kv, f);      
+      };
+      Kokkos::parallel_for(m_tp_ne, calc_dprecon);
+      remap_v(m_dp3d, np1, m_divdp, m_vn0);
+    }
+    const auto calc_midpoint_velocity = KOKKOS_LAMBDA (const MT& team) {
+      KernelVariables kv(team, m_tu_ne);
+      const auto ie = kv.ie;
+      const auto vn0 = (independent_time_steps ?
+                        Homme::subview(m_vn0, ie) :
+                        Homme::subview(m_v, ie, np1));
+      const auto vstar = Homme::subview(m_vstar, ie);
+      const auto spheremp = Homme::subview(m_spheremp, ie);
+      const auto rspheremp = Homme::subview(m_rspheremp, ie);
       const auto ugradv = S2Nlev(Homme::subview(buf2b, kv.team_idx).data());
       ugradv_sphere(sphere_ops, kv, Homme::subview(m_vec_sph2cart, ie), vn0, vstar,
                     SNlev(Homme::subview(buf1a, kv.team_idx).data()),
                     S2Nlev(Homme::subview(buf2a, kv.team_idx).data()),
                     ugradv);
-
       // Write the midpoint velocity to vstar.
       const auto f = [&] (const int i, const int j, const int k) {
         for (int d = 0; d < 2; ++d)

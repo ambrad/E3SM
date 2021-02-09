@@ -14,7 +14,8 @@ contains
     use theta_f2c_mod, only: init_elements_c
     use edge_mod_base, only: initEdgeBuffer, edge_g
     use control_mod, only: transport_alg, semi_lagrange_cdr_alg, semi_lagrange_cdr_check, &
-         semi_lagrange_hv_q, limiter_option, nu_q, hypervis_subcycle_q, hypervis_order
+         semi_lagrange_hv_q, limiter_option, nu_q, hypervis_subcycle_q, hypervis_order, &
+         vert_remap_q_alg
     use geometry_interface_mod, only: GridVertex
     use bndry_mod, only: sort_neighbor_buffer_mapping
     use reduction_mod, only: initreductionbuffer, red_sum, red_min, red_max
@@ -35,6 +36,7 @@ contains
     semi_lagrange_cdr_check = cdr_check
     qsize = qsize_in
     limiter_option = lim
+    vert_remap_q_alg = 10
 
     hypervis_order = 2
     semi_lagrange_hv_q = hv_q

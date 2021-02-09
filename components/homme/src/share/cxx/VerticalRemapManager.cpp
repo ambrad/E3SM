@@ -100,4 +100,8 @@ void VerticalRemapManager::init_buffers(const FunctorsBuffersManager& fbm) {
   p_->remapper->init_buffers(fbm);
 }
 
+std::shared_ptr<Remap::Remapper> VerticalRemapManager::get_remapper () const {
+  return p_->remapper;
+}
+
 } // namespace Homme

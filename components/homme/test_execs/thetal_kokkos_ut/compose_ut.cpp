@@ -21,6 +21,7 @@
 #include "ElementOps.hpp"
 #include "profiling.hpp"
 #include "ErrorDefs.hpp"
+#include "VerticalRemapManager.hpp"
 
 #include "utilities/TestUtils.hpp"
 #include "utilities/SyncUtils.hpp"
@@ -126,6 +127,8 @@ struct Session {
     p.qsize = qsize;
     p.limiter_option = 9;
     p.hypervis_scaling = 0;
+    p.remap_alg = RemapAlg::PPM_LIMITED_EXTRAP;
+    p.params_set = true;
     const bool consthv = p.hypervis_scaling == 0;
 
     const auto hyai = cmvdc(h.hybrid_ai);
@@ -162,6 +165,8 @@ struct Session {
     assert(nlev > 0);
     np = NP;
     assert(np == 4);
+
+    c.create<VerticalRemapManager>();
   }
 
   void cleanup () {

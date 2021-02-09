@@ -114,6 +114,9 @@ struct ComposeTransportImpl {
   void run(const TimeLevel& tl, const Real dt);
 
   void calc_trajectory(const Real dt);
+  void remap_v(const ExecViewUnmanaged<const Scalar*[NUM_TIME_LEVELS][NP][NP][NUM_LEV]>& dp3d,
+               const int np1, const ExecViewManaged<const Scalar*[NP][NP][NUM_LEV]>& m_divdp,
+               const ExecViewManaged<Scalar*[2][NP][NP][NUM_LEV]>& m_vn0);
 
   void advance_hypervis_scalar(const Real dt);
 
