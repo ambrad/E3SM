@@ -1,5 +1,3 @@
-#include "/home/ambrad/repo/sik/hommexx/dbg.hpp"
-
 #include "ComposeTransport.hpp"
 #include "compose_test.hpp"
 
@@ -130,7 +128,6 @@ struct Session {
     p.remap_alg = RemapAlg::PPM_LIMITED_EXTRAP;
     p.rsplit = 1;
     p.params_set = true;
-    const bool consthv = p.hypervis_scaling == 0;
 
     const auto hyai = cmvdc(h.hybrid_ai);
     const auto hybi = cmvdc(h.hybrid_bi);
@@ -273,6 +270,7 @@ TEST_CASE ("compose_transport_testing") {
   REQUIRE(fails.empty());
 
   for (const bool independent_time_steps : {false, true}) {
+    printf("independent_time_steps %d\n", independent_time_steps);
     const Real twelve_days = 3600 * 24 * 12;
     const Real t0 = 0.13*twelve_days;
     const Real t1 = independent_time_steps ? t0 + 1800 : 0.22*twelve_days;

@@ -531,7 +531,7 @@ static int test_calc_p (const HybridVCoord& hvcoord) {
       Real accum = hvcoord.hybrid_ai0*hvcoord.ps0;
       for (int k = 0; k < cti::num_phys_lev; ++k)
         accum += dph(i,j,k);
-      if (p(i,j,cti::num_phys_lev) != accum) ++nerr;
+      if (ph(i,j,cti::num_phys_lev) != accum) ++nerr;
     }
   if (nerr) printf("test_calc_p failed %d\n", nerr);
   return nerr;
@@ -609,14 +609,18 @@ int ComposeTransportImpl::run_trajectory_unit_tests () {
 
 ComposeTransport::TestDepView::HostMirror ComposeTransportImpl::
 test_trajectory (Real t0, Real t1, const bool independent_time_steps) {
+  using Kokkos::create_mirror_view;
+  using Kokkos::deep_copy;
+
   const bool its_save = m_data.independent_time_steps;
   m_data.independent_time_steps = independent_time_steps;
   m_data.np1 = 0;
-  const auto vstar = Kokkos::create_mirror_view(m_derived.m_vstar);
-  const auto vn0 = Kokkos::create_mirror_view(m_derived.m_vn0);
-  const auto v = Kokkos::create_mirror_view(m_state.m_v);
-  const auto dp3d = Kokkos::create_mirror_view(m_state.m_dp3d);
-  const auto dp = Kokkos::create_mirror_view(m_derived.m_dp);
+
+  const auto vstar = create_mirror_view(m_derived.m_vstar);
+  const auto vn0 = create_mirror_view(m_derived.m_vn0);
+  const auto v = create_mirror_view(m_state.m_v);
+  const auto dp3d = create_mirror_view(m_state.m_dp3d);
+  const auto dp = create_mirror_view(m_derived.m_dp);
   const auto pll = cmvdc(m_geometry.m_sphere_latlon);
   const auto np1 = m_data.np1;
   const int packn = this->packn;
@@ -636,9 +640,11 @@ test_trajectory (Real t0, Real t1, const bool independent_time_steps) {
     dp(ie,i,j,p)[s] = 1;
   };
   loop_host_ie_plev_ij(f);
-  Kokkos::deep_copy(m_derived.m_vstar, vstar);
-  Kokkos::deep_copy(m_derived.m_vn0, vn0);
-  Kokkos::deep_copy(m_state.m_v, v);
+  deep_copy(m_derived.m_vstar, vstar);
+  deep_copy(m_derived.m_vn0, vn0);
+  deep_copy(m_state.m_v, v);
+  deep_copy(m_state.m_dp3d, dp3d);
+  deep_copy(m_derived.m_dp, dp);
 
   calc_trajectory(t1 - t0);
   Kokkos::fence();

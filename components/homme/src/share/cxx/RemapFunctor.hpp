@@ -463,13 +463,13 @@ struct RemapFunctor : public Remapper {
     const int ne = dp_src.extent_int(0), nv = v.extent_int(1);
     assert(nv < num_to_remap());
     const auto remap = m_remap;
-    const auto g = [&] (const TeamMember& team) {
+    const auto g = KOKKOS_LAMBDA (const TeamMember& team) {
       KernelVariables kv(team, m_tu_ne);
       remap.compute_grids_phase(kv, Homme::subview(dp_src, kv.ie, np1),
                                 Homme::subview(dp_tgt, kv.ie));
     };
     Kokkos::parallel_for(get_default_team_policy<ExecSpace>(ne), g);
-    const auto r = [&] (const TeamMember& team) {
+    const auto r = KOKKOS_LAMBDA (const TeamMember& team) {
       KernelVariables kv(team, nv, m_tu_ne_ntr);
       remap.compute_remap_phase(kv, Homme::subview(v, kv.ie, kv.iq));
     };
