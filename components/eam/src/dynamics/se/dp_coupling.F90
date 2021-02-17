@@ -13,7 +13,7 @@ module dp_coupling
   use kinds,          only: real_kind, int_kind
   use shr_kind_mod,   only: r8=>shr_kind_r8
   use physics_types,  only: physics_state, physics_tend 
-  use ppgrid,         only: begchunk, endchunk, pcols, pver, pverp
+  use ppgrid,         only: begchunk, endchunk, pcols, pver, pverp, nbrhdchunk
   use cam_logfile,    only: iulog
   use spmd_dyn,       only: local_dp_map, block_buf_nrecs, chunk_buf_nrecs
   use spmd_utils,     only: mpicom, iam
@@ -25,6 +25,10 @@ module dp_coupling
                             transpose_block_to_chunk, transpose_chunk_to_block,   &
                             chunk_to_block_send_pters, chunk_to_block_recv_pters, &
                             block_to_chunk_recv_pters, block_to_chunk_send_pters
+  use phys_grid_nbrhd,only: nbrhd_block_to_chunk_sizes, nbrhd_block_to_chunk_send_pters, &
+                            nbrhd_block_to_chunk_recv_pters, nbrhd_transpose_block_to_chunk, &
+                            nbrhd_get_num_copies, nbrhd_get_copy_idxs, nbrhd_get_option_pcnst
+  use phys_grid_nbrhd_util, only: nbrhd_p_p_coupling, nbrhd_test_api
   private
   public :: d_p_coupling, p_d_coupling
 
@@ -48,7 +52,7 @@ CONTAINS
     type(dyn_export_t), intent(inout)  :: dyn_out         ! dynamics export 
     type(physics_buffer_desc), pointer :: pbuf2d(:,:)     ! physics buffer
     ! OUTPUT PARAMETERS:
-    type(physics_state), intent(inout), dimension(begchunk:endchunk) :: phys_state
+    type(physics_state), intent(inout), dimension(begchunk:endchunk+nbrhdchunk) :: phys_state
     type(physics_tend ), intent(inout), dimension(begchunk:endchunk) :: phys_tend 
     ! LOCAL VARIABLES
     real(kind=real_kind), dimension(npsq,nelemd)            :: ps_tmp ! temp array to hold ps
@@ -82,7 +86,13 @@ CONTAINS
     ! Transpose buffers
     real (kind=real_kind), allocatable, dimension(:) :: bbuffer 
     real (kind=real_kind), allocatable, dimension(:) :: cbuffer
+    logical, save :: first = .true.
     !---------------------------------------------------------------------------
+
+    if (first) then
+       call nbrhd_test_api(phys_state)
+       first = .false.
+    end if
 
     nullify(pbuf_chnk)
     nullify(pbuf_frontgf)
@@ -276,6 +286,8 @@ CONTAINS
     end if ! local_dp_map
     call t_stopf('dpcopy')
 
+    if (nbrhdchunk > 0) call nbrhd_p_p_coupling(phys_state)
+
     call t_startf('derived_phys')
     call derived_phys(phys_state,phys_tend,pbuf2d)
     call t_stopf('derived_phys')
@@ -283,7 +295,7 @@ CONTAINS
 !for theta there is no need to multiply omega_p by p
 #ifndef MODEL_THETA_L
     !$omp parallel do private (lchnk, ncols, ilyr, icol)
-    do lchnk = begchunk,endchunk
+    do lchnk = begchunk,endchunk+nbrhdchunk
       ncols = get_ncols_p(lchnk)
       do ilyr = 1,pver
         do icol = 1,ncols
@@ -326,7 +338,7 @@ CONTAINS
 
       end if ! fv_nphys > 0
     end if ! write_inithist
-   
+
   end subroutine d_p_coupling
   !=================================================================================================
   !=================================================================================================
@@ -508,9 +520,10 @@ CONTAINS
     use hycoef,         only: hyam, hybm, hyai, hybi, ps0
     use shr_vmath_mod,  only: shr_vmath_log
     use phys_gmean,     only: gmean
+    use cam_abortutils, only: endrun
     !---------------------------------------------------------------------------
     implicit none
-    type(physics_state), intent(inout), dimension(begchunk:endchunk) :: phys_state
+    type(physics_state), intent(inout), dimension(begchunk:endchunk+nbrhdchunk) :: phys_state
     type(physics_tend ), intent(inout), dimension(begchunk:endchunk) :: phys_tend 
     type(physics_buffer_desc), pointer :: pbuf2d(:,:)
 
@@ -523,13 +536,14 @@ CONTAINS
     real(r8) :: se(pcols,begchunk:endchunk)   
     real(r8) :: ke_glob(1),se_glob(1)
     real(r8) :: zvirv(pcols,pver)    ! Local zvir array pointer
-    integer  :: m, i, k, ncol
+    integer  :: m, i, k, ncol, ierr
     type(physics_buffer_desc), pointer :: pbuf_chnk(:)
+    real(r8), allocatable :: nbrhd_rairv(:,:), nbrhd_zvirv(:,:)
     !---------------------------------------------------------------------------
 
     ! Evaluate derived quantities
-    !$omp parallel do private (lchnk, ncol, k, i, zvirv, pbuf_chnk)
-    do lchnk = begchunk,endchunk
+    !$omp parallel do private (lchnk, ncol, k, i, zvirv, pbuf_chnk, nbrhd_rairv, nbrhd_zvirv, ierr)
+    do lchnk = begchunk,endchunk+nbrhdchunk
       ncol = get_ncols_p(lchnk)
       do k = 1,nlev
         do i = 1,ncol
@@ -557,20 +571,37 @@ CONTAINS
         end do
       end do
 
-      !----------------------------------------------------
-      ! Need to fill zvirv 2D variables to be 
-      ! compatible with geopotential_t interface
-      !----------------------------------------------------
-      zvirv(:,:) = zvir
+      if (lchnk <= endchunk) then
+         !----------------------------------------------------
+         ! Need to fill zvirv 2D variables to be 
+         ! compatible with geopotential_t interface
+         !----------------------------------------------------
+         zvirv(:,:) = zvir
 
-      ! Compute initial geopotential heights
-      call geopotential_t(phys_state(lchnk)%lnpint, phys_state(lchnk)%lnpmid  ,&
-                          phys_state(lchnk)%pint  , phys_state(lchnk)%pmid    ,&
-                          phys_state(lchnk)%pdel  , phys_state(lchnk)%rpdel   ,&
-                          phys_state(lchnk)%t     , phys_state(lchnk)%q(:,:,1),&
-                          rairv(:,:,lchnk)        , gravit, zvirv             ,&
-                          phys_state(lchnk)%zi    , phys_state(lchnk)%zm      ,&
-                          ncol)
+         ! Compute initial geopotential heights
+         call geopotential_t(phys_state(lchnk)%lnpint, phys_state(lchnk)%lnpmid  ,&
+                             phys_state(lchnk)%pint  , phys_state(lchnk)%pmid    ,&
+                             phys_state(lchnk)%pdel  , phys_state(lchnk)%rpdel   ,&
+                             phys_state(lchnk)%t     , phys_state(lchnk)%q(:,:,1),&
+                             rairv(:,:,lchnk)        , gravit, zvirv             ,&
+                             phys_state(lchnk)%zi    , phys_state(lchnk)%zm      ,&
+                             ncol)
+      else
+         allocate(nbrhd_rairv(ncol,pver), nbrhd_zvirv(ncol,pver), stat=ierr)
+         if (ierr /= 0) then
+            call endrun("dp_coupling::derived_phys: alloc nbrhd_rairv,zvirv failed")
+         end if
+         nbrhd_rairv(:,:) = rair
+         nbrhd_zvirv(:,:) = zvir
+         call geopotential_t(phys_state(lchnk)%lnpint, phys_state(lchnk)%lnpmid  ,&
+                             phys_state(lchnk)%pint  , phys_state(lchnk)%pmid    ,&
+                             phys_state(lchnk)%pdel  , phys_state(lchnk)%rpdel   ,&
+                             phys_state(lchnk)%t     , phys_state(lchnk)%q(:,:,1),&
+                             nbrhd_rairv,              gravit, nbrhd_zvirv       ,&
+                             phys_state(lchnk)%zi    , phys_state(lchnk)%zm      ,&
+                             ncol)
+         deallocate(nbrhd_rairv, nbrhd_zvirv)
+      end if
           
        ! Compute initial dry static energy s = g*z + c_p*T
        do k = 1, pver
@@ -597,6 +628,8 @@ CONTAINS
        ! Convert dry type constituents from moist to dry mixing ratio
        call set_state_pdry(phys_state(lchnk))	! First get dry pressure to use for this timestep
        call set_wet_to_dry(phys_state(lchnk)) ! Dynamics had moist, physics wants dry.
+
+       if (lchnk > endchunk) cycle
 
        ! Compute energy and water integrals of input state
        pbuf_chnk => pbuf_get_chunk(pbuf2d, lchnk)
