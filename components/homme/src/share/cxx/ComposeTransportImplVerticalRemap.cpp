@@ -26,7 +26,9 @@ void ComposeTransportImpl
     v(ie,q,i,j,k) *= dp3d(ie,np1,i,j,k);
   };
   parallel_for(policy, pre);
+  Kokkos::fence();
   r->remap1(dp3d, np1, dp, v);
+  Kokkos::fence();
   const auto post = KOKKOS_LAMBDA (const int idx) {
     int ie, q, i, j, k;
     cti::idx_ie_q_ij_nlev<NUM_LEV>(2, idx, ie, q, i, j, k);
@@ -37,7 +39,24 @@ void ComposeTransportImpl
 
 void ComposeTransportImpl::remap_q (const TimeLevel& tl, const Real dt) {
   GPTLstart("compose_vertical_remap");
-
+  const auto np1 = tl.np1;
+  const auto np1_qdp = tl.np1_qdp;
+  const auto dp = m_derived.m_divdp;
+  const auto dp3d = m_state.m_dp3d;
+  const auto qdp = m_tracers.qdp;
+  const auto q = m_tracers.Q;
+  const auto& vrm = Context::singleton().get<VerticalRemapManager>();
+  const auto r = vrm.get_remapper();
+  r->remap1(dp, dp3d, np1, qdp, np1_qdp);
+  const auto post = KOKKOS_LAMBDA (const int idx) {
+    int ie, iq, i, j, k;
+    cti::idx_ie_q_ij_nlev<NUM_LEV>(2, idx, ie, iq, i, j, k);
+    q(ie,iq,i,j,k) = qdp(ie,np1_qdp,iq,i,j,k)/dp3d(ie,np1,i,j,k);
+  };
+  const auto policy = Kokkos::RangePolicy<ExecSpace>(0, (dp3d.extent_int(0)*NP*NP*NUM_LEV*
+                                                         m_tracers.num_tracers()));
+  Kokkos::parallel_for(policy, post);
+  Kokkos::fence();
   GPTLstop("compose_vertical_remap");
 }
 

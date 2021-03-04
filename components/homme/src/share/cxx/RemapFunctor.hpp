@@ -247,9 +247,15 @@ struct Remapper {
   virtual void init_buffers(const FunctorsBuffersManager& fbm) = 0;
 
   // Interface equivalent to Homme's remap1.
-  virtual void remap1(ExecViewUnmanaged<const Scalar*[NUM_TIME_LEVELS][NP][NP][NUM_LEV]> dp_src,
-                      const int np1, ExecViewUnmanaged<const Scalar*[NP][NP][NUM_LEV]> dp_tgt,
-                      ExecViewUnmanaged<Scalar**[NP][NP][NUM_LEV]> v) = 0;
+  virtual void remap1(
+    ExecViewUnmanaged<const Scalar*[NUM_TIME_LEVELS][NP][NP][NUM_LEV]> dp_src, const int np1,
+    ExecViewUnmanaged<const Scalar*[NP][NP][NUM_LEV]> dp_tgt,
+    ExecViewUnmanaged<Scalar**[NP][NP][NUM_LEV]> v) = 0;
+  virtual void remap1(
+    ExecViewUnmanaged<const Scalar*[NP][NP][NUM_LEV]> dp_src,
+    ExecViewUnmanaged<const Scalar*[NUM_TIME_LEVELS][NP][NP][NUM_LEV]> dp_tgt, const int np1,
+    // remap v(:,n_v,:,:,:)
+    ExecViewUnmanaged<Scalar***[NP][NP][NUM_LEV]> v, const int n_v) = 0;
 };
 
 // The Remap functor
@@ -457,9 +463,11 @@ struct RemapFunctor : public Remapper {
     Kokkos::parallel_for(update_dp_policy, *this);
   }
 
-  void remap1 (const ExecViewUnmanaged<const Scalar*[NUM_TIME_LEVELS][NP][NP][NUM_LEV]> dp_src,
-               const int np1, const ExecViewUnmanaged<const Scalar*[NP][NP][NUM_LEV]> dp_tgt,
-               const ExecViewUnmanaged<Scalar**[NP][NP][NUM_LEV]> v) override {
+  void remap1 (
+    const ExecViewUnmanaged<const Scalar*[NUM_TIME_LEVELS][NP][NP][NUM_LEV]> dp_src, const int np1,
+    const ExecViewUnmanaged<const Scalar*[NP][NP][NUM_LEV]> dp_tgt,
+    const ExecViewUnmanaged<Scalar**[NP][NP][NUM_LEV]> v) override
+  {
     const int ne = dp_src.extent_int(0), nv = v.extent_int(1);
     assert(nv < num_to_remap());
     const auto remap = m_remap;
@@ -472,6 +480,27 @@ struct RemapFunctor : public Remapper {
     const auto r = KOKKOS_LAMBDA (const TeamMember& team) {
       KernelVariables kv(team, nv, m_tu_ne_ntr);
       remap.compute_remap_phase(kv, Homme::subview(v, kv.ie, kv.iq));
+    };
+    Kokkos::parallel_for(get_default_team_policy<ExecSpace>(ne*nv), r);
+  }
+
+  void remap1 (
+    const ExecViewUnmanaged<const Scalar*[NP][NP][NUM_LEV]> dp_src,
+    const ExecViewUnmanaged<const Scalar*[NUM_TIME_LEVELS][NP][NP][NUM_LEV]> dp_tgt, const int np1,
+    const ExecViewUnmanaged<Scalar***[NP][NP][NUM_LEV]> v, const int n_v) override
+  {
+    const int ne = dp_src.extent_int(0), nv = v.extent_int(2);
+    assert(nv < num_to_remap());
+    const auto remap = m_remap;
+    const auto g = KOKKOS_LAMBDA (const TeamMember& team) {
+      KernelVariables kv(team, m_tu_ne);
+      remap.compute_grids_phase(kv, Homme::subview(dp_src, kv.ie),
+                                Homme::subview(dp_tgt, kv.ie, np1));
+    };
+    Kokkos::parallel_for(get_default_team_policy<ExecSpace>(ne), g);
+    const auto r = KOKKOS_LAMBDA (const TeamMember& team) {
+      KernelVariables kv(team, nv, m_tu_ne_ntr);
+      remap.compute_remap_phase(kv, Homme::subview(v, kv.ie, n_v, kv.iq));
     };
     Kokkos::parallel_for(get_default_team_policy<ExecSpace>(ne*nv), r);
   }

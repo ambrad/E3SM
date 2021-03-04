@@ -143,6 +143,7 @@ void ComposeTransportImpl::run (const TimeLevel& tl, const Real dt) {
   if (m_data.hv_q > 0 && m_data.nu_q > 0) {
     GPTLstart("compose_hypervis_scalar");
     advance_hypervis_scalar(dt);
+    Kokkos::fence();
     GPTLstop("compose_hypervis_scalar");
   }
   
@@ -151,9 +152,13 @@ void ComposeTransportImpl::run (const TimeLevel& tl, const Real dt) {
   const auto qsize = m_data.qsize;
   GPTLstart("compose_cedr_global");
   const auto run_cedr = homme::compose::property_preserve_global();
+  if (run_cedr) Kokkos::fence();
   GPTLstop("compose_cedr_global");
   GPTLstart("compose_cedr_local");
-  homme::compose::property_preserve_local(m_data.limiter_option);
+  if (run_cedr) {
+    homme::compose::property_preserve_local(m_data.limiter_option);
+    Kokkos::fence();
+  }
   GPTLstop("compose_cedr_local");    
   
   if ( ! run_cedr) {
@@ -189,12 +194,14 @@ void ComposeTransportImpl::run (const TimeLevel& tl, const Real dt) {
     };
     launch_ie_ij_nlev<num_lev_pack>(f2);
     m_qdp_dss_be[tl.np1_qdp]->exchange(m_geometry.m_rspheremp);
+    Kokkos::fence();
     GPTLstop("compose_dss_q");
   }
   
   if (m_data.cdr_check) {
     GPTLstart("compose_cedr_check");
     homme::compose::property_preserve_check();
+    Kokkos::fence();
     GPTLstop("compose_cedr_check");
   }
   
