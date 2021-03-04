@@ -16,7 +16,8 @@ void set_views(const SetView<double***>& spheremp,
 
 void advect(const int np1, const int n0_qdp, const int np1_qdp);
 
-bool property_preserve(const int limiter_option);
+bool property_preserve_global();
+bool property_preserve_local(const int limiter_option);
 void property_preserve_check();
 
 void finalize();

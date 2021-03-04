@@ -51,9 +51,14 @@ void advect (const int np1, const int n0_qdp, const int np1_qdp) {
   islmpi::step<>(cm, 0, cm.nelemd - 1, nullptr, nullptr, nullptr);
 }
 
-bool property_preserve (const int limiter_option) {
+bool property_preserve_global () {
   if ( ! cedr_should_run()) return false;
   homme::cedr_sl_run_global();
+  return true;
+}
+
+bool property_preserve_local (const int limiter_option) {
+  if ( ! cedr_should_run()) return false;
   homme::cedr_sl_run_local(limiter_option);
   return true;
 }

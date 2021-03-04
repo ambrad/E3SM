@@ -35,4 +35,10 @@ void ComposeTransportImpl
   parallel_for(policy, post);
 }
 
+void ComposeTransportImpl::remap_q (const TimeLevel& tl, const Real dt) {
+  GPTLstart("compose_vertical_remap");
+
+  GPTLstop("compose_vertical_remap");
+}
+
 } // namespace Homme

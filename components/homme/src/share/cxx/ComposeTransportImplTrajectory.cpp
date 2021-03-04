@@ -354,6 +354,7 @@ void ComposeTransportImpl::calc_trajectory (const Real dt) {
     const auto m_dp = m_derived.m_dp;
     const auto m_divdp = m_derived.m_divdp;
     if (m_data.independent_time_steps) {
+      GPTLstart("compose_3d_levels");
       const auto calc_dprecon = KOKKOS_LAMBDA (const MT& team) {
         KernelVariables kv(team, m_tu_ne);
         const auto ie = kv.ie;
@@ -382,7 +383,9 @@ void ComposeTransportImpl::calc_trajectory (const Real dt) {
         cti::loop_ijk<num_lev_pack>(kv, f);
       };
       Kokkos::parallel_for(m_tp_ne, sphere);
+      GPTLstop("compose_3d_levels");
     }
+    GPTLstart("compose_v_bexchv");
     const auto calc_midpoint_velocity = KOKKOS_LAMBDA (const MT& team) {
       KernelVariables kv(team, m_tu_ne);
       const auto ie = kv.ie;
@@ -412,7 +415,9 @@ void ComposeTransportImpl::calc_trajectory (const Real dt) {
     const auto be = m_v_dss_be[m_data.independent_time_steps ? 1 : 0];
     be->exchange();
   }
+  GPTLstop("compose_v_bexchv");
   { // Calculate departure point.
+    GPTLstart("compose_v2x");
     const int packn = this->packn;
     const int num_phys_lev = this->num_phys_lev;
     const auto m_sphere_cart = geo.m_sphere_cart;
@@ -449,6 +454,8 @@ void ComposeTransportImpl::calc_trajectory (const Real dt) {
       cti::loop_ijk<num_lev_pack>(kv, f);
     };
     Kokkos::parallel_for(m_tp_ne, calc_departure_point);
+    Kokkos::fence();
+    GPTLstop("compose_v2x");
   }
 }
 

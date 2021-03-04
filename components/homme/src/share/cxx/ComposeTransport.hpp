@@ -32,6 +32,7 @@ public:
   void init_boundary_exchanges();
 
   void run(const TimeLevel& tl, const Real dt);
+  void remap_q(const TimeLevel& tl, const Real dt);
 
   std::vector<std::pair<std::string, int> > run_unit_tests();
 

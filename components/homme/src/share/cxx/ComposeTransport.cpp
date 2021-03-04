@@ -38,9 +38,11 @@ void ComposeTransport::init_boundary_exchanges () {
 }
 
 void ComposeTransport::run (const TimeLevel& tl, const Real dt) {
-  GPTLstart("compute_step");
   m_compose_impl->run(tl, dt);
-  GPTLstop("compute_step");
+}
+
+void ComposeTransport::remap_q (const TimeLevel& tl, const Real dt) {
+  m_compose_impl->remap_q(tl, dt);
 }
 
 std::vector<std::pair<std::string, int> >

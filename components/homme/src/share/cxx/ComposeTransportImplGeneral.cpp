@@ -130,15 +130,33 @@ void ComposeTransportImpl::init_boundary_exchanges () {
 }
 
 void ComposeTransportImpl::run (const TimeLevel& tl, const Real dt) {
+  GPTLstart("compose_transport");
+
   m_data.np1 = tl.np1;
   m_data.np1_qdp = tl.np1_qdp;
   calc_trajectory(dt);
+  
+  GPTLstart("compose_isl");
   homme::compose::advect(tl.np1, tl.n0_qdp, tl.np1_qdp);
-  if (m_data.hv_q > 0 && m_data.nu_q > 0) advance_hypervis_scalar(dt);
+  GPTLstop("compose_isl");
+  
+  if (m_data.hv_q > 0 && m_data.nu_q > 0) {
+    GPTLstart("compose_hypervis_scalar");
+    advance_hypervis_scalar(dt);
+    GPTLstop("compose_hypervis_scalar");
+  }
+  
   const auto np1 = m_data.np1;
   const auto np1_qdp = m_data.np1_qdp;
   const auto qsize = m_data.qsize;
-  if ( ! homme::compose::property_preserve(m_data.limiter_option)) {
+  GPTLstart("compose_cedr_global");
+  const auto run_cedr = homme::compose::property_preserve_global();
+  GPTLstop("compose_cedr_global");
+  GPTLstart("compose_cedr_local");
+  homme::compose::property_preserve_local(m_data.limiter_option);
+  GPTLstop("compose_cedr_local");    
+  
+  if ( ! run_cedr) {
     // For analysis purposes, property preservation was not run. Need to convert
     // Q to qdp.
     const auto qdp = m_tracers.qdp;
@@ -152,7 +170,9 @@ void ComposeTransportImpl::run (const TimeLevel& tl, const Real dt) {
     };
     launch_ie_q_ij_nlev<num_lev_pack>(qsize, f);
   }
+  
   { // DSS qdp and omega
+    GPTLstart("compose_dss_q");
     const auto qdp = m_tracers.qdp;
     const auto spheremp = m_geometry.m_spheremp;
     const auto f1 = KOKKOS_LAMBDA (const int idx) {
@@ -169,8 +189,16 @@ void ComposeTransportImpl::run (const TimeLevel& tl, const Real dt) {
     };
     launch_ie_ij_nlev<num_lev_pack>(f2);
     m_qdp_dss_be[tl.np1_qdp]->exchange(m_geometry.m_rspheremp);
+    GPTLstop("compose_dss_q");
   }
-  if (m_data.cdr_check) homme::compose::property_preserve_check();
+  
+  if (m_data.cdr_check) {
+    GPTLstart("compose_cedr_check");
+    homme::compose::property_preserve_check();
+    GPTLstop("compose_cedr_check");
+  }
+  
+  GPTLstop("compose_transport");
 }
 
 } // namespace Homme
