@@ -15,7 +15,7 @@ contains
     use edge_mod_base, only: initEdgeBuffer, edge_g
     use control_mod, only: transport_alg, semi_lagrange_cdr_alg, semi_lagrange_cdr_check, &
          semi_lagrange_hv_q, limiter_option, nu_q, hypervis_subcycle_q, hypervis_order, &
-         vert_remap_q_alg, rsplit
+         vert_remap_q_alg, qsplit, rsplit, dt_tracer_factor
     use geometry_interface_mod, only: GridVertex
     use bndry_mod, only: sort_neighbor_buffer_mapping
     use reduction_mod, only: initreductionbuffer, red_sum, red_min, red_max
@@ -37,6 +37,8 @@ contains
     qsize = qsize_in
     limiter_option = lim
     vert_remap_q_alg = 10
+    dt_tracer_factor = -1
+    qsplit = 1
     rsplit = 1
 
     hypervis_order = 2
@@ -213,5 +215,64 @@ contains
        end do
     end do
   end subroutine run_trajectory_f90
+
+  subroutine run_sl_vertical_remap_bfb_f90(diagnostic) bind(c)
+    use time_mod, only: timelevel_t, timelevel_init_default, timelevel_qdp
+    use sl_advection, only: sl_vertically_remap_tracers
+    use hybrid_mod, only: hybrid_t, hybrid_create
+    use control_mod, only: qsplit, dt_tracer_factor
+    
+    real (c_double), intent(out) :: diagnostic
+
+    real (real_kind), parameter :: c1 = 0.491827d0, c2 = 0.2432109d0, c3 = 0.1234567d0, c4 = 0.0832d0
+    
+    real (real_kind) :: unused
+    type (timelevel_t) :: tl
+    type (hybrid_t) :: hybrid
+    integer :: ie, i, j, k, krev, q, nq, n0_qdp, np1_qdp
+
+    hybrid = hybrid_create(par, 0, 1)
+    call timelevel_init_default(tl)
+    tl%np1 = 1
+    tl%nstep = 42
+    call timelevel_qdp(tl, dt_tracer_factor, n0_qdp, np1_qdp)
+    
+    nq = size(elem(1)%state%q,4)
+    unused = 0
+
+    ! manufactured values
+    do ie = 1,nelemd
+       do q = 1,nq
+          do k = 1,nlev
+             krev = nlev - k + 1
+             do j = 1,np
+                do i = 1,np
+                   if (q == 1) then
+                      elem(ie)%state%dp3d(i,j,k,tl%np1) = k + c1*i + c2*j*i + c3*(j*j + j*k)
+                      elem(ie)%derived%divdp(i,j,k) = krev + c1*i + c2*j*i + c3*(j*j + j*krev)
+                   end if
+                   elem(ie)%state%qdp(i,j,k,q,np1_qdp) = ie + c1*i + c2*j*i + c3*(j*j + j*k) + c4*q
+                end do
+             end do
+          end do
+       end do
+    end do
+    
+    call sl_vertically_remap_tracers(hybrid, elem, 1, nelemd, tl, unused)
+
+    diagnostic = 0
+    do ie = 1,nelemd
+       do q = 1,nq
+          do k = 1,nlev
+             krev = nlev - k + 1
+             do j = 1,np
+                do i = 1,np
+                   diagnostic = diagnostic + elem(ie)%state%q(i,j,k,q)
+                end do
+             end do
+          end do
+       end do
+    end do
+  end subroutine run_sl_vertical_remap_bfb_f90
   
 end module compose_interface

@@ -41,8 +41,8 @@ void ComposeTransport::run (const TimeLevel& tl, const Real dt) {
   m_compose_impl->run(tl, dt);
 }
 
-void ComposeTransport::remap_q (const TimeLevel& tl, const Real dt) {
-  m_compose_impl->remap_q(tl, dt);
+void ComposeTransport::remap_q (const TimeLevel& tl) {
+  m_compose_impl->remap_q(tl);
 }
 
 std::vector<std::pair<std::string, int> >

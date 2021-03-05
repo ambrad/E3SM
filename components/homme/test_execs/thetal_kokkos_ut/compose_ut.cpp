@@ -42,6 +42,7 @@ extern "C" {
   void run_compose_standalone_test_f90(int* nmax, Real* eval);
   void run_trajectory_f90(Real t0, Real t1, bool independent_time_steps, Real* dep,
                           Real* dprecon);
+  void run_sl_vertical_remap_bfb_f90(Real* diagnostic);
 } // extern "C"
 
 using FA4d = Kokkos::View<Real****, Kokkos::LayoutLeft, Kokkos::HostSpace>;
@@ -126,6 +127,7 @@ struct Session {
     p.limiter_option = 9;
     p.hypervis_scaling = 0;
     p.remap_alg = RemapAlg::PPM_LIMITED_EXTRAP;
+    p.qsplit = 1;
     p.rsplit = 1;
     p.params_set = true;
 
@@ -254,12 +256,66 @@ static bool equal (const Real& a, const Real& b,
 }
 
 typedef ExecViewUnmanaged<Real*[NP][NP][NUM_LEV*VECTOR_SIZE]> RNlev;
+typedef ExecViewUnmanaged<Real**[NP][NP][NUM_LEV*VECTOR_SIZE]> RsNlev;
+typedef ExecViewUnmanaged<Real***[NP][NP][NUM_LEV*VECTOR_SIZE]> RssNlev;
+
+void run_sl_vertical_remap_bfb_cpp (const Session& s, ComposeTransport& ct,
+                                    Real& diagnostic) {
+  using Kokkos::create_mirror_view;
+
+  static const Real c1 = 0.491827, c2 = 0.2432109, c3 = 0.1234567, c4 = 0.0832;
+  
+  const auto elements = Context::singleton().get<Elements>();
+  const auto& state = elements.m_state;
+  const auto& derived = elements.m_derived;
+  const auto& tracers = Context::singleton().get<Tracers>();
+  const auto& params = Context::singleton().get<SimulationParams>();
+
+  TimeLevel tl;
+  tl.np1 = 0;
+  tl.nstep = 42;
+  tl.update_tracers_levels(params.qsplit);
+
+  const auto qdp_h = create_mirror_view(tracers.qdp);
+  const auto dp3d_h = cmvdc(state.m_dp3d);
+  const auto dp_h = cmvdc(derived.m_divdp);
+  RssNlev qdp(pack2real(qdp_h), s.nelemd, qdp_h.extent_int(1), qdp_h.extent_int(2));
+  RsNlev dp3d(pack2real(dp3d_h), s.nelemd, dp3d_h.extent_int(1));
+  RNlev dp(pack2real(dp_h), s.nelemd);
+
+  for (int ie = 0; ie < s.nelemd; ++ie)
+    for (int iq = 0; iq < tracers.num_tracers(); ++iq)
+      for (int k = 0; k < s.nlev; ++k)
+        for (int i = 0; i < s.np; ++i)
+          for (int j = 0; j < s.np; ++j) {
+            const int ie1 = ie+1, iq1 = iq+1, i1 = i+1, j1 = j+1, k1 = k+1, krev = s.nlev - k;
+            if (iq == 0) {
+              dp3d(ie,tl.np1,i,j,k) = k1 + c1*i1 + c2*j1*i1 + c3*(j1*j1 + j1*k1);
+              dp(ie,i,j,k) = krev + c1*i1 + c2*j1*i1 + c3*(j1*j1 + j1*krev);
+            }
+            qdp(ie,tl.np1_qdp,iq,i,j,k) = ie1 + c1*i1 + c2*j1*i1 + c3*(j1*j1 + j1*k1) + c4*iq1;
+          }
+
+  ct.remap_q(tl);
+
+  const auto q_h = cmvdc(tracers.Q);
+  RsNlev q(pack2real(q_h), s.nelemd, q_h.extent_int(1));
+  
+  diagnostic = 0;
+  for (int ie = 0; ie < s.nelemd; ++ie)
+    for (int iq = 0; iq < tracers.num_tracers(); ++iq)
+      for (int k = 0; k < s.nlev; ++k)
+        for (int i = 0; i < s.np; ++i)
+          for (int j = 0; j < s.np; ++j)
+            diagnostic += q(ie,iq,i,j,k);
+}
 
 TEST_CASE ("compose_transport_testing") {
   static constexpr Real tol = std::numeric_limits<Real>::epsilon();
 
   auto& s = Session::singleton(); try {
 
+  // unit tests
   REQUIRE(compose::test::slmm_unittest() == 0);
   REQUIRE(compose::test::cedr_unittest() == 0);
   REQUIRE(compose::test::cedr_unittest(s.get_comm().mpi_comm()) == 0);
@@ -269,6 +325,7 @@ TEST_CASE ("compose_transport_testing") {
   for (const auto& e : fails) printf("%s %d\n", e.first.c_str(), e.second);
   REQUIRE(fails.empty());
 
+  // trajectory BFB
   for (const bool independent_time_steps : {false, true}) {
     printf("independent_time_steps %d\n", independent_time_steps);
     const Real twelve_days = 3600 * 24 * 12;
@@ -298,7 +355,14 @@ TEST_CASE ("compose_transport_testing") {
               REQUIRE(equal(depf(ie,lev,i,j,d), depc(ie,lev,i,j,d), 10*tol));
   }
 
-  {
+  { // q vertical remap
+    Real diagnostic_f90, diagnostic_cpp;
+    run_sl_vertical_remap_bfb_f90(&diagnostic_f90);
+    run_sl_vertical_remap_bfb_cpp(s, ct, diagnostic_cpp);
+    REQUIRE(equal(diagnostic_f90, diagnostic_cpp, 1e2*tol));
+  }
+
+  { // 2D SL BFB
     int nmax;
     std::vector<Real> eval_f((s.nlev+1)*s.qsize), eval_c(eval_f.size());
     run_compose_standalone_test_f90(&nmax, eval_f.data());

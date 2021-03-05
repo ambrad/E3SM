@@ -112,7 +112,7 @@ struct ComposeTransportImpl {
   void init_boundary_exchanges();
 
   void run(const TimeLevel& tl, const Real dt);
-  void remap_q(const TimeLevel& tl, const Real dt);
+  void remap_q(const TimeLevel& tl);
 
   void calc_trajectory(const Real dt);
   void remap_v(const ExecViewUnmanaged<const Scalar*[NUM_TIME_LEVELS][NP][NP][NUM_LEV]>& dp3d,
