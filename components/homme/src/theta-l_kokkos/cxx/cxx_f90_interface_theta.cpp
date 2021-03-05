@@ -46,7 +46,7 @@ void init_simulation_params_c (const int& remap_alg, const int& limiter_option, 
   // Check that the simulation options are supported. This helps us in the future, since we
   // are currently 'assuming' some option have/not have certain values. As we support for more
   // options in the C++ build, we will remove some checks
-  Errors::check_option("init_simulation_params_c","vert_remap_q_alg",remap_alg,{1,3});
+  Errors::check_option("init_simulation_params_c","vert_remap_q_alg",remap_alg,{1,3,10});
   Errors::check_option("init_simulation_params_c","prescribed_wind",prescribed_wind,{false});
   Errors::check_option("init_simulation_params_c","hypervis_order",hypervis_order,{2});
   Errors::check_option("init_simulation_params_c","transport_alg",transport_alg,{0,12});
@@ -69,6 +69,8 @@ void init_simulation_params_c (const int& remap_alg, const int& limiter_option, 
     params.remap_alg = RemapAlg::PPM_FIXED_PARABOLA;
   } else if (remap_alg == 3) {
     params.remap_alg = RemapAlg::PPM_FIXED_MEANS;
+  } else if (remap_alg == 10) {
+    params.remap_alg = RemapAlg::PPM_LIMITED_EXTRAP;
   }
 
   if (theta_adv_form==0) {
