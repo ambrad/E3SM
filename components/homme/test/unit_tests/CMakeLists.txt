@@ -39,7 +39,6 @@ macro(cxx_unit_test target_name target_f90_srcs target_cxx_srcs include_dirs con
 
   # Compile definitions and flags
   SET_TARGET_PROPERTIES(${target_name} PROPERTIES COMPILE_DEFINITIONS "${config_defines}")
-  message("amb BUILD_HOMME_WITHOUT_PIOLIBRARY ${BUILD_HOMME_WITHOUT_PIOLIBRARY} ${target_name}")
   IF(BUILD_HOMME_WITHOUT_PIOLIBRARY)
     TARGET_COMPILE_DEFINITIONS(${target_name} PUBLIC HOMME_WITHOUT_PIOLIBRARY)
   ENDIF()
