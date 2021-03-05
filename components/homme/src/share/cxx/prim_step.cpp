@@ -101,4 +101,10 @@ void prim_step (const Real dt, const bool compute_diagnostics)
   GPTLstop("tl-s prim_step");
 }
 
+void prim_step_flexible (const Real dt, const bool compute_diagnostics) {
+  GPTLstart("tl-s prim_step_flexible");
+  
+  GPTLstop("tl-s prim_step_flexible");
+}
+
 } // namespace Homme
