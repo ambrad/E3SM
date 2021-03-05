@@ -305,8 +305,8 @@ void run_sl_vertical_remap_bfb_cpp (const Session& s, ComposeTransport& ct,
   for (int ie = 0; ie < s.nelemd; ++ie)
     for (int iq = 0; iq < tracers.num_tracers(); ++iq)
       for (int k = 0; k < s.nlev; ++k)
-        for (int i = 0; i < s.np; ++i)
-          for (int j = 0; j < s.np; ++j)
+        for (int j = 0; j < s.np; ++j)
+          for (int i = 0; i < s.np; ++i)
             diagnostic += q(ie,iq,i,j,k);
 }
 
