@@ -117,25 +117,25 @@ contains
        end if
        allocate(minq(np,np,nlev,qsize,size(elem)), maxq(np,np,nlev,qsize,size(elem)))
        dp_tol = -one
-    endif
 
-    amb_gpu_profile = 0
-    call get_environment_variable("AMB_GPU_PROFILE", amb_experiment_str, status=ie)
-    if (ie /= 1) read(amb_experiment_str, *, iostat=ie) amb_gpu_profile
-    if (.not. (amb_gpu_profile == 0 .or. amb_gpu_profile == 1)) then
-       call abortmp('amb_gpu_profile must be 0 or 1')
-    end if
-    if (par%masterproc) then
-       print *,'amb> amb_gpu_profile',amb_gpu_profile
-    end if
-    if (amb_gpu_profile > 0) then
-       if (semi_lagrange_hv_q > 0 .and. nu_q /= 0) &
-            call abortmp('hv_q or nu_q must be 0 if amb_gpu_profile > 0')
-       if (semi_lagrange_cdr_check) &
-            call abortmp('cdr_check must be off if amb_gpu_profile > 0')
-       if (semi_lagrange_cdr_alg /= 2) &
-            call abortmp('cdr_alg must be 2 if amb_gpu_profile > 0')
-    end if
+       amb_gpu_profile = 0
+       call get_environment_variable("AMB_GPU_PROFILE", amb_experiment_str, status=ie)
+       if (ie /= 1) read(amb_experiment_str, *, iostat=ie) amb_gpu_profile
+       if (.not. (amb_gpu_profile == 0 .or. amb_gpu_profile == 1)) then
+          call abortmp('amb_gpu_profile must be 0 or 1')
+       end if
+       if (par%masterproc) then
+          print *,'amb> amb_gpu_profile',amb_gpu_profile
+       end if
+       if (amb_gpu_profile > 0) then
+          if (semi_lagrange_hv_q > 0 .and. nu_q /= 0) &
+               call abortmp('hv_q or nu_q must be 0 if amb_gpu_profile > 0')
+          if (semi_lagrange_cdr_check) &
+               call abortmp('cdr_check must be off if amb_gpu_profile > 0')
+          if (semi_lagrange_cdr_alg /= 2) &
+               call abortmp('cdr_alg must be 2 if amb_gpu_profile > 0')
+       end if
+    endif
     call t_stopf('sl_init1')
 #endif
   end subroutine sl_init1
