@@ -64,7 +64,8 @@ contains
                               hypervis_order, hypervis_subcycle, hypervis_scaling,    &
                               ftype, prescribed_wind, moisture, disable_diagnostics,  &
                               use_cpstar, transport_alg, theta_hydrostatic_mode,      &
-                              dcmip16_mu, theta_advect_form, test_case, MAX_STRING_LEN
+                              dcmip16_mu, theta_advect_form, test_case,               &
+                              MAX_STRING_LEN, dt_remap_factor, dt_tracer_factor
     !
     ! Input(s)
     !
@@ -98,7 +99,8 @@ contains
                                    LOGICAL(use_cpstar==1,c_bool),                                 &
                                    LOGICAL(use_semi_lagrange_transport,c_bool),                   &
                                    LOGICAL(theta_hydrostatic_mode,c_bool),                        &
-                                   c_loc(test_name))
+                                   c_loc(test_name),                                              &
+                                   dt_remap_factor, dt_tracer_factor)
 
     ! Initialize time level structure in C++
     call init_time_level_c(tl%nm1, tl%n0, tl%np1, tl%nstep, tl%nstep0)

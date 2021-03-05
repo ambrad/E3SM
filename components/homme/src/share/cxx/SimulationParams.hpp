@@ -27,8 +27,8 @@ struct SimulationParams
   ForcingAlg    ftype;
   AdvectionForm theta_adv_form; // Only for theta model
 
-  int           rsplit;
-  int           qsplit;
+  int           rsplit, dt_remap_factor;
+  int           qsplit, dt_tracer_factor;
   int           qsize;
 
 

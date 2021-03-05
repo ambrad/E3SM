@@ -11,13 +11,14 @@ interface
                                        qsize, state_frequency, nu, nu_p, nu_q, nu_s, nu_div, nu_top, &
                                        hypervis_order, hypervis_subcycle, hypervis_scaling,          &
                                        ftype, prescribed_wind, moisture,                             &
-                                       disable_diagnostics, use_cpstar, use_semi_lagrange_transport) bind(c)
+                                       disable_diagnostics, use_cpstar, use_semi_lagrange_transport, &
+                                       dt_remap_factor, dt_tracer_factor) bind(c)
     use iso_c_binding, only: c_int, c_bool, c_double, c_ptr
     !
     ! Inputs
     !
     integer(kind=c_int),  intent(in) :: remap_alg, limiter_option, rsplit, qsplit, time_step_type
-    integer(kind=c_int),  intent(in) :: state_frequency, qsize
+    integer(kind=c_int),  intent(in) :: state_frequency, qsize, dt_remap_factor, dt_tracer_factor
     real(kind=c_double),  intent(in) :: nu, nu_p, nu_q, nu_s, nu_div, nu_top, hypervis_scaling
     integer(kind=c_int),  intent(in) :: hypervis_order, hypervis_subcycle, ftype
     logical(kind=c_bool), intent(in) :: prescribed_wind, moisture, disable_diagnostics, use_cpstar

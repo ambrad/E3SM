@@ -38,7 +38,8 @@ void init_simulation_params_c (const int& remap_alg, const int& limiter_option, 
                                const Real& nu, const Real& nu_p, const Real& nu_q, const Real& nu_s, const Real& nu_div, const Real& nu_top,
                                const int& hypervis_order, const int& hypervis_subcycle, const double& hypervis_scaling,
                                const int& ftype, const bool& prescribed_wind, const bool& moisture, const bool& disable_diagnostics,
-                               const bool& use_cpstar, const bool& use_semi_lagrangian_transport)
+                               const bool& use_cpstar, const bool& use_semi_lagrangian_transport,
+                               const int& dt_remap_factor, const int& dt_tracer_factor)
 {
   // Check that the simulation options are supported. This helps us in the future, since we
   // are currently 'assuming' some option have/not have certain values. As we support for more
@@ -73,6 +74,8 @@ void init_simulation_params_c (const int& remap_alg, const int& limiter_option, 
   params.limiter_option                = limiter_option;
   params.rsplit                        = rsplit;
   params.qsplit                        = qsplit;
+  params.dt_remap_factor               = dt_remap_factor;
+  params.dt_tracer_factor              = dt_tracer_factor;
   params.prescribed_wind               = prescribed_wind;
   params.state_frequency               = state_frequency;
   params.qsize                         = qsize;

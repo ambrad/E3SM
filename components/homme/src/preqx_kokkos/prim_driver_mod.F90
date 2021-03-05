@@ -57,7 +57,8 @@ contains
                                  tstep_type, statefreq, rsplit, qsplit, ftype,          &
                                  prescribed_wind, limiter_option, disable_diagnostics,  &
                                  nu, nu_p, nu_q, nu_s, nu_div, nu_top, moisture,        &
-                                 hypervis_order, hypervis_scaling, hypervis_subcycle
+                                 hypervis_order, hypervis_scaling, hypervis_subcycle,   &
+                                 dt_remap_factor, dt_tracer_factor
     use preqx_f2c_mod,    only : init_reference_element_c, init_simulation_params_c, &
                                  init_hvcoord_c, init_time_level_c, init_elements_c
     !
@@ -88,7 +89,8 @@ contains
                                    LOGICAL(moisture/="dry",c_bool),                               &
                                    LOGICAL(disable_diagnostics,c_bool),                           &
                                    LOGICAL(use_cpstar==1,c_bool),                                 &
-                                   LOGICAL(use_semi_lagrange_transport,c_bool))
+                                   LOGICAL(use_semi_lagrange_transport,c_bool),                   &
+                                   dt_remap_factor, dt_tracer_factor)
 
     ! Initialize time level structure in C++
     call init_time_level_c(tl%nm1, tl%n0, tl%np1, tl%nstep, tl%nstep0)
