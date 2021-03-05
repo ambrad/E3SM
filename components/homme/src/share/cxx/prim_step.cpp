@@ -29,8 +29,8 @@ void prim_step (const Real dt, const bool compute_diagnostics)
   // Get the time level info
   TimeLevel& tl = Context::singleton().get<TimeLevel>();
 
-  if (params.use_semi_lagrangian_transport) {
-    Errors::option_error("prim_step", "use_semi_lagrangian_transport",params.use_semi_lagrangian_transport);
+  if (params.transport_alg > 0) {
+    Errors::option_error("prim_step", "transport_alg", params.transport_alg);
     // Set derived_star = v
   }
 

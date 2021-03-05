@@ -38,7 +38,7 @@ struct SimulationParams
 
   int       state_frequency;
   bool      disable_diagnostics;
-  bool      use_semi_lagrangian_transport;
+  int       transport_alg;
   bool      use_cpstar;
   bool      theta_hydrostatic_mode;   // Only for theta model
 

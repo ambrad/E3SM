@@ -76,7 +76,6 @@ contains
     ! Local(s)
     !
     integer :: ie
-    logical (kind=c_bool) :: use_semi_lagrange_transport
     real (kind=real_kind), target :: dvv (np,np), elem_mp(np,np)
     type (c_ptr) :: hybrid_am_ptr, hybrid_ai_ptr, hybrid_bm_ptr, hybrid_bi_ptr
     character(len=MAX_STRING_LEN), target :: test_name
@@ -87,7 +86,6 @@ contains
     call init_reference_element_c(c_loc(dvv),c_loc(elem_mp))
 
     ! Fill the simulation params structures in C++
-    use_semi_lagrange_transport = transport_alg > 0
     test_name = TRIM(test_case) // C_NULL_CHAR
     call init_simulation_params_c (vert_remap_q_alg, limiter_option, rsplit, qsplit, tstep_type,  &
                                    qsize, statefreq, nu, nu_p, nu_q, nu_s, nu_div, nu_top,        &
@@ -97,7 +95,7 @@ contains
                                    LOGICAL(moisture/="dry",c_bool),                               &
                                    LOGICAL(disable_diagnostics,c_bool),                           &
                                    LOGICAL(use_cpstar==1,c_bool),                                 &
-                                   LOGICAL(use_semi_lagrange_transport,c_bool),                   &
+                                   transport_alg,                                                 &
                                    LOGICAL(theta_hydrostatic_mode,c_bool),                        &
                                    c_loc(test_name),                                              &
                                    dt_remap_factor, dt_tracer_factor)

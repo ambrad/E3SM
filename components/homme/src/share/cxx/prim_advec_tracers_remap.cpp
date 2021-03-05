@@ -21,9 +21,9 @@ void prim_advec_tracers_remap (const Real dt);
 void prim_advec_tracers_remap (const Real dt) {
   SimulationParams& params = Context::singleton().get<SimulationParams>();
 
-  if (params.use_semi_lagrangian_transport) {
-    Errors::option_error("prim_advec_tracers_remap","use_semi_lagrangian_transport",
-                          params.use_semi_lagrangian_transport);
+  if (params.transport_alg > 0) {
+    Errors::option_error("prim_advec_tracers_remap", "transport_alg",
+                          params.transport_alg);
   } else {
     prim_advec_tracers_remap_RK2(dt);
   }

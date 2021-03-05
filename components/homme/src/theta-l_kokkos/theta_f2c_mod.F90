@@ -11,7 +11,7 @@ interface
                                        qsize, state_frequency, nu, nu_p, nu_q, nu_s, nu_div, nu_top, &
                                        hypervis_order, hypervis_subcycle, hypervis_scaling,          &
                                        dcmip16_mu, ftype, theta_adv_form, prescribed_wind, moisture, &
-                                       disable_diagnostics, use_cpstar, use_semi_lagrange_transport, &
+                                       disable_diagnostics, use_cpstar, transport_alg, &
                                        theta_hydrostatic_mode, test_case_name, dt_remap_factor,      &
                                        dt_tracer_factor) bind(c)
     use iso_c_binding, only: c_int, c_bool, c_double, c_ptr
@@ -19,13 +19,13 @@ interface
     ! Inputs
     !
     integer(kind=c_int),  intent(in) :: remap_alg, limiter_option, rsplit, qsplit, time_step_type
-    integer(kind=c_int),  intent(in) :: dt_remap_factor, dt_tracer_factor
+    integer(kind=c_int),  intent(in) :: dt_remap_factor, dt_tracer_factor, transport_alg
     integer(kind=c_int),  intent(in) :: state_frequency, qsize
     real(kind=c_double),  intent(in) :: nu, nu_p, nu_q, nu_s, nu_div, nu_top, hypervis_scaling, dcmip16_mu
     integer(kind=c_int),  intent(in) :: hypervis_order, hypervis_subcycle
     integer(kind=c_int),  intent(in) :: ftype, theta_adv_form
     logical(kind=c_bool), intent(in) :: prescribed_wind, moisture, disable_diagnostics, use_cpstar
-    logical(kind=c_bool), intent(in) :: use_semi_lagrange_transport, theta_hydrostatic_mode
+    logical(kind=c_bool), intent(in) :: theta_hydrostatic_mode
     type(c_ptr), intent(in) :: test_case_name
   end subroutine init_simulation_params_c
 

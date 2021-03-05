@@ -70,7 +70,6 @@ contains
     !
     ! Local(s)
     !
-    logical (kind=c_bool) :: use_semi_lagrange_transport
     real (kind=real_kind), dimension(np,np), target :: dvv, elem_mp
 
     type (c_ptr) :: hybrid_am_ptr, hybrid_ai_ptr, hybrid_bm_ptr, hybrid_bi_ptr
@@ -81,7 +80,6 @@ contains
     call init_reference_element_c(c_loc(dvv),c_loc(elem_mp))
 
     ! Fill the simulation params structures in C++
-    use_semi_lagrange_transport = transport_alg > 0
     call init_simulation_params_c (vert_remap_q_alg, limiter_option, rsplit, qsplit, tstep_type,  &
                                    qsize, statefreq, nu, nu_p, nu_q, nu_s, nu_div, nu_top,        &
                                    hypervis_order, hypervis_subcycle, hypervis_scaling, ftype,    &
@@ -89,7 +87,7 @@ contains
                                    LOGICAL(moisture/="dry",c_bool),                               &
                                    LOGICAL(disable_diagnostics,c_bool),                           &
                                    LOGICAL(use_cpstar==1,c_bool),                                 &
-                                   LOGICAL(use_semi_lagrange_transport,c_bool),                   &
+                                   transport_alg,                                                 &
                                    dt_remap_factor, dt_tracer_factor)
 
     ! Initialize time level structure in C++
