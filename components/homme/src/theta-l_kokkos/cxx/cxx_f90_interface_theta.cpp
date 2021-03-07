@@ -11,6 +11,7 @@
 #include "Elements.hpp"
 #include "ErrorDefs.hpp"
 #include "EulerStepFunctor.hpp"
+#include "ComposeTransport.hpp"
 #include "ForcingFunctor.hpp"
 #include "FunctorsBuffersManager.hpp"
 #include "HommexxEnums.hpp"
@@ -321,7 +322,10 @@ void init_functors_c ()
   // First, sphere operators, then the others
   auto& sph_op = Context::singleton().create<SphereOperators>(elems.m_geometry,ref_FE);
   auto& caar = Context::singleton().create<CaarFunctor>(elems,tracers,ref_FE,hvcoord,sph_op,params);
-  auto& esf  = Context::singleton().create<EulerStepFunctor>();
+  if (params.transport_alg == 0)
+    Context::singleton().create<EulerStepFunctor>();
+  else
+    Context::singleton().create<ComposeTransport>();
   auto& hvf  = Context::singleton().create<HyperviscosityFunctor>();
   auto& fbm  = Context::singleton().create<FunctorsBuffersManager>();
   auto& ff   = Context::singleton().create<ForcingFunctor>();
@@ -341,7 +345,10 @@ void init_functors_c ()
   // Make the functor request their buffer to the buffers manager
   // Note: diagnostics also needs buffers
   fbm.request_size(caar.requested_buffer_size());
-  fbm.request_size(esf.requested_buffer_size());
+  if (params.transport_alg == 0)
+    fbm.request_size(Context::singleton().get<EulerStepFunctor>().requested_buffer_size());
+  else
+    fbm.request_size(Context::singleton().get<ComposeTransport>().requested_buffer_size());
   fbm.request_size(hvf.requested_buffer_size());
   fbm.request_size(diag.requested_buffer_size());
   fbm.request_size(ff.requested_buffer_size());
@@ -355,7 +362,10 @@ void init_functors_c ()
   fbm.allocate();
 
   caar.init_buffers(fbm);
-  esf.init_buffers(fbm);
+  if (params.transport_alg == 0)
+    Context::singleton().get<EulerStepFunctor>().init_buffers(fbm);
+  else
+    Context::singleton().get<ComposeTransport>().init_buffers(fbm);
   hvf.init_buffers(fbm);
   diag.init_buffers(fbm);
   ff.init_buffers(fbm);
@@ -469,10 +479,16 @@ void init_boundary_exchanges_c ()
   bmm[MPI_EXCHANGE]->set_connectivity(connectivity);
   bmm[MPI_EXCHANGE_MIN_MAX]->set_connectivity(connectivity);
 
-  // Euler BEs
-  auto& esf = Context::singleton().get<EulerStepFunctor>();
-  esf.reset(params);
-  esf.init_boundary_exchanges();
+  if (params.transport_alg == 0) {
+    // Euler BEs
+    auto& esf = Context::singleton().get<EulerStepFunctor>();
+    esf.reset(params);
+    esf.init_boundary_exchanges();
+  } else {
+    auto& ct = Context::singleton().get<ComposeTransport>();
+    ct.reset(params);
+    ct.init_boundary_exchanges();
+  }
 
   // RK stages BE's
   auto& cf = Context::singleton().get<CaarFunctor>();

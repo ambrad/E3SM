@@ -6,6 +6,7 @@
 
 #include "Context.hpp"
 #include "EulerStepFunctor.hpp"
+#include "ComposeTransport.hpp"
 #include "SimulationParams.hpp"
 #include "TimeLevel.hpp"
 #include "profiling.hpp"
@@ -89,7 +90,15 @@ static void prim_advec_tracers_remap_RK2 (const Real dt)
 }
 
 static void prim_advec_tracers_remap_compose (const Real dt) {
-  
+  GPTLstart("tl-at prim_advec_tracers_remap_compose");
+  const auto& params = Context::singleton().get<SimulationParams>();
+  assert(params.params_set);
+  auto& tl = Context::singleton().get<TimeLevel>();
+  tl.update_tracers_levels(params.dt_tracer_factor);
+  auto& ct = Context::singleton().get<ComposeTransport>();
+  ct.reset(params);
+  ct.run(tl, dt);
+  GPTLstop("tl-at prim_advec_tracers_remap_compose");
 }
 
 } // namespace Homme

@@ -57,7 +57,6 @@ struct ComposeTransportImpl {
     Real nu_q, hv_scaling, dp_tol;
     bool independent_time_steps;
 
-    int nslot;
     Buf1 buf1[3];
     Buf2 buf2[2];
 
@@ -77,6 +76,7 @@ struct ComposeTransportImpl {
   const ElementsGeometry m_geometry;
   const Tracers m_tracers;
   SphereOperators m_sphere_ops;
+  int nslot;
   Data m_data;
 
   TeamPolicy m_tp_ne, m_tp_ne_qsize, m_tp_ne_hv_q;
@@ -85,24 +85,11 @@ struct ComposeTransportImpl {
   std::shared_ptr<BoundaryExchange>
     m_qdp_dss_be[Q_NUM_TIME_LEVELS], m_v_dss_be[2], m_hv_dss_be[2];
 
+  ComposeTransportImpl();
+
   KOKKOS_INLINE_FUNCTION
   size_t shmem_size (const int team_size) const {
     return KernelVariables::shmem_size(team_size);
-  }
-
-  ComposeTransportImpl ()
-    : m_hvcoord(Context::singleton().get<HybridVCoord>()),
-      m_elements(Context::singleton().get<Elements>()),
-      m_state(m_elements.m_state),
-      m_derived(m_elements.m_derived),
-      m_geometry(Context::singleton().get<ElementsGeometry>()),
-      m_tracers(Context::singleton().get<Tracers>()),
-      m_sphere_ops(Context::singleton().get<SphereOperators>()),
-      m_tp_ne(1,1,1), m_tu_ne(m_tp_ne), // throwaway settings
-      m_tp_ne_qsize(1,1,1), m_tu_ne_qsize(m_tp_ne_qsize), // throwaway settings
-      m_tp_ne_hv_q(1,1,1), m_tu_ne_hv_q(m_tp_ne_hv_q) // throwaway settings
-  {
-    set_dp_tol();
   }
 
   void set_dp_tol();

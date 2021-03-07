@@ -13,6 +13,28 @@ sl_get_params(double* nu_q, double* hv_scaling, int* hv_q, int* hv_subcycle_q,
 
 namespace Homme {
 
+static int calc_nslot (const int nelemd) {
+  const auto tp = Homme::get_default_team_policy<ExecSpace>(nelemd);
+  const auto tu = TeamUtils<ExecSpace>(tp);
+  return std::min(nelemd, tu.get_num_ws_slots());
+}
+
+ComposeTransportImpl::ComposeTransportImpl ()
+  : m_hvcoord(Context::singleton().get<HybridVCoord>()),
+    m_elements(Context::singleton().get<Elements>()),
+    m_state(m_elements.m_state),
+    m_derived(m_elements.m_derived),
+    m_geometry(Context::singleton().get<ElementsGeometry>()),
+    m_tracers(Context::singleton().get<Tracers>()),
+    m_sphere_ops(Context::singleton().get<SphereOperators>()),
+    m_tp_ne(1,1,1), m_tu_ne(m_tp_ne), // throwaway settings
+    m_tp_ne_qsize(1,1,1), m_tu_ne_qsize(m_tp_ne_qsize), // throwaway settings
+    m_tp_ne_hv_q(1,1,1), m_tu_ne_hv_q(m_tp_ne_hv_q) // throwaway settings
+{
+  set_dp_tol();
+  nslot = calc_nslot(m_geometry.num_elems());
+}
+
 void ComposeTransportImpl::reset (const SimulationParams& params) {
   const auto num_elems = Context::singleton().get<Connectivity>().get_num_local_elements();
   if (m_data.nelemd == num_elems && m_data.qsize == params.qsize) return;
@@ -43,8 +65,6 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
 
   m_sphere_ops.allocate_buffers(m_tu_ne_qsize);
 
-  m_data.nslot = std::min(m_data.nelemd, m_tu_ne.get_num_ws_slots());
-
   if (Context::singleton().get<Connectivity>().get_comm().root())
     printf("nelemd %d qsize %d hv_q %d np1_qdp %d independent_time_steps %d\n",
            m_data.nelemd, m_data.qsize, m_data.hv_q, m_data.np1_qdp,
@@ -73,19 +93,19 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
 
 int ComposeTransportImpl::requested_buffer_size () const {
   // FunctorsBuffersManager wants the size in terms of sizeof(Real).
-  return (3*Buf1::shmem_size(m_data.nslot) +
-          2*Buf2::shmem_size(m_data.nslot))/sizeof(Real);
+  return (3*Buf1::shmem_size(nslot) +
+          2*Buf2::shmem_size(nslot))/sizeof(Real);
 }
 
 void ComposeTransportImpl::init_buffers (const FunctorsBuffersManager& fbm) {
   Scalar* mem = reinterpret_cast<Scalar*>(fbm.get_memory());
   for (int i = 0; i < 3; ++i) {
-    m_data.buf1[i] = Buf1(mem, m_data.nslot);
-    mem += Buf1::shmem_size(m_data.nslot)/sizeof(Scalar);
+    m_data.buf1[i] = Buf1(mem, nslot);
+    mem += Buf1::shmem_size(nslot)/sizeof(Scalar);
   }
   for (int i = 0; i < 2; ++i) {
-    m_data.buf2[i] = Buf2(mem, m_data.nslot);
-    mem += Buf2::shmem_size(m_data.nslot)/sizeof(Scalar);
+    m_data.buf2[i] = Buf2(mem, nslot);
+    mem += Buf2::shmem_size(nslot)/sizeof(Scalar);
   }
 }
 
