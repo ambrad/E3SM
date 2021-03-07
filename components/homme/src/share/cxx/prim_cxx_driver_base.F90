@@ -34,6 +34,7 @@ module prim_cxx_driver_base
                                  prim_init1_cleanup, prim_init1_buffers,      &
                                  prim_init1_compose,                          &
                                  MetaVertex, GridEdge, deriv1
+    use compose_mod,      only : compose_control_kokkos_init_and_fin
 #ifndef CAM
     use prim_driver_base, only : prim_init1_no_cam
 #endif
@@ -63,6 +64,8 @@ module prim_cxx_driver_base
 
     ! Initialize kokkos before any environment changes from the Fortran
     call initialize_hommexx_session()
+    ! Don't let any other components that use Kokkos control init/finalization.
+    call compose_control_kokkos_init_and_fin(.false.)
 
 #ifndef CAM
     call prim_init1_no_cam(par)
@@ -111,6 +114,8 @@ module prim_cxx_driver_base
 
   subroutine prim_finalize ()
     use prim_driver_base, only: prim_finalize_base=>prim_finalize
+    use control_mod, only: transport_alg
+    use compose_mod, only: compose_finalize
     interface
       subroutine finalize_hommexx_session() bind(c)
       end subroutine finalize_hommexx_session

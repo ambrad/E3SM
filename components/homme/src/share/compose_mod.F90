@@ -3,6 +3,7 @@ module compose_mod
   implicit none
 
   logical :: compose_h2d = .false., compose_d2h = .false.
+  logical, private :: control_kokkos_init_and_fin = .true.
 
   interface
 
@@ -215,6 +216,11 @@ module compose_mod
 
 contains
 
+  subroutine compose_control_kokkos_init_and_fin(control)
+    logical, intent(in) :: control
+    control_kokkos_init_and_fin = control
+  end subroutine compose_control_kokkos_init_and_fin
+
   subroutine compose_init(par, elem, GridVertex, init_kokkos)
     use iso_c_binding, only: c_bool
     use parallel_mod, only: parallel_t, abortmp
@@ -250,7 +256,7 @@ contains
 
     call_init_kokkos = .true.
     if (present(init_kokkos)) call_init_kokkos = init_kokkos
-    if (call_init_kokkos) call kokkos_init()
+    if (control_kokkos_init_and_fin .and. call_init_kokkos) call kokkos_init()
 
     use_sgi = sgi_is_initialized()
     hard_zero = .true.
@@ -354,7 +360,8 @@ contains
 
     call_finalize_kokkos = .true.
     if (present(finalize_kokkos)) call_finalize_kokkos = finalize_kokkos
-    if (call_finalize_kokkos) call kokkos_finalize()
+    print *,'amb> compose_finalize',call_finalize_kokkos
+    if (control_kokkos_init_and_fin .and. call_finalize_kokkos) call kokkos_finalize()
 #endif
   end subroutine compose_finalize
   

@@ -13,8 +13,8 @@
 namespace Homme
 {
 
-void prim_advec_tracers_remap_RK2 (const Real dt);
-void prim_advec_tracers_remap (const Real dt);
+static void prim_advec_tracers_remap_RK2 (const Real dt);
+static void prim_advec_tracers_remap_compose (const Real dt);
 
 // ----------- IMPLEMENTATION ---------- //
 
@@ -22,14 +22,13 @@ void prim_advec_tracers_remap (const Real dt) {
   SimulationParams& params = Context::singleton().get<SimulationParams>();
 
   if (params.transport_alg > 0) {
-    Errors::option_error("prim_advec_tracers_remap", "transport_alg",
-                          params.transport_alg);
+    prim_advec_tracers_remap_compose(dt);
   } else {
     prim_advec_tracers_remap_RK2(dt);
   }
 }
 
-void prim_advec_tracers_remap_RK2 (const Real dt)
+static void prim_advec_tracers_remap_RK2 (const Real dt)
 {
   GPTLstart("tl-at prim_advec_tracers_remap_RK2");
   // Get control and simulation params
@@ -87,6 +86,10 @@ void prim_advec_tracers_remap_RK2 (const Real dt)
     // call advance_hypervis_scalar(edgeadv,elem,hvcoord,hybrid,deriv,tl%np1,np1_qdp,nets,nete,dt)
   }
   GPTLstop("tl-at prim_advec_tracers_remap_RK2");
+}
+
+static void prim_advec_tracers_remap_compose (const Real dt) {
+  
 }
 
 } // namespace Homme
