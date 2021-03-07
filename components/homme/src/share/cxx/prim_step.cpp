@@ -16,24 +16,9 @@ namespace Homme
 void prim_advance_exp (TimeLevel& tl, const Real dt, const bool compute_diagnostics);
 void prim_advec_tracers_remap(const Real);
 
-void prim_step (const Real dt, const bool compute_diagnostics)
+static void set_tracer_transport_derived_values (
+  const SimulationParams& params, const Elements& elements, const TimeLevel& tl)
 {
-  GPTLstart("tl-s prim_step");
-  // Get control and simulation params
-  SimulationParams& params = Context::singleton().get<SimulationParams>();
-  assert(params.params_set);
-
-  // Get the elements structure
-  Elements& elements = Context::singleton().get<Elements>();
-
-  // Get the time level info
-  TimeLevel& tl = Context::singleton().get<TimeLevel>();
-
-  if (params.transport_alg > 0) {
-    Errors::option_error("prim_step", "transport_alg", params.transport_alg);
-    // Set derived_star = v
-  }
-
   // ===============
   // initialize mean flux accumulation variables and save some variables at n0
   // for use by advection
@@ -47,6 +32,9 @@ void prim_step (const Real dt, const bool compute_diagnostics)
     const auto derived_dpdiss_biharmonic = elements.m_derived.m_dpdiss_biharmonic;
     const auto derived_dp = elements.m_derived.m_dp;
     const auto dp3d = elements.m_state.m_dp3d;
+    const auto vstar = elements.m_derived.m_vstar;
+    const auto v = elements.m_state.m_v;
+    const auto n0 = tl.n0;
     Kokkos::parallel_for(Kokkos::RangePolicy<ExecSpace> (0,elements.num_elems()*NP*NP*NUM_LEV),
                          KOKKOS_LAMBDA(const int idx) {
       const int ie   = ((idx / NUM_LEV) / NP) / NP;
@@ -61,11 +49,31 @@ void prim_step (const Real dt, const bool compute_diagnostics)
         derived_dpdiss_ave(ie,igp,jgp,ilev) = 0;
         derived_dpdiss_biharmonic(ie,igp,jgp,ilev) = 0;
       }
-      derived_dp(ie,igp,jgp,ilev) = dp3d(ie,tl.n0,igp,jgp,ilev);
+      derived_dp(ie,igp,jgp,ilev) = dp3d(ie,n0,igp,jgp,ilev);
+      if (params.transport_alg > 0) {
+        vstar(ie,0,igp,jgp,ilev) = v(ie,0,igp,jgp,ilev,n0);
+        vstar(ie,1,igp,jgp,ilev) = v(ie,1,igp,jgp,ilev,n0);
+      }
     });
   }
   ExecSpace::impl_static_fence();
-  GPTLstop("tl-s deep_copy+derived_dp");
+  GPTLstop("tl-s deep_copy+derived_dp");  
+}
+
+void prim_step (const Real dt, const bool compute_diagnostics)
+{
+  GPTLstart("tl-s prim_step");
+  // Get control and simulation params
+  SimulationParams& params = Context::singleton().get<SimulationParams>();
+  assert(params.params_set);
+
+  // Get the elements structure
+  Elements& elements = Context::singleton().get<Elements>();
+
+  // Get the time level info
+  TimeLevel& tl = Context::singleton().get<TimeLevel>();
+
+  set_tracer_transport_derived_values(params, elements, tl);
 
   // ===============
   // Dynamical Step
