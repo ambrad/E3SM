@@ -331,7 +331,8 @@ KOKKOS_FUNCTION static void calc_vertically_lagrangian_levels (
           = p1 - dt/2 (v(p1,t0) + v(p1,t1) - dt grad v(p1,t0) v(p1,t1)) + O(dt^3)
    In the code, v(p1,t0) = vstar, v(p1,t1) is vn0.
  */
-void ComposeTransportImpl::calc_trajectory (const Real dt) {
+void ComposeTransportImpl::calc_trajectory (const int np1, const Real dt) {
+  GPTLstart("compose_calc_trajectory");
   const auto sphere_ops = m_sphere_ops;
   const auto geo = m_geometry;
   const auto m_vec_sph2cart = geo.m_vec_sph2cart;
@@ -344,7 +345,6 @@ void ComposeTransportImpl::calc_trajectory (const Real dt) {
     const auto m_rspheremp = geo.m_rspheremp;
     const auto m_v = m_state.m_v;
     const auto m_vn0 = m_derived.m_vn0;
-    const auto np1 = m_data.np1;
     const auto independent_time_steps = m_data.independent_time_steps;
     const Real dp_tol = m_data.dp_tol;
     const Real ps0 = m_hvcoord.ps0;
@@ -461,6 +461,7 @@ void ComposeTransportImpl::calc_trajectory (const Real dt) {
     Kokkos::fence();
     GPTLstop("compose_v2x");
   }
+  GPTLstop("compose_calc_trajectory");
 }
 
 static int test_approx_derivative () {
@@ -625,7 +626,6 @@ test_trajectory (Real t0, Real t1, const bool independent_time_steps) {
 
   const bool its_save = m_data.independent_time_steps;
   m_data.independent_time_steps = independent_time_steps;
-  m_data.np1 = 0;
 
   const auto vstar = create_mirror_view(m_derived.m_vstar);
   const auto vn0 = create_mirror_view(m_derived.m_vn0);
@@ -633,7 +633,7 @@ test_trajectory (Real t0, Real t1, const bool independent_time_steps) {
   const auto dp3d = create_mirror_view(m_state.m_dp3d);
   const auto dp = create_mirror_view(m_derived.m_dp);
   const auto pll = cmvdc(m_geometry.m_sphere_latlon);
-  const auto np1 = m_data.np1;
+  const auto np1 = 0;
   const int packn = this->packn;
   const compose::test::NonDivergentWindField wf;
   // On host b/c trig isn't BFB between host and device.
@@ -657,7 +657,7 @@ test_trajectory (Real t0, Real t1, const bool independent_time_steps) {
   deep_copy(m_state.m_dp3d, dp3d);
   deep_copy(m_derived.m_dp, dp);
 
-  calc_trajectory(t1 - t0);
+  calc_trajectory(np1, t1 - t0);
   Kokkos::fence();
 
   m_data.independent_time_steps = its_save;

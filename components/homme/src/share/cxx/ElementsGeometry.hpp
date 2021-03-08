@@ -48,7 +48,8 @@ public:
 
   ElementsGeometry() : m_num_elems(0) {}
 
-  void init (const int num_elems, const bool consthv, const bool alloc_gradphis);
+  void init (const int num_elems, const bool consthv, const bool alloc_gradphis,
+             const bool alloc_sphere_coords=false);
 
   void randomize (const int seed);
 

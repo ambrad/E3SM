@@ -53,7 +53,7 @@ struct ComposeTransportImpl {
   using DeparturePoints = ExecViewManaged<Real*[NUM_PHYSICAL_LEV][NP][NP][3]>;
 
   struct Data {
-    int nelemd, qsize, np1, np1_qdp, limiter_option, cdr_check, hv_q, hv_subcycle_q, rsplit;
+    int nelemd, qsize, limiter_option, cdr_check, hv_q, hv_subcycle_q;
     Real nu_q, hv_scaling, dp_tol;
     bool independent_time_steps;
 
@@ -63,7 +63,7 @@ struct ComposeTransportImpl {
     DeparturePoints dep_pts;
 
     Data ()
-      : nelemd(-1), qsize(-1), np1_qdp(-1), limiter_option(9), cdr_check(0), hv_q(0),
+      : nelemd(-1), qsize(-1), limiter_option(9), cdr_check(0), hv_q(0),
         hv_subcycle_q(0), independent_time_steps(false), nu_q(0), hv_scaling(0),
         dp_tol(-1)
     {}
@@ -101,7 +101,7 @@ struct ComposeTransportImpl {
   void run(const TimeLevel& tl, const Real dt);
   void remap_q(const TimeLevel& tl);
 
-  void calc_trajectory(const Real dt);
+  void calc_trajectory(const int np1, const Real dt);
   void remap_v(const ExecViewUnmanaged<const Scalar*[NUM_TIME_LEVELS][NP][NP][NUM_LEV]>& dp3d,
                const int np1, const ExecViewUnmanaged<const Scalar*[NP][NP][NUM_LEV]>& dp,
                const ExecViewUnmanaged<Scalar*[2][NP][NP][NUM_LEV]>& v);

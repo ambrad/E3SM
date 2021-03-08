@@ -123,7 +123,7 @@ struct Session {
     h = c.get<HybridVCoord>();
 
     auto& p = c.create<SimulationParams>();
-    p.transport_alg = 0;
+    p.transport_alg = 12;
     p.qsize = qsize;
     p.limiter_option = 9;
     p.hypervis_scaling = 0;

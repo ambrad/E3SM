@@ -16,7 +16,8 @@
 
 namespace Homme {
 
-void ElementsGeometry::init(const int num_elems, const bool consthv, const bool alloc_gradphis) {
+void ElementsGeometry::init(const int num_elems, const bool consthv, const bool alloc_gradphis,
+                            const bool alloc_sphere_coords) {
   // Sanity check
   assert (num_elems>0);
 
@@ -47,6 +48,11 @@ void ElementsGeometry::init(const int num_elems, const bool consthv, const bool 
 
   if (alloc_gradphis) {
     m_gradphis = decltype(m_gradphis) ("gradient of geopotential at surface", m_num_elems);
+  }
+
+  if (alloc_sphere_coords) {
+    m_sphere_cart = ExecViewManaged<Real * [NP][NP][3]>("sphere_cart", m_num_elems);
+    m_sphere_latlon = ExecViewManaged<Real * [NP][NP][2]>("sphere_latlon", m_num_elems);
   }
 }
 
@@ -152,15 +158,11 @@ set_elem_data (const int ie,
   }
   Kokkos::deep_copy(Homme::subview(m_vec_sph2cart,ie), h_vec_sph2cart);
 
-  if (sphere_cart) {
-    if (m_sphere_cart.size() == 0)
-      m_sphere_cart = ExecViewManaged<Real * [NP][NP][3]>("sphere_cart", m_num_elems);
+  if (sphere_cart && m_sphere_cart.size() != 0) {
     const auto fsc = HostViewUnmanaged<const Real [NP][NP][3]>(sphere_cart);
     Kokkos::deep_copy(Homme::subview(m_sphere_cart, ie), fsc);
   }
-  if (sphere_latlon) {
-    if (m_sphere_latlon.size() == 0)
-      m_sphere_latlon = ExecViewManaged<Real * [NP][NP][2]>("sphere_latlon", m_num_elems);
+  if (sphere_latlon && m_sphere_latlon.size() != 0) {
     const auto fsl = HostViewUnmanaged<const Real [NP][NP][2]>(sphere_latlon);
     Kokkos::deep_copy(Homme::subview(m_sphere_latlon, ie), fsl);
   }

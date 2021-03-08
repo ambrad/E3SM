@@ -39,7 +39,7 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
   const auto num_elems = Context::singleton().get<Connectivity>().get_num_local_elements();
   if (m_data.nelemd == num_elems && m_data.qsize == params.qsize) return;
 
-  m_data.rsplit = params.rsplit;
+  m_data.independent_time_steps = params.dt_tracer_factor > params.dt_remap_factor;
   m_data.qsize = params.qsize;
   Errors::runtime_check(m_data.qsize > 0,
                         "SL transport requires qsize > 0; if qsize == 0, use Eulerian.");
@@ -66,9 +66,9 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
   m_sphere_ops.allocate_buffers(m_tu_ne_qsize);
 
   if (Context::singleton().get<Connectivity>().get_comm().root())
-    printf("nelemd %d qsize %d hv_q %d np1_qdp %d independent_time_steps %d\n",
-           m_data.nelemd, m_data.qsize, m_data.hv_q, m_data.np1_qdp,
-           (int) m_data.independent_time_steps);
+    printf("nelemd %d qsize %d hv_q %d hv_subcycle_q %d lim %d independent_time_steps %d\n",
+           m_data.nelemd, m_data.qsize, m_data.hv_q, m_data.hv_subcycle_q,
+           m_data.limiter_option, (int) m_data.independent_time_steps);
 
   {
     const auto& g = m_geometry;
@@ -152,9 +152,7 @@ void ComposeTransportImpl::init_boundary_exchanges () {
 void ComposeTransportImpl::run (const TimeLevel& tl, const Real dt) {
   GPTLstart("compose_transport");
 
-  m_data.np1 = tl.np1;
-  m_data.np1_qdp = tl.np1_qdp;
-  calc_trajectory(dt);
+  calc_trajectory(tl.np1, dt);
   
   GPTLstart("compose_isl");
   homme::compose::advect(tl.np1, tl.n0_qdp, tl.np1_qdp);
@@ -167,8 +165,8 @@ void ComposeTransportImpl::run (const TimeLevel& tl, const Real dt) {
     GPTLstop("compose_hypervis_scalar");
   }
   
-  const auto np1 = m_data.np1;
-  const auto np1_qdp = m_data.np1_qdp;
+  const auto np1 = tl.np1;
+  const auto np1_qdp = tl.np1_qdp;
   const auto qsize = m_data.qsize;
   GPTLstart("compose_cedr_global");
   const auto run_cedr = homme::compose::property_preserve_global();

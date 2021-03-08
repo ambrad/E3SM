@@ -51,8 +51,8 @@ static void set_tracer_transport_derived_values (
       }
       derived_dp(ie,igp,jgp,ilev) = dp3d(ie,n0,igp,jgp,ilev);
       if (params.transport_alg > 0) {
-        vstar(ie,0,igp,jgp,ilev) = v(ie,0,igp,jgp,ilev,n0);
-        vstar(ie,1,igp,jgp,ilev) = v(ie,1,igp,jgp,ilev,n0);
+        vstar(ie,0,igp,jgp,ilev) = v(ie,n0,0,igp,jgp,ilev);
+        vstar(ie,1,igp,jgp,ilev) = v(ie,n0,1,igp,jgp,ilev);
       }
     });
   }
