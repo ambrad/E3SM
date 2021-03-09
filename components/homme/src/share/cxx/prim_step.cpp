@@ -8,6 +8,8 @@
 #include "Elements.hpp"
 #include "TimeLevel.hpp"
 #include "SimulationParams.hpp"
+#include "CamForcing.hpp"
+#include "Diagnostics.hpp"
 #include "profiling.hpp"
 
 namespace Homme
@@ -15,6 +17,7 @@ namespace Homme
 
 void prim_advance_exp (TimeLevel& tl, const Real dt, const bool compute_diagnostics);
 void prim_advec_tracers_remap(const Real);
+void apply_test_forcing();
 
 static void set_tracer_transport_derived_values (
   const SimulationParams& params, const Elements& elements, const TimeLevel& tl)
@@ -111,6 +114,60 @@ void prim_step (const Real dt, const bool compute_diagnostics)
 
 void prim_step_flexible (const Real dt, const bool compute_diagnostics) {
   GPTLstart("tl-s prim_step_flexible");
+  const auto& context = Context::singleton();
+  const SimulationParams& params = context.get<SimulationParams>();
+  assert(params.params_set);
+  Elements& elements = context.get<Elements>();
+  TimeLevel& tl = context.get<TimeLevel>();
+
+  const auto dt_q = dt*params.dt_tracer_factor;
+  const auto dt_remap = params.dt_remap_factor == 0 ? dt : dt*params.dt_remap_factor;
+
+  tl.update_tracers_levels(params.dt_tracer_factor);
+  
+  bool apply_forcing;
+#ifdef CAM
+  apply_forcing = params.ftype == ForcingAlg::FORCING_DEBUG;
+#else
+  const bool forcing_0or2 = (params.ftype == ForcingAlg::FORCING_DEBUG ||
+                             params.ftype == ForcingAlg::FORCING_2);
+  apply_forcing = forcing_0or2;
+  apply_test_forcing();
+#endif
+  if (apply_forcing) {
+    // Apply tracer forcings over tracer time step.
+    apply_cam_forcing_tracers(dt_q);
+  }
+
+  set_tracer_transport_derived_values(params, elements, tl);
+
+  for (int n = 0; n < params.dt_tracer_factor; ++n) {
+    const bool compute_diagnostics_it = compute_diagnostics && n == 0;
+    if (n > 0) tl.update_dynamics_levels(UpdateType::LEAPFROG);
+
+    if (forcing_0or2) {
+      // Apply dynamics forcing over the dynamics (vertically Eulerian) or
+      // vertical remap time step if we're at reference levels.
+      apply_forcing = (params.dt_remap_factor == 0 ||
+                       n % params.dt_remap_factor == 0);
+      if (apply_forcing) {
+        apply_cam_forcing_dynamics(dt_remap);
+        if (compute_diagnostics_it)
+          context.get<Diagnostics>().run_diagnostics(false,1);
+      }
+    }
+
+    prim_advance_exp(tl, dt, compute_diagnostics);
+
+    if (params.dt_remap_factor == 0) {
+      // Set np1_qdp to -1. Since dt_remap == 0, the only part of
+      // vertical_remap that is active is the updates to
+      // ps_v(:,:,np1) and dp3d(:,:,:,np1).
+      
+    } else {
+      
+    }
+  }
   
   GPTLstop("tl-s prim_step_flexible");
 }
