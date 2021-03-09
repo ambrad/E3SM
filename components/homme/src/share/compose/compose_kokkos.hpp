@@ -139,6 +139,13 @@ template <typename View> View unmanaged (
 # define COMPOSE_LAMBDA [&]
 #endif
 
+template <typename V>
+decltype(Kokkos::create_mirror_view(V())) cmvdc (const V& v) {
+  const auto h = Kokkos::create_mirror_view(v);
+  deep_copy(h, v);
+  return h;
+}
+
 } // namespace Kokkos
 
 #endif

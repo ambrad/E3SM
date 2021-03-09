@@ -32,23 +32,24 @@ void check (CDR<MT>& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
   ko::deep_copy(q_min, ta.q_min);
   ko::deep_copy(q_max, ta.q_max);
 #else
-# ifdef COMPOSE_PORT_DEV_VIEWS
-  const QExtremaHConst<ko::MachineTraits>
-    q_min(q_min_r, ta.nelemd, ta.qsize, ta.np2, ta.nlev),
-    q_max(q_max_r, ta.nelemd, ta.qsize, ta.np2, ta.nlev);
-# else
   const QExtremaHConst<ko::MachineTraits>
     q_min(q_min_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2),
     q_max(q_max_r, ta.nelemd, ta.qsize, ta.nlev, ta.np2);
-# endif
 #endif
   const auto np1 = ta.np1;
   const auto n0_qdp = ta.n0_qdp;
   const auto n1_qdp = ta.n1_qdp;
+#ifdef COMPOSE_PORT_DEV_VIEWS
+  const auto spheremp = ko::cmvdc(ta.spheremp);
+  const auto dp3d_c = ko::cmvdc(ta.dp3d);
+  const auto qdp_pc = ko::cmvdc(ta.qdp);
+  const auto q_c = ko::cmvdc(ta.q);
+#else
   const auto& spheremp = ta.pspheremp;
   const auto& dp3d_c = ta.pdp3d;
   const auto& qdp_pc = ta.pqdp;
   const auto& q_c = ta.pq;
+#endif
 
   Int iprob = 0;
 
