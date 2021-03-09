@@ -66,7 +66,8 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
   m_sphere_ops.allocate_buffers(m_tu_ne_qsize);
 
   if (Context::singleton().get<Connectivity>().get_comm().root())
-    printf("nelemd %d qsize %d hv_q %d hv_subcycle_q %d lim %d independent_time_steps %d\n",
+    printf("compose> nelemd %d qsize %d hv_q %d hv_subcycle_q %d lim %d "
+           "independent_time_steps %d\n",
            m_data.nelemd, m_data.qsize, m_data.hv_q, m_data.hv_subcycle_q,
            m_data.limiter_option, (int) m_data.independent_time_steps);
 

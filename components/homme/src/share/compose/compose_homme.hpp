@@ -65,6 +65,7 @@ struct HommeFormatArray {
   T& operator() (const Int& ie, const Int& i) const {
     static_assert(rank == 2, "rank 2 array");
     assert(i >= 0);
+    assert(ie_data_ptr[ie]);
     return *(ie_data_ptr[ie] + i);
   }
   KOKKOS_FORCEINLINE_FUNCTION 
@@ -105,6 +106,7 @@ private:
               Int timelev = -1) const {
 #ifdef COMPOSE_BOUNDS_CHECK
     assert(ie >= 0 && ie < static_cast<Int>(ie_data_ptr.size()));
+    assert(ie_data_ptr[ie]);
     if (k >= 0) assert(k < np2);
     if (lev >= 0) assert(lev < nlev);
     if (q_or_timelev >= 0) {
