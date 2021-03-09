@@ -160,9 +160,8 @@ void prim_step_flexible (const Real dt, const bool compute_diagnostics) {
     prim_advance_exp(tl, dt, compute_diagnostics);
 
     if (params.dt_remap_factor == 0) {
-      // Set np1_qdp to -1. Since dt_remap == 0, the only part of
-      // vertical_remap that is active is the updates to
-      // ps_v(:,:,np1) and dp3d(:,:,:,np1).
+      // Set np1_qdp to -1. Since dt_remap == 0, the only part of vertical_remap
+      // that is active is the updates to ps_v(:,:,np1) and dp3d(:,:,:,np1).
       
     } else {
       

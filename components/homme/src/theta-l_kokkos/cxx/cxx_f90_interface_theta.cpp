@@ -331,7 +331,10 @@ void init_functors_c ()
   auto& fbm  = Context::singleton().create<FunctorsBuffersManager>();
   auto& ff   = Context::singleton().create<ForcingFunctor>();
   auto& diag = Context::singleton().create<Diagnostics> (elems.num_elems());
-  auto& vrm  = Context::singleton().create<VerticalRemapManager>();
+
+  const bool remap_q = (params.transport_alg == 0 ||
+                        params.dt_remap_factor >= params.dt_tracer_factor);
+  auto& vrm  = Context::singleton().create<VerticalRemapManager>(remap_q);
 
   const bool need_dirk = (params.time_step_type==TimeStepType::IMEX_KG243 ||   
                           params.time_step_type==TimeStepType::IMEX_KG254 ||

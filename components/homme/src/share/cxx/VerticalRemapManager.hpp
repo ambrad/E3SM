@@ -16,7 +16,7 @@ class FunctorsBuffersManager;
 namespace Remap { class Remapper; }
 
 struct VerticalRemapManager {
-  VerticalRemapManager();
+  VerticalRemapManager(const bool remap_tracers=true);
 
   void run_remap(int np1, int np1_qdp, double dt) const;
 

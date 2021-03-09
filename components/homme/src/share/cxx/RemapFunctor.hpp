@@ -292,13 +292,18 @@ struct RemapFunctor : public Remapper {
   RemapFunctor (const int qsize,
                 const Elements& elements,
                 const Tracers& tracers,
-                const HybridVCoord &hvcoord)
+                const HybridVCoord &hvcoord,
+                // We don't always want to remap everything at once. State the
+                // maximum capacity needed if it differs from
+                //    num_states_remap + qsize.
+                // If capacity < num_states_remap, num_states_remap is used.
+                const int capacity=-1)
    : m_data(qsize)
    , m_fields_provider(elements)
    , m_state(elements.m_state)
    , m_hvcoord(hvcoord)
    , m_qdp(tracers.qdp)
-   , m_remap(elements.num_elems(), this->num_to_remap())
+   , m_remap(elements.num_elems(), std::max(capacity, this->num_to_remap()))
    // Functor tags are irrelevant below
    , m_tu_ne(remap_team_policy<ComputeThicknessTag>(m_state.num_elems()))
    , m_tu_ne_nsr(remap_team_policy<ComputeThicknessTag>(m_state.num_elems() * m_fields_provider.num_states_remap()))
