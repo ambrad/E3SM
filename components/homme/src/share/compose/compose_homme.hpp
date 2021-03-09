@@ -73,6 +73,7 @@ struct HommeFormatArray {
     static_assert(rank == 3, "rank 3 array");
     assert(k >= 0);
     assert(lev >= 0);
+    assert(ie_data_ptr[ie]);
     check(ie, k, lev);
     return *(ie_data_ptr[ie] + lev*np2 + k);
   }
@@ -82,6 +83,7 @@ struct HommeFormatArray {
     assert(q_or_timelev >= 0);
     assert(k >= 0);
     assert(lev >= 0);
+    assert(ie_data_ptr[ie]);
     check(ie, k, lev, q_or_timelev);
     return *(ie_data_ptr[ie] + (q_or_timelev*nlev + lev)*np2 + k);
   }
@@ -92,6 +94,7 @@ struct HommeFormatArray {
     assert(q >= 0);
     assert(k >= 0);
     assert(lev >= 0);
+    assert(ie_data_ptr[ie]);
     check(ie, k, lev, q, timelev);
     return *(ie_data_ptr[ie] + ((timelev*qsized + q)*nlev + lev)*np2 + k);
   }
@@ -106,7 +109,6 @@ private:
               Int timelev = -1) const {
 #ifdef COMPOSE_BOUNDS_CHECK
     assert(ie >= 0 && ie < static_cast<Int>(ie_data_ptr.size()));
-    assert(ie_data_ptr[ie]);
     if (k >= 0) assert(k < np2);
     if (lev >= 0) assert(lev < nlev);
     if (q_or_timelev >= 0) {
