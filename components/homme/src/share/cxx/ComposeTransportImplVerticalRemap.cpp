@@ -27,7 +27,7 @@ void ComposeTransportImpl
   };
   parallel_for(policy, pre);
   Kokkos::fence();
-  r->remap1(dp3d, np1, dp, v);
+  r->remap1(dp3d, np1, dp, v, 2);
   Kokkos::fence();
   const auto post = KOKKOS_LAMBDA (const int idx) {
     int ie, q, i, j, k;
@@ -48,7 +48,7 @@ void ComposeTransportImpl::remap_q (const TimeLevel& tl) {
   const int nq = m_tracers.num_tracers();
   const auto& vrm = Context::singleton().get<VerticalRemapManager>();
   const auto r = vrm.get_remapper();
-  r->remap1(dp, dp3d, np1, qdp, np1_qdp);
+  r->remap1(dp, dp3d, np1, qdp, np1_qdp, nq);
   const auto post = KOKKOS_LAMBDA (const int idx) {
     int ie, iq, i, j, k;
     cti::idx_ie_q_ij_nlev<NUM_LEV>(nq, idx, ie, iq, i, j, k);

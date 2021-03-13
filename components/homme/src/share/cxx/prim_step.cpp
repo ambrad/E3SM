@@ -10,14 +10,16 @@
 #include "SimulationParams.hpp"
 #include "CamForcing.hpp"
 #include "Diagnostics.hpp"
+#include "ComposeTransport.hpp"
 #include "profiling.hpp"
 
 namespace Homme
 {
 
 void prim_advance_exp (TimeLevel& tl, const Real dt, const bool compute_diagnostics);
-void prim_advec_tracers_remap(const Real);
-void apply_test_forcing();
+void prim_advec_tracers_remap (const Real);
+void vertical_remap (const Real);
+void apply_test_forcing ();
 
 static void set_tracer_transport_derived_values (
   const SimulationParams& params, const Elements& elements, const TimeLevel& tl)
@@ -153,20 +155,40 @@ void prim_step_flexible (const Real dt, const bool compute_diagnostics) {
       if (apply_forcing) {
         apply_cam_forcing_dynamics(dt_remap);
         if (compute_diagnostics_it)
-          context.get<Diagnostics>().run_diagnostics(false,1);
+          context.get<Diagnostics>().run_diagnostics(true, 1);
       }
     }
 
     prim_advance_exp(tl, dt, compute_diagnostics);
 
     if (params.dt_remap_factor == 0) {
-      // Set np1_qdp to -1. Since dt_remap == 0, the only part of vertical_remap
-      // that is active is the updates to ps_v(:,:,np1) and dp3d(:,:,:,np1).
-      
-    } else {
-      
+      // Since dt_remap == 0, the only part of vertical_remap that is active is
+      // the updates to ps_v(:,:,np1) and dp3d(:,:,:,np1).
+      vertical_remap(dt_remap);
+    } else if ((n+1) % params.dt_remap_factor == 0) {
+      if (compute_diagnostics)
+        context.get<Diagnostics>().run_diagnostics(false, 4);
+      if (params.prescribed_wind) {
+        // Prescribed winds are evaluated on reference levels, not floating
+        // levels, so don't remap, just update dp3d.
+        Errors::runtime_abort("prim_step_flexible: need to impl prescribed_wind\n",
+                              Errors::err_not_implemented);
+      } else {
+        // Remap dynamics variables but not tracers.
+        vertical_remap(dt_remap);
+      }
     }
   }
+
+  if (params.qsize > 0)
+    prim_advec_tracers_remap(dt*params.dt_tracer_factor);
+
+  if (params.dt_remap_factor == 0 && compute_diagnostics)
+    context.get<Diagnostics>().run_diagnostics(false, 4);
+
+  // Remap tracers.
+  if (params.qsize > 0)
+    Context::singleton().get<ComposeTransport>().remap_q(tl);
   
   GPTLstop("tl-s prim_step_flexible");
 }

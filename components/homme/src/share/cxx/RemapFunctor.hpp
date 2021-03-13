@@ -250,12 +250,14 @@ struct Remapper {
   virtual void remap1(
     ExecViewUnmanaged<const Scalar*[NUM_TIME_LEVELS][NP][NP][NUM_LEV]> dp_src, const int np1,
     ExecViewUnmanaged<const Scalar*[NP][NP][NUM_LEV]> dp_tgt,
-    ExecViewUnmanaged<Scalar**[NP][NP][NUM_LEV]> v) = 0;
+    // remap v(:,1:num_to_remap,:,:,:)
+    ExecViewUnmanaged<Scalar**[NP][NP][NUM_LEV]> v, const int num_to_remap) = 0;
   virtual void remap1(
     ExecViewUnmanaged<const Scalar*[NP][NP][NUM_LEV]> dp_src,
     ExecViewUnmanaged<const Scalar*[NUM_TIME_LEVELS][NP][NP][NUM_LEV]> dp_tgt, const int np1,
-    // remap v(:,n_v,:,:,:)
-    ExecViewUnmanaged<Scalar***[NP][NP][NUM_LEV]> v, const int n_v) = 0;
+    // remap v(:,n_v,1:num_to_remap,:,:,:,:)
+    ExecViewUnmanaged<Scalar***[NP][NP][NUM_LEV]> v, const int n_v,
+    const int num_to_remap) = 0;
 };
 
 // The Remap functor
@@ -267,15 +269,17 @@ struct RemapFunctor : public Remapper {
                 "RemapFunctor not given a remap algorithm to use");
 
   struct RemapData {
-    RemapData(const int qsize_in) : qsize(qsize_in) {}
-    const int qsize;
+    RemapData(const int qsize_in, const int capacity_in)
+      : qsize(qsize_in), capacity(capacity_in)
+    {}
+    const int qsize, capacity;
     int np1;
     int np1_qdp;
     Real dt;
   };
 
-  RemapData m_data;
   RemapStateAndThicknessProvider<nonzero_rsplit> m_fields_provider;
+  RemapData m_data;
 
   const ElementsState m_state;
   const HybridVCoord m_hvcoord;
@@ -298,12 +302,12 @@ struct RemapFunctor : public Remapper {
                 //    num_states_remap + qsize.
                 // If capacity < num_states_remap, num_states_remap is used.
                 const int capacity=-1)
-   : m_data(qsize)
-   , m_fields_provider(elements)
+   : m_fields_provider(elements)
+   , m_data(qsize, std::max(capacity, m_fields_provider.num_states_remap() + qsize))
    , m_state(elements.m_state)
    , m_hvcoord(hvcoord)
    , m_qdp(tracers.qdp)
-   , m_remap(elements.num_elems(), std::max(capacity, this->num_to_remap()))
+   , m_remap(elements.num_elems(), m_data.capacity)
    // Functor tags are irrelevant below
    , m_tu_ne(remap_team_policy<ComputeThicknessTag>(m_state.num_elems()))
    , m_tu_ne_nsr(remap_team_policy<ComputeThicknessTag>(m_state.num_elems() * m_fields_provider.num_states_remap()))
@@ -471,11 +475,12 @@ struct RemapFunctor : public Remapper {
   void remap1 (
     const ExecViewUnmanaged<const Scalar*[NUM_TIME_LEVELS][NP][NP][NUM_LEV]> dp_src, const int np1,
     const ExecViewUnmanaged<const Scalar*[NP][NP][NUM_LEV]> dp_tgt,
-    const ExecViewUnmanaged<Scalar**[NP][NP][NUM_LEV]> v) override
+    const ExecViewUnmanaged<Scalar**[NP][NP][NUM_LEV]> v,
+    const int num_remap) override
   {
     using Kokkos::ALL;
-    const int ne = dp_src.extent_int(0), nv = v.extent_int(1);
-    assert(nv < num_to_remap());
+    const int ne = dp_src.extent_int(0), nv = num_remap;
+    assert(nv < m_data.capacity);
     const auto remap = m_remap;
     const auto g = KOKKOS_LAMBDA (const TeamMember& team) {
       KernelVariables kv(team, m_tu_ne);
@@ -493,11 +498,12 @@ struct RemapFunctor : public Remapper {
   void remap1 (
     const ExecViewUnmanaged<const Scalar*[NP][NP][NUM_LEV]> dp_src,
     const ExecViewUnmanaged<const Scalar*[NUM_TIME_LEVELS][NP][NP][NUM_LEV]> dp_tgt, const int np1,
-    const ExecViewUnmanaged<Scalar***[NP][NP][NUM_LEV]> v, const int n_v) override
+    const ExecViewUnmanaged<Scalar***[NP][NP][NUM_LEV]> v, const int n_v,
+    const int num_remap) override
   {
     using Kokkos::ALL;
-    const int ne = dp_src.extent_int(0), nv = v.extent_int(2);
-    assert(nv < num_to_remap());
+    const int ne = dp_src.extent_int(0), nv = num_remap;
+    assert(nv < m_data.capacity);
     const auto remap = m_remap;
     const auto g = KOKKOS_LAMBDA (const TeamMember& team) {
       KernelVariables kv(team, m_tu_ne);
