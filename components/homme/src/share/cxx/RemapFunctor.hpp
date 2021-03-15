@@ -480,7 +480,7 @@ struct RemapFunctor : public Remapper {
   {
     using Kokkos::ALL;
     const int ne = dp_src.extent_int(0), nv = num_remap;
-    assert(nv < m_data.capacity);
+    assert(nv <= m_data.capacity);
     const auto remap = m_remap;
     const auto g = KOKKOS_LAMBDA (const TeamMember& team) {
       KernelVariables kv(team, m_tu_ne);
@@ -503,7 +503,7 @@ struct RemapFunctor : public Remapper {
   {
     using Kokkos::ALL;
     const int ne = dp_src.extent_int(0), nv = num_remap;
-    assert(nv < m_data.capacity);
+    assert(nv <= m_data.capacity);
     const auto remap = m_remap;
     const auto g = KOKKOS_LAMBDA (const TeamMember& team) {
       KernelVariables kv(team, m_tu_ne);
