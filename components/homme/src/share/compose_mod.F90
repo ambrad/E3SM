@@ -360,7 +360,6 @@ contains
 
     call_finalize_kokkos = .true.
     if (present(finalize_kokkos)) call_finalize_kokkos = finalize_kokkos
-    print *,'amb> compose_finalize',call_finalize_kokkos
     if (control_kokkos_init_and_fin .and. call_finalize_kokkos) call kokkos_finalize()
 #endif
   end subroutine compose_finalize

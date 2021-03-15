@@ -90,7 +90,7 @@ static void prim_advec_tracers_remap_RK2 (const Real dt)
 }
 
 static void prim_advec_tracers_remap_compose (const Real dt) {
-  GPTLstart("tl-at prim_advec_tracers_remap_compose");
+  GPTLstart("tl-at prim_advec_tracers_compose");
   const auto& params = Context::singleton().get<SimulationParams>();
   assert(params.params_set);
   auto& tl = Context::singleton().get<TimeLevel>();
@@ -98,7 +98,7 @@ static void prim_advec_tracers_remap_compose (const Real dt) {
   auto& ct = Context::singleton().get<ComposeTransport>();
   ct.reset(params);
   ct.run(tl, dt);
-  GPTLstop("tl-at prim_advec_tracers_remap_compose");
+  GPTLstop("tl-at prim_advec_tracers_compose");
 }
 
 } // namespace Homme
