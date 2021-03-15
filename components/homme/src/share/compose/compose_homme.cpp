@@ -8,22 +8,31 @@ TracerArrays<MT>::TracerArrays (Int nelemd_, Int nlev_, Int np_, Int qsize_, Int
     pspheremp(nelemd, np2),
     pdp(nelemd, np2, nlev), pdp3d(nelemd, np2, nlev, -1, 3),
     pqdp(nelemd, np2, nlev, qsized, 2), pq(nelemd, np2, nlev, qsized),
-#if defined COMPOSE_PORT_DEV_VIEWS
-    spheremp("spheremp", nelemd, np2),
-    dp("dp", nelemd, np2, nlev), dp3d("dp3d", nelemd, 3, np2, nlev),
-    qdp("qdp", nelemd, 2, qsize, np2, nlev),
-    q("q", nelemd, qsize, np2, nlev),
+#if defined COMPOSE_PORT
     dep_points("dep_points", nelemd, nlev, np2),
-    q_min("q_min", nelemd, qsize, np2, nlev), q_max("q_max", nelemd, qsize, np2, nlev)
+    q_min("q_min", nelemd, qsize, np2, nlev),
+    q_max("q_max", nelemd, qsize, np2, nlev)
 #else
     spheremp(pspheremp), dp(pdp), dp3d(pdp3d), qdp(pqdp), q(pq)
 #endif
 {}
 
 template <typename MT>
-void sl_h2d (const TracerArrays<MT>& ta, bool transfer, Cartesian3D* dep_points) {
-#if defined COMPOSE_PORT_DEV_VIEWS
+void TracerArrays<MT>::alloc_if_not () {
+  if (spheremp.size() > 0) return;
+  spheremp = decltype(spheremp)("spheremp", nelemd, np2);
+  dp = decltype(dp)("dp", nelemd, np2, nlev);
+  dp3d = decltype(dp3d)("dp3d", nelemd, 3, np2, nlev);
+  qdp = decltype(qdp)("qdp", nelemd, 2, qsize, np2, nlev);
+  q = decltype(q)("q", nelemd, qsize, np2, nlev);
+  assert(dep_points.size() > 0);
+}
+
+template <typename MT>
+void sl_h2d (TracerArrays<MT>& ta, bool transfer, Cartesian3D* dep_points) {
+#if defined COMPOSE_PORT
   ko::fence();
+  ta.alloc_if_not();
   const Int nelemd = ta.nelemd, qsize = ta.qsize, np2 = ta.np2, nlev = ta.nlev;
   const DepPointsH<MT> cart_h(reinterpret_cast<Real*>(dep_points), nelemd, nlev, np2);
   const auto dep_points_h = ko::create_mirror_view(ta.dep_points);
@@ -58,7 +67,7 @@ void sl_h2d (const TracerArrays<MT>& ta, bool transfer, Cartesian3D* dep_points)
 template <typename MT>
 void sl_d2h (const TracerArrays<MT>& ta, bool transfer, Cartesian3D* dep_points,
              Real* minq, Real* maxq) {
-#if defined COMPOSE_PORT_DEV_VIEWS
+#if defined COMPOSE_PORT
   if ( ! transfer) return;
   ko::fence();
   const auto q_m = ko::create_mirror_view(ta.q);
@@ -81,7 +90,7 @@ void sl_d2h (const TracerArrays<MT>& ta, bool transfer, Cartesian3D* dep_points,
 
 template <typename MT>
 void cedr_h2d (const TracerArrays<MT>& ta, bool transfer) {
-#if defined COMPOSE_PORT_DEV_VIEWS
+#if defined COMPOSE_PORT
   if ( ! transfer) return;
   ko::fence();
   const auto dp3d_m = ko::create_mirror_view(ta.dp3d);
@@ -108,7 +117,7 @@ void cedr_h2d (const TracerArrays<MT>& ta, bool transfer) {
 
 template <typename MT>
 void cedr_d2h (const TracerArrays<MT>& ta, bool transfer) {
-#if defined COMPOSE_PORT_DEV_VIEWS
+#if defined COMPOSE_PORT
   if ( ! transfer) return;
   ko::fence();
   const auto q_m = ko::create_mirror_view(ta.q);
@@ -150,7 +159,7 @@ void delete_tracer_arrays () {
 }
 
 template struct TracerArrays<ko::MachineTraits>;
-template void sl_h2d(const TracerArrays<ko::MachineTraits>& ta, bool transfer,
+template void sl_h2d(TracerArrays<ko::MachineTraits>& ta, bool transfer,
                      Cartesian3D* dep_points);
 template void sl_d2h(const TracerArrays<ko::MachineTraits>& ta, bool transfer,
                      Cartesian3D* dep_points, Real* minq, Real* maxq);

@@ -19,7 +19,7 @@ void step (
   slmm_assert(nets == 0 && nete+1 == cm.nelemd);
 #endif
 
-#ifdef COMPOSE_PORT_DEV_VIEWS
+#ifdef COMPOSE_PORT
   const auto& dep_points = cm.tracer_arrays->dep_points;
   const auto& q_min = cm.tracer_arrays->q_min;
   const auto& q_max = cm.tracer_arrays->q_max;

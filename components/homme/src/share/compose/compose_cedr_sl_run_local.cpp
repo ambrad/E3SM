@@ -140,7 +140,7 @@ void run_local (CDR<MT>& cdr, CDRT* cedr_cdr_p,
   static const Int np = np_, np2 = np_*np_;
   const Int nlev = ta.nlev, qsize = ta.qsize, nlevwrem = cdr.nsuplev*cdr.nsublev;
 
-#ifdef COMPOSE_PORT_DEV_VIEWS
+#ifdef COMPOSE_PORT
   const auto q_min = unmanaged(ta.q_min);
   const auto q_max = unmanaged(ta.q_max);
 #else

@@ -125,7 +125,7 @@ void set_elem_data (IslMpi<MT>& cm, const Int ie, Real* qdp, const Int n0_qdp,
   slmm_assert(ie < cm.ed_h.size());
   slmm_assert(cm.halo > 1 || cm.ed_h(ie).nbrs.size() == nelem_in_patch);
   auto& e = cm.ed_h(ie);
-#if defined COMPOSE_PORT_DEV
+#if defined COMPOSE_PORT
   cm.tracer_arrays->pqdp.set_ie_ptr(ie, qdp);
   cm.tracer_arrays->n0_qdp = n0_qdp;
   cm.tracer_arrays->pdp.set_ie_ptr(ie, dp);

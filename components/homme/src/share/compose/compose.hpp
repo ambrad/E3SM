@@ -32,7 +32,7 @@
 #ifndef HORIZ_OPENMP
 # ifndef KOKKOS_ENABLE_CUDA
 // Mimic GPU threading on host to debug race conditions on a regular CPU.
-#  define COMPOSE_MIMIC_GPU
+//#  define COMPOSE_MIMIC_GPU
 # endif
 // Optionally define this for testing the port code.
 # define COMPOSE_PORT
@@ -66,14 +66,6 @@
 #  define COMPOSE_PORT_SEPARATE_VIEWS
 // If defined, do pass1 routines on host. This is for performance checking.
 //#  define COMPOSE_PACK_NOSCAN
-# endif
-# if ! defined COMPOSE_WITH_HOMMEXX
-// Need to use utils from compose_port_dev.hpp to bridge Homme (ie, not Hommexx)
-// and COMPOSE_PORT code paths.
-#  define COMPOSE_PORT_DEV
-#  if defined COMPOSE_MIMIC_GPU || defined KOKKOS_ENABLE_CUDA
-#   define COMPOSE_PORT_DEV_VIEWS
-#  endif
 # endif
 #endif
 

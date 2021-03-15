@@ -26,7 +26,7 @@ void check (CDR<MT>& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
   Kokkos::deep_copy(qd_lo, 0);
   Kokkos::deep_copy(qd_hi, 0);
 
-#ifdef COMPOSE_PORT_DEV_VIEWS
+#ifdef COMPOSE_PORT
   const auto q_min = ko::create_mirror_view(ta.q_min);
   const auto q_max = ko::create_mirror_view(ta.q_max);
   ko::deep_copy(q_min, ta.q_min);
@@ -39,7 +39,7 @@ void check (CDR<MT>& cdr, Data& d, const Real* q_min_r, const Real* q_max_r,
   const auto np1 = ta.np1;
   const auto n0_qdp = ta.n0_qdp;
   const auto n1_qdp = ta.n1_qdp;
-#ifdef COMPOSE_PORT_DEV_VIEWS
+#ifdef COMPOSE_PORT
   const auto spheremp = ko::cmvdc(ta.spheremp);
   const auto dp3d_c = ko::cmvdc(ta.dp3d);
   const auto qdp_pc = ko::cmvdc(ta.qdp);

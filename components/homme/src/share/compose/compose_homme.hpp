@@ -36,7 +36,7 @@ struct Cartesian3D { Real x, y, z; };
 
 template <typename VT> KOKKOS_FORCEINLINE_FUNCTION
 typename VT::value_type& idx_qext (const VT& qe, int ie, int q, int g, int lev) {
-#ifdef COMPOSE_PORT_DEV_VIEWS
+#ifdef COMPOSE_PORT
   return qe(ie,q,g,lev);
 #else
   return qe(ie,q,lev,g);
@@ -139,7 +139,7 @@ struct TracerArrays {
   HommeFormatArray<Real,4> pq;
   Int n0_qdp, n1_qdp, np1;
 
-#if defined COMPOSE_PORT_DEV_VIEWS
+#if defined COMPOSE_PORT
   template <typename Datatype> using View =
     ko::View<Datatype, ko::LayoutRight, typename MT::DDT>;
   View<Real**> spheremp;
@@ -149,6 +149,7 @@ struct TracerArrays {
   View<Real****>  q;    // elem%state%Q
   DepPoints<MT> dep_points;
   QExtrema<MT> q_min, q_max;
+  void alloc_if_not();
 #else
   HommeFormatArray<const Real,2>& spheremp;
   HommeFormatArray<const Real,3>& dp;
@@ -163,7 +164,7 @@ struct TracerArrays {
 };
 
 template <typename MT>
-void sl_h2d(const TracerArrays<MT>& ta, bool transfer, Cartesian3D* dep_points);
+void sl_h2d(TracerArrays<MT>& ta, bool transfer, Cartesian3D* dep_points);
 
 template <typename MT>
 void sl_d2h(const TracerArrays<MT>& ta, bool transfer, Cartesian3D* dep_points,

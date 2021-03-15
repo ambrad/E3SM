@@ -62,7 +62,7 @@ void run_global (CDR<MT>& cdr, CDRT* cedr_cdr_p,
   const Int nlev = ta.nlev, qsize = ta.qsize, nlevwrem = cdr.nsuplev*cdr.nsublev;
   cedr_assert(np <= 4);
   
-#ifdef COMPOSE_PORT_DEV_VIEWS
+#ifdef COMPOSE_PORT
   const auto q_min = unmanaged(ta.q_min);
   const auto q_max = unmanaged(ta.q_max);
 #else

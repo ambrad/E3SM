@@ -19,12 +19,6 @@
 #ifdef COMPOSE_PACK_NOSCAN
 # pragma message "COMPOSE_PACK_NOSCAN"
 #endif
-#ifdef COMPOSE_PORT_DEV
-# pragma message "COMPOSE_PORT_DEV"
-#endif
-#ifdef COMPOSE_PORT_DEV_VIEWS
-# pragma message "COMPOSE_PORT_DEV_VIEWS"
-#endif
 
 namespace slmm {
 template <typename ES> SLMM_KIF
