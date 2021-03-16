@@ -38,7 +38,7 @@ static void prim_advec_tracers_remap_RK2 (const Real dt)
 
   // Get time info and update tracers time levels
   TimeLevel& tl = Context::singleton().get<TimeLevel>();
-  tl.update_tracers_levels(params.qsplit);
+  tl.update_tracers_levels(params.dt_tracer_factor);
 
   // Get the ESF
   EulerStepFunctor& esf = Context::singleton().get<EulerStepFunctor>();

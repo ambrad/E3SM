@@ -492,6 +492,7 @@ struct RemapFunctor : public Remapper {
       KernelVariables kv(team, nv, m_tu_ne_ntr);
       remap.compute_remap_phase(kv, Kokkos::subview(v, kv.ie, kv.iq, ALL(), ALL(), ALL()));
     };
+    Kokkos::fence();
     Kokkos::parallel_for(get_default_team_policy<ExecSpace>(ne*nv), r);
   }
 
@@ -515,6 +516,7 @@ struct RemapFunctor : public Remapper {
       KernelVariables kv(team, nv, m_tu_ne_ntr);
       remap.compute_remap_phase(kv, Kokkos::subview(v, kv.ie, n_v, kv.iq, ALL(), ALL(), ALL()));
     };
+    Kokkos::fence();
     Kokkos::parallel_for(get_default_team_policy<ExecSpace>(ne*nv), r);
   }
 

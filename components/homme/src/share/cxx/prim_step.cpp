@@ -20,6 +20,7 @@ void prim_advance_exp (TimeLevel& tl, const Real dt, const bool compute_diagnost
 void prim_advec_tracers_remap (const Real);
 void vertical_remap (const Real);
 void apply_test_forcing ();
+void init_dp3d_from_ps ();
 
 static void set_tracer_transport_derived_values (
   const SimulationParams& params, const Elements& elements, const TimeLevel& tl)
@@ -86,7 +87,7 @@ void prim_step (const Real dt, const bool compute_diagnostics)
   GPTLstart("tl-s prim_advance_exp-loop");
   prim_advance_exp(tl,dt,compute_diagnostics);
   tl.tevolve += dt;
-  for (int n=1; n<params.qsplit; ++n) {
+  for (int n=1; n<params.dt_tracer_factor; ++n) {
     tl.update_dynamics_levels(UpdateType::LEAPFROG);
     prim_advance_exp(tl,dt,false);
     tl.tevolve += dt;
@@ -108,7 +109,7 @@ void prim_step (const Real dt, const bool compute_diagnostics)
   // Currently advecting all species
   GPTLstart("tl-s prim_advec_tracers_remap");
   if (params.qsize>0) {
-    prim_advec_tracers_remap(dt*params.qsplit);
+    prim_advec_tracers_remap(dt*params.dt_tracer_factor);
   }
   GPTLstop("tl-s prim_advec_tracers_remap");
   GPTLstop("tl-s prim_step");
@@ -155,7 +156,7 @@ void prim_step_flexible (const Real dt, const bool compute_diagnostics) {
       if (apply_forcing) {
         apply_cam_forcing_dynamics(dt_remap);
         if (compute_diagnostics_it)
-          context.get<Diagnostics>().run_diagnostics(true, 1);
+          context.get<Diagnostics>().run_diagnostics(true, 0);
       }
     }
 
@@ -165,9 +166,10 @@ void prim_step_flexible (const Real dt, const bool compute_diagnostics) {
       // Since dt_remap == 0, the only part of vertical_remap that is active is
       // the updates to ps_v(:,:,np1) and dp3d(:,:,:,np1).
       vertical_remap(dt_remap);
+      init_dp3d_from_ps();
     } else if ((n+1) % params.dt_remap_factor == 0) {
       if (compute_diagnostics)
-        context.get<Diagnostics>().run_diagnostics(false, 4);
+        context.get<Diagnostics>().run_diagnostics(false, 3);
       if (params.prescribed_wind) {
         // Prescribed winds are evaluated on reference levels, not floating
         // levels, so don't remap, just update dp3d.
@@ -176,6 +178,7 @@ void prim_step_flexible (const Real dt, const bool compute_diagnostics) {
       } else {
         // Remap dynamics variables but not tracers.
         vertical_remap(dt_remap);
+        init_dp3d_from_ps();
       }
     }
   }
@@ -184,7 +187,7 @@ void prim_step_flexible (const Real dt, const bool compute_diagnostics) {
     prim_advec_tracers_remap(dt*params.dt_tracer_factor);
 
   if (params.dt_remap_factor == 0 && compute_diagnostics)
-    context.get<Diagnostics>().run_diagnostics(false, 4);
+    context.get<Diagnostics>().run_diagnostics(false, 3);
 
   // Remap tracers.
   if (params.qsize > 0)

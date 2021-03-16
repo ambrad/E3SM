@@ -37,9 +37,35 @@ ComposeTransportImpl::ComposeTransportImpl ()
 
 void ComposeTransportImpl::reset (const SimulationParams& params) {
   const auto num_elems = Context::singleton().get<Connectivity>().get_num_local_elements();
+
+  const bool independent_time_steps = params.dt_tracer_factor > params.dt_remap_factor;
+  if (independent_time_steps != m_data.independent_time_steps ||
+      m_data.nelemd != num_elems || m_data.qsize != params.qsize) {
+    const auto& g = m_geometry;
+    const auto& t = m_tracers;
+    const auto& s = m_state;
+    const auto& d = m_derived;
+    const auto nel = num_elems;
+    const auto nlev = NUM_LEV*packn;
+    m_data.dep_pts = DeparturePoints("dep_pts", nel);
+    homme::compose::set_views(
+      g.m_spheremp,
+      homme::compose::SetView<Real****>  (reinterpret_cast<Real*>(d.m_dp.data()),
+                                          nel, np, np, nlev),
+      homme::compose::SetView<Real*****> (
+        reinterpret_cast<Real*>(independent_time_steps ?
+                                d.m_divdp.data() :
+                                s.m_dp3d.data()),
+        nel, (independent_time_steps ? 1 : NUM_TIME_LEVELS), np, np, nlev),
+      homme::compose::SetView<Real******>(reinterpret_cast<Real*>(t.qdp.data()),
+                                          nel, Q_NUM_TIME_LEVELS, QSIZE_D, np, np, nlev),
+      homme::compose::SetView<Real*****> (reinterpret_cast<Real*>(t.Q.data()),
+                                          nel, QSIZE_D, np, np, nlev),
+      m_data.dep_pts);
+  }
+  m_data.independent_time_steps = independent_time_steps;
   if (m_data.nelemd == num_elems && m_data.qsize == params.qsize) return;
 
-  m_data.independent_time_steps = params.dt_tracer_factor > params.dt_remap_factor;
   m_data.qsize = params.qsize;
   Errors::runtime_check(m_data.qsize > 0,
                         "SL transport requires qsize > 0; if qsize == 0, use Eulerian.");
@@ -51,8 +77,6 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
                         "semi_lagrange_hv_q should be in [0, qsize].");
   Errors::runtime_check(m_data.hv_subcycle_q >= 0,
                         "hypervis_subcycle_q should be >= 0.");
-
-  m_data.dep_pts = DeparturePoints("dep_pts", m_data.nelemd);
 
   m_tp_ne = Homme::get_default_team_policy<ExecSpace>(m_data.nelemd);
   m_tp_ne_qsize = Homme::get_default_team_policy<ExecSpace>(m_data.nelemd * m_data.qsize);
@@ -70,26 +94,6 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
            "independent_time_steps %d\n",
            m_data.nelemd, m_data.qsize, m_data.hv_q, m_data.hv_subcycle_q,
            m_data.limiter_option, (int) m_data.independent_time_steps);
-
-  {
-    const auto& g = m_geometry;
-    const auto& t = m_tracers;
-    const auto& s = m_state;
-    const auto& d = m_derived;
-    const auto nel = m_data.nelemd;
-    const auto nlev = NUM_LEV*packn;
-    homme::compose::set_views(
-      g.m_spheremp,
-      homme::compose::SetView<Real****>  (reinterpret_cast<Real*>(d.m_dp.data()),
-                                          nel, np, np, nlev),
-      homme::compose::SetView<Real*****> (reinterpret_cast<Real*>(s.m_dp3d.data()),
-                                          nel, NUM_TIME_LEVELS, np, np, nlev),
-      homme::compose::SetView<Real******>(reinterpret_cast<Real*>(t.qdp.data()),
-                                          nel, Q_NUM_TIME_LEVELS, QSIZE_D, np, np, nlev),
-      homme::compose::SetView<Real*****> (reinterpret_cast<Real*>(t.Q.data()),
-                                          nel, QSIZE_D, np, np, nlev),
-      m_data.dep_pts);
-  }
 }
 
 int ComposeTransportImpl::requested_buffer_size () const {
@@ -166,10 +170,10 @@ void ComposeTransportImpl::run (const TimeLevel& tl, const Real dt) {
     GPTLstop("compose_hypervis_scalar");
   }
   
-  const auto np1 = tl.np1;
-  const auto np1_qdp = tl.np1_qdp;
-  const auto qsize = m_data.qsize;
   GPTLstart("compose_cedr_global");
+  homme::compose::set_dp3d_np1(m_data.independent_time_steps ?
+                               0 : // dp3d is actually divdp
+                               tl.np1);
   const auto run_cedr = homme::compose::property_preserve_global();
   if (run_cedr) Kokkos::fence();
   GPTLstop("compose_cedr_global");
@@ -179,6 +183,10 @@ void ComposeTransportImpl::run (const TimeLevel& tl, const Real dt) {
     Kokkos::fence();
   }
   GPTLstop("compose_cedr_local");    
+
+  const auto np1 = tl.np1;
+  const auto np1_qdp = tl.np1_qdp;
+  const auto qsize = m_data.qsize;
   
   if ( ! run_cedr) {
     // For analysis purposes, property preservation was not run. Need to convert

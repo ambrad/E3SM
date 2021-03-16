@@ -55,6 +55,7 @@ void ComposeTransportImpl::remap_q (const TimeLevel& tl) {
     q(ie,iq,i,j,k) = qdp(ie,np1_qdp,iq,i,j,k)/dp3d(ie,np1,i,j,k);
   };
   const auto policy = Kokkos::RangePolicy<ExecSpace>(0, dp3d.extent_int(0)*NP*NP*NUM_LEV*nq);
+  Kokkos::fence();
   Kokkos::parallel_for(policy, post);
   Kokkos::fence();
   GPTLstop("compose_vertical_remap");

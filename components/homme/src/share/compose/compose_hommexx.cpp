@@ -51,6 +51,11 @@ void advect (const int np1, const int n0_qdp, const int np1_qdp) {
   islmpi::step<>(cm, 0, cm.nelemd - 1, nullptr, nullptr, nullptr);
 }
 
+void set_dp3d_np1 (const int np1) {
+  auto& cm = *get_isl_mpi_singleton();
+  cm.tracer_arrays->np1 = np1;
+}
+
 bool property_preserve_global () {
   if ( ! cedr_should_run()) return false;
   homme::cedr_sl_run_global();
