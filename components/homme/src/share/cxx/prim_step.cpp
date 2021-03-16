@@ -161,6 +161,7 @@ void prim_step_flexible (const Real dt, const bool compute_diagnostics) {
     }
 
     prim_advance_exp(tl, dt, compute_diagnostics);
+    tl.tevolve += dt;
 
     if (params.dt_remap_factor == 0) {
       // Since dt_remap == 0, the only part of vertical_remap that is active is
