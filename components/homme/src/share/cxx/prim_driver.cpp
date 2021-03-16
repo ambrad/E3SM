@@ -129,7 +129,7 @@ void prim_run_subcycle_c (const Real& dt, int& nstep, int& nm1, int& n0, int& np
     // Loop over rsplit vertically lagrangian timesteps
     GPTLstart("tl-sc prim_step-loop");
     prim_step(dt,compute_diagnostics);
-    for (int r=1; r<params.dt_remap_factor; ++r) {
+    for (int r=1; r<params.rsplit; ++r) {
       tl.update_dynamics_levels(UpdateType::LEAPFROG);
       prim_step(dt,false);
     }
