@@ -44,8 +44,6 @@ module sl_advection
 
   logical, parameter :: barrier = .false.
 
-  integer :: amb_gpu_profile
-
 contains
 
   !=================================================================================================!
@@ -82,9 +80,6 @@ contains
     integer :: nslots, ie, num_neighbors, need_conservation, i, j
     logical :: slmm, cisl, qos, sl_test, independent_time_steps
 
-    character (len=255) :: amb_experiment_str
-    integer :: env_gpu_profile
-
 #ifdef HOMME_ENABLE_COMPOSE
     call t_startf('sl_init1')
     if (transport_alg > 0) then
@@ -117,24 +112,6 @@ contains
        end if
        allocate(minq(np,np,nlev,qsize,size(elem)), maxq(np,np,nlev,qsize,size(elem)))
        dp_tol = -one
-
-       amb_gpu_profile = 0
-       call get_environment_variable("AMB_GPU_PROFILE", amb_experiment_str, status=ie)
-       if (ie /= 1) read(amb_experiment_str, *, iostat=ie) amb_gpu_profile
-       if (.not. (amb_gpu_profile == 0 .or. amb_gpu_profile == 1)) then
-          call abortmp('amb_gpu_profile must be 0 or 1')
-       end if
-       if (par%masterproc) then
-          print *,'amb> amb_gpu_profile',amb_gpu_profile
-       end if
-       if (amb_gpu_profile > 0) then
-          if (semi_lagrange_hv_q > 0 .and. nu_q /= 0) &
-               call abortmp('hv_q or nu_q must be 0 if amb_gpu_profile > 0')
-          if (semi_lagrange_cdr_check) &
-               call abortmp('cdr_check must be off if amb_gpu_profile > 0')
-          if (semi_lagrange_cdr_alg /= 2) &
-               call abortmp('cdr_alg must be 2 if amb_gpu_profile > 0')
-       end if
     endif
     call t_stopf('sl_init1')
 #endif
@@ -199,7 +176,6 @@ contains
     ! Until I get the DSS onto GPU, always need to h<->d.
     !h2d = hybrid%par%nprocs > 1 .or. semi_lagrange_cdr_check .or. & (semi_lagrange_hv_q > 0 .and. nu_q > 0)
     h2d = .true.
-    if (amb_gpu_profile > 0) h2d = .false.
     d2h = compose_d2h .or. h2d
     h2d = compose_h2d .or. h2d
 
@@ -283,12 +259,10 @@ contains
     ! dss_Qdp also DSSes derived%omega_p for diagnostics. It's important not to
     ! forget to do that, and we don't need to optimize for the
     ! semi_lagrange_cdr_alg <= 1 case, so just always call dss_Qdp.
-    if (amb_gpu_profile == 0) then
-       call t_startf('SL_dss')
-       call dss_Qdp(elem, nets, nete, hybrid, np1_qdp)
-       if (barrier) call perf_barrier(hybrid)
-       call t_stopf('SL_dss')
-    end if
+    call t_startf('SL_dss')
+    call dss_Qdp(elem, nets, nete, hybrid, np1_qdp)
+    if (barrier) call perf_barrier(hybrid)
+    call t_stopf('SL_dss')
     if (semi_lagrange_cdr_check) then
        call t_startf('CEDR_check')
        call cedr_sl_check(minq, maxq, nets, nete)
