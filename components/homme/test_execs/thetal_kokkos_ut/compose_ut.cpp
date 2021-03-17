@@ -296,10 +296,10 @@ void run_sl_vertical_remap_bfb_cpp (const Session& s, ComposeTransport& ct,
           for (int j = 0; j < s.np; ++j) {
             const int ie1 = ie+1, iq1 = iq+1, i1 = i+1, j1 = j+1, k1 = k+1, krev = s.nlev - k;
             if (iq == 0) {
-              dp3d_h(ie,tl.np1,i,j,k) = k1 + c1*i1 + c2*j1*i1 + c3*(j1*j1 + j1*k1);
-              dp_h(ie,i,j,k) = krev + c1*i1 + c2*j1*i1 + c3*(j1*j1 + j1*krev);
+              dp3d(ie,tl.np1,i,j,k) = k1 + c1*i1 + c2*j1*i1 + c3*(j1*j1 + j1*k1);
+              dp(ie,i,j,k) = krev + c1*i1 + c2*j1*i1 + c3*(j1*j1 + j1*krev);
             }
-            qdp_h(ie,tl.np1_qdp,iq,i,j,k) = ie1 + c1*i1 + c2*j1*i1 + c3*(j1*j1 + j1*k1) + c4*iq1;
+            qdp(ie,tl.np1_qdp,iq,i,j,k) = ie1 + c1*i1 + c2*j1*i1 + c3*(j1*j1 + j1*k1) + c4*iq1;
           }
   deep_copy(tracers.qdp, qdp_h);
   deep_copy(state.m_dp3d, dp3d_h);

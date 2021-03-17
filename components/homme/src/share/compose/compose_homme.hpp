@@ -49,13 +49,12 @@ struct HommeFormatArray {
   enum : int { rank = rank_ };
   typedef T value_type;
 
-  HommeFormatArray (Int nelemd, Int np2_, Int nlev_ = -1, Int qsized_ = -1, Int ntimelev_ = -1)
+  HommeFormatArray (Int nelemd, Int np2_, Int nlev_ = -1, Int qsized_ = -1,
+                    Int ntimelev_ = -1)
     : nlev(nlev_), qsized(qsized_), ntimelev(ntimelev_)
   {
     assert(np2_ == np2);
-#ifndef COMPOSE_PORT
     ie_data_ptr.resize(nelemd);
-#endif
   }
 
   void set_ie_ptr (const Int ie, T* ptr) {
@@ -80,7 +79,8 @@ struct HommeFormatArray {
     return *(ie_data_ptr[ie] + lev*np2 + k);
   }
   COMPOSE_FORCEINLINE_FUNCTION 
-  T& operator() (const Int& ie, const Int& q_or_timelev, const Int& k, const Int& lev) const {
+  T& operator() (const Int& ie, const Int& q_or_timelev, const Int& k,
+                 const Int& lev) const {
     static_assert(rank == 4, "rank 4 array");
     assert(q_or_timelev >= 0);
     assert(k >= 0);
@@ -90,7 +90,8 @@ struct HommeFormatArray {
     return *(ie_data_ptr[ie] + (q_or_timelev*nlev + lev)*np2 + k);
   }
   COMPOSE_FORCEINLINE_FUNCTION 
-  T& operator() (const Int& ie, const Int& timelev, const Int& q, const Int& k, const Int& lev) const {
+  T& operator() (const Int& ie, const Int& timelev, const Int& q, const Int& k,
+                 const Int& lev) const {
     static_assert(rank == 5, "rank 4 array");
     assert(timelev >= 0);
     assert(q >= 0);
@@ -103,22 +104,14 @@ struct HommeFormatArray {
 
 private:
   static const int np2 = 16;
-#ifdef COMPOSE_PORT
-  // In this build, this class is not used. Fake an array that won't trigger
-  // Cuda warnings.
-  T** ie_data_ptr;
-#else
   std::vector<T*> ie_data_ptr;
-#endif
   const Int nlev, qsized, ntimelev;
 
   COMPOSE_FORCEINLINE_FUNCTION
   void check (Int ie, Int k = -1, Int lev = -1, Int q_or_timelev = -1,
               Int timelev = -1) const {
 #ifdef COMPOSE_BOUNDS_CHECK
-# ifndef COMPOSE_PORT
     assert(ie >= 0 && ie < static_cast<Int>(ie_data_ptr.size()));
-# endif
     if (k >= 0) assert(k < np2);
     if (lev >= 0) assert(lev < nlev);
     if (q_or_timelev >= 0) {
