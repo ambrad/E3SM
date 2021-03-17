@@ -150,15 +150,15 @@ void prim_run_subcycle_c (const Real& dt, int& nstep, int& nm1, int& n0, int& np
     GPTLstart("tl-sc vertical_remap");
     vertical_remap(dt_remap);
     GPTLstop("tl-sc vertical_remap");
+
+    ////////////////////////////////////////////////////////////////////////
+    // time step is complete.  update some diagnostic variables:
+    // Q    (mixing ratio)
+    ////////////////////////////////////////////////////////////////////////
+    update_q(tl.np1_qdp,tl.np1);
   } else { // independent_time_steps
     prim_step_flexible(dt, compute_diagnostics);
   }
-
-  ////////////////////////////////////////////////////////////////////////
-  // time step is complete.  update some diagnostic variables:
-  // Q    (mixing ratio)
-  ////////////////////////////////////////////////////////////////////////
-  update_q(tl.np1_qdp,tl.np1);
 
   if (compute_diagnostics) {
     Diagnostics& diags = context.get<Diagnostics>();

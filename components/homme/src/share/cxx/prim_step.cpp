@@ -185,7 +185,7 @@ void prim_step_flexible (const Real dt, const bool compute_diagnostics) {
   }
 
   if (params.qsize > 0)
-    prim_advec_tracers_remap(dt*params.dt_tracer_factor);
+    prim_advec_tracers_remap(dt_q);
 
   if (params.dt_remap_factor == 0 && compute_diagnostics)
     context.get<Diagnostics>().run_diagnostics(false, 3);

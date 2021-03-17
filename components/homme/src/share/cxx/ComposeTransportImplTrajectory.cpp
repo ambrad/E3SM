@@ -355,6 +355,14 @@ void ComposeTransportImpl::calc_trajectory (const int np1, const Real dt) {
     const auto m_divdp = m_derived.m_divdp;
     if (m_data.independent_time_steps) {
       GPTLstart("compose_3d_levels");
+      const auto copy_v = KOKKOS_LAMBDA (const int idx) {
+        int ie, lev, i, j;
+        cti::idx_ie_packlev_ij(idx, ie, lev, i, j);
+        for (int d = 0; d < 2; ++d)
+          m_vn0(ie,d,i,j,lev) = m_v(ie,np1,d,i,j,lev);
+      };
+      launch_ie_packlev_ij(copy_v);
+      Kokkos::fence();
       const auto calc_dprecon = KOKKOS_LAMBDA (const MT& team) {
         KernelVariables kv(team, m_tu_ne);
         const auto ie = kv.ie;
@@ -646,13 +654,11 @@ test_trajectory (Real t0, Real t1, const bool independent_time_steps) {
     for (int d = 0; d < 2; ++d) vstar(ie,d,i,j,p)[s] = uv[d];
     wf.eval(t1, latlon, uv);
     for (int d = 0; d < 2; ++d) v(ie,np1,d,i,j,p)[s] = uv[d];
-    for (int d = 0; d < 2; ++d) vn0(ie,d,i,j,p)[s] = uv[d];
     for (int t = 0; t < NUM_TIME_LEVELS; ++t) dp3d(ie,t,i,j,p)[s] = 1;
     dp(ie,i,j,p)[s] = 1;
   };
   loop_host_ie_plev_ij(f);
   deep_copy(m_derived.m_vstar, vstar);
-  deep_copy(m_derived.m_vn0, vn0);
   deep_copy(m_state.m_v, v);
   deep_copy(m_state.m_dp3d, dp3d);
   deep_copy(m_derived.m_dp, dp);
