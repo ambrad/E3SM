@@ -116,7 +116,9 @@ private:
   void check (Int ie, Int k = -1, Int lev = -1, Int q_or_timelev = -1,
               Int timelev = -1) const {
 #ifdef COMPOSE_BOUNDS_CHECK
+# ifndef COMPOSE_PORT
     assert(ie >= 0 && ie < static_cast<Int>(ie_data_ptr.size()));
+# endif
     if (k >= 0) assert(k < np2);
     if (lev >= 0) assert(lev < nlev);
     if (q_or_timelev >= 0) {
