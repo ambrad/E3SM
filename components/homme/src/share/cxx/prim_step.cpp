@@ -167,7 +167,6 @@ void prim_step_flexible (const Real dt, const bool compute_diagnostics) {
       // Since dt_remap == 0, the only part of vertical_remap that is active is
       // the updates to ps_v(:,:,np1) and dp3d(:,:,:,np1).
       vertical_remap(dt_remap);
-      init_dp3d_from_ps();
     } else if ((n+1) % params.dt_remap_factor == 0) {
       if (compute_diagnostics)
         context.get<Diagnostics>().run_diagnostics(false, 3);
@@ -179,7 +178,6 @@ void prim_step_flexible (const Real dt, const bool compute_diagnostics) {
       } else {
         // Remap dynamics variables but not tracers.
         vertical_remap(dt_remap);
-        init_dp3d_from_ps();
       }
     }
   }

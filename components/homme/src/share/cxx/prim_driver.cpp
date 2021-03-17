@@ -27,7 +27,7 @@ void vertical_remap (const Real);
 void apply_test_forcing ();
 void update_q (const int np1_qdp, const int np1);
 
-void init_dp3d_from_ps () {
+static void init_dp3d_from_ps () {
   // Initialize dp3d from ps
   GPTLstart("tl-sc dp3d-from-ps");
   const auto& context = Context::singleton();
