@@ -261,10 +261,14 @@ static bool equal (const Real& a, const Real& b,
 typedef ExecViewUnmanaged<Real*[NP][NP][NUM_LEV*VECTOR_SIZE]> RNlev;
 typedef ExecViewUnmanaged<Real**[NP][NP][NUM_LEV*VECTOR_SIZE]> RsNlev;
 typedef ExecViewUnmanaged<Real***[NP][NP][NUM_LEV*VECTOR_SIZE]> RssNlev;
+typedef HostView<Real*[NP][NP][NUM_LEV*VECTOR_SIZE]> RNlevH;
+typedef HostView<Real**[NP][NP][NUM_LEV*VECTOR_SIZE]> RsNlevH;
+typedef HostView<Real***[NP][NP][NUM_LEV*VECTOR_SIZE]> RssNlevH;
 
 void run_sl_vertical_remap_bfb_cpp (const Session& s, ComposeTransport& ct,
                                     Real& diagnostic) {
   using Kokkos::create_mirror_view;
+  using Kokkos::deep_copy;
 
   static const Real c1 = 0.491827, c2 = 0.2432109, c3 = 0.1234567, c4 = 0.0832;
   
@@ -280,12 +284,11 @@ void run_sl_vertical_remap_bfb_cpp (const Session& s, ComposeTransport& ct,
   tl.update_tracers_levels(params.qsplit);
 
   const auto qdp_h = create_mirror_view(tracers.qdp);
-  const auto dp3d_h = cmvdc(state.m_dp3d);
-  const auto dp_h = cmvdc(derived.m_divdp);
-  RssNlev qdp(pack2real(qdp_h), s.nelemd, qdp_h.extent_int(1), qdp_h.extent_int(2));
-  RsNlev dp3d(pack2real(dp3d_h), s.nelemd, dp3d_h.extent_int(1));
-  RNlev dp(pack2real(dp_h), s.nelemd);
-
+  const auto dp3d_h = create_mirror_view(state.m_dp3d);
+  const auto dp_h = create_mirror_view(derived.m_divdp);
+  RssNlevH qdp(pack2real(qdp_h), s.nelemd, qdp_h.extent_int(1), qdp_h.extent_int(2));
+  RsNlevH dp3d(pack2real(dp3d_h), s.nelemd, dp3d_h.extent_int(1));
+  RNlevH dp(pack2real(dp_h), s.nelemd);
   for (int ie = 0; ie < s.nelemd; ++ie)
     for (int iq = 0; iq < tracers.num_tracers(); ++iq)
       for (int k = 0; k < s.nlev; ++k)
@@ -293,16 +296,19 @@ void run_sl_vertical_remap_bfb_cpp (const Session& s, ComposeTransport& ct,
           for (int j = 0; j < s.np; ++j) {
             const int ie1 = ie+1, iq1 = iq+1, i1 = i+1, j1 = j+1, k1 = k+1, krev = s.nlev - k;
             if (iq == 0) {
-              dp3d(ie,tl.np1,i,j,k) = k1 + c1*i1 + c2*j1*i1 + c3*(j1*j1 + j1*k1);
-              dp(ie,i,j,k) = krev + c1*i1 + c2*j1*i1 + c3*(j1*j1 + j1*krev);
+              dp3d_h(ie,tl.np1,i,j,k) = k1 + c1*i1 + c2*j1*i1 + c3*(j1*j1 + j1*k1);
+              dp_h(ie,i,j,k) = krev + c1*i1 + c2*j1*i1 + c3*(j1*j1 + j1*krev);
             }
-            qdp(ie,tl.np1_qdp,iq,i,j,k) = ie1 + c1*i1 + c2*j1*i1 + c3*(j1*j1 + j1*k1) + c4*iq1;
+            qdp_h(ie,tl.np1_qdp,iq,i,j,k) = ie1 + c1*i1 + c2*j1*i1 + c3*(j1*j1 + j1*k1) + c4*iq1;
           }
+  deep_copy(tracers.qdp, qdp_h);
+  deep_copy(state.m_dp3d, dp3d_h);
+  deep_copy(derived.m_divdp, dp_h);
 
   ct.remap_q(tl);
 
   const auto q_h = cmvdc(tracers.Q);
-  RsNlev q(pack2real(q_h), s.nelemd, q_h.extent_int(1));
+  RsNlevH q(pack2real(q_h), s.nelemd, q_h.extent_int(1));
   
   diagnostic = 0;
   for (int ie = 0; ie < s.nelemd; ++ie)
