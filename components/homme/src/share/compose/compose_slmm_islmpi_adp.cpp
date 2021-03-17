@@ -32,7 +32,7 @@ namespace homme {
 namespace islmpi {
 
 template <typename MT>
-SLMM_KF ko::EnableIfNotOnGpu<MT> throw_on_sci_error (
+ko::EnableIfNotOnGpu<MT> throw_on_sci_error (
   const slmm::LocalMesh<typename MT::DES>& mesh,
   const typename IslMpi<MT>::ElemDataD& ed,
   const bool nearest_point_permitted, const DepPoints<MT>& dep_points,
@@ -139,8 +139,6 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
   const auto myrank = cm.p->rank();
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
   const Int np2 = cm.np2, nlev = cm.nlev;
-  const auto& ed_d = cm.ed_d;
-  const auto& own_dep_mask = cm.own_dep_mask;
   cm.bla.zero();
   cm.nx_in_lid.zero();
   {
@@ -150,13 +148,12 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
     const auto& ed_d = cm.ed_d;
     const auto& bla = cm.bla;
     const auto& nx_in_lid = cm.nx_in_lid;
-    const auto horiz_openmp = cm.horiz_openmp;
 #ifdef COMPOSE_HORIZ_OPENMP
+    const auto horiz_openmp = cm.horiz_openmp;
     const auto& ri_lidi_locks = cm.ri_lidi_locks;
 #endif
     ko::parallel_for(ko::RangePolicy<typename MT::DES>(nets, nete+1),
                      COMPOSE_LAMBDA (const Int& tci) { ed_d(tci).own.clear(); });
-    Int own_dep_list_len = 0;
     const auto f = COMPOSE_LAMBDA (const Int& ki) {
       const Int tci = nets + ki/(nlev*np2);
 #if 0

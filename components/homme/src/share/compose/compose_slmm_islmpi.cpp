@@ -551,7 +551,7 @@ void comm_lid_on_rank (IslMpi<MT>& cm, const Rank2Gids& rank2rmtgids,
     for (auto gid: e.second) {
       slmm_assert(gid > pgid);
       pgid = gid;
-      send[slot++] = gid2mylid[gid];
+      send[slot++] = gid2mylid[pgid];
     }
     const Int ne = e.second.size();
     const Int rank = e.first;

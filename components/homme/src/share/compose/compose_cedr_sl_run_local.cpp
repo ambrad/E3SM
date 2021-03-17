@@ -8,7 +8,7 @@ namespace sl {
 template <int np_,
           typename CV2, typename CV4, typename CV5, typename QV5,
           typename V4, typename V5>
-KOKKOS_FUNCTION
+COMPOSE_FUNCTION
 void solve_local (const Int ie, const Int k, const Int q,
                   const Int np1, const Int n1_qdp, const Int np,
                   const bool scalar_bounds, const Int limiter_option,
@@ -95,7 +95,7 @@ void solve_local (const Int ie, const Int k, const Int q,
   }
 }
 
-KOKKOS_FUNCTION
+COMPOSE_FUNCTION
 Int vertical_caas_backup (const Int n, Real* rhom,
                           const Real q_min, const Real q_max,
                           Real Qmlo_tot, Real Qmhi_tot, const Real Qm_tot,

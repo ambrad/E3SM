@@ -133,10 +133,16 @@ template <typename View> View unmanaged (
 #endif
 
 // Copy by ref if not Cuda build.
-#ifdef KOKKOS_ENABLE_CUDA
+#if defined COMPOSE_PORT && defined KOKKOS_ENABLE_CUDA
 # define COMPOSE_LAMBDA KOKKOS_LAMBDA
+# define COMPOSE_INLINE_FUNCTION KOKKOS_INLINE_FUNCTION
+# define COMPOSE_FORCEINLINE_FUNCTION KOKKOS_FORCEINLINE_FUNCTION
+# define COMPOSE_FUNCTION KOKKOS_FUNCTION
 #else
 # define COMPOSE_LAMBDA [&]
+# define COMPOSE_INLINE_FUNCTION inline
+# define COMPOSE_FORCEINLINE_FUNCTION inline
+# define COMPOSE_FUNCTION
 #endif
 
 template <typename V>

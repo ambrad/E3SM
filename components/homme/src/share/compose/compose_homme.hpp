@@ -34,7 +34,7 @@ template <typename MT> using QExtremaConst = ko::Const<QExtrema<MT> >;
 
 struct Cartesian3D { Real x, y, z; };
 
-template <typename VT> KOKKOS_FORCEINLINE_FUNCTION
+template <typename VT> COMPOSE_FORCEINLINE_FUNCTION
 typename VT::value_type& idx_qext (const VT& qe, int ie, int q, int g, int lev) {
 #ifdef COMPOSE_PORT
   return qe(ie,q,g,lev);
@@ -53,7 +53,9 @@ struct HommeFormatArray {
     : nlev(nlev_), qsized(qsized_), ntimelev(ntimelev_)
   {
     assert(np2_ == np2);
+#ifndef COMPOSE_PORT
     ie_data_ptr.resize(nelemd);
+#endif
   }
 
   void set_ie_ptr (const Int ie, T* ptr) {
@@ -61,14 +63,14 @@ struct HommeFormatArray {
     ie_data_ptr[ie] = ptr;
   }
 
-  KOKKOS_FORCEINLINE_FUNCTION
+  COMPOSE_FORCEINLINE_FUNCTION
   T& operator() (const Int& ie, const Int& i) const {
     static_assert(rank == 2, "rank 2 array");
     assert(i >= 0);
     assert(ie_data_ptr[ie]);
     return *(ie_data_ptr[ie] + i);
   }
-  KOKKOS_FORCEINLINE_FUNCTION 
+  COMPOSE_FORCEINLINE_FUNCTION 
   T& operator() (const Int& ie, const Int& k, const Int& lev) const {
     static_assert(rank == 3, "rank 3 array");
     assert(k >= 0);
@@ -77,7 +79,7 @@ struct HommeFormatArray {
     check(ie, k, lev);
     return *(ie_data_ptr[ie] + lev*np2 + k);
   }
-  KOKKOS_FORCEINLINE_FUNCTION 
+  COMPOSE_FORCEINLINE_FUNCTION 
   T& operator() (const Int& ie, const Int& q_or_timelev, const Int& k, const Int& lev) const {
     static_assert(rank == 4, "rank 4 array");
     assert(q_or_timelev >= 0);
@@ -87,7 +89,7 @@ struct HommeFormatArray {
     check(ie, k, lev, q_or_timelev);
     return *(ie_data_ptr[ie] + (q_or_timelev*nlev + lev)*np2 + k);
   }
-  KOKKOS_FORCEINLINE_FUNCTION 
+  COMPOSE_FORCEINLINE_FUNCTION 
   T& operator() (const Int& ie, const Int& timelev, const Int& q, const Int& k, const Int& lev) const {
     static_assert(rank == 5, "rank 4 array");
     assert(timelev >= 0);
@@ -101,10 +103,16 @@ struct HommeFormatArray {
 
 private:
   static const int np2 = 16;
+#ifdef COMPOSE_PORT
+  // In this build, this class is not used. Fake an array that won't trigger
+  // Cuda warnings.
+  T** ie_data_ptr;
+#else
   std::vector<T*> ie_data_ptr;
+#endif
   const Int nlev, qsized, ntimelev;
 
-  KOKKOS_FORCEINLINE_FUNCTION
+  COMPOSE_FORCEINLINE_FUNCTION
   void check (Int ie, Int k = -1, Int lev = -1, Int q_or_timelev = -1,
               Int timelev = -1) const {
 #ifdef COMPOSE_BOUNDS_CHECK

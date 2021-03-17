@@ -6,7 +6,7 @@ namespace homme {
 namespace sl {
 
 template <typename MT, typename Ie2gci, typename Qdp, typename Dp3d>
-KOKKOS_FUNCTION ko::EnableIfNotOnGpu<MT> warn_on_Qm_prev_negative (
+ko::EnableIfNotOnGpu<MT> warn_on_Qm_prev_negative (
   Real Qm_prev, Int rank, Int ie, const Ie2gci& ie2gci, Int np2, Int spli,
   Int k0, Int q, Int ti, Int sbli, Int lci, Int k, Int n0_qdp, Int np1,
   const Qdp& qdp_p, const Dp3d& dp3d_c)
@@ -34,7 +34,7 @@ KOKKOS_FUNCTION ko::EnableIfNotOnGpu<MT> warn_on_Qm_prev_negative (
 }
 
 template <typename MT, typename Ie2gci, typename Qdp, typename Dp3d>
-KOKKOS_FUNCTION ko::EnableIfOnGpu<MT> warn_on_Qm_prev_negative (
+COMPOSE_FUNCTION ko::EnableIfOnGpu<MT> warn_on_Qm_prev_negative (
   Real Qm_prev, Int rank, Int ie, const Ie2gci& ie2gci, Int np2, Int spli,
   Int k0, Int q, Int ti, Int sbli, Int lci, Int k, Int n0_qdp, Int np1,
   const Qdp& qdp_p, const Dp3d& dp3d_c)
@@ -58,9 +58,9 @@ void run_global (CDR<MT>& cdr, CDRT* cedr_cdr_p,
   Timer t("01_write_global");
   const auto& ta = *d.ta;
   cedr_assert(ta.np == np_);
-  static const Int np = np_, np2 = np_*np_;
+  static const Int np2 = np_*np_;
   const Int nlev = ta.nlev, qsize = ta.qsize, nlevwrem = cdr.nsuplev*cdr.nsublev;
-  cedr_assert(np <= 4);
+  cedr_assert(np_ <= 4);
   
 #ifdef COMPOSE_PORT
   const auto q_min = unmanaged(ta.q_min);
