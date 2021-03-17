@@ -151,7 +151,9 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
     const auto& bla = cm.bla;
     const auto& nx_in_lid = cm.nx_in_lid;
     const auto horiz_openmp = cm.horiz_openmp;
+#ifdef COMPOSE_HORIZ_OPENMP
     const auto& ri_lidi_locks = cm.ri_lidi_locks;
+#endif
     ko::parallel_for(ko::RangePolicy<typename MT::DES>(nets, nete+1),
                      COMPOSE_LAMBDA (const Int& tci) { ed_d(tci).own.clear(); });
     Int own_dep_list_len = 0;

@@ -17,6 +17,7 @@ TracerArrays<MT>::TracerArrays (Int nelemd_, Int nlev_, Int np_, Int qsize_, Int
 #endif
 {}
 
+#if defined COMPOSE_PORT
 template <typename MT>
 void TracerArrays<MT>::alloc_if_not () {
   if (spheremp.size() > 0) return;
@@ -27,6 +28,7 @@ void TracerArrays<MT>::alloc_if_not () {
   q = decltype(q)("q", nelemd, qsize, np2, nlev);
   assert(dep_points.size() > 0);
 }
+#endif
 
 template <typename MT>
 void sl_h2d (TracerArrays<MT>& ta, bool transfer, Cartesian3D* dep_points) {
