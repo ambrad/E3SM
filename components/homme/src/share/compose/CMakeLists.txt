@@ -30,6 +30,7 @@ add_library (${COMPOSE_LIBRARY}
   compose_cedr_sl_run_local.cpp
   compose_cedr_sl_run_check.cpp
   compose_cedr_qlt.cpp
+  compose_cedr_caas.cpp
   cedr_util.cpp
   cedr_mpi.cpp
   cedr_local.cpp

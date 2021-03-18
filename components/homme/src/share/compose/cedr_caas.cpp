@@ -123,21 +123,6 @@ Int CAAS<ES>::get_num_tracers () const {
   return probs_.extent_int(0);
 }
 
-template <typename RealList, typename IntList>
-KOKKOS_INLINE_FUNCTION static void
-calc_Qm_scalars (const RealList& d, const IntList& probs,
-                 const Int& nt, const Int& nlclcells,
-                 const Int& k, const Int& os, const Int& i,
-                 Real& Qm_clip, Real& Qm_term) {
-  const Real Qm = d(os+i);
-  Qm_term = (probs(k) & ProblemType::conserve ?
-             d(os + nlclcells*3*nt + i) /* Qm_prev */ :
-             Qm);
-  const Real Qm_min = d(os + nlclcells*  nt + i);
-  const Real Qm_max = d(os + nlclcells*2*nt + i);
-  Qm_clip = cedr::impl::min(Qm_max, cedr::impl::max(Qm_min, Qm));
-}
-
 template <typename ES>
 void CAAS<ES>::reduce_locally () {
   const bool user_reduces = user_reducer_ != nullptr;

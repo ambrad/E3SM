@@ -8,7 +8,6 @@
 
 #include <mpi.h>
 
-//#include "compose_config.hpp"
 #include "compose.hpp"
 #include "cedr.hpp"
 

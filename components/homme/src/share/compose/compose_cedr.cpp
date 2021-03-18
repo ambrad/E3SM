@@ -341,7 +341,7 @@ void compose_repro_sum(const Real* send, Real* recv,
 
 template <typename MT>
 struct ReproSumReducer :
-    public compose::CAAS<typename MT::DES>::UserAllReducer {
+    public cedr::caas::CAAS<typename MT::DES>::UserAllReducer {
   ReproSumReducer (Int fcomm, Int n_accum_in_place)
     : fcomm_(fcomm), n_accum_in_place_(n_accum_in_place)
   {}
@@ -363,8 +363,14 @@ struct ReproSumReducer :
       sendptr = send.data();
       rcvptr = recv.data();
     }
-    //todo Protect with omp master once the rest of CAAS is threaded.
+#ifdef COMPOSE_HORIZ_OPENMP
+#   pragma omp barrier
+#   pragma omp master
+#endif
     compose_repro_sum(sendptr, rcvptr, nlocal, count, fcomm_);
+#ifdef COMPOSE_HORIZ_OPENMP
+#   pragma omp barrier
+#endif
     if (ko::OnGpu<typename MT::DES>::value)
       ko::deep_copy(RealList(rcvbuf, count), recv);
     return 0;
@@ -380,7 +386,7 @@ private:
 
 template <typename MT>
 struct TreeReducer :
-    public compose::CAAS<typename MT::DES>::UserAllReducer {
+    public cedr::caas::CAAS<typename MT::DES>::UserAllReducer {
   typedef typename cedr::BfbTreeAllReducer<typename MT::DES> Reducer;
 
   TreeReducer (const cedr::mpi::Parallel::Ptr& p, const cedr::tree::Node::Ptr& tree,
@@ -395,13 +401,13 @@ struct TreeReducer :
                   int nlocal, int count, MPI_Op op) const override {
     cedr_assert(op == MPI_SUM);
     cedr_assert(count == nfield_);
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 #   pragma omp barrier
 #   pragma omp master
 #endif
     r_.allreduce(typename Reducer::ConstRealList(sendbuf, nlocal*count),
                  typename Reducer::RealList(rcvbuf, count), true);
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 #   pragma omp barrier
 #endif
     return 0;

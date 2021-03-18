@@ -254,6 +254,17 @@ static void initialize_kokkos () {
   Kokkos::initialize(narg, args.data());
 }
 
+static void check_threading () {
+#if defined COMPOSE_PORT
+  static bool first = true;
+  if ( ! first) return;
+  slmm_throw_if(omp_get_num_threads() > 1,
+                "Compose API cannot be called in a threaded resion when "
+                "COMPOSE_PORT is defined");
+  first = false;
+#endif
+}
+
 extern "C" {
 // Interface for Homme, through compose_mod.F90.
 void kokkos_init () {
@@ -371,6 +382,7 @@ void slmm_csl (
   homme::Real* minq, homme::Real* maxq, homme::Int* info)
 {
   amb::dev_init_threads();
+  check_threading();
   slmm_assert(homme::g_csl_mpi);
   slmm_assert(homme::g_csl_mpi->sendsz.empty()); // alloc_mpi_buffers was called
   { slmm::Timer timer("h2d");

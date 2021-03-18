@@ -40,6 +40,21 @@ Real CAAS<ES>::get_Qm (const Int& lclcellidx, const Int& tracer_idx) const {
   return d_((1 + tracer_idx)*nlclcells_ + lclcellidx);
 }
 
+template <typename RealList, typename IntList>
+KOKKOS_INLINE_FUNCTION void
+calc_Qm_scalars (const RealList& d, const IntList& probs,
+                 const Int& nt, const Int& nlclcells,
+                 const Int& k, const Int& os, const Int& i,
+                 Real& Qm_clip, Real& Qm_term) {
+  const Real Qm = d(os+i);
+  Qm_term = (probs(k) & ProblemType::conserve ?
+             d(os + nlclcells*3*nt + i) /* Qm_prev */ :
+             Qm);
+  const Real Qm_min = d(os + nlclcells*  nt + i);
+  const Real Qm_max = d(os + nlclcells*2*nt + i);
+  Qm_clip = cedr::impl::min(Qm_max, cedr::impl::max(Qm_min, Qm));
+}
+
 } // namespace caas
 } // namespace cedr
 

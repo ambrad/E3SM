@@ -40,7 +40,11 @@ struct CDR {
 
   typedef std::shared_ptr<CDR> Ptr;
   typedef compose::QLT<typename MT::DES> QLTT;
-  typedef compose::CAAS<typename MT::DES> CAAST;
+#ifdef COMPOSE_PORT
+  typedef cedr::caas::CAAS<typename MT::DES> CAAST;
+#else
+  typedef compose::CAAS CAAST;
+#endif
 
   typedef Kokkos::View<Int*, typename MT::DES> Idxs;
   typedef typename Idxs::HostMirror IdxsH;
