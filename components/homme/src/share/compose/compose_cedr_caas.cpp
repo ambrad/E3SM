@@ -1,4 +1,6 @@
+#ifndef COMPOSE_PORT
 #include "compose_cedr_caas.hpp"
+#include "compose_kokkos.hpp"
 
 namespace homme {
 namespace compose {
@@ -34,7 +36,7 @@ void CAAS::reduce_locally_horiz_omp () {
   const auto d = d_;
   const Int n_accum_in_place = user_reducer_->n_accum_in_place();
   const Int nlclaccum = nlclcells / n_accum_in_place;
-  const auto calc_Qm_clip = KOKKOS_LAMBDA (const Int& j) {
+  const auto calc_Qm_clip = COMPOSE_LAMBDA (const Int& j) {
     const auto k = j / nlclaccum;
     const auto bi = j % nlclaccum;
     const auto os = (k+1)*nlclcells;
@@ -52,7 +54,7 @@ void CAAS::reduce_locally_horiz_omp () {
     send(nlclaccum*(nt + k) + bi) = accum_term;
   };
   homme_parallel_for(0, nt*nlclaccum, calc_Qm_clip);
-  const auto set_Qm_minmax = KOKKOS_LAMBDA (const Int& j) {
+  const auto set_Qm_minmax = COMPOSE_LAMBDA (const Int& j) {
     const auto k = 2*nt + j / nlclaccum;
     const auto bi = j % nlclaccum;
     const auto os = (k-nt+1)*nlclcells;
@@ -71,7 +73,7 @@ void CAAS::finish_locally_horiz_omp () {
   ConstExceptGnu Int nt = probs_.size(), nlclcells = nlclcells_;
   const auto recv = recv_;
   const auto d = d_;
-  const auto adjust_Qm = KOKKOS_LAMBDA (const Int& k) {
+  const auto adjust_Qm = COMPOSE_LAMBDA (const Int& k) {
     const auto os = (k+1)*nlclcells;
     const auto Qm_clip_sum = recv(     k);
     const auto Qm_sum      = recv(nt + k);
@@ -107,3 +109,4 @@ void CAAS::finish_locally_horiz_omp () {
 
 } // namespace compose
 } // namespace homme
+#endif

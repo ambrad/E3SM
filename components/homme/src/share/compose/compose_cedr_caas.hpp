@@ -3,6 +3,9 @@
 
 #include "cedr_caas.hpp"
 
+#include "compose.hpp"
+#ifndef COMPOSE_PORT
+
 namespace homme {
 namespace compose {
 
@@ -29,5 +32,6 @@ private:
 
 } // namespace compose
 } // namespace homme
+#endif
 
 #endif

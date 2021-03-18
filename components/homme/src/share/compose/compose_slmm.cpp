@@ -255,7 +255,7 @@ static void initialize_kokkos () {
 }
 
 static void check_threading () {
-#if defined COMPOSE_PORT
+#if defined COMPOSE_PORT && defined _OPENMP
   static bool first = true;
   if ( ! first) return;
   slmm_throw_if(omp_get_num_threads() > 1,
