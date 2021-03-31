@@ -737,6 +737,7 @@ add_default($nl, 'config_vert_tracer_adv_order');
 add_default($nl, 'config_horiz_tracer_adv_order');
 add_default($nl, 'config_coef_3rd_order');
 add_default($nl, 'config_monotonic');
+add_default($nl, 'config_passive_tracers_supercycle_timestep');
 
 ###############################
 # Namelist group: bottom_drag #
@@ -990,6 +991,7 @@ if ($ice_bgc eq 'ice_bgc' ) {
 } else {
         add_default($nl, 'config_use_ecosysTracers_sea_ice_coupling', 'val'=>".false.");
 }
+add_default($nl, 'config_ecosysTracers_subcycle_param');
 
 #############################################
 # Namelist group: tracer_forcing_DMSTracers #
