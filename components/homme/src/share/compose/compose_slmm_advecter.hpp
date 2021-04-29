@@ -18,8 +18,9 @@ using Ints = Kokkos::View<Int*, ES>;
 // in addition, cubed_sphere_map=0.
 template <typename ES>
 struct SphereToRef {
-  void init (const Int cubed_sphere_map, const Int nelem_global,
-             const typename Ints<ES>::const_type& lid2facenum) {
+  void init (const Geometry::Type geometry, const Int cubed_sphere_map,
+             const Int nelem_global, const typename Ints<ES>::const_type& lid2facenum) {
+    geometry_ = geometry;
     cubed_sphere_map_ = cubed_sphere_map;
     lid2facenum_ = lid2facenum;
     nelem_global_ = nelem_global;
@@ -44,10 +45,13 @@ struct SphereToRef {
     const Int max_its = 10,
     const Real tol = 1e2*std::numeric_limits<Real>::epsilon()) const
   {
-    if (cubed_sphere_map_ == 2)
-      siqk::sqr::calc_sphere_to_ref(m.p, slice(m.e, m.tgt_elem), q, a, b,
-                                    info, max_its, tol);
-    else {
+    if (cubed_sphere_map_ == 2) {
+      if (geometry_ == Geometry::Type::sphere)
+        siqk::sqr::calc_sphere_to_ref(m.p, slice(m.e, m.tgt_elem), q, a, b,
+                                      info, max_its, tol);
+      else
+        ;
+    } else {
       const Int face = lid2facenum_(ie); //assume: ie corresponds to m.tgt_elem.
       map_sphere_coord_to_face_coord(face-1, q[0], q[1], q[2], a, b);
       a = map_face_coord_to_cell_ref_coord(a);
@@ -69,6 +73,7 @@ struct SphereToRef {
   }
 
 private:
+  Geometry::Type geometry_;
   Int ne_, nelem_global_, cubed_sphere_map_;
   typename Ints<ES>::const_type lid2facenum_;
 
@@ -145,10 +150,12 @@ struct Advecter {
   };
 
   Advecter (const Int np, const Int nelem, const Int transport_alg,
-            const Int cubed_sphere_map, const Int nearest_point_permitted_lev_bdy)
+            const Int cubed_sphere_map, const Geometry::Type geometry,
+            const Int nearest_point_permitted_lev_bdy)
     : alg_(Alg::convert(transport_alg)),
       np_(np), np2_(np*np), np4_(np2_*np2_),
-      cubed_sphere_map_(cubed_sphere_map),
+      cubed_sphere_map_(geometry == Geometry::Type::plane ? 2 : cubed_sphere_map),
+      geometry_(geometry),
       tq_order_(alg_ == Alg::qos ? 14 : 12),
       nearest_point_permitted_lev_bdy_(nearest_point_permitted_lev_bdy)
   {
@@ -171,6 +178,7 @@ struct Advecter {
   bool is_cisl () const { return Alg::is_cisl(alg_); }
 
   Int cubed_sphere_map () const { return cubed_sphere_map_; }
+  Geometry::Type geometry () const { return geometry_; }
   const Ints<DES>& lid2facenum () const { return lid2facenum_; }
 
   // nelem_global is used only if cubed_sphere_map = 0, to deduce ne in
@@ -221,6 +229,7 @@ struct Advecter {
 private:
   const typename Alg::Enum alg_;
   const Int np_, np2_, np4_, cubed_sphere_map_;
+  Geometry::Type geometry_;
   LocalMeshesH local_mesh_h_;
   LocalMeshesD local_mesh_d_;
   typename LocalMeshesD::HostMirror local_mesh_m_; // handle managed allocs
@@ -256,7 +265,7 @@ void Advecter<MT>
         m.p(k,j) = corners(j,vi,ci);
       m.e(ci,vi) = k;
     }
-  fill_normals<siqk::SphereGeometry>(m);
+  fill_normals(m, geometry_);
   m.tgt_elem = slmm::get_src_cell(m, p_inside);
   slmm_assert(m.tgt_elem >= 0 &&
               m.tgt_elem < ncell);

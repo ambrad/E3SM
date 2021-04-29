@@ -10,16 +10,34 @@ void Advecter<MT>
   lid2facenum_h_ = ko::create_mirror_view(lid2facenum_);
   std::copy(lid2facenum, lid2facenum + nelemd, lid2facenum_h_.data());
   ko::deep_copy(lid2facenum_, lid2facenum_h_);
-  s2r_.init(cubed_sphere_map_, nelem_global, lid2facenum_);
+  s2r_.init(geometry_, cubed_sphere_map_, nelem_global, lid2facenum_);
+}
+
+template <typename Mesh>
+static void print_mesh (const Mesh& m) {
+  printf("mesh> tgt %d\n", m.tgt_elem);
+  for (int ie = 0; ie < nslices(m.e); ++ie) {
+    const auto cell = slice(m.e,ie);
+    for (int i = 0; i < 4; ++i) {
+      const auto v = slice(m.p, cell[i]);
+      printf("ie %2d v %d %1.3e %1.3e %1.3e\n", ie, i, v[0], v[1], v[2]);
+    }
+    const auto nmls = slice(m.en,ie);
+    for (int i = 0; i < 4; ++i) {
+      const auto n = slice(m.nml, nmls[i]);
+      printf("ie %2d n %d %1.3e %1.3e %1.3e\n", ie, i, n[0], n[1], n[2]);
+    }
+  }
 }
 
 template <typename MT>
 void Advecter<MT>::check_ref2sphere (const Int ie, const Real* p_homme) {
   const auto& m = local_mesh_host(ie);
+  //if (geometry_ == Geometry::Type::plane) print_mesh(m);
   Real ref_coord[2];
   siqk::sqr::Info info;
   SphereToRef<typename MT::HES> s2r;
-  s2r.init(cubed_sphere_map_, s2r_.nelem_global(), lid2facenum_h_);
+  s2r.init(geometry_, cubed_sphere_map_, s2r_.nelem_global(), lid2facenum_h_);
   const Real tol = s2r_.tol();
   s2r.calc_sphere_to_ref(ie, m, p_homme, ref_coord[0], ref_coord[1], &info);
   const slmm::Basis basis(4, 0);

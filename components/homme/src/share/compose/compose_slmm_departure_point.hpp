@@ -70,6 +70,9 @@ void fill_normals (LocalMesh<ko::MachineTraits::HES>& m) {
   m.nml = nml;
 }
 
+void fill_normals(LocalMesh<ko::MachineTraits::HES>& m,
+                  const Geometry::Type geometry);
+
 template <typename ESD, typename ESS>
 void deep_copy (LocalMesh<ESD>& d, const LocalMesh<ESS>& s) {
   siqk::resize_and_copy(d.p, s.p);
@@ -308,7 +311,8 @@ void calc (const LocalMesh<ES>& m, Real* v) {
 }
 } // namespace nearest_point
 
-Int unittest(LocalMesh<ko::MachineTraits::HES>& m, const Int tgt_elem);
+Int unittest(LocalMesh<ko::MachineTraits::HES>& m, const Int tgt_elem,
+             const bool sphere);
 
 std::string to_string(const LocalMesh<ko::MachineTraits::HES>& m);
 

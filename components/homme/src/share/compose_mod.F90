@@ -31,12 +31,12 @@ module compose_mod
      end subroutine cedr_init_impl
 
      subroutine slmm_init_impl(comm, transport_alg, np, nlev, qsize, qsize_d, &
-          nelem, nelemd, cubed_sphere_map, lid2gid, lid2facenum, nbr_id_rank, nirptr, &
+          nelem, nelemd, cubed_sphere_map, geometry, lid2gid, lid2facenum, nbr_id_rank, nirptr, &
           sl_nearest_point_lev, lid2gid_sz, lid2facenum_sz, nbr_id_rank_sz, nirptr_sz) bind(c)
        use iso_c_binding, only: c_int
        integer(kind=c_int), value, intent(in) :: comm, transport_alg, np, nlev, qsize, qsize_d, &
-            nelem, nelemd, cubed_sphere_map, sl_nearest_point_lev, lid2gid_sz, lid2facenum_sz, &
-            nbr_id_rank_sz, nirptr_sz
+            nelem, nelemd, cubed_sphere_map, geometry, sl_nearest_point_lev, lid2gid_sz, &
+            lid2facenum_sz, nbr_id_rank_sz, nirptr_sz
        integer(kind=c_int), intent(in) :: lid2gid(lid2gid_sz), lid2facenum(lid2facenum_sz), &
             nbr_id_rank(nbr_id_rank_sz), nirptr(nirptr_sz)
      end subroutine slmm_init_impl
@@ -228,7 +228,7 @@ contains
     use element_mod, only: element_t
     use gridgraph_mod, only: GridVertex_t
     use control_mod, only: semi_lagrange_cdr_alg, transport_alg, cubed_sphere_map, &
-         semi_lagrange_nearest_point_lev, dt_remap_factor, dt_tracer_factor
+         semi_lagrange_nearest_point_lev, dt_remap_factor, dt_tracer_factor, geometry
     use scalable_grid_init_mod, only: sgi_is_initialized, sgi_get_rank2sfc, &
          sgi_gid2igv
     use perf_mod, only: t_startf, t_stopf
@@ -243,7 +243,7 @@ contains
          ! These are for non-scalable grid initialization, still used for RRM.
          sc2gci(:), sc2rank(:)        ! space curve index -> (GID, rank)
     integer :: lid2gid(nelemd), lid2facenum(nelemd)
-    integer :: i, j, k, sfc, gid, igv, sc
+    integer :: i, j, k, sfc, gid, igv, sc, geometry_type
     ! To map SFC index to IDs and ranks
     logical(kind=c_bool) :: use_sgi, owned, independent_time_steps, hard_zero
     integer, allocatable :: owned_ids(:)
@@ -339,8 +339,10 @@ contains
           end do
        end do
        nirptr(nelemd+1) = k - 1
+       geometry_type = 0 ! sphere
+       if (trim(geometry) == "plane") geometry_type = 1
        call slmm_init_impl(par%comm, transport_alg, np, nlev, qsize, qsize_d, &
-            nelem, nelemd, cubed_sphere_map, lid2gid, lid2facenum, &
+            nelem, nelemd, cubed_sphere_map, geometry_type, lid2gid, lid2facenum, &
             nbr_id_rank, nirptr, semi_lagrange_nearest_point_lev, &
             size(lid2gid), size(lid2facenum), size(nbr_id_rank), size(nirptr))
        deallocate(nbr_id_rank, nirptr)

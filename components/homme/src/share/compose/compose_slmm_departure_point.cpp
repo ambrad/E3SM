@@ -1,6 +1,22 @@
 #include "compose_slmm_departure_point.hpp"
 
 namespace slmm {
+
+void fill_normals (LocalMesh<ko::MachineTraits::HES>& m,
+                   const Geometry::Type geometry) {
+  if (geometry == Geometry::Type::plane) {
+#ifndef NDEBUG
+    // In principle the plane could be embedded in a general orientation in 3D
+    // space. In practice, it's sensibly implemented in Homme as || to the x-y
+    // plane. Be sure of that here.
+    const Int n = nslices(m.p);
+    for (Int i = 0; i < n; ++i) assert(m.p(i,2) == 0);
+#endif
+    fill_normals<siqk::PlaneGeometry>(m);
+  } else
+    fill_normals<siqk::SphereGeometry>(m);
+}
+
 namespace nearest_point {
 
 Int test_canpoa () {
@@ -87,7 +103,8 @@ Int test_fill_perim (const LocalMesh<ES>& m, const Int& tgt_ic) {
 }
 } // namespace nearest_point
 
-Int unittest (LocalMesh<ko::MachineTraits::HES>& m, const Int tgt_elem) {
+Int unittest (LocalMesh<ko::MachineTraits::HES>& m, const Int tgt_elem,
+              const bool sphere) {
   Int nerr = 0, ne = 0;
   const Int nc = len(m.e);
   for (Int ic = 0; ic < nc; ++ic) {
@@ -120,6 +137,11 @@ Int unittest (LocalMesh<ko::MachineTraits::HES>& m, const Int tgt_elem) {
     nerr += ne;
     ne = nearest_point::test_calc(m, tgt_elem);
     if (ne) pr("slmm::unittest: test_calc failed");
+    nerr += ne;
+  }
+  {
+    ne = siqk::sqr::test::test_sphere_to_ref(m.p, m.e, sphere);
+    if (ne) pr("slmm::unittest: siqk::sqr::test::test_sphere_to_ref failed");
     nerr += ne;
   }
   return nerr;
