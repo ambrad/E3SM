@@ -6,12 +6,18 @@ void fill_normals (LocalMesh<ko::MachineTraits::HES>& m,
                    const Geometry::Type geometry) {
   if (geometry == Geometry::Type::plane) {
 #ifndef NDEBUG
-    // In principle the plane could be embedded in a general orientation in 3D
-    // space. In practice, it's sensibly implemented in Homme as || to the x-y
-    // plane. Be sure of that here.
-    const Int n = nslices(m.p);
-    for (Int i = 0; i < n; ++i) assert(m.p(i,2) == 0);
+    {
+      // In principle the plane could be embedded in a general orientation in 3D
+      // space. In practice, it's sensibly implemented in Homme as || to the x-y
+      // plane. Be sure of that here.
+      const Int n = nslices(m.p);
+      for (Int i = 0; i < n; ++i) assert(m.p(i,2) == 0);
+    }
 #endif
+    // Following the assumption above, be sure the third component is 0 since
+    // PlaneGeometry::fill_normals won't write to it.
+    const Int n = nslices(m.nml);
+    for (Int i = 0; i < n; ++i) m.nml(i,2) = 0;
     fill_normals<siqk::PlaneGeometry>(m);
   } else
     fill_normals<siqk::SphereGeometry>(m);
@@ -65,9 +71,8 @@ Int test_calc (const LocalMesh<ES>& m, const Int& tgt_ic) {
   return nerr;
 }
 
-template <typename ES>
+template <typename geo, typename ES>
 Int test_fill_perim (const LocalMesh<ES>& m, const Int& tgt_ic) {
-  using geo = siqk::SphereGeometry;
   Int nerr = 0;
   const auto tgt_cell = slice(m.e, tgt_ic);
   const Int np_perim = len(m.perimp);
@@ -80,6 +85,9 @@ Int test_fill_perim (const LocalMesh<ES>& m, const Int& tgt_ic) {
         Real diff = 0;
         for (Int i = 0; i < 3; ++i) diff += std::abs(p[i] - perim[i]);
         if (diff == 0) ++on;
+
+        //TODO won't work until tgt_ic is right
+        if (diff == 0) pr("test_fill_perim tgt-cell point is on perim" pu(tgt_ic) pu(ip) pu(k) pu(diff));
       }
     }
     if (on > 0) ++nerr;
@@ -94,8 +102,8 @@ Int test_fill_perim (const LocalMesh<ES>& m, const Int& tgt_ic) {
       // Normal orthogonal to edge?
       if (std::abs(dot) > 1e2*std::numeric_limits<Real>::epsilon()/L) ++nerr;
       // Oriented inwards?
-      Real outward[3];
-      geo::cross(p1, p0, outward);
+      Real outward[3] = {0};
+      geo::edge_normal(p1, p0, outward);
       if (geo::dot(nml, outward) >= 0) ++nerr;
     }
   }
@@ -132,7 +140,10 @@ Int unittest (LocalMesh<ko::MachineTraits::HES>& m, const Int tgt_elem,
   if (ne) pr("slmm::unittest: test_canpoa failed");
   {
     nearest_point::fill_perim(m);
-    ne = nearest_point::test_fill_perim(m, tgt_elem);
+    if (sphere)
+      ne = nearest_point::test_fill_perim<siqk::SphereGeometry>(m, tgt_elem);
+    else
+      ne = nearest_point::test_fill_perim<siqk::PlaneGeometry>(m, tgt_elem);
     if (ne) pr("slmm::unittest: test_fill_perim failed");
     nerr += ne;
     ne = nearest_point::test_calc(m, tgt_elem);

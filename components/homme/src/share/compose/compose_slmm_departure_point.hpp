@@ -95,22 +95,29 @@ bool is_inside (const LocalMesh<ES>& m,
   assert(szslice(m.e) == ne);
   assert(szslice(m.en) == ne);
   bool inside = true;
-  for (Int ie = 0; ie < ne; ++ie)
+  for (Int ie = 0; ie < ne; ++ie) {
+    // We can use SphereGeometry here regardless of plane or sphere because the
+    // third component is 0; see comments in fill_normals.
     if (siqk::SphereGeometry::dot_c_amb(slice(m.nml, celln[ie]),
                                         v, slice(m.p, cell[ie]))
         < -atol) {
       inside = false;
       break;
     }
+  }
   return inside;
 }
 
 // Both cubed_sphere_map=0 and cubed_sphere_map=2 can use this
-// method. (cubed_sphere_map=1 is not impl'ed in Homme.) This method is natural
-// for cubed_sphere_map=2, so RRM works automatically. cubed_sphere_map=0 is
-// supported in Homme only for regular cubed-sphere meshes, not RRM; in that
-// case, edges are great arcs, so again this impl works. In contrast,
-// calc_sphere_to_ref has to be specialized on cubed_sphere_map.
+// method. (cubed_sphere_map=1 is not impl'ed in Homme.)
+//   This method is natural for cubed_sphere_map=2, so RRM works automatically.
+//   cubed_sphere_map=0 is supported in Homme only for regular cubed-sphere
+// meshes, not RRM; in that case, edges are great arcs, so again this impl
+// works.
+//   In contrast, calc_sphere_to_ref has to be specialized on cubed_sphere_map.
+//   In the case of planar geometry, this method again works because the only
+// difference is in the edge normals. The SphereGeometry linear algebra below
+// works because the third component is 0; see the comments in fill_normals.
 template <typename ES> SLMM_KF
 int get_src_cell (const LocalMesh<ES>& m, // Local mesh.
                   const Real* v, // 3D Cartesian point.
@@ -129,7 +136,7 @@ int get_src_cell (const LocalMesh<ES>& m, // Local mesh.
         const int ic = my_ic == -1 ? 0 : my_ic;
         const auto cell = slice(m.e, ic);
         Real d[3];
-        siqk::SphereGeometry::axpbyz(1, slice(m.p, cell[1]),
+        siqk::SphereGeometry::axpbyz( 1, slice(m.p, cell[1]),
                                      -1, slice(m.p, cell[0]),
                                      d);
         const Real L = std::sqrt(siqk::SphereGeometry::norm2(d));
