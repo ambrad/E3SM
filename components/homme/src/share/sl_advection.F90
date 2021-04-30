@@ -5,7 +5,6 @@
 module sl_advection
   use kinds, only              : real_kind, int_kind
   use dimensions_mod, only     : nlev, nlevp, np, qsize, qsize_d
-  use physical_constants, only : rgas, Rwater_vapor, kappa, g, rearth, rrearth, cp
   use derivative_mod, only     : derivative_t, gradient_sphere, divergence_sphere
   use element_mod, only        : element_t
   use hybvcoord_mod, only      : hvcoord_t
@@ -501,7 +500,7 @@ contains
   ! OUTPUT:
   !-----------------------------------------------------------------------------------!
   subroutine ALE_departure_from_gll(acart, vstar, elem, dt, normalize)
-    use physical_constants,     only : rearth
+    use physical_constants,     only : scale_factor
     use coordinate_systems_mod, only : spherical_polar_t, cartesian3D_t
     use time_mod,               only : timelevel_t
     use element_mod,            only : element_t
@@ -533,9 +532,9 @@ contains
     do i=1,np
        do j=1,np
           call sphere2cart(elem%spherep(i,j), acart(i,j))
-          acart(i,j)%x = acart(i,j)%x - dt*uxyz(i,j,1)/rearth
-          acart(i,j)%y = acart(i,j)%y - dt*uxyz(i,j,2)/rearth
-          acart(i,j)%z = acart(i,j)%z - dt*uxyz(i,j,3)/rearth
+          acart(i,j)%x = acart(i,j)%x - dt*uxyz(i,j,1)/scale_factor
+          acart(i,j)%y = acart(i,j)%y - dt*uxyz(i,j,2)/scale_factor
+          acart(i,j)%z = acart(i,j)%z - dt*uxyz(i,j,3)/scale_factor
           if (normalize) then
              norm = sqrt(acart(i,j)%x*acart(i,j)%x + acart(i,j)%y*acart(i,j)%y + &
                   acart(i,j)%z*acart(i,j)%z)

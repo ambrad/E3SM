@@ -50,7 +50,8 @@ struct SphereToRef {
         siqk::sqr::calc_sphere_to_ref(m.p, slice(m.e, m.tgt_elem), q, a, b,
                                       info, max_its, tol);
       else
-        ;
+        siqk::sqr::calc_plane_to_ref(m.p, slice(m.e, m.tgt_elem), q, a, b,
+                                     info, max_its, tol);;
     } else {
       const Int face = lid2facenum_(ie); //assume: ie corresponds to m.tgt_elem.
       map_sphere_coord_to_face_coord(face-1, q[0], q[1], q[2], a, b);
@@ -164,6 +165,11 @@ struct Advecter {
     local_mesh_h_ = LocalMeshesH("local_mesh_h_", nelem);
   }
 
+  void init_plane (Real Sx, Real Sy, Real Lx, Real Ly) {
+    slmm_assert(geometry_ == Geometry::Type::plane);
+    plane.Sx = Sx; plane.Sy = Sy; plane.Lx = Lx; plane.Ly = Ly;
+  }
+
   void fill_nearest_points_if_needed();
 
   // After Advecter is fully initialized, send all the data to device.
@@ -241,6 +247,7 @@ private:
   Ints<HES> lid2facenum_h_;
   Ints<DES> lid2facenum_;
   SphereToRef<DES> s2r_;
+  Plane plane;
 };
 
 template <typename MT>

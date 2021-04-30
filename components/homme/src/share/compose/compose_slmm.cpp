@@ -321,6 +321,11 @@ void slmm_query_bufsz (homme::Int* sendsz, homme::Int* recvsz) {
   *recvsz = r;
 }
 
+void slmm_init_plane (homme::Real Sx, homme::Real Sy, homme::Real Lx, homme::Real Ly) {
+  slmm_assert(homme::g_advecter);
+  homme::g_advecter->init_plane(Sx, Sy, Lx, Ly);
+}
+
 void slmm_set_bufs (homme::Real* sendbuf, homme::Real* recvbuf,
                     homme::Int, homme::Int) {
   slmm_assert(homme::g_csl_mpi);
@@ -348,6 +353,7 @@ void slmm_init_local_mesh (
     ie - 1, homme::FA3<const homme::Real>(
       reinterpret_cast<const homme::Real*>(neigh_corners), 3, 4, nnc),
     reinterpret_cast<const homme::Real*>(p_inside));
+  const auto m = homme::g_advecter->local_mesh_host(ie - 1);
   amb::dev_fin_threads();
 }
 
