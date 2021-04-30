@@ -23,6 +23,49 @@ void fill_normals (LocalMesh<ko::MachineTraits::HES>& m,
     fill_normals<siqk::SphereGeometry>(m);
 }
 
+void make_continuous (const Plane& p, LocalMesh<ko::MachineTraits::HES>& m) {
+  slmm_assert(m.tgt_elem >= 0 && m.tgt_elem <= nslices(m.e));
+  const Real tol = 1e2 * std::max(p.Lx, p.Ly) * ko::NumericTraits<Real>::epsilon();
+  const auto equal = [&] (const Real a, const Real b) {
+    return std::abs(a - b) <= tol;
+  };
+  const auto setside = [&] (Int& side, const Int val) {
+    slmm_assert(side == 0 || side == val);
+    side = val;
+  };
+  const auto setsides = [&] (const Int ie, Int& we, Int& sn) {
+    we = 0; sn = 0;
+    const auto cell = slice(m.e, ie);
+    for (Int i = 0; i < 4; ++i) {
+      if (equal(m.p(cell[i],0), p.Sx))
+        setside(we, -1);
+      else if (equal(m.p(cell[i],0), p.Sx + p.Lx))
+        setside(we, 1);
+      if (equal(m.p(cell[i],1), p.Sy))
+        setside(sn, -1);
+      else if (equal(m.p(cell[i],1), p.Sy + p.Ly))
+        setside(sn, 1);
+    }    
+  };
+  const auto translate = [&] (const Int ie, const Int d, const Real delta) {
+    const auto cell = slice(m.e, ie);
+    for (Int i = 0; i < 4; ++i)
+      m.p(cell[i],d) += delta;
+  };
+  Int twe, tsn;
+  setsides(m.tgt_elem, twe, tsn);
+  const Real dx = twe == -1 ? -p.Lx : twe == 1 ? p.Lx : 0;
+  const Real dy = tsn == -1 ? -p.Ly : tsn == 1 ? p.Ly : 0;
+  const Int ncell = nslices(m.e);
+  for (Int ie = 0; ie < ncell; ++ie) {
+    if (ie == m.tgt_elem) continue;
+    Int we, sn;
+    setsides(ie, we, sn);
+    if (we && we != twe) translate(ie, 0, dx);
+    if (sn && sn != tsn) translate(ie, 1, dy);
+  }
+}
+
 namespace nearest_point {
 
 Int test_canpoa () {

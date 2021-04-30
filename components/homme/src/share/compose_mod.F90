@@ -41,9 +41,9 @@ module compose_mod
             nbr_id_rank(nbr_id_rank_sz), nirptr(nirptr_sz)
      end subroutine slmm_init_impl
 
-     subroutine slmm_init_plane(Sx, Sy, Lx, Ly) bind(c)
+     subroutine slmm_init_plane(Sx, Sy, Lx, Ly, dx, dy) bind(c)
        use iso_c_binding, only: c_double
-       real(kind=c_double), value, intent(in) :: Sx, Sy, Lx, Ly
+       real(kind=c_double), value, intent(in) :: Sx, Sy, Lx, Ly, dx, dy
      end subroutine slmm_init_plane
 
      subroutine cedr_query_bufsz(sendsz, recvsz) bind(c)
@@ -234,7 +234,7 @@ contains
     use gridgraph_mod, only: GridVertex_t
     use control_mod, only: semi_lagrange_cdr_alg, transport_alg, cubed_sphere_map, &
          semi_lagrange_nearest_point_lev, dt_remap_factor, dt_tracer_factor, geometry
-    use physical_constants, only: Sx, Sy, Lx, Ly
+    use physical_constants, only: Sx, Sy, Lx, Ly, dx, dy
     use scalable_grid_init_mod, only: sgi_is_initialized, sgi_get_rank2sfc, &
          sgi_gid2igv
     use perf_mod, only: t_startf, t_stopf
@@ -351,7 +351,7 @@ contains
             nelem, nelemd, cubed_sphere_map, geometry_type, lid2gid, lid2facenum, &
             nbr_id_rank, nirptr, semi_lagrange_nearest_point_lev, &
             size(lid2gid), size(lid2facenum), size(nbr_id_rank), size(nirptr))
-       if (geometry_type == 1) call slmm_init_plane(Sx, Sy, Lx, Ly)
+       if (geometry_type == 1) call slmm_init_plane(Sx, Sy, Lx, Ly, dx, dy)
        deallocate(nbr_id_rank, nirptr)
     end if
     call t_stopf('compose_init')

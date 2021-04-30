@@ -165,9 +165,12 @@ struct Advecter {
     local_mesh_h_ = LocalMeshesH("local_mesh_h_", nelem);
   }
 
-  void init_plane (Real Sx, Real Sy, Real Lx, Real Ly) {
+  void init_plane (Real Sx, Real Sy, Real Lx, Real Ly, Real dx, Real dy) {
     slmm_assert(geometry_ == Geometry::Type::plane);
-    plane.Sx = Sx; plane.Sy = Sy; plane.Lx = Lx; plane.Ly = Ly;
+    plane.Sx = Sx; plane.Sy = Sy;
+    plane.Lx = Lx; plane.Ly = Ly;
+    plane.dx = dx; plane.dy = dy;
+    const auto& p = plane; pr("init_plane" pu(p.Sx) pu(p.Sy) pu(p.Lx) pu(p.Ly) pu(p.dx) pu(p.dy));
   }
 
   void fill_nearest_points_if_needed();
@@ -274,8 +277,9 @@ void Advecter<MT>
     }
   fill_normals(m, geometry_);
   m.tgt_elem = slmm::get_src_cell(m, p_inside);
-  slmm_assert(m.tgt_elem >= 0 &&
-              m.tgt_elem < ncell);
+  slmm_assert(m.tgt_elem >= 0 && m.tgt_elem < ncell);
+  if (geometry_ == Geometry::Type::plane)
+    make_continuous(plane, m);
 }
 
 template <typename MT>

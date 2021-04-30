@@ -111,6 +111,7 @@ init (const typename IslMpi<MT>::Advecter::ConstPtr& advecter,
 // already has a ref to the const'ed one.
 template <typename MT>
 void finalize_init_phase (IslMpi<MT>& cm, typename IslMpi<MT>::Advecter& advecter) {
+# pragma message "TODO periodic"
   if (cm.halo == 2)
     extend_halo::extend_local_meshes<MT>(*cm.p, cm.ed_h, advecter);
   advecter.fill_nearest_points_if_needed();
@@ -321,9 +322,10 @@ void slmm_query_bufsz (homme::Int* sendsz, homme::Int* recvsz) {
   *recvsz = r;
 }
 
-void slmm_init_plane (homme::Real Sx, homme::Real Sy, homme::Real Lx, homme::Real Ly) {
+void slmm_init_plane (homme::Real Sx, homme::Real Sy, homme::Real Lx, homme::Real Ly,
+                      homme::Real dx, homme::Real dy) {
   slmm_assert(homme::g_advecter);
-  homme::g_advecter->init_plane(Sx, Sy, Lx, Ly);
+  homme::g_advecter->init_plane(Sx, Sy, Lx, Ly, dx, dy);
 }
 
 void slmm_set_bufs (homme::Real* sendbuf, homme::Real* recvbuf,

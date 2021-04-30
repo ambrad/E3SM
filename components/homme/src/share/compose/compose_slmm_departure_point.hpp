@@ -6,7 +6,7 @@
 namespace slmm {
 
 // Plane dimensions for planar doubly-periodic domain.
-struct Plane { Real Sx, Sy, Lx, Ly; };
+struct Plane { Real Sx, Sy, Lx, Ly, dx, dy; };
 
 /* A local mesh is described by the following arrays:
        p: 3 x #nodes, the array of vertices.
@@ -75,6 +75,10 @@ void fill_normals (LocalMesh<ko::MachineTraits::HES>& m) {
 
 void fill_normals(LocalMesh<ko::MachineTraits::HES>& m,
                   const Geometry::Type geometry);
+
+// For doubly-periodic planar mesh, make the local mesh patch's vertices
+// continuous in space, anchored at m.tgt_elem.
+void make_continuous(const Plane& p, LocalMesh<ko::MachineTraits::HES>& m);
 
 template <typename ESD, typename ESS>
 void deep_copy (LocalMesh<ESD>& d, const LocalMesh<ESS>& s) {
