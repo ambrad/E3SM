@@ -229,7 +229,7 @@ contains
   subroutine compose_init(par, elem, GridVertex, init_kokkos)
     use iso_c_binding, only: c_bool
     use parallel_mod, only: parallel_t, abortmp
-    use dimensions_mod, only: np, nlev, qsize, qsize_d, nelem, nelemd
+    use dimensions_mod, only: np, nlev, qsize, qsize_d, nelem, nelemd, ne_x, ne_y
     use element_mod, only: element_t
     use gridgraph_mod, only: GridVertex_t
     use control_mod, only: semi_lagrange_cdr_alg, transport_alg, cubed_sphere_map, &
@@ -269,8 +269,18 @@ contains
 
     independent_time_steps = dt_remap_factor < dt_tracer_factor
 
-    if (.true. .or. &
-         semi_lagrange_cdr_alg == 2 .or. semi_lagrange_cdr_alg == 20 .or. &
+    geometry_type = 0 ! sphere
+    if (trim(geometry) == "plane") then
+       geometry_type = 1
+       if (min(ne_x, ne_y) < 5) then
+          ! If we really want to, we can support ne := min(ne_x, ne_y) >= 3 just
+          ! by setting halo = 1 if ne < 5. But for now that's not important,
+          ! support ne no less than 5.
+          call abortmp('SL transport for planar geometry does not support min(ne_x, ne_y) < 5.')
+       end if
+    end if
+
+    if ( semi_lagrange_cdr_alg == 2 .or. semi_lagrange_cdr_alg == 20 .or. &
          semi_lagrange_cdr_alg == 21) then
        if (use_sgi) then
           call sgi_get_rank2sfc(rank2sfc)
@@ -345,8 +355,6 @@ contains
           end do
        end do
        nirptr(nelemd+1) = k - 1
-       geometry_type = 0 ! sphere
-       if (trim(geometry) == "plane") geometry_type = 1
        call slmm_init_impl(par%comm, transport_alg, np, nlev, qsize, qsize_d, &
             nelem, nelemd, cubed_sphere_map, geometry_type, lid2gid, lid2facenum, &
             nbr_id_rank, nirptr, semi_lagrange_nearest_point_lev, &

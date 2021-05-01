@@ -305,8 +305,7 @@ void slmm_init_impl (
   const auto p = homme::mpi::make_parallel(MPI_Comm_f2c(fcomm));
   homme::g_csl_mpi = homme::islmpi::init<homme::HommeMachineTraits>(
     homme::g_advecter, p, np, nlev, qsize, qsized, nelemd,
-    nbr_id_rank, nirptr, 1 /*2*/ /* halo */);
-#pragma message "1 halo"
+    nbr_id_rank, nirptr, 2 /* halo */);
   amb::dev_fin_threads();
 }
 
