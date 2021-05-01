@@ -436,7 +436,7 @@ void extend_local_meshes (const mpi::Parallel& p,
       }
     }
     // Recompute all normals.
-    slmm::fill_normals(local_mesh, advecter.geometry());
+    slmm::fill_normals(local_mesh);
   }
 }
 

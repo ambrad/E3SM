@@ -2,9 +2,8 @@
 
 namespace slmm {
 
-void fill_normals (LocalMesh<ko::MachineTraits::HES>& m,
-                   const Geometry::Type geometry) {
-  if (geometry == Geometry::Type::plane) {
+void fill_normals (LocalMesh<ko::MachineTraits::HES>& m) {
+  if (m.geometry == Geometry::Type::plane) {
 #ifndef NDEBUG
     {
       // In principle the plane could be embedded in a general orientation in 3D
@@ -68,7 +67,7 @@ void make_continuous (const Plane& p, LocalMesh<ko::MachineTraits::HES>& m) {
 
 namespace nearest_point {
 
-Int test_canpoa () {
+Int test_canpoa (const bool sphere) {
   Int nerr = 0;
   using geo = siqk::SphereGeometry;
   Real p0[] = {-0.5,0.5,0}, p1[] = {0.1,0.8,0}, nml[] = {0,0,-1};
@@ -81,7 +80,7 @@ Int test_canpoa () {
   geo::copy(correct[2], p1);
   for (Int i = 0; i < 3; ++i) {
     Real nr[3];
-    nearest_point::calc_approx_nearest_point_on_arc(p0, p1, nml, points[i], nr);
+    nearest_point::calc_approx_nearest_point_on_arc(p0, p1, nml, points[i], nr, sphere);
     Real d[3];
     geo::axpbyz(1, nr, -1, correct[i], d);
     if (std::sqrt(geo::norm2(d)) > 10*std::numeric_limits<Real>::epsilon())
@@ -106,7 +105,7 @@ Int test_calc (const LocalMesh<ES>& m, const Int& tgt_ic) {
     if (calc_dist(p0, v) > std::numeric_limits<Real>::epsilon() / L) ++nerr;
     Real on[3];
     siqk::SphereGeometry::combine(p0, p1, 0.4, on);
-    siqk::SphereGeometry::normalize(on);
+    if (m.is_sphere()) siqk::SphereGeometry::normalize(on);
     for (Int d = 0; d < 3; ++d) v[d] = on[d];
     calc(m, v);
     if (calc_dist(on, v) > 1e2*std::numeric_limits<Real>::epsilon() / L) ++nerr;
@@ -128,9 +127,6 @@ Int test_fill_perim (const LocalMesh<ES>& m, const Int& tgt_ic) {
         Real diff = 0;
         for (Int i = 0; i < 3; ++i) diff += std::abs(p[i] - perim[i]);
         if (diff == 0) ++on;
-
-        //TODO won't work until tgt_ic is right
-        if (diff == 0) pr("test_fill_perim tgt-cell point is on perim" pu(tgt_ic) pu(ip) pu(k) pu(diff));
       }
     }
     if (on > 0) ++nerr;
@@ -154,8 +150,7 @@ Int test_fill_perim (const LocalMesh<ES>& m, const Int& tgt_ic) {
 }
 } // namespace nearest_point
 
-Int unittest (LocalMesh<ko::MachineTraits::HES>& m, const Int tgt_elem,
-              const bool sphere) {
+Int unittest (LocalMesh<ko::MachineTraits::HES>& m, const Int tgt_elem) {
   Int nerr = 0, ne = 0;
   const Int nc = len(m.e);
   for (Int ic = 0; ic < nc; ++ic) {
@@ -178,12 +173,15 @@ Int unittest (LocalMesh<ko::MachineTraits::HES>& m, const Int tgt_elem,
   }
   if (ne) pr("slmm::unittest: get_src_cell failed");
   nerr += ne;
-  ne = nearest_point::test_canpoa();
+  ne = nearest_point::test_canpoa(true);
+  if (ne) pr("slmm::unittest: test_canpoa sphere failed");
   nerr += ne;
-  if (ne) pr("slmm::unittest: test_canpoa failed");
+  ne = nearest_point::test_canpoa(false);
+  if (ne) pr("slmm::unittest: test_canpoa plane failed");
+  nerr += ne;
   {
     nearest_point::fill_perim(m);
-    if (sphere)
+    if (m.is_sphere())
       ne = nearest_point::test_fill_perim<siqk::SphereGeometry>(m, tgt_elem);
     else
       ne = nearest_point::test_fill_perim<siqk::PlaneGeometry>(m, tgt_elem);
@@ -194,7 +192,7 @@ Int unittest (LocalMesh<ko::MachineTraits::HES>& m, const Int tgt_elem,
     nerr += ne;
   }
   {
-    ne = siqk::sqr::test::test_sphere_to_ref(m.p, m.e, sphere);
+    ne = siqk::sqr::test::test_sphere_to_ref(m.p, m.e, m.is_sphere());
     if (ne) pr("slmm::unittest: siqk::sqr::test::test_sphere_to_ref failed");
     nerr += ne;
   }

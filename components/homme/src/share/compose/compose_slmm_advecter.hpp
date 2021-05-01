@@ -188,6 +188,7 @@ struct Advecter {
 
   Int cubed_sphere_map () const { return cubed_sphere_map_; }
   Geometry::Type geometry () const { return geometry_; }
+  bool is_sphere () const { return geometry_ == Geometry::Type::sphere; }
   const Ints<DES>& lid2facenum () const { return lid2facenum_; }
 
   // nelem_global is used only if cubed_sphere_map = 0, to deduce ne in
@@ -266,6 +267,7 @@ void Advecter<MT>
     ncell = corners.extent_int(2),
     N = nvert*ncell;
   auto& m = local_mesh_h_(ie);
+  m.geometry = geometry_;
   typedef LocalMesh<HES> LM;
   m.p = typename LM::RealArray("p", N);
   m.e = typename LM::IntArray("e", ncell, nvert);
@@ -275,7 +277,7 @@ void Advecter<MT>
         m.p(k,j) = corners(j,vi,ci);
       m.e(ci,vi) = k;
     }
-  fill_normals(m, geometry_);
+  fill_normals(m);
   m.tgt_elem = slmm::get_src_cell(m, p_inside);
   slmm_assert(m.tgt_elem >= 0 && m.tgt_elem < ncell);
   if (geometry_ == Geometry::Type::plane)

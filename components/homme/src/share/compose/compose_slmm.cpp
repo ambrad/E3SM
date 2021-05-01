@@ -203,7 +203,7 @@ int slmm_unittest () {
     const bool sphere = homme::g_advecter->geometry() == slmm::Geometry::Type::sphere;
     for (int i = 0; i < homme::g_advecter->nelem(); ++i) {
       auto& m = homme::g_advecter->local_mesh_host(i);
-      ne += slmm::unittest(m, m.tgt_elem, sphere);
+      ne += slmm::unittest(m, m.tgt_elem);
     }
     if (ne)
       fprintf(stderr, "FAIL slmm::unittest returned %d\n", ne);
@@ -305,7 +305,8 @@ void slmm_init_impl (
   const auto p = homme::mpi::make_parallel(MPI_Comm_f2c(fcomm));
   homme::g_csl_mpi = homme::islmpi::init<homme::HommeMachineTraits>(
     homme::g_advecter, p, np, nlev, qsize, qsized, nelemd,
-    nbr_id_rank, nirptr, 2 /* halo */);
+    nbr_id_rank, nirptr, 1 /*2*/ /* halo */);
+#pragma message "1 halo"
   amb::dev_fin_threads();
 }
 

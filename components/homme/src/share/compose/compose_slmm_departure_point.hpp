@@ -29,6 +29,7 @@ struct LocalMesh {
   using Ints = ko::View<Int*, ES>;
 
   // Local mesh data.
+  bool geometry;
   RealArray p, nml;
   IntArray e, en;
 
@@ -39,6 +40,8 @@ struct LocalMesh {
 
   // Index of the target element in this local mesh.
   Int tgt_elem;
+
+  SLMM_KIF bool is_sphere () const { return geometry == Geometry::Type::sphere; }
 };
 
 // Inward-oriented normal. In practice, we want to form high-quality normals
@@ -73,8 +76,7 @@ void fill_normals (LocalMesh<ko::MachineTraits::HES>& m) {
   m.nml = nml;
 }
 
-void fill_normals(LocalMesh<ko::MachineTraits::HES>& m,
-                  const Geometry::Type geometry);
+void fill_normals(LocalMesh<ko::MachineTraits::HES>& m);
 
 // For doubly-periodic planar mesh, make the local mesh patch's vertices
 // continuous in space, anchored at m.tgt_elem.
@@ -272,15 +274,22 @@ void fill_perim (LocalMesh<ES>& m) {
 
 template <typename V3> SLMM_KF
 void calc_approx_nearest_point_on_arc (
-  const V3& p0, const V3& p1, const V3& nml, const Real* point, Real* nearest)
+  const V3& p0, const V3& p1, const V3& nml, const Real* point, Real* nearest,
+  const bool sphere)
 {
-  // Approximation is to project point onto the plane of the arc, then to
+  // The approximation is to project point onto the plane of the arc, then to
   // normalize to the arc. If point is on the arc, then nearest = point, as
   // desired.
   using geo = siqk::SphereGeometry;
-  const auto dot = geo::dot(point, nml);
-  for (Int d = 0; d < 3; ++d) nearest[d] = point[d] - dot*nml[d];
-  geo::normalize(nearest);
+  if (sphere) {
+    const auto dot = geo::dot(point, nml);
+    for (Int d = 0; d < 3; ++d) nearest[d] = point[d] - dot*nml[d];
+    geo::normalize(nearest);
+  } else {
+    Real dot = 0;
+    for (Int d = 0; d < 3; ++d) dot += (point[d] - p0[d])*nml[d];
+    for (Int d = 0; d < 3; ++d) nearest[d] = point[d] - dot*nml[d];
+  }
   // If this initial value for nearest is outside of the arc, then 'nearest' is
   // set to the nearer of p0 and p1.
   //   Find the nearest point on line in parameterized coord alpha. alpha is in
@@ -298,13 +307,14 @@ template <typename ES> SLMM_KF
 void calc (const LocalMesh<ES>& m, Real* v) {
   using geo = siqk::SphereGeometry;
   const Int nedge = m.perimp.size();
+  const bool sphere = m.is_sphere();
   const auto canpoa = [&] (const Int& ie, Real* vn) {
     calc_approx_nearest_point_on_arc(slice(m.p, m.perimp(ie)),
                                      slice(m.p, m.perimp((ie+1) % nedge)),
                                      slice(m.nml, m.perimnml(ie)),
-                                     v, vn);
+                                     v, vn, sphere);
   };
-  Real min_dist2 = 100;
+  Real min_dist2 = 1e20;
   Int min_ie = -1;
   for (Int ie = 0; ie < nedge; ++ie) {
     Real vn[3];
@@ -325,8 +335,7 @@ void calc (const LocalMesh<ES>& m, Real* v) {
 }
 } // namespace nearest_point
 
-Int unittest(LocalMesh<ko::MachineTraits::HES>& m, const Int tgt_elem,
-             const bool sphere);
+Int unittest(LocalMesh<ko::MachineTraits::HES>& m, const Int tgt_elem);
 
 std::string to_string(const LocalMesh<ko::MachineTraits::HES>& m);
 
