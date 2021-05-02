@@ -18,10 +18,11 @@ using Ints = Kokkos::View<Int*, ES>;
 // in addition, cubed_sphere_map=0.
 template <typename ES>
 struct SphereToRef {
-  void init (const Geometry::Type geometry, const Int cubed_sphere_map,
+  void init (const Geometry::Type geometry, const Int cubed_sphere_map, const Real length_scale,
              const Int nelem_global, const typename Ints<ES>::const_type& lid2facenum) {
     geometry_ = geometry;
     cubed_sphere_map_ = cubed_sphere_map;
+    length_scale_ = length_scale;
     lid2facenum_ = lid2facenum;
     nelem_global_ = nelem_global;
     ne_ = static_cast<Int>(std::round(std::sqrt((nelem_global / 6))));
@@ -46,12 +47,13 @@ struct SphereToRef {
     const Real tol = 1e2*std::numeric_limits<Real>::epsilon()) const
   {
     if (cubed_sphere_map_ == 2) {
+      // Tolerance is absolute, so multiply the rel tol by the length scale.
       if (geometry_ == Geometry::Type::sphere)
         siqk::sqr::calc_sphere_to_ref(m.p, slice(m.e, m.tgt_elem), q, a, b,
-                                      info, max_its, tol);
+                                      info, max_its, tol*length_scale_);
       else
         siqk::sqr::calc_plane_to_ref(m.p, slice(m.e, m.tgt_elem), q, a, b,
-                                     info, max_its, tol);;
+                                     info, max_its, tol*length_scale_);
     } else {
       const Int face = lid2facenum_(ie); //assume: ie corresponds to m.tgt_elem.
       map_sphere_coord_to_face_coord(face-1, q[0], q[1], q[2], a, b);
@@ -75,6 +77,7 @@ struct SphereToRef {
 
 private:
   Geometry::Type geometry_;
+  Real length_scale_;
   Int ne_, nelem_global_, cubed_sphere_map_;
   typename Ints<ES>::const_type lid2facenum_;
 
@@ -170,7 +173,6 @@ struct Advecter {
     plane.Sx = Sx; plane.Sy = Sy;
     plane.Lx = Lx; plane.Ly = Ly;
     plane.dx = dx; plane.dy = dy;
-    const auto& p = plane; pr("init_plane" pu(p.Sx) pu(p.Sy) pu(p.Lx) pu(p.Ly) pu(p.dx) pu(p.dy));
   }
 
   void fill_nearest_points_if_needed();

@@ -450,7 +450,7 @@ void calc_sphere_to_ref (
   Info* const info = nullptr,
   // Max number of iterations before returning with failure.
   const Int max_its = 10,
-  // Tolerance for Newton iteration.
+  // Absolute tolerance for Newton iteration.
   const Real tol = 1e2*std::numeric_limits<Real>::epsilon())
 {
   const Real tol2 = square(tol);
@@ -500,7 +500,7 @@ void calc_plane_to_ref (
   Info* const info = nullptr,
   // Max number of iterations before returning with failure.
   const Int max_its = 10,
-  // Tolerance for Newton iteration.
+  // Absolute tolerance for Newton iteration.
   const Real tol = 1e2*std::numeric_limits<Real>::epsilon())
 {
   const Real tol2 = square(tol);
