@@ -22,14 +22,32 @@ void fill_normals (LocalMesh<ko::MachineTraits::HES>& m) {
     fill_normals<siqk::SphereGeometry>(m);
 }
 
+// Modify m.p so that the elements surrounding the target element have
+// continuous rather than periodic coordinate values.
 void make_continuous (const Plane& p, LocalMesh<ko::MachineTraits::HES>& m) {
   slmm_assert(m.tgt_elem >= 0 && m.tgt_elem <= nslices(m.e));
   const auto tcell = slice(m.e, m.tgt_elem);
-  const auto dist = [&] (const Int ie, const Real dx, const Real dy) {
+  // Geometric center of cell.
+  const auto getctr = [&] (const Int ie, Real ctr[3]) {
     const auto cell = slice(m.e, ie);
-    return (std::abs(m.p(cell[0],0) + dx - m.p(tcell[0],0)) +
-            std::abs(m.p(cell[0],1) + dy - m.p(tcell[0],1)));
+    for (Int d = 0; d < 3; ++d) ctr[d] = 0;
+    for (Int i = 0; i < 4; ++i)
+      for (Int d = 0; d < 3; ++d)
+        ctr[d] += m.p(cell[i],d);
+    for (Int d = 0; d < 3; ++d) ctr[d] /= 4;
   };
+  Real tctr[3];
+  getctr(m.tgt_elem, tctr);
+  // Distance using cell center.
+  const auto dist = [&] (const Int ie, const Real dx, const Real dy) {
+    Real ctr[3];
+    getctr(ie, ctr);
+    Real dist = 0;
+    Real trans[3] = {dx, dy, 0};
+    for (Int d = 0; d < 3; ++d) dist += siqk::square(ctr[d] + trans[d] - tctr[d]);
+    return std::sqrt(dist);
+  };
+  // Translate cell dim d by delta.
   const auto translate = [&] (const Int ie, const Int d, const Real delta) {
     const auto cell = slice(m.e, ie);
     for (Int i = 0; i < 4; ++i)
@@ -38,12 +56,14 @@ void make_continuous (const Plane& p, LocalMesh<ko::MachineTraits::HES>& m) {
   const Int ncell = nslices(m.e);
   for (Int ie = 0; ie < ncell; ++ie) {
     if (ie == m.tgt_elem) continue;
+    // Find the distance-minimizing translation, including 0 translation.
     Real min_dist = 1e20, mdx = 0, mdy = 0;
     for (const Real dx : {-p.Lx, 0.0, p.Lx})
       for (const Real dy : {-p.Ly, 0.0, p.Ly}) {
         const Real d = dist(ie, dx, dy);
         if (d < min_dist) { min_dist = d; mdx = dx; mdy = dy; }
       }
+    // Apply the translation.
     translate(ie, 0, mdx);
     translate(ie, 1, mdy);
   }
