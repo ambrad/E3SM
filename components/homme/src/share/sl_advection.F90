@@ -343,7 +343,7 @@ contains
 #endif
        do k = 1, nlev
           call ALE_departure_from_gll(dep_points_all(:,:,k,ie), &
-               elem(ie)%derived%vstar(:,:,:,k), elem(ie), dt, normalize=.true.)
+               elem(ie)%derived%vstar(:,:,:,k), elem(ie), dt, normalize=is_sphere)
        end do
     end do
     call t_stopf('SLMM_v2x')

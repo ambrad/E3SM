@@ -507,11 +507,14 @@ void calc_plane_to_ref (
   Real rnorm2 = 1;
   a = b = 0;
   if (q[2] == 0) {
-    // Init assuming a quad in the x-y plane on a regular grid.
+    // Init assuming a quad in the x-y plane on an axis-aligned, regular grid.
     for (Int d = 0; d < 2; ++d) {
-      const Real den = p(e[1], d) - p(e[0], d);
+      // One of the two edges is 0 and the other the one we want if the
+      // assumption holds.
+      const Real den = std::max(std::abs(p(e[1], d) - p(e[0], d)),
+                                std::abs(p(e[2], d) - p(e[1], d)));
       if (den == 0) continue;
-      const Real ref = 2*((q[d] - p(e[0], d))/den) - 1;
+      const Real ref = 2*(std::abs(q[d] - p(e[0], d))/den) - 1;
       if (d == 0) a = ref; else b = ref;
     }
   }
