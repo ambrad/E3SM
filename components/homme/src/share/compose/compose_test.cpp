@@ -372,7 +372,20 @@ struct StandaloneTracersTester {
       for (Int k = 0; k < nlev; ++k)
         for (Int j = 0; j < np; ++j)
           for (Int i = 0; i < np; ++i) {
-            Real lat = p_elem(2,i,j), lon = p_elem(1,i,j);
+            Real lat, lon;
+            if (is_sphere) {
+              lat = p_elem(2,i,j);
+              lon = p_elem(1,i,j);
+            } else {
+#             pragma message "do proper ICs"
+              // To get something reasonable quickly, map (x,y) to (lon,lat).
+              // rp_elem is still the spherical_polar_t data structure, and
+              // plane geometry convention is to fill lon with x, lat with y,
+              // and set r to 0.
+              assert(p_elem(0,i,j) == 0); // check that the convention still holds
+              lon = 2*M_PI*((p_elem(1,i,j) - plane.Sx)/plane.Lx);
+              lat = M_PI*((p_elem(2,i,j) - plane.Sy)/plane.Ly - 0.5);
+            }
             offset_latlon(nlev, k, lat, lon);
             InitialCondition::init(get_ic(qsize,k,q), 1, &lat, &lon, &qdp(i,j,k,q));
             if (rdp)
@@ -383,18 +396,28 @@ struct StandaloneTracersTester {
   void fill_v (const Int ie, const Real* rp_elem, const Real t, Real* rv) const {
     const homme::FA3<const Real> p_elem(rp_elem, 3, np, np);
     const homme::FA4<Real> v(rv, np, np, 2, nlev);
-    NonDivergentWindField f;
-    for (Int k = 0; k < nlev; ++k)
-      for (Int j = 0; j < np; ++j)
-        for (Int i = 0; i < np; ++i) {
-          Real lat = p_elem(2,i,j), lon = p_elem(1,i,j);
-          offset_latlon(nlev, k, lat, lon);
-          const Real latlon[] = {lat, lon};
-          Real uv[2];
-          f.eval(t, latlon, uv);
-          v(i,j,0,k) = uv[0];
-          v(i,j,1,k) = uv[1];
-        }
+    if (is_sphere) {
+      NonDivergentWindField f;
+      for (Int k = 0; k < nlev; ++k)
+        for (Int j = 0; j < np; ++j)
+          for (Int i = 0; i < np; ++i) {
+            Real lat = p_elem(2,i,j), lon = p_elem(1,i,j);
+            offset_latlon(nlev, k, lat, lon);
+            const Real latlon[] = {lat, lon};
+            Real uv[2];
+            f.eval(t, latlon, uv);
+            v(i,j,0,k) = uv[0];
+            v(i,j,1,k) = uv[1];
+          }
+    } else {
+      const Real f = 1.0/day2sec(12);
+      for (Int k = 0; k < nlev; ++k)
+        for (Int j = 0; j < np; ++j)
+          for (Int i = 0; i < np; ++i) {
+            v(i,j,0,k) =  2.0*f*plane.Lx;
+            v(i,j,1,k) = -1.0*f*plane.Ly;
+          }
+    }
   }
 
   // Error data.
