@@ -215,11 +215,12 @@ void pack_dep_points_sendbuf_pass1 (IslMpi<MT>& cm) {
 #endif
 }
 
-SLMM_KF static void continuous2periodic (const slmm::Plane& p, const Real* con, Real* per) {
+SLMM_KF static void
+continuous2periodic (const slmm::Plane& p, const Real* con, Real* per) {
   for (Int d = 0; d < 3; ++d) per[d] = con[d];
-  if (con[0] < p.Sx) per[0] += p.Lx;
+  if (     con[0] < p.Sx       ) per[0] += p.Lx;
   else if (con[0] > p.Sx + p.Lx) per[0] -= p.Lx;
-  if (con[1] < p.Sy) per[1] += p.Ly;
+  if (     con[1] < p.Sy       ) per[1] += p.Ly;
   else if (con[1] > p.Sy + p.Ly) per[1] -= p.Ly;
 }
 

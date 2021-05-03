@@ -43,10 +43,8 @@ public:
     const auto cell = slice(e_, ei);
     const Real a_t = a_test[i], b_t = a_test[j];
     Real q[3];
-    if (sphere_)
-      sqr::calc_ref_to_sphere(p_, cell, a_t, b_t, q);
-    else
-      sqr::calc_ref_to_plane(p_, cell, a_t, b_t, q);
+    if (sphere_) sqr::calc_ref_to_sphere(p_, cell, a_t, b_t, q);
+    else         sqr::calc_ref_to_plane (p_, cell, a_t, b_t, q);
     Real length_scale = 0;
     for (Int i = 0; i < 4; ++i)
       length_scale = std::max(length_scale,
@@ -57,7 +55,7 @@ public:
     if (sphere_)
       sqr::calc_sphere_to_ref(p_, cell, q, a, b, &info, 100, tol_*length_scale);
     else
-      sqr::calc_plane_to_ref(p_, cell, q, a, b, &info, 100, tol_*length_scale);
+      sqr::calc_plane_to_ref (p_, cell, q, a, b, &info, 100, tol_*length_scale);
     const Real err = std::sqrt(square(a_t - a) + square(b_t - b));
     // tol is on dx, not (a,b), so adjust slightly.
     if ( ! info.success || err > 1e4*tol_) {

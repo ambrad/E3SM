@@ -168,11 +168,10 @@ struct Advecter {
     local_mesh_h_ = LocalMeshesH("local_mesh_h_", nelem);
   }
 
-  void init_plane (Real Sx, Real Sy, Real Lx, Real Ly, Real dx, Real dy) {
+  void init_plane (Real Sx, Real Sy, Real Lx, Real Ly) {
     slmm_assert(geometry_ == Geometry::Type::plane);
     plane.Sx = Sx; plane.Sy = Sy;
     plane.Lx = Lx; plane.Ly = Ly;
-    plane.dx = dx; plane.dy = dy;
   }
 
   void fill_nearest_points_if_needed();

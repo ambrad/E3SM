@@ -138,16 +138,21 @@ void InitialCondition
 struct StandaloneTracersTester {
   typedef std::shared_ptr<StandaloneTracersTester> Ptr;
 
+  struct Plane { Real Sx, Sy, Lx, Ly; };
+
   const Int np, nlev, qsize, qsize_d, nelemd, testno;
+  const bool is_sphere;
+  const Plane plane;
 
   // testno is 0 for the 2D transport test, 1 for 3D. Right now, the 3D test is
   // not actually a valid test; it's used just to create w values for BFB
   // comparison of F90 and C++ trajectory impls. Eventually, it might duplicate
   // test_src/dcmip2012_test1_conv.F90.
   StandaloneTracersTester (Int np_, Int nlev_, Int qsize_, Int qsize_d_,
-                           Int nelemd_, Int testno_)
+                           Int nelemd_, Int testno_, Int geometry_,
+                           Real Sx, Real Sy, Real Lx, Real Ly)
     : np(np_), nlev(nlev_), qsize(qsize_), qsize_d(qsize_d_), nelemd(nelemd_),
-      testno(testno_)
+      testno(testno_), is_sphere(geometry_ == 0), plane{Sx, Sy, Lx, Ly}
   {}
 
   void fill_uniform_density (const Int ie, Real* rdp) const {
@@ -308,14 +313,16 @@ extern "C" void compose_unittest () {
 }
 
 extern "C" void compose_stt_init (
-  Int np, Int nlev, Int qsize, Int qsize_d, Int nelemd, Int testno)
+  Int np, Int nlev, Int qsize, Int qsize_d, Int nelemd, Int testno,
+  // Data used only if geometry = 1 (plane); 0 is sphere.
+  Int geometry, Real Sx, Real Sy, Real Lx, Real Ly)
 {
 #ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
 # pragma omp master
 #endif
   g_stt = std::make_shared<StandaloneTracersTester>(
-    np, nlev, qsize, qsize_d, nelemd, testno);
+    np, nlev, qsize, qsize_d, nelemd, testno, geometry, Sx, Sy, Lx, Ly);
 #ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
 #endif

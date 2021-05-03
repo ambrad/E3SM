@@ -6,7 +6,7 @@
 namespace slmm {
 
 // Plane dimensions for planar doubly-periodic domain.
-struct Plane { Real Sx, Sy, Lx, Ly, dx, dy; };
+struct Plane { Real Sx, Sy, Lx, Ly; };
 
 /* A local mesh is described by the following arrays:
        p: 3 x #nodes, the array of vertices.

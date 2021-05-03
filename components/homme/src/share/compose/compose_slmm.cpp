@@ -321,10 +321,9 @@ void slmm_query_bufsz (homme::Int* sendsz, homme::Int* recvsz) {
   *recvsz = r;
 }
 
-void slmm_init_plane (homme::Real Sx, homme::Real Sy, homme::Real Lx, homme::Real Ly,
-                      homme::Real dx, homme::Real dy) {
+void slmm_init_plane (homme::Real Sx, homme::Real Sy, homme::Real Lx, homme::Real Ly) {
   slmm_assert(homme::g_advecter);
-  homme::g_advecter->init_plane(Sx, Sy, Lx, Ly, dx, dy);
+  homme::g_advecter->init_plane(Sx, Sy, Lx, Ly);
 }
 
 void slmm_set_bufs (homme::Real* sendbuf, homme::Real* recvbuf,
