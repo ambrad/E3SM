@@ -117,8 +117,8 @@ bool is_inside (const LocalMesh<ES>& m,
   return inside;
 }
 
-// Both cubed_sphere_map=0 and cubed_sphere_map=2 can use this
-// method. (cubed_sphere_map=1 is not impl'ed in Homme.)
+// Both cubed_sphere_map=0 and cubed_sphere_map=2 can use this method.
+// (cubed_sphere_map=1 is not impl'ed in Homme.)
 //   This method is natural for cubed_sphere_map=2, so RRM works automatically.
 //   cubed_sphere_map=0 is supported in Homme only for regular cubed-sphere
 // meshes, not RRM; in that case, edges are great arcs, so again this impl
