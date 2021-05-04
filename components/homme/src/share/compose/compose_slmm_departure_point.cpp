@@ -113,7 +113,7 @@ Int test_calc (const LocalMesh<ES>& m, const Int& tgt_ic) {
     if (m.is_sphere()) siqk::SphereGeometry::normalize(on);
     for (Int d = 0; d < 3; ++d) v[d] = on[d];
     calc(m, v);
-    if (calc_dist(on, v) > 10*tol) ++nerr;
+    if (calc_dist(on, v) > 100*tol) ++nerr;
   }
   return nerr;
 }
