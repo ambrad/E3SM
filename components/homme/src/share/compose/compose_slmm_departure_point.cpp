@@ -103,16 +103,17 @@ Int test_calc (const LocalMesh<ES>& m, const Int& tgt_ic) {
     const auto p0 = slice(m.p, m.perimp(k));
     const auto p1 = slice(m.p, m.perimp((k+1) % np_perim));
     const auto L = calc_dist(p0, p1);
+    const auto tol = std::numeric_limits<Real>::epsilon()*L;
     Real v[3];
     for (Int d = 0; d < 3; ++d) v[d] = p0[d];
     calc(m, v);
-    if (calc_dist(p0, v) > std::numeric_limits<Real>::epsilon() / L) ++nerr;
+    if (calc_dist(p0, v) > tol) ++nerr;
     Real on[3];
     siqk::SphereGeometry::combine(p0, p1, 0.4, on);
     if (m.is_sphere()) siqk::SphereGeometry::normalize(on);
     for (Int d = 0; d < 3; ++d) v[d] = on[d];
     calc(m, v);
-    if (calc_dist(on, v) > 1e2*std::numeric_limits<Real>::epsilon() / L) ++nerr;
+    if (calc_dist(on, v) > 10*tol) ++nerr;
   }
   return nerr;
 }
