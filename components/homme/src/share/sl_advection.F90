@@ -37,7 +37,7 @@ module sl_advection
   public :: prim_advec_tracers_remap_ALE, sl_init1, sl_vertically_remap_tracers, sl_unittest
 
   ! For testing
-  public :: calc_trajectory, dep_points_all
+  public :: calc_trajectory, dep_points_all, sphere2cart
 
   ! For C++
   public :: sl_get_params
@@ -135,13 +135,13 @@ contains
   end subroutine sl_init1
 
   subroutine sl_get_params(nu_q_out, hv_scaling, hv_q, hv_subcycle_q, limiter_option_out, &
-       cdr_check) bind(c)
+       cdr_check, geometry_type) bind(c)
     use control_mod, only: semi_lagrange_hv_q, hypervis_subcycle_q, semi_lagrange_cdr_check, &
-         hypervis_power, nu_q, hypervis_scaling, limiter_option
+         hypervis_power, nu_q, hypervis_scaling, limiter_option, geometry
     use iso_c_binding, only: c_int, c_double
 
     real(c_double), intent(out) :: nu_q_out, hv_scaling
-    integer(c_int), intent(out) :: hv_q, hv_subcycle_q, limiter_option_out, cdr_check
+    integer(c_int), intent(out) :: hv_q, hv_subcycle_q, limiter_option_out, cdr_check, geometry_type
 
     nu_q_out = nu_q
     hv_scaling = hypervis_scaling
@@ -150,6 +150,8 @@ contains
     limiter_option_out = limiter_option
     cdr_check = 0
     if (semi_lagrange_cdr_check) cdr_check = 1
+    geometry_type = 0 ! sphere
+    if (trim(geometry) == "plane") geometry_type = 1
 
     ! Assert some things.
     if (nu_q > 0 .and. hv_q > 0 .and. hypervis_power /= 0) &
