@@ -335,7 +335,8 @@ void calc (const LocalMesh<ES>& m, Real* v) {
 }
 } // namespace nearest_point
 
-Int unittest(LocalMesh<ko::MachineTraits::HES>& m, const Int tgt_elem);
+Int unittest(LocalMesh<ko::MachineTraits::HES>& m, const Int tgt_elem,
+             const Real length_scale = 1);
 
 std::string to_string(const LocalMesh<ko::MachineTraits::HES>& m);
 

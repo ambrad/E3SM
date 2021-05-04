@@ -94,7 +94,7 @@ Int test_canpoa (const bool sphere) {
 }
 
 template <typename ES>
-Int test_calc (const LocalMesh<ES>& m, const Int& tgt_ic) {
+Int test_calc (const LocalMesh<ES>& m, const Int& tgt_ic, const Real length_scale) {
   Int nerr = 0;
   // If a point is on the perim, then calc should return it as the nearest
   // point.
@@ -102,7 +102,7 @@ Int test_calc (const LocalMesh<ES>& m, const Int& tgt_ic) {
   for (Int k = 0; k < np_perim; ++k) {
     const auto p0 = slice(m.p, m.perimp(k));
     const auto p1 = slice(m.p, m.perimp((k+1) % np_perim));
-    const auto L = calc_dist(p0, p1);
+    const auto L = 1e2*length_scale;
     const auto tol = std::numeric_limits<Real>::epsilon()*L;
     Real v[3];
     for (Int d = 0; d < 3; ++d) v[d] = p0[d];
@@ -113,7 +113,7 @@ Int test_calc (const LocalMesh<ES>& m, const Int& tgt_ic) {
     if (m.is_sphere()) siqk::SphereGeometry::normalize(on);
     for (Int d = 0; d < 3; ++d) v[d] = on[d];
     calc(m, v);
-    if (calc_dist(on, v) > 100*tol) ++nerr;
+    if (calc_dist(on, v) > tol) ++nerr;
   }
   return nerr;
 }
@@ -155,7 +155,8 @@ Int test_fill_perim (const LocalMesh<ES>& m, const Int& tgt_ic) {
 }
 } // namespace nearest_point
 
-Int unittest (LocalMesh<ko::MachineTraits::HES>& m, const Int tgt_elem) {
+Int unittest (LocalMesh<ko::MachineTraits::HES>& m, const Int tgt_elem,
+              const Real length_scale) {
   Int nerr = 0, ne = 0;
   const Int nc = len(m.e);
   for (Int ic = 0; ic < nc; ++ic) {
@@ -192,7 +193,7 @@ Int unittest (LocalMesh<ko::MachineTraits::HES>& m, const Int tgt_elem) {
       ne = nearest_point::test_fill_perim<siqk::PlaneGeometry>(m, tgt_elem);
     if (ne) pr("slmm::unittest: test_fill_perim failed");
     nerr += ne;
-    ne = nearest_point::test_calc(m, tgt_elem);
+    ne = nearest_point::test_calc(m, tgt_elem, length_scale);
     if (ne) pr("slmm::unittest: test_calc failed");
     nerr += ne;
   }

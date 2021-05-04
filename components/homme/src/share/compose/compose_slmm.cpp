@@ -199,13 +199,14 @@ int slmm_unittest () {
   int nerr = 0, ne;
   {
     ne = 0;
-    const bool sphere = homme::g_advecter->geometry() == slmm::Geometry::Type::sphere;
+    const auto& p = homme::g_advecter->get_plane();
+    const homme::Real length_scale
+      = homme::g_advecter->is_sphere() ? 1 : std::max(p.Lx, p.Ly);
     for (int i = 0; i < homme::g_advecter->nelem(); ++i) {
       auto& m = homme::g_advecter->local_mesh_host(i);
-      ne += slmm::unittest(m, m.tgt_elem);
+      ne += slmm::unittest(m, m.tgt_elem, length_scale);
     }
-    if (ne)
-      fprintf(stderr, "FAIL slmm::unittest returned %d\n", ne);
+    if (ne) fprintf(stderr, "FAIL slmm::unittest returned %d\n", ne);
     nerr += ne;
   }
   amb::dev_fin_threads();
