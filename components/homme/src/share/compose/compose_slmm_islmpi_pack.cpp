@@ -215,15 +215,6 @@ void pack_dep_points_sendbuf_pass1 (IslMpi<MT>& cm) {
 #endif
 }
 
-SLMM_KF static void
-continuous2periodic (const slmm::Plane& p, const Real* con, Real* per) {
-  for (Int d = 0; d < 3; ++d) per[d] = con[d];
-  if (     con[0] < p.Sx       ) per[0] += p.Lx;
-  else if (con[0] > p.Sx + p.Lx) per[0] -= p.Lx;
-  if (     con[1] < p.Sy       ) per[1] += p.Ly;
-  else if (con[1] > p.Sy + p.Ly) per[1] -= p.Ly;
-}
-
 template <typename MT>
 void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const DepPoints<MT>& dep_points) {
   const auto myrank = cm.p->rank();
@@ -252,8 +243,6 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const DepPoints<MT>& dep_poi
     const auto sendbuf = cm.sendbuf.unmanaged();
     const auto x_bulkdata_offset = cm.x_bulkdata_offset.unmanaged();
     const auto bla = cm.bla.unmanaged();
-    const bool sphere = cm.advecter->is_sphere();
-    const auto plane = cm.advecter->get_plane();
 #ifdef COMPOSE_HORIZ_OPENMP
     const auto horiz_openmp = cm.horiz_openmp;
     const auto& ri_lidi_locks = cm.ri_lidi_locks;
@@ -292,11 +281,8 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const DepPoints<MT>& dep_poi
       if (horiz_openmp) omp_unset_lock(lock);
 #endif
       slmm_kernel_assert_high(xptr > 0);
-      if (sphere)
-        for (Int i = 0; i < 3; ++i)
-          sb(xptr + i) = dep_points(tci,lev,k,i);
-      else
-        continuous2periodic(plane, &dep_points(tci,lev,k,0), &sb(xptr));
+      for (Int i = 0; i < 3; ++i)
+        sb(xptr + i) = dep_points(tci,lev,k,i);
       auto& item = ed.rmt.atomic_inc_and_return_next();
       item.q_extrema_ptr = qsize * qptr;
       item.q_ptr = item.q_extrema_ptr + qsize*(2 + cnt);

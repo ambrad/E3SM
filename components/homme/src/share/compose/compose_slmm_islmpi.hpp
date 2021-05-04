@@ -671,10 +671,7 @@ void copy_q(IslMpi<MT>& cm, const Int& nets,
    plane's bounds, the values should stay as such. Impl reason: get_src_cell
    operates using LocalMesh, so it naturally wants the departure points to have
    continuous values to match the patch values.
-     The source cell's local id on the owning process is then communicated. When
-   the owning process computes the reference coordinates, it does so with the
-   LocalMesh whose tgt_elem matches the local id. As a result, at this point,
-   the departure point must be in periodic coorindates.
+     Once that calculation is done, dep_points is changed to periodic values.
 */
 template <typename MT = ko::MachineTraits>
 void step(
