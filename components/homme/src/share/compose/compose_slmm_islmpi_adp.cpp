@@ -86,8 +86,6 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
   const Int np2 = cm.np2, nlev = cm.nlev;
   const auto ed_d = cm.ed_d;
   const auto own_dep_mask = cm.own_dep_mask;
-  const auto& plane = cm.advecter->get_plane();
-  const Int qsize = cm.qsize;
   cm.bla.zero();
   cm.nx_in_lid.zero();
   cm.nx_in_rank.zero();
@@ -125,7 +123,7 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
         ko::atomic_increment(static_cast<volatile Int*>(&nx_in_rank(ri)));
       }
       // Change to periodic for use in next phase.
-      if (is_sphere) continuous2periodic(plane, &dep_points(tci,lev,k,0));
+      if ( ! is_sphere) continuous2periodic(plane, &dep_points(tci,lev,k,0));
     };
     ko::fence();
     ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, (nete - nets + 1)*nlev*np2), f);
@@ -210,7 +208,7 @@ void analyze_dep_points (IslMpi<MT>& cm, const Int& nets, const Int& nete,
         if (horiz_openmp) omp_unset_lock(lock);
 #endif
       }
-      if (is_sphere) continuous2periodic(plane, &dep_points(tci,lev,k,0));
+      if ( ! is_sphere) continuous2periodic(plane, &dep_points(tci,lev,k,0));
     };
     ko::fence();
     ko::parallel_for(

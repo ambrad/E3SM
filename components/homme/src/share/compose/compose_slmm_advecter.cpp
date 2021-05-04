@@ -21,7 +21,7 @@ void Advecter<MT>::check_ref2sphere (const Int ie, const Real* p_homme) {
   Real ref_coord[2];
   siqk::sqr::Info info;
   SphereToRef<typename MT::HES> s2r;
-  Real length_scale = m.is_sphere() ? 1 : std::max(plane.Lx, plane.Ly);
+  const Real length_scale = m.is_sphere() ? 1 : std::max(plane.Lx, plane.Ly);
   s2r.init(geometry_, cubed_sphere_map_, length_scale,
            s2r_.nelem_global(), lid2facenum_h_);
   const Real tol = s2r_.tol();

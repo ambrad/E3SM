@@ -29,7 +29,7 @@ struct LocalMesh {
   using Ints = ko::View<Int*, ES>;
 
   // Local mesh data.
-  bool geometry;
+  Geometry::Type geometry;
   RealArray p, nml;
   IntArray e, en;
 

@@ -353,7 +353,6 @@ void slmm_init_local_mesh (
     ie - 1, homme::FA3<const homme::Real>(
       reinterpret_cast<const homme::Real*>(neigh_corners), 3, 4, nnc),
     reinterpret_cast<const homme::Real*>(p_inside));
-  const auto m = homme::g_advecter->local_mesh_host(ie - 1);
   amb::dev_fin_threads();
 }
 
