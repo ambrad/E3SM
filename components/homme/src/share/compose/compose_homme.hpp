@@ -125,8 +125,8 @@ private:
   }
 };
 
-template <typename HFA> HFA unmanaged (
-  const HFA& s, typename std::enable_if<HFA::type_tag_HommeFormatArray == 42>::type* = 0)
+template <typename HFA> HFA& unmanaged (
+  HFA& s, typename std::enable_if<HFA::type_tag_HommeFormatArray == 42>::type* = 0)
 { return s; }
 
 // Qdp, dp, Q

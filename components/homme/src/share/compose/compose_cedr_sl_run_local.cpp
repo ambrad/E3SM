@@ -139,7 +139,6 @@ void run_local (CDR<MT>& cdr, CDRT* cedr_cdr_p,
   cedr_assert(ta.np == np_);
   static const Int np = np_, np2 = np_*np_;
   const Int nlev = ta.nlev, qsize = ta.qsize, nlevwrem = cdr.nsuplev*cdr.nsublev;
-
 #ifdef COMPOSE_PORT
   const auto q_min = unmanaged(ta.q_min);
   const auto q_max = unmanaged(ta.q_max);
@@ -151,17 +150,16 @@ void run_local (CDR<MT>& cdr, CDRT* cedr_cdr_p,
 #endif
   const auto np1 = ta.np1;
   const auto n1_qdp = ta.n1_qdp;
-  const auto spheremp = unmanaged(ta.spheremp);
-  const auto dp3d_c = unmanaged(ta.dp3d);
-  const auto qdp_c = unmanaged(ta.qdp);
-  const auto q_c = unmanaged(ta.q);
-
+  const AUTO_REF spheremp = unmanaged(ta.spheremp);
+  const AUTO_REF dp3d_c = unmanaged(ta.dp3d);
+  const AUTO_REF qdp_c = unmanaged(ta.qdp);
+  const AUTO_REF q_c = unmanaged(ta.q);
   const Int nsublev = cdr.nsublev;
   const Int nsuplev = cdr.nsuplev;
   const auto cdr_over_super_levels = cdr.cdr_over_super_levels;
   const auto caas_in_suplev = cdr.caas_in_suplev;
-  const auto ie2lci = unmanaged(cdr.ie2lci);
   const AUTO_REF cedr_cdr = *cedr_cdr_p;
+  const AUTO_REF ie2lci = unmanaged(cdr.ie2lci);
   const auto f = COMPOSE_LAMBDA (const Int& idx) {
     const Int ie = nets + idx/(nsuplev*qsize);
     const Int q = (idx / nsuplev) % qsize;
