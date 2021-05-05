@@ -11,6 +11,10 @@
 
 #include "compose_test.hpp"
 
+extern "C"
+void compose_repro_sum(const double* send, double* recv,
+                       int nlocal, int nfld, int fcomm);
+
 #define pr(m) do {                              \
     std::stringstream _ss_;                     \
     _ss_ << m << std::endl;                     \
@@ -400,64 +404,19 @@ struct StandaloneTracersTester {
         }
   }
 
-#if 0
-  // Debug output on a single rank.
-  std::vector<Real> d_;
-
-  void record_begin () {
-#ifdef HORIZ_OPENMP
-# pragma omp master
-#endif
-    d_.resize(3 * nelemd * np*np);
-#ifdef HORIZ_OPENMP
-# pragma omp barrier
-#endif
-  }
-
-  void record (const Int ie, const Real* rp_elem, const Real* spheremp,
-               const Real* rdp, const Real* rqdp) {
-    const FA3<const Real> p_elem(rp_elem, 3, np, np);
-    const FA4<const Real> qdp(rqdp, np, np, nlev, qsize_d);
-    const Int q = 0, k = 0;
-    Real* d = d_.data() + 3*np*np*ie;
-    for (Int j = 0; j < np; ++j)
-      for (Int i = 0; i < np; ++i) {
-        d[3*(np*j + i) + 0] = p_elem(2,i,j);
-        d[3*(np*j + i) + 1] = p_elem(1,i,j);
-        d[3*(np*j + i) + 2] = qdp(i,j,k,q);
-      }
-  }
-
-  void record_end () {
-#ifdef HORIZ_OPENMP
-# pragma omp barrier
-# pragma omp master
-    {
-#endif
-      FILE* fid = fopen("ct.txt", "w");
-      for (size_t i = 0; i < d_.size()/3; ++i)
-        fprintf(fid, "%1.15e %1.15e %1.15e\n",
-                d_[3*i+0], d_[3*i+1], d_[3*i+2]);
-      fclose(fid);
-#ifdef HORIZ_OPENMP
-    }
-#endif
-  }
-#else
   // Error data.
-  std::vector<Real> l2_err_, wrk_, mass0_, massf_;
+  std::vector<Real> l2_num_, l2_den_, wrk_, mass0_, massf_;
 
   void record_begin () {
-    int nthr = 1;
 #ifdef HORIZ_OPENMP
-    nthr = omp_get_num_threads();
 # pragma omp master
 #endif
     {
-      l2_err_.resize(2*nlev*qsize*nthr, 0);
-      wrk_.resize(np*np*nlev*qsize*nthr);
-      mass0_.resize(qsize*nthr, 0);
-      massf_.resize(qsize*nthr, 0);
+      l2_num_.resize(nlev*qsize*nelemd, 0);
+      l2_den_.resize(nlev*qsize*nelemd, 0);
+      wrk_.resize(np*np*nlev*qsize*nelemd);
+      mass0_.resize(qsize*nelemd, 0);
+      massf_.resize(qsize*nelemd, 0);
     }
 #ifdef HORIZ_OPENMP
 # pragma omp barrier
@@ -477,13 +436,15 @@ struct StandaloneTracersTester {
     const FA2<const Real> spheremp(rspheremp, np, np);
     const FA3<const Real> dp(rdp, np, np, nlev);
     const FA4<const Real> qdp(rqdp, np, np, nlev, qsize_d);
-    Real* const l2_err = l2_err_.data() + 2*nlev*qsize*tid;
+    FA3<Real> l2_num(l2_num_.data(), nelemd, nlev, qsize),
+      l2_den(l2_den_.data(), nelemd, nlev, qsize);
+    FA2<Real> mass0(mass0_.data(), nelemd, qsize),
+      massf(massf_.data(), nelemd, qsize);
     Real* const wrk = wrk_.data() + np*np*nlev*qsize*tid;
-    Real* const mass0 = mass0_.data() + qsize*tid;
-    Real* const massf = massf_.data() + qsize*tid;
     fill_ics(ie, rp_elem, nullptr, wrk);
     const FA4<const Real> q0(wrk, np, np, nlev, qsize_d);
-    for (Int q = 0; q < qsize; ++q)
+    for (Int q = 0; q < qsize; ++q) {
+      Real m0 = 0, mf = 0;
       for (Int k = 0; k < nlev; ++k) {
         Real num = 0, den = 0;
         for (Int j = 0; j < np; ++j)
@@ -491,15 +452,19 @@ struct StandaloneTracersTester {
             num += spheremp(i,j)*square(qdp(i,j,k,q)/dp(i,j,k) -
                                         q0(i,j,k,q));
             den += spheremp(i,j)*square(q0(i,j,k,q));
-            mass0[q] += spheremp(i,j)*q0(i,j,k,q) /* times rho = 1 */;
-            massf[q] += spheremp(i,j)*qdp(i,j,k,q);
+            m0 += spheremp(i,j)*q0(i,j,k,q) /* times rho = 1 */;
+            mf += spheremp(i,j)*qdp(i,j,k,q);
           }
-        l2_err[2*nlev*q + 2*k    ] += num;
-        l2_err[2*nlev*q + 2*k + 1] += den;
+        l2_num(ie,k,q) = num;
+        l2_den(ie,k,q) = den;
       }
+      mass0(ie,q) = m0;
+      massf(ie,q) = mf;
+    }
   }
 
-  void record_end (MPI_Comm comm, const Int root, const Int rank) {
+  void record_end (const Int fcomm, const Int root, const Int rank,
+                   Real* l2_errs, Real* mass_errs) {
 #ifdef HORIZ_OPENMP
 # pragma omp barrier
 #endif
@@ -512,40 +477,38 @@ struct StandaloneTracersTester {
 # pragma omp master
     {
 #endif
-      const int nthr = wrk_.size()/(np*np*nlev*qsize);
-      for (int i = 1; i < nthr; ++i) {
-        for (int j = 0; j < nr; ++j)
-          l2_err_[j] += l2_err_[nr*i + j];
-        for (int j = 0; j < qsize; ++j) {
-          mass0_[j] += mass0_[qsize*i + j];
-          massf_[j] += massf_[qsize*i + j];
-        }
+      {
+        FA2<Real> l2_num(wrk_.data(), nlev, qsize),
+          l2_den(wrk_.data() + nr, nlev, qsize);
+        compose_repro_sum(l2_num_.data(), l2_num.data(), nelemd, nr, fcomm);
+        compose_repro_sum(l2_den_.data(), l2_den.data(), nelemd, nr, fcomm);
+        if (rank == root)
+          for (int q = 0, cnt = 0; q < qsize; ++q) {
+            printf("COMPOSE>");
+            for (int k = 0; k < nlev; ++k) {
+              const auto err = std::sqrt(l2_num(k,q)/l2_den(k,q));
+              l2_errs[cnt++] = err;
+              printf("%23.16e", err);
+            }
+            printf("\n");
+          }
       }
-      MPI_Reduce(l2_err_.data(), wrk_.data(), nr, MPI_DOUBLE, MPI_SUM,
-                 root, comm);
-      if (rank == root)
-        for (int q = 0; q < qsize; ++q) {
-          printf("COMPOSE>");
-          for (int k = 0; k < nlev; ++k)
-            printf("%9.2e", std::sqrt(wrk_[2*nlev*q + 2*k] /
-                                      wrk_[2*nlev*q + 2*k + 1]));
-          printf("\n");
-        }
-      MPI_Reduce(mass0_.data(), wrk_.data(), qsize, MPI_DOUBLE, MPI_SUM,
-                 root, comm);
-      MPI_Reduce(massf_.data(), wrk_.data() + qsize, qsize, MPI_DOUBLE, MPI_SUM,
-                 root, comm);
-      if (rank == root)
-        for (int q = 0; q < qsize; ++q) {
-          printf("COMPOSE>");
-          const Real mass0 = wrk_[q], massf = wrk_[qsize + q];
-          printf(" mass0 %8.2e mass re %9.2e\n", mass0, (massf - mass0)/mass0);
-        }
+      {
+        Real* const mass0 = wrk_.data();
+        Real* const massf = mass0 + qsize;
+        compose_repro_sum(mass0_.data(), mass0, nelemd, qsize, fcomm);
+        compose_repro_sum(massf_.data(), massf, nelemd, qsize, fcomm);
+        if (rank == root)
+          for (int q = 0; q < qsize; ++q) {
+            const auto err = (massf[q] - mass0[q])/mass0[q];
+            mass_errs[q] = err;
+            printf("COMPOSE> mass0 %8.2e mass re %9.2e\n", mass0[q], err);
+          }
+      }  
 #ifdef HORIZ_OPENMP
     }
 #endif
   }
-#endif
 };
  
 static StandaloneTracersTester::Ptr g_stt;
@@ -603,8 +566,8 @@ extern "C" void compose_stt_record_q (
                 (n0_qdp - 1));
 }
 
-extern "C" void compose_stt_finish (Int fcomm, Int root, Int rank) {
-  g_stt->record_end(MPI_Comm_f2c(fcomm), root, rank);
+extern "C" void compose_stt_finish (Int fcomm, Int root, Int rank, Real* eval) {
+  g_stt->record_end(fcomm, root, rank, eval, eval + g_stt->nlev * g_stt->qsize);
 #ifdef HORIZ_OPENMP
 # pragma omp barrier
 # pragma omp master

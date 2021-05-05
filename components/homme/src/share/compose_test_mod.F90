@@ -59,9 +59,11 @@ interface
           dp3d(np,np,nlev,timelevels), qdp(np,np,nlev,qsize_d,2)
    end subroutine compose_stt_record_q
 
-   subroutine compose_stt_finish(comm, root, rank) bind(c)
-     use iso_c_binding, only: c_int
+   subroutine compose_stt_finish(comm, root, rank, eval) bind(c)
+     use iso_c_binding, only: c_int, c_double
+     use dimensions_mod, only: nlev, qsize
      integer (kind=c_int), value, intent(in) :: comm, root, rank
+     real (kind=c_double), intent(out) :: eval((nlev+1)*qsize)
    end subroutine compose_stt_finish
 #endif
 
@@ -192,7 +194,7 @@ contains
 
     type (timelevel_t) :: tl
     integer :: nsteps, n0_qdp, np1_qdp, ie, i, j
-    real (kind=real_kind) :: dt, tprev, t
+    real (kind=real_kind) :: dt, tprev, t, unused((nlev+1)*qsize)
 
     if (se_fv_phys_remap_alg == -1) then
        call gfr_test(hybrid, dom_mt, hvcoord, deriv, elem)
@@ -248,7 +250,7 @@ contains
             tl%np1, elem(ie)%state%dp3d, np1_qdp, elem(ie)%state%qdp)
     end do
     ! Do the global reductions, print diagnostic information, and clean up.
-    call compose_stt_finish(hybrid%par%comm, hybrid%par%root, hybrid%par%rank)
+    call compose_stt_finish(hybrid%par%comm, hybrid%par%root, hybrid%par%rank, unused)
     call t_stopf('compose_stt')
 #endif
   end subroutine compose_stt
