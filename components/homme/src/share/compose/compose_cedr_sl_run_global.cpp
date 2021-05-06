@@ -71,18 +71,18 @@ void run_global (CDR<MT>& cdr, CDRT* cedr_cdr_p,
 #endif
   const auto np1 = ta.np1;
   const auto n0_qdp = ta.n0_qdp;
-  const auto spheremp = unmanaged(ta.spheremp);
-  const auto dp3d_c = unmanaged(ta.dp3d);
-  const auto qdp_p = unmanaged(ta.qdp);
-  const auto q_c = unmanaged(ta.q);
+  const AUTO_REF spheremp = unmanaged(ta.spheremp);
+  const AUTO_REF dp3d_c = unmanaged(ta.dp3d);
+  const AUTO_REF qdp_p = unmanaged(ta.qdp);
+  const AUTO_REF q_c = unmanaged(ta.q);
 
   const Int nsublev = cdr.nsublev;
   const Int nsuplev = cdr.nsuplev;
-  const auto nonnegs = unmanaged(cdr.nonneg);
+  const AUTO_REF nonnegs = unmanaged(cdr.nonneg);
   const auto cdr_over_super_levels = cdr.cdr_over_super_levels;
   const auto caas_in_suplev = cdr.caas_in_suplev;
-  const auto ie2lci = unmanaged(cdr.ie2lci);
-  const auto ie2gci = unmanaged(cdr.ie2gci);
+  const AUTO_REF ie2lci = unmanaged(cdr.ie2lci);
+  const AUTO_REF ie2gci = unmanaged(cdr.ie2gci);
   const auto rank = cdr.p->rank();
   const AUTO_REF cedr_cdr = *cedr_cdr_p;
   if (cedr::impl::OnGpu<typename MT::DES>::value) {
@@ -99,6 +99,10 @@ void run_global (CDR<MT>& cdr, CDRT* cedr_cdr_p,
     const Int k0 = nsublev*spli;
     const bool nonneg = nonnegs[q];
     const Int ti = cdr_over_super_levels ? q : spli*qsize + q;
+    const auto spheremp1 = subview_ie(ie, spheremp);
+    const auto dp3d_c1 = subview_ie(ie, dp3d_c);
+    const auto qdp_p1 = subview_ie(ie, qdp_p);
+    const auto q_c1 = subview_ie(ie, q_c);
     Real Qm = 0, Qm_min = 0, Qm_max = 0, Qm_prev = 0, rhom = 0, volume = 0;
     Int ie_idx;
     if (caas_in_suplev)
@@ -119,15 +123,16 @@ void run_global (CDR<MT>& cdr, CDRT* cedr_cdr_p,
       }
       if (k < nlev) {
         for (Int g = 0; g < np2; ++g) {
-          volume += spheremp(ie,g);
-          const Real rhomij = dp3d_c(ie,np1,g,k) * spheremp(ie,g);
+          const auto smp = spheremp1(g);
+          volume += smp;
+          const Real rhomij = dp3d_c1(np1,g,k) * smp;
           rhom += rhomij;
-          Qm += q_c(ie,q,g,k) * rhomij;
+          Qm += q_c1(q,g,k) * rhomij;
           if ( ! cedr::impl::OnGpu<typename MT::DES>::value && nonneg)
             idx_qext(q_min,ie,q,g,k) = ko::max<Real>(idx_qext(q_min,ie,q,g,k), 0);
           Qm_min += idx_qext(q_min,ie,q,g,k) * rhomij;
           Qm_max += idx_qext(q_max,ie,q,g,k) * rhomij;
-          Qm_prev += qdp_p(ie,n0_qdp,q,g,k) * spheremp(ie,g);
+          Qm_prev += qdp_p1(n0_qdp,q,g,k) * smp;
         }
       }
       const bool write = ! caas_in_suplev || sbli == nsublev-1;

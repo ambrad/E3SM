@@ -6,25 +6,26 @@ namespace homme {
 namespace sl {
 
 template <int np_,
-          typename CV2, typename CV4, typename CV5, typename QV5,
-          typename V4, typename V5>
+          typename CV1, typename CV3,
+          typename QV4, typename CQV4,
+          typename V3, typename V4>
 COMPOSE_FUNCTION
 void solve_local (const Int ie, const Int k, const Int q,
                   const Int np1, const Int n1_qdp, const Int np,
                   const bool scalar_bounds, const Int limiter_option,
-                  const CV2& spheremp, const CV4& dp3d_c,
-                  const QV5& q_min, const CV5& q_max,
-                  const Real Qm, V5& qdp_c, V4& q_c) {
+                  const CV1& spheremp, const CV3& dp3d_c,
+                  const QV4& q_min, const CQV4& q_max,
+                  const Real Qm, V4& qdp_c, V3& q_c) {
   cedr_kernel_assert(np == np_);
   static const Int np2 = np_*np_;
 
   Real wa[np2], qlo[np2], qhi[np2], y[np2], x[np2];
   Real rhom = 0;
   for (Int g = 0; g < np2; ++g) {
-    const Real rhomij = dp3d_c(ie,np1,g,k) * spheremp(ie,g);
+    const Real rhomij = dp3d_c(np1,g,k) * spheremp(g);
     rhom += rhomij;
     wa[g] = rhomij;
-    y[g] = q_c(ie,q,g,k);
+    y[g] = q_c(q,g,k);
     x[g] = y[g];
   }
 
@@ -90,8 +91,8 @@ void solve_local (const Int ie, const Int k, const Int q,
   }
         
   for (Int g = 0; g < np2; ++g) {
-    q_c(ie,q,g,k) = x[g];
-    qdp_c(ie,n1_qdp,q,g,k) = q_c(ie,q,g,k) * dp3d_c(ie,np1,g,k);
+    q_c(q,g,k) = x[g];
+    qdp_c(n1_qdp,q,g,k) = x[g] * dp3d_c(np1,g,k);
   }
 }
 
@@ -166,6 +167,10 @@ void run_local (CDR<MT>& cdr, CDRT* cedr_cdr_p,
     const Int spli = idx % nsuplev;
     const Int k0 = nsublev*spli;
     const Int ti = cdr_over_super_levels ? q : spli*qsize + q;
+    const auto spheremp1 = subview_ie(ie, spheremp);
+    const auto dp3d_c1 = subview_ie(ie, dp3d_c);
+    const auto qdp_c1 = subview_ie(ie, qdp_c);
+    const auto q_c1 = subview_ie(ie, q_c);
     if (caas_in_suplev) {
       const auto ie_idx = (cdr_over_super_levels ?
                            nsuplev*ie + spli :
@@ -222,7 +227,7 @@ void run_local (CDR<MT>& cdr, CDRT* cedr_cdr_p,
         const Int k = k0 + i;
         solve_local<np_>(ie, k, q, np1, n1_qdp, np,
                          scalar_bounds, limiter_option,
-                         spheremp, dp3d_c, q_min, q_max, Qm[i], qdp_c, q_c);
+                         spheremp1, dp3d_c1, q_min, q_max, Qm[i], qdp_c1, q_c1);
       }
     } else {
       for (Int sbli = 0; sbli < nsublev; ++sbli) {
@@ -235,7 +240,7 @@ void run_local (CDR<MT>& cdr, CDRT* cedr_cdr_p,
         const Real Qm = cedr_cdr.get_Qm(lci, ti);
         solve_local<np_>(ie, k, q, np1, n1_qdp, np,
                          scalar_bounds, limiter_option,
-                         spheremp, dp3d_c, q_min, q_max, Qm, qdp_c, q_c);
+                         spheremp1, dp3d_c1, q_min, q_max, Qm, qdp_c1, q_c1);
       }
     }
   };

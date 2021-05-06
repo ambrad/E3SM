@@ -44,10 +44,80 @@ typename VT::value_type& idx_qext (const VT& qe, int ie, int q, int g, int lev) 
 }
 
 template <typename T, int rank_>
+struct HommeFormatSubArray {
+  enum { type_tag_HommeFormatSubArray = 41 };
+  enum : int { rank = rank_ };
+  typedef T value_type;
+
+  HommeFormatSubArray (T* data_, Int np2_, Int nlev_ = -1, Int qsized_ = -1,
+                       Int ntimelev_ = -1)
+    : data(data_), nlev(nlev_), qsized(qsized_), ntimelev(ntimelev_)
+  {
+    assert(np2_ == np2);
+  }
+
+  COMPOSE_FORCEINLINE_FUNCTION
+  T& operator() (const Int& i) const {
+    static_assert(rank == 1, "rank 1 array");
+    assert(i >= 0);
+    return data[i];
+  }
+  COMPOSE_FORCEINLINE_FUNCTION 
+  T& operator() (const Int& k, const Int& lev) const {
+    static_assert(rank == 2, "rank 2 array");
+    assert(k >= 0);
+    assert(lev >= 0);
+    check(k, lev);
+    return data[lev*np2 + k];
+  }
+  COMPOSE_FORCEINLINE_FUNCTION 
+  T& operator() (const Int& q_or_timelev, const Int& k, const Int& lev) const {
+    static_assert(rank == 3, "rank 3 array");
+    assert(q_or_timelev >= 0);
+    assert(k >= 0);
+    assert(lev >= 0);
+    check(k, lev, q_or_timelev);
+    return data[(q_or_timelev*nlev + lev)*np2 + k];
+  }
+  COMPOSE_FORCEINLINE_FUNCTION 
+  T& operator() (const Int& timelev, const Int& q, const Int& k, const Int& lev) const {
+    static_assert(rank == 4, "rank 4 array");
+    assert(timelev >= 0);
+    assert(q >= 0);
+    assert(k >= 0);
+    assert(lev >= 0);
+    check(k, lev, q, timelev);
+    return data[((timelev*qsized + q)*nlev + lev)*np2 + k];
+  }
+
+private:
+  static const int np2 = 16;  
+  T* data;
+  const Int nlev, qsized, ntimelev;
+
+  COMPOSE_FORCEINLINE_FUNCTION
+  void check (Int k = -1, Int lev = -1, Int q_or_timelev = -1,
+              Int timelev = -1) const {
+#ifdef COMPOSE_BOUNDS_CHECK
+    if (k >= 0) assert(k < np2);
+    if (lev >= 0) assert(lev < nlev);
+    if (q_or_timelev >= 0) {
+      if (qsized < 0)
+        assert(q_or_timelev < ntimelev);
+      else
+        assert(q_or_timelev < qsized);
+    }
+    if (timelev >= 0) assert(timelev < ntimelev);
+#endif    
+  }
+};
+
+template <typename T, int rank_>
 struct HommeFormatArray {
   enum { type_tag_HommeFormatArray = 42 };
   enum : int { rank = rank_ };
   typedef T value_type;
+  typedef HommeFormatSubArray<T,rank_-1> subview_type;
 
   HommeFormatArray (Int nelemd, Int np2_, Int nlev_ = -1, Int qsized_ = -1,
                     Int ntimelev_ = -1)
@@ -60,6 +130,11 @@ struct HommeFormatArray {
   void set_ie_ptr (const Int ie, T* ptr) {
     check(ie);
     ie_data_ptr[ie] = ptr;
+  }
+
+  COMPOSE_FORCEINLINE_FUNCTION
+  subview_type get_sub (const Int& ie) const {
+    return subview_type(ie_data_ptr[ie], np2, nlev, qsized, ntimelev);
   }
 
   COMPOSE_FORCEINLINE_FUNCTION
@@ -126,8 +201,12 @@ private:
 };
 
 template <typename HFA> HFA& unmanaged (
-  HFA& s, typename std::enable_if<HFA::type_tag_HommeFormatArray == 42>::type* = 0)
+  HFA& s, typename std::enable_if<HFA::type_tag_HommeFormatArray>::type* = 0)
 { return s; }
+
+template <typename HFA> typename HFA::subview_type subview_ie (
+  const Int ie, HFA& s, typename std::enable_if<HFA::type_tag_HommeFormatArray>::type* = 0)
+{ return s.get_sub(ie); }
 
 // Qdp, dp, Q
 template <typename MT>
