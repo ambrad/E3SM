@@ -245,6 +245,17 @@ struct TracerArrays {
   TracerArrays& operator=(const TracerArrays<MT>&) = delete;
 };
 
+template <typename DataType>
+using TracerView = ko::View<DataType, ko::LayoutRight, ko::MachineTraits::DDT>;
+template <typename T> TracerView<T*> subview_ie (const Int ie, const TracerView<T**>& s)
+{ return TracerView<T*>(&s(ie,0), s.extent(1)); }
+template <typename T> TracerView<T**> subview_ie (const Int ie, const TracerView<T***>& s)
+{ return TracerView<T**>(&s(ie,0,0), s.extent(1), s.extent(2)); }
+template <typename T> TracerView<T***> subview_ie (const Int ie, const TracerView<T****>& s)
+{ return TracerView<T***>(&s(ie,0,0,0), s.extent(1), s.extent(2), s.extent(3)); }
+template <typename T> TracerView<T****> subview_ie (const Int ie, const TracerView<T*****>& s)
+{ return TracerView<T****>(&s(ie,0,0,0,0), s.extent(1), s.extent(2), s.extent(3), s.extent(4)); }
+
 template <typename MT>
 void sl_h2d(TracerArrays<MT>& ta, bool transfer, Cartesian3D* dep_points);
 
