@@ -472,7 +472,7 @@ struct StandaloneTracersTester {
     // two pragmas directly adjacent, just in this section of code, Intel 17
     // gives "internal error: assertion failed: find_assoc_pragma: pragma not
     // found (shared/cfe/edgcpfe/il.c, line 23535)".
-    const int nr = 2*nlev*qsize;
+    const int nr = nlev*qsize;
 #ifdef HORIZ_OPENMP
 # pragma omp master
     {

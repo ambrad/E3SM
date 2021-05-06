@@ -623,8 +623,8 @@ contains
     real (kind=real_kind), intent(in   )         :: dt2
 
     ! local
-    real (kind=real_kind), dimension(np,np,nlev,qsize,nets:nete) :: Qtens
-    real (kind=real_kind), dimension(np,np,nlev                ) :: dp
+    real (kind=real_kind), dimension(np,np,nlev,nq,nets:nete) :: Qtens
+    real (kind=real_kind), dimension(np,np,nlev             ) :: dp
     real (kind=real_kind) :: dt
     integer :: k , ie , ic , q
 
@@ -701,7 +701,7 @@ contains
     type (hybrid_t)      , intent(in) :: hybrid
     type (element_t)     , intent(inout), target :: elem(:)
     integer :: nets,nete,nq
-    real (kind=real_kind), dimension(np,np,nlev,qsize,nets:nete) :: qtens
+    real (kind=real_kind), dimension(np,np,nlev,nq,nets:nete) :: qtens
     type (EdgeBuffer_t)  , intent(inout) :: edgeq
     type (derivative_t)  , intent(in) :: deriv
 
