@@ -13,6 +13,7 @@ contains
     use thetal_test_interface, only: init_f90
     use theta_f2c_mod, only: init_elements_c
     use edge_mod_base, only: initEdgeBuffer, edge_g
+    use prim_advection_base, only: edgeAdvQminmax
     use geometry_interface_mod, only: GridVertex
     use bndry_mod, only: sort_neighbor_buffer_mapping
     use reduction_mod, only: initreductionbuffer, red_sum, red_min, red_max
@@ -26,21 +27,43 @@ contains
     real (real_kind), intent(out) :: dvv(np,np), mp(np,np)
     logical (c_bool), value, intent(in) :: is_sphere
 
-    integer :: ie
+    integer :: ie, edgesz
 
-    if (is_sphere) print *, "NOT IMPL'ED YET"
+    if (.not. is_sphere) print *, "NOT IMPL'ED YET"
 
     qsize = qsize_in
 
     call init_f90(ne, hyai, hybi, hyam, hybm, dvv, mp, ps0)
     call init_elements_c(nelemd)
 
-    call initEdgeBuffer(par, edge_g, elem, 6*nlev+1)
+    edgesz = max((qsize+3)*nlev+2,6*nlev+1)
+    call initEdgeBuffer(par, edge_g, elem, edgesz)
+    call initEdgeBuffer(par, edgeAdvQminmax, elem, qsize*nlev*2)
 
     call initReductionBuffer(red_sum,5)
     call initReductionBuffer(red_min,1)
     call initReductionBuffer(red_max,1)
     allocate(global_shared_buf(nelemd, nrepro_vars))
   end subroutine init_gllfvremap_f90
+
+  subroutine run_gfr_test(nerr) bind(c)
+    use thetal_test_interface, only: deriv, hvcoord
+    use domain_mod, only: domain1d_t
+    use thread_mod, only: omp_get_thread_num
+    use hybrid_mod, only: hybrid_t, hybrid_create
+    use gllfvremap_mod, only: gfr_test
+
+    integer (c_int), intent(out) :: nerr
+
+    integer :: ithr
+    type (hybrid_t) :: hybrid
+    type (domain1d_t) :: dom_mt(0:0)
+
+    dom_mt(0)%start = 1
+    dom_mt(0)%end = nelemd
+    hybrid = hybrid_create(par, 0, 1)
+    
+    nerr = gfr_test(hybrid, dom_mt, hvcoord, deriv, elem)
+  end subroutine run_gfr_test
   
 end module physgrid_interface
