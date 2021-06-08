@@ -119,6 +119,8 @@ struct Session {
 
     auto& p = c.create<SimulationParams>();
     p.qsize = qsize;
+    p.hypervis_scaling = 0;
+    p.transport_alg = 0;
     p.params_set = true;
 
     const auto hyai = cmvdc(h.hybrid_ai);
