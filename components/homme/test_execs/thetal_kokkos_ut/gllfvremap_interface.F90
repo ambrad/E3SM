@@ -49,7 +49,6 @@ contains
   subroutine run_gfr_test(nerr) bind(c)
     use thetal_test_interface, only: deriv, hvcoord
     use domain_mod, only: domain1d_t
-    use thread_mod, only: omp_get_thread_num
     use hybrid_mod, only: hybrid_t, hybrid_create
     use gllfvremap_mod, only: gfr_test
 
@@ -65,5 +64,19 @@ contains
     
     nerr = gfr_test(hybrid, dom_mt, hvcoord, deriv, elem)
   end subroutine run_gfr_test
-  
+
+  subroutine run_gfr_check_api(nerr) bind(c)
+    use thetal_test_interface, only: hvcoord
+    use hybrid_mod, only: hybrid_t, hybrid_create
+    use gllfvremap_util_mod, only: gfr_check_api
+
+    integer (c_int), intent(out) :: nerr
+
+    integer :: ithr
+    type (hybrid_t) :: hybrid
+
+    hybrid = hybrid_create(par, 0, 1)    
+    nerr = gfr_check_api(hybrid, 1, nelemd, hvcoord, elem)
+  end subroutine run_gfr_check_api
+
 end module physgrid_interface

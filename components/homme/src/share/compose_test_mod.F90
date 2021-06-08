@@ -213,7 +213,7 @@ contains
     
     if (se_fv_phys_remap_alg == -1) then
        nerr = nerr + gfr_test(hybrid, dom_mt, hvcoord, deriv, elem)
-       call gfr_check_api(hybrid, nets, nete, hvcoord, elem)
+       nerr = nerr + gfr_check_api(hybrid, nets, nete, hvcoord, elem)
        return
     end if
 

@@ -2760,10 +2760,16 @@ contains
           write(iulog, '(a,es12.4)') 'gfr> l2  ', rd
           rd = abs(global_shared_sum(4) - global_shared_sum(3))/global_shared_sum(3)
           msg = ''
-          if (rd > 10*eps) msg = ' ERROR'
+          if (rd > 10*eps) then
+             nerr = nerr + 1
+             msg = ' ERROR'
+          end if
           write(iulog, '(a,es11.3,a8)') 'gfr> mass', rd, msg
           msg = ''
-          if (limit .and. (qmin < qmin1 - 5*eps .or. qmax > qmax1 + 5*eps)) msg = ' ERROR'
+          if (limit .and. (qmin < qmin1 - 5*eps .or. qmax > qmax1 + 5*eps)) then
+             nerr = nerr + 1
+             msg = ' ERROR'
+          end if
           write(iulog, '(a,es11.3,es11.3,a8)') 'gfr> limit', min(zero, qmin - qmin1), &
                max(zero, qmax - qmax1), msg
        end if

@@ -38,6 +38,7 @@ extern "C" {
                            bool is_sphere);
   void init_geometry_f90();
   void run_gfr_test(int* nerr);
+  void run_gfr_check_api(int* nerr);
 } // extern "C"
 
 using FA4d = Kokkos::View<Real****, Kokkos::LayoutLeft, Kokkos::HostSpace>;
@@ -252,6 +253,8 @@ TEST_CASE ("compose_transport_testing") {
 
   auto& s = Session::singleton(); try {
     int nerr;
+    run_gfr_test(&nerr);
+    REQUIRE(nerr == 0);
     run_gfr_test(&nerr);
     REQUIRE(nerr == 0);
   } catch (...) {}
