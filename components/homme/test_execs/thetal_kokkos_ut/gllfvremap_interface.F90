@@ -12,7 +12,7 @@ contains
     use hybvcoord_mod, only: set_layer_locations
     use thetal_test_interface, only: init_f90
     use theta_f2c_mod, only: init_elements_c
-    use edge_mod_base, only: initEdgeBuffer, edge_g
+    use edge_mod_base, only: initEdgeBuffer, edge_g, initEdgeSBuffer
     use prim_advection_base, only: edgeAdvQminmax
     use geometry_interface_mod, only: GridVertex
     use bndry_mod, only: sort_neighbor_buffer_mapping
@@ -38,7 +38,7 @@ contains
 
     edgesz = max((qsize+3)*nlev+2,6*nlev+1)
     call initEdgeBuffer(par, edge_g, elem, edgesz)
-    call initEdgeBuffer(par, edgeAdvQminmax, elem, qsize*nlev*2)
+    call initEdgeSBuffer(par, edgeAdvQminmax, elem, qsize*nlev*2)
 
     call initReductionBuffer(red_sum,5)
     call initReductionBuffer(red_min,1)

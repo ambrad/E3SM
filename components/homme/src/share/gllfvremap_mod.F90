@@ -2603,19 +2603,28 @@ contains
        a = sum(elem(ie)%metdet * gfr%w_gg)
        b = sum(gfr%fv_metdet(:nf2,ie) * gfr%w_ff(:nf2))
        rd = abs(b - a)/abs(a)
-       if (rd /= rd .or. rd > 10*eps) write(iulog,*) 'gfr> area', ie, a, b, rd
+       if (rd /= rd .or. rd > 10*eps) then
+          nerr = nerr + 1
+          write(iulog,*) 'gfr> area', ie, a, b, rd
+       end if
 
        ! Check FV geometry.
        f0(:nf2) = gfr%D_f(:,1,1,ie)*gfr%D_f(:,2,2,ie) - &
             gfr%D_f(:,1,2,ie)*gfr%D_f(:,2,1,ie)
        rd = maxval(abs(f0(:nf2)) - gfr%fv_metdet(:nf2,ie))/ &
             maxval(gfr%fv_metdet(:nf2,ie))
-       if (rd > 10*eps) write(iulog,*) 'gfr> D', ie, rd
+       if (rd > 10*eps) then
+          nerr = nerr + 1
+          write(iulog,*) 'gfr> D', ie, rd
+       end if
        f0(:nf2) = gfr%Dinv_f(:,1,1,ie)*gfr%Dinv_f(:,2,2,ie) - &
             gfr%Dinv_f(:,1,2,ie)*gfr%Dinv_f(:,2,1,ie)
        rd = maxval(abs(f0(:nf2)) - one/gfr%fv_metdet(:nf2,ie))/ &
             maxval(one/gfr%fv_metdet(:nf2,ie))
-       if (rd > 10*eps) write(iulog,*) 'gfr> Dinv', ie, rd
+       if (rd > 10*eps) then
+          nerr = nerr + 1
+          write(iulog,*) 'gfr> Dinv', ie, rd
+       end if
 
        ! Check that FV -> GLL -> FV recovers the original FV values exactly
        ! (with no DSS and no limiter).
@@ -2633,8 +2642,10 @@ contains
        a = sum(wf(:nf2)*abs(f1(:nf2) - f0(:nf2)))
        b = sum(wf(:nf2)*abs(f0(:nf2)))
        rd = a/b
-       if (rd /= rd .or. rd > 10*eps) &
-            write(iulog,*) 'gfr> recover', ie, a, b, rd, gfr%fv_metdet(:nf2,ie)
+       if (rd /= rd .or. rd > 10*eps) then
+          nerr = nerr + 1
+          write(iulog,*) 'gfr> recover', ie, a, b, rd, gfr%fv_metdet(:nf2,ie)
+       end if
     end do
     nerr = nerr + check_nonnegative(elem, nets, nete)
 
