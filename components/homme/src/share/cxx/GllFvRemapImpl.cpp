@@ -23,8 +23,7 @@ GllFvRemapImpl::GllFvRemapImpl ()
     m_tracers(Context::singleton().get<Tracers>()),
     m_sphere_ops(Context::singleton().get<SphereOperators>()),
     m_tp_ne(1,1,1), m_tu_ne(m_tp_ne), // throwaway settings
-    m_tp_ne_qsize(1,1,1), m_tu_ne_qsize(m_tp_ne_qsize), // throwaway settings
-    m_tp_ne_hv_q(1,1,1), m_tu_ne_hv_q(m_tp_ne_hv_q) // throwaway settings
+    m_tp_ne_qsize(1,1,1), m_tu_ne_qsize(m_tp_ne_qsize) // throwaway settings
 {
   nslot = calc_nslot(m_geometry.num_elems());
 }
@@ -84,14 +83,72 @@ void GllFvRemapImpl::init_boundary_exchanges () {
 }
 
 void GllFvRemapImpl
-::run_dyn_to_fv (const int ncol, const int nq, const int time_idx, const Phys0T& ps,
-                 const Phys0T& phis, const Phys1T& T, const Phys1T& omega, const Phys2T& uv,
-                 const Phys2T& q) {
+::run_dyn_to_fv (const int time_idx, const Phys0T& ps, const Phys0T& phis, const Phys1T& Ts,
+                 const Phys1T& omegas, const Phys2T& uvs, const Phys2T& qs) {
+  const auto nf2 = m_data.nf2;
+  const auto nelemd = m_data.nelemd;
+  const auto qsize = m_data.qsize;
+  const auto ncol = nelemd*nf2;
+
+  assert(ps.extent_int(0) >= ncol);
+  assert(phis.extent_int(0) >= ncol);
+  assert(Ts.extent_int(0) >= ncol && Ts.extent_int(1) % packn == 0);
+  assert(omegas.extent_int(0) >= ncol && omegas.extent_int(1) % packn == 0);
+  assert(uvs.extent_int(0) >= ncol && uvs.extent_int(1) == 2 && uvs.extent_int(2) % packn == 0);
+  assert(qs.extent_int(0) >= ncol && qs.extent_int(1) >= qsize && qs.extent_int(2) % packn == 0);
+
+  VPhys1T
+    T(real2pack(Ts), Ts.extent_int(0), Ts.extent_int(1)/packn),
+    omega(real2pack(omegas), omegas.extent_int(0), omegas.extent_int(1)/packn);
+  VPhys2T
+    uv(real2pack(uvs), uvs.extent_int(0), 2, uvs.extent_int(2)/packn),
+    q(real2pack(qs), qs.extent_int(0), qs.extent_int(1), qs.extent_int(2)/packn);
+
+  const auto fe = KOKKOS_LAMBDA (const MT& team) {
+    
+  };
+  Kokkos::parallel_for(m_tp_ne, fe);
+
+  const auto feq = KOKKOS_LAMBDA (const MT& team) {
+    
+  };
+  Kokkos::parallel_for(m_tp_ne_qsize, feq);
 }
 
 void GllFvRemapImpl::
-run_fv_to_dyn (const int ncol, const int nq, const int time_idx, const Real dt,
-               const CPhys1T& T, const CPhys2T& uv, const CPhys2T& q) {
+run_fv_to_dyn (const int time_idx, const Real dt, const CPhys1T& Ts, const CPhys2T& uvs,
+               const CPhys2T& qs) {
+  const auto nf2 = m_data.nf2;
+  const auto nelemd = m_data.nelemd;
+  const auto qsize = m_data.qsize;
+  const auto ncol = nelemd*nf2;
+
+  assert(Ts.extent_int(0) >= ncol && Ts.extent_int(1) % packn == 0);
+  assert(uvs.extent_int(0) >= ncol && uvs.extent_int(1) == 2 && uvs.extent_int(2) % packn == 0);
+  assert(qs.extent_int(0) >= ncol && qs.extent_int(1) >= qsize && qs.extent_int(2) % packn == 0);
+
+  CVPhys1T
+    T(creal2pack(Ts), Ts.extent_int(0), Ts.extent_int(1)/packn);
+  CVPhys2T
+    uv(creal2pack(uvs), uvs.extent_int(0), 2, uvs.extent_int(2)/packn),
+    q(creal2pack(qs), qs.extent_int(0), qs.extent_int(1), qs.extent_int(2)/packn);
+
+  const auto fe = KOKKOS_LAMBDA (const MT& team) {
+    
+  };
+  Kokkos::parallel_for(m_tp_ne, fe);
+
+  const auto feq = KOKKOS_LAMBDA (const MT& team) {
+    
+  };
+  Kokkos::parallel_for(m_tp_ne_qsize, feq);
+
+  // halo exchange
+
+  const auto geq = KOKKOS_LAMBDA (const MT& team) {
+    
+  };
+  Kokkos::parallel_for(m_tp_ne_qsize, geq);
 }
 
 } // namespace Homme

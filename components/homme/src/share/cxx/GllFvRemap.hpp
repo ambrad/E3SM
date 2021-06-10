@@ -36,7 +36,7 @@ public:
   typedef Phys1T::const_type CPhys1T;
   typedef Phys2T::const_type CPhys2T;
 
-  void run_dyn_to_fv(const int ncol, const int nq, const int time_idx,
+  void run_dyn_to_fv(const int time_idx,
                      // ps,phis(col)
                      const Phys0T& ps, const Phys0T& phis,
                      // T,omega(col,lev)
@@ -45,7 +45,7 @@ public:
                      const Phys2T& uv, 
                      // q(col,idx,lev)
                      const Phys2T& q);
-  void run_fv_to_dyn(const int ncol, const int nq, const int time_idx, const Real dt,
+  void run_fv_to_dyn(const int time_idx, const Real dt,
                      const CPhys1T& T, const CPhys2T& uv, const CPhys2T& q);
 
 private:

@@ -45,6 +45,10 @@ struct GllFvRemapImpl {
   typedef GllFvRemap::Phys2T Phys2T;
   typedef GllFvRemap::CPhys1T CPhys1T;
   typedef GllFvRemap::CPhys2T CPhys2T;
+  typedef ExecViewUnmanaged<Scalar**>  VPhys1T;
+  typedef ExecViewUnmanaged<Scalar***> VPhys2T;
+  typedef VPhys1T::const_type CVPhys1T;
+  typedef VPhys2T::const_type CVPhys2T;
 
   using TeamPolicy = Kokkos::TeamPolicy<ExecSpace>;
   using MT = typename TeamPolicy::member_type;
@@ -52,23 +56,14 @@ struct GllFvRemapImpl {
   using Buf1 = ExecViewUnmanaged<Scalar*[NP][NP][NUM_LEV_P]>;
   using Buf2 = ExecViewUnmanaged<Scalar*[2][NP][NP][NUM_LEV_P]>;
 
-  using DeparturePoints = ExecViewManaged<Real*[NUM_PHYSICAL_LEV][NP][NP][3]>;
-
   struct Data {
-    int nelemd, qsize, limiter_option, cdr_check, hv_q, hv_subcycle_q;
-    int geometry_type; // 0: sphere, 1: plane
-    Real nu_q, hv_scaling, dp_tol;
-    bool independent_time_steps;
+    int nelemd, qsize, nf2;
 
     Buf1 buf1[3];
     Buf2 buf2[2];
 
-    DeparturePoints dep_pts;
-
     Data ()
-      : nelemd(-1), qsize(-1), limiter_option(9), cdr_check(0), hv_q(0),
-        hv_subcycle_q(0), independent_time_steps(false), nu_q(0), hv_scaling(0),
-        dp_tol(-1), geometry_type(0)
+      : nelemd(-1), qsize(-1), nf2(-1)
     {}
   };
 
@@ -82,8 +77,8 @@ struct GllFvRemapImpl {
   int nslot;
   Data m_data;
 
-  TeamPolicy m_tp_ne, m_tp_ne_qsize, m_tp_ne_hv_q;
-  TeamUtils<ExecSpace> m_tu_ne, m_tu_ne_qsize, m_tu_ne_hv_q;
+  TeamPolicy m_tp_ne, m_tp_ne_qsize;
+  TeamUtils<ExecSpace> m_tu_ne, m_tu_ne_qsize;
 
   std::shared_ptr<BoundaryExchange>
     m_qdp_dss_be[Q_NUM_TIME_LEVELS], m_v_dss_be[2], m_hv_dss_be[2];
@@ -100,11 +95,11 @@ struct GllFvRemapImpl {
   void init_buffers(const FunctorsBuffersManager& fbm);
   void init_boundary_exchanges();
 
-  void run_dyn_to_fv(const int ncol, const int nq, const int time_idx, const Phys0T& ps,
-                     const Phys0T& phis, const Phys1T& T, const Phys1T& omega, const Phys2T& uv,
+  void run_dyn_to_fv(const int time_idx, const Phys0T& ps, const Phys0T& phis,
+                     const Phys1T& T, const Phys1T& omega, const Phys2T& uv,
                      const Phys2T& q);
-  void run_fv_to_dyn(const int ncol, const int nq, const int time_idx, const Real dt,
-                     const CPhys1T& T, const CPhys2T& uv, const CPhys2T& q);
+  void run_fv_to_dyn(const int time_idx, const Real dt, const CPhys1T& T,
+                     const CPhys2T& uv, const CPhys2T& q);
 
   template <int KLIM, typename Fn> KOKKOS_INLINE_FUNCTION
   static void loop_ijk (const KernelVariables& kv, const Fn& h) {
@@ -238,6 +233,10 @@ struct GllFvRemapImpl {
   Real* pack2real (const View& v) { return &(*v.data())[0]; }
   template <typename View> static KOKKOS_INLINE_FUNCTION
   const Real* cpack2real (const View& v) { return &(*v.data())[0]; }
+  template <typename View> static KOKKOS_INLINE_FUNCTION
+  Scalar* real2pack (const View& v) { return reinterpret_cast<Scalar*>(v.data()); }
+  template <typename View> static KOKKOS_INLINE_FUNCTION
+  const Scalar* creal2pack (const View& v) { return reinterpret_cast<const Scalar*>(v.data()); }
 };
 
 } // namespace Homme
