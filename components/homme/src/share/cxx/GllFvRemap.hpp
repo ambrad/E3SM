@@ -37,15 +37,16 @@ public:
   typedef Phys2T::const_type CPhys2T;
 
   void run_dyn_to_fv(const int ncol, const int nq, const int time_idx,
-                     // x(col)
+                     // ps,phis(col)
                      const Phys0T& ps, const Phys0T& phis,
-                     // x(col,lev)
-                     const Phys1T& T, const Phys1T& u, const Phys1T& v, const Phys1T& omega,
-                     // x(col,idx,lev)
+                     // T,omega(col,lev)
+                     const Phys1T& T, const Phys1T& omega,
+                     // uv(col, 0 or 1, lev)
+                     const Phys2T& uv, 
+                     // q(col,idx,lev)
                      const Phys2T& q);
   void run_fv_to_dyn(const int ncol, const int nq, const int time_idx, const Real dt,
-                     const CPhys1T& T, const CPhys1T& u, const CPhys1T& v,
-                     const CPhys2T& q);
+                     const CPhys1T& T, const CPhys2T& uv, const CPhys2T& q);
 
 private:
   std::unique_ptr<GllFvRemapImpl> m_impl;

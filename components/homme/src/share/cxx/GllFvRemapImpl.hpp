@@ -101,10 +101,10 @@ struct GllFvRemapImpl {
   void init_boundary_exchanges();
 
   void run_dyn_to_fv(const int ncol, const int nq, const int time_idx, const Phys0T& ps,
-                     const Phys0T& phis, const Phys1T& T, const Phys1T& u, const Phys1T& v,
-                     const Phys1T& omega, const Phys2T& q);
+                     const Phys0T& phis, const Phys1T& T, const Phys1T& omega, const Phys2T& uv,
+                     const Phys2T& q);
   void run_fv_to_dyn(const int ncol, const int nq, const int time_idx, const Real dt,
-                     const CPhys1T& T, const CPhys1T& u, const CPhys1T& v, const CPhys2T& q);
+                     const CPhys1T& T, const CPhys2T& uv, const CPhys2T& q);
 
   template <int KLIM, typename Fn> KOKKOS_INLINE_FUNCTION
   static void loop_ijk (const KernelVariables& kv, const Fn& h) {
