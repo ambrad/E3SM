@@ -253,6 +253,7 @@ TEST_CASE ("compose_transport_testing") {
 
   auto& s = Session::singleton(); try {
     int nerr;
+    // Run existing F90 gllfvremap unit tests.
     run_gfr_test(&nerr);
     REQUIRE(nerr == 0);
     run_gfr_test(&nerr);

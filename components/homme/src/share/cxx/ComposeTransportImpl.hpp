@@ -15,7 +15,6 @@
 #include "ElementsDerivedState.hpp"
 #include "FunctorsBuffersManager.hpp"
 #include "ErrorDefs.hpp"
-#include "EulerStepFunctor.hpp"
 #include "HommexxEnums.hpp"
 #include "HybridVCoord.hpp"
 #include "SimulationParams.hpp"
