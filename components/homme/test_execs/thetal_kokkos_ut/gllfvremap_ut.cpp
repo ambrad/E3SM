@@ -1,6 +1,6 @@
 #include "/home/ambrad/repo/sik/hommexx/dbg.hpp"
 
-#include "GllFvRemap.hpp"
+#include "GllFvRemapImpl.hpp"
 
 #include "Types.hpp"
 #include "Context.hpp"
@@ -282,9 +282,18 @@ assert_limiter_properties (const int nlev, const int n, const V1& spheremp,
 
 static void test_limiter (const int nlev, const int n, Random& r, const bool too_tight) {
   using Kokkos::deep_copy;
+
   const int n2 = n*n;
-  const ExecView<Real*> spheremp_d("spheremp", n2), qmin_d("qmin", nlev), qmax_d("qmax", nlev);
-  const ExecView<Real**> dp_d("dp", nlev, n2), qorig_d("qorig", nlev, n2), q_d("q", nlev, n2);
+  const int nlevpk = (nlev + GllFvRemapImpl::packn - 1)/GllFvRemapImpl::packn;
+  const int nlevsk = nlevpk*GllFvRemapImpl::packn;
+
+  const ExecView<Real*> spheremp_d("spheremp", n2);
+  const ExecView<Scalar*> qmin_p("qmin", nlevpk), qmax_p("qmax", nlevpk);
+  const ExecView<Scalar**> dp_p("dp", nlevpk, n2), qorig_p("qorig", nlevpk, n2), q_p("q", nlevpk, n2);
+  const ExecView<Real*> qmin_d(pack2real(qmin_p), nlevsk), qmax_d(pack2real(qmax_p), nlevsk);
+  const ExecView<Real**> dp_d(pack2real(dp_p), nlevsk, n2), qorig_d(pack2real(qorig_p), nlevsk, n2),
+    q_d(pack2real(q_p), nlevsk, n2);
+
   const auto spheremp = cmv(spheremp_d);
   const auto qmin = cmv(qmin_d), qmax = cmv(qmax_d);
   const auto dp = cmv(dp_d), qorig = cmv(qorig_d), q = cmv(q_d);
@@ -325,6 +334,8 @@ static void test_limiter (const int nlev, const int n, Random& r, const bool too
     for (int i = 0; i < n2; ++i) qf90(k,i) = qk[i];
   }
   assert_limiter_properties(nlev, n, spheremp, qmin, qmax, dp, qorig, qf90, too_tight);
+
+  //GllFvRemapImpl::limiter_clip_and_sum(nlev, );
 }
 
 TEST_CASE ("compose_transport_testing") {
