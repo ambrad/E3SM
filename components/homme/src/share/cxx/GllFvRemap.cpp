@@ -4,6 +4,9 @@
  * See the file 'COPYRIGHT' in the HOMMEXX/src/share/cxx directory
  *******************************************************************************/
 
+#pragma message "if 0 out for now"
+#if 0
+
 #include "GllFvRemap.hpp"
 #include "GllFvRemapImpl.hpp"
 #include "Context.hpp"
@@ -51,3 +54,5 @@ void GllFvRemap
 }
 
 } // Namespace Homme
+
+#endif

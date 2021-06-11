@@ -101,6 +101,14 @@ struct GllFvRemapImpl {
   void run_fv_to_dyn(const int time_idx, const Real dt, const CPhys1T& T,
                      const CPhys2T& uv, const CPhys2T& q);
 
+  template <typename CR1, typename V1, typename CV2, typename V2>
+  static KOKKOS_FUNCTION
+  void limiter_clip_and_sum (const int nlev, const int n, const CR1& spheremp,
+                             const V1& qmin, const V1& qmax,
+                             const CV2& dp, const V2& q) {
+    
+  }
+
   template <int KLIM, typename Fn> KOKKOS_INLINE_FUNCTION
   static void loop_ijk (const KernelVariables& kv, const Fn& h) {
     using Kokkos::parallel_for;
