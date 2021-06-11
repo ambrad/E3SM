@@ -114,12 +114,15 @@ module gllfvremap_mod
 
   type (GllFvRemap_t), private :: gfr
 
-  ! For testing.
+  ! For testing in gllfvremap_util_mod and gllfvremap_ut.
   public :: &
        gfr_test, &
        gfr_g2f_scalar, gfr_f2g_scalar, gfr_g2f_vector, &
        gfr_f_get_area, gfr_f_get_latlon, gfr_f_get_corner_latlon, gfr_f_get_cartesian3d, &
        gfr_g_make_nonnegative, gfr_dyn_to_fv_phys_topo_elem, gfr_f2g_dss
+  ! For testing in gllfvremap_ut.
+  public :: &
+       limiter1_clip_and_sum
 
   ! Interfaces to support calling inside or outside a horizontally
   ! threaded region.

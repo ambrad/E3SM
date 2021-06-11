@@ -1,3 +1,5 @@
+#include "/home/ambrad/repo/sik/hommexx/dbg.hpp"
+
 #include "GllFvRemap.hpp"
 
 #include "Types.hpp"
@@ -39,6 +41,8 @@ extern "C" {
   void init_geometry_f90();
   void run_gfr_test(int* nerr);
   void run_gfr_check_api(int* nerr);
+  void limiter1_clip_and_sum_f90(int n, double* spheremp, double* qmin, double* qmax,
+                                 double* dp, double* q);
 } // extern "C"
 
 using FA4d = Kokkos::View<Real****, Kokkos::LayoutLeft, Kokkos::HostSpace>;
@@ -248,6 +252,51 @@ typedef HostView<Real*[NP][NP][NUM_LEV*VECTOR_SIZE]> RNlevH;
 typedef HostView<Real**[NP][NP][NUM_LEV*VECTOR_SIZE]> RsNlevH;
 typedef HostView<Real***[NP][NP][NUM_LEV*VECTOR_SIZE]> RssNlevH;
 
+static void
+assert_limiter_properties (const int n, const Real* spheremp,
+                           const Real qmin, const Real qmax,
+                           const Real* dp, const Real* qorig, const Real* q,
+                           const bool too_tight) {
+  static const auto eps = std::numeric_limits<Real>::epsilon();
+  const int n2 = n*n;
+  Real qm0 = 0, qm = 0;
+  for (int i = 0; i < n2; ++i) {
+    REQUIRE(q[i] >= (1 - 1e1*eps)*qmin);
+    REQUIRE(q[i] <= (1 + 1e1*eps)*qmax);
+    qm0 += spheremp[i]*dp[i]*qorig[i];
+    qm  += spheremp[i]*dp[i]*q[i];
+  }
+  REQUIRE(almost_equal(qm0, qm, 1e2*eps));
+  if (too_tight)
+    for (int i = 1; i < n2; ++i)
+      REQUIRE(almost_equal(q[i], q[0], 1e2*eps));
+}
+
+template <int n>
+static void test_limiter (Random& r, const bool too_tight) {
+  static const int n2 = n*n;
+  Real spheremp[n2], dp[n2], q[n2], qorig[n2], mass = 0, qmass = 0, qmin = 1, qmax = 0;
+  for (int i = 0; i < n2; ++i) {
+    spheremp[i] = r.urrng(0.5, 1.5);
+    dp[i] = r.urrng(0.5, 1.5);
+    qorig[i] = q[i] = r.urrng(1e-2, 3e-2);
+    mass += spheremp[i]*dp[i];
+    qmass += spheremp[i]*dp[i]*q[i];
+    qmin = std::min(qmin, q[i]);
+    qmax = std::max(qmax, q[i]);
+  }
+  const auto q0 = qmass/mass;
+  if (too_tight) {
+    qmin = 0.5*(q0 + qmin);
+    qmax = 0.1*qmin + 0.9*q0;
+  } else {
+    qmin = 0.5*(q0 + qmin);
+    qmax = 0.5*(q0 + qmax);
+  }
+  limiter1_clip_and_sum_f90(n, spheremp, &qmin, &qmax, dp, q);
+  assert_limiter_properties(n, spheremp, qmin, qmax, dp, qorig, q, too_tight);
+}
+
 TEST_CASE ("compose_transport_testing") {
   static constexpr Real tol = std::numeric_limits<Real>::epsilon();
 
@@ -258,6 +307,8 @@ TEST_CASE ("compose_transport_testing") {
     REQUIRE(nerr == 0);
     run_gfr_test(&nerr);
     REQUIRE(nerr == 0);
+
+    for (const auto too_tight : {false, true}) test_limiter<7>(s.r, too_tight);
   } catch (...) {}
   Session::delete_singleton();
 }

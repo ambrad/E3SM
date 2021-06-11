@@ -79,4 +79,14 @@ contains
     nerr = gfr_check_api(hybrid, 1, nelemd, hvcoord, elem)
   end subroutine run_gfr_check_api
 
+  subroutine limiter1_clip_and_sum_f90(n, spheremp, qmin, qmax, dp, q) bind(c)
+    use gllfvremap_mod, only: limiter1_clip_and_sum
+
+    integer (c_int), value, intent(in) :: n
+    real (c_double), intent(in) :: spheremp(n*n), dp(n*n)
+    real (c_double), intent(inout) :: qmin, qmax, q(n*n)
+
+    call limiter1_clip_and_sum(n, spheremp, qmin, qmax, dp, q)
+  end subroutine limiter1_clip_and_sum_f90
+
 end module physgrid_interface
