@@ -45,10 +45,15 @@ extern "C" {
                                  double* dp, double* q);
 } // extern "C"
 
-using FA4d = Kokkos::View<Real****, Kokkos::LayoutLeft, Kokkos::HostSpace>;
+using CA1d = Kokkos::View<Real*, Kokkos::LayoutRight, Kokkos::HostSpace>;
+using CA2d = Kokkos::View<Real**, Kokkos::LayoutRight, Kokkos::HostSpace>;
 using CA4d = Kokkos::View<Real****, Kokkos::LayoutRight, Kokkos::HostSpace>;
-using FA5d = Kokkos::View<Real*****, Kokkos::LayoutLeft, Kokkos::HostSpace>;
 using CA5d = Kokkos::View<Real*****, Kokkos::LayoutRight, Kokkos::HostSpace>;
+
+template <typename V>
+decltype(Kokkos::create_mirror_view(V())) cmv (const V& v) {
+  return Kokkos::create_mirror_view(v);
+}
 
 template <typename V>
 decltype(Kokkos::create_mirror_view(V())) cmvdc (const V& v) {
@@ -252,49 +257,74 @@ typedef HostView<Real*[NP][NP][NUM_LEV*VECTOR_SIZE]> RNlevH;
 typedef HostView<Real**[NP][NP][NUM_LEV*VECTOR_SIZE]> RsNlevH;
 typedef HostView<Real***[NP][NP][NUM_LEV*VECTOR_SIZE]> RssNlevH;
 
+template <typename V1, typename V2, typename V2q>
 static void
-assert_limiter_properties (const int n, const Real* spheremp,
-                           const Real qmin, const Real qmax,
-                           const Real* dp, const Real* qorig, const Real* q,
+assert_limiter_properties (const int nlev, const int n, const V1& spheremp,
+                           const V1& qmin, const V1& qmax,
+                           const V2& dp, const V2& qorig, const V2q& q,
                            const bool too_tight) {
   static const auto eps = std::numeric_limits<Real>::epsilon();
   const int n2 = n*n;
-  Real qm0 = 0, qm = 0;
-  for (int i = 0; i < n2; ++i) {
-    REQUIRE(q[i] >= (1 - 1e1*eps)*qmin);
-    REQUIRE(q[i] <= (1 + 1e1*eps)*qmax);
-    qm0 += spheremp[i]*dp[i]*qorig[i];
-    qm  += spheremp[i]*dp[i]*q[i];
+  for (int k = 0; k < nlev; ++k) {
+    Real qm0 = 0, qm = 0;
+    for (int i = 0; i < n2; ++i) {
+      REQUIRE(q(k,i) >= (1 - 1e1*eps)*qmin(k));
+      REQUIRE(q(k,i) <= (1 + 1e1*eps)*qmax(k));
+      qm0 += spheremp(i)*dp(k,i)*qorig(k,i);
+      qm  += spheremp(i)*dp(k,i)*q(k,i);
+    }
+    REQUIRE(almost_equal(qm0, qm, 1e2*eps));
+    if (too_tight && k % 2 == 1)
+      for (int i = 1; i < n2; ++i)
+        REQUIRE(almost_equal(q(k,i), q(k,0), 1e2*eps));
   }
-  REQUIRE(almost_equal(qm0, qm, 1e2*eps));
-  if (too_tight)
-    for (int i = 1; i < n2; ++i)
-      REQUIRE(almost_equal(q[i], q[0], 1e2*eps));
 }
 
-template <int n>
-static void test_limiter (Random& r, const bool too_tight) {
-  static const int n2 = n*n;
-  Real spheremp[n2], dp[n2], q[n2], qorig[n2], mass = 0, qmass = 0, qmin = 1, qmax = 0;
-  for (int i = 0; i < n2; ++i) {
-    spheremp[i] = r.urrng(0.5, 1.5);
-    dp[i] = r.urrng(0.5, 1.5);
-    qorig[i] = q[i] = r.urrng(1e-2, 3e-2);
-    mass += spheremp[i]*dp[i];
-    qmass += spheremp[i]*dp[i]*q[i];
-    qmin = std::min(qmin, q[i]);
-    qmax = std::max(qmax, q[i]);
+static void test_limiter (const int nlev, const int n, Random& r, const bool too_tight) {
+  using Kokkos::deep_copy;
+  const int n2 = n*n;
+  const ExecView<Real*> spheremp_d("spheremp", n2), qmin_d("qmin", nlev), qmax_d("qmax", nlev);
+  const ExecView<Real**> dp_d("dp", nlev, n2), qorig_d("qorig", nlev, n2), q_d("q", nlev, n2);
+  const auto spheremp = cmv(spheremp_d);
+  const auto qmin = cmv(qmin_d), qmax = cmv(qmax_d);
+  const auto dp = cmv(dp_d), qorig = cmv(qorig_d), q = cmv(q_d);
+
+  for (int k = 0; k < nlev; ++k) {
+    Real mass = 0, qmass = 0;
+    qmin(k) = 1; qmax(k) = 0;
+    for (int i = 0; i < n2; ++i) {
+      if (k == 0) spheremp(i) = r.urrng(0.5, 1.5);
+      dp(k,i) = r.urrng(0.5, 1.5);
+      qorig(k,i) = q(k,i) = r.urrng(1e-2, 3e-2);
+      mass += spheremp(i)*dp(k,i);
+      qmass += spheremp(i)*dp(k,i)*q(k,i);
+      qmin(k) = std::min(qmin(k), q(k,i));
+      qmax(k) = std::max(qmax(k), q(k,i));
+    }
+    const auto q0 = qmass/mass;
+    if (too_tight && k % 2 == 1) {
+      qmin(k) = 0.5*(q0 + qmin(k));
+      qmax(k) = 0.1*qmin(k) + 0.9*q0;
+    } else {
+      qmin(k) = 0.5*(q0 + qmin(k));
+      qmax(k) = 0.5*(q0 + qmax(k));
+    }
   }
-  const auto q0 = qmass/mass;
-  if (too_tight) {
-    qmin = 0.5*(q0 + qmin);
-    qmax = 0.1*qmin + 0.9*q0;
-  } else {
-    qmin = 0.5*(q0 + qmin);
-    qmax = 0.5*(q0 + qmax);
+
+  deep_copy(spheremp, spheremp_d);
+  deep_copy(qmin, qmin_d); deep_copy(qmax, qmax_d);
+  deep_copy(dp, dp_d); deep_copy(qorig, qorig_d); deep_copy(q, q_d);
+
+  CA2d qf90("q", nlev, n2);
+  deep_copy(qf90, qorig);
+  CA1d dpk("dpk", n2), qk("qk", n2);
+  for (int k = 0; k < nlev; ++k) {
+    for (int i = 0; i < n2; ++i) dpk[i] = dp(k,i);
+    for (int i = 0; i < n2; ++i) qk[i] = qf90(k,i);
+    limiter1_clip_and_sum_f90(n, spheremp.data(), &qmin(k), &qmax(k), dpk.data(), qk.data());
+    for (int i = 0; i < n2; ++i) qf90(k,i) = qk[i];
   }
-  limiter1_clip_and_sum_f90(n, spheremp, &qmin, &qmax, dp, q);
-  assert_limiter_properties(n, spheremp, qmin, qmax, dp, qorig, q, too_tight);
+  assert_limiter_properties(nlev, n, spheremp, qmin, qmax, dp, qorig, qf90, too_tight);
 }
 
 TEST_CASE ("compose_transport_testing") {
@@ -308,7 +338,8 @@ TEST_CASE ("compose_transport_testing") {
     run_gfr_test(&nerr);
     REQUIRE(nerr == 0);
 
-    for (const auto too_tight : {false, true}) test_limiter<7>(s.r, too_tight);
+    for (const auto too_tight : {false, true})
+      test_limiter(11, 7, s.r, too_tight);
   } catch (...) {}
   Session::delete_singleton();
 }
