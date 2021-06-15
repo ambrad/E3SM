@@ -254,7 +254,7 @@ typedef HostView<Real*[NP][NP][NUM_LEV*VECTOR_SIZE]> RNlevH;
 typedef HostView<Real**[NP][NP][NUM_LEV*VECTOR_SIZE]> RsNlevH;
 typedef HostView<Real***[NP][NP][NUM_LEV*VECTOR_SIZE]> RssNlevH;
 
-static void sfwd_matvec (const int m, const int n,
+static void sfwd_remapd (const int m, const int n,
                          const Real* A, const Real* d1, const Real* d2,
                          const Real* x, Real* y) {
   for (int i = 0; i < m; ++i) {
@@ -265,14 +265,15 @@ static void sfwd_matvec (const int m, const int n,
   }
 }
 
-static void sfwd_matvec (const int m, const int n, const int nlev,
+static void sfwd_remapd (const int m, const int n, const int nlev,
                          const Real* A, const Real* d1, const Real* d2,
                          const Real* Dinv, const Real* D,
                          const Real* x, Real* y) {
   
 }
 
-static void test_matvecs (Random& r, const int m, const int n, const int nlev) {
+// Comparison of straightforwardly computed remapd vs GllFvRemapImpl version.
+static void test_remapds (Random& r, const int m, const int n, const int nlev) {
   using Kokkos::deep_copy;
   using g = GllFvRemapImpl;
 
@@ -281,7 +282,7 @@ static void test_matvecs (Random& r, const int m, const int n, const int nlev) {
   for (int i = 0; i <   n; ++i) d1[i] = r.urrng(0.2, 1.2);
   for (int i = 0; i < m  ; ++i) d2[i] = r.urrng(0.3, 1.1);
   for (int i = 0; i <   n; ++i) x [i] = r.urrng(0.4, 0.9);
-  sfwd_matvec(m, n, A.data(), d1.data(), d2.data(), x.data(), y.data());
+  sfwd_remapd(m, n, A.data(), d1.data(), d2.data(), x.data(), y.data());
 
   const int nlevpk = (nlev + g::packn - 1)/g::packn;
   const int nlevsk = nlevpk*g::packn;
@@ -305,7 +306,7 @@ static void test_matvecs (Random& r, const int m, const int n, const int nlev) {
   deep_copy(x_d, x_h);
 
   const auto f = KOKKOS_LAMBDA (const g::MT& team) {
-    g::matvec(team, m, n, nlevpk, A_d, d1_d, d2_d, x_p, x_p, y_p);
+    g::remapd(team, m, n, nlevpk, A_d, d1_d, d2_d, x_p, x_p, y_p);
   };
   Kokkos::parallel_for(Homme::get_default_team_policy<ExecSpace>(1), f);
 
@@ -426,8 +427,8 @@ TEST_CASE ("compose_transport_testing") {
     REQUIRE(nerr == 0);
 #endif
 
-    test_matvecs(s.r, 7, 11, 13);
-    test_matvecs(s.r, 16, 4, 8);
+    test_remapds(s.r, 7, 11, 13);
+    test_remapds(s.r, 16, 4, 8);
 
     for (const auto too_tight : {false, true})
       test_limiter(11, 7, s.r, too_tight);

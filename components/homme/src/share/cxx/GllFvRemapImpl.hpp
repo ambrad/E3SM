@@ -118,7 +118,7 @@ struct GllFvRemapImpl {
    */
   template <typename AT, typename D1T, typename D2T, typename XT, typename WT, typename YT>
   static KOKKOS_FUNCTION void
-  matvec (const MT& team,
+  remapd (const MT& team,
           const int m, const int n, const int nlev, // range of x,y fastest dim
           const AT& A, const D1T& d1, const D2T& d2,
           const XT& x, const YT& w, const WT& y) {
@@ -155,17 +155,17 @@ struct GllFvRemapImpl {
    */
   // Handle (dof,d) vs (d,dof) index ordering.
   template <bool idx_dof_d> static KOKKOS_INLINE_FUNCTION void
-  matvec_idx_order (const int& dof, const int& d, int& i1, int& i2)
+  remapd_idx_order (const int& dof, const int& d, int& i1, int& i2)
   { if (idx_dof_d) { i1 = dof; i2 = d; } else { i1 = d; i2 = dof; } }
   template <bool idx_dof_d> static KOKKOS_INLINE_FUNCTION int
-  matvec_idx_dof (             const int idx) { return idx_dof_d ? idx / 2 : idx % 2; }
+  remapd_idx_dof (             const int idx) { return idx_dof_d ? idx / 2 : idx % 2; }
   template <bool idx_dof_d> static KOKKOS_INLINE_FUNCTION int
-  matvec_idx_d   (const int n, const int idx) { return idx_dof_d ? idx % n : idx / n; }
+  remapd_idx_d   (const int n, const int idx) { return idx_dof_d ? idx % n : idx / n; }
   template <bool x_idx_dof_d,
             typename AT, typename D1T, typename D2T, typename DinvT, typename DT,
             typename XT, typename WT, typename YT>
   static KOKKOS_FUNCTION void
-  matvec (const MT& team,
+  remapd (const MT& team,
           const int m, const int n, const int nlev,
           const AT& A, const D1T& d1, const D2T& d2,
           const DinvT& Dinv, const DT& D,
@@ -178,8 +178,8 @@ struct GllFvRemapImpl {
     parallel_for(ttrn, [&] (const int i) {
       // This impl permits w to alias x. The alternative is to use twice as many
       // threads but w can't alias x.
-      int i11, i12; matvec_idx_order<x_idx_dof_d>(i, 0, i11, i12);
-      int i21, i22; matvec_idx_order<x_idx_dof_d>(i, 1, i21, i22);
+      int i11, i12; remapd_idx_order<x_idx_dof_d>(i, 0, i11, i12);
+      int i21, i22; remapd_idx_order<x_idx_dof_d>(i, 1, i21, i22);
       parallel_for(tvr, [&] (const int k) {
         const auto x1 = x(i11,i12,k), x2 = x(i21,i22,k);
         w(i11,i12,k) = (Dinv(i11,i12,1)*x1 + Dinv(i11,i12,2)*x2) * d1(i);
@@ -188,12 +188,12 @@ struct GllFvRemapImpl {
     });
     team.team_barrier();
     parallel_for(ttr2m, [&] (const int idx) {
-      const int i = matvec_idx_dof<!x_idx_dof_d>(idx);
-      const int d = matvec_idx_d<!x_idx_dof_d>(m, idx);
-      int yi1, yi2; matvec_idx_order<!x_idx_dof_d>(i, d, yi1, yi2);
+      const int i = remapd_idx_dof<!x_idx_dof_d>(idx);
+      const int d = remapd_idx_d<!x_idx_dof_d>(m, idx);
+      int yi1, yi2; remapd_idx_order<!x_idx_dof_d>(i, d, yi1, yi2);
       parallel_for(tvr, [&] (const int k) { y(yi1,yi2,k) = 0; });
       for (int j = 0; j < n; ++j) {
-        int xj1, xj2; matvec_idx_order<x_idx_dof_d>(j, d, xj1, xj2);
+        int xj1, xj2; remapd_idx_order<x_idx_dof_d>(j, d, xj1, xj2);
         parallel_for(tvr, [&] (const int k) { y(yi1,yi2,k) += A(i,j) * w(xj1,xj2,k); });
       }
       parallel_for(tvr, [&] (const int k) { y(yi1,yi2,k) /= d2(i); });
@@ -202,8 +202,8 @@ struct GllFvRemapImpl {
     parallel_for(ttrm, [&] (const int i) {
       // This impl avoids a work slot having y's structure; the alternative
       // using twice as many threads requires an extra work slot.
-      int i11, i12; matvec_idx_order<!x_idx_dof_d>(i, 0, i11, i12);
-      int i21, i22; matvec_idx_order<!x_idx_dof_d>(i, 1, i21, i22);
+      int i11, i12; remapd_idx_order<!x_idx_dof_d>(i, 0, i11, i12);
+      int i21, i22; remapd_idx_order<!x_idx_dof_d>(i, 1, i21, i22);
       parallel_for(tvr, [&] (const int k) {
         const auto y1 = y(i11,i12,k), y2 = y(i21,i22,k);
         y(i11,i12,k) = (D(i11,i12,1)*y1 + D(i11,i12,2)*y2);
