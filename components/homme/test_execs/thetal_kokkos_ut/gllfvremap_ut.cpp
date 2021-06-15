@@ -336,14 +336,36 @@ static void test_limiter (const int nlev, const int n, Random& r, const bool too
   }
   assert_limiter_properties(nlev, n, spheremp, qmin, qmax, dp, qorig, qf90, too_tight);
 
+  return; // not yet
   pr("now C++");
   const auto f = KOKKOS_LAMBDA (const g::MT& team) {
     g::limiter_clip_and_sum(nlev, n, spheremp_d, qmin_p, qmax_p, dp_p, q_p);
   };
   Kokkos::parallel_for(Homme::get_default_team_policy<ExecSpace>(1), f);
+  deep_copy(q, q_d);
   assert_limiter_properties(nlev, n, spheremp, qmin, qmax, dp, qorig, q, too_tight);
 
   // BFB
+  for (int k = 0; k < nlev; ++k)
+    for (int i = 0; i < n2; ++i)
+      REQUIRE(equal(qf90(k,i), q(k,i)));
+}
+
+static void sfwd_matvec (const int m, const int n, const int nlev,
+                         const Real* A, const Real* d1, const Real* d2,
+                         const Real* x, Real* y) {
+  
+}
+
+static void sfwd_matvec (const int m, const int n, const int nlev,
+                         const Real* A, const Real* d1, const Real* d2,
+                         const Real* Dinv, const Real* D,
+                         const Real* x, Real* y) {
+  
+}
+
+static void test_matvecs (const int m, const int n, const int nlev) {
+  
 }
 
 TEST_CASE ("compose_transport_testing") {

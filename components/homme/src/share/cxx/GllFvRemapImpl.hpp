@@ -102,139 +102,112 @@ struct GllFvRemapImpl {
                      const CPhys2T& uv, const CPhys2T& q);
 
   template <typename CR1, typename V1, typename CV2, typename V2>
-  static KOKKOS_FUNCTION
-  void limiter_clip_and_sum (const int nlev, const int n, const CR1& spheremp,
-                             const V1& qmin, const V1& qmax,
-                             const CV2& dp, const V2& q) {
+  static KOKKOS_FUNCTION void
+  limiter_clip_and_sum (const int nlev, const int n, const CR1& spheremp,
+                        const V1& qmin, const V1& qmax, const CV2& dp, const V2& q) {
     
   }
 
-  template <int KLIM, typename Fn> KOKKOS_INLINE_FUNCTION
-  static void loop_ijk (const KernelVariables& kv, const Fn& h) {
+  /* Compute
+         y(1:m,k) = (A (d1 x(1:n,k)))/d2, k = 1:nlev
+     Sizes are min; a dim can have larger size.
+         A m by n, d1 n, d2 m
+         x n by nlev, w n by nlev, y m by nlev
+     Permitted aliases:
+         w = x
+   */
+  template <typename AT, typename D1T, typename D2T, typename XT, typename YT, typename WT>
+  static KOKKOS_FUNCTION void
+  matvec (const MT& team,
+          const int m, const int n, const int nlev,
+          const AT& A, const D1T& d1, const D2T& d2,
+          const XT& x, const YT& y, const WT& w) {
     using Kokkos::parallel_for;
-    if (OnGpu<ExecSpace>::value) {
-      const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
-      const auto tvr = Kokkos::ThreadVectorRange(kv.team, KLIM);
-      const auto f = [&] (const int idx) {
-        const int i = idx / NP, j = idx % NP;
-        const auto g = [&] (const int k) { h(i,j,k); };
-        parallel_for(tvr, g);
-      };
-      parallel_for(ttr, f);
-    } else if (kv.team.team_size() == 1) {
-      for (int i = 0; i < NP; ++i)
-        for (int j = 0; j < NP; ++j)
-          for (int k = 0; k < KLIM; ++k)
-            h(i,j,k);
-    } else {
-      const auto tr = Kokkos::TeamThreadRange(kv.team, KLIM);
-      const auto f = [&] (const int k) {
-        for (int i = 0; i < NP; ++i)
-          for (int j = 0; j < NP; ++j)
-            h(i,j,k);
-      };
-      parallel_for(tr, f);
-    }
+    const auto ttrn = Kokkos::TeamThreadRange(team, n);
+    const auto ttrm = Kokkos::TeamThreadRange(team, m);
+    const auto tvr = Kokkos::ThreadVectorRange(team, nlev);
+    parallel_for( ttrn,   [&] (const int i) {
+      parallel_for(tvr,   [&] (const int k) { w(i,k) = x(i,k) * d1(i); }); });
+    team.team_barrier();
+    parallel_for( ttrm,   [&] (const int i) {
+      parallel_for(tvr,   [&] (const int k) { y(i,k) = 0; });
+      for (int j = 0; j < n; ++j)
+        parallel_for(tvr, [&] (const int k) { y(i,k) += A(i,j) * w(j,k); });
+      parallel_for(tvr,   [&] (const int k) { y(i,k) /= d2(i); }); });
   }
 
-  template <typename Fn> KOKKOS_INLINE_FUNCTION
-  static void loop_ij (const KernelVariables& kv, const Fn& h) {
-    if (OnGpu<ExecSpace>::value) {
-      const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
-      const auto f = [&] (const int idx) {
-        const int i = idx / NP, j = idx % NP;
-        const auto g = [&] () { h(i,j); };
-        Kokkos::single(Kokkos::PerThread(kv.team), g);
-      };
-      Kokkos::parallel_for(ttr, f);
-    } else if (kv.team.team_size() == 1) {
-      for (int i = 0; i < NP; ++i)
-        for (int j = 0; j < NP; ++j)
-          h(i,j);
-    } else {
-      const auto f = [&] () {
-        for (int i = 0; i < NP; ++i)
-          for (int j = 0; j < NP; ++j)
-            h(i,j);
-      };
-      Kokkos::single(Kokkos::PerTeam(kv.team), f);
-    }
-  }
-
-  template <typename Fn>
-  void loop_host_ie_plev_ij (const Fn& f) const {
-    for (int ie = 0; ie < m_data.nelemd; ++ie)
-      for (int lev = 0; lev < num_phys_lev; ++lev)
-        for (int i = 0; i < np; ++i)
-          for (int j = 0; j < np; ++j)
-            f(ie, lev, i, j);
-  }
-
-  template <int nlev> KOKKOS_INLINE_FUNCTION
-  static void idx_ie_nlev_ij (const int idx, int& ie, int& lev, int& i, int& j) {
-    ie = idx / (nlev*np*np);
-    lev = (idx / (np*np)) % nlev;
-    i = (idx / np) % np;
-    j = idx % np;
-  }
-
-  KOKKOS_INLINE_FUNCTION
-  static void idx_ie_physlev_ij (const int idx, int& ie, int& lev, int& i, int& j) {
-    idx_ie_nlev_ij<num_phys_lev>(idx, ie, lev, i, j);
-  }
-
-  template <typename Fn>
-  void launch_ie_physlev_ij (Fn& f) const {
-    Kokkos::parallel_for(
-      Kokkos::RangePolicy<ExecSpace>(0, m_data.nelemd*np*np*num_phys_lev), f);
-  }
-
-  KOKKOS_INLINE_FUNCTION
-  static void idx_ie_packlev_ij (const int idx, int& ie, int& lev, int& i, int& j) {
-    idx_ie_nlev_ij<num_lev_pack>(idx, ie, lev, i, j);
-  }
-
-  template <typename Fn>
-  void launch_ie_packlev_ij (Fn& f) const {
-    Kokkos::parallel_for(
-      Kokkos::RangePolicy<ExecSpace>(0, m_data.nelemd*np*np*num_lev_pack), f);
-  }
-
-  template <int nlev> KOKKOS_INLINE_FUNCTION
-  static void idx_ie_ij_nlev (const int idx, int& ie, int& i, int& j, int& lev) {
-    ie = idx / (np*np*nlev);
-    i = (idx / (np*nlev)) % np;
-    j = (idx / nlev) % np;
-    lev = idx % nlev;
-  }
-
-  template <int nlev, typename Fn>
-  void launch_ie_ij_nlev (Fn& f) const {
-    Kokkos::parallel_for(
-      Kokkos::RangePolicy<ExecSpace>(0, m_data.nelemd*np*np*nlev), f);
-  }
-
-  template <int nlev> KOKKOS_INLINE_FUNCTION
-  static void idx_ie_q_ij_nlev (const int qsize, const int idx,
-                                int& ie, int& q, int& i, int& j, int& lev) {
-    ie = idx / (qsize*np*np*nlev);
-    q = (idx / (np*np*nlev)) % qsize;
-    i = (idx / (np*nlev)) % np;
-    j = (idx / nlev) % np;
-    lev = idx % nlev;
-  }
-
-  template <int nlev, typename Fn>
-  void launch_ie_q_ij_nlev (const int qsize, Fn& f) const {
-    Kokkos::parallel_for(
-      Kokkos::RangePolicy<ExecSpace>(0, m_data.nelemd*qsize*np*np*nlev), f);
-  }
-
-  template <typename V>
-  static decltype(Kokkos::create_mirror_view(V())) cmvdc (const V& v) {
-    const auto h = Kokkos::create_mirror_view(v);
-    deep_copy(h, v);
-    return h;
+  /* Compute
+         xt(i,d,k) = Dinv(i,:,:) x(i,:,k), i = 1:n
+         yt(1:m,d,k) = (A (d1 (xt(1:n,d,k))))/d2
+         y(i,d,k) = D(i,:,:) yt(i,:,k),    i = 1:n
+     for k = 1:nlev. Sizes are min; a dim can have larger size.
+         A m by n, d1 n, d2 m
+         Dinv n by 2 by 2, D m by 2 by 2
+         x (n,2) by nlev, w (n,2) by nlev with x indexing, y (m,2) by nlev
+     Permitted aliases:
+         w = x
+     If x_idx_dof_d, then x is indexed as x(i,d,k) and y as y(d,i,k); else the
+     opposite.
+   */
+  // Handle (dof,d) vs (d,dof) index ordering.
+  template <bool idx_dof_d> static KOKKOS_INLINE_FUNCTION void
+  matvec_idx_order (const int& dof, const int& d, int& i1, int& i2)
+  { if (idx_dof_d) { i1 = dof; i2 = d; } else { i1 = d; i2 = dof; } }
+  template <bool idx_dof_d> static KOKKOS_INLINE_FUNCTION int
+  matvec_idx_dof (             const int idx) { return idx_dof_d ? idx / 2 : idx % 2; }
+  template <bool idx_dof_d> static KOKKOS_INLINE_FUNCTION int
+  matvec_idx_d   (const int n, const int idx) { return idx_dof_d ? idx % n : idx / n; }
+  template <bool x_idx_dof_d,
+            typename AT, typename D1T, typename D2T, typename DinvT, typename DT,
+            typename XT, typename YT, typename WT>
+  static KOKKOS_FUNCTION void
+  matvec (const MT& team,
+          const int m, const int n, const int nlev,
+          const AT& A, const D1T& d1, const D2T& d2,
+          const DinvT& Dinv, const DT& D,
+          const XT& x, const YT& y, const WT& w) {
+    using Kokkos::parallel_for;
+    const auto ttrn  = Kokkos::TeamThreadRange(team,   n);
+    const auto ttrm  = Kokkos::TeamThreadRange(team,   m);
+    const auto ttr2m = Kokkos::TeamThreadRange(team, 2*m);
+    const auto tvr = Kokkos::ThreadVectorRange(team, nlev);
+    parallel_for(ttrn, [&] (const int i) {
+      // This impl permits w to alias x. The alternative is to use twice as many
+      // threads but w can't alias x.
+      int i11, i12; matvec_idx_order<x_idx_dof_d>(i, 0, i11, i12);
+      int i21, i22; matvec_idx_order<x_idx_dof_d>(i, 1, i21, i22);
+      parallel_for(tvr, [&] (const int k) {
+        const auto x1 = x(i11,i12,k);
+        const auto x2 = x(i21,i22,k);
+        w(i11,i12,k) = (Dinv(i11,i12,1)*x1 + Dinv(i11,i12,2)*x2) * d1(i);
+        w(i21,i22,k) = (Dinv(i21,i22,1)*x1 + Dinv(i21,i22,2)*x2) * d1(i);
+      });
+    });
+    team.team_barrier();
+    parallel_for(ttr2m, [&] (const int idx) {
+      const int i = matvec_idx_dof<!x_idx_dof_d>(idx);
+      const int d = matvec_idx_d<!x_idx_dof_d>(m, idx);
+      int yi1, yi2; matvec_idx_order<!x_idx_dof_d>(i, d, yi1, yi2);
+      parallel_for(tvr, [&] (const int k) { y(yi1,yi2,k) = 0; });
+      for (int j = 0; j < n; ++j) {
+        int xj1, xj2; matvec_idx_order<x_idx_dof_d>(j, d, xj1, xj2);
+        parallel_for(tvr, [&] (const int k) { y(yi1,yi2,k) += A(i,j) * w(xj1,xj2,k); });
+      }
+      parallel_for(tvr, [&] (const int k) { y(yi1,yi2,k) /= d2(i); });
+    });
+    team.team_barrier();
+    parallel_for(ttrm, [&] (const int i) {
+      // This impl avoids a work slot having y's structure; the alternative
+      // using twice as many threads requires an extra work slot.
+      int i11, i12; matvec_idx_order<!x_idx_dof_d>(i, 0, i11, i12);
+      int i21, i22; matvec_idx_order<!x_idx_dof_d>(i, 1, i21, i22);
+      parallel_for(tvr, [&] (const int k) {
+        const auto y1 = y(i11,i12,k);
+        const auto y2 = y(i21,i22,k);
+        y(i11,i12,k) = (D(i11,i12,1)*y1 + D(i11,i12,2)*y2);
+        y(i21,i22,k) = (D(i21,i22,1)*y1 + D(i21,i22,2)*y2);
+      });
+    });
   }
 
   template <typename View> static KOKKOS_INLINE_FUNCTION
