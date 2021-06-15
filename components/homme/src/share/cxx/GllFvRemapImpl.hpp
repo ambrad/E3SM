@@ -158,9 +158,10 @@ struct GllFvRemapImpl {
   remapd_idx_order (const int& dof, const int& d, int& i1, int& i2)
   { if (idx_dof_d) { i1 = dof; i2 = d; } else { i1 = d; i2 = dof; } }
   template <bool idx_dof_d> static KOKKOS_INLINE_FUNCTION int
-  remapd_idx_dof (             const int idx) { return idx_dof_d ? idx / 2 : idx % 2; }
+  remapd_idx_dof (const int n, const int idx) { return idx_dof_d ? idx / 2 : idx % n; }
   template <bool idx_dof_d> static KOKKOS_INLINE_FUNCTION int
-  remapd_idx_d   (const int n, const int idx) { return idx_dof_d ? idx % n : idx / n; }
+  remapd_idx_d   (const int n, const int idx) { return idx_dof_d ? idx % 2 : idx / n; }
+
   template <bool x_idx_dof_d,
             typename AT, typename D1T, typename D2T, typename DinvT, typename DT,
             typename XT, typename WT, typename YT>
@@ -182,14 +183,14 @@ struct GllFvRemapImpl {
       int i21, i22; remapd_idx_order<x_idx_dof_d>(i, 1, i21, i22);
       parallel_for(tvr, [&] (const int k) {
         const auto x1 = x(i11,i12,k), x2 = x(i21,i22,k);
-        w(i11,i12,k) = (Dinv(i11,i12,1)*x1 + Dinv(i11,i12,2)*x2) * d1(i);
-        w(i21,i22,k) = (Dinv(i21,i22,1)*x1 + Dinv(i21,i22,2)*x2) * d1(i);
+        w(i11,i12,k) = (Dinv(i,0,0)*x1 + Dinv(i,0,1)*x2) * d1(i);
+        w(i21,i22,k) = (Dinv(i,1,0)*x1 + Dinv(i,1,1)*x2) * d1(i);
       });
     });
     team.team_barrier();
     parallel_for(ttr2m, [&] (const int idx) {
-      const int i = remapd_idx_dof<!x_idx_dof_d>(idx);
-      const int d = remapd_idx_d<!x_idx_dof_d>(m, idx);
+      const int i = remapd_idx_dof<!x_idx_dof_d>(m, idx);
+      const int d = remapd_idx_d  <!x_idx_dof_d>(m, idx);
       int yi1, yi2; remapd_idx_order<!x_idx_dof_d>(i, d, yi1, yi2);
       parallel_for(tvr, [&] (const int k) { y(yi1,yi2,k) = 0; });
       for (int j = 0; j < n; ++j) {
@@ -206,8 +207,8 @@ struct GllFvRemapImpl {
       int i21, i22; remapd_idx_order<!x_idx_dof_d>(i, 1, i21, i22);
       parallel_for(tvr, [&] (const int k) {
         const auto y1 = y(i11,i12,k), y2 = y(i21,i22,k);
-        y(i11,i12,k) = (D(i11,i12,1)*y1 + D(i11,i12,2)*y2);
-        y(i21,i22,k) = (D(i21,i22,1)*y1 + D(i21,i22,2)*y2);
+        y(i11,i12,k) = D(i,0,0)*y1 + D(i,0,1)*y2;
+        y(i21,i22,k) = D(i,1,0)*y1 + D(i,1,1)*y2;
       });
     });
   }

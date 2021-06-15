@@ -265,11 +265,22 @@ static void sfwd_remapd (const int m, const int n,
   }
 }
 
-static void sfwd_remapd (const int m, const int n, const int nlev,
+static void sfwd_remapd (const int m, const int n,
                          const Real* A, const Real* d1, const Real* d2,
                          const Real* Dinv, const Real* D,
-                         const Real* x, Real* y) {
-  
+                         const Real* x, Real* wx, Real* wy, Real* y) {
+  for (int d = 0; d < 2; ++d) {
+    const int os = d*n;
+    for (int i = 0; i < n; ++i)
+      wx[os+i] = Dinv[4*i+2*d]*x[i] + Dinv[4*i+2*d+1]*x[n+i];
+  }
+  for (int d = 0; d < 2; ++d)
+    sfwd_remapd(m, n, A, d1, d2, wx + d*n, wy + d*m);
+  for (int d = 0; d < 2; ++d) {
+    const int os = d*m;
+    for (int i = 0; i < m; ++i)
+      y[os+i] = D[4*i+2*d]*wy[i] + D[4*i+2*d+1]*wy[m+i];
+  }  
 }
 
 // Comparison of straightforwardly computed remapd vs GllFvRemapImpl version.
@@ -277,23 +288,33 @@ static void test_remapds (Random& r, const int m, const int n, const int nlev) {
   using Kokkos::deep_copy;
   using g = GllFvRemapImpl;
 
-  std::vector<Real> A(m*n), d1(n), d2(m), x(n), y(m);
+  // Random data for both scalar and vector remapd.
+
+  std::vector<Real> A(m*n), d1(n), d2(m), x(2*n), y(2*m), Dinv(4*n), D(4*m);
   for (int i = 0; i < m*n; ++i) A [i] = r.urrng(0.1, 1.3);
   for (int i = 0; i <   n; ++i) d1[i] = r.urrng(0.2, 1.2);
   for (int i = 0; i < m  ; ++i) d2[i] = r.urrng(0.3, 1.1);
-  for (int i = 0; i <   n; ++i) x [i] = r.urrng(0.4, 0.9);
-  sfwd_remapd(m, n, A.data(), d1.data(), d2.data(), x.data(), y.data());
+  for (int i = 0; i < 2*n; ++i) x [i] = r.urrng(0.4, 0.9);
+  for (int i = 0; i < 4*n; ++i) Dinv[i] = r.urrng(0.5, 1.1);
+  for (int i = 0; i < 4*m; ++i) D   [i] = r.urrng(0.6, 1.2);
 
   const int nlevpk = (nlev + g::packn - 1)/g::packn;
   const int nlevsk = nlevpk*g::packn;
   // Size arrays larger than needed because we want to support that case.
+  const ExecView<Real*[2][2]> Dinv_d("Dinv", n), D_d("D", m);
   const ExecView<Real**> A_d("A", m+1, n+2);
   const ExecView<Real*> d1_d("d1", n+1), d2_d("d2", m+3);
   const ExecView<Scalar**> x_p("x", n+1, nlevpk), y_p("y", m+2, nlevpk);
   const ExecView<Real**> x_d(g::pack2real(x_p), n+1, nlevsk), y_d(g::pack2real(y_p), m+2, nlevsk);
+  const auto Dinv_h = cmv(Dinv_d), D_h = cmv(D_d);
   const auto A_h = cmv(A_d);
   const auto d1_h = cmv(d1_d), d2_h = cmv(d2_d);
   const auto x_h = cmv(x_d), y_h = cmv(y_d);
+    for (int d1 = 0; d1 < 2; ++d1)
+      for (int d2 = 0; d2 < 2; ++d2) {
+        for (int i = 0; i < n; ++i) Dinv_h(i,d1,d2) = Dinv[4*i + 2*d1 + d2];
+        for (int i = 0; i < m; ++i) D_h   (i,d1,d2) = D   [4*i + 2*d1 + d2];
+      }
   for (int i = 0; i < m; ++i)
     for (int j = 0; j < n; ++j)
       A_h(i,j) = A[n*i + j];
@@ -302,18 +323,72 @@ static void test_remapds (Random& r, const int m, const int n, const int nlev) {
   for (int k = 0; k < nlev; ++k)
     for (int i = 0; i < n; ++i)
       x_h(i,k) = x[i];
+  deep_copy(Dinv_d, Dinv_h); deep_copy(D_d, D_h);
   deep_copy(A_d, A_h); deep_copy(d1_d, d1_h); deep_copy(d2_d, d2_h);
   deep_copy(x_d, x_h);
 
-  const auto f = KOKKOS_LAMBDA (const g::MT& team) {
-    g::remapd(team, m, n, nlevpk, A_d, d1_d, d2_d, x_p, x_p, y_p);
-  };
-  Kokkos::parallel_for(Homme::get_default_team_policy<ExecSpace>(1), f);
+  // Scalar remapd.
+
+  sfwd_remapd(m, n, A.data(), d1.data(), d2.data(), x.data(), y.data());
+
+  Kokkos::parallel_for(
+    Homme::get_default_team_policy<ExecSpace>(1),
+    KOKKOS_LAMBDA (const g::MT& team) {
+      g::remapd(team, m, n, nlevpk, A_d, d1_d, d2_d, x_p, x_p, y_p); });
 
   deep_copy(x_h, x_d); deep_copy(y_h, y_d);
   for (int k = 0; k < nlev; ++k) {
     for (int i = 0; i < n; ++i) REQUIRE(x_h(i,0) == x[i]*d1[i]);
     for (int i = 0; i < m; ++i) REQUIRE(y_h(i,k) == y[i]);
+  }
+
+  // Vector remapd.
+
+  std::vector<Real> wx(2*n), wy(2*m);
+  sfwd_remapd(m, n, A.data(), d1.data(), d2.data(), Dinv.data(), D.data(),
+              x.data(), wx.data(), wy.data(), y.data());
+
+  { // x(i,d), y(d,i)
+    const ExecView<Scalar***> x2_p("x2", n+1, 2, nlevpk), y2_p("y", 2, m+2, nlevpk);
+    const ExecView<Real***> x2_d(g::pack2real(x2_p), n+1, 2, nlevsk),
+      y2_d(g::pack2real(y2_p), 2, m+2, nlevsk);
+    const auto x2_h = cmv(x2_d), y2_h = cmv(y2_d);
+    for (int k = 0; k < nlev; ++k)
+      for (int i = 0; i < n; ++i)
+        for (int d = 0; d < 2; ++d)
+          x2_h(i,d,k) = x[d*n+i];
+    deep_copy(x2_d, x2_h);
+    Kokkos::parallel_for(
+      Homme::get_default_team_policy<ExecSpace>(1),
+      KOKKOS_LAMBDA (const g::MT& team) {
+        g::remapd<true>(team, m, n, nlevpk, A_d, d1_d, d2_d, Dinv_d, D_d,
+                        x2_p, x2_p, y2_p); });
+    deep_copy(y2_h, y2_d);
+    for (int k = 0; k < nlev; ++k)
+      for (int i = 0; i < m; ++i)
+        for (int d = 0; d < 2; ++d)
+          REQUIRE(y2_h(d,i,k) == y[d*m+i]);
+  }
+  { // x(d,i), y(i,d)
+    const ExecView<Scalar***> x2_p("x2", 2, n+1, nlevpk), y2_p("y", m+2, 2, nlevpk);
+    const ExecView<Real***> x2_d(g::pack2real(x2_p), 2, n+1, nlevsk),
+      y2_d(g::pack2real(y2_p), m+2, 2, nlevsk);
+    const auto x2_h = cmv(x2_d), y2_h = cmv(y2_d);
+    for (int k = 0; k < nlev; ++k)
+      for (int i = 0; i < n; ++i)
+        for (int d = 0; d < 2; ++d)
+          x2_h(d,i,k) = x[d*n+i];
+    deep_copy(x2_d, x2_h);
+    Kokkos::parallel_for(
+      Homme::get_default_team_policy<ExecSpace>(1),
+      KOKKOS_LAMBDA (const g::MT& team) {
+        g::remapd<false>(team, m, n, nlevpk, A_d, d1_d, d2_d, Dinv_d, D_d,
+                         x2_p, x2_p, y2_p); });
+    deep_copy(y2_h, y2_d);
+    for (int k = 0; k < nlev; ++k)
+      for (int i = 0; i < m; ++i)
+        for (int d = 0; d < 2; ++d)
+          REQUIRE(y2_h(i,d,k) == y[d*m+i]);
   }
 }
 
@@ -418,17 +493,17 @@ TEST_CASE ("compose_transport_testing") {
   static constexpr Real tol = std::numeric_limits<Real>::epsilon();
 
   auto& s = Session::singleton(); try {
-#if 0
     int nerr;
     // Run existing F90 gllfvremap unit tests.
     run_gfr_test(&nerr);
     REQUIRE(nerr == 0);
     run_gfr_test(&nerr);
     REQUIRE(nerr == 0);
-#endif
 
     test_remapds(s.r, 7, 11, 13);
-    test_remapds(s.r, 16, 4, 8);
+    test_remapds(s.r, 11, 7, 13);
+    test_remapds(s.r, 16, 4, 8 );
+    test_remapds(s.r, 4, 16, 8 );
 
     for (const auto too_tight : {false, true})
       test_limiter(11, 7, s.r, too_tight);
