@@ -116,12 +116,16 @@ struct GllFvRemapImpl {
      Permitted aliases:
          w = x
    */
-  template <typename AT, typename D1T, typename D2T, typename XT, typename YT, typename WT>
+  template <typename AT, typename D1T, typename D2T, typename XT, typename WT, typename YT>
   static KOKKOS_FUNCTION void
   matvec (const MT& team,
-          const int m, const int n, const int nlev,
+          const int m, const int n, const int nlev, // range of x,y fastest dim
           const AT& A, const D1T& d1, const D2T& d2,
-          const XT& x, const YT& y, const WT& w) {
+          const XT& x, const YT& w, const WT& y) {
+    assert(A.extent_int(0) >= m && A.extent_int(1) >= n);
+    assert(d1.extent_int(0) >= n); assert(d2.extent_int(0) >= m);
+    assert(x.extent_int(0) >= n && x.extent_int(1) >= nlev);
+    assert(y.extent_int(0) >= m && y.extent_int(1) >= nlev);
     using Kokkos::parallel_for;
     const auto ttrn = Kokkos::TeamThreadRange(team, n);
     const auto ttrm = Kokkos::TeamThreadRange(team, m);
@@ -159,13 +163,13 @@ struct GllFvRemapImpl {
   matvec_idx_d   (const int n, const int idx) { return idx_dof_d ? idx % n : idx / n; }
   template <bool x_idx_dof_d,
             typename AT, typename D1T, typename D2T, typename DinvT, typename DT,
-            typename XT, typename YT, typename WT>
+            typename XT, typename WT, typename YT>
   static KOKKOS_FUNCTION void
   matvec (const MT& team,
           const int m, const int n, const int nlev,
           const AT& A, const D1T& d1, const D2T& d2,
           const DinvT& Dinv, const DT& D,
-          const XT& x, const YT& y, const WT& w) {
+          const XT& x, const WT& w, const YT& y) {
     using Kokkos::parallel_for;
     const auto ttrn  = Kokkos::TeamThreadRange(team,   n);
     const auto ttrm  = Kokkos::TeamThreadRange(team,   m);
@@ -177,8 +181,7 @@ struct GllFvRemapImpl {
       int i11, i12; matvec_idx_order<x_idx_dof_d>(i, 0, i11, i12);
       int i21, i22; matvec_idx_order<x_idx_dof_d>(i, 1, i21, i22);
       parallel_for(tvr, [&] (const int k) {
-        const auto x1 = x(i11,i12,k);
-        const auto x2 = x(i21,i22,k);
+        const auto x1 = x(i11,i12,k), x2 = x(i21,i22,k);
         w(i11,i12,k) = (Dinv(i11,i12,1)*x1 + Dinv(i11,i12,2)*x2) * d1(i);
         w(i21,i22,k) = (Dinv(i21,i22,1)*x1 + Dinv(i21,i22,2)*x2) * d1(i);
       });
@@ -202,8 +205,7 @@ struct GllFvRemapImpl {
       int i11, i12; matvec_idx_order<!x_idx_dof_d>(i, 0, i11, i12);
       int i21, i22; matvec_idx_order<!x_idx_dof_d>(i, 1, i21, i22);
       parallel_for(tvr, [&] (const int k) {
-        const auto y1 = y(i11,i12,k);
-        const auto y2 = y(i21,i22,k);
+        const auto y1 = y(i11,i12,k), y2 = y(i21,i22,k);
         y(i11,i12,k) = (D(i11,i12,1)*y1 + D(i11,i12,2)*y2);
         y(i21,i22,k) = (D(i21,i22,1)*y1 + D(i21,i22,2)*y2);
       });
