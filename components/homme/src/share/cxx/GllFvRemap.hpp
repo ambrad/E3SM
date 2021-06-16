@@ -7,6 +7,8 @@
 #ifndef HOMMEXX_GLLFVREMAP_HPP
 #define HOMMEXX_GLLFVREMAP_HPP
 
+#include "/home/ambrad/repo/sik/hommexx/dbg.hpp"
+
 #include "Types.hpp"
 #include <memory>
 

@@ -1,5 +1,3 @@
-#include "/home/ambrad/repo/sik/hommexx/dbg.hpp"
-
 #include "GllFvRemapImpl.hpp"
 
 #include "Types.hpp"
@@ -305,7 +303,8 @@ static void test_remapds (Random& r, const int m, const int n, const int nlev) {
   const ExecView<Real**> A_d("A", m+1, n+2);
   const ExecView<Real*> d1_d("d1", n+1), d2_d("d2", m+3);
   const ExecView<Scalar**> x_p("x", n+1, nlevpk), y_p("y", m+2, nlevpk);
-  const ExecView<Real**> x_d(g::pack2real(x_p), n+1, nlevsk), y_d(g::pack2real(y_p), m+2, nlevsk);
+  const ExecView<Real**> x_d(g::pack2real(x_p), n+1, nlevsk),
+    y_d(g::pack2real(y_p), m+2, nlevsk);
   const auto Dinv_h = cmv(Dinv_d), D_h = cmv(D_d);
   const auto A_h = cmv(A_d);
   const auto d1_h = cmv(d1_d), d2_h = cmv(d2_d);
@@ -328,14 +327,11 @@ static void test_remapds (Random& r, const int m, const int n, const int nlev) {
   deep_copy(x_d, x_h);
 
   // Scalar remapd.
-
   sfwd_remapd(m, n, A.data(), d1.data(), d2.data(), x.data(), y.data());
-
   Kokkos::parallel_for(
     Homme::get_default_team_policy<ExecSpace>(1),
     KOKKOS_LAMBDA (const g::MT& team) {
       g::remapd(team, m, n, nlevpk, A_d, d1_d, d2_d, x_p, x_p, y_p); });
-
   deep_copy(x_h, x_d); deep_copy(y_h, y_d);
   for (int k = 0; k < nlev; ++k) {
     for (int i = 0; i < n; ++i) REQUIRE(x_h(i,0) == x[i]*d1[i]);
@@ -343,11 +339,9 @@ static void test_remapds (Random& r, const int m, const int n, const int nlev) {
   }
 
   // Vector remapd.
-
   std::vector<Real> wx(2*n), wy(2*m);
   sfwd_remapd(m, n, A.data(), d1.data(), d2.data(), Dinv.data(), D.data(),
               x.data(), wx.data(), wy.data(), y.data());
-
   { // x(i,d), y(d,i)
     const ExecView<Scalar***> x2_p("x2", n+1, 2, nlevpk), y2_p("y", 2, m+2, nlevpk);
     const ExecView<Real***> x2_d(g::pack2real(x2_p), n+1, 2, nlevsk),
@@ -394,7 +388,7 @@ static void test_remapds (Random& r, const int m, const int n, const int nlev) {
 
 template <typename V1, typename V2, typename V2q>
 static void
-assert_limiter_properties (const int nlev, const int n, const V1& spheremp,
+assert_limiter_properties (const int n, const int nlev, const V1& spheremp,
                            const V1& qmin, const V1& qmax,
                            const V2& dp, const V2& qorig, const V2q& q,
                            const bool too_tight) {
@@ -404,16 +398,16 @@ assert_limiter_properties (const int nlev, const int n, const V1& spheremp,
   for (int k = 0; k < nlev; ++k) {
     Real qm0 = 0, qm = 0;
     for (int i = 0; i < n2; ++i) {
-      REQUIRE(q(k,i) >= (1 - 1e1*eps)*qmin(k));
-      REQUIRE(q(k,i) <= (1 + 1e1*eps)*qmax(k));
-      qm0 += spheremp(i)*dp(k,i)*qorig(k,i);
-      qm  += spheremp(i)*dp(k,i)*q(k,i);
-      if (q(k,i) != qorig(k,i)) ++noteq;
+      REQUIRE(q(i,k) >= (1 - 1e1*eps)*qmin(k));
+      REQUIRE(q(i,k) <= (1 + 1e1*eps)*qmax(k));
+      qm0 += spheremp(i)*dp(i,k)*qorig(i,k);
+      qm  += spheremp(i)*dp(i,k)*q(i,k);
+      if (q(i,k) != qorig(i,k)) ++noteq;
     }
     REQUIRE(almost_equal(qm0, qm, 1e2*eps));
     if (too_tight && k % 2 == 1)
       for (int i = 1; i < n2; ++i)
-        REQUIRE(almost_equal(q(k,i), q(k,0), 1e2*eps));
+        REQUIRE(almost_equal(q(i,k), q(0,k), 1e2*eps));
   }
   REQUIRE(noteq > 0);
 }
@@ -428,10 +422,12 @@ static void test_limiter (const int nlev, const int n, Random& r, const bool too
 
   const ExecView<Real*> spheremp_d("spheremp", n2);
   const ExecView<Scalar*> qmin_p("qmin", nlevpk), qmax_p("qmax", nlevpk);
-  const ExecView<Scalar**> dp_p("dp", nlevpk, n2), qorig_p("qorig", nlevpk, n2), q_p("q", nlevpk, n2);
-  const ExecView<Real*> qmin_d(g::pack2real(qmin_p), nlevsk), qmax_d(g::pack2real(qmax_p), nlevsk);
-  const ExecView<Real**> dp_d(g::pack2real(dp_p), nlevsk, n2),
-    qorig_d(g::pack2real(qorig_p), nlevsk, n2), q_d(g::pack2real(q_p), nlevsk, n2);
+  const ExecView<Scalar**> dp_p("dp", n2, nlevpk), qorig_p("qorig", n2, nlevpk),
+    q_p("q", n2, nlevpk), wrk_p("wrk", n2, nlevpk);
+  const ExecView<Real*> qmin_d(g::pack2real(qmin_p), nlevsk),
+    qmax_d(g::pack2real(qmax_p), nlevsk);
+  const ExecView<Real**> dp_d(g::pack2real(dp_p), n2, nlevsk),
+    qorig_d(g::pack2real(qorig_p), n2, nlevsk), q_d(g::pack2real(q_p), n2, nlevsk);
 
   const auto spheremp = cmv(spheremp_d);
   const auto qmin = cmv(qmin_d), qmax = cmv(qmax_d);
@@ -442,12 +438,12 @@ static void test_limiter (const int nlev, const int n, Random& r, const bool too
     qmin(k) = 1; qmax(k) = 0;
     for (int i = 0; i < n2; ++i) {
       if (k == 0) spheremp(i) = r.urrng(0.5, 1.5);
-      dp(k,i) = r.urrng(0.5, 1.5);
-      qorig(k,i) = q(k,i) = r.urrng(1e-2, 3e-2);
-      mass += spheremp(i)*dp(k,i);
-      qmass += spheremp(i)*dp(k,i)*q(k,i);
-      qmin(k) = std::min(qmin(k), q(k,i));
-      qmax(k) = std::max(qmax(k), q(k,i));
+      dp(i,k) = r.urrng(0.5, 1.5);
+      qorig(i,k) = q(i,k) = r.urrng(1e-2, 3e-2);
+      mass += spheremp(i)*dp(i,k);
+      qmass += spheremp(i)*dp(i,k)*q(i,k);
+      qmin(k) = std::min(qmin(k), q(i,k));
+      qmax(k) = std::max(qmax(k), q(i,k));
     }
     const auto q0 = qmass/mass;
     if (too_tight && k % 2 == 1) {
@@ -463,50 +459,56 @@ static void test_limiter (const int nlev, const int n, Random& r, const bool too
   deep_copy(qmin_d, qmin); deep_copy(qmax_d, qmax);
   deep_copy(dp_d, dp); deep_copy(qorig_d, qorig); deep_copy(q_d, q);
 
-  CA2d qf90("q", nlevsk, n2);
+  // F90 limiter properties.
+  CA2d qf90("q", n2, nlevsk);
   deep_copy(qf90, qorig);
   CA1d dpk("dpk", n2), qk("qk", n2);
   for (int k = 0; k < nlev; ++k) {
-    for (int i = 0; i < n2; ++i) dpk(i) = dp(k,i);
-    for (int i = 0; i < n2; ++i) qk(i) = qf90(k,i);
-    limiter1_clip_and_sum_f90(n, spheremp.data(), &qmin(k), &qmax(k), dpk.data(), qk.data());
-    for (int i = 0; i < n2; ++i) qf90(k,i) = qk(i);
+    for (int i = 0; i < n2; ++i) dpk(i) = dp(i,k);
+    for (int i = 0; i < n2; ++i) qk(i) = qf90(i,k);
+    limiter1_clip_and_sum_f90(n, spheremp.data(), &qmin(k), &qmax(k), dpk.data(),
+                              qk.data());
+    for (int i = 0; i < n2; ++i) qf90(i,k) = qk(i);
   }
-  assert_limiter_properties(nlev, n, spheremp, qmin, qmax, dp, qorig, qf90, too_tight);
+  assert_limiter_properties(n, nlev, spheremp, qmin, qmax, dp, qorig, qf90, too_tight);
 
-  return; // not yet
-  pr("now C++");
-  const auto f = KOKKOS_LAMBDA (const g::MT& team) {
-    g::limiter_clip_and_sum(nlev, n, spheremp_d, qmin_p, qmax_p, dp_p, q_p);
-  };
-  Kokkos::parallel_for(Homme::get_default_team_policy<ExecSpace>(1), f);
+  // C++ limiter properties.
+  Kokkos::parallel_for(
+    Homme::get_default_team_policy<ExecSpace>(1),
+    KOKKOS_LAMBDA (const g::MT& team) {
+      g::limiter_clip_and_sum(team, n2, nlevpk, spheremp_d, qmin_p, qmax_p, dp_p,
+                              wrk_p, q_p); });
   deep_copy(q, q_d);
-  assert_limiter_properties(nlev, n, spheremp, qmin, qmax, dp, qorig, q, too_tight);
+  assert_limiter_properties(n, nlev, spheremp, qmin, qmax, dp, qorig, q, too_tight);
 
-  // BFB
+  // BFB C++ vs F90.
   for (int k = 0; k < nlev; ++k)
     for (int i = 0; i < n2; ++i)
-      REQUIRE(equal(qf90(k,i), q(k,i)));
+      REQUIRE(equal(qf90(i,k), q(i,k)));
 }
 
 TEST_CASE ("compose_transport_testing") {
   static constexpr Real tol = std::numeric_limits<Real>::epsilon();
 
   auto& s = Session::singleton(); try {
+    // Existing F90 gllfvremap unit tests.
     int nerr;
-    // Run existing F90 gllfvremap unit tests.
     run_gfr_test(&nerr);
     REQUIRE(nerr == 0);
     run_gfr_test(&nerr);
     REQUIRE(nerr == 0);
 
+    // Core scalar and vector remapd routines.
     test_remapds(s.r, 7, 11, 13);
     test_remapds(s.r, 11, 7, 13);
     test_remapds(s.r, 16, 4, 8 );
     test_remapds(s.r, 4, 16, 8 );
 
-    for (const auto too_tight : {false, true})
-      test_limiter(11, 7, s.r, too_tight);
+    // Limiter.
+    for (const auto too_tight : {false, true}) {
+      test_limiter(16, 7, s.r, too_tight);
+      test_limiter(16, 4, s.r, too_tight);
+    }
   } catch (...) {}
   Session::delete_singleton();
 }

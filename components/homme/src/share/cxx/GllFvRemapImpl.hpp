@@ -101,14 +101,7 @@ struct GllFvRemapImpl {
   void run_fv_to_dyn(const int time_idx, const Real dt, const CPhys1T& T,
                      const CPhys2T& uv, const CPhys2T& q);
 
-  template <typename CR1, typename V1, typename CV2, typename V2>
-  static KOKKOS_FUNCTION void
-  limiter_clip_and_sum (const int nlev, const int n, const CR1& spheremp,
-                        const V1& qmin, const V1& qmax, const CV2& dp, const V2& q) {
-    
-  }
-
-  /* Compute
+  /* Compute (1-based indexing)
          y(1:m,k) = (A (d1 x(1:n,k)))/d2, k = 1:nlev
      Sizes are min; a dim can have larger size.
          A m by n, d1 n, d2 m
@@ -140,7 +133,7 @@ struct GllFvRemapImpl {
       parallel_for(tvr,   [&] (const int k) { y(i,k) /= d2(i); }); });
   }
 
-  /* Compute
+  /* Compute (1-based indexing)
          xt(i,d,k) = Dinv(i,:,:) x(i,:,k), i = 1:n
          yt(1:m,d,k) = (A (d1 (xt(1:n,d,k))))/d2
          y(i,d,k) = D(i,:,:) yt(i,:,k),    i = 1:n
@@ -213,6 +206,85 @@ struct GllFvRemapImpl {
     });
   }
 
+  /* CAAS as described in Alg 3.1 of doi:10.1137/18M1165414. q is a mixing
+     ratio. Solve
+        min_q* norm(dp q - dp q*, 1)
+         st    spheremp'(dp q*) = spheremp'(dp q)
+               qmin < q* < qmax
+     Operate on DOF indices 0:n-1 and level pack indices 0:nlev-1.
+   */
+  template <typename CR1, typename V1, typename CV2, typename V2>
+  static KOKKOS_FUNCTION void
+  limiter_clip_and_sum (const MT& team, const int n, const int nlev,
+                        const CR1& spheremp, const V1& qmin, const V1& qmax,
+                        const CV2& dp, const V2& wrk, const V2& q) {
+    assert(spheremp.extent_int(0) >= n);
+    assert(qmin.extent_int(0) >= nlev); assert(qmax.extent_int(0) >= nlev);
+    assert(dp .extent_int(0) >= n && dp .extent_int(1) >= nlev);
+    assert(wrk.extent_int(0) >= n && wrk.extent_int(1) >= nlev);
+    assert(q  .extent_int(0) >= n && q  .extent_int(1) >= nlev);
+    static_assert(Scalar::vector_length == packn);
+    const auto f = [&] (const int k) {
+      auto& c = wrk;
+      { // In the case of an infeasible problem, prefer to conserve mass and
+        // violate a bound.
+        Scalar mass(0), qmass(0);
+        for (int i = 0; i < n; ++i) {
+          c(i,k) = spheremp(i)*dp(i,k);
+          mass  += c(i,k);
+          qmass += c(i,k)*q(i,k);
+        }
+        VECTOR_SIMD_LOOP for (int s = 0; s < packn; ++s)
+          if (qmass[s] < qmin(k)[s]*mass[s])
+            qmin(k)[s] = qmass[s]/mass[s];
+        VECTOR_SIMD_LOOP for (int s = 0; s < packn; ++s)
+          if (qmass[s] > qmax(k)[s]*mass[s])
+            qmax(k)[s] = qmass[s]/mass[s];
+      }
+
+      Scalar addmass(0);
+      bool modified[packn] = {0};
+      // Clip.
+      for (int i = 0; i < n; ++i)
+        VECTOR_SIMD_LOOP for (int s = 0; s < packn; ++s) {
+          auto& x = q(i,k)[s];
+          const auto xmin = qmin(k)[s];
+          const auto xmax = qmax(k)[s];
+          if (x > xmax) {
+            modified[s] = true;
+            addmass[s] += (x - xmax)*c(i,k)[s];
+            x = xmax;
+          } else if (x < xmin) {
+            modified[s] = true;
+            addmass[s] += (x - xmin)*c(i,k)[s];
+            x = xmin;
+          }
+        }
+
+      {
+        // Compute weights normalization.
+        Scalar den(0);
+        for (int i = 0; i < n; ++i)
+          VECTOR_SIMD_LOOP for (int s = 0; s < packn; ++s)
+            if (modified[s]) {
+              if (addmass[s] > 0)
+                den[s] += (qmax(k)[s] - q(i,k)[s])*c(i,k)[s];
+              else
+                den[s] += (q(i,k)[s] - qmin(k)[s])*c(i,k)[s];
+            }
+        // Redistribute mass.
+        for (int i = 0; i < n; ++i)
+          VECTOR_SIMD_LOOP for (int s = 0; s < packn; ++s)
+            if (modified[s] && den[s] > 0) {
+              auto& x = q(i,k)[s];
+              const auto v = addmass[s] > 0 ? qmax(k)[s] - x : x - qmin(k)[s];
+              x += addmass[s]*(v/den[s]);
+            }
+      }
+    };
+    team_parallel_for_with_linear_index(team, f, nlev);
+  }
+
   template <typename View> static KOKKOS_INLINE_FUNCTION
   Real* pack2real (const View& v) { return &(*v.data())[0]; }
   template <typename View> static KOKKOS_INLINE_FUNCTION
@@ -221,6 +293,29 @@ struct GllFvRemapImpl {
   Scalar* real2pack (const View& v) { return reinterpret_cast<Scalar*>(v.data()); }
   template <typename View> static KOKKOS_INLINE_FUNCTION
   const Scalar* creal2pack (const View& v) { return reinterpret_cast<const Scalar*>(v.data()); }
+
+  // ||4 f(k) on k = 0:niter-1.
+  template <typename Fn> KOKKOS_INLINE_FUNCTION static void
+  team_parallel_for_with_linear_index (const MT& team, const Fn& fn, const int niter) {
+    using Kokkos::parallel_for;
+    // 2D -> 1D thread index space. Need to make vector dim the faster for
+    // coalesced memory access on the GPU. Kokkos doesn't expose the number of
+    // threads in a team, so we have to go to the lower-level API here.
+    const int nthr_per_team =
+#if defined __CUDA_ARCH__
+      blockDim.x,
+#else
+      1,
+#endif
+      team_niter = (niter + nthr_per_team - 1)/nthr_per_team;
+    assert(OnGpu<ExecSpace>::value || nthr_per_team == 1);
+    parallel_for(Kokkos::TeamThreadRange(team, team_niter), [&] (const int team_idx) {
+      parallel_for(Kokkos::ThreadVectorRange(team, nthr_per_team), [&] (const int vec_idx) {
+        const int k = team_idx*nthr_per_team + vec_idx;
+        if (k >= niter) return;
+        fn(k);
+      }); });
+  }
 };
 
 } // namespace Homme
