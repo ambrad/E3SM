@@ -41,8 +41,11 @@ extern "C" {
   void run_gfr_check_api(int* nerr);
   void limiter1_clip_and_sum_f90(int n, double* spheremp, double* qmin, double* qmax,
                                  double* dp, double* q);
+  void calc_dp_fv_f90(int nf, double* ps, double* dp_fv);
 } // extern "C"
 
+using FA1d = Kokkos::View<Real*, Kokkos::LayoutLeft, Kokkos::HostSpace>;
+using FA2d = Kokkos::View<Real**, Kokkos::LayoutLeft, Kokkos::HostSpace>;
 using CA1d = Kokkos::View<Real*, Kokkos::LayoutRight, Kokkos::HostSpace>;
 using CA2d = Kokkos::View<Real**, Kokkos::LayoutRight, Kokkos::HostSpace>;
 using CA4d = Kokkos::View<Real****, Kokkos::LayoutRight, Kokkos::HostSpace>;
@@ -251,6 +254,35 @@ typedef ExecViewUnmanaged<Real***[NP][NP][NUM_LEV*VECTOR_SIZE]> RssNlev;
 typedef HostView<Real*[NP][NP][NUM_LEV*VECTOR_SIZE]> RNlevH;
 typedef HostView<Real**[NP][NP][NUM_LEV*VECTOR_SIZE]> RsNlevH;
 typedef HostView<Real***[NP][NP][NUM_LEV*VECTOR_SIZE]> RssNlevH;
+
+static void test_calc_dp_fv (Random& r, const HybridVCoord& hvcoord) {
+  using Kokkos::deep_copy;
+  using g = GllFvRemapImpl;
+  
+  const int nf = 3, ncol = nf*nf;
+  
+  FA1d ps_f90("ps", ncol);
+  FA2d dp_fv_f90("dp_fv", ncol, g::num_phys_lev);
+  for (int i = 0; i < ncol; ++i) ps_f90(i) = r.urrng(0.9e5, 1.05e5);
+  calc_dp_fv_f90(nf, ps_f90.data(), dp_fv_f90.data());
+
+  const ExecView<Real*> ps_d("ps", ncol);
+  const ExecView<Scalar**> dp_fv_p("dp_fv", ncol, g::num_lev_pack);
+  const auto ps_h = cmv(ps_d);
+  for (int i = 0; i < ncol; ++i) ps_h(i) = ps_f90(i);
+  deep_copy(ps_d, ps_h);
+  Kokkos::parallel_for(
+    Homme::get_default_team_policy<ExecSpace>(1),
+    KOKKOS_LAMBDA (const g::MT& team) {
+      g::calc_dp_fv(team, hvcoord, ncol, g::num_lev_pack, ps_d, dp_fv_p);
+    });
+  const ExecViewUnmanaged<Real**> dp_fv_d(g::pack2real(dp_fv_p), ncol, g::num_lev_aligned);
+  const auto dp_fv_h = cmvdc(dp_fv_d);
+  
+  for (int i = 0; i < ncol; ++i)
+    for (int k = 0; k < g::num_phys_lev; ++k)
+      REQUIRE(dp_fv_f90(i,k) == dp_fv_d(i,k));
+}
 
 static void sfwd_remapd (const int m, const int n,
                          const Real* A, const Real* d1, const Real* d2,
@@ -491,13 +523,9 @@ TEST_CASE ("compose_transport_testing") {
   static constexpr Real tol = std::numeric_limits<Real>::epsilon();
 
   auto& s = Session::singleton(); try {
-    // Existing F90 gllfvremap unit tests.
-    int nerr;
-    run_gfr_test(&nerr);
-    REQUIRE(nerr == 0);
-    run_gfr_test(&nerr);
-    REQUIRE(nerr == 0);
-
+    // calc_dp_fv BFB.
+    test_calc_dp_fv(s.r, s.h);
+    
     // Core scalar and vector remapd routines.
     test_remapds(s.r, 7, 11, 13);
     test_remapds(s.r, 11, 7, 13);
@@ -509,6 +537,13 @@ TEST_CASE ("compose_transport_testing") {
       test_limiter(16, 7, s.r, too_tight);
       test_limiter(16, 4, s.r, too_tight);
     }
+
+    // Existing F90 gllfvremap unit tests.
+    int nerr;
+    run_gfr_test(&nerr);
+    REQUIRE(nerr == 0);
+    run_gfr_test(&nerr);
+    REQUIRE(nerr == 0);
   } catch (...) {}
   Session::delete_singleton();
 }

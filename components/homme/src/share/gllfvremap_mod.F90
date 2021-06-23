@@ -122,7 +122,7 @@ module gllfvremap_mod
        gfr_g_make_nonnegative, gfr_dyn_to_fv_phys_topo_elem, gfr_f2g_dss
   ! For testing in gllfvremap_ut.
   public :: &
-       limiter1_clip_and_sum
+       limiter1_clip_and_sum, calc_dp_fv
 
   ! Interfaces to support calling inside or outside a horizontally
   ! threaded region.

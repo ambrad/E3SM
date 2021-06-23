@@ -101,6 +101,29 @@ struct GllFvRemapImpl {
   void run_fv_to_dyn(const int time_idx, const Real dt, const CPhys1T& T,
                      const CPhys2T& uv, const CPhys2T& q);
 
+  /* Compute pressure level increments on the FV grid given ps on the FV grid.
+     Directly projecting dp_gll to dp_fv disagrees numerically with the loop in
+     this subroutine. This loop is essentially how CAM computes pdel in
+     derived_phys in dp_coupling.F90, so we must use it, too.
+   */
+  template <typename PST, typename DPT>
+  static KOKKOS_FUNCTION void
+  calc_dp_fv (const MT& team,
+              const HybridVCoord& hvcoord, const int ncol, const int nlev,
+              const PST& ps, const DPT& dp_fv) {
+    assert(ps.extent_int(0) >= ncol);
+    assert(dp_fv.extent_int(0) >= ncol && dp_fv.extent_int(1) >= nlev);
+    using Kokkos::parallel_for;
+    const auto ttr = Kokkos::TeamThreadRange(team, ncol);
+    const auto tvr = Kokkos::ThreadVectorRange(team, nlev);
+    parallel_for(ttr, [&] (const int i) {
+      parallel_for(tvr, [&] (const int k) {
+        dp_fv(i,k) = (hvcoord.hybrid_ai_delta(k)*hvcoord.ps0 +
+                      hvcoord.hybrid_bi_delta(k)*ps(i));
+      });
+    });
+  }
+
   /* Compute (1-based indexing)
          y(1:m,k) = (A (d1 x(1:n,k)))/d2, k = 1:nlev
      Sizes are min; a dim can have larger size.

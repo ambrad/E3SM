@@ -89,4 +89,14 @@ contains
     call limiter1_clip_and_sum(n, spheremp, qmin, qmax, dp, q)
   end subroutine limiter1_clip_and_sum_f90
 
+  subroutine calc_dp_fv_f90(nf, ps, dp_fv) bind(c)
+    use thetal_test_interface, only: hvcoord
+    use gllfvremap_mod, only: calc_dp_fv
+
+    integer (c_int), value, intent(in) :: nf
+    real (c_double), intent(in) :: ps(nf*nf)
+    real (c_double), intent(out) :: dp_fv(nf*nf,nlev)
+
+    call calc_dp_fv(nf, hvcoord, ps, dp_fv)
+  end subroutine calc_dp_fv_f90
 end module physgrid_interface
