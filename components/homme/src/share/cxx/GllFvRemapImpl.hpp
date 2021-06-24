@@ -11,6 +11,7 @@
 
 #include "Context.hpp"
 #include "Elements.hpp"
+#include "ElementOps.hpp"
 #include "ElementsGeometry.hpp"
 #include "ElementsDerivedState.hpp"
 #include "FunctorsBuffersManager.hpp"
@@ -52,6 +53,7 @@ struct GllFvRemapImpl {
 
   using TeamPolicy = Kokkos::TeamPolicy<ExecSpace>;
   using MT = typename TeamPolicy::member_type;
+  template <typename Data> using EVU = ExecViewUnmanaged<Data>;
 
   using Buf1 = ExecViewUnmanaged<Scalar*[NP][NP][NUM_LEV_P]>;
   using Buf2 = ExecViewUnmanaged<Scalar*[2][NP][NP][NUM_LEV_P]>;
@@ -59,8 +61,11 @@ struct GllFvRemapImpl {
   struct Data {
     int nelemd, qsize, nf2;
 
-    Buf1 buf1[3];
-    Buf2 buf2[2];
+    static constexpr int nbuf1 = 1, nbuf2 = 1;
+    Buf1 buf1[nbuf1];
+    Buf2 buf2[nbuf2];
+
+    ExecView<Real**> fv_metdet, g2f_remapd, f2g_remapd;
 
     Data ()
       : nelemd(-1), qsize(-1), nf2(-1)
@@ -80,8 +85,7 @@ struct GllFvRemapImpl {
   TeamPolicy m_tp_ne, m_tp_ne_qsize;
   TeamUtils<ExecSpace> m_tu_ne, m_tu_ne_qsize;
 
-  std::shared_ptr<BoundaryExchange>
-    m_qdp_dss_be[Q_NUM_TIME_LEVELS], m_v_dss_be[2], m_hv_dss_be[2];
+  std::shared_ptr<BoundaryExchange> m_extrema_be, m_dss;
 
   GllFvRemapImpl();
 

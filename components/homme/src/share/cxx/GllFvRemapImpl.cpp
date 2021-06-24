@@ -49,17 +49,17 @@ void GllFvRemapImpl::reset (const SimulationParams& params) {
 
 int GllFvRemapImpl::requested_buffer_size () const {
   // FunctorsBuffersManager wants the size in terms of sizeof(Real).
-  return (3*Buf1::shmem_size(nslot) +
-          2*Buf2::shmem_size(nslot))/sizeof(Real);
+  return (Data::nbuf1*Buf1::shmem_size(nslot) +
+          Data::nbuf2*Buf2::shmem_size(nslot))/sizeof(Real);
 }
 
 void GllFvRemapImpl::init_buffers (const FunctorsBuffersManager& fbm) {
   Scalar* mem = reinterpret_cast<Scalar*>(fbm.get_memory());
-  for (int i = 0; i < 3; ++i) {
+  for (int i = 0; i < Data::nbuf1; ++i) {
     m_data.buf1[i] = Buf1(mem, nslot);
     mem += Buf1::shmem_size(nslot)/sizeof(Scalar);
   }
-  for (int i = 0; i < 2; ++i) {
+  for (int i = 0; i < Data::nbuf2; ++i) {
     m_data.buf2[i] = Buf2(mem, nslot);
     mem += Buf2::shmem_size(nslot)/sizeof(Scalar);
   }
@@ -70,21 +70,20 @@ void GllFvRemapImpl::init_boundary_exchanges () {
 
   auto bm_exchange = Context::singleton().get<MpiBuffersManagerMap>()[MPI_EXCHANGE];
 
-  // For qdp DSS at end of transport step.
-  for (int i = 0; i < Q_NUM_TIME_LEVELS; ++i) {
-    m_qdp_dss_be[i] = std::make_shared<BoundaryExchange>();
-    auto be = m_qdp_dss_be[i];
-    be->set_buffers_manager(bm_exchange);
-    be->set_num_fields(0, 0, m_data.qsize + 1);
-    be->register_field(m_tracers.qdp, i, m_data.qsize, 0);
-    be->register_field(m_derived.m_omega_p);
-    be->registration_completed();
-  }
+  assert(0); //todo
 }
+
+/* todo
+   - add get_temperature to ElementOpts.hpp
+   x compute_hydrostatic_p is already available
+*/
 
 void GllFvRemapImpl
 ::run_dyn_to_fv (const int time_idx, const Phys0T& ps, const Phys0T& phis, const Phys1T& Ts,
                  const Phys1T& omegas, const Phys2T& uvs, const Phys2T& qs) {
+  const int np2 = GllFvRemapImpl::np2;
+  const int nlevpk = num_lev_pack;
+  const int nreal_per_slot1 = np2*max_num_lev_pack;
   const auto nf2 = m_data.nf2;
   const auto nelemd = m_data.nelemd;
   const auto qsize = m_data.qsize;
@@ -104,8 +103,31 @@ void GllFvRemapImpl
     uv(real2pack(uvs), uvs.extent_int(0), 2, uvs.extent_int(2)/packn),
     q(real2pack(qs), qs.extent_int(0), qs.extent_int(1), qs.extent_int(2)/packn);
 
+  const auto dp_fv = m_derived.m_divdp_proj; // store dp_fv between kernels
+  const auto ps_v = m_state.m_ps_v;
+  const auto metdet = m_geometry.m_metdet;
+  const auto fv_metdet = m_data.fv_metdet;
+  const auto g2f_remapd = m_data.g2f_remapd;
+  const auto hvcoord = m_hvcoord;
+
   const auto fe = KOKKOS_LAMBDA (const MT& team) {
+    KernelVariables kv(team, m_tu_ne);
+    const auto ie = kv.ie;
     
+    const auto all = Kokkos::ALL();
+    const auto rw1 = Kokkos::subview(m_data.buf1[0], kv.team_idx, all, all, all);
+    const EVU<Real*> rw1s(pack2real(rw1), nreal_per_slot1);
+    
+    const EVU<const Real*> fv_metdet_ie(&fv_metdet(ie,0), nf2), gll_metdet_ie(&metdet(ie,0,0), np2);
+
+    const EVU<Scalar**> dp_fv_ie(&dp_fv(ie,0,0,0), nf2, nlevpk); {
+      const EVU<Real*> ps_v_fv(rw1s.data(), nf2); {
+        const EVU<Real**> ps_v_ie(&ps_v(ie,time_idx,0,0), np2, 1), wrk(rw1s.data() + np2, np2, 1);
+        remapd(team, nf2, np2, 1, g2f_remapd, gll_metdet_ie, fv_metdet_ie, ps_v_ie, wrk,
+               EVU<Real**>(ps_v_fv.data(), nf2, 1));
+      }
+      calc_dp_fv(team, hvcoord, nf2, nlevpk, ps_v_fv, dp_fv_ie);
+    }
   };
   Kokkos::parallel_for(m_tp_ne, fe);
 
