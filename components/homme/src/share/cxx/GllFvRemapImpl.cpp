@@ -73,6 +73,72 @@ void GllFvRemapImpl::init_boundary_exchanges () {
   assert(0); //todo
 }
 
+template <typename T> using FV = Kokkos::View<T, Kokkos::LayoutLeft, Kokkos::HostSpace>;
+
+void GllFvRemapImpl
+::init_data (const int nf, const int nf_max, const Real* fv_metdet_r,
+             const Real* g2f_remapd_r, const Real* f2g_remapd_r,
+             const Real* D_f_r, const Real* Dinv_f_r) {
+  using Kokkos::create_mirror_view;
+  using Kokkos::deep_copy;
+
+  const int nf2 = nf*nf, nf2_max = nf_max*nf_max;
+  auto& d = m_data;
+  d.nf2 = nf2;
+  const FV<const Real**>
+    fg2f_remapd(g2f_remapd_r, np2, nf2_max),
+    ff2g_remapd(f2g_remapd_r, nf2_max, np2),
+    ffv_metdet(fv_metdet_r, nf2, d.nelemd);
+  const FV<const Real****>
+    fD_f(D_f_r, nf2, 2, 2, d.nelemd),
+    fDinv_f(Dinv_f_r, nf2, 2, 2, d.nelemd);
+
+  d.g2f_remapd = decltype(d.g2f_remapd)("g2f_remapd", nf2, np2);
+  d.f2g_remapd = decltype(d.f2g_remapd)("f2g_remapd", np2, nf2);
+  d.fv_metdet = decltype(d.fv_metdet)("fv_metdet", d.nelemd, nf2);
+  d.D = decltype(d.D)("D", d.nelemd, np2, 2, 2);
+  d.Dinv = decltype(d.D)("Dinv", d.nelemd, np2, 2, 2);
+  d.D_f = decltype(d.D)("D_f", d.nelemd, nf2, 2, 2);
+  d.Dinv_f = decltype(d.D)("Dinv_f", d.nelemd, nf2, 2, 2);
+
+  const auto g2f_remapd = create_mirror_view(d.g2f_remapd);
+  const auto f2g_remapd = create_mirror_view(d.f2g_remapd);
+  const auto fv_metdet = create_mirror_view(d.fv_metdet);
+  const auto D = create_mirror_view(d.D);
+  const auto Dinv = create_mirror_view(d.Dinv);
+  const auto D_f = create_mirror_view(d.D_f);
+  const auto Dinv_f = create_mirror_view(d.Dinv_f);
+  const auto cD = create_mirror_view(m_geometry.m_d); deep_copy(cD, m_geometry.m_d);
+  const auto cDinv = create_mirror_view(m_geometry.m_dinv); deep_copy(cDinv, m_geometry.m_dinv);
+  for (int i = 0; i < nf2; ++i)
+    for (int j = 0; j < np2; ++j)
+      g2f_remapd(i,j) = fg2f_remapd(j,i);
+  for (int j = 0; j < np2; ++j)
+    for (int i = 0; i < nf2; ++i)
+      f2g_remapd(j,i) = ff2g_remapd(i,j);
+  for (int ie = 0; ie < d.nelemd; ++ie) {
+    for (int k = 0; k < nf2; ++k)
+      fv_metdet(ie,k) = ffv_metdet(k,ie);
+    for (int d0 = 0; d0 < 2; ++d0)
+      for (int d1 = 0; d1 < 2; ++d1)
+        for (int i = 0; i < np; ++i)
+          for (int j = 0; j < np; ++j) {
+            const auto k = np*i + j;
+            D     (ie,k,d0,d1) = cD   (ie,d0,d1,i,j);
+            Dinv  (ie,k,d0,d1) = cDinv(ie,d0,d1,i,j);
+            D_f   (ie,k,d0,d1) = D_f   (ie,k,d0,d1);
+            Dinv_f(ie,k,d0,d1) = Dinv_f(ie,k,d0,d1);
+          }
+  }
+  deep_copy(d.fv_metdet, fv_metdet);
+  deep_copy(d.g2f_remapd, g2f_remapd);
+  deep_copy(d.f2g_remapd, f2g_remapd);
+  deep_copy(d.D, D);
+  deep_copy(d.Dinv, Dinv);
+  deep_copy(d.D_f, D_f);
+  deep_copy(d.Dinv_f, Dinv_f);
+}
+
 /* todo
    - add get_temperature to ElementOpts.hpp
    x compute_hydrostatic_p is already available

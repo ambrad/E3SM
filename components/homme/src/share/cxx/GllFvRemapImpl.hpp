@@ -65,7 +65,13 @@ struct GllFvRemapImpl {
     Buf1 buf1[nbuf1];
     Buf2 buf2[nbuf2];
 
-    ExecView<Real**> fv_metdet, g2f_remapd, f2g_remapd;
+    ExecView<Real**>
+      fv_metdet,   // (nelemd,nf2)
+      g2f_remapd,  // (nf2,np2)
+      f2g_remapd;  // (np2,nf2)
+    ExecView<Real****>
+      D, Dinv,     // (nelemd,np2,2,2)
+      D_f, Dinv_f; // (nelemd,nf2,2,2)
 
     Data ()
       : nelemd(-1), qsize(-1), nf2(-1)
@@ -98,6 +104,10 @@ struct GllFvRemapImpl {
   int requested_buffer_size() const;
   void init_buffers(const FunctorsBuffersManager& fbm);
   void init_boundary_exchanges();
+
+  void init_data(const int nf, const int nf_max, const Real* fv_metdet_r,
+                 const Real* g2f_remapd_r, const Real* f2g_remapd_r,
+                 const Real* D_f_r, const Real* Dinv_f_r);
 
   void run_dyn_to_fv(const int time_idx, const Phys0T& ps, const Phys0T& phis,
                      const Phys1T& T, const Phys1T& omega, const Phys2T& uv,
