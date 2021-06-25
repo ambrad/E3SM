@@ -37,6 +37,7 @@ extern "C" {
                            const Real* hybm, Real ps0, Real* dvv, Real* mp, int qsize,
                            bool is_sphere);
   void init_geometry_f90();
+  void gfr_init_c();
   void run_gfr_test(int* nerr);
   void run_gfr_check_api(int* nerr);
   void limiter1_clip_and_sum_f90(int n, double* spheremp, double* qmin, double* qmax,
@@ -154,14 +155,13 @@ struct Session {
     auto& sphop = c.create<SphereOperators>();
     sphop.setup(geo, ref_FE);
 
-#if 0
-    auto& ct = c.create<ComposeTransport>();
-    ct.reset(p);
-    fbm.request_size(ct.requested_buffer_size());
+    auto& gfr = c.create<GllFvRemap>();
+    gfr.reset(p);
+    fbm.request_size(gfr.requested_buffer_size());
     fbm.allocate();
-    ct.init_buffers(fbm);
-    ct.init_boundary_exchanges();
-#endif
+    gfr.init_buffers(fbm);
+    gfr.init_boundary_exchanges();
+    gfr_init_c();
 
     nlev = NUM_PHYSICAL_LEV;
     assert(nlev > 0);

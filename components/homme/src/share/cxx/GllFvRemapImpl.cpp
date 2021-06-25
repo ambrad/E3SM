@@ -70,7 +70,13 @@ void GllFvRemapImpl::init_boundary_exchanges () {
 
   auto bm_exchange = Context::singleton().get<MpiBuffersManagerMap>()[MPI_EXCHANGE];
 
-  assert(0); //todo
+#pragma message "TODO: init_boundary_exchanges"
+}
+
+void init_gllfvremap_c (const int nf, const int nf_max, CF90Ptr fv_metdet, CF90Ptr g2f_remapd,
+                        CF90Ptr f2g_remapd, CF90Ptr D_f, CF90Ptr Dinv_f) {
+  auto& g = Context::singleton().get<GllFvRemap>();
+  g.init_data(nf, nf_max, fv_metdet, g2f_remapd, f2g_remapd, D_f, Dinv_f);
 }
 
 template <typename T> using FV = Kokkos::View<T, Kokkos::LayoutLeft, Kokkos::HostSpace>;

@@ -123,6 +123,9 @@ module gllfvremap_mod
   ! For testing in gllfvremap_ut.
   public :: &
        limiter1_clip_and_sum, calc_dp_fv
+  ! For C++ dycore.
+  public :: &
+       gfr_init_c
 
   ! Interfaces to support calling inside or outside a horizontally
   ! threaded region.
@@ -252,6 +255,21 @@ contains
 
     if (gfr%check > 0) call check_areas(par, gfr, elem, 1, nelemd)
   end subroutine gfr_init
+
+  subroutine gfr_init_c() bind(c)
+    interface
+       subroutine init_gllfvremap_c(nf, nf_max, fv_metdet, g2f_remapd, f2g_remapd, &
+            D_f, Dinv_f) bind(c)
+         use iso_c_binding, only: c_int, c_double
+         integer (c_int), value, intent(in) :: nf, nf_max
+         real (c_double), dimension(:,:), intent(in) :: fv_metdet
+         real (c_double), dimension(:,:,:), intent(in) :: g2f_remapd, f2g_remapd
+         real (c_double), dimension(:,:,:,:), intent(in) :: D_f, Dinv_f
+       end subroutine init_gllfvremap_c
+    end interface
+    call init_gllfvremap_c(gfr%nphys, nphys_max, gfr%fv_metdet, gfr%g2f_remapd, &
+         gfr%f2g_remapd, gfr%D_f, gfr%Dinv_f)
+  end subroutine gfr_init_c
 
   subroutine gfr_finish()
     ! Deallocate the internal gfr structure.

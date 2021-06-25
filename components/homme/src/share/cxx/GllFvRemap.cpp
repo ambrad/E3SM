@@ -4,9 +4,6 @@
  * See the file 'COPYRIGHT' in the HOMMEXX/src/share/cxx directory
  *******************************************************************************/
 
-#pragma message "if 0 out for now"
-#if 0
-
 #include "GllFvRemap.hpp"
 #include "GllFvRemapImpl.hpp"
 #include "Context.hpp"
@@ -41,6 +38,13 @@ void GllFvRemap::init_boundary_exchanges () {
 }
 
 void GllFvRemap
+::init_data (const int nf, const int nf_max, const Real* fv_metdet,
+             const Real* g2f_remapd, const Real* f2g_remapd,
+             const Real* D_f, const Real* Dinv_f) {
+  m_impl->init_data(nf, nf_max, fv_metdet, g2f_remapd, f2g_remapd, D_f, Dinv_f);
+}
+
+void GllFvRemap
 ::run_dyn_to_fv (const int time_idx, const Phys0T& ps, const Phys0T& phis,
                  const Phys1T& T, const Phys1T& omega, const Phys2T& uv,
                  const Phys2T& q) {
@@ -55,4 +59,3 @@ void GllFvRemap
 
 } // Namespace Homme
 
-#endif

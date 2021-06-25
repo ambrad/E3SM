@@ -38,6 +38,10 @@ public:
   typedef Phys1T::const_type CPhys1T;
   typedef Phys2T::const_type CPhys2T;
 
+  void init_data(const int nf, const int nf_max, const Real* fv_metdet,
+                 const Real* g2f_remapd, const Real* f2g_remapd,
+                 const Real* D_f, const Real* Dinv_f);
+
   void run_dyn_to_fv(const int time_idx,
                      // ps,phis(col)
                      const Phys0T& ps, const Phys0T& phis,
@@ -53,6 +57,10 @@ public:
 private:
   std::unique_ptr<GllFvRemapImpl> m_impl;
 };
+
+extern "C" void
+init_gllfvremap_c(const int nf, const int nf_max, CF90Ptr fv_metdet, CF90Ptr g2f_remapd,
+                  CF90Ptr f2g_remapd, CF90Ptr D_f, CF90Ptr Dinv_f);
 
 } // Namespace Homme
 
