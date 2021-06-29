@@ -41,15 +41,15 @@ struct GllFvRemapImpl {
   enum : int { num_phys_lev = NUM_PHYSICAL_LEV };
   enum : int { num_work = 12 };
 
-  typedef GllFvRemap::Phys0T Phys0T;
   typedef GllFvRemap::Phys1T Phys1T;
   typedef GllFvRemap::Phys2T Phys2T;
-  typedef GllFvRemap::CPhys1T CPhys1T;
+  typedef GllFvRemap::Phys3T Phys3T;
   typedef GllFvRemap::CPhys2T CPhys2T;
-  typedef ExecViewUnmanaged<Scalar**>  VPhys1T;
-  typedef ExecViewUnmanaged<Scalar***> VPhys2T;
-  typedef VPhys1T::const_type CVPhys1T;
+  typedef GllFvRemap::CPhys3T CPhys3T;
+  typedef ExecViewUnmanaged<Scalar***>  VPhys2T;
+  typedef ExecViewUnmanaged<Scalar****> VPhys3T;
   typedef VPhys2T::const_type CVPhys2T;
+  typedef VPhys3T::const_type CVPhys3T;
 
   using TeamPolicy = Kokkos::TeamPolicy<ExecSpace>;
   using MT = typename TeamPolicy::member_type;
@@ -109,11 +109,11 @@ struct GllFvRemapImpl {
                  const Real* g2f_remapd_r, const Real* f2g_remapd_r,
                  const Real* D_f_r, const Real* Dinv_f_r);
 
-  void run_dyn_to_fv(const int time_idx, const Phys0T& ps, const Phys0T& phis,
-                     const Phys1T& T, const Phys1T& omega, const Phys2T& uv,
-                     const Phys2T& q);
-  void run_fv_to_dyn(const int time_idx, const Real dt, const CPhys1T& T,
-                     const CPhys2T& uv, const CPhys2T& q);
+  void run_dyn_to_fv(const int time_idx, const Phys1T& ps, const Phys1T& phis,
+                     const Phys2T& T, const Phys2T& omega, const Phys3T& uv,
+                     const Phys3T& q);
+  void run_fv_to_dyn(const int time_idx, const Real dt,
+                     const CPhys2T& T, const CPhys3T& uv, const CPhys3T& q);
 
   /* Compute pressure level increments on the FV grid given ps on the FV grid.
      Directly projecting dp_gll to dp_fv disagrees numerically with the loop in

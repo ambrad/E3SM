@@ -250,13 +250,6 @@ static bool equal (const Real& a, const Real& b,
 #endif
 }
 
-typedef ExecViewUnmanaged<Real*[NP][NP][NUM_LEV*VECTOR_SIZE]> RNlev;
-typedef ExecViewUnmanaged<Real**[NP][NP][NUM_LEV*VECTOR_SIZE]> RsNlev;
-typedef ExecViewUnmanaged<Real***[NP][NP][NUM_LEV*VECTOR_SIZE]> RssNlev;
-typedef HostView<Real*[NP][NP][NUM_LEV*VECTOR_SIZE]> RNlevH;
-typedef HostView<Real**[NP][NP][NUM_LEV*VECTOR_SIZE]> RsNlevH;
-typedef HostView<Real***[NP][NP][NUM_LEV*VECTOR_SIZE]> RssNlevH;
-
 static void test_calc_dp_fv (Random& r, const HybridVCoord& hvcoord) {
   using Kokkos::deep_copy;
   using g = GllFvRemapImpl;
@@ -522,7 +515,10 @@ static void test_limiter (const int nlev, const int n, Random& r, const bool too
 }
 
 static void test_dyn_to_fv_phys (const Session& s, const int nf, const int ftype) {
-  const int nt = 1; // time index
+  using Kokkos::subview;
+  using g = GllFvRemapImpl;
+  
+  const int nt = 0; // time index
   const int nf2 = nf*nf;
 
   gfr_init_f90(nf, ftype);
@@ -532,8 +528,17 @@ static void test_dyn_to_fv_phys (const Session& s, const int nf, const int ftype
   CA3d fT("fT", s.nelemd, s.nlev, nf2), fomega("fomega", s.nelemd, s.nlev, nf2);
   CA4d fuv("fuv", s.nelemd, s.nlev, 2, nf2), fq("fq", s.nelemd, s.qsize, s.nlev, nf2);
 
-  gfr_dyn_to_fv_phys_f90(nf, nt, fps.data(), fphis.data(), fT.data(), fuv.data(),
+  gfr_dyn_to_fv_phys_f90(nf, nt+1, fps.data(), fphis.data(), fT.data(), fuv.data(),
                          fomega.data(), fq.data());
+
+  const ExecView<Real**> dps("dps", s.nelemd, nf2), dphis("dphis", s.nelemd, nf2);
+  const ExecView<Real***> dT("dT", s.nelemd, nf2, g::num_lev_aligned),
+    domega("domega", s.nelemd, nf2, g::num_lev_aligned);
+  const ExecView<Real****> duv("duv", s.nelemd, nf2, 2, g::num_lev_aligned),
+    dq("dq", s.nelemd, nf2, s.qsize, g::num_lev_aligned);
+  const auto& c = Context::singleton();
+  auto& gfr = c.get<GllFvRemap>();
+  gfr.run_dyn_to_fv(nt, dps, dphis, dT, domega, duv, dq);
 
   gfr_finish_f90();
 }

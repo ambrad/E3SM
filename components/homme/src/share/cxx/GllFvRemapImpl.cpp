@@ -151,29 +151,34 @@ void GllFvRemapImpl
 */
 
 void GllFvRemapImpl
-::run_dyn_to_fv (const int time_idx, const Phys0T& ps, const Phys0T& phis, const Phys1T& Ts,
-                 const Phys1T& omegas, const Phys2T& uvs, const Phys2T& qs) {
+::run_dyn_to_fv (const int time_idx, const Phys1T& ps, const Phys1T& phis, const Phys2T& Ts,
+                 const Phys2T& omegas, const Phys3T& uvs, const Phys3T& qs) {
   const int np2 = GllFvRemapImpl::np2;
   const int nlevpk = num_lev_pack;
   const int nreal_per_slot1 = np2*max_num_lev_pack;
   const auto nf2 = m_data.nf2;
   const auto nelemd = m_data.nelemd;
   const auto qsize = m_data.qsize;
-  const auto ncol = nelemd*nf2;
 
-  assert(ps.extent_int(0) >= ncol);
-  assert(phis.extent_int(0) >= ncol);
-  assert(Ts.extent_int(0) >= ncol && Ts.extent_int(1) % packn == 0);
-  assert(omegas.extent_int(0) >= ncol && omegas.extent_int(1) % packn == 0);
-  assert(uvs.extent_int(0) >= ncol && uvs.extent_int(1) == 2 && uvs.extent_int(2) % packn == 0);
-  assert(qs.extent_int(0) >= ncol && qs.extent_int(1) >= qsize && qs.extent_int(2) % packn == 0);
+  assert(ps.extent_int(0) >= nelemd && ps.extent_int(1) >= nf2);
+  assert(phis.extent_int(0) >= nelemd && phis.extent_int(1) >= nf2);
+  assert(Ts.extent_int(0) >= nelemd && Ts.extent_int(1) >= nf2 && Ts.extent_int(2) % packn == 0);
+  assert(omegas.extent_int(0) >= nelemd && omegas.extent_int(1) >= nf2 &&
+         omegas.extent_int(2) % packn == 0);
+  assert(uvs.extent_int(0) >= nelemd && uvs.extent_int(1) >= nf2 && uvs.extent_int(2) == 2 &&
+         uvs.extent_int(3) % packn == 0);
+  assert(qs.extent_int(0) >= nelemd && qs.extent_int(1) >= nf2 && qs.extent_int(2) >= qsize &&
+         qs.extent_int(3) % packn == 0);
 
-  VPhys1T
-    T(real2pack(Ts), Ts.extent_int(0), Ts.extent_int(1)/packn),
-    omega(real2pack(omegas), omegas.extent_int(0), omegas.extent_int(1)/packn);
   VPhys2T
-    uv(real2pack(uvs), uvs.extent_int(0), 2, uvs.extent_int(2)/packn),
-    q(real2pack(qs), qs.extent_int(0), qs.extent_int(1), qs.extent_int(2)/packn);
+    T(real2pack(Ts), Ts.extent_int(0), Ts.extent_int(1), Ts.extent_int(2)/packn),
+    omega(real2pack(omegas), omegas.extent_int(0), omegas.extent_int(1),
+          omegas.extent_int(2)/packn);
+  VPhys3T
+    uv(real2pack(uvs), uvs.extent_int(0), uvs.extent_int(1), uvs.extent_int(2),
+       uvs.extent_int(2)/packn),
+    q(real2pack(qs), qs.extent_int(0), qs.extent_int(1), qs.extent_int(2),
+      qs.extent_int(3)/packn);
 
   const auto dp_fv = m_derived.m_divdp_proj; // store dp_fv between kernels
   const auto ps_v = m_state.m_ps_v;
@@ -210,22 +215,25 @@ void GllFvRemapImpl
 }
 
 void GllFvRemapImpl::
-run_fv_to_dyn (const int time_idx, const Real dt, const CPhys1T& Ts, const CPhys2T& uvs,
-               const CPhys2T& qs) {
+run_fv_to_dyn (const int time_idx, const Real dt,
+               const CPhys2T& Ts, const CPhys3T& uvs, const CPhys3T& qs) {
   const auto nf2 = m_data.nf2;
   const auto nelemd = m_data.nelemd;
   const auto qsize = m_data.qsize;
-  const auto ncol = nelemd*nf2;
 
-  assert(Ts.extent_int(0) >= ncol && Ts.extent_int(1) % packn == 0);
-  assert(uvs.extent_int(0) >= ncol && uvs.extent_int(1) == 2 && uvs.extent_int(2) % packn == 0);
-  assert(qs.extent_int(0) >= ncol && qs.extent_int(1) >= qsize && qs.extent_int(2) % packn == 0);
+  assert(Ts.extent_int(0) >= nelemd && Ts.extent_int(1) >= nf2 && Ts.extent_int(2) % packn == 0);
+  assert(uvs.extent_int(0) >= nelemd && uvs.extent_int(1) >= nf2 && uvs.extent_int(2) == 2 &&
+         uvs.extent_int(3) % packn == 0);
+  assert(qs.extent_int(0) >= nelemd && qs.extent_int(1) >= nf2 && qs.extent_int(2) >= qsize &&
+         qs.extent_int(3) % packn == 0);
 
-  CVPhys1T
-    T(creal2pack(Ts), Ts.extent_int(0), Ts.extent_int(1)/packn);
   CVPhys2T
-    uv(creal2pack(uvs), uvs.extent_int(0), 2, uvs.extent_int(2)/packn),
-    q(creal2pack(qs), qs.extent_int(0), qs.extent_int(1), qs.extent_int(2)/packn);
+    T(creal2pack(Ts), Ts.extent_int(0), Ts.extent_int(1), Ts.extent_int(2)/packn);
+  CVPhys3T
+    uv(creal2pack(uvs), uvs.extent_int(0), uvs.extent_int(1), uvs.extent_int(2),
+       uvs.extent_int(3)/packn),
+    q(creal2pack(qs), qs.extent_int(0), qs.extent_int(1), qs.extent_int(2),
+      qs.extent_int(3)/packn);
 
   const auto fe = KOKKOS_LAMBDA (const MT& team) {
     
