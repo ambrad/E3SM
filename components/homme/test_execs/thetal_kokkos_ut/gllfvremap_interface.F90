@@ -18,8 +18,7 @@ contains
     use bndry_mod, only: sort_neighbor_buffer_mapping
     use reduction_mod, only: initreductionbuffer, red_sum, red_min, red_max
     use parallel_mod, only: global_shared_buf, nrepro_vars
-    use compose_mod, only: compose_init, cedr_set_ie2gci, compose_set_null_bufs
-    use sl_advection, only: sl_init1
+    use control_mod, only: ftype
 
     real (real_kind), intent(in) :: hyai(nlevp), hybi(nlevp), hyam(nlev), hybm(nlev)
     integer (c_int), value, intent(in) :: ne, qsize_in
@@ -32,6 +31,7 @@ contains
     if (.not. is_sphere) print *, "NOT IMPL'ED YET"
 
     qsize = qsize_in
+    ftype = 2
 
     call init_f90(ne, hyai, hybi, hyam, hybm, dvv, mp, ps0)
     call init_elements_c(nelemd)
@@ -64,6 +64,24 @@ contains
     
     nerr = gfr_test(hybrid, dom_mt, hvcoord, deriv, elem)
   end subroutine run_gfr_test
+
+  subroutine gfr_init_f90(nf, ftype_in) bind(c)
+    use gllfvremap_mod, only: gfr_init
+    use control_mod, only: ftype
+    
+    integer (c_int), value, intent(in) :: nf, ftype_in
+
+    ftype = ftype_in
+    call gfr_init(par, elem, nf, 2, .false.)
+  end subroutine gfr_init_f90
+  
+  subroutine gfr_finish_f90(nf) bind(c)
+    use gllfvremap_mod, only: gfr_finish
+
+    integer (c_int), value, intent(in) :: nf
+
+    call gfr_finish()
+  end subroutine gfr_finish_f90
 
   subroutine run_gfr_check_api(nerr) bind(c)
     use thetal_test_interface, only: hvcoord
@@ -99,4 +117,20 @@ contains
 
     call calc_dp_fv(nf, hvcoord, ps, dp_fv)
   end subroutine calc_dp_fv_f90
+
+  subroutine gfr_dyn_to_fv_phys_f90(nt, ps, phis, T, uv, omega_p, q) bind(c)
+    use thetal_test_interface, only: hvcoord
+    use hybrid_mod, only: hybrid_t, hybrid_create
+    use gllfvremap_mod, only: gfr_dyn_to_fv_phys
+    
+    integer (c_int), intent(in) :: nt
+    real (c_double), intent(out) :: ps(:,:), phis(:,:), T(:,:,:), &
+         uv(:,:,:,:), omega_p(:,:,:), q(:,:,:,:)
+
+    type (hybrid_t) :: hybrid
+
+    hybrid = hybrid_create(par, 0, 1)
+    call gfr_dyn_to_fv_phys(hybrid, nt, hvcoord, elem, 1, nelemd, &
+         ps, phis, T, uv, omega_p, q)
+  end subroutine gfr_dyn_to_fv_phys_f90
 end module physgrid_interface

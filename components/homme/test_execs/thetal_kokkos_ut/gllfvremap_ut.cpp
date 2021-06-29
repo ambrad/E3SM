@@ -37,19 +37,21 @@ extern "C" {
                            const Real* hybm, Real ps0, Real* dvv, Real* mp, int qsize,
                            bool is_sphere);
   void init_geometry_f90();
-  void gfr_init_c();
+  void gfr_init_f90(int nf, int ftype);
+  void gfr_init_hxx();
+  void gfr_finish_f90();
   void run_gfr_test(int* nerr);
   void run_gfr_check_api(int* nerr);
   void limiter1_clip_and_sum_f90(int n, double* spheremp, double* qmin, double* qmax,
                                  double* dp, double* q);
   void calc_dp_fv_f90(int nf, double* ps, double* dp_fv);
+  void gfr_dyn_to_fv_phys_f90(int nt, double* ps, double* phis, double* T, double* uv,
+                              double* omega_p, double* q);
 } // extern "C"
 
-using FA1d = Kokkos::View<Real*, Kokkos::LayoutLeft, Kokkos::HostSpace>;
-using FA2d = Kokkos::View<Real**, Kokkos::LayoutLeft, Kokkos::HostSpace>;
-using CA1d = Kokkos::View<Real*, Kokkos::LayoutRight, Kokkos::HostSpace>;
-using CA2d = Kokkos::View<Real**, Kokkos::LayoutRight, Kokkos::HostSpace>;
-using CA4d = Kokkos::View<Real****, Kokkos::LayoutRight, Kokkos::HostSpace>;
+using CA1d = Kokkos::View<Real*,     Kokkos::LayoutRight, Kokkos::HostSpace>;
+using CA2d = Kokkos::View<Real**,    Kokkos::LayoutRight, Kokkos::HostSpace>;
+using CA4d = Kokkos::View<Real**** , Kokkos::LayoutRight, Kokkos::HostSpace>;
 using CA5d = Kokkos::View<Real*****, Kokkos::LayoutRight, Kokkos::HostSpace>;
 
 template <typename V>
@@ -161,7 +163,6 @@ struct Session {
     fbm.allocate();
     gfr.init_buffers(fbm);
     gfr.init_boundary_exchanges();
-    gfr_init_c();
 
     nlev = NUM_PHYSICAL_LEV;
     assert(nlev > 0);
@@ -261,8 +262,8 @@ static void test_calc_dp_fv (Random& r, const HybridVCoord& hvcoord) {
   
   const int nf = 3, ncol = nf*nf;
   
-  FA1d ps_f90("ps", ncol);
-  FA2d dp_fv_f90("dp_fv", ncol, g::num_phys_lev);
+  CA1d ps_f90("ps", ncol);
+  CA2d dp_fv_f90("dp_fv", g::num_phys_lev, ncol);
   for (int i = 0; i < ncol; ++i) ps_f90(i) = r.urrng(0.9e5, 1.05e5);
   calc_dp_fv_f90(nf, ps_f90.data(), dp_fv_f90.data());
 
@@ -281,7 +282,7 @@ static void test_calc_dp_fv (Random& r, const HybridVCoord& hvcoord) {
   
   for (int i = 0; i < ncol; ++i)
     for (int k = 0; k < g::num_phys_lev; ++k)
-      REQUIRE(dp_fv_f90(i,k) == dp_fv_d(i,k));
+      REQUIRE(dp_fv_f90(k,i) == dp_fv_d(i,k));
 }
 
 static void sfwd_remapd (const int m, const int n,
@@ -519,6 +520,20 @@ static void test_limiter (const int nlev, const int n, Random& r, const bool too
       REQUIRE(equal(qf90(i,k), q(i,k)));
 }
 
+static void test_dyn_to_fv_phys (const int nf, const int ftype) {
+  const int nt = 1; // time index
+
+  gfr_init_f90(nf, ftype);
+  gfr_init_hxx();
+#if 0
+  CA1d fps("ps", ncol);
+    
+  gfr_dyn_to_fv_phys_f90(nt, fps.data(), fphis.data(), fT.data(), fuv.data(),
+                         fomega.data(), fq.data());
+#endif
+  gfr_finish_f90();
+}
+
 TEST_CASE ("compose_transport_testing") {
   static constexpr Real tol = std::numeric_limits<Real>::epsilon();
 
@@ -544,6 +559,10 @@ TEST_CASE ("compose_transport_testing") {
     REQUIRE(nerr == 0);
     run_gfr_test(&nerr);
     REQUIRE(nerr == 0);
+
+    for (const int nf : {2,3,4})
+      for (const int ftype : {0,2})
+        test_dyn_to_fv_phys(nf, ftype);
   } catch (...) {}
   Session::delete_singleton();
 }
