@@ -532,7 +532,7 @@ static void test_dyn_to_fv_phys (const Session& s, const int nf, const int ftype
   CA3d fT("fT", s.nelemd, s.nlev, nf2), fomega("fomega", s.nelemd, s.nlev, nf2);
   CA4d fuv("fuv", s.nelemd, s.nlev, 2, nf2), fq("fq", s.nelemd, s.qsize, s.nlev, nf2);
 
-  gfr_dyn_to_fv_phys_f90(nt, nf, fps.data(), fphis.data(), fT.data(), fuv.data(),
+  gfr_dyn_to_fv_phys_f90(nf, nt, fps.data(), fphis.data(), fT.data(), fuv.data(),
                          fomega.data(), fq.data());
 
   gfr_finish_f90();

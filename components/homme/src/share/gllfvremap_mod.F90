@@ -122,7 +122,7 @@ module gllfvremap_mod
        gfr_g_make_nonnegative, gfr_dyn_to_fv_phys_topo_elem, gfr_f2g_dss
   ! For testing in gllfvremap_ut.
   public :: &
-       limiter1_clip_and_sum, calc_dp_fv
+       limiter1_clip_and_sum, calc_dp_fv, gfr_get_nphys
   ! For C++ dycore.
   public :: &
        gfr_init_hxx
@@ -270,6 +270,11 @@ contains
     call init_gllfvremap_c(gfr%nphys, nphys_max, gfr%fv_metdet, gfr%g2f_remapd, &
          gfr%f2g_remapd, gfr%D_f, gfr%Dinv_f)
   end subroutine gfr_init_hxx
+
+  function gfr_get_nphys() result(nf)
+    integer :: nf
+    nf = gfr%nphys
+  end function gfr_get_nphys
 
   subroutine gfr_finish()
     ! Deallocate the internal gfr structure.

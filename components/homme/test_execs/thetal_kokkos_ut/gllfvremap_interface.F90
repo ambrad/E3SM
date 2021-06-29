@@ -122,14 +122,16 @@ contains
   subroutine gfr_dyn_to_fv_phys_f90(nf, nt, ps, phis, T, uv, omega_p, q) bind(c)
     use thetal_test_interface, only: hvcoord
     use hybrid_mod, only: hybrid_t, hybrid_create
-    use gllfvremap_mod, only: gfr_dyn_to_fv_phys
+    use gllfvremap_mod, only: gfr_dyn_to_fv_phys, gfr_get_nphys
     
     integer (c_int), value, intent(in) :: nf, nt
     real (c_double), intent(out) :: ps(nf*nf,nelemd), phis(nf*nf,nelemd), &
          T(nf*nf,nlev,nelemd), uv(nf*nf,2,nlev,nelemd), omega_p(nf*nf,nlev,nelemd), &
-         q(nf*nf,qsize,nlev,nelemd)
+         q(nf*nf,nlev,qsize,nelemd)
 
     type (hybrid_t) :: hybrid
+
+    if (nf /= gfr_get_nphys()) print *, 'ERROR: nf vs gfr%nphys:', nf, gfr_get_nphys()
 
     hybrid = hybrid_create(par, 0, 1)
     call gfr_dyn_to_fv_phys(hybrid, nt, hvcoord, elem, 1, nelemd, &
