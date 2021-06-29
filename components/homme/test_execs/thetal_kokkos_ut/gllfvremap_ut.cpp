@@ -45,12 +45,13 @@ extern "C" {
   void limiter1_clip_and_sum_f90(int n, double* spheremp, double* qmin, double* qmax,
                                  double* dp, double* q);
   void calc_dp_fv_f90(int nf, double* ps, double* dp_fv);
-  void gfr_dyn_to_fv_phys_f90(int nt, double* ps, double* phis, double* T, double* uv,
-                              double* omega_p, double* q);
+  void gfr_dyn_to_fv_phys_f90(int nf, int nt, double* ps, double* phis, double* T,
+                              double* uv, double* omega_p, double* q);
 } // extern "C"
 
 using CA1d = Kokkos::View<Real*,     Kokkos::LayoutRight, Kokkos::HostSpace>;
 using CA2d = Kokkos::View<Real**,    Kokkos::LayoutRight, Kokkos::HostSpace>;
+using CA3d = Kokkos::View<Real***,   Kokkos::LayoutRight, Kokkos::HostSpace>;
 using CA4d = Kokkos::View<Real**** , Kokkos::LayoutRight, Kokkos::HostSpace>;
 using CA5d = Kokkos::View<Real*****, Kokkos::LayoutRight, Kokkos::HostSpace>;
 
@@ -171,7 +172,7 @@ struct Session {
   }
 
   void cleanup () {
-    auto& c = Context::singleton();
+    const auto& c = Context::singleton();
     c.finalize_singleton();
   }
 
@@ -520,17 +521,20 @@ static void test_limiter (const int nlev, const int n, Random& r, const bool too
       REQUIRE(equal(qf90(i,k), q(i,k)));
 }
 
-static void test_dyn_to_fv_phys (const int nf, const int ftype) {
+static void test_dyn_to_fv_phys (const Session& s, const int nf, const int ftype) {
   const int nt = 1; // time index
+  const int nf2 = nf*nf;
 
   gfr_init_f90(nf, ftype);
   gfr_init_hxx();
-#if 0
-  CA1d fps("ps", ncol);
-    
-  gfr_dyn_to_fv_phys_f90(nt, fps.data(), fphis.data(), fT.data(), fuv.data(),
+
+  CA2d fps("fps", s.nelemd, nf2), fphis("fphis", s.nelemd, nf2);
+  CA3d fT("fT", s.nelemd, s.nlev, nf2), fomega("fomega", s.nelemd, s.nlev, nf2);
+  CA4d fuv("fuv", s.nelemd, s.nlev, 2, nf2), fq("fq", s.nelemd, s.qsize, s.nlev, nf2);
+
+  gfr_dyn_to_fv_phys_f90(nt, nf, fps.data(), fphis.data(), fT.data(), fuv.data(),
                          fomega.data(), fq.data());
-#endif
+
   gfr_finish_f90();
 }
 
@@ -562,7 +566,7 @@ TEST_CASE ("compose_transport_testing") {
 
     for (const int nf : {2,3,4})
       for (const int ftype : {0,2})
-        test_dyn_to_fv_phys(nf, ftype);
+        test_dyn_to_fv_phys(s, nf, ftype);
   } catch (...) {}
   Session::delete_singleton();
 }

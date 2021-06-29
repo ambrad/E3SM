@@ -306,7 +306,7 @@ contains
     nf2 = nf*nf
 
     qsize = size(q,3)
-    
+
     do ie = nets,nete
        call gfr_g2f_scalar(ie, elem(ie)%metdet, elem(ie)%state%ps_v(:,:,nt:nt), wf1(:,:1))
        ps(:nf2,ie) = wf1(:nf2,1)

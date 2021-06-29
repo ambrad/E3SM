@@ -72,7 +72,8 @@ contains
     integer (c_int), value, intent(in) :: nf, ftype_in
 
     ftype = ftype_in
-    call gfr_init(par, elem, nf, 2, .false.)
+    print *, 'gfr_init_f90: check 0; switch to 2 when ready'
+    call gfr_init(par, elem, nf, 0, .false.)
   end subroutine gfr_init_f90
   
   subroutine gfr_finish_f90(nf) bind(c)
@@ -118,14 +119,15 @@ contains
     call calc_dp_fv(nf, hvcoord, ps, dp_fv)
   end subroutine calc_dp_fv_f90
 
-  subroutine gfr_dyn_to_fv_phys_f90(nt, ps, phis, T, uv, omega_p, q) bind(c)
+  subroutine gfr_dyn_to_fv_phys_f90(nf, nt, ps, phis, T, uv, omega_p, q) bind(c)
     use thetal_test_interface, only: hvcoord
     use hybrid_mod, only: hybrid_t, hybrid_create
     use gllfvremap_mod, only: gfr_dyn_to_fv_phys
     
-    integer (c_int), intent(in) :: nt
-    real (c_double), intent(out) :: ps(:,:), phis(:,:), T(:,:,:), &
-         uv(:,:,:,:), omega_p(:,:,:), q(:,:,:,:)
+    integer (c_int), value, intent(in) :: nf, nt
+    real (c_double), intent(out) :: ps(nf*nf,nelemd), phis(nf*nf,nelemd), &
+         T(nf*nf,nlev,nelemd), uv(nf*nf,2,nlev,nelemd), omega_p(nf*nf,nlev,nelemd), &
+         q(nf*nf,qsize,nlev,nelemd)
 
     type (hybrid_t) :: hybrid
 
