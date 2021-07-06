@@ -59,7 +59,8 @@ private:
 };
 
 extern "C" void
-init_gllfvremap_c(const int nf, const int nf_max, CF90Ptr fv_metdet, CF90Ptr g2f_remapd,
+init_gllfvremap_c(const int nelemd, const int np, const int nf, const int nf_max,
+                  CF90Ptr fv_metdet, CF90Ptr g2f_remapd,
                   CF90Ptr f2g_remapd, CF90Ptr D_f, CF90Ptr Dinv_f);
 
 } // Namespace Homme

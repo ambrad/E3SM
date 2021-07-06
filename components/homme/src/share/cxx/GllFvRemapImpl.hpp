@@ -65,10 +65,11 @@ struct GllFvRemapImpl {
     Buf1 buf1[nbuf1];
     Buf2 buf2[nbuf2];
 
+    Real w_ff;
     ExecView<Real**>
-      fv_metdet,   // (nelemd,nf2)
-      g2f_remapd,  // (nf2,np2)
-      f2g_remapd;  // (np2,nf2)
+      fv_w_metdet,   // (nelemd,nf2), gfr%w_ff * gfr%fv_metdet
+      g2f_remapd,    // (nf2,np2)
+      f2g_remapd;    // (np2,nf2)
     ExecView<Real****>
       D, Dinv,     // (nelemd,np2,2,2)
       D_f, Dinv_f; // (nelemd,nf2,2,2)

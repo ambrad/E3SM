@@ -119,6 +119,18 @@ contains
     call calc_dp_fv(nf, hvcoord, ps, dp_fv)
   end subroutine calc_dp_fv_f90
 
+  subroutine init_dyn_data_f90(ps) bind(c)
+    use element_state, only: timelevels
+
+    real (c_double), intent(in) :: ps(np,np,timelevels,nelemd)
+    
+    integer :: ie
+
+    do ie = 1,nelemd
+       elem(ie)%state%ps_v = ps(:,:,:,ie)
+    end do
+  end subroutine init_dyn_data_f90
+
   subroutine gfr_dyn_to_fv_phys_f90(nf, nt, ps, phis, T, uv, omega_p, q) bind(c)
     use thetal_test_interface, only: hvcoord
     use hybrid_mod, only: hybrid_t, hybrid_create

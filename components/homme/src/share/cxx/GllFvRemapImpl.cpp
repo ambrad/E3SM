@@ -73,12 +73,6 @@ void GllFvRemapImpl::init_boundary_exchanges () {
 #pragma message "TODO: init_boundary_exchanges"
 }
 
-void init_gllfvremap_c (const int nf, const int nf_max, CF90Ptr fv_metdet, CF90Ptr g2f_remapd,
-                        CF90Ptr f2g_remapd, CF90Ptr D_f, CF90Ptr Dinv_f) {
-  auto& g = Context::singleton().get<GllFvRemap>();
-  g.init_data(nf, nf_max, fv_metdet, g2f_remapd, f2g_remapd, D_f, Dinv_f);
-}
-
 template <typename T> using FV = Kokkos::View<T, Kokkos::LayoutLeft, Kokkos::HostSpace>;
 
 void GllFvRemapImpl
@@ -99,9 +93,11 @@ void GllFvRemapImpl
     fD_f(D_f_r, nf2, 2, 2, d.nelemd),
     fDinv_f(Dinv_f_r, nf2, 2, 2, d.nelemd);
 
+  d.w_ff = Real(4)/nf2;
+
   d.g2f_remapd = decltype(d.g2f_remapd)("g2f_remapd", nf2, np2);
   d.f2g_remapd = decltype(d.f2g_remapd)("f2g_remapd", np2, nf2);
-  d.fv_metdet = decltype(d.fv_metdet)("fv_metdet", d.nelemd, nf2);
+  d.fv_w_metdet = decltype(d.fv_w_metdet)("fv_w_metdet", d.nelemd, nf2);
   d.D = decltype(d.D)("D", d.nelemd, np2, 2, 2);
   d.Dinv = decltype(d.D)("Dinv", d.nelemd, np2, 2, 2);
   d.D_f = decltype(d.D)("D_f", d.nelemd, nf2, 2, 2);
@@ -109,7 +105,7 @@ void GllFvRemapImpl
 
   const auto g2f_remapd = create_mirror_view(d.g2f_remapd);
   const auto f2g_remapd = create_mirror_view(d.f2g_remapd);
-  const auto fv_metdet = create_mirror_view(d.fv_metdet);
+  const auto fv_w_metdet = create_mirror_view(d.fv_w_metdet);
   const auto D = create_mirror_view(d.D);
   const auto Dinv = create_mirror_view(d.Dinv);
   const auto D_f = create_mirror_view(d.D_f);
@@ -124,7 +120,7 @@ void GllFvRemapImpl
       f2g_remapd(j,i) = ff2g_remapd(i,j);
   for (int ie = 0; ie < d.nelemd; ++ie) {
     for (int k = 0; k < nf2; ++k)
-      fv_metdet(ie,k) = ffv_metdet(k,ie);
+      fv_w_metdet(ie,k) = d.w_ff * ffv_metdet(k,ie);
     for (int d0 = 0; d0 < 2; ++d0)
       for (int d1 = 0; d1 < 2; ++d1)
         for (int i = 0; i < np; ++i)
@@ -136,7 +132,7 @@ void GllFvRemapImpl
             Dinv_f(ie,k,d0,d1) = Dinv_f(ie,k,d0,d1);
           }
   }
-  deep_copy(d.fv_metdet, fv_metdet);
+  deep_copy(d.fv_w_metdet, fv_w_metdet);
   deep_copy(d.g2f_remapd, g2f_remapd);
   deep_copy(d.f2g_remapd, f2g_remapd);
   deep_copy(d.D, D);
@@ -183,7 +179,7 @@ void GllFvRemapImpl
   const auto dp_fv = m_derived.m_divdp_proj; // store dp_fv between kernels
   const auto ps_v = m_state.m_ps_v;
   const auto metdet = m_geometry.m_metdet;
-  const auto fv_metdet = m_data.fv_metdet;
+  const auto fv_w_metdet = m_data.fv_w_metdet;
   const auto g2f_remapd = m_data.g2f_remapd;
   const auto hvcoord = m_hvcoord;
 
@@ -195,16 +191,16 @@ void GllFvRemapImpl
     const auto rw1 = Kokkos::subview(m_data.buf1[0], kv.team_idx, all, all, all);
     const EVU<Real*> rw1s(pack2real(rw1), nreal_per_slot1);
     
-    const EVU<const Real*> fv_metdet_ie(&fv_metdet(ie,0), nf2), gll_metdet_ie(&metdet(ie,0,0), np2);
+    const EVU<const Real*> fv_w_metdet_ie(&fv_w_metdet(ie,0), nf2),
+      gll_metdet_ie(&metdet(ie,0,0), np2);
 
-    const EVU<Scalar**> dp_fv_ie(&dp_fv(ie,0,0,0), nf2, nlevpk); {
-      const EVU<Real*> ps_v_fv(rw1s.data(), nf2); {
-        const EVU<Real**> ps_v_ie(&ps_v(ie,time_idx,0,0), np2, 1), wrk(rw1s.data() + np2, np2, 1);
-        remapd(team, nf2, np2, 1, g2f_remapd, gll_metdet_ie, fv_metdet_ie, ps_v_ie, wrk,
-               EVU<Real**>(ps_v_fv.data(), nf2, 1));
-      }
-      calc_dp_fv(team, hvcoord, nf2, nlevpk, ps_v_fv, dp_fv_ie);
+    const EVU<Scalar**> dp_fv_ie(&dp_fv(ie,0,0,0), nf2, nlevpk);
+    {
+      const EVU<Real**> ps_v_ie(&ps_v(ie,time_idx,0,0), np2, 1), wrk(rw1s.data(), np2, 1);
+      remapd(team, nf2, np2, 1, g2f_remapd, gll_metdet_ie, fv_w_metdet_ie, ps_v_ie, wrk,
+             EVU<Real**>(&ps(ie,0), nf2, 1));
     }
+    calc_dp_fv(team, hvcoord, nf2, nlevpk, EVU<Real*>(&ps(ie,0), nf2), dp_fv_ie);
   };
   Kokkos::parallel_for(m_tp_ne, fe);
 

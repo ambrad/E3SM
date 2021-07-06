@@ -258,16 +258,17 @@ contains
 
   subroutine gfr_init_hxx() bind(c)
     interface
-       subroutine init_gllfvremap_c(nf, nf_max, fv_metdet, g2f_remapd, f2g_remapd, &
-            D_f, Dinv_f) bind(c)
+       subroutine init_gllfvremap_c(nelemd, np, nf, nf_max, fv_metdet, g2f_remapd, &
+            f2g_remapd, D_f, Dinv_f) bind(c)
          use iso_c_binding, only: c_int, c_double
-         integer (c_int), value, intent(in) :: nf, nf_max
-         real (c_double), dimension(:,:), intent(in) :: fv_metdet
-         real (c_double), dimension(:,:,:), intent(in) :: g2f_remapd, f2g_remapd
-         real (c_double), dimension(:,:,:,:), intent(in) :: D_f, Dinv_f
+         integer (c_int), value, intent(in) :: nelemd, np, nf, nf_max
+         real (c_double), dimension(nf*nf,nelemd), intent(in) :: fv_metdet
+         real (c_double), dimension(np,np,nf_max*nf_max), intent(in) :: g2f_remapd
+         real (c_double), dimension(nf_max*nf_max,np,np), intent(in) :: f2g_remapd
+         real (c_double), dimension(nf,nf,2,2,nelemd), intent(in) :: D_f, Dinv_f
        end subroutine init_gllfvremap_c
     end interface
-    call init_gllfvremap_c(gfr%nphys, nphys_max, gfr%fv_metdet, gfr%g2f_remapd, &
+    call init_gllfvremap_c(nelemd, np, gfr%nphys, nphys_max, gfr%fv_metdet, gfr%g2f_remapd, &
          gfr%f2g_remapd, gfr%D_f, gfr%Dinv_f)
   end subroutine gfr_init_hxx
 

@@ -42,11 +42,11 @@ extern "C" {
   void gfr_finish_f90();
   void run_gfr_test(int* nerr);
   void run_gfr_check_api(int* nerr);
-  void limiter1_clip_and_sum_f90(int n, double* spheremp, double* qmin, double* qmax,
-                                 double* dp, double* q);
-  void calc_dp_fv_f90(int nf, double* ps, double* dp_fv);
-  void gfr_dyn_to_fv_phys_f90(int nf, int nt, double* ps, double* phis, double* T,
-                              double* uv, double* omega_p, double* q);
+  void limiter1_clip_and_sum_f90(int n, Real* spheremp, Real* qmin, Real* qmax, Real* dp, Real* q);
+  void calc_dp_fv_f90(int nf, Real* ps, Real* dp_fv);
+  void init_dyn_data_f90(Real* ps);
+  void gfr_dyn_to_fv_phys_f90(int nf, int nt, Real* ps, Real* phis, Real* T, Real* uv,
+                              Real* omega_p, Real* q);
 } // extern "C"
 
 using CA1d = Kokkos::View<Real*,     Kokkos::LayoutRight, Kokkos::HostSpace>;
@@ -514,7 +514,27 @@ static void test_limiter (const int nlev, const int n, Random& r, const bool too
       REQUIRE(equal(qf90(i,k), q(i,k)));
 }
 
-static void test_dyn_to_fv_phys (const Session& s, const int nf, const int ftype) {
+static void init_dyn_data (Session& s) {
+  using Kokkos::deep_copy;
+
+  // randomize C++ data
+  auto& c = Context::singleton();
+  const auto state = c.get<ElementsState>();
+  const auto ps = cmv(state.m_ps_v);
+  for (int ie = 0; ie < s.nelemd; ++ie)
+    for (int t = 0; t < NUM_TIME_LEVELS; ++t)
+      for (int i = 0; i < s.np; ++i)
+        for (int j = 0; j < s.np; ++j)
+          ps(ie,t,i,j) = s.h.ps0*(s.r.urrng(0.9, 1.1));
+  prc(s.h.ps0);
+  deep_copy(state.m_ps_v, ps);
+  
+  init_dyn_data_f90( // sizes
+                    ps.data() // data
+                     );
+}
+
+static void test_dyn_to_fv_phys (Session& s, const int nf, const int ftype) {
   using Kokkos::subview;
   using g = GllFvRemapImpl;
   
@@ -523,6 +543,8 @@ static void test_dyn_to_fv_phys (const Session& s, const int nf, const int ftype
 
   gfr_init_f90(nf, ftype);
   gfr_init_hxx();
+
+  init_dyn_data(s);
 
   CA2d fps("fps", s.nelemd, nf2), fphis("fphis", s.nelemd, nf2);
   CA3d fT("fT", s.nelemd, s.nlev, nf2), fomega("fomega", s.nelemd, s.nlev, nf2);
@@ -539,6 +561,18 @@ static void test_dyn_to_fv_phys (const Session& s, const int nf, const int ftype
   const auto& c = Context::singleton();
   auto& gfr = c.get<GllFvRemap>();
   gfr.run_dyn_to_fv(nt, dps, dphis, dT, domega, duv, dq);
+
+  const auto ps = cmvdc(dps);
+  const auto phis = cmvdc(dphis);
+  const auto T = cmvdc(dT);
+  const auto omega = cmvdc(domega);
+  const auto uv = cmvdc(duv);
+  const auto q = cmvdc(dq);
+
+  for (int ie = 0; ie < 1 /*s.nelemd*/; ++ie) {
+    for (int i = 0; i < nf2; ++i)
+      REQUIRE(ps(ie,i) == fps(ie,i));
+  }
 
   gfr_finish_f90();
 }
