@@ -33,20 +33,27 @@ extern int hommexx_catch2_argc;
 extern char** hommexx_catch2_argv;
 
 extern "C" {
+  void limiter1_clip_and_sum_f90(int n, Real* spheremp, Real* qmin, Real* qmax, Real* dp, Real* q);
+  void calc_dp_fv_f90(int nf, Real* ps, Real* dp_fv);
+
   void init_gllfvremap_f90(int ne, const Real* hyai, const Real* hybi, const Real* hyam,
                            const Real* hybm, Real ps0, Real* dvv, Real* mp, int qsize,
                            bool is_sphere);
   void init_geometry_f90();
+
+  void run_gfr_test(int* nerr);
+  void run_gfr_check_api(int* nerr);
+
   void gfr_init_f90(int nf, int ftype);
   void gfr_init_hxx();
   void gfr_finish_f90();
-  void run_gfr_test(int* nerr);
-  void run_gfr_check_api(int* nerr);
-  void limiter1_clip_and_sum_f90(int n, Real* spheremp, Real* qmin, Real* qmax, Real* dp, Real* q);
-  void calc_dp_fv_f90(int nf, Real* ps, Real* dp_fv);
+
   void init_dyn_data_f90(int nlev_align, int nq, Real* ps, Real* dp3d, Real* q);
   void gfr_dyn_to_fv_phys_f90(int nf, int nt, Real* ps, Real* phis, Real* T, Real* uv,
                               Real* omega_p, Real* q);
+
+  void gfr_fv_phys_to_dyn_f90(int nf, int nt, Real dt, Real* T, Real* uv, Real* q);
+  void cmp_dyn_data_f90(int nlev_align, int nq, Real* T, Real* uv, Real* q, int* nerr);
 } // extern "C"
 
 using CA1d = Kokkos::View<Real*,     Kokkos::LayoutRight, Kokkos::HostSpace>;
@@ -554,7 +561,6 @@ static void test_dyn_to_fv_phys (Session& s, const int nf, const int ftype) {
   using Kokkos::subview;
   using g = GllFvRemapImpl;
   
-  const int nt = 0; // time index
   const int nf2 = nf*nf;
 
   gfr_init_f90(nf, ftype);
@@ -566,33 +572,75 @@ static void test_dyn_to_fv_phys (Session& s, const int nf, const int ftype) {
   CA3d fT("fT", s.nelemd, s.nlev, nf2), fomega("fomega", s.nelemd, s.nlev, nf2);
   CA4d fuv("fuv", s.nelemd, s.nlev, 2, nf2), fq("fq", s.nelemd, s.qsize, s.nlev, nf2);
 
-  gfr_dyn_to_fv_phys_f90(nf, nt+1, fps.data(), fphis.data(), fT.data(), fuv.data(),
-                         fomega.data(), fq.data());
-
   const ExecView<Real**> dps("dps", s.nelemd, nf2), dphis("dphis", s.nelemd, nf2);
   const ExecView<Real***> dT("dT", s.nelemd, nf2, g::num_lev_aligned),
     domega("domega", s.nelemd, nf2, g::num_lev_aligned);
   const ExecView<Real****> duv("duv", s.nelemd, nf2, 2, g::num_lev_aligned),
     dq("dq", s.nelemd, nf2, s.qsize, g::num_lev_aligned);
+
   const auto& c = Context::singleton();
   auto& gfr = c.get<GllFvRemap>();
-  gfr.run_dyn_to_fv(nt, dps, dphis, dT, domega, duv, dq);
 
-  const auto ps = cmvdc(dps);
-  const auto phis = cmvdc(dphis);
-  const auto T = cmvdc(dT);
-  const auto omega = cmvdc(domega);
-  const auto uv = cmvdc(duv);
-  const auto q = cmvdc(dq);
+  for (int nt = 0; nt < NUM_TIME_LEVELS; ++nt) {
+    gfr_dyn_to_fv_phys_f90(nf, nt+1, fps.data(), fphis.data(), fT.data(), fuv.data(),
+                           fomega.data(), fq.data());
 
-  for (int ie = 0; ie < s.nelemd; ++ie)
-    for (int i = 0; i < nf2; ++i) {
-      REQUIRE(ps(ie,i) == fps(ie,i));
-      for (int k = 0; k < s.nlev; ++k) {
-        for (int iq = 0; iq < s.qsize; ++iq)
-          REQUIRE(q(ie,i,iq,k) == fq(ie,iq,k,i));
+    gfr.run_dyn_to_fv(nt, dps, dphis, dT, domega, duv, dq);
+
+    const auto ps = cmvdc(dps);
+    const auto phis = cmvdc(dphis);
+    const auto T = cmvdc(dT);
+    const auto omega = cmvdc(domega);
+    const auto uv = cmvdc(duv);
+    const auto q = cmvdc(dq);
+
+    for (int ie = 0; ie < s.nelemd; ++ie)
+      for (int i = 0; i < nf2; ++i) {
+        REQUIRE(ps(ie,i) == fps(ie,i));
+        for (int k = 0; k < s.nlev; ++k) {
+          for (int iq = 0; iq < s.qsize; ++iq)
+            REQUIRE(q(ie,i,iq,k) == fq(ie,iq,k,i));
+        }
       }
-    }
+  }
+
+  gfr_finish_f90();
+}
+
+static void test_fv_phys_to_dyn (Session& s, const int nf, const int ftype) {
+  using Kokkos::subview;
+  using g = GllFvRemapImpl;
+  
+  const Real dt = 1800;
+  const int nf2 = nf*nf;
+
+  gfr_init_f90(nf, ftype);
+  gfr_init_hxx();
+
+  CA3d fT("fT", s.nelemd, s.nlev, nf2);
+  CA4d fuv("fuv", s.nelemd, s.nlev, 2, nf2), fq("fq", s.nelemd, s.qsize, s.nlev, nf2);
+
+  const ExecView<Real***> dT("dT", s.nelemd, nf2, g::num_lev_aligned);
+  const ExecView<Real****> duv("duv", s.nelemd, nf2, 2, g::num_lev_aligned),
+    dq("dq", s.nelemd, nf2, s.qsize, g::num_lev_aligned);
+
+  const auto T = cmv(dT);
+  const auto uv = cmv(duv);
+  const auto q = cmv(dq);
+
+  //todo fill data
+
+  const auto& c = Context::singleton();
+  auto& gfr = c.get<GllFvRemap>();
+
+  for (int nt = 0; nt < NUM_TIME_LEVELS; ++nt) {
+    gfr_fv_phys_to_dyn_f90(nf, nt+1, dt, fT.data(), fuv.data(), fq.data());
+    gfr.run_fv_to_dyn(nt, dt, dT, duv, dq);
+  }
+
+  int nerr = 0;
+  cmp_dyn_data_f90(g::num_lev_aligned, q.extent_int(1), T.data(), uv.data(), q.data(), &nerr);
+  REQUIRE(nerr == 0);
 
   gfr_finish_f90();
 }
@@ -605,10 +653,10 @@ TEST_CASE ("compose_transport_testing") {
     test_calc_dp_fv(s.r, s.h);
     
     // Core scalar and vector remapd routines.
-    test_remapds(s.r, 7, 11, 13);
-    test_remapds(s.r, 11, 7, 13);
-    test_remapds(s.r, 16, 4, 8 );
-    test_remapds(s.r, 4, 16, 8 );
+    test_remapds(s.r,  7, 11, 13);
+    test_remapds(s.r, 11,  7, 13);
+    test_remapds(s.r, 16,  4,  8);
+    test_remapds(s.r,  4, 16,  8);
 
     // Limiter.
     for (const auto too_tight : {false, true}) {
@@ -626,6 +674,10 @@ TEST_CASE ("compose_transport_testing") {
     for (const int nf : {2,3,4})
       for (const int ftype : {0,2})
         test_dyn_to_fv_phys(s, nf, ftype);
+
+    for (const int nf : {2,3,4})
+      for (const int ftype : {0,2})
+        test_fv_phys_to_dyn(s, nf, ftype);
   } catch (...) {}
   Session::delete_singleton();
 }

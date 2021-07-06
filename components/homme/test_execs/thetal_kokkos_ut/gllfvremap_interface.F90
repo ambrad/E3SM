@@ -123,8 +123,8 @@ contains
     use element_state, only: timelevels
 
     integer (c_int), value, intent(in) :: nk, nq
-    real (c_double), intent(in) :: ps(np,np,timelevels,nelemd), dp3d(nk,np,np,timelevels,nelemd), &
-         q(nk,np,np,nq,nelemd)
+    real (c_double), intent(in) :: ps(np,np,timelevels,nelemd), &
+         dp3d(nk,np,np,timelevels,nelemd), q(nk,np,np,nq,nelemd)
     
     integer :: ie, k, tl, iq
 
@@ -159,4 +159,31 @@ contains
     call gfr_dyn_to_fv_phys(hybrid, nt, hvcoord, elem, 1, nelemd, &
          ps, phis, T, uv, omega_p, q)
   end subroutine gfr_dyn_to_fv_phys_f90
+
+  subroutine gfr_fv_phys_to_dyn_f90(nf, nt, dt, T, uv, q) bind(c)
+    use thetal_test_interface, only: hvcoord
+    use hybrid_mod, only: hybrid_t, hybrid_create
+    use gllfvremap_mod, only: gfr_fv_phys_to_dyn, gfr_get_nphys
+
+    integer (c_int), value, intent(in) :: nf, nt
+    real (c_double), value, intent(in) :: dt
+    real (c_double), intent(in) :: T(nf*nf,nlev,nelemd), uv(nf*nf,2,nlev,nelemd), &
+         q(nf*nf,nlev,qsize,nelemd)
+
+    type (hybrid_t) :: hybrid
+
+    if (nf /= gfr_get_nphys()) print *, 'ERROR: nf vs gfr%nphys:', nf, gfr_get_nphys()
+
+    hybrid = hybrid_create(par, 0, 1)
+    call gfr_fv_phys_to_dyn(hybrid, nt, dt, hvcoord, elem, 1, nelemd, T, uv, q)
+  end subroutine gfr_fv_phys_to_dyn_f90
+
+  subroutine cmp_dyn_data_f90(nk, nq, T, uv, q, nerr) bind(c)
+    use element_state, only: timelevels
+
+    integer (c_int), value, intent(in) :: nk, nq
+    real (c_double), intent(in) :: T(nk,np,np,nelemd), uv(nk,np,np,2,timelevels), &
+         q(nk,np,np,nq,nelemd)
+    integer (c_int), intent(out) :: nerr
+  end subroutine cmp_dyn_data_f90
 end module physgrid_interface
