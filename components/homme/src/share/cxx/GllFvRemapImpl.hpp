@@ -67,7 +67,7 @@ struct GllFvRemapImpl {
 
     Real w_ff;
     ExecView<Real**>
-      fv_w_metdet,   // (nelemd,nf2), gfr%w_ff * gfr%fv_metdet
+      fv_spheremp,   // (nelemd,nf2), gfr%w_ff * gfr%fv_metdet
       g2f_remapd,    // (nf2,np2)
       f2g_remapd;    // (np2,nf2)
     ExecView<Real****>
@@ -321,6 +321,21 @@ struct GllFvRemapImpl {
       }
     };
     team_parallel_for_with_linear_index(team, f, nlev);
+  }
+
+  template <typename RT, typename GS, typename GT, typename DS, typename DT,
+            typename QS, typename WT, typename QT>
+  static KOKKOS_FUNCTION void
+  remap_mixing_ratio (const MT& team, const int nsrc, const int ntgt, const int nlev,
+                      const RT& remap_s2t, const GS& geosrc, const GT& geotgt,
+                      const DS& dpsrc, const DT& dptgt, const QS& qsrc, const WT& wrk,
+                      const QT& qtgt) {
+    using Kokkos::parallel_for;
+    const auto ttrtgt = Kokkos::TeamThreadRange(team, ntgt);
+    const auto tvr = Kokkos::ThreadVectorRange(team, nlev);
+    parallel_for(ttrtgt, [&] (const int i) {
+        
+    });
   }
 
   template <typename View> static KOKKOS_INLINE_FUNCTION

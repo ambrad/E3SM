@@ -345,6 +345,7 @@ contains
        ! for preqx, omega_p = omega/p
        omega_p(:nf2,:,ie) = wf1(:nf2,:)/p_fv(:nf2,:)
 #endif
+
        do qi = 1,qsize
           call gfr_g2f_mixing_ratio(gfr, ie, elem(ie)%metdet, dp, dp_fv, &
                elem(ie)%state%Q(:,:,:,qi), wf1)
