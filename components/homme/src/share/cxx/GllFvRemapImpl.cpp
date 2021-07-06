@@ -82,6 +82,10 @@ void GllFvRemapImpl
   using Kokkos::create_mirror_view;
   using Kokkos::deep_copy;
 
+  if (nf <= 1)
+    Errors::runtime_abort("GllFvRemap: In physics grid configuratoin nf x nf,"
+                          " nf must be > 1.", Errors::err_not_implemented);
+
   const int nf2 = nf*nf, nf2_max = nf_max*nf_max;
   auto& d = m_data;
   d.nf2 = nf2;
@@ -122,15 +126,18 @@ void GllFvRemapImpl
     for (int k = 0; k < nf2; ++k)
       fv_spheremp(ie,k) = d.w_ff * ffv_metdet(k,ie);
     for (int d0 = 0; d0 < 2; ++d0)
-      for (int d1 = 0; d1 < 2; ++d1)
+      for (int d1 = 0; d1 < 2; ++d1) {
         for (int i = 0; i < np; ++i)
           for (int j = 0; j < np; ++j) {
             const auto k = np*i + j;
             D     (ie,k,d0,d1) = cD   (ie,d0,d1,i,j);
             Dinv  (ie,k,d0,d1) = cDinv(ie,d0,d1,i,j);
-            D_f   (ie,k,d0,d1) = D_f   (ie,k,d0,d1);
-            Dinv_f(ie,k,d0,d1) = Dinv_f(ie,k,d0,d1);
           }
+        for (int k = 0; k < nf2; ++k) {
+          D_f   (ie,k,d0,d1) = fD_f   (ie,k,d0,d1);
+          Dinv_f(ie,k,d0,d1) = fDinv_f(ie,k,d0,d1);
+        }
+      }
   }
   deep_copy(d.fv_spheremp, fv_spheremp);
   deep_copy(d.g2f_remapd, g2f_remapd);
@@ -222,17 +229,18 @@ void GllFvRemapImpl
 
     const auto all = Kokkos::ALL();
     const auto rw1 = Kokkos::subview(m_data.buf1[0], kv.team_idx, all, all, all);
+    const auto rw2 = Kokkos::subview(m_data.buf1[2], kv.team_idx, all, all, all);
     
     const EVU<const Real*> fv_spheremp_ie(&fv_spheremp(ie,0), nf2),
       gll_metdet_ie(&metdet(ie,0,0), np2);
     const EVU<const Scalar**> dp_fv_ie(&dp_fv(ie,0,0,0), nf2, nlevpk);
     
     // q
-    remap_mixing_ratio(team, np2, nf2, nlevpk, g2f_remapd, gll_metdet_ie, fv_spheremp_ie,
-                       EVU<const Scalar[NP*NP][NUM_LEV]>(&dp_g(ie,timeidx,0,0,0)), dp_fv_ie,
-                       EVU<const Scalar[NP*NP][NUM_LEV]>(&q_g(ie,iq,0,0,0)),
-                       EVU<Scalar**>(rw1.data(), np2, nlevpk),
-                       EVU<Scalar**>(&q(ie,iq,0,0), q.extent_int(2), q.extent_int(3)));
+    g2f_mixing_ratio(kv, np2, nf2, nlevpk, g2f_remapd, gll_metdet_ie, fv_spheremp_ie,
+                     EVU<const Scalar[NP*NP][NUM_LEV]>(&dp_g(ie,timeidx,0,0,0)), dp_fv_ie,
+                     EVU<const Scalar[NP*NP][NUM_LEV]>(&q_g(ie,iq,0,0,0)),
+                     EVU<Scalar**>(rw1.data(), np2, nlevpk), EVU<Scalar**>(rw2.data(), np2, nlevpk),
+                     EVU<Scalar***>(&q(ie,0,0,0), q.extent_int(1), q.extent_int(2), q.extent_int(3)));
   };
   Kokkos::parallel_for(m_tp_ne_qsize, feq);
 }

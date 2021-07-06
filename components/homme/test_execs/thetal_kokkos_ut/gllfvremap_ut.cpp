@@ -44,7 +44,7 @@ extern "C" {
   void run_gfr_check_api(int* nerr);
   void limiter1_clip_and_sum_f90(int n, Real* spheremp, Real* qmin, Real* qmax, Real* dp, Real* q);
   void calc_dp_fv_f90(int nf, Real* ps, Real* dp_fv);
-  void init_dyn_data_f90(Real* ps);
+  void init_dyn_data_f90(int nlev_align, int nq, Real* ps, Real* dp3d, Real* q);
   void gfr_dyn_to_fv_phys_f90(int nf, int nt, Real* ps, Real* phis, Real* T, Real* uv,
                               Real* omega_p, Real* q);
 } // extern "C"
@@ -516,22 +516,37 @@ static void test_limiter (const int nlev, const int n, Random& r, const bool too
 
 static void init_dyn_data (Session& s) {
   using Kokkos::deep_copy;
+  using g = GllFvRemapImpl;
 
   // randomize C++ data
+  const auto hai = cmvdc(s.h.hybrid_ai);
+  const auto bai = cmvdc(s.h.hybrid_bi);
   auto& c = Context::singleton();
   const auto state = c.get<ElementsState>();
+  const auto tracers = c.get<Tracers>();
+  const int nt = NUM_TIME_LEVELS;
   const auto ps = cmv(state.m_ps_v);
+  const g::EVU<Real*****>
+    dp3d_s(g::pack2real(state.m_dp3d), s.nelemd, nt, NP, NP, g::num_lev_aligned),
+    q_s(g::pack2real(tracers.Q), s.nelemd, tracers.Q.extent_int(1), NP, NP, g::num_lev_aligned);
+  const auto dp3d = cmv(dp3d_s);
+  const auto q = cmv(q_s);
   for (int ie = 0; ie < s.nelemd; ++ie)
     for (int t = 0; t < NUM_TIME_LEVELS; ++t)
       for (int i = 0; i < s.np; ++i)
         for (int j = 0; j < s.np; ++j)
-          ps(ie,t,i,j) = s.h.ps0*(s.r.urrng(0.9, 1.1));
-  prc(s.h.ps0);
+          for (int k = 0; k < s.nlev; ++k) {
+            if (k == 0) ps(ie,t,i,j) = s.h.ps0*(s.r.urrng(0.9, 1.1));
+            dp3d(ie,t,i,j,k) = ((hai(k+1) - hai(k))*s.h.ps0 +
+                                (bai(k+1) - bai(k))*ps(ie,t,i,j));
+            for (int iq = 0; iq < s.qsize; ++iq)
+              q(ie,iq,i,j,k) = s.r.urrng(0, 0.1);
+          }
   deep_copy(state.m_ps_v, ps);
+  deep_copy(dp3d_s, dp3d);
+  deep_copy(q_s, q);
   
-  init_dyn_data_f90( // sizes
-                    ps.data() // data
-                     );
+  init_dyn_data_f90(g::num_lev_aligned, q.extent_int(1), ps.data(), dp3d.data(), q.data());
 }
 
 static void test_dyn_to_fv_phys (Session& s, const int nf, const int ftype) {
@@ -569,10 +584,14 @@ static void test_dyn_to_fv_phys (Session& s, const int nf, const int ftype) {
   const auto uv = cmvdc(duv);
   const auto q = cmvdc(dq);
 
-  for (int ie = 0; ie < 1 /*s.nelemd*/; ++ie) {
-    for (int i = 0; i < nf2; ++i)
+  for (int ie = 0; ie < s.nelemd; ++ie)
+    for (int i = 0; i < nf2; ++i) {
       REQUIRE(ps(ie,i) == fps(ie,i));
-  }
+      for (int k = 0; k < s.nlev; ++k) {
+        for (int iq = 0; iq < s.qsize; ++iq)
+          REQUIRE(q(ie,i,iq,k) == fq(ie,iq,k,i));
+      }
+    }
 
   gfr_finish_f90();
 }

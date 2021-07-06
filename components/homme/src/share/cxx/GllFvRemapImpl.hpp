@@ -61,7 +61,7 @@ struct GllFvRemapImpl {
   struct Data {
     int nelemd, qsize, nf2;
 
-    static constexpr int nbuf1 = 1, nbuf2 = 1;
+    static constexpr int nbuf1 = 2, nbuf2 = 1;
     Buf1 buf1[nbuf1];
     Buf2 buf2[nbuf2];
 
@@ -251,11 +251,11 @@ struct GllFvRemapImpl {
                qmin < q* < qmax
      Operate on DOF indices 0:n-1 and level pack indices 0:nlev-1.
    */
-  template <typename CR1, typename V1, typename CV2, typename V2>
+  template <typename CR1, typename V1, typename CV2, typename V2, typename VQ>
   static KOKKOS_FUNCTION void
   limiter_clip_and_sum (const MT& team, const int n, const int nlev,
                         const CR1& spheremp, const V1& qmin, const V1& qmax,
-                        const CV2& dp, const V2& wrk, const V2& q) {
+                        const CV2& dp, const V2& wrk, const VQ& q) {
     assert(spheremp.extent_int(0) >= n);
     assert(qmin.extent_int(0) >= nlev); assert(qmax.extent_int(0) >= nlev);
     assert(dp .extent_int(0) >= n && dp .extent_int(1) >= nlev);
@@ -323,19 +323,50 @@ struct GllFvRemapImpl {
     team_parallel_for_with_linear_index(team, f, nlev);
   }
 
+  // Remap a mixing ratio conservatively and preventing new extrema.
   template <typename RT, typename GS, typename GT, typename DS, typename DT,
             typename QS, typename WT, typename QT>
   static KOKKOS_FUNCTION void
-  remap_mixing_ratio (const MT& team, const int nsrc, const int ntgt, const int nlev,
-                      const RT& remap_s2t, const GS& geosrc, const GT& geotgt,
-                      const DS& dpsrc, const DT& dptgt, const QS& qsrc, const WT& wrk,
-                      const QT& qtgt) {
+  g2f_mixing_ratio (const KernelVariables& kv, const int np2, const int nf2, const int nlev,
+                    const RT& remap_s2t, const GS& geog, const GT& geof,
+                    const DS& dpg, const DT& dpf, const QS& qg,
+                    const WT& w1, const WT& w2, const QT& qf) {
     using Kokkos::parallel_for;
-    const auto ttrtgt = Kokkos::TeamThreadRange(team, ntgt);
-    const auto tvr = Kokkos::ThreadVectorRange(team, nlev);
-    parallel_for(ttrtgt, [&] (const int i) {
-        
-    });
+    const auto ttrg = Kokkos::TeamThreadRange(kv.team, np2);
+    const auto ttrf = Kokkos::TeamThreadRange(kv.team, nf2);
+    const auto tvrg = Kokkos::ThreadVectorRange(kv.team, np2);
+    const auto tvr  = Kokkos::ThreadVectorRange(kv.team, nlev);
+    const int iq = kv.iq;
+
+    // Linearly remap qdp GLL->FV. w2 holds q_f at end of this block.
+    parallel_for( ttrg, [&] (const int i) {
+      parallel_for(tvr, [&] (const int k) { w1(i,k) = dpg(i,k)*qg(i,k); }); });
+    remapd(kv.team, nf2, np2, nlev, remap_s2t, geog, geof, w1, w1, w2);
+    parallel_for( ttrf, [&] (const int i) {
+      parallel_for(tvr, [&] (const int k) { w2(i,k) /= dpf(i,k); }); });
+
+    // Compute extremal q values in element on GLL grid. Use qf as tmp space.
+    const EVU<Scalar*> qmin(&qf(0,iq,0), nlev), qmax(&qf(1,iq,0), nlev);
+    const auto f = [&] (const int k) {
+      auto& qmink = qmin(k);
+      auto& qmaxk = qmax(k);
+      qmink = w2(0,k);
+      qmaxk = w2(0,k);
+      for (int i = 1; i < np2; ++i) {
+        const auto w2ik = w2(i,k);
+        VECTOR_SIMD_LOOP for (int s = 0; s < packn; ++s)
+          qmink[s] = min(qmink[s], w2ik[s]);
+        VECTOR_SIMD_LOOP for (int s = 0; s < packn; ++s)
+          qmaxk[s] = max(qmaxk[s], w2ik[s]);
+      }
+    };
+    team_parallel_for_with_linear_index(kv.team, f, nlev);
+
+    // Apply CAAS to w2, the provisional q_f values.
+    limiter_clip_and_sum(kv.team, nf2, nlev, geof, qmin, qmax, dpf, w1, w2);
+    // Copy to qf array.
+    parallel_for( ttrf, [&] (const int i) {
+      parallel_for(tvr, [&] (const int k) { qf(i,iq,k) = w2(i,k); }); });
   }
 
   template <typename View> static KOKKOS_INLINE_FUNCTION

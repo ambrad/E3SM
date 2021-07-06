@@ -119,15 +119,25 @@ contains
     call calc_dp_fv(nf, hvcoord, ps, dp_fv)
   end subroutine calc_dp_fv_f90
 
-  subroutine init_dyn_data_f90(ps) bind(c)
+  subroutine init_dyn_data_f90(nk, nq, ps, dp3d, q) bind(c)
     use element_state, only: timelevels
 
-    real (c_double), intent(in) :: ps(np,np,timelevels,nelemd)
+    integer (c_int), value, intent(in) :: nk, nq
+    real (c_double), intent(in) :: ps(np,np,timelevels,nelemd), dp3d(nk,np,np,timelevels,nelemd), &
+         q(nk,np,np,nq,nelemd)
     
-    integer :: ie
+    integer :: ie, k, tl, iq
 
     do ie = 1,nelemd
        elem(ie)%state%ps_v = ps(:,:,:,ie)
+       do tl = 1,timelevels
+          do k = 1,nlev
+             elem(ie)%state%dp3d(:,:,k,tl) = dp3d(k,:,:,tl,ie)
+             do iq = 1,nq
+                elem(ie)%state%q(:,:,k,iq) = q(k,:,:,iq,ie)
+             end do
+          end do
+       end do
     end do
   end subroutine init_dyn_data_f90
 
