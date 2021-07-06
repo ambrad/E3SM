@@ -76,6 +76,7 @@ class Random {
   rngalg engine;
 public:
   Random (unsigned int seed_ = Catch::rngSeed()) : seed(seed_ == 0 ? rd() : seed_), engine(seed) {}
+  //Random () : seed(346068100), engine(seed) {}
   unsigned int gen_seed () { return seed; }
   Real urrng (const Real lo = 0, const Real hi = 1) { return rpdf(lo, hi)(engine); }
   int  uirng (const int lo, const int hi) { return ipdf(lo, hi)(engine); }
@@ -425,8 +426,8 @@ assert_limiter_properties (const int n, const int nlev, const V1& spheremp,
   for (int k = 0; k < nlev; ++k) {
     Real qm0 = 0, qm = 0;
     for (int i = 0; i < n2; ++i) {
-      REQUIRE(q(i,k) >= (1 - 1e1*eps)*qmin(k));
-      REQUIRE(q(i,k) <= (1 + 1e1*eps)*qmax(k));
+      REQUIRE(q(i,k) >= (1 - 5e1*eps)*qmin(k));
+      REQUIRE(q(i,k) <= (1 + 5e1*eps)*qmax(k));
       qm0 += spheremp(i)*dp(i,k)*qorig(i,k);
       qm  += spheremp(i)*dp(i,k)*q(i,k);
       if (q(i,k) != qorig(i,k)) ++noteq;

@@ -328,7 +328,7 @@ struct GllFvRemapImpl {
             typename QS, typename WT, typename QT>
   static KOKKOS_FUNCTION void
   g2f_mixing_ratio (const KernelVariables& kv, const int np2, const int nf2, const int nlev,
-                    const RT& remap_s2t, const GS& geog, const GT& geof,
+                    const RT& remap_g2f, const GS& geog, const GT& geof,
                     const DS& dpg, const DT& dpf, const QS& qg,
                     const WT& w1, const WT& w2, const QT& qf) {
     using Kokkos::parallel_for;
@@ -341,7 +341,7 @@ struct GllFvRemapImpl {
     // Linearly remap qdp GLL->FV. w2 holds q_f at end of this block.
     parallel_for( ttrg, [&] (const int i) {
       parallel_for(tvr, [&] (const int k) { w1(i,k) = dpg(i,k)*qg(i,k); }); });
-    remapd(kv.team, nf2, np2, nlev, remap_s2t, geog, geof, w1, w1, w2);
+    remapd(kv.team, nf2, np2, nlev, remap_g2f, geog, geof, w1, w1, w2);
     parallel_for( ttrf, [&] (const int i) {
       parallel_for(tvr, [&] (const int k) { w2(i,k) /= dpf(i,k); }); });
 
@@ -350,14 +350,13 @@ struct GllFvRemapImpl {
     const auto f = [&] (const int k) {
       auto& qmink = qmin(k);
       auto& qmaxk = qmax(k);
-      qmink = w2(0,k);
-      qmaxk = w2(0,k);
+      qmink = qmaxk = qg(0,k);
       for (int i = 1; i < np2; ++i) {
-        const auto w2ik = w2(i,k);
+        const auto qgik = qg(i,k);
         VECTOR_SIMD_LOOP for (int s = 0; s < packn; ++s)
-          qmink[s] = min(qmink[s], w2ik[s]);
+          qmink[s] = min(qmink[s], qgik[s]);
         VECTOR_SIMD_LOOP for (int s = 0; s < packn; ++s)
-          qmaxk[s] = max(qmaxk[s], w2ik[s]);
+          qmaxk[s] = max(qmaxk[s], qgik[s]);
       }
     };
     team_parallel_for_with_linear_index(kv.team, f, nlev);
