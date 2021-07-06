@@ -153,6 +153,52 @@ void GllFvRemapImpl
    x compute_hydrostatic_p is already available
 */
 
+// Remap a mixing ratio conservatively and preventing new extrema.
+template <typename RT, typename GS, typename GT, typename DS, typename DT,
+          typename QS, typename WT, typename QT>
+static KOKKOS_FUNCTION void
+g2f_mixing_ratio (const KernelVariables& kv, const int np2, const int nf2, const int nlev,
+                  const RT& remap_g2f, const GS& geog, const GT& geof,
+                  const DS& dpg, const DT& dpf, const QS& qg,
+                  const WT& w1, const WT& w2, const QT& qf) {
+  using g = GllFvRemapImpl;
+  using Kokkos::parallel_for;
+  const auto ttrg = Kokkos::TeamThreadRange(kv.team, np2);
+  const auto ttrf = Kokkos::TeamThreadRange(kv.team, nf2);
+  const auto tvrg = Kokkos::ThreadVectorRange(kv.team, np2);
+  const auto tvr  = Kokkos::ThreadVectorRange(kv.team, nlev);
+  const int iq = kv.iq, packn = g::packn;
+
+  // Linearly remap qdp GLL->FV. w2 holds q_f at end of this block.
+  parallel_for( ttrg, [&] (const int i) {
+      parallel_for(tvr, [&] (const int k) { w1(i,k) = dpg(i,k)*qg(i,k); }); });
+  g::remapd(kv.team, nf2, np2, nlev, remap_g2f, geog, geof, w1, w1, w2);
+  parallel_for( ttrf, [&] (const int i) {
+      parallel_for(tvr, [&] (const int k) { w2(i,k) /= dpf(i,k); }); });
+
+  // Compute extremal q values in element on GLL grid. Use qf as tmp space.
+  const g::EVU<Scalar*> qmin(&qf(0,iq,0), nlev), qmax(&qf(1,iq,0), nlev);
+  const auto f = [&] (const int k) {
+    auto& qmink = qmin(k);
+    auto& qmaxk = qmax(k);
+    qmink = qmaxk = qg(0,k);
+    for (int i = 1; i < np2; ++i) {
+      const auto qgik = qg(i,k);
+      VECTOR_SIMD_LOOP for (int s = 0; s < packn; ++s)
+        qmink[s] = min(qmink[s], qgik[s]);
+      VECTOR_SIMD_LOOP for (int s = 0; s < packn; ++s)
+        qmaxk[s] = max(qmaxk[s], qgik[s]);
+    }
+  };
+  g::team_parallel_for_with_linear_index(kv.team, f, nlev);
+
+  // Apply CAAS to w2, the provisional q_f values.
+  g::limiter_clip_and_sum(kv.team, nf2, nlev, geof, qmin, qmax, dpf, w1, w2);
+  // Copy to qf array.
+  parallel_for( ttrf, [&] (const int i) {
+      parallel_for(tvr, [&] (const int k) { qf(i,iq,k) = w2(i,k); }); });
+}
+
 void GllFvRemapImpl
 ::run_dyn_to_fv (const int timeidx, const Phys1T& ps, const Phys1T& phis, const Phys2T& Ts,
                  const Phys2T& omegas, const Phys3T& uvs, const Phys3T& qs) {
