@@ -53,7 +53,7 @@ extern "C" {
                               Real* omega_p, Real* q);
 
   void gfr_fv_phys_to_dyn_f90(int nf, int nt, Real dt, Real* T, Real* uv, Real* q);
-  void cmp_dyn_data_f90(int nlev_align, int nq, Real* T, Real* uv, Real* q, int* nerr);
+  void cmp_dyn_data_f90(int nlev_align, int nq, Real* thv, Real* uv, Real* q, int* nerr);
 } // extern "C"
 
 using CA1d = Kokkos::View<Real*,     Kokkos::LayoutRight, Kokkos::HostSpace>;
@@ -616,42 +616,60 @@ static void test_fv_phys_to_dyn (Session& s, const int nf, const int ftype) {
   gfr_init_f90(nf, ftype);
   gfr_init_hxx();
 
-  CA3d fT("fT", s.nelemd, s.nlev, nf2);
-  CA4d fuv("fuv", s.nelemd, s.nlev, 2, nf2), fq("fq", s.nelemd, s.qsize, s.nlev, nf2);
+  {
+    CA3d fT("fT", s.nelemd, s.nlev, nf2);
+    CA4d fuv("fuv", s.nelemd, s.nlev, 2, nf2), fq("fq", s.nelemd, s.qsize, s.nlev, nf2);
 
-  const ExecView<Real***> dT("dT", s.nelemd, nf2, g::num_lev_aligned);
-  const ExecView<Real****> duv("duv", s.nelemd, nf2, 2, g::num_lev_aligned),
-    dq("dq", s.nelemd, nf2, s.qsize, g::num_lev_aligned);
+    const ExecView<Real***> dT("dT", s.nelemd, nf2, g::num_lev_aligned);
+    const ExecView<Real****> duv("duv", s.nelemd, nf2, 2, g::num_lev_aligned),
+      dq("dq", s.nelemd, nf2, s.qsize, g::num_lev_aligned);
 
-  const auto T = cmv(dT);
-  const auto uv = cmv(duv);
-  const auto q = cmv(dq);
+    const auto T = cmv(dT);
+    const auto uv = cmv(duv);
+    const auto q = cmv(dq);
 
-  for (int ie = 0; ie < s.nelemd; ++ie)
-    for (int k = 0; k < s.nlev; ++k)
-      for (int i = 0; i < nf2; ++i) {
-        T(ie,i,k) = s.r.urrng(100, 300);
-        for (int d = 0; d < 2; ++d)
-          fuv(ie,k,d,i) = uv(ie,i,d,k) = s.r.urrng(-30, 30);
-        for (int iq = 0; iq < s.qsize; ++iq)
-          fq(ie,iq,k,i) = q(ie,i,iq,k) = s.r.urrng(0, 0.1);
-      }
+    for (int ie = 0; ie < s.nelemd; ++ie)
+      for (int k = 0; k < s.nlev; ++k)
+        for (int i = 0; i < nf2; ++i) {
+          T(ie,i,k) = s.r.urrng(100, 300);
+          for (int d = 0; d < 2; ++d)
+            fuv(ie,k,d,i) = uv(ie,i,d,k) = s.r.urrng(-30, 30);
+          for (int iq = 0; iq < s.qsize; ++iq)
+            fq(ie,iq,k,i) = q(ie,i,iq,k) = s.r.urrng(0, 0.1);
+        }
   
-  deep_copy(dT, T);
-  deep_copy(duv, uv);
-  deep_copy(dq, q);
+    deep_copy(dT, T);
+    deep_copy(duv, uv);
+    deep_copy(dq, q);
 
-  const auto& c = Context::singleton();
-  auto& gfr = c.get<GllFvRemap>();
+    const auto& c = Context::singleton();
+    auto& gfr = c.get<GllFvRemap>();
 
-  for (int nt = 0; nt < NUM_TIME_LEVELS; ++nt) {
-    gfr_fv_phys_to_dyn_f90(nf, nt+1, dt, fT.data(), fuv.data(), fq.data());
-    gfr.run_fv_to_dyn(nt, dt, dT, duv, dq);
+    for (int nt = 0; nt < NUM_TIME_LEVELS; ++nt) {
+      gfr_fv_phys_to_dyn_f90(nf, nt+1, dt, fT.data(), fuv.data(), fq.data());
+      gfr.run_fv_to_dyn(nt, dt, dT, duv, dq);
+    }
   }
 
-  int nerr = 0;
-  cmp_dyn_data_f90(g::num_lev_aligned, q.extent_int(1), T.data(), uv.data(), q.data(), &nerr);
-  REQUIRE(nerr == 0);
+  {
+    auto& c = Context::singleton();
+    const auto state = c.get<ElementsState>();
+    const auto tracers = c.get<Tracers>();
+
+    const g::EVU<Real*****>
+      thv_s(g::pack2real(state.m_vtheta_dp), s.nelemd, NUM_TIME_LEVELS, NP, NP, g::num_lev_aligned),
+      q_s(g::pack2real(tracers.Q), s.nelemd, tracers.Q.extent_int(1), NP, NP, g::num_lev_aligned);
+    const g::EVU<Real******>
+      uv_s(g::pack2real(state.m_v), s.nelemd, NUM_TIME_LEVELS, 2, NP, NP, g::num_lev_aligned);
+
+    const auto thv = cmvdc(thv_s);
+    const auto q = cmvdc(q_s);
+    const auto uv = cmvdc(uv_s);
+
+    int nerr = 0;
+    cmp_dyn_data_f90(g::num_lev_aligned, q.extent_int(1), thv.data(), uv.data(), q.data(), &nerr);
+    REQUIRE(nerr == 0);
+  }
 
   gfr_finish_f90();
 }
@@ -683,11 +701,11 @@ TEST_CASE ("compose_transport_testing") {
     REQUIRE(nerr == 0);
 
     for (const int nf : {2,3,4})
-      for (const int ftype : {0,2})
+      for (const int ftype : {2}) // dyn_to_fv_phys is independent of ftype
         test_dyn_to_fv_phys(s, nf, ftype);
 
     for (const int nf : {2,3,4})
-      for (const int ftype : {0,2})
+      for (const int ftype : {/*not impl'ed yet: 0,*/ 2})
         test_fv_phys_to_dyn(s, nf, ftype);
   } catch (...) {}
   Session::delete_singleton();

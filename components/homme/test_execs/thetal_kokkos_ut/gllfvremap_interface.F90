@@ -72,7 +72,7 @@ contains
     integer (c_int), value, intent(in) :: nf, ftype_in
 
     ftype = ftype_in
-    print *, 'gfr_init_f90: check 0; switch to 2 when ready'
+    print *, '!!!!!!! gfr_init_f90: check 0; switch to 2 when ready !!!!!!!'
     call gfr_init(par, elem, nf, 0, .false.)
   end subroutine gfr_init_f90
   
@@ -178,12 +178,12 @@ contains
     call gfr_fv_phys_to_dyn(hybrid, nt, dt, hvcoord, elem, 1, nelemd, T, uv, q)
   end subroutine gfr_fv_phys_to_dyn_f90
 
-  subroutine cmp_dyn_data_f90(nk, nq, T, uv, q, nerr) bind(c)
+  subroutine cmp_dyn_data_f90(nk, nq, thv, uv, q, nerr) bind(c)
     use element_state, only: timelevels
 
     integer (c_int), value, intent(in) :: nk, nq
-    real (c_double), intent(in) :: T(nk,np,np,nelemd), uv(nk,np,np,2,timelevels), &
-         q(nk,np,np,nq,nelemd)
+    real (c_double), intent(in) :: thv(nk,np,np,timelevels,nelemd), &
+         uv(nk,np,np,2,timelevels), q(nk,np,np,nq,nelemd)
     integer (c_int), intent(out) :: nerr
 
     integer, parameter :: outmax = 20
@@ -197,7 +197,7 @@ contains
              do k = 1,nlev
                 do tl = 1,timelevels
                 end do
-                do iq = 1,nq
+                do iq = 1,qsize
                    if (elem(ie)%state%q(j,i,k,iq) /= q(k,j,i,iq,ie)) then
                       nerr = nerr+1
                       if (nerr < outmax) then
