@@ -130,12 +130,12 @@ contains
 
     do ie = 1,nelemd
        elem(ie)%state%ps_v = ps(:,:,:,ie)
-       do tl = 1,timelevels
-          do k = 1,nlev
+       do k = 1,nlev
+          do tl = 1,timelevels
              elem(ie)%state%dp3d(:,:,k,tl) = dp3d(k,:,:,tl,ie)
-             do iq = 1,nq
-                elem(ie)%state%q(:,:,k,iq) = q(k,:,:,iq,ie)
-             end do
+          end do
+          do iq = 1,nq
+             elem(ie)%state%q(:,:,k,iq) = q(k,:,:,iq,ie)
           end do
        end do
     end do
@@ -185,5 +185,31 @@ contains
     real (c_double), intent(in) :: T(nk,np,np,nelemd), uv(nk,np,np,2,timelevels), &
          q(nk,np,np,nq,nelemd)
     integer (c_int), intent(out) :: nerr
+
+    integer, parameter :: outmax = 20
+
+    integer :: ie, i, j, k, tl, iq
+
+    nerr = 0
+    do ie = 1,nelemd
+       do i = 1,np
+          do j = 1,np
+             do k = 1,nlev
+                do tl = 1,timelevels
+                end do
+                do iq = 1,nq
+                   if (elem(ie)%state%q(j,i,k,iq) /= q(k,j,i,iq,ie)) then
+                      nerr = nerr+1
+                      if (nerr < outmax) then
+                         print '(a,i4,i3,i2,i2,es18.10,es18.10)', &
+                              'ie,iq,i,j',ie,iq,i,j, &
+                              elem(ie)%state%q(j,i,k,iq), q(k,j,i,iq,ie)
+                      end if
+                   end if
+                end do
+             end do
+          end do
+       end do
+    end do
   end subroutine cmp_dyn_data_f90
 end module physgrid_interface

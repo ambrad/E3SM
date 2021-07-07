@@ -558,7 +558,6 @@ static void init_dyn_data (Session& s) {
 }
 
 static void test_dyn_to_fv_phys (Session& s, const int nf, const int ftype) {
-  using Kokkos::subview;
   using g = GllFvRemapImpl;
   
   const int nf2 = nf*nf;
@@ -608,7 +607,7 @@ static void test_dyn_to_fv_phys (Session& s, const int nf, const int ftype) {
 }
 
 static void test_fv_phys_to_dyn (Session& s, const int nf, const int ftype) {
-  using Kokkos::subview;
+  using Kokkos::deep_copy;
   using g = GllFvRemapImpl;
   
   const Real dt = 1800;
@@ -628,7 +627,19 @@ static void test_fv_phys_to_dyn (Session& s, const int nf, const int ftype) {
   const auto uv = cmv(duv);
   const auto q = cmv(dq);
 
-  //todo fill data
+  for (int ie = 0; ie < s.nelemd; ++ie)
+    for (int k = 0; k < s.nlev; ++k)
+      for (int i = 0; i < nf2; ++i) {
+        T(ie,i,k) = s.r.urrng(100, 300);
+        for (int d = 0; d < 2; ++d)
+          fuv(ie,k,d,i) = uv(ie,i,d,k) = s.r.urrng(-30, 30);
+        for (int iq = 0; iq < s.qsize; ++iq)
+          fq(ie,iq,k,i) = q(ie,i,iq,k) = s.r.urrng(0, 0.1);
+      }
+  
+  deep_copy(dT, T);
+  deep_copy(duv, uv);
+  deep_copy(dq, q);
 
   const auto& c = Context::singleton();
   auto& gfr = c.get<GllFvRemap>();
