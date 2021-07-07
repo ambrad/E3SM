@@ -7,7 +7,7 @@
 #include "GllFvRemap.hpp"
 #include "GllFvRemapImpl.hpp"
 #include "Context.hpp"
-
+#include "ErrorDefs.hpp"
 #include "profiling.hpp"
 
 #include <assert.h>
@@ -15,10 +15,19 @@
 
 namespace Homme {
 
-void init_gllfvremap_c (const int nelemd, const int np, const int nf, const int nf_max,
+void init_gllfvremap_c (int nelemd, int np, int nf, int nf_max, int ftype,
                         CF90Ptr fv_metdet, CF90Ptr g2f_remapd,
                         CF90Ptr f2g_remapd, CF90Ptr D_f, CF90Ptr Dinv_f) {
-  auto& g = Context::singleton().get<GllFvRemap>();
+  auto& c = Context::singleton();
+  auto& s = c.get<SimulationParams>();
+  assert(ftype >= 0 && ftype <= 4);
+  s.ftype = (ftype == 0 ? ForcingAlg::FORCING_0 :
+             ftype == 1 ? ForcingAlg::FORCING_1 :
+             ForcingAlg::FORCING_2);
+  if (s.ftype == ForcingAlg::FORCING_0)
+    Errors::runtime_abort("GllFvRemap: ftype 0 not supported yet",
+                          Errors::err_not_implemented);
+  auto& g = c.get<GllFvRemap>();
   g.init_data(nf, nf_max, fv_metdet, g2f_remapd, f2g_remapd, D_f, Dinv_f);
 }
 

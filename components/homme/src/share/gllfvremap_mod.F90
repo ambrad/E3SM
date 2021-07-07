@@ -257,19 +257,20 @@ contains
   end subroutine gfr_init
 
   subroutine gfr_init_hxx() bind(c)
+    use control_mod, only: ftype
     interface
-       subroutine init_gllfvremap_c(nelemd, np, nf, nf_max, fv_metdet, g2f_remapd, &
-            f2g_remapd, D_f, Dinv_f) bind(c)
+       subroutine init_gllfvremap_c(nelemd, np, nf, nf_max, ftype, &
+            fv_metdet, g2f_remapd, f2g_remapd, D_f, Dinv_f) bind(c)
          use iso_c_binding, only: c_int, c_double
-         integer (c_int), value, intent(in) :: nelemd, np, nf, nf_max
+         integer (c_int), value, intent(in) :: nelemd, np, nf, nf_max, ftype
          real (c_double), dimension(nf*nf,nelemd), intent(in) :: fv_metdet
          real (c_double), dimension(np,np,nf_max*nf_max), intent(in) :: g2f_remapd
          real (c_double), dimension(nf_max*nf_max,np,np), intent(in) :: f2g_remapd
          real (c_double), dimension(nf,nf,2,2,nelemd), intent(in) :: D_f, Dinv_f
        end subroutine init_gllfvremap_c
     end interface
-    call init_gllfvremap_c(nelemd, np, gfr%nphys, nphys_max, gfr%fv_metdet, gfr%g2f_remapd, &
-         gfr%f2g_remapd, gfr%D_f, gfr%Dinv_f)
+    call init_gllfvremap_c(nelemd, np, gfr%nphys, nphys_max, ftype, &
+         gfr%fv_metdet, gfr%g2f_remapd, gfr%f2g_remapd, gfr%D_f, gfr%Dinv_f)
   end subroutine gfr_init_hxx
 
   function gfr_get_nphys() result(nf)
@@ -318,7 +319,7 @@ contains
        ps(:nf2,ie) = wf1(:nf2,1)
        dp = elem(ie)%state%dp3d(:,:,:,nt)
        call calc_dp_fv(nf, hvcoord, ps(:,ie), dp_fv)
-       
+
        if (gfr%have_fv_topo_file_phis) then
           phis(:nf2,ie) = gfr%phis(:,ie)
        else
