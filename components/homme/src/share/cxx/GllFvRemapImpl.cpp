@@ -200,8 +200,8 @@ g2f_mixing_ratio (const KernelVariables& kv, const int np2, const int nf2, const
 }
 
 void GllFvRemapImpl
-::run_dyn_to_fv (const int timeidx, const Phys1T& ps, const Phys1T& phis, const Phys2T& Ts,
-                 const Phys2T& omegas, const Phys3T& uvs, const Phys3T& qs) {
+::run_dyn_to_fv_phys (const int timeidx, const Phys1T& ps, const Phys1T& phis, const Phys2T& Ts,
+                      const Phys2T& omegas, const Phys3T& uvs, const Phys3T& qs) {
   const int np2 = GllFvRemapImpl::np2;
   const int nlevpk = num_lev_pack;
   const int nreal_per_slot1 = np2*max_num_lev_pack;
@@ -292,8 +292,8 @@ void GllFvRemapImpl
 }
 
 void GllFvRemapImpl::
-run_fv_to_dyn (const int timeidx, const Real dt,
-               const CPhys2T& Ts, const CPhys3T& uvs, const CPhys3T& qs) {
+run_fv_phys_to_dyn (const int timeidx, const Real dt,
+                    const CPhys2T& Ts, const CPhys3T& uvs, const CPhys3T& qs) {
   const auto nf2 = m_data.nf2;
   const auto nelemd = m_data.nelemd;
   const auto qsize = m_data.qsize;

@@ -18,7 +18,7 @@ contains
     use bndry_mod, only: sort_neighbor_buffer_mapping
     use reduction_mod, only: initreductionbuffer, red_sum, red_min, red_max
     use parallel_mod, only: global_shared_buf, nrepro_vars
-    use control_mod, only: ftype
+    use control_mod, only: ftype, use_moisture, theta_hydrostatic_mode
 
     real (real_kind), intent(in) :: hyai(nlevp), hybi(nlevp), hyam(nlev), hybm(nlev)
     integer (c_int), value, intent(in) :: ne, qsize_in
@@ -32,6 +32,8 @@ contains
 
     qsize = qsize_in
     ftype = 2
+    use_moisture = .true.
+    theta_hydrostatic_mode = .true.
 
     call init_f90(ne, hyai, hybi, hyam, hybm, dvv, mp, ps0)
     call init_elements_c(nelemd)
@@ -119,21 +121,25 @@ contains
     call calc_dp_fv(nf, hvcoord, ps, dp_fv)
   end subroutine calc_dp_fv_f90
 
-  subroutine init_dyn_data_f90(nk, nq, ps, dp3d, q) bind(c)
+  subroutine init_dyn_data_f90(nk, nq, ps, phis, dp3d, vthdp, omega, q) bind(c)
     use element_state, only: timelevels
 
     integer (c_int), value, intent(in) :: nk, nq
-    real (c_double), intent(in) :: ps(np,np,timelevels,nelemd), &
-         dp3d(nk,np,np,timelevels,nelemd), q(nk,np,np,nq,nelemd)
+    real (c_double), intent(in) :: ps(np,np,timelevels,nelemd), phis(np,np,nelemd), &
+         dp3d(nk,np,np,timelevels,nelemd), vthdp(nk,np,np,timelevels,nelemd), &
+         omega(nk,np,np,nelemd), q(nk,np,np,nq,nelemd)
     
     integer :: ie, k, tl, iq
 
     do ie = 1,nelemd
+       elem(ie)%state%phis = phis(:,:,ie)
        elem(ie)%state%ps_v = ps(:,:,:,ie)
        do k = 1,nlev
           do tl = 1,timelevels
              elem(ie)%state%dp3d(:,:,k,tl) = dp3d(k,:,:,tl,ie)
+             elem(ie)%state%vtheta_dp(:,:,k,tl) = vthdp(k,:,:,tl,ie)
           end do
+          elem(ie)%derived%omega_p(:,:,k) = omega(k,:,:,ie)
           do iq = 1,nq
              elem(ie)%state%q(:,:,k,iq) = q(k,:,:,iq,ie)
           end do
@@ -182,8 +188,8 @@ contains
     use element_state, only: timelevels
 
     integer (c_int), value, intent(in) :: nk, nq
-    real (c_double), intent(in) :: thv(nk,np,np,timelevels,nelemd), &
-         uv(nk,np,np,2,timelevels), q(nk,np,np,nq,nelemd)
+    real (c_double), intent(in) :: thv(nk,np,np,nelemd), &
+         uv(nk,np,np,3,nelemd), q(nk,np,np,nq,nelemd)
     integer (c_int), intent(out) :: nerr
 
     integer, parameter :: outmax = 20
@@ -198,12 +204,12 @@ contains
                 do tl = 1,timelevels
                 end do
                 do iq = 1,qsize
-                   if (elem(ie)%state%q(j,i,k,iq) /= q(k,j,i,iq,ie)) then
+                   if (elem(ie)%derived%FQ(j,i,k,iq) /= q(k,j,i,iq,ie)) then
                       nerr = nerr+1
                       if (nerr < outmax) then
                          print '(a,i4,i3,i2,i2,es18.10,es18.10)', &
                               'ie,iq,i,j',ie,iq,i,j, &
-                              elem(ie)%state%q(j,i,k,iq), q(k,j,i,iq,ie)
+                              elem(ie)%derived%FQ(j,i,k,iq), q(k,j,i,iq,ie)
                       end if
                    end if
                 end do

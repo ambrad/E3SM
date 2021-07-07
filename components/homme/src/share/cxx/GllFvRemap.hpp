@@ -42,17 +42,17 @@ public:
                  const Real* g2f_remapd, const Real* f2g_remapd,
                  const Real* D_f, const Real* Dinv_f);
 
-  void run_dyn_to_fv(const int time_idx,
-                     // ps,phis(ie,col)
-                     const Phys1T& ps, const Phys1T& phis,
-                     // T,omega(ie,col,lev)
-                     const Phys2T& T, const Phys2T& omega,
-                     // uv(ie, col, 0 or 1, lev)
-                     const Phys3T& uv, 
-                     // q(ie,col,idx,lev)
-                     const Phys3T& q);
-  void run_fv_to_dyn(const int time_idx, const Real dt,
-                     const CPhys2T& T, const CPhys3T& uv, const CPhys3T& q);
+  void run_dyn_to_fv_phys(const int time_idx,
+                          // ps,phis(ie,col)
+                          const Phys1T& ps, const Phys1T& phis,
+                          // T,omega(ie,col,lev)
+                          const Phys2T& T, const Phys2T& omega,
+                          // uv(ie, col, 0 or 1, lev)
+                          const Phys3T& uv, 
+                          // q(ie,col,idx,lev)
+                          const Phys3T& q);
+  void run_fv_phys_to_dyn(const int time_idx, const Real dt,
+                          const CPhys2T& T, const CPhys3T& uv, const CPhys3T& q);
 
 private:
   std::unique_ptr<GllFvRemapImpl> m_impl;

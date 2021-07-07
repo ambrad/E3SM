@@ -48,7 +48,8 @@ extern "C" {
   void gfr_init_hxx();
   void gfr_finish_f90();
 
-  void init_dyn_data_f90(int nlev_align, int nq, Real* ps, Real* dp3d, Real* q);
+  void init_dyn_data_f90(int nlev_align, int nq, Real* ps, Real* phis, Real* dp3d, Real* vthdp,
+                         Real* omega, Real* q);
   void gfr_dyn_to_fv_phys_f90(int nf, int nt, Real* ps, Real* phis, Real* T, Real* uv,
                               Real* omega_p, Real* q);
 
@@ -141,6 +142,8 @@ struct Session {
     p.qsize = qsize;
     p.hypervis_scaling = 0;
     p.transport_alg = 0;
+    p.moisture = MoistDry::MOIST;
+    p.theta_hydrostatic_mode = true;
     p.params_set = true;
 
     const auto hyai = cmvdc(h.hybrid_ai);
@@ -531,30 +534,47 @@ static void init_dyn_data (Session& s) {
   const auto bai = cmvdc(s.h.hybrid_bi);
   auto& c = Context::singleton();
   const auto state = c.get<ElementsState>();
+  const auto derived = c.get<ElementsDerivedState>();
   const auto tracers = c.get<Tracers>();
+  const auto geometry = c.get<ElementsGeometry>();
   const int nt = NUM_TIME_LEVELS;
   const auto ps = cmv(state.m_ps_v);
+
+  const g::EVU<Real****>
+    omega_s(g::pack2real(derived.m_omega_p), s.nelemd, NP, NP, g::num_lev_aligned);
   const g::EVU<Real*****>
     dp3d_s(g::pack2real(state.m_dp3d), s.nelemd, nt, NP, NP, g::num_lev_aligned),
+    vthdp_s(g::pack2real(state.m_vtheta_dp), s.nelemd, nt, NP, NP, g::num_lev_aligned),
     q_s(g::pack2real(tracers.Q), s.nelemd, tracers.Q.extent_int(1), NP, NP, g::num_lev_aligned);
+
+  const auto phis = cmv(geometry.m_phis);
+  const auto omega = cmv(omega_s);
   const auto dp3d = cmv(dp3d_s);
+  const auto vthdp = cmv(vthdp_s);
   const auto q = cmv(q_s);
   for (int ie = 0; ie < s.nelemd; ++ie)
-    for (int t = 0; t < NUM_TIME_LEVELS; ++t)
-      for (int i = 0; i < s.np; ++i)
-        for (int j = 0; j < s.np; ++j)
-          for (int k = 0; k < s.nlev; ++k) {
+    for (int i = 0; i < s.np; ++i)
+      for (int j = 0; j < s.np; ++j)
+        for (int k = 0; k < s.nlev; ++k) {
+          for (int t = 0; t < NUM_TIME_LEVELS; ++t) {
             if (k == 0) ps(ie,t,i,j) = s.h.ps0*(s.r.urrng(0.9, 1.1));
             dp3d(ie,t,i,j,k) = ((hai(k+1) - hai(k))*s.h.ps0 +
                                 (bai(k+1) - bai(k))*ps(ie,t,i,j));
-            for (int iq = 0; iq < s.qsize; ++iq)
-              q(ie,iq,i,j,k) = s.r.urrng(0, 0.1);
+            vthdp(ie,t,i,j,k) = s.r.urrng(150, 320)*dp3d(ie,t,i,j,k);
           }
+          if (k == 0) phis(ie,i,j) = s.r.urrng(-1000, 10000);
+          omega(ie,i,j,k) = s.r.urrng(-10, 10);
+          for (int iq = 0; iq < s.qsize; ++iq)
+            q(ie,iq,i,j,k) = s.r.urrng(0, 0.1);
+        }
+  deep_copy(geometry.m_phis, phis);
   deep_copy(state.m_ps_v, ps);
   deep_copy(dp3d_s, dp3d);
+  deep_copy(vthdp_s, vthdp);
   deep_copy(q_s, q);
   
-  init_dyn_data_f90(g::num_lev_aligned, q.extent_int(1), ps.data(), dp3d.data(), q.data());
+  init_dyn_data_f90(g::num_lev_aligned, q.extent_int(1), ps.data(), phis.data(), dp3d.data(),
+                    vthdp.data(), omega.data(), q.data());
 }
 
 static void test_dyn_to_fv_phys (Session& s, const int nf, const int ftype) {
@@ -584,7 +604,7 @@ static void test_dyn_to_fv_phys (Session& s, const int nf, const int ftype) {
     gfr_dyn_to_fv_phys_f90(nf, nt+1, fps.data(), fphis.data(), fT.data(), fuv.data(),
                            fomega.data(), fq.data());
 
-    gfr.run_dyn_to_fv(nt, dps, dphis, dT, domega, duv, dq);
+    gfr.run_dyn_to_fv_phys(nt, dps, dphis, dT, domega, duv, dq);
 
     const auto ps = cmvdc(dps);
     const auto phis = cmvdc(dphis);
@@ -647,20 +667,21 @@ static void test_fv_phys_to_dyn (Session& s, const int nf, const int ftype) {
 
     for (int nt = 0; nt < NUM_TIME_LEVELS; ++nt) {
       gfr_fv_phys_to_dyn_f90(nf, nt+1, dt, fT.data(), fuv.data(), fq.data());
-      gfr.run_fv_to_dyn(nt, dt, dT, duv, dq);
+      gfr.run_fv_phys_to_dyn(nt, dt, dT, duv, dq);
+#     pragma message "fv_to_dyn DSS"
     }
   }
 
   {
     auto& c = Context::singleton();
-    const auto state = c.get<ElementsState>();
+    const auto forcing = c.get<ElementsForcing>();
     const auto tracers = c.get<Tracers>();
 
+    const g::EVU<Real****>
+      thv_s(g::pack2real(forcing.m_fvtheta), s.nelemd, NP, NP, g::num_lev_aligned);
     const g::EVU<Real*****>
-      thv_s(g::pack2real(state.m_vtheta_dp), s.nelemd, NUM_TIME_LEVELS, NP, NP, g::num_lev_aligned),
-      q_s(g::pack2real(tracers.Q), s.nelemd, tracers.Q.extent_int(1), NP, NP, g::num_lev_aligned);
-    const g::EVU<Real******>
-      uv_s(g::pack2real(state.m_v), s.nelemd, NUM_TIME_LEVELS, 2, NP, NP, g::num_lev_aligned);
+      q_s(g::pack2real(tracers.Q), s.nelemd, tracers.Q.extent_int(1), NP, NP, g::num_lev_aligned),
+      uv_s(g::pack2real(forcing.m_fm), s.nelemd, 3, NP, NP, g::num_lev_aligned);
 
     const auto thv = cmvdc(thv_s);
     const auto q = cmvdc(q_s);

@@ -61,16 +61,16 @@ void GllFvRemap
 }
 
 void GllFvRemap
-::run_dyn_to_fv (const int time_idx, const Phys1T& ps, const Phys1T& phis,
-                 const Phys2T& T, const Phys2T& omega, const Phys3T& uv,
-                 const Phys3T& q) {
-  m_impl->run_dyn_to_fv(time_idx, ps, phis, T, omega, uv, q);
+::run_dyn_to_fv_phys (const int time_idx, const Phys1T& ps, const Phys1T& phis,
+                      const Phys2T& T, const Phys2T& omega, const Phys3T& uv,
+                      const Phys3T& q) {
+  m_impl->run_dyn_to_fv_phys(time_idx, ps, phis, T, omega, uv, q);
 }
 
 void GllFvRemap
-::run_fv_to_dyn (const int time_idx, const Real dt,
-                 const CPhys2T& T, const CPhys3T& uv, const CPhys3T& q) {
-  m_impl->run_fv_to_dyn(time_idx, dt, T, uv, q);
+::run_fv_phys_to_dyn (const int time_idx, const Real dt,
+                      const CPhys2T& T, const CPhys3T& uv, const CPhys3T& q) {
+  m_impl->run_fv_phys_to_dyn(time_idx, dt, T, uv, q);
 }
 
 } // Namespace Homme

@@ -110,11 +110,11 @@ struct GllFvRemapImpl {
                  const Real* g2f_remapd_r, const Real* f2g_remapd_r,
                  const Real* D_f_r, const Real* Dinv_f_r);
 
-  void run_dyn_to_fv(const int time_idx, const Phys1T& ps, const Phys1T& phis,
-                     const Phys2T& T, const Phys2T& omega, const Phys3T& uv,
-                     const Phys3T& q);
-  void run_fv_to_dyn(const int time_idx, const Real dt,
-                     const CPhys2T& T, const CPhys3T& uv, const CPhys3T& q);
+  void run_dyn_to_fv_phys(const int time_idx, const Phys1T& ps, const Phys1T& phis,
+                          const Phys2T& T, const Phys2T& omega, const Phys3T& uv,
+                          const Phys3T& q);
+  void run_fv_phys_to_dyn(const int time_idx, const Real dt,
+                          const CPhys2T& T, const CPhys3T& uv, const CPhys3T& q);
 
   /* Compute pressure level increments on the FV grid given ps on the FV grid.
      Directly projecting dp_gll to dp_fv disagrees numerically with the loop in
