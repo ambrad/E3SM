@@ -131,11 +131,9 @@ struct GllFvRemapImpl {
     using Kokkos::parallel_for;
     const auto ttr = Kokkos::TeamThreadRange(team, ncol);
     const auto tvr = Kokkos::ThreadVectorRange(team, nlev);
-    parallel_for(ttr, [&] (const int i) {
-      parallel_for(tvr, [&] (const int k) {
-        dp_fv(i,k) = (hvcoord.hybrid_ai_delta(k)*hvcoord.ps0 +
-                      hvcoord.hybrid_bi_delta(k)*ps(i));
-      });
+    loop_ik(ttr, tvr, [&] (int i, int k) {
+      dp_fv(i,k) = (hvcoord.hybrid_ai_delta(k)*hvcoord.ps0 +
+                    hvcoord.hybrid_bi_delta(k)*ps(i));
     });
   }
 
@@ -160,8 +158,7 @@ struct GllFvRemapImpl {
     const auto ttrn = Kokkos::TeamThreadRange(team, n);
     const auto ttrm = Kokkos::TeamThreadRange(team, m);
     const auto tvr = Kokkos::ThreadVectorRange(team, nlev);
-    parallel_for( ttrn,   [&] (const int i) {
-      parallel_for(tvr,   [&] (const int k) { w(i,k) = x(i,k) * (s1 * d1(i)); }); });
+    loop_ik(ttrn, tvr, [&] (int i, int k) { w(i,k) = x(i,k) * (s1 * d1(i)); });
     team.team_barrier();
     parallel_for( ttrm,   [&] (const int i) {
       parallel_for(tvr,   [&] (const int k) { y(i,k) = 0; });
@@ -351,6 +348,13 @@ struct GllFvRemapImpl {
         if (k >= niter) return;
         fn(k);
       }); });
+  }
+
+  template <typename TTR, typename TVR, typename Fn>
+  static KOKKOS_INLINE_FUNCTION void
+  loop_ik (const TTR& ttr, const TVR& tvr, const Fn& fn) {
+    using Kokkos::parallel_for;
+    parallel_for(ttr, [&] (const int i) { parallel_for(tvr, [&] (const int k) { fn(i,k); }); });
   }
 };
 
