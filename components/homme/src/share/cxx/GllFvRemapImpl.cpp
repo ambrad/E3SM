@@ -10,6 +10,7 @@ namespace Homme {
 
 typedef ExecViewUnmanaged<Scalar[NP*NP][NUM_LEV]> evus_np2_nlev;
 typedef ExecViewUnmanaged<const Scalar[NP*NP][NUM_LEV]> evucs_np2_nlev;
+typedef ExecViewUnmanaged<Scalar*> evus1;
 
 static int calc_nslot (const int nelemd) {
   const auto tp = Homme::get_default_team_policy<ExecSpace>(nelemd);
@@ -164,6 +165,7 @@ void GllFvRemapImpl
    x compute_hydrostatic_p is already available
 */
 
+// Min/max of q in each level.
 template <typename TA, typename TE>
 static KOKKOS_FUNCTION void
 calc_extrema (const KernelVariables& kv, const int n, const int nlev,
@@ -176,6 +178,27 @@ calc_extrema (const KernelVariables& kv, const int n, const int nlev,
       auto& qmaxk = qmax(k);
       qmink = qmaxk = q(0,k);
       for (int i = 1; i < n; ++i) {
+        const auto qik = q(i,k);
+        VECTOR_SIMD_LOOP for (int s = 0; s < packn; ++s)
+          qmink[s] = min(qmink[s], qik[s]);
+        VECTOR_SIMD_LOOP for (int s = 0; s < packn; ++s)
+          qmaxk[s] = max(qmaxk[s], qik[s]);
+      }
+    });  
+}
+
+// qmin,max are already initialized with values. Augment these using q.
+template <typename TA, typename TE>
+static KOKKOS_FUNCTION void
+augment_extrema (const KernelVariables& kv, const int n, const int nlev,
+                 const TA& q, const TE& qmin, const TE& qmax) {
+  const int packn = GllFvRemapImpl::packn;
+  GllFvRemapImpl::team_parallel_for_with_linear_index(
+    kv.team, nlev, 
+    [&] (const int k) {
+      auto& qmink = qmin(k);
+      auto& qmaxk = qmax(k);
+      for (int i = 0; i < n; ++i) {
         const auto qik = q(i,k);
         VECTOR_SIMD_LOOP for (int s = 0; s < packn; ++s)
           qmink[s] = min(qmink[s], qik[s]);
@@ -207,7 +230,7 @@ g2f_mixing_ratio (const KernelVariables& kv, const int np2, const int nf2, const
     parallel_for(tvr, [&] (const int k) { w2(i,k) /= dpf(i,k); }); });
 
   // Compute extremal q values in element on GLL grid. Use qf as tmp space.
-  const g::EVU<Scalar*> qmin(&qf(0,iqf,0), nlev), qmax(&qf(1,iqf,0), nlev);
+  const evus1 qmin(&qf(0,iqf,0), nlev), qmax(&qf(1,iqf,0), nlev);
   calc_extrema(kv, np2, nlev, qg, qmin, qmax);
 
   // Apply CAAS to w2, the provisional q_f values.
@@ -362,6 +385,7 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
   const auto dp_fv = m_derived.m_divdp_proj; // store dp_fv between kernels
   const auto ps_v = m_state.m_ps_v;
   const auto gll_metdet = m_geometry.m_metdet;
+  const auto gll_spheremp = m_geometry.m_spheremp;
   const auto w_ff = m_data.w_ff;
   const auto fv_metdet = m_data.fv_metdet;
   const auto g2f_remapd = m_data.g2f_remapd;
@@ -416,9 +440,9 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
     // Get limiter bounds.
     const EVU<Scalar**> qf_ie(&r2w(1,0,0,0), nf2, nlevpk);
     parallel_for( ttrf, [&] (const int i) {
-        parallel_for(tvr, [&] (const int k) { qf_ie(i,k) = q(ie,i,iq,k); }); });
+      parallel_for(tvr, [&] (const int k) { qf_ie(i,k) = q(ie,i,iq,k); }); });
     calc_extrema(kv, nf2, nlevpk, qf_ie,
-                 EVU<Scalar*>(&qlim(ie,iq,0,0), nlevpk), EVU<Scalar*>(&qlim(ie,iq,1,0), nlevpk));
+                 evus1(&qlim(ie,iq,0,0), nlevpk), evus1(&qlim(ie,iq,1,0), nlevpk));
     // FV Q_ten
     //   GLL Q0 -> FV Q0
     const EVU<Scalar**> dqf_ie(&r2w(0,0,0,0), nf2, nlevpk);
@@ -446,7 +470,20 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
   m_extrema_be->exchange_min_max();
 
   const auto geq = KOKKOS_LAMBDA (const MT& team) {
-    
+    KernelVariables kv(team, qsize, m_tu_ne);
+    const auto ie = kv.ie, iq = kv.iq;
+    const auto all = Kokkos::ALL();
+    const auto rw1 = Kokkos::subview(m_data.buf1[0], kv.team_idx, all, all, all);
+    // Augment bounds with GLL Q0 bounds. This assures that if the tendency is
+    // 0, GLL Q1 = GLL Q0.
+    const evucs_np2_nlev qg_ie(&q_g(ie,iq,0,0,0));
+    const evus1 qmin(&qlim(ie,iq,0,0), nlevpk), qmax(&qlim(ie,iq,1,0), nlevpk);
+    augment_extrema(kv, np2, nlevpk, qg_ie, qmin, qmax);
+    // Final GLL Q1, except for DSS.
+    const EVU<const Real*> gll_spheremp_ie(&gll_spheremp(ie,0,0), np2);
+    const evucs_np2_nlev dp_g_ie(&dp_g(ie,timeidx,0,0,0));
+    limiter_clip_and_sum(kv.team, np2, nlevpk, 1, gll_spheremp_ie, qmin, qmax, dp_g_ie,
+                         evus_np2_nlev(rw1.data()), evus_np2_nlev(&fq(ie,iq,0,0,0)));
   };
   parallel_for(m_tp_ne_qsize, geq);
 }
