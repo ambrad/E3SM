@@ -11,6 +11,8 @@ namespace Homme {
 typedef ExecViewUnmanaged<Scalar[NP*NP][NUM_LEV]> evus_np2_nlev;
 typedef ExecViewUnmanaged<const Scalar[NP*NP][NUM_LEV]> evucs_np2_nlev;
 typedef ExecViewUnmanaged<Scalar*> evus1;
+typedef ExecViewUnmanaged<Scalar**> evus2;
+typedef ExecViewUnmanaged<Real**> evur2;
 
 static int calc_nslot (const int nelemd) {
   const auto tp = Homme::get_default_team_policy<ExecSpace>(nelemd);
@@ -310,11 +312,11 @@ void GllFvRemapImpl
       gll_metdet_ie(&gll_metdet(ie,0,0), np2);
 
     // ps and dp_fv
-    const EVU<Scalar**> dp_fv_ie(&dp_fv(ie,0,0,0), nf2, nlevpk); {
-      const EVU<Real**> ps_v_ie(&ps_v(ie,timeidx,0,0), np2, 1), wrk(rw1s.data(), np2, 1);
+    const evus2 dp_fv_ie(&dp_fv(ie,0,0,0), nf2, nlevpk); {
+      const evur2 ps_v_ie(&ps_v(ie,timeidx,0,0), np2, 1), wrk(rw1s.data(), np2, 1);
       remapd(team, nf2, np2, 1, g2f_remapd,
              1, gll_metdet_ie, w_ff, fv_metdet_ie,
-             ps_v_ie, wrk, EVU<Real**>(&ps(ie,0), nf2, 1));
+             ps_v_ie, wrk, evur2(&ps(ie,0), nf2, 1));
       calc_dp_fv(team, hvcoord, nf2, nlevpk, EVU<Real*>(&ps(ie,0), nf2), dp_fv_ie);
     }
 
@@ -404,19 +406,18 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
       gll_metdet_ie(&gll_metdet(ie,0,0), np2);
 
     // ps and dp_fv
-    const EVU<Scalar**> dp_fv_ie(&dp_fv(ie,0,0,0), nf2, nlevpk); {
-      const EVU<Real**> ps_v_ie(&ps_v(ie,timeidx,0,0), np2, 1), w1(rw1s.data(), np2, 1);
+    const evus2 dp_fv_ie(&dp_fv(ie,0,0,0), nf2, nlevpk); {
+      const evur2 ps_v_ie(&ps_v(ie,timeidx,0,0), np2, 1), w1(rw1s.data(), np2, 1);
       Real* const w2 = rw1s.data() + np2;
       remapd(team, nf2, np2, 1, g2f_remapd,
              1, gll_metdet_ie, w_ff, fv_metdet_ie,
-             ps_v_ie, w1, EVU<Real**>(w2, nf2, 1));
+             ps_v_ie, w1, evur2(w2, nf2, 1));
       calc_dp_fv(team, hvcoord, nf2, nlevpk, EVU<Real*>(w2, nf2), dp_fv_ie);
     }
     
   };
   parallel_for(m_tp_ne, fe);
 
-  assert(q_adjustment); // for now
   const auto dp_g = m_state.m_dp3d;
   const auto q_g = m_tracers.Q;
   const auto fq = m_tracers.fq;
@@ -427,7 +428,7 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
     const auto ttrf = Kokkos::TeamThreadRange(kv.team, nf2);
     const auto ttrg = Kokkos::TeamThreadRange(kv.team, np2);
     const auto tvr  = Kokkos::ThreadVectorRange(kv.team, nlevpk);
-    const auto all = Kokkos::ALL();
+    const auto all  = Kokkos::ALL();
 
     const auto rw1 = Kokkos::subview(m_data.buf1[0], kv.team_idx, all, all, all);
     const auto rw2 = Kokkos::subview(m_data.buf1[1], kv.team_idx, all, all, all);
@@ -437,32 +438,36 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
       gll_metdet_ie(&gll_metdet(ie,0,0), np2);
     const EVU<const Scalar**> dp_fv_ie(&dp_fv(ie,0,0,0), nf2, nlevpk);
 
-    // Get limiter bounds.
-    const EVU<Scalar**> qf_ie(&r2w(1,0,0,0), nf2, nlevpk);
-    parallel_for( ttrf, [&] (const int i) {
-      parallel_for(tvr, [&] (const int k) { qf_ie(i,k) = q(ie,i,iq,k); }); });
-    calc_extrema(kv, nf2, nlevpk, qf_ie,
-                 evus1(&qlim(ie,iq,0,0), nlevpk), evus1(&qlim(ie,iq,1,0), nlevpk));
-    // FV Q_ten
-    //   GLL Q0 -> FV Q0
-    const EVU<Scalar**> dqf_ie(&r2w(0,0,0,0), nf2, nlevpk);
-    const evucs_np2_nlev dp_g_ie(&dp_g(ie,timeidx,0,0,0)), qg_ie(&q_g(ie,iq,0,0,0));
-    g2f_mixing_ratio(
-      kv, np2, nf2, nlevpk, g2f_remapd, gll_metdet_ie,
-      w_ff, fv_metdet_ie, dp_g_ie, dp_fv_ie, qg_ie,
-      evus_np2_nlev(rw1.data()), evus_np2_nlev(rw2.data()),
-      0, EVU<Scalar***>(dqf_ie.data(), nf2, 1, nlevpk));
-    //   FV Q_ten = FV Q1 - FV Q0
-    parallel_for( ttrf, [&] (const int i) {
-      parallel_for(tvr, [&] (const int k) { dqf_ie(i,k) = qf_ie(i,k) - dqf_ie(i,k); }); });
-    //   GLL Q_ten
-    const evus_np2_nlev dqg_ie(rw2.data());
-    f2g_scalar_dp(kv, nf2, np2, nlevpk, f2g_remapd, fv_metdet_ie, gll_metdet_ie,
-                  dp_fv_ie, dp_g_ie, dqf_ie, evus_np2_nlev(rw1.data()), dqg_ie);
-    //   GLL Q1
-    const evus_np2_nlev fq_ie(&fq(ie,iq,0,0,0));
-    parallel_for( ttrg, [&] (const int i) {
-      parallel_for(tvr, [&] (const int k) { fq_ie(i,k) = qg_ie(i,k) + dqg_ie(i,k); }); });
+    if (q_adjustment) {
+      // Get limiter bounds.
+      const evus2 qf_ie(&r2w(1,0,0,0), nf2, nlevpk);
+      parallel_for( ttrf, [&] (const int i) {
+        parallel_for(tvr, [&] (const int k) { qf_ie(i,k) = q(ie,i,iq,k); }); });
+      calc_extrema(kv, nf2, nlevpk, qf_ie,
+                   evus1(&qlim(ie,iq,0,0), nlevpk), evus1(&qlim(ie,iq,1,0), nlevpk));
+      // FV Q_ten
+      //   GLL Q0 -> FV Q0
+      const evus2 dqf_ie(&r2w(0,0,0,0), nf2, nlevpk);
+      const evucs_np2_nlev dp_g_ie(&dp_g(ie,timeidx,0,0,0)), qg_ie(&q_g(ie,iq,0,0,0));
+      g2f_mixing_ratio(
+        kv, np2, nf2, nlevpk, g2f_remapd, gll_metdet_ie,
+        w_ff, fv_metdet_ie, dp_g_ie, dp_fv_ie, qg_ie,
+        evus_np2_nlev(rw1.data()), evus_np2_nlev(rw2.data()),
+        0, EVU<Scalar***>(dqf_ie.data(), nf2, 1, nlevpk));
+      //   FV Q_ten = FV Q1 - FV Q0
+      parallel_for( ttrf, [&] (const int i) {
+        parallel_for(tvr, [&] (const int k) { dqf_ie(i,k) = qf_ie(i,k) - dqf_ie(i,k); }); });
+      //   GLL Q_ten
+      const evus_np2_nlev dqg_ie(rw2.data());
+      f2g_scalar_dp(kv, nf2, np2, nlevpk, f2g_remapd, fv_metdet_ie, gll_metdet_ie,
+                    dp_fv_ie, dp_g_ie, dqf_ie, evus_np2_nlev(rw1.data()), dqg_ie);
+      //   GLL Q1
+      const evus_np2_nlev fq_ie(&fq(ie,iq,0,0,0));
+      parallel_for( ttrg, [&] (const int i) {
+        parallel_for(tvr, [&] (const int k) { fq_ie(i,k) = qg_ie(i,k) + dqg_ie(i,k); }); });
+    } else {
+      
+    }
   };
   parallel_for(m_tp_ne_qsize, feq);
 
@@ -482,8 +487,16 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
     // Final GLL Q1, except for DSS.
     const EVU<const Real*> gll_spheremp_ie(&gll_spheremp(ie,0,0), np2);
     const evucs_np2_nlev dp_g_ie(&dp_g(ie,timeidx,0,0,0));
+    const evus_np2_nlev fq_ie(&fq(ie,iq,0,0,0));
     limiter_clip_and_sum(kv.team, np2, nlevpk, 1, gll_spheremp_ie, qmin, qmax, dp_g_ie,
-                         evus_np2_nlev(rw1.data()), evus_np2_nlev(&fq(ie,iq,0,0,0)));
+                         evus_np2_nlev(rw1.data()), fq_ie);
+    if ( ! q_adjustment) {
+      const auto ttrg = Kokkos::TeamThreadRange(kv.team, np2);
+      const auto tvr  = Kokkos::ThreadVectorRange(kv.team, nlevpk);
+      parallel_for( ttrg, [&] (const int i) {
+        parallel_for(tvr, [&] (const int k) {
+          fq_ie(i,k) = dp_g_ie(i,k)*(fq_ie(i,k) - qg_ie(i,k))/dt; }); });
+    }
   };
   parallel_for(m_tp_ne_qsize, geq);
 }

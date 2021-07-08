@@ -24,9 +24,6 @@ void init_gllfvremap_c (int nelemd, int np, int nf, int nf_max, int ftype,
   s.ftype = (ftype == 0 ? ForcingAlg::FORCING_0 :
              ftype == 1 ? ForcingAlg::FORCING_1 :
              ForcingAlg::FORCING_2);
-  if (s.ftype == ForcingAlg::FORCING_0)
-    Errors::runtime_abort("GllFvRemap: ftype 0 not supported yet",
-                          Errors::err_not_implemented);
   auto& g = c.get<GllFvRemap>();
   g.init_data(nf, nf_max, fv_metdet, g2f_remapd, f2g_remapd, D_f, Dinv_f);
 }

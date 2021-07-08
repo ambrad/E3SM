@@ -725,12 +725,16 @@ TEST_CASE ("compose_transport_testing") {
     REQUIRE(nerr == 0);
 
     for (const int nf : {2,3,4})
-      for (const int ftype : {2}) // dyn_to_fv_phys is independent of ftype
+      for (const int ftype : {2}) { // dyn_to_fv_phys is independent of ftype
+        printf("ut> g2f nf %d ftype %d\n", nf, ftype);
         test_dyn_to_fv_phys(s, nf, ftype);
+      }
 
     for (const int nf : {2,3,4})
-      for (const int ftype : {/*not impl'ed yet: 0,*/ 2})
+      for (const int ftype : {2,0}) {
+        printf("ut> f2g nf %d ftype %d\n", nf, ftype);
         test_fv_phys_to_dyn(s, nf, ftype);
+      }
   } catch (...) {}
   Session::delete_singleton();
 }
