@@ -207,11 +207,12 @@ g2f_mixing_ratio (const KernelVariables& kv, const int np2, const int nf2, const
     parallel_for(tvr, [&] (const int k) { qf(i,iqf,k) = w2(i,k); }); });
 }
 
-template <typename RT, typename GS, typename GT, typename DS, typename DT, typename WT, typename QT>
+template <typename RT, typename GS, typename GT, typename DS, typename DT, typename WT,
+          typename QFT, typename QGT>
 static KOKKOS_FUNCTION void
 f2g_scalar_dp (const KernelVariables& kv, const int nf2, const int np2, const int nlev,
                const RT& f2g_remap, const GS& geof, const GT& geog, const DS& dpf,
-               const DT& dpg, const QT& qf, const WT& w1, const QT& qg) {
+               const DT& dpg, const QFT& qf, const WT& w1, const QGT& qg) {
   using g = GllFvRemapImpl;
   using Kokkos::parallel_for;
   const auto ttrf = Kokkos::TeamThreadRange(kv.team, nf2);
@@ -314,7 +315,7 @@ void GllFvRemapImpl
       kv, np2, nf2, nlevpk, g2f_remapd, gll_metdet_ie, w_ff, fv_metdet_ie,
       EVU<const Scalar[NP*NP][NUM_LEV]>(&dp_g(ie,timeidx,0,0,0)), dp_fv_ie,
       EVU<const Scalar[NP*NP][NUM_LEV]>(&q_g(ie,iq,0,0,0)),
-      EVU<Scalar**>(rw1.data(), np2, nlevpk), EVU<Scalar**>(rw2.data(), np2, nlevpk),
+      EVU<Scalar[NP*NP][NUM_LEV]>(rw1.data()), EVU<Scalar[NP*NP][NUM_LEV]>(rw2.data()),
       iq, EVU<Scalar***>(&q(ie,0,0,0), q.extent_int(1), q.extent_int(2), q.extent_int(3)));
   };
   Kokkos::parallel_for(m_tp_ne_qsize, feq);
@@ -410,18 +411,18 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
     g2f_mixing_ratio(
       kv, np2, nf2, nlevpk, g2f_remapd, gll_metdet_ie, w_ff, fv_metdet_ie, dp_g_ie, dp_fv_ie,
       EVU<const Scalar[NP*NP][NUM_LEV]>(&q_g(ie,iq,0,0,0)),
-      EVU<Scalar**>(rw1.data(), np2, nlevpk), EVU<Scalar**>(rw2.data(), np2, nlevpk),
-      0, EVU<Scalar***>(qf_ie.data(), 1, nf2, nlevpk));
+      EVU<Scalar[NP*NP][NUM_LEV]>(rw1.data()), EVU<Scalar[NP*NP][NUM_LEV]>(rw2.data()),
+      0, EVU<Scalar***>(qf_ie.data(), nf2, 1, nlevpk));
     //   FV Q_ten = FV Q1 - FV Q0
     parallel_for( ttrf, [&] (const int i) {
       parallel_for(tvr, [&] (const int k) { qf_ie(i,k) = q(ie,iq,i,k) - qf_ie(i,k); }); });
     //   GLL Q_ten
-    const EVU<Scalar**> dqg_ie(rw2.data(), np2, nlevpk);
+    const EVU<Scalar[NP*NP][NUM_LEV]> dqg_ie(rw2.data());
     f2g_scalar_dp(kv, nf2, np2, nlevpk, f2g_remapd, fv_metdet_ie, gll_metdet_ie,
-                  dp_fv_ie, dp_g_ie, qf_ie, EVU<Scalar**>(rw1.data(), np2, nlevpk), dqg_ie);
+                  dp_fv_ie, dp_g_ie, qf_ie, EVU<Scalar[NP*NP][NUM_LEV]>(rw1.data()), dqg_ie);
     //   GLL Q1
-    const EVU<Scalar**> fq_ie(&fq(ie,iq,0,0,0), np2, nlevpk);
-    const EVU<const Scalar**> qg_ie(&q_g(ie,iq,0,0,0), np2, nlevpk);
+    const EVU<Scalar[NP*NP][NUM_LEV]> fq_ie(&fq(ie,iq,0,0,0));
+    const EVU<const Scalar[NP*NP][NUM_LEV]> qg_ie(&q_g(ie,iq,0,0,0));
     parallel_for( ttrg, [&] (const int i) {
       parallel_for(tvr, [&] (const int k) { fq_ie(i,k) = qg_ie(i,k) + dqg_ie(i,k); }); });
     // Get limiter bounds.
