@@ -320,7 +320,7 @@ struct GllFvRemapImpl {
             }
       }
     };
-    team_parallel_for_with_linear_index(team, f, nlev);
+    team_parallel_for_with_linear_index(team, nlev, f);
   }
 
   template <typename View> static KOKKOS_INLINE_FUNCTION
@@ -334,7 +334,7 @@ struct GllFvRemapImpl {
 
   // ||4 f(k) on k = 0:niter-1.
   template <typename Fn> KOKKOS_INLINE_FUNCTION static void
-  team_parallel_for_with_linear_index (const MT& team, const Fn& fn, const int niter) {
+  team_parallel_for_with_linear_index (const MT& team, const int niter, const Fn& fn) {
     using Kokkos::parallel_for;
     // 2D -> 1D thread index space. Need to make vector dim the faster for
     // coalesced memory access on the GPU. Kokkos doesn't expose the number of

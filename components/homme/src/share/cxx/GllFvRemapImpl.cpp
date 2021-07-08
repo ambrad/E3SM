@@ -153,6 +153,27 @@ void GllFvRemapImpl
    x compute_hydrostatic_p is already available
 */
 
+template <typename TA, typename TE>
+static KOKKOS_FUNCTION void
+calc_extrema (const KernelVariables& kv, const int n, const int nlev,
+              const TA& q, const TE& qmin, const TE& qmax) {
+  const int packn = GllFvRemapImpl::packn;
+  GllFvRemapImpl::team_parallel_for_with_linear_index(
+    kv.team, nlev, 
+    [&] (const int k) {
+      auto& qmink = qmin(k);
+      auto& qmaxk = qmax(k);
+      qmink = qmaxk = q(0,k);
+      for (int i = 1; i < n; ++i) {
+        const auto qik = q(i,k);
+        VECTOR_SIMD_LOOP for (int s = 0; s < packn; ++s)
+          qmink[s] = min(qmink[s], qik[s]);
+        VECTOR_SIMD_LOOP for (int s = 0; s < packn; ++s)
+          qmaxk[s] = max(qmaxk[s], qik[s]);
+      }
+    });  
+}
+
 // Remap a mixing ratio conservatively and preventing new extrema.
 template <typename RT, typename GS, typename GT, typename DS, typename DT,
           typename QS, typename WT, typename QT>
@@ -165,9 +186,8 @@ g2f_mixing_ratio (const KernelVariables& kv, const int np2, const int nf2, const
   using Kokkos::parallel_for;
   const auto ttrg = Kokkos::TeamThreadRange(kv.team, np2);
   const auto ttrf = Kokkos::TeamThreadRange(kv.team, nf2);
-  const auto tvrg = Kokkos::ThreadVectorRange(kv.team, np2);
   const auto tvr  = Kokkos::ThreadVectorRange(kv.team, nlev);
-  const int iq = kv.iq, packn = g::packn;
+  const int iq = kv.iq;
 
   // Linearly remap qdp GLL->FV. w2 holds q_f at end of this block.
   parallel_for( ttrg, [&] (const int i) {
@@ -178,20 +198,7 @@ g2f_mixing_ratio (const KernelVariables& kv, const int np2, const int nf2, const
 
   // Compute extremal q values in element on GLL grid. Use qf as tmp space.
   const g::EVU<Scalar*> qmin(&qf(0,iqf,0), nlev), qmax(&qf(1,iqf,0), nlev);
-  const auto f = [&] (const int k) {
-    auto& qmink = qmin(k);
-    auto& qmaxk = qmax(k);
-    qmink = qmaxk = qg(0,k);
-    for (int i = 1; i < np2; ++i) {
-      const auto qgik = qg(i,k);
-      VECTOR_SIMD_LOOP for (int s = 0; s < packn; ++s)
-        qmink[s] = min(qmink[s], qgik[s]);
-      VECTOR_SIMD_LOOP for (int s = 0; s < packn; ++s)
-        qmaxk[s] = max(qmaxk[s], qgik[s]);
-    }
-  };
-  g::team_parallel_for_with_linear_index(kv.team, f, nlev);
-
+  calc_extrema(kv, np2, nlev, qg, qmin, qmax);
   // Apply CAAS to w2, the provisional q_f values.
   g::limiter_clip_and_sum(kv.team, nf2, nlev, geof, qmin, qmax, dpf, w1, w2);
   // Copy to qf array.
@@ -294,6 +301,8 @@ void GllFvRemapImpl
 void GllFvRemapImpl::
 run_fv_phys_to_dyn (const int timeidx, const Real dt,
                     const CPhys2T& Ts, const CPhys3T& uvs, const CPhys3T& qs) {
+  using Kokkos::parallel_for;
+
   const int np2 = GllFvRemapImpl::np2;
   const int nlevpk = num_lev_pack;
   const int nreal_per_slot1 = np2*max_num_lev_pack;
@@ -301,14 +310,14 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
   const auto nelemd = m_data.nelemd;
   const auto qsize = m_data.qsize;
 
-  const auto& sp = Context::singleton().get<SimulationParams>();
-  const bool q_adjustment = sp.ftype != ForcingAlg::FORCING_0;
-
   assert(Ts.extent_int(0) >= nelemd && Ts.extent_int(1) >= nf2 && Ts.extent_int(2) % packn == 0);
   assert(uvs.extent_int(0) >= nelemd && uvs.extent_int(1) >= nf2 && uvs.extent_int(2) == 2 &&
          uvs.extent_int(3) % packn == 0);
   assert(qs.extent_int(0) >= nelemd && qs.extent_int(1) >= nf2 && qs.extent_int(2) >= qsize &&
          qs.extent_int(3) % packn == 0);
+
+  const auto& sp = Context::singleton().get<SimulationParams>();
+  const bool q_adjustment = sp.ftype != ForcingAlg::FORCING_0;
 
   CVPhys2T
     T(creal2pack(Ts), Ts.extent_int(0), Ts.extent_int(1), Ts.extent_int(2)/packn);
@@ -346,39 +355,65 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
     }
     
   };
-  Kokkos::parallel_for(m_tp_ne, fe);
+  parallel_for(m_tp_ne, fe);
 
   assert(q_adjustment); // for now
   const auto dp_g = m_state.m_dp3d;
   const auto q_g = m_tracers.Q;
+  const auto fq = m_tracers.fq;
+  const auto qlim = m_tracers.qlim;
   const auto feq = KOKKOS_LAMBDA (const MT& team) {
     KernelVariables kv(team, qsize, m_tu_ne);
     const auto ie = kv.ie, iq = kv.iq;
-
+    const auto ttrf = Kokkos::TeamThreadRange(kv.team, nf2);
+    const auto ttrg = Kokkos::ThreadVectorRange(kv.team, np2);
+    const auto tvr  = Kokkos::ThreadVectorRange(kv.team, nlevpk);
     const auto all = Kokkos::ALL();
+
     const auto rw1 = Kokkos::subview(m_data.buf1[0], kv.team_idx, all, all, all);
     const auto rw2 = Kokkos::subview(m_data.buf1[2], kv.team_idx, all, all, all);
+    const auto r2w = Kokkos::subview(m_data.buf2[0], kv.team_idx, all, all, all, all);
 
     const EVU<const Real*> fv_spheremp_ie(&fv_spheremp(ie,0), nf2),
       gll_metdet_ie(&gll_metdet(ie,0,0), np2);
     const EVU<const Scalar**> dp_fv_ie(&dp_fv(ie,0,0,0), nf2, nlevpk);
 
+    // FV Q_ten
+    //   GLL Q0 -> FV Q0
+    const EVU<Scalar**> qf_ie(r2w.data(), nf2, nlevpk);
+    const EVU<const Scalar[NP*NP][NUM_LEV]> dp_g_ie(&dp_g(ie,timeidx,0,0,0));
     g2f_mixing_ratio(
-      kv, np2, nf2, nlevpk, g2f_remapd, gll_metdet_ie, fv_spheremp_ie,
-      EVU<const Scalar[NP*NP][NUM_LEV]>(&dp_g(ie,timeidx,0,0,0)), dp_fv_ie,
+      kv, np2, nf2, nlevpk, g2f_remapd, gll_metdet_ie, fv_spheremp_ie, dp_g_ie, dp_fv_ie,
       EVU<const Scalar[NP*NP][NUM_LEV]>(&q_g(ie,iq,0,0,0)),
       EVU<Scalar**>(rw1.data(), np2, nlevpk), EVU<Scalar**>(rw2.data(), np2, nlevpk),
-      0, EVU<Scalar***>(rw1.data(), 1, nf2, nlevpk));
-    
+      0, EVU<Scalar***>(qf_ie.data(), 1, nf2, nlevpk));
+    //   FV Q_ten = FV Q1 - FV Q0
+    parallel_for( ttrf, [&] (const int i) {
+      parallel_for(tvr, [&] (const int k) { qf_ie(i,k) = q(ie,iq,i,k) - qf_ie(i,k); }); });
+    //   GLL Q_ten
+    const EVU<Scalar**> dqg_ie(rw2.data(), np2, nlevpk);
+#if 0
+    f2g_scalar_dp(
+      kv, nf2, np2, nlevpk, f2g_remapd, fv_spheremp_ie, gll_metdet_ie,
+      dp_fv_ie, dp_g_ie, qf_ie, EVU<Scalar**>(rw1.data(), np2, nlevpk), dqg_ie);
+#endif
+    //   GLL Q1
+    const EVU<Scalar**> fq_ie(&fq(ie,iq,0,0,0), np2, nlevpk);
+    const EVU<const Scalar**> qg_ie(&q_g(ie,iq,0,0,0), np2, nlevpk);
+    parallel_for( ttrg, [&] (const int i) {
+      parallel_for(tvr, [&] (const int k) { fq_ie(i,k) = qg_ie(i,k) + dqg_ie(i,k); }); });
+    // Get limiter bounds.
+    calc_extrema(kv, nf2, nlevpk, qf_ie,
+                 EVU<Scalar*>(&qlim(ie,iq,0,0), nlevpk), EVU<Scalar*>(&qlim(ie,iq,1,0), nlevpk));
   };
-  Kokkos::parallel_for(m_tp_ne_qsize, feq);
+  parallel_for(m_tp_ne_qsize, feq);
 
   // halo exchange
 
   const auto geq = KOKKOS_LAMBDA (const MT& team) {
     
   };
-  Kokkos::parallel_for(m_tp_ne_qsize, geq);
+  parallel_for(m_tp_ne_qsize, geq);
 }
 
 } // namespace Homme
