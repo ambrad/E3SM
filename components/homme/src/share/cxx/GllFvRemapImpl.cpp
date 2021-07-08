@@ -8,6 +8,9 @@
 
 namespace Homme {
 
+typedef ExecViewUnmanaged<Scalar[NP*NP][NUM_LEV]> evus_np2_nlev;
+typedef ExecViewUnmanaged<const Scalar[NP*NP][NUM_LEV]> evucs_np2_nlev;
+
 static int calc_nslot (const int nelemd) {
   const auto tp = Homme::get_default_team_policy<ExecSpace>(nelemd);
   const auto tu = TeamUtils<ExecSpace>(tp);
@@ -68,9 +71,17 @@ void GllFvRemapImpl::init_buffers (const FunctorsBuffersManager& fbm) {
 void GllFvRemapImpl::init_boundary_exchanges () {
   assert(m_data.qsize > 0); // after reset() called
 
-  auto bm_exchange = Context::singleton().get<MpiBuffersManagerMap>()[MPI_EXCHANGE];
+  auto& c = Context::singleton();
 
-#pragma message "TODO: init_boundary_exchanges"
+  {
+    auto bm_exchange_minmax = c.get<MpiBuffersManagerMap>()[MPI_EXCHANGE_MIN_MAX];
+    m_extrema_be = std::make_shared<BoundaryExchange>();
+    BoundaryExchange& be = *m_extrema_be;
+    be.set_buffers_manager(bm_exchange_minmax);
+    be.set_num_fields(m_data.qsize, 0, 0);
+    be.register_min_max_fields(m_tracers.qlim, m_data.qsize, 0);
+    be.registration_completed();
+  }
 }
 
 template <typename T> using FV = Kokkos::View<T, Kokkos::LayoutLeft, Kokkos::HostSpace>;
@@ -312,10 +323,9 @@ void GllFvRemapImpl
     // q
     g2f_mixing_ratio(
       kv, np2, nf2, nlevpk, g2f_remapd, gll_metdet_ie, w_ff, fv_metdet_ie,
-      EVU<const Scalar[NP*NP][NUM_LEV]>(&dp_g(ie,timeidx,0,0,0)), dp_fv_ie,
-      EVU<const Scalar[NP*NP][NUM_LEV]>(&q_g(ie,iq,0,0,0)),
-      EVU<Scalar[NP*NP][NUM_LEV]>(rw1.data()), EVU<Scalar[NP*NP][NUM_LEV]>(rw2.data()),
-      iq, EVU<Scalar***>(&q(ie,0,0,0), q.extent_int(1), q.extent_int(2), q.extent_int(3)));
+      evucs_np2_nlev(&dp_g(ie,timeidx,0,0,0)), dp_fv_ie, evucs_np2_nlev(&q_g(ie,iq,0,0,0)),
+      evus_np2_nlev(rw1.data()), evus_np2_nlev(rw2.data()), iq,
+      EVU<Scalar***>(&q(ie,0,0,0), q.extent_int(1), q.extent_int(2), q.extent_int(3)));
   };
   Kokkos::parallel_for(m_tp_ne_qsize, feq);
 }
@@ -412,28 +422,28 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
     // FV Q_ten
     //   GLL Q0 -> FV Q0
     const EVU<Scalar**> dqf_ie(&r2w(0,0,0,0), nf2, nlevpk);
-    const EVU<const Scalar[NP*NP][NUM_LEV]>
-      dp_g_ie(&dp_g(ie,timeidx,0,0,0)), qg_ie(&q_g(ie,iq,0,0,0));
+    const evucs_np2_nlev dp_g_ie(&dp_g(ie,timeidx,0,0,0)), qg_ie(&q_g(ie,iq,0,0,0));
     g2f_mixing_ratio(
       kv, np2, nf2, nlevpk, g2f_remapd, gll_metdet_ie,
       w_ff, fv_metdet_ie, dp_g_ie, dp_fv_ie, qg_ie,
-      EVU<Scalar[NP*NP][NUM_LEV]>(rw1.data()), EVU<Scalar[NP*NP][NUM_LEV]>(rw2.data()),
+      evus_np2_nlev(rw1.data()), evus_np2_nlev(rw2.data()),
       0, EVU<Scalar***>(dqf_ie.data(), nf2, 1, nlevpk));
     //   FV Q_ten = FV Q1 - FV Q0
     parallel_for( ttrf, [&] (const int i) {
       parallel_for(tvr, [&] (const int k) { dqf_ie(i,k) = qf_ie(i,k) - dqf_ie(i,k); }); });
     //   GLL Q_ten
-    const EVU<Scalar[NP*NP][NUM_LEV]> dqg_ie(rw2.data());
+    const evus_np2_nlev dqg_ie(rw2.data());
     f2g_scalar_dp(kv, nf2, np2, nlevpk, f2g_remapd, fv_metdet_ie, gll_metdet_ie,
-                  dp_fv_ie, dp_g_ie, dqf_ie, EVU<Scalar[NP*NP][NUM_LEV]>(rw1.data()), dqg_ie);
+                  dp_fv_ie, dp_g_ie, dqf_ie, evus_np2_nlev(rw1.data()), dqg_ie);
     //   GLL Q1
-    const EVU<Scalar[NP*NP][NUM_LEV]> fq_ie(&fq(ie,iq,0,0,0));
+    const evus_np2_nlev fq_ie(&fq(ie,iq,0,0,0));
     parallel_for( ttrg, [&] (const int i) {
       parallel_for(tvr, [&] (const int k) { fq_ie(i,k) = qg_ie(i,k) + dqg_ie(i,k); }); });
   };
   parallel_for(m_tp_ne_qsize, feq);
 
-  // halo exchange
+  // Halo exchange extrema data.
+  m_extrema_be->exchange_min_max();
 
   const auto geq = KOKKOS_LAMBDA (const MT& team) {
     
