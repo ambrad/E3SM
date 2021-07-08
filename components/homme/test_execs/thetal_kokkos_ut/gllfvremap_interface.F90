@@ -184,12 +184,12 @@ contains
     call gfr_fv_phys_to_dyn(hybrid, nt, dt, hvcoord, elem, 1, nelemd, T, uv, q)
   end subroutine gfr_fv_phys_to_dyn_f90
 
-  subroutine cmp_dyn_data_f90(nk, nq, thv, uv, q, nerr) bind(c)
+  subroutine cmp_dyn_data_f90(nk, nq, thv, uv, q, fq, nerr) bind(c)
     use element_state, only: timelevels
 
     integer (c_int), value, intent(in) :: nk, nq
     real (c_double), intent(in) :: thv(nk,np,np,nelemd), &
-         uv(nk,np,np,3,nelemd), q(nk,np,np,nq,nelemd)
+         uv(nk,np,np,3,nelemd), q(nk,np,np,nq,nelemd), fq(nk,np,np,nq,nelemd)
     integer (c_int), intent(out) :: nerr
 
     integer, parameter :: outmax = 20
@@ -204,12 +204,20 @@ contains
                 do tl = 1,timelevels
                 end do
                 do iq = 1,qsize
+                   if (elem(ie)%state%Q(j,i,k,iq) /= q(k,j,i,iq,ie)) then
+                      nerr = nerr+1
+                      if (nerr < outmax) then
+                         print '(a,i4,i3,i2,i2,i3,es18.10,es18.10)', &
+                              'q: ie,iq,i,j,k',ie,iq,i,j,k, &
+                              elem(ie)%state%Q(j,i,k,iq), q(k,j,i,iq,ie)
+                      end if                      
+                   end if
                    if (elem(ie)%derived%FQ(j,i,k,iq) /= q(k,j,i,iq,ie)) then
                       nerr = nerr+1
                       if (nerr < outmax) then
-                         print '(a,i4,i3,i2,i2,es18.10,es18.10)', &
-                              'ie,iq,i,j',ie,iq,i,j, &
-                              elem(ie)%derived%FQ(j,i,k,iq), q(k,j,i,iq,ie)
+                         print '(a,i4,i3,i2,i2,i3,es18.10,es18.10)', &
+                              'fq: ie,iq,i,j,k',ie,iq,i,j,k, &
+                              elem(ie)%derived%FQ(j,i,k,iq), fq(k,j,i,iq,ie)
                       end if
                    end if
                 end do

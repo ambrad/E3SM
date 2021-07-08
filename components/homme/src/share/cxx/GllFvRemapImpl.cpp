@@ -101,7 +101,7 @@ void GllFvRemapImpl
 
   d.g2f_remapd = decltype(d.g2f_remapd)("g2f_remapd", nf2, np2);
   d.f2g_remapd = decltype(d.f2g_remapd)("f2g_remapd", np2, nf2);
-  d.fv_spheremp = decltype(d.fv_spheremp)("fv_spheremp", d.nelemd, nf2);
+  d.fv_metdet = decltype(d.fv_metdet)("fv_metdet", d.nelemd, nf2);
   d.D = decltype(d.D)("D", d.nelemd, np2, 2, 2);
   d.Dinv = decltype(d.D)("Dinv", d.nelemd, np2, 2, 2);
   d.D_f = decltype(d.D)("D_f", d.nelemd, nf2, 2, 2);
@@ -109,7 +109,7 @@ void GllFvRemapImpl
 
   const auto g2f_remapd = create_mirror_view(d.g2f_remapd);
   const auto f2g_remapd = create_mirror_view(d.f2g_remapd);
-  const auto fv_spheremp = create_mirror_view(d.fv_spheremp);
+  const auto fv_metdet = create_mirror_view(d.fv_metdet);
   const auto D = create_mirror_view(d.D);
   const auto Dinv = create_mirror_view(d.Dinv);
   const auto D_f = create_mirror_view(d.D_f);
@@ -124,7 +124,7 @@ void GllFvRemapImpl
       f2g_remapd(j,i) = ff2g_remapd(i,j);
   for (int ie = 0; ie < d.nelemd; ++ie) {
     for (int k = 0; k < nf2; ++k)
-      fv_spheremp(ie,k) = d.w_ff * ffv_metdet(k,ie);
+      fv_metdet(ie,k) = ffv_metdet(k,ie);
     for (int d0 = 0; d0 < 2; ++d0)
       for (int d1 = 0; d1 < 2; ++d1) {
         for (int i = 0; i < np; ++i)
@@ -139,7 +139,7 @@ void GllFvRemapImpl
         }
       }
   }
-  deep_copy(d.fv_spheremp, fv_spheremp);
+  deep_copy(d.fv_metdet, fv_metdet);
   deep_copy(d.g2f_remapd, g2f_remapd);
   deep_copy(d.f2g_remapd, f2g_remapd);
   deep_copy(d.D, D);
@@ -179,7 +179,7 @@ template <typename RT, typename GS, typename GT, typename DS, typename DT,
           typename QS, typename WT, typename QT>
 static KOKKOS_FUNCTION void
 g2f_mixing_ratio (const KernelVariables& kv, const int np2, const int nf2, const int nlev,
-                  const RT& remap_g2f, const GS& geog, const GT& geof,
+                  const RT& g2f_remap, const GS& geog, const Real sf, const GT& geof,
                   const DS& dpg, const DT& dpf, const QS& qg,
                   const WT& w1, const WT& w2, const int iqf, const QT& qf) {
   using g = GllFvRemapImpl;
@@ -192,18 +192,38 @@ g2f_mixing_ratio (const KernelVariables& kv, const int np2, const int nf2, const
   // Linearly remap qdp GLL->FV. w2 holds q_f at end of this block.
   parallel_for( ttrg, [&] (const int i) {
     parallel_for(tvr, [&] (const int k) { w1(i,k) = dpg(i,k)*qg(i,k); }); });
-  g::remapd(kv.team, nf2, np2, nlev, remap_g2f, geog, geof, w1, w1, w2);
+  g::remapd(kv.team, nf2, np2, nlev, g2f_remap, 1, geog, sf, geof, w1, w1, w2);
   parallel_for( ttrf, [&] (const int i) {
     parallel_for(tvr, [&] (const int k) { w2(i,k) /= dpf(i,k); }); });
 
   // Compute extremal q values in element on GLL grid. Use qf as tmp space.
   const g::EVU<Scalar*> qmin(&qf(0,iqf,0), nlev), qmax(&qf(1,iqf,0), nlev);
   calc_extrema(kv, np2, nlev, qg, qmin, qmax);
+
   // Apply CAAS to w2, the provisional q_f values.
-  g::limiter_clip_and_sum(kv.team, nf2, nlev, geof, qmin, qmax, dpf, w1, w2);
+  g::limiter_clip_and_sum(kv.team, nf2, nlev, sf, geof, qmin, qmax, dpf, w1, w2);
   // Copy to qf array.
   parallel_for( ttrf, [&] (const int i) {
     parallel_for(tvr, [&] (const int k) { qf(i,iqf,k) = w2(i,k); }); });
+}
+
+template <typename RT, typename GS, typename GT, typename DS, typename DT, typename WT, typename QT>
+static KOKKOS_FUNCTION void
+f2g_scalar_dp (const KernelVariables& kv, const int nf2, const int np2, const int nlev,
+               const RT& f2g_remap, const GS& geof, const GT& geog, const DS& dpf,
+               const DT& dpg, const QT& qf, const WT& w1, const QT& qg) {
+  using g = GllFvRemapImpl;
+  using Kokkos::parallel_for;
+  const auto ttrf = Kokkos::TeamThreadRange(kv.team, nf2);
+  const auto ttrg = Kokkos::TeamThreadRange(kv.team, np2);
+  const auto tvr  = Kokkos::ThreadVectorRange(kv.team, nlev);
+  const int iq = kv.iq;
+
+  parallel_for( ttrf, [&] (const int i) {
+    parallel_for(tvr, [&] (const int k) { w1(i,k) = dpf(i,k)*qf(i,k); }); });
+  g::remapd(kv.team, np2, nf2, nlev, f2g_remap, 1, geof, 1, geog, w1, w1, qg);
+  parallel_for( ttrg, [&] (const int i) {
+    parallel_for(tvr, [&] (const int k) { qg(i,k) /= dpg(i,k); }); });  
 }
 
 void GllFvRemapImpl
@@ -239,7 +259,8 @@ void GllFvRemapImpl
   const auto dp_fv = m_derived.m_divdp_proj; // store dp_fv between kernels
   const auto ps_v = m_state.m_ps_v;
   const auto gll_metdet = m_geometry.m_metdet;
-  const auto fv_spheremp = m_data.fv_spheremp;
+  const auto fv_metdet = m_data.fv_metdet;
+  const auto w_ff = m_data.w_ff;
   const auto g2f_remapd = m_data.g2f_remapd;
   const auto hvcoord = m_hvcoord;
 
@@ -251,14 +272,15 @@ void GllFvRemapImpl
     const auto rw1 = Kokkos::subview(m_data.buf1[0], kv.team_idx, all, all, all);
     const EVU<Real*> rw1s(pack2real(rw1), nreal_per_slot1);
     
-    const EVU<const Real*> fv_spheremp_ie(&fv_spheremp(ie,0), nf2),
+    const EVU<const Real*> fv_metdet_ie(&fv_metdet(ie,0), nf2),
       gll_metdet_ie(&gll_metdet(ie,0,0), np2);
 
     // ps and dp_fv
     const EVU<Scalar**> dp_fv_ie(&dp_fv(ie,0,0,0), nf2, nlevpk); {
       const EVU<Real**> ps_v_ie(&ps_v(ie,timeidx,0,0), np2, 1), wrk(rw1s.data(), np2, 1);
-      remapd(team, nf2, np2, 1, g2f_remapd, gll_metdet_ie, fv_spheremp_ie, ps_v_ie, wrk,
-             EVU<Real**>(&ps(ie,0), nf2, 1));
+      remapd(team, nf2, np2, 1, g2f_remapd,
+             1, gll_metdet_ie, w_ff, fv_metdet_ie,
+             ps_v_ie, wrk, EVU<Real**>(&ps(ie,0), nf2, 1));
       calc_dp_fv(team, hvcoord, nf2, nlevpk, EVU<Real*>(&ps(ie,0), nf2), dp_fv_ie);
     }
 
@@ -283,13 +305,13 @@ void GllFvRemapImpl
     const auto rw1 = Kokkos::subview(m_data.buf1[0], kv.team_idx, all, all, all);
     const auto rw2 = Kokkos::subview(m_data.buf1[2], kv.team_idx, all, all, all);
     
-    const EVU<const Real*> fv_spheremp_ie(&fv_spheremp(ie,0), nf2),
+    const EVU<const Real*> fv_metdet_ie(&fv_metdet(ie,0), nf2),
       gll_metdet_ie(&gll_metdet(ie,0,0), np2);
     const EVU<const Scalar**> dp_fv_ie(&dp_fv(ie,0,0,0), nf2, nlevpk);
     
     // q
     g2f_mixing_ratio(
-      kv, np2, nf2, nlevpk, g2f_remapd, gll_metdet_ie, fv_spheremp_ie,
+      kv, np2, nf2, nlevpk, g2f_remapd, gll_metdet_ie, w_ff, fv_metdet_ie,
       EVU<const Scalar[NP*NP][NUM_LEV]>(&dp_g(ie,timeidx,0,0,0)), dp_fv_ie,
       EVU<const Scalar[NP*NP][NUM_LEV]>(&q_g(ie,iq,0,0,0)),
       EVU<Scalar**>(rw1.data(), np2, nlevpk), EVU<Scalar**>(rw2.data(), np2, nlevpk),
@@ -330,8 +352,10 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
   const auto dp_fv = m_derived.m_divdp_proj; // store dp_fv between kernels
   const auto ps_v = m_state.m_ps_v;
   const auto gll_metdet = m_geometry.m_metdet;
-  const auto fv_spheremp = m_data.fv_spheremp;
+  const auto w_ff = m_data.w_ff;
+  const auto fv_metdet = m_data.fv_metdet;
   const auto g2f_remapd = m_data.g2f_remapd;
+  const auto f2g_remapd = m_data.f2g_remapd;
   const auto hvcoord = m_hvcoord;
 
   const auto fe = KOKKOS_LAMBDA (const MT& team) {
@@ -342,15 +366,16 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
     const auto rw1 = Kokkos::subview(m_data.buf1[0], kv.team_idx, all, all, all);
     const EVU<Real*> rw1s(pack2real(rw1), nreal_per_slot1);
     
-    const EVU<const Real*> fv_spheremp_ie(&fv_spheremp(ie,0), nf2),
+    const EVU<const Real*> fv_metdet_ie(&fv_metdet(ie,0), nf2),
       gll_metdet_ie(&gll_metdet(ie,0,0), np2);
 
     // ps and dp_fv
     const EVU<Scalar**> dp_fv_ie(&dp_fv(ie,0,0,0), nf2, nlevpk); {
       const EVU<Real**> ps_v_ie(&ps_v(ie,timeidx,0,0), np2, 1), w1(rw1s.data(), np2, 1);
       Real* const w2 = rw1s.data() + np2;
-      remapd(team, nf2, np2, 1, g2f_remapd, gll_metdet_ie, fv_spheremp_ie, ps_v_ie, w1,
-             EVU<Real**>(w2, nf2, 1));
+      remapd(team, nf2, np2, 1, g2f_remapd,
+             1, gll_metdet_ie, w_ff, fv_metdet_ie,
+             ps_v_ie, w1, EVU<Real**>(w2, nf2, 1));
       calc_dp_fv(team, hvcoord, nf2, nlevpk, EVU<Real*>(w2, nf2), dp_fv_ie);
     }
     
@@ -374,7 +399,7 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
     const auto rw2 = Kokkos::subview(m_data.buf1[2], kv.team_idx, all, all, all);
     const auto r2w = Kokkos::subview(m_data.buf2[0], kv.team_idx, all, all, all, all);
 
-    const EVU<const Real*> fv_spheremp_ie(&fv_spheremp(ie,0), nf2),
+    const EVU<const Real*> fv_metdet_ie(&fv_metdet(ie,0), nf2),
       gll_metdet_ie(&gll_metdet(ie,0,0), np2);
     const EVU<const Scalar**> dp_fv_ie(&dp_fv(ie,0,0,0), nf2, nlevpk);
 
@@ -383,7 +408,7 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
     const EVU<Scalar**> qf_ie(r2w.data(), nf2, nlevpk);
     const EVU<const Scalar[NP*NP][NUM_LEV]> dp_g_ie(&dp_g(ie,timeidx,0,0,0));
     g2f_mixing_ratio(
-      kv, np2, nf2, nlevpk, g2f_remapd, gll_metdet_ie, fv_spheremp_ie, dp_g_ie, dp_fv_ie,
+      kv, np2, nf2, nlevpk, g2f_remapd, gll_metdet_ie, w_ff, fv_metdet_ie, dp_g_ie, dp_fv_ie,
       EVU<const Scalar[NP*NP][NUM_LEV]>(&q_g(ie,iq,0,0,0)),
       EVU<Scalar**>(rw1.data(), np2, nlevpk), EVU<Scalar**>(rw2.data(), np2, nlevpk),
       0, EVU<Scalar***>(qf_ie.data(), 1, nf2, nlevpk));
@@ -392,11 +417,8 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
       parallel_for(tvr, [&] (const int k) { qf_ie(i,k) = q(ie,iq,i,k) - qf_ie(i,k); }); });
     //   GLL Q_ten
     const EVU<Scalar**> dqg_ie(rw2.data(), np2, nlevpk);
-#if 0
-    f2g_scalar_dp(
-      kv, nf2, np2, nlevpk, f2g_remapd, fv_spheremp_ie, gll_metdet_ie,
-      dp_fv_ie, dp_g_ie, qf_ie, EVU<Scalar**>(rw1.data(), np2, nlevpk), dqg_ie);
-#endif
+    f2g_scalar_dp(kv, nf2, np2, nlevpk, f2g_remapd, fv_metdet_ie, gll_metdet_ie,
+                  dp_fv_ie, dp_g_ie, qf_ie, EVU<Scalar**>(rw1.data(), np2, nlevpk), dqg_ie);
     //   GLL Q1
     const EVU<Scalar**> fq_ie(&fq(ie,iq,0,0,0), np2, nlevpk);
     const EVU<const Scalar**> qg_ie(&q_g(ie,iq,0,0,0), np2, nlevpk);

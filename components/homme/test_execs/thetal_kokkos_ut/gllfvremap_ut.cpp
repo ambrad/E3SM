@@ -54,7 +54,7 @@ extern "C" {
                               Real* omega_p, Real* q);
 
   void gfr_fv_phys_to_dyn_f90(int nf, int nt, Real dt, Real* T, Real* uv, Real* q);
-  void cmp_dyn_data_f90(int nlev_align, int nq, Real* thv, Real* uv, Real* q, int* nerr);
+  void cmp_dyn_data_f90(int nlev_align, int nq, Real* thv, Real* uv, Real* q, Real* fq, int* nerr);
 } // extern "C"
 
 using CA1d = Kokkos::View<Real*,     Kokkos::LayoutRight, Kokkos::HostSpace>;
@@ -290,19 +290,19 @@ static void test_calc_dp_fv (Random& r, const HybridVCoord& hvcoord) {
       REQUIRE(dp_fv_f90(k,i) == dp_fv_d(i,k));
 }
 
-static void sfwd_remapd (const int m, const int n,
-                         const Real* A, const Real* d1, const Real* d2,
+static void sfwd_remapd (const int m, const int n, const Real* A,
+                         const Real s1, const Real* d1, const Real s2, const Real* d2,
                          const Real* x, Real* y) {
   for (int i = 0; i < m; ++i) {
     y[i] = 0;
     for (int j = 0; j < n; ++j)
-      y[i] += A[n*i + j] * (x[j] * d1[j]);
-    y[i] /= d2[i];
+      y[i] += A[n*i + j] * (x[j] * (s1 * d1[j]));
+    y[i] /= s2 * d2[i];
   }
 }
 
-static void sfwd_remapd (const int m, const int n,
-                         const Real* A, const Real* d1, const Real* d2,
+static void sfwd_remapd (const int m, const int n, const Real* A,
+                         const Real s1, const Real* d1, const Real s2, const Real* d2,
                          const Real* Dinv, const Real* D,
                          const Real* x, Real* wx, Real* wy, Real* y) {
   for (int d = 0; d < 2; ++d) {
@@ -311,7 +311,7 @@ static void sfwd_remapd (const int m, const int n,
       wx[os+i] = Dinv[4*i+2*d]*x[i] + Dinv[4*i+2*d+1]*x[n+i];
   }
   for (int d = 0; d < 2; ++d)
-    sfwd_remapd(m, n, A, d1, d2, wx + d*n, wy + d*m);
+    sfwd_remapd(m, n, A, s1, d1, s2, d2, wx + d*n, wy + d*m);
   for (int d = 0; d < 2; ++d) {
     const int os = d*m;
     for (int i = 0; i < m; ++i)
@@ -365,20 +365,19 @@ static void test_remapds (Random& r, const int m, const int n, const int nlev) {
   deep_copy(x_d, x_h);
 
   // Scalar remapd.
-  sfwd_remapd(m, n, A.data(), d1.data(), d2.data(), x.data(), y.data());
+  sfwd_remapd(m, n, A.data(), 3, d1.data(), 5, d2.data(), x.data(), y.data());
   Kokkos::parallel_for(
     Homme::get_default_team_policy<ExecSpace>(1),
     KOKKOS_LAMBDA (const g::MT& team) {
-      g::remapd(team, m, n, nlevpk, A_d, d1_d, d2_d, x_p, x_p, y_p); });
+      g::remapd(team, m, n, nlevpk, A_d, 3, d1_d, 5, d2_d, x_p, x_p, y_p); });
   deep_copy(x_h, x_d); deep_copy(y_h, y_d);
-  for (int k = 0; k < nlev; ++k) {
-    for (int i = 0; i < n; ++i) REQUIRE(x_h(i,0) == x[i]*d1[i]);
-    for (int i = 0; i < m; ++i) REQUIRE(y_h(i,k) == y[i]);
-  }
+  for (int k = 0; k < nlev; ++k)
+    for (int i = 0; i < m; ++i)
+      REQUIRE(y_h(i,k) == y[i]);
 
   // Vector remapd.
   std::vector<Real> wx(2*n), wy(2*m);
-  sfwd_remapd(m, n, A.data(), d1.data(), d2.data(), Dinv.data(), D.data(),
+  sfwd_remapd(m, n, A.data(), 5, d1.data(), 3, d2.data(), Dinv.data(), D.data(),
               x.data(), wx.data(), wy.data(), y.data());
   { // x(i,d), y(d,i)
     const ExecView<Scalar***> x2_p("x2", n+1, 2, nlevpk), y2_p("y", 2, m+2, nlevpk);
@@ -393,7 +392,7 @@ static void test_remapds (Random& r, const int m, const int n, const int nlev) {
     Kokkos::parallel_for(
       Homme::get_default_team_policy<ExecSpace>(1),
       KOKKOS_LAMBDA (const g::MT& team) {
-        g::remapd<true>(team, m, n, nlevpk, A_d, d1_d, d2_d, Dinv_d, D_d,
+        g::remapd<true>(team, m, n, nlevpk, A_d, 5, d1_d, 3, d2_d, Dinv_d, D_d,
                         x2_p, x2_p, y2_p); });
     deep_copy(y2_h, y2_d);
     for (int k = 0; k < nlev; ++k)
@@ -414,7 +413,7 @@ static void test_remapds (Random& r, const int m, const int n, const int nlev) {
     Kokkos::parallel_for(
       Homme::get_default_team_policy<ExecSpace>(1),
       KOKKOS_LAMBDA (const g::MT& team) {
-        g::remapd<false>(team, m, n, nlevpk, A_d, d1_d, d2_d, Dinv_d, D_d,
+        g::remapd<false>(team, m, n, nlevpk, A_d, 5, d1_d, 3, d2_d, Dinv_d, D_d,
                          x2_p, x2_p, y2_p); });
     deep_copy(y2_h, y2_d);
     for (int k = 0; k < nlev; ++k)
@@ -514,7 +513,7 @@ static void test_limiter (const int nlev, const int n, Random& r, const bool too
   Kokkos::parallel_for(
     Homme::get_default_team_policy<ExecSpace>(1),
     KOKKOS_LAMBDA (const g::MT& team) {
-      g::limiter_clip_and_sum(team, n2, nlevpk, spheremp_d, qmin_p, qmax_p, dp_p,
+      g::limiter_clip_and_sum(team, n2, nlevpk, 1, spheremp_d, qmin_p, qmax_p, dp_p,
                               wrk_p, q_p); });
   deep_copy(q, q_d);
   assert_limiter_properties(n, nlev, spheremp, qmin, qmax, dp, qorig, q, too_tight);
@@ -638,15 +637,16 @@ static void test_fv_phys_to_dyn (Session& s, const int nf, const int ftype) {
 
   {
     CA3d fT("fT", s.nelemd, s.nlev, nf2);
-    CA4d fuv("fuv", s.nelemd, s.nlev, 2, nf2), fq("fq", s.nelemd, s.qsize, s.nlev, nf2);
+    CA4d fuv("fuv", s.nelemd, s.nlev, 2, nf2), ffq("fq", s.nelemd, s.qsize, s.nlev, nf2);
 
     const ExecView<Real***> dT("dT", s.nelemd, nf2, g::num_lev_aligned);
     const ExecView<Real****> duv("duv", s.nelemd, nf2, 2, g::num_lev_aligned),
-      dq("dq", s.nelemd, nf2, s.qsize, g::num_lev_aligned);
+      dq("dq", s.nelemd, nf2, s.qsize, g::num_lev_aligned),
+      dfq("dq", s.nelemd, nf2, s.qsize, g::num_lev_aligned);
 
     const auto T = cmv(dT);
     const auto uv = cmv(duv);
-    const auto q = cmv(dq);
+    const auto fq = cmv(dfq);
 
     for (int ie = 0; ie < s.nelemd; ++ie)
       for (int k = 0; k < s.nlev; ++k)
@@ -655,19 +655,19 @@ static void test_fv_phys_to_dyn (Session& s, const int nf, const int ftype) {
           for (int d = 0; d < 2; ++d)
             fuv(ie,k,d,i) = uv(ie,i,d,k) = s.r.urrng(-30, 30);
           for (int iq = 0; iq < s.qsize; ++iq)
-            fq(ie,iq,k,i) = q(ie,i,iq,k) = s.r.urrng(0, 0.1);
+            ffq(ie,iq,k,i) = fq(ie,i,iq,k) = s.r.urrng(0, 0.1);
         }
   
     deep_copy(dT, T);
     deep_copy(duv, uv);
-    deep_copy(dq, q);
+    deep_copy(dfq, fq);
 
     const auto& c = Context::singleton();
     auto& gfr = c.get<GllFvRemap>();
 
     for (int nt = 0; nt < NUM_TIME_LEVELS; ++nt) {
-      gfr_fv_phys_to_dyn_f90(nf, nt+1, dt, fT.data(), fuv.data(), fq.data());
-      gfr.run_fv_phys_to_dyn(nt, dt, dT, duv, dq);
+      gfr_fv_phys_to_dyn_f90(nf, nt+1, dt, fT.data(), fuv.data(), ffq.data());
+      gfr.run_fv_phys_to_dyn(nt, dt, dT, duv, dfq);
 #     pragma message "fv_to_dyn DSS"
     }
   }
@@ -681,14 +681,17 @@ static void test_fv_phys_to_dyn (Session& s, const int nf, const int ftype) {
       thv_s(g::pack2real(forcing.m_fvtheta), s.nelemd, NP, NP, g::num_lev_aligned);
     const g::EVU<Real*****>
       q_s(g::pack2real(tracers.Q), s.nelemd, tracers.Q.extent_int(1), NP, NP, g::num_lev_aligned),
+      fq_s(g::pack2real(tracers.fq), s.nelemd, tracers.fq.extent_int(1), NP, NP, g::num_lev_aligned),
       uv_s(g::pack2real(forcing.m_fm), s.nelemd, 3, NP, NP, g::num_lev_aligned);
 
     const auto thv = cmvdc(thv_s);
     const auto q = cmvdc(q_s);
+    const auto fq = cmvdc(fq_s);
     const auto uv = cmvdc(uv_s);
 
     int nerr = 0;
-    cmp_dyn_data_f90(g::num_lev_aligned, q.extent_int(1), thv.data(), uv.data(), q.data(), &nerr);
+    cmp_dyn_data_f90(g::num_lev_aligned, q.extent_int(1), thv.data(), uv.data(), q.data(),
+                     fq.data(), &nerr);
     REQUIRE(nerr == 0);
   }
 

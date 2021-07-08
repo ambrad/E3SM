@@ -67,9 +67,9 @@ struct GllFvRemapImpl {
 
     Real w_ff;
     ExecView<Real**>
-      fv_spheremp,   // (nelemd,nf2), gfr%w_ff * gfr%fv_metdet
-      g2f_remapd,    // (nf2,np2)
-      f2g_remapd;    // (np2,nf2)
+      fv_metdet,   // (nelemd,nf2)
+      g2f_remapd,  // (nf2,np2)
+      f2g_remapd;  // (np2,nf2)
     ExecView<Real****>
       D, Dinv,     // (nelemd,np2,2,2)
       D_f, Dinv_f; // (nelemd,nf2,2,2)
@@ -149,9 +149,8 @@ struct GllFvRemapImpl {
    */
   template <typename AT, typename D1T, typename D2T, typename XT, typename WT, typename YT>
   static KOKKOS_FUNCTION void
-  remapd (const MT& team,
-          const int m, const int n, const int nlev, // range of x,y fastest dim
-          const AT& A, const D1T& d1, const D2T& d2,
+  remapd (const MT& team, const int m, const int n, const int nlev, // range of x,y fastest dim
+          const AT& A, const Real s1, const D1T& d1, const Real s2, const D2T& d2,
           const XT& x, const YT& w, const WT& y) {
     assert(A.extent_int(0) >= m && A.extent_int(1) >= n);
     assert(d1.extent_int(0) >= n); assert(d2.extent_int(0) >= m);
@@ -162,13 +161,13 @@ struct GllFvRemapImpl {
     const auto ttrm = Kokkos::TeamThreadRange(team, m);
     const auto tvr = Kokkos::ThreadVectorRange(team, nlev);
     parallel_for( ttrn,   [&] (const int i) {
-      parallel_for(tvr,   [&] (const int k) { w(i,k) = x(i,k) * d1(i); }); });
+      parallel_for(tvr,   [&] (const int k) { w(i,k) = x(i,k) * (s1 * d1(i)); }); });
     team.team_barrier();
     parallel_for( ttrm,   [&] (const int i) {
       parallel_for(tvr,   [&] (const int k) { y(i,k) = 0; });
       for (int j = 0; j < n; ++j)
         parallel_for(tvr, [&] (const int k) { y(i,k) += A(i,j) * w(j,k); });
-      parallel_for(tvr,   [&] (const int k) { y(i,k) /= d2(i); }); });
+      parallel_for(tvr,   [&] (const int k) { y(i,k) /= s2 * d2(i); }); });
   }
 
   /* Compute (1-based indexing)
@@ -197,11 +196,9 @@ struct GllFvRemapImpl {
             typename AT, typename D1T, typename D2T, typename DinvT, typename DT,
             typename XT, typename WT, typename YT>
   static KOKKOS_FUNCTION void
-  remapd (const MT& team,
-          const int m, const int n, const int nlev,
-          const AT& A, const D1T& d1, const D2T& d2,
-          const DinvT& Dinv, const DT& D,
-          const XT& x, const WT& w, const YT& y) {
+  remapd (const MT& team, const int m, const int n, const int nlev, const AT& A,
+          const Real s1, const D1T& d1, const Real s2, const D2T& d2,
+          const DinvT& Dinv, const DT& D, const XT& x, const WT& w, const YT& y) {
     using Kokkos::parallel_for;
     const auto ttrn  = Kokkos::TeamThreadRange(team,   n);
     const auto ttrm  = Kokkos::TeamThreadRange(team,   m);
@@ -214,8 +211,8 @@ struct GllFvRemapImpl {
       int i21, i22; remapd_idx_order<x_idx_dof_d>(i, 1, i21, i22);
       parallel_for(tvr, [&] (const int k) {
         const auto x1 = x(i11,i12,k), x2 = x(i21,i22,k);
-        w(i11,i12,k) = (Dinv(i,0,0)*x1 + Dinv(i,0,1)*x2) * d1(i);
-        w(i21,i22,k) = (Dinv(i,1,0)*x1 + Dinv(i,1,1)*x2) * d1(i);
+        w(i11,i12,k) = (Dinv(i,0,0)*x1 + Dinv(i,0,1)*x2) * (s1 * d1(i));
+        w(i21,i22,k) = (Dinv(i,1,0)*x1 + Dinv(i,1,1)*x2) * (s1 * d1(i));
       });
     });
     team.team_barrier();
@@ -228,7 +225,7 @@ struct GllFvRemapImpl {
         int xj1, xj2; remapd_idx_order<x_idx_dof_d>(j, d, xj1, xj2);
         parallel_for(tvr, [&] (const int k) { y(yi1,yi2,k) += A(i,j) * w(xj1,xj2,k); });
       }
-      parallel_for(tvr, [&] (const int k) { y(yi1,yi2,k) /= d2(i); });
+      parallel_for(tvr, [&] (const int k) { y(yi1,yi2,k) /= s2 * d2(i); });
     });
     team.team_barrier();
     parallel_for(ttrm, [&] (const int i) {
@@ -249,14 +246,15 @@ struct GllFvRemapImpl {
         min_q* norm(dp q - dp q*, 1)
          st    spheremp'(dp q*) = spheremp'(dp q)
                qmin < q* < qmax
-     Operate on DOF indices 0:n-1 and level pack indices 0:nlev-1.
+     where spheremp = s geo. Operate on DOF indices 0:n-1 and level pack indices
+     0:nlev-1.
    */
   template <typename CR1, typename V1, typename CV2, typename V2, typename VQ>
   static KOKKOS_FUNCTION void
   limiter_clip_and_sum (const MT& team, const int n, const int nlev,
-                        const CR1& spheremp, const V1& qmin, const V1& qmax,
+                        const Real s, const CR1& geo, const V1& qmin, const V1& qmax,
                         const CV2& dp, const V2& wrk, const VQ& q) {
-    assert(spheremp.extent_int(0) >= n);
+    assert(geo.extent_int(0) >= n);
     assert(qmin.extent_int(0) >= nlev); assert(qmax.extent_int(0) >= nlev);
     assert(dp .extent_int(0) >= n && dp .extent_int(1) >= nlev);
     assert(wrk.extent_int(0) >= n && wrk.extent_int(1) >= nlev);
@@ -268,7 +266,7 @@ struct GllFvRemapImpl {
         // violate a bound.
         Scalar mass(0), qmass(0);
         for (int i = 0; i < n; ++i) {
-          c(i,k) = spheremp(i)*dp(i,k);
+          c(i,k) = (s*geo(i))*dp(i,k);
           mass  += c(i,k);
           qmass += c(i,k)*q(i,k);
         }
