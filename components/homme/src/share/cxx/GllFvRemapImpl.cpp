@@ -187,7 +187,6 @@ g2f_mixing_ratio (const KernelVariables& kv, const int np2, const int nf2, const
   const auto ttrg = Kokkos::TeamThreadRange(kv.team, np2);
   const auto ttrf = Kokkos::TeamThreadRange(kv.team, nf2);
   const auto tvr  = Kokkos::ThreadVectorRange(kv.team, nlev);
-  const int iq = kv.iq;
 
   // Linearly remap qdp GLL->FV. w2 holds q_f at end of this block.
   parallel_for( ttrg, [&] (const int i) {
@@ -304,7 +303,7 @@ void GllFvRemapImpl
 
     const auto all = Kokkos::ALL();
     const auto rw1 = Kokkos::subview(m_data.buf1[0], kv.team_idx, all, all, all);
-    const auto rw2 = Kokkos::subview(m_data.buf1[2], kv.team_idx, all, all, all);
+    const auto rw2 = Kokkos::subview(m_data.buf1[1], kv.team_idx, all, all, all);
     
     const EVU<const Real*> fv_metdet_ie(&fv_metdet(ie,0), nf2),
       gll_metdet_ie(&gll_metdet(ie,0,0), np2);
@@ -392,42 +391,45 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
     KernelVariables kv(team, qsize, m_tu_ne);
     const auto ie = kv.ie, iq = kv.iq;
     const auto ttrf = Kokkos::TeamThreadRange(kv.team, nf2);
-    const auto ttrg = Kokkos::ThreadVectorRange(kv.team, np2);
+    const auto ttrg = Kokkos::TeamThreadRange(kv.team, np2);
     const auto tvr  = Kokkos::ThreadVectorRange(kv.team, nlevpk);
     const auto all = Kokkos::ALL();
 
     const auto rw1 = Kokkos::subview(m_data.buf1[0], kv.team_idx, all, all, all);
-    const auto rw2 = Kokkos::subview(m_data.buf1[2], kv.team_idx, all, all, all);
+    const auto rw2 = Kokkos::subview(m_data.buf1[1], kv.team_idx, all, all, all);
     const auto r2w = Kokkos::subview(m_data.buf2[0], kv.team_idx, all, all, all, all);
 
     const EVU<const Real*> fv_metdet_ie(&fv_metdet(ie,0), nf2),
       gll_metdet_ie(&gll_metdet(ie,0,0), np2);
     const EVU<const Scalar**> dp_fv_ie(&dp_fv(ie,0,0,0), nf2, nlevpk);
 
+    // Get limiter bounds.
+    const EVU<Scalar**> qf_ie(&r2w(1,0,0,0), nf2, nlevpk);
+    parallel_for( ttrf, [&] (const int i) {
+        parallel_for(tvr, [&] (const int k) { qf_ie(i,k) = q(ie,i,iq,k); }); });
+    calc_extrema(kv, nf2, nlevpk, qf_ie,
+                 EVU<Scalar*>(&qlim(ie,iq,0,0), nlevpk), EVU<Scalar*>(&qlim(ie,iq,1,0), nlevpk));
     // FV Q_ten
     //   GLL Q0 -> FV Q0
-    const EVU<Scalar**> qf_ie(r2w.data(), nf2, nlevpk);
-    const EVU<const Scalar[NP*NP][NUM_LEV]> dp_g_ie(&dp_g(ie,timeidx,0,0,0));
+    const EVU<Scalar**> dqf_ie(&r2w(0,0,0,0), nf2, nlevpk);
+    const EVU<const Scalar[NP*NP][NUM_LEV]>
+      dp_g_ie(&dp_g(ie,timeidx,0,0,0)), qg_ie(&q_g(ie,iq,0,0,0));
     g2f_mixing_ratio(
-      kv, np2, nf2, nlevpk, g2f_remapd, gll_metdet_ie, w_ff, fv_metdet_ie, dp_g_ie, dp_fv_ie,
-      EVU<const Scalar[NP*NP][NUM_LEV]>(&q_g(ie,iq,0,0,0)),
+      kv, np2, nf2, nlevpk, g2f_remapd, gll_metdet_ie,
+      w_ff, fv_metdet_ie, dp_g_ie, dp_fv_ie, qg_ie,
       EVU<Scalar[NP*NP][NUM_LEV]>(rw1.data()), EVU<Scalar[NP*NP][NUM_LEV]>(rw2.data()),
-      0, EVU<Scalar***>(qf_ie.data(), nf2, 1, nlevpk));
+      0, EVU<Scalar***>(dqf_ie.data(), nf2, 1, nlevpk));
     //   FV Q_ten = FV Q1 - FV Q0
     parallel_for( ttrf, [&] (const int i) {
-      parallel_for(tvr, [&] (const int k) { qf_ie(i,k) = q(ie,iq,i,k) - qf_ie(i,k); }); });
+      parallel_for(tvr, [&] (const int k) { dqf_ie(i,k) = qf_ie(i,k) - dqf_ie(i,k); }); });
     //   GLL Q_ten
     const EVU<Scalar[NP*NP][NUM_LEV]> dqg_ie(rw2.data());
     f2g_scalar_dp(kv, nf2, np2, nlevpk, f2g_remapd, fv_metdet_ie, gll_metdet_ie,
-                  dp_fv_ie, dp_g_ie, qf_ie, EVU<Scalar[NP*NP][NUM_LEV]>(rw1.data()), dqg_ie);
+                  dp_fv_ie, dp_g_ie, dqf_ie, EVU<Scalar[NP*NP][NUM_LEV]>(rw1.data()), dqg_ie);
     //   GLL Q1
     const EVU<Scalar[NP*NP][NUM_LEV]> fq_ie(&fq(ie,iq,0,0,0));
-    const EVU<const Scalar[NP*NP][NUM_LEV]> qg_ie(&q_g(ie,iq,0,0,0));
     parallel_for( ttrg, [&] (const int i) {
       parallel_for(tvr, [&] (const int k) { fq_ie(i,k) = qg_ie(i,k) + dqg_ie(i,k); }); });
-    // Get limiter bounds.
-    calc_extrema(kv, nf2, nlevpk, qf_ie,
-                 EVU<Scalar*>(&qlim(ie,iq,0,0), nlevpk), EVU<Scalar*>(&qlim(ie,iq,1,0), nlevpk));
   };
   parallel_for(m_tp_ne_qsize, feq);
 

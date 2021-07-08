@@ -212,7 +212,7 @@ contains
                               elem(ie)%state%Q(j,i,k,iq), q(k,j,i,iq,ie)
                       end if                      
                    end if
-                   if (elem(ie)%derived%FQ(j,i,k,iq) /= q(k,j,i,iq,ie)) then
+                   if (elem(ie)%derived%FQ(j,i,k,iq) /= fq(k,j,i,iq,ie)) then
                       nerr = nerr+1
                       if (nerr < outmax) then
                          print '(a,i4,i3,i2,i2,i3,es18.10,es18.10)', &
