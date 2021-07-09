@@ -668,7 +668,7 @@ static void test_fv_phys_to_dyn (Session& s, const int nf, const int ftype) {
     for (int nt = 0; nt < NUM_TIME_LEVELS; ++nt) {
       gfr_fv_phys_to_dyn_f90(nf, nt+1, dt, fT.data(), fuv.data(), ffq.data());
       gfr.run_fv_phys_to_dyn(nt, dt, dT, duv, dfq);
-#     pragma message "fv_to_dyn DSS"
+      gfr.run_fv_phys_to_dyn_dss();
     }
   }
 

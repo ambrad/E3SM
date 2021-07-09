@@ -26,11 +26,12 @@ GllFvRemapImpl::GllFvRemapImpl ()
     m_elements(Context::singleton().get<Elements>()),
     m_state(m_elements.m_state),
     m_derived(m_elements.m_derived),
+    m_forcing(Context::singleton().get<ElementsForcing>()),
     m_geometry(Context::singleton().get<ElementsGeometry>()),
     m_tracers(Context::singleton().get<Tracers>()),
-    m_sphere_ops(Context::singleton().get<SphereOperators>()),
     m_tp_ne(1,1,1), m_tu_ne(m_tp_ne), // throwaway settings
-    m_tp_ne_qsize(1,1,1), m_tu_ne_qsize(m_tp_ne_qsize) // throwaway settings
+    m_tp_ne_qsize(1,1,1), m_tu_ne_qsize(m_tp_ne_qsize), // throwaway settings
+    m_tp_ne_dss(1,1,1), m_tu_ne_dss(m_tp_ne_dss) // throwaway settings
 {
   nslot = calc_nslot(m_geometry.num_elems());
 }
@@ -41,13 +42,14 @@ void GllFvRemapImpl::reset (const SimulationParams& params) {
   m_data.qsize = params.qsize;
   Errors::runtime_check(m_data.qsize > 0, "GllFvRemapImpl requires qsize > 0");
   m_data.nelemd = num_elems;
+  m_data.n_dss_fld = m_data.qsize + 2 + 1;
 
   m_tp_ne = Homme::get_default_team_policy<ExecSpace>(m_data.nelemd);
   m_tp_ne_qsize = Homme::get_default_team_policy<ExecSpace>(m_data.nelemd * m_data.qsize);
+  m_tp_ne_dss = Homme::get_default_team_policy<ExecSpace>(m_data.nelemd * m_data.n_dss_fld);
   m_tu_ne = TeamUtils<ExecSpace>(m_tp_ne);
   m_tu_ne_qsize = TeamUtils<ExecSpace>(m_tp_ne_qsize);
-
-  m_sphere_ops.allocate_buffers(m_tu_ne_qsize);
+  m_tu_ne_dss = TeamUtils<ExecSpace>(m_tp_ne_dss);
 
   if (Context::singleton().get<Connectivity>().get_comm().root())
     printf("gfr> nelemd %d qsize %d\n",
@@ -76,6 +78,17 @@ void GllFvRemapImpl::init_boundary_exchanges () {
   assert(m_data.qsize > 0); // after reset() called
 
   auto& c = Context::singleton();
+
+  {
+    auto bm_exchange = c.get<MpiBuffersManagerMap>()[MPI_EXCHANGE];
+    m_dss_be = std::make_shared<BoundaryExchange>();
+    m_dss_be->set_buffers_manager(bm_exchange);
+    m_dss_be->set_num_fields(0, 0, m_data.n_dss_fld);
+    m_dss_be->register_field(m_tracers.fq, m_data.qsize, 0);
+    m_dss_be->register_field(m_forcing.m_fm, 2, 0); // omit vertical
+    m_dss_be->register_field(m_forcing.m_ft);
+    m_dss_be->registration_completed();
+  }
 
   {
     auto bm_exchange_minmax = c.get<MpiBuffersManagerMap>()[MPI_EXCHANGE_MIN_MAX];
@@ -519,6 +532,31 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
     }
   };
   parallel_for(m_tp_ne_qsize, geq);
+}
+
+void GllFvRemapImpl::run_fv_phys_to_dyn_dss () {
+  const int np2 = GllFvRemapImpl::np2;
+  const int nlevpk = num_lev_pack;
+  const int n_dss_fld = m_data.n_dss_fld;
+  const int qsize = m_data.qsize;
+  const auto gll_spheremp = m_geometry.m_spheremp;
+  const auto fq = m_tracers.fq;
+  const auto fm = m_forcing.m_fm;
+  const auto ft = m_forcing.m_ft;
+  const auto f = KOKKOS_LAMBDA (const MT& team) {
+    const int ie  = team.league_rank() / n_dss_fld;
+    const int idx = team.league_rank() % n_dss_fld;
+    const auto ttrg = Kokkos::TeamThreadRange(team, np2);
+    const auto tvr  = Kokkos::ThreadVectorRange(team, nlevpk);
+    const EVU<const Real*> s(&gll_spheremp(ie,0,0), np2);
+    const evus2 f_ie((idx  < qsize     ? &fq(ie,idx,      0,0,0) :
+                      idx == qsize + 2 ? &ft(ie,          0,0,0) :
+                      /**/               &fm(ie,idx-qsize,0,0,0)),
+                     np2, nlevpk);
+    loop_ik(ttrg, tvr, [&] (int i, int k) { f_ie(i,k) *= s(i); });
+  };
+  Kokkos::parallel_for(m_tp_ne_dss, f);
+  m_dss_be->exchange(m_geometry.m_rspheremp);
 }
 
 } // namespace Homme

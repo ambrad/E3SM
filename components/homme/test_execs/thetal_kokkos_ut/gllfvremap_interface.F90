@@ -169,7 +169,7 @@ contains
   subroutine gfr_fv_phys_to_dyn_f90(nf, nt, dt, T, uv, q) bind(c)
     use thetal_test_interface, only: hvcoord
     use hybrid_mod, only: hybrid_t, hybrid_create
-    use gllfvremap_mod, only: gfr_fv_phys_to_dyn, gfr_get_nphys
+    use gllfvremap_mod, only: gfr_fv_phys_to_dyn, gfr_get_nphys, gfr_f2g_dss
 
     integer (c_int), value, intent(in) :: nf, nt
     real (c_double), value, intent(in) :: dt
@@ -182,6 +182,7 @@ contains
 
     hybrid = hybrid_create(par, 0, 1)
     call gfr_fv_phys_to_dyn(hybrid, nt, dt, hvcoord, elem, 1, nelemd, T, uv, q)
+    call gfr_f2g_dss(hybrid, elem, 1, nelemd)
   end subroutine gfr_fv_phys_to_dyn_f90
 
   subroutine cmp_dyn_data_f90(nk, nq, thv, uv, q, fq, nerr) bind(c)

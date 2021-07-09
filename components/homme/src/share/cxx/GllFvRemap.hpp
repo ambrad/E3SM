@@ -53,6 +53,7 @@ public:
                           const Phys3T& q);
   void run_fv_phys_to_dyn(const int time_idx, const Real dt,
                           const CPhys2T& T, const CPhys3T& uv, const CPhys3T& q);
+  void run_fv_phys_to_dyn_dss();
 
 private:
   std::unique_ptr<GllFvRemapImpl> m_impl;

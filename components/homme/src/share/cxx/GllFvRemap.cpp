@@ -70,5 +70,7 @@ void GllFvRemap
   m_impl->run_fv_phys_to_dyn(time_idx, dt, T, uv, q);
 }
 
+void GllFvRemap::run_fv_phys_to_dyn_dss () { m_impl->run_fv_phys_to_dyn_dss(); }
+
 } // Namespace Homme
 

@@ -59,7 +59,7 @@ struct GllFvRemapImpl {
   using Buf2 = ExecViewUnmanaged<Scalar*[2][NP][NP][NUM_LEV_P]>;
 
   struct Data {
-    int nelemd, qsize, nf2;
+    int nelemd, qsize, nf2, n_dss_fld;
 
     static constexpr int nbuf1 = 2, nbuf2 = 1;
     Buf1 buf1[nbuf1];
@@ -83,16 +83,16 @@ struct GllFvRemapImpl {
   const Elements m_elements;
   const ElementsState m_state;
   const ElementsDerivedState m_derived;
+  const ElementsForcing m_forcing;
   const ElementsGeometry m_geometry;
   const Tracers m_tracers;
-  SphereOperators m_sphere_ops;
   int nslot;
   Data m_data;
 
-  TeamPolicy m_tp_ne, m_tp_ne_qsize;
-  TeamUtils<ExecSpace> m_tu_ne, m_tu_ne_qsize;
+  TeamPolicy m_tp_ne, m_tp_ne_qsize, m_tp_ne_dss;
+  TeamUtils<ExecSpace> m_tu_ne, m_tu_ne_qsize, m_tu_ne_dss;
 
-  std::shared_ptr<BoundaryExchange> m_extrema_be, m_dss;
+  std::shared_ptr<BoundaryExchange> m_extrema_be, m_dss_be;
 
   GllFvRemapImpl();
 
@@ -115,6 +115,7 @@ struct GllFvRemapImpl {
                           const Phys3T& q);
   void run_fv_phys_to_dyn(const int time_idx, const Real dt,
                           const CPhys2T& T, const CPhys3T& uv, const CPhys3T& q);
+  void run_fv_phys_to_dyn_dss();
 
   /* Compute pressure level increments on the FV grid given ps on the FV grid.
      Directly projecting dp_gll to dp_fv disagrees numerically with the loop in
