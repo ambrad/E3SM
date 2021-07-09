@@ -74,8 +74,7 @@ contains
     integer (c_int), value, intent(in) :: nf, ftype_in
 
     ftype = ftype_in
-    print *, '!!!!!!! gfr_init_f90: check 0; switch to 2 when ready !!!!!!!'
-    call gfr_init(par, elem, nf, 0, .false.)
+    call gfr_init(par, elem, nf, 2, .false.)
   end subroutine gfr_init_f90
   
   subroutine gfr_finish_f90(nf) bind(c)
