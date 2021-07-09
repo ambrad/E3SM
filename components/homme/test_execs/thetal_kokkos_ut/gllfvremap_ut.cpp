@@ -423,11 +423,12 @@ static void test_remapds (Random& r, const int m, const int n, const int nlev) {
   }
 }
 
-template <typename V1, typename V2, typename V2q>
+template <typename V1O, typename V2O, typename V1s, typename V1, typename V2, typename V2q>
 static void
-assert_limiter_properties (const int n, const int nlev, const V1& spheremp,
+assert_limiter_properties (const int n, const int nlev, const V1s& spheremp,
+                           const V1O& qmin_orig, const V1O& qmax_orig,
                            const V1& qmin, const V1& qmax,
-                           const V2& dp, const V2& qorig, const V2q& q,
+                           const V2& dp, const V2O& qorig, const V2q& q,
                            const bool too_tight) {
   static const auto eps = std::numeric_limits<Real>::epsilon();
   const int n2 = n*n;
@@ -442,9 +443,13 @@ assert_limiter_properties (const int n, const int nlev, const V1& spheremp,
       if (q(i,k) != qorig(i,k)) ++noteq;
     }
     REQUIRE(almost_equal(qm0, qm, 1e2*eps));
-    if (too_tight && k % 2 == 1)
+    if (too_tight && k % 2 == 1) {
       for (int i = 1; i < n2; ++i)
         REQUIRE(almost_equal(q(i,k), q(0,k), 1e2*eps));
+    } else {
+      REQUIRE(equal(qmin(k), qmin_orig(k)));
+      REQUIRE(equal(qmax(k), qmax_orig(k)));
+    }
   }
   REQUIRE(noteq > 0);
 }
@@ -459,16 +464,16 @@ static void test_limiter (const int nlev, const int n, Random& r, const bool too
 
   const ExecView<Real*> spheremp_d("spheremp", n2);
   const ExecView<Scalar*> qmin_p("qmin", nlevpk), qmax_p("qmax", nlevpk);
-  const ExecView<Scalar**> dp_p("dp", n2, nlevpk), qorig_p("qorig", n2, nlevpk),
-    q_p("q", n2, nlevpk), wrk_p("wrk", n2, nlevpk);
-  const ExecView<Real*> qmin_d(g::pack2real(qmin_p), nlevsk),
-    qmax_d(g::pack2real(qmax_p), nlevsk);
-  const ExecView<Real**> dp_d(g::pack2real(dp_p), n2, nlevsk),
-    qorig_d(g::pack2real(qorig_p), n2, nlevsk), q_d(g::pack2real(q_p), n2, nlevsk);
+  const ExecView<Scalar**> dp_p("dp", n2, nlevpk), q_p("q", n2, nlevpk), wrk_p("wrk", n2, nlevpk);
+  const ExecView<Real*> qmin_d(g::pack2real(qmin_p), nlevsk), qmax_d(g::pack2real(qmax_p), nlevsk);
+  const ExecView<Real**> dp_d(g::pack2real(dp_p), n2, nlevsk), q_d(g::pack2real(q_p), n2, nlevsk);
+
+  const HostViewManaged<Real*> qmin_orig("qmin_orig", nlevsk), qmax_orig("qmax_orig", nlevsk);
+  const HostViewManaged<Real**> qorig("qorig", n2, nlevsk);
 
   const auto spheremp = cmv(spheremp_d);
   const auto qmin = cmv(qmin_d), qmax = cmv(qmax_d);
-  const auto dp = cmv(dp_d), qorig = cmv(qorig_d), q = cmv(q_d);
+  const auto dp = cmv(dp_d), q = cmv(q_d);
 
   for (int k = 0; k < nlev; ++k) {
     Real mass = 0, qmass = 0;
@@ -490,24 +495,29 @@ static void test_limiter (const int nlev, const int n, Random& r, const bool too
       qmin(k) = 0.5*(q0 + qmin(k));
       qmax(k) = 0.5*(q0 + qmax(k));
     }
+    qmin_orig(k) = qmin(k);
+    qmax_orig(k) = qmax(k);
   }
 
   deep_copy(spheremp_d, spheremp);
   deep_copy(qmin_d, qmin); deep_copy(qmax_d, qmax);
-  deep_copy(dp_d, dp); deep_copy(qorig_d, qorig); deep_copy(q_d, q);
+  deep_copy(dp_d, dp); deep_copy(q_d, q);
 
   // F90 limiter properties.
+  CA1d qminf90("qminf90", nlevsk), qmaxf90("qmaxf90", nlevsk);
   CA2d qf90("q", n2, nlevsk);
-  deep_copy(qf90, qorig);
+  deep_copy(qf90, qorig); deep_copy(qminf90, qmin_orig); deep_copy(qmaxf90, qmax_orig);
   CA1d dpk("dpk", n2), qk("qk", n2);
   for (int k = 0; k < nlev; ++k) {
     for (int i = 0; i < n2; ++i) dpk(i) = dp(i,k);
     for (int i = 0; i < n2; ++i) qk(i) = qf90(i,k);
-    limiter1_clip_and_sum_f90(n, spheremp.data(), &qmin(k), &qmax(k), dpk.data(),
+    limiter1_clip_and_sum_f90(n, spheremp.data(), &qminf90(k), &qmaxf90(k), dpk.data(),
                               qk.data());
     for (int i = 0; i < n2; ++i) qf90(i,k) = qk(i);
   }
-  assert_limiter_properties(n, nlev, spheremp, qmin, qmax, dp, qorig, qf90, too_tight);
+  assert_limiter_properties(n, nlev, spheremp,
+                            qmin_orig, qmax_orig, qminf90, qmaxf90,
+                            dp, qorig, qf90, too_tight);
 
   // C++ limiter properties.
   Kokkos::parallel_for(
@@ -515,15 +525,49 @@ static void test_limiter (const int nlev, const int n, Random& r, const bool too
     KOKKOS_LAMBDA (const g::MT& team) {
       g::limiter_clip_and_sum(team, n2, nlevpk, 1, spheremp_d, qmin_p, qmax_p, dp_p,
                               wrk_p, q_p); });
-  deep_copy(q, q_d);
-  assert_limiter_properties(n, nlev, spheremp, qmin, qmax, dp, qorig, q, too_tight);
+  deep_copy(q, q_d); deep_copy(qmin, qmin_d); deep_copy(qmax, qmax_d);
+  assert_limiter_properties(n, nlev, spheremp,
+                            qmin_orig, qmax_orig, qmin, qmax,
+                            dp, qorig, q, too_tight);
 
   // BFB C++ vs F90.
   for (int k = 0; k < nlev; ++k)
     for (int i = 0; i < n2; ++i)
       REQUIRE(equal(qf90(i,k), q(i,k)));
 
-#pragma message "add limiter_clip_and_sum_real1"
+  { // BFB C++ real1 vs pack
+
+    // Run the pack version with dp_p = ones b/c that is what the real1 supports.
+    const ExecView<Scalar**> ones("ones", n2, nlevpk);
+    deep_copy(ones, 1);
+    deep_copy(q_d, qorig); deep_copy(qmin_d, qmin_orig); deep_copy(qmax_d, qmax_orig);
+    Kokkos::parallel_for(
+    Homme::get_default_team_policy<ExecSpace>(1),
+    KOKKOS_LAMBDA (const g::MT& team) {
+      g::limiter_clip_and_sum(team, n2, nlevpk, 1, spheremp_d, qmin_p, qmax_p, ones,
+                              wrk_p, q_p); });
+    deep_copy(q, q_d);
+
+    // Run the real1 version and BFB cmp with the pack version.
+    const ExecView<Real*> q1("q1", n2), qmin1("qmin1", nlevsk), qmax1("qmax1", nlevsk),
+      wrk("wrk", n2);
+    deep_copy(qmin1, qmin_orig); deep_copy(qmax1, qmax_orig);
+    const auto q1h = cmv(q1);
+    const auto qmin1h = cmv(qmin1), qmax1h = cmv(qmax1);
+    for (int k = 0; k < nlev; ++k) {
+      for (int i = 0; i < n2; ++i) q1h(i) = qorig(i,k);
+      deep_copy(q1, q1h);
+      Kokkos::parallel_for(
+        Homme::get_default_team_policy<ExecSpace>(1),
+        KOKKOS_LAMBDA (const g::MT& team) {
+          g::limiter_clip_and_sum_real1(team, n2, 1, spheremp_d, qmin1(k), qmax1(k),
+                                        wrk, q1); });
+      deep_copy(q1h, q1); deep_copy(qmin1h, qmin1); deep_copy(qmax1h, qmax1);
+      for (int i = 0; i < n2; ++i) REQUIRE(equal(q1h(i), q(i,k)));
+      REQUIRE(equal(qmin1h(k), qmin(k)));
+      REQUIRE(equal(qmax1h(k), qmax(k)));
+    }
+  }
 }
 
 static void init_dyn_data (Session& s) {
