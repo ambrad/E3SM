@@ -522,6 +522,8 @@ static void test_limiter (const int nlev, const int n, Random& r, const bool too
   for (int k = 0; k < nlev; ++k)
     for (int i = 0; i < n2; ++i)
       REQUIRE(equal(qf90(i,k), q(i,k)));
+
+#pragma message "add limiter_clip_and_sum_real1"
 }
 
 static void init_dyn_data (Session& s) {
@@ -615,6 +617,7 @@ static void test_dyn_to_fv_phys (Session& s, const int nf, const int ftype) {
     for (int ie = 0; ie < s.nelemd; ++ie)
       for (int i = 0; i < nf2; ++i) {
         REQUIRE(ps(ie,i) == fps(ie,i));
+        REQUIRE(phis(ie,i) == fphis(ie,i));
         for (int k = 0; k < s.nlev; ++k) {
           for (int iq = 0; iq < s.qsize; ++iq)
             REQUIRE(q(ie,i,iq,k) == fq(ie,iq,k,i));

@@ -319,6 +319,55 @@ struct GllFvRemapImpl {
     team_parallel_for_with_linear_index(team, nlev, f);
   }
 
+  template <typename CR1, typename VW, typename VQ>
+  static KOKKOS_FUNCTION void
+  limiter_clip_and_sum_real1 (const MT& team, const int n, const Real s, const CR1& geo,
+                              Real& qmin, Real& qmax, const VW& wrk, const VQ& q) {
+    const auto f = [&] (const int) {
+      auto& c = wrk;
+      Real mass = 0, qmass = 0;
+      for (int i = 0; i < n; ++i) {
+        c(i) = s*geo(i);
+        mass  += c(i);
+        qmass += c(i)*q(i);
+      }
+      if (qmass < qmin*mass) qmin = qmass/mass;
+      if (qmass > qmax*mass) qmax = qmass/mass;
+
+      Real addmass = 0;
+      bool modified = false;
+      // Clip.
+      for (int i = 0; i < n; ++i) {
+        auto& x = q(i);
+        const auto xmin = qmin;
+        const auto xmax = qmax;
+        if (x > xmax) {
+          modified = true;
+          addmass += (x - xmax)*c(i);
+          x = xmax;
+        } else if (x < xmin) {
+          modified = true;
+          addmass += (x - xmin)*c(i);
+          x = xmin;
+        }
+      }
+
+      if ( ! modified) return;
+
+      // Compute weights normalization.
+      Real den = 0;
+      if (addmass > 0) { for (int i = 0; i < n; ++i) den += (qmax - q(i))*c(i); }
+      else             { for (int i = 0; i < n; ++i) den += (q(i) - qmin)*c(i); }
+      if (den == 0) return;
+      // Redistribute mass.
+      for (int i = 0; i < n; ++i) {
+        const auto v = addmass > 0 ? qmax - q(i) : q(i) - qmin;
+        q(i) += addmass*(v/den);
+      }
+    };
+    team_parallel_for_with_linear_index(team, 1, f);
+  }
+
   template <typename View> static KOKKOS_INLINE_FUNCTION
   Real* pack2real (const View& v) { return &(*v.data())[0]; }
   template <typename View> static KOKKOS_INLINE_FUNCTION
