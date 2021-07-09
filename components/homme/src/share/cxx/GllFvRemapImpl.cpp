@@ -463,30 +463,30 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
       const evus_np2_nlev fq_ie(&fq(ie,iq,0,0,0));
       loop_ik(ttrg, tvr, [&] (int i, int k) { fq_ie(i,k) = qg_ie(i,k) + dqg_ie(i,k); });
     } else {
-#if 0
       // FV Q_ten
-      parallel_for( ttrf, [&] (const int i) {
-        parallel_for(tvr, [&] (const int k) { ; }); });
+      const evus2 dqf_ie(&r2w(0,0,0,0), nf2, nlevpk);
+      loop_ik(ttrf, tvr, [&] (int i, int k) { dqf_ie(i,k) = dt*q(ie,i,iq,k)/dp_fv_ie(i,k); });
       // GLL Q_ten
+      const evucs_np2_nlev dp_g_ie(&dp_g(ie,timeidx,0,0,0));
       const evus_np2_nlev dqg_ie(rw2.data());
       f2g_scalar_dp(kv, nf2, np2, nlevpk, f2g_remapd, fv_metdet_ie, gll_metdet_ie,
                     dp_fv_ie, dp_g_ie, dqf_ie, evus_np2_nlev(rw1.data()), dqg_ie);
       // GLL Q1
+      const evucs_np2_nlev qg_ie(&q_g(ie,iq,0,0,0));
       const evus_np2_nlev fq_ie(&fq(ie,iq,0,0,0));
-      parallel_for( ttrg, [&] (const int i) {
-        parallel_for(tvr, [&] (const int k) { fq_ie(i,k) = qg_ie(i,k) + dqg_ie(i,k); }); });
+      loop_ik(ttrg, tvr, [&] (int i, int k) { fq_ie(i,k) = qg_ie(i,k) + dqg_ie(i,k); });
       // GLL Q0 -> FV Q0
-      const evus2 dqf_ie(&r2w(0,0,0,0), nf2, nlevpk);
-      const evucs_np2_nlev dp_g_ie(&dp_g(ie,timeidx,0,0,0)), qg_ie(&q_g(ie,iq,0,0,0));
+      const evus2 qf_ie(&r2w(1,0,0,0), nf2, nlevpk);
       g2f_mixing_ratio(
         kv, np2, nf2, nlevpk, g2f_remapd, gll_metdet_ie,
         w_ff, fv_metdet_ie, dp_g_ie, dp_fv_ie, qg_ie,
         evus_np2_nlev(rw1.data()), evus_np2_nlev(rw2.data()),
-        0, evus3(dqf_ie.data(), nf2, 1, nlevpk));
+        0, evus3(qf_ie.data(), nf2, 1, nlevpk));
       // FV Q1
-
+      loop_ik(ttrg, tvr, [&] (int i, int k) { qf_ie(i,k) += dqf_ie(i,k); });
       // Get limiter bounds.
-#endif
+      calc_extrema(kv, nf2, nlevpk, qf_ie,
+                   evus1(&qlim(ie,iq,0,0), nlevpk), evus1(&qlim(ie,iq,1,0), nlevpk));
     }
   };
   parallel_for(m_tp_ne_qsize, feq);
