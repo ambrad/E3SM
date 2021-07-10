@@ -99,7 +99,7 @@ module gllfvremap_mod
           ! FV subcell areas; FV analogue of GLL elem(ie)%metdet arrays
           fv_metdet(:,:), & ! (nphys*nphys,nelemd)
           ! Vector on ref elem -> vector on sphere
-          D_f(:,:,:,:), & ! (nphys,nphys,2,2,nelemd)
+          D_f(:,:,:,:), & ! (nphys*nphys,2,2,nelemd)
           ! Inverse of D_f
           Dinv_f(:,:,:,:), &
           qmin(:,:,:), qmax(:,:,:), &
@@ -244,7 +244,7 @@ contains
     call gfr_init_f2g_remapd(gfr, R, tau)
 
     allocate(gfr%fv_metdet(nphys2,nelemd), &
-         gfr%D_f(nphys*nphys,2,2,nelemd), gfr%Dinv_f(nphys*nphys,2,2,nelemd), &
+         gfr%D_f(nphys2,2,2,nelemd), gfr%Dinv_f(nphys2,2,2,nelemd), &
          gfr%qmin(nlev,max(1,qsize),nelemd), gfr%qmax(nlev,max(1,qsize),nelemd), &
          gfr%phis(nphys2,nelemd), gfr%center_f(nphys,nphys,nelemd), &
          gfr%corners_f(4,nphys,nphys,nelemd))
@@ -266,7 +266,7 @@ contains
          real (c_double), dimension(nf*nf,nelemd), intent(in) :: fv_metdet
          real (c_double), dimension(np,np,nf_max*nf_max), intent(in) :: g2f_remapd
          real (c_double), dimension(nf_max*nf_max,np,np), intent(in) :: f2g_remapd
-         real (c_double), dimension(nf,nf,2,2,nelemd), intent(in) :: D_f, Dinv_f
+         real (c_double), dimension(nf*nf,2,2,nelemd), intent(in) :: D_f, Dinv_f
        end subroutine init_gllfvremap_c
     end interface
     call init_gllfvremap_c(nelemd, np, gfr%nphys, nphys_max, ftype, &

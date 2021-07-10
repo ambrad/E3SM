@@ -139,7 +139,7 @@ struct GllFvRemapImpl {
   }
 
   /* Compute (1-based indexing)
-         y(1:m,k) = (A (d1 x(1:n,k)))/d2, k = 1:nlev
+         y(1:m,k) = (A (d1 x(1:n,k)))/(s2*d2), k = 1:nlev
      Sizes are min; a dim can have larger size.
          A m by n, d1 n, d2 m
          x n by nlev, w n by nlev, y m by nlev
@@ -149,7 +149,7 @@ struct GllFvRemapImpl {
   template <typename AT, typename D1T, typename D2T, typename XT, typename WT, typename YT>
   static KOKKOS_FUNCTION void
   remapd (const MT& team, const int m, const int n, const int nlev, // range of x,y fastest dim
-          const AT& A, const Real s1, const D1T& d1, const Real s2, const D2T& d2,
+          const AT& A, const D1T& d1, const Real s2, const D2T& d2,
           const XT& x, const YT& w, const WT& y) {
     assert(A.extent_int(0) >= m && A.extent_int(1) >= n);
     assert(d1.extent_int(0) >= n); assert(d2.extent_int(0) >= m);
@@ -159,7 +159,7 @@ struct GllFvRemapImpl {
     const auto ttrn = Kokkos::TeamThreadRange(team, n);
     const auto ttrm = Kokkos::TeamThreadRange(team, m);
     const auto tvr = Kokkos::ThreadVectorRange(team, nlev);
-    loop_ik(ttrn, tvr, [&] (int i, int k) { w(i,k) = x(i,k) * (s1 * d1(i)); });
+    loop_ik(ttrn, tvr, [&] (int i, int k) { w(i,k) = x(i,k) * d1(i); });
     team.team_barrier();
     parallel_for( ttrm,   [&] (const int i) {
       parallel_for(tvr,   [&] (const int k) { y(i,k) = 0; });
@@ -168,19 +168,6 @@ struct GllFvRemapImpl {
       parallel_for(tvr,   [&] (const int k) { y(i,k) /= s2 * d2(i); }); });
   }
 
-  /* Compute (1-based indexing)
-         xt(i,d,k) = Dinv(i,:,:) x(i,:,k), i = 1:n
-         yt(1:m,d,k) = (A (d1 (xt(1:n,d,k))))/d2
-         y(i,d,k) = D(i,:,:) yt(i,:,k),    i = 1:n
-     for k = 1:nlev. Sizes are min; a dim can have larger size.
-         A m by n, d1 n, d2 m
-         Dinv n by 2 by 2, D m by 2 by 2
-         x (n,2) by nlev, w (n,2) by nlev with x indexing, y (m,2) by nlev
-     Permitted aliases:
-         w = x
-     If x_idx_dof_d, then x is indexed as x(i,d,k) and y as y(d,i,k); else the
-     opposite.
-   */
   // Handle (dof,d) vs (d,dof) index ordering.
   template <bool idx_dof_d> static KOKKOS_INLINE_FUNCTION void
   remapd_idx_order (const int& dof, const int& d, int& i1, int& i2)
@@ -190,13 +177,26 @@ struct GllFvRemapImpl {
   template <bool idx_dof_d> static KOKKOS_INLINE_FUNCTION int
   remapd_idx_d   (const int n, const int idx) { return idx_dof_d ? idx % 2 : idx / n; }
 
+  /* Compute (1-based indexing)
+         xt(i,d,k) = Dinv(i,:,:) x(i,:,k), i = 1:n
+         yt(1:m,d,k) = A xt(1:n,d,k)
+         y(i,d,k) = D(i,:,:) (yt(i,:,k)/s2),    i = 1:n
+     for k = 1:nlev. Sizes are min; a dim can have larger size.
+         A m by n,
+         Dinv n by 2 by 2, D m by 2 by 2
+         x (n,2) by nlev, w (n,2) by nlev with x indexing, y (m,2) by nlev
+     Permitted aliases:
+         w = x
+     If x_idx_dof_d, then x is indexed as x(i,d,k) and y as y(d,i,k); else the
+     opposite.
+   */
   template <bool x_idx_dof_d,
-            typename AT, typename D1T, typename D2T, typename DinvT, typename DT,
+            typename AT, typename DinvT, typename DT,
             typename XT, typename WT, typename YT>
   static KOKKOS_FUNCTION void
   remapd (const MT& team, const int m, const int n, const int nlev, const AT& A,
-          const Real s1, const D1T& d1, const Real s2, const D2T& d2,
-          const DinvT& Dinv, const DT& D, const XT& x, const WT& w, const YT& y) {
+          const DinvT& Dinv, const Real s2, const DT& D,
+          const XT& x, const WT& w, const YT& y) {
     using Kokkos::parallel_for;
     const auto ttrn  = Kokkos::TeamThreadRange(team,   n);
     const auto ttrm  = Kokkos::TeamThreadRange(team,   m);
@@ -209,8 +209,8 @@ struct GllFvRemapImpl {
       int i21, i22; remapd_idx_order<x_idx_dof_d>(i, 1, i21, i22);
       parallel_for(tvr, [&] (const int k) {
         const auto x1 = x(i11,i12,k), x2 = x(i21,i22,k);
-        w(i11,i12,k) = (Dinv(i,0,0)*x1 + Dinv(i,0,1)*x2) * (s1 * d1(i));
-        w(i21,i22,k) = (Dinv(i,1,0)*x1 + Dinv(i,1,1)*x2) * (s1 * d1(i));
+        w(i11,i12,k) = Dinv(i,0,0)*x1 + Dinv(i,0,1)*x2;
+        w(i21,i22,k) = Dinv(i,1,0)*x1 + Dinv(i,1,1)*x2;
       });
     });
     team.team_barrier();
@@ -223,7 +223,7 @@ struct GllFvRemapImpl {
         int xj1, xj2; remapd_idx_order<x_idx_dof_d>(j, d, xj1, xj2);
         parallel_for(tvr, [&] (const int k) { y(yi1,yi2,k) += A(i,j) * w(xj1,xj2,k); });
       }
-      parallel_for(tvr, [&] (const int k) { y(yi1,yi2,k) /= s2 * d2(i); });
+      parallel_for(tvr, [&] (const int k) { y(yi1,yi2,k) /= s2; });
     });
     team.team_barrier();
     parallel_for(ttrm, [&] (const int i) {

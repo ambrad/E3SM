@@ -120,13 +120,13 @@ contains
     call calc_dp_fv(nf, hvcoord, ps, dp_fv)
   end subroutine calc_dp_fv_f90
 
-  subroutine init_dyn_data_f90(nk, nq, ps, phis, dp3d, vthdp, omega, q) bind(c)
+  subroutine init_dyn_data_f90(nk, nq, ps, phis, dp3d, vthdp, uv, omega, q) bind(c)
     use element_state, only: timelevels
 
     integer (c_int), value, intent(in) :: nk, nq
     real (c_double), intent(in) :: ps(np,np,timelevels,nelemd), phis(np,np,nelemd), &
          dp3d(nk,np,np,timelevels,nelemd), vthdp(nk,np,np,timelevels,nelemd), &
-         omega(nk,np,np,nelemd), q(nk,np,np,nq,nelemd)
+         uv(nk,np,np,2,timelevels,nelemd), omega(nk,np,np,nelemd), q(nk,np,np,nq,nelemd)
     
     integer :: ie, k, tl, iq
 
@@ -137,6 +137,7 @@ contains
           do tl = 1,timelevels
              elem(ie)%state%dp3d(:,:,k,tl) = dp3d(k,:,:,tl,ie)
              elem(ie)%state%vtheta_dp(:,:,k,tl) = vthdp(k,:,:,tl,ie)
+             elem(ie)%state%v(:,:,:,k,tl) = uv(k,:,:,:,tl,ie)
           end do
           elem(ie)%derived%omega_p(:,:,k) = omega(k,:,:,ie)
           do iq = 1,nq

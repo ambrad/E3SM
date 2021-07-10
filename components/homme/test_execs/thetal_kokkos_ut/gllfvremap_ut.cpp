@@ -49,7 +49,7 @@ extern "C" {
   void gfr_finish_f90();
 
   void init_dyn_data_f90(int nlev_align, int nq, Real* ps, Real* phis, Real* dp3d, Real* vthdp,
-                         Real* omega, Real* q);
+                         Real* uv, Real* omega, Real* q);
   void gfr_dyn_to_fv_phys_f90(int nf, int nt, Real* ps, Real* phis, Real* T, Real* uv,
                               Real* omega_p, Real* q);
 
@@ -287,31 +287,33 @@ static void test_calc_dp_fv (Random& r, const HybridVCoord& hvcoord) {
   
   for (int i = 0; i < ncol; ++i)
     for (int k = 0; k < g::num_phys_lev; ++k)
-      REQUIRE(dp_fv_f90(k,i) == dp_fv_d(i,k));
+      REQUIRE(equal(dp_fv_f90(k,i), dp_fv_d(i,k)));
 }
 
 static void sfwd_remapd (const int m, const int n, const Real* A,
-                         const Real s1, const Real* d1, const Real s2, const Real* d2,
+                         const Real* d1, const Real s2, const Real* d2,
                          const Real* x, Real* y) {
   for (int i = 0; i < m; ++i) {
     y[i] = 0;
     for (int j = 0; j < n; ++j)
-      y[i] += A[n*i + j] * (x[j] * (s1 * d1[j]));
+      y[i] += A[n*i + j] * (x[j] * d1[j]);
     y[i] /= s2 * d2[i];
   }
 }
 
 static void sfwd_remapd (const int m, const int n, const Real* A,
-                         const Real s1, const Real* d1, const Real s2, const Real* d2,
-                         const Real* Dinv, const Real* D,
+                         const Real* Dinv, const Real s2, const Real* D,
                          const Real* x, Real* wx, Real* wy, Real* y) {
+  static const int nones = 128;
+  Real ones[nones]; assert(std::max(m,n) < nones);
+  for (int i = 0; i < nones; ++i) ones[i] = 1;
   for (int d = 0; d < 2; ++d) {
     const int os = d*n;
     for (int i = 0; i < n; ++i)
       wx[os+i] = Dinv[4*i+2*d]*x[i] + Dinv[4*i+2*d+1]*x[n+i];
   }
   for (int d = 0; d < 2; ++d)
-    sfwd_remapd(m, n, A, s1, d1, s2, d2, wx + d*n, wy + d*m);
+    sfwd_remapd(m, n, A, ones, s2, ones, wx + d*n, wy + d*m);
   for (int d = 0; d < 2; ++d) {
     const int os = d*m;
     for (int i = 0; i < m; ++i)
@@ -365,20 +367,19 @@ static void test_remapds (Random& r, const int m, const int n, const int nlev) {
   deep_copy(x_d, x_h);
 
   // Scalar remapd.
-  sfwd_remapd(m, n, A.data(), 3, d1.data(), 5, d2.data(), x.data(), y.data());
+  sfwd_remapd(m, n, A.data(), d1.data(), 5, d2.data(), x.data(), y.data());
   Kokkos::parallel_for(
     Homme::get_default_team_policy<ExecSpace>(1),
     KOKKOS_LAMBDA (const g::MT& team) {
-      g::remapd(team, m, n, nlevpk, A_d, 3, d1_d, 5, d2_d, x_p, x_p, y_p); });
+      g::remapd(team, m, n, nlevpk, A_d, d1_d, 5, d2_d, x_p, x_p, y_p); });
   deep_copy(x_h, x_d); deep_copy(y_h, y_d);
   for (int k = 0; k < nlev; ++k)
     for (int i = 0; i < m; ++i)
-      REQUIRE(y_h(i,k) == y[i]);
+      REQUIRE(equal(y_h(i,k), y[i]));
 
   // Vector remapd.
   std::vector<Real> wx(2*n), wy(2*m);
-  sfwd_remapd(m, n, A.data(), 5, d1.data(), 3, d2.data(), Dinv.data(), D.data(),
-              x.data(), wx.data(), wy.data(), y.data());
+  sfwd_remapd(m, n, A.data(), Dinv.data(), 5, D.data(), x.data(), wx.data(), wy.data(), y.data());
   { // x(i,d), y(d,i)
     const ExecView<Scalar***> x2_p("x2", n+1, 2, nlevpk), y2_p("y", 2, m+2, nlevpk);
     const ExecView<Real***> x2_d(g::pack2real(x2_p), n+1, 2, nlevsk),
@@ -392,13 +393,12 @@ static void test_remapds (Random& r, const int m, const int n, const int nlev) {
     Kokkos::parallel_for(
       Homme::get_default_team_policy<ExecSpace>(1),
       KOKKOS_LAMBDA (const g::MT& team) {
-        g::remapd<true>(team, m, n, nlevpk, A_d, 5, d1_d, 3, d2_d, Dinv_d, D_d,
-                        x2_p, x2_p, y2_p); });
+        g::remapd<true>(team, m, n, nlevpk, A_d, Dinv_d, 5, D_d, x2_p, x2_p, y2_p); });
     deep_copy(y2_h, y2_d);
     for (int k = 0; k < nlev; ++k)
       for (int i = 0; i < m; ++i)
         for (int d = 0; d < 2; ++d)
-          REQUIRE(y2_h(d,i,k) == y[d*m+i]);
+          REQUIRE(equal(y2_h(d,i,k), y[d*m+i]));
   }
   { // x(d,i), y(i,d)
     const ExecView<Scalar***> x2_p("x2", 2, n+1, nlevpk), y2_p("y", m+2, 2, nlevpk);
@@ -413,13 +413,12 @@ static void test_remapds (Random& r, const int m, const int n, const int nlev) {
     Kokkos::parallel_for(
       Homme::get_default_team_policy<ExecSpace>(1),
       KOKKOS_LAMBDA (const g::MT& team) {
-        g::remapd<false>(team, m, n, nlevpk, A_d, 5, d1_d, 3, d2_d, Dinv_d, D_d,
-                         x2_p, x2_p, y2_p); });
+        g::remapd<false>(team, m, n, nlevpk, A_d, Dinv_d, 5, D_d, x2_p, x2_p, y2_p); });
     deep_copy(y2_h, y2_d);
     for (int k = 0; k < nlev; ++k)
       for (int i = 0; i < m; ++i)
         for (int d = 0; d < 2; ++d)
-          REQUIRE(y2_h(i,d,k) == y[d*m+i]);
+          REQUIRE(equal(y2_h(i,d,k), y[d*m+i]));
   }
 }
 
@@ -591,12 +590,15 @@ static void init_dyn_data (Session& s) {
     dp3d_s(g::pack2real(state.m_dp3d), s.nelemd, nt, NP, NP, g::num_lev_aligned),
     vthdp_s(g::pack2real(state.m_vtheta_dp), s.nelemd, nt, NP, NP, g::num_lev_aligned),
     q_s(g::pack2real(tracers.Q), s.nelemd, tracers.Q.extent_int(1), NP, NP, g::num_lev_aligned);
+  const g::EVU<Real******>
+    uv_s(g::pack2real(state.m_v), s.nelemd, nt, 2, NP, NP, g::num_lev_aligned);
 
   const auto phis = cmv(geometry.m_phis);
   const auto omega = cmv(omega_s);
   const auto dp3d = cmv(dp3d_s);
   const auto vthdp = cmv(vthdp_s);
   const auto q = cmv(q_s);
+  const auto uv = cmv(uv_s);
   for (int ie = 0; ie < s.nelemd; ++ie)
     for (int i = 0; i < s.np; ++i)
       for (int j = 0; j < s.np; ++j)
@@ -606,6 +608,7 @@ static void init_dyn_data (Session& s) {
             dp3d(ie,t,i,j,k) = ((hai(k+1) - hai(k))*s.h.ps0 +
                                 (bai(k+1) - bai(k))*ps(ie,t,i,j));
             vthdp(ie,t,i,j,k) = s.r.urrng(150, 320)*dp3d(ie,t,i,j,k);
+            for (int d = 0; d < 2; ++d) uv(ie,t,d,i,j,k) = s.r.urrng(-30, 30);
           }
           if (k == 0) phis(ie,i,j) = s.r.urrng(-1000, 10000);
           omega(ie,i,j,k) = s.r.urrng(-10, 10);
@@ -617,9 +620,10 @@ static void init_dyn_data (Session& s) {
   deep_copy(dp3d_s, dp3d);
   deep_copy(vthdp_s, vthdp);
   deep_copy(q_s, q);
+  deep_copy(uv_s, uv);
   
   init_dyn_data_f90(g::num_lev_aligned, q.extent_int(1), ps.data(), phis.data(), dp3d.data(),
-                    vthdp.data(), omega.data(), q.data());
+                    vthdp.data(), uv.data(), omega.data(), q.data());
 }
 
 static void test_dyn_to_fv_phys (Session& s, const int nf, const int ftype) {
@@ -660,11 +664,13 @@ static void test_dyn_to_fv_phys (Session& s, const int nf, const int ftype) {
 
     for (int ie = 0; ie < s.nelemd; ++ie)
       for (int i = 0; i < nf2; ++i) {
-        REQUIRE(ps(ie,i) == fps(ie,i));
+        REQUIRE(equal(ps(ie,i), fps(ie,i)));
         REQUIRE(phis(ie,i) == fphis(ie,i));
         for (int k = 0; k < s.nlev; ++k) {
           for (int iq = 0; iq < s.qsize; ++iq)
-            REQUIRE(q(ie,i,iq,k) == fq(ie,iq,k,i));
+            REQUIRE(equal(q(ie,i,iq,k), fq(ie,iq,k,i)));
+          for (int d = 0; d < 2; ++d)
+            REQUIRE(equal(uv(ie,i,d,k), fuv(ie,k,d,i)));
         }
       }
   }

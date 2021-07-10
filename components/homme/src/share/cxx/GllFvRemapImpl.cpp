@@ -10,11 +10,14 @@ namespace Homme {
 
 typedef ExecViewUnmanaged<      Scalar[NP*NP][NUM_LEV]> evus_np2_nlev;
 typedef ExecViewUnmanaged<const Scalar[NP*NP][NUM_LEV]> evucs_np2_nlev;
+typedef ExecViewUnmanaged<      Scalar[2][NP*NP][NUM_LEV]> evus_2_np2_nlev;
+typedef ExecViewUnmanaged<const Scalar[2][NP*NP][NUM_LEV]> evucs_2_np2_nlev;
 typedef ExecViewUnmanaged<Scalar*  > evus1;
 typedef ExecViewUnmanaged<Scalar** > evus2;
 typedef ExecViewUnmanaged<Scalar***> evus3;
-typedef ExecViewUnmanaged<Real* > evur1;
-typedef ExecViewUnmanaged<Real**> evur2;
+typedef ExecViewUnmanaged<Real*  > evur1;
+typedef ExecViewUnmanaged<Real** > evur2;
+typedef ExecViewUnmanaged<Real***> evur3;
 typedef ExecViewUnmanaged<const Real*  > evucr1;
 typedef ExecViewUnmanaged<const Real** > evucr2;
 
@@ -126,7 +129,7 @@ void GllFvRemapImpl
     ffv_metdet(fv_metdet_r, nf2, d.nelemd);
   const FV<const Real****>
     fD_f(D_f_r, nf2, 2, 2, d.nelemd),
-    fDinv_f(Dinv_f_r, nf2, 2, 2, d.nelemd);
+    fDinv_f(Dinv_f_r, nf, 2, 2, d.nelemd);
 
   d.w_ff = Real(4)/nf2;
 
@@ -161,12 +164,12 @@ void GllFvRemapImpl
         for (int i = 0; i < np; ++i)
           for (int j = 0; j < np; ++j) {
             const auto k = np*i + j;
-            D   (ie,k,d0,d1) = cD   (ie,d0,d1,i,j);
-            Dinv(ie,k,d0,d1) = cDinv(ie,d0,d1,i,j);
+            D   (ie,k,d0,d1) = cD   (ie,d1,d0,i,j); // reverse d0,d1 in my use case
+            Dinv(ie,k,d0,d1) = cDinv(ie,d1,d0,i,j);
           }
         for (int k = 0; k < nf2; ++k) {
-          D_f   (ie,k,d0,d1) = fD_f   (ie,k,d0,d1);
-          Dinv_f(ie,k,d0,d1) = fDinv_f(ie,k,d0,d1);
+          D_f   (ie,k,d0,d1) = fD_f   (k,d0,d1,ie); // reverse d0,d1
+          Dinv_f(ie,k,d0,d1) = fDinv_f(k,d0,d1,ie);
         }
       }
   }
@@ -259,7 +262,7 @@ g2f_mixing_ratio (const KernelVariables& kv, const int np2, const int nf2, const
 
   // Linearly remap qdp GLL->FV. w2 holds q_f at end of this block.
   g::loop_ik(ttrg, tvr, [&] (int i, int k) { w1(i,k) = dpg(i,k)*qg(i,k); });
-  g::remapd(kv.team, nf2, np2, nlev, g2f_remap, 1, geog, sf, geof, w1, w1, w2);
+  g::remapd(kv.team, nf2, np2, nlev, g2f_remap, geog, sf, geof, w1, w1, w2);
   g::loop_ik(ttrf, tvr, [&] (int i, int k) { w2(i,k) /= dpf(i,k); });
 
   // Compute extremal q values in element on GLL grid. Use qf as tmp space.
@@ -286,7 +289,7 @@ f2g_scalar_dp (const KernelVariables& kv, const int nf2, const int np2, const in
   const int iq = kv.iq;
 
   g::loop_ik(ttrf, tvr, [&] (int i, int k) { w1(i,k) = dpf(i,k)*qf(i,k); });
-  g::remapd(kv.team, np2, nf2, nlev, f2g_remap, 1, geof, 1, geog, w1, w1, qg);
+  g::remapd(kv.team, np2, nf2, nlev, f2g_remap, geof, 1, geog, w1, w1, qg);
   g::loop_ik(ttrg, tvr, [&] (int i, int k) { qg(i,k) /= dpg(i,k); });
 }
 
@@ -316,7 +319,7 @@ void GllFvRemapImpl
           omegas.extent_int(2)/packn);
   VPhys3T
     uv(real2pack(uvs), uvs.extent_int(0), uvs.extent_int(1), uvs.extent_int(2),
-       uvs.extent_int(2)/packn),
+       uvs.extent_int(3)/packn),
     q(real2pack(qs), qs.extent_int(0), qs.extent_int(1), qs.extent_int(2),
       qs.extent_int(3)/packn);
 
@@ -327,6 +330,9 @@ void GllFvRemapImpl
   const auto fv_metdet = m_data.fv_metdet;
   const auto w_ff = m_data.w_ff;
   const auto g2f_remapd = m_data.g2f_remapd;
+  const auto Dinv = m_data.Dinv;
+  const auto D_f = m_data.D_f;
+  const auto v = m_state.m_v;
   const auto hvcoord = m_hvcoord;
 
   const auto fe = KOKKOS_LAMBDA (const MT& team) {
@@ -335,6 +341,7 @@ void GllFvRemapImpl
     
     const auto all = Kokkos::ALL();
     const auto rw1 = Kokkos::subview(m_data.buf1[0], kv.team_idx, all, all, all);
+    const auto r2w = Kokkos::subview(m_data.buf2[0], kv.team_idx, all, all, all, all);
     const EVU<Real*> rw1s(pack2real(rw1), nreal_per_slot1);
     
     const evucr1 fv_metdet_ie(&fv_metdet(ie,0), nf2),
@@ -343,8 +350,7 @@ void GllFvRemapImpl
     // ps and dp_fv
     const evus2 dp_fv_ie(&dp_fv(ie,0,0,0), nf2, nlevpk); {
       const evur2 ps_v_ie(&ps_v(ie,timeidx,0,0), np2, 1), wrk(rw1s.data(), np2, 1);
-      remapd(team, nf2, np2, 1, g2f_remapd,
-             1, gll_metdet_ie, w_ff, fv_metdet_ie,
+      remapd(team, nf2, np2, 1, g2f_remapd, gll_metdet_ie, w_ff, fv_metdet_ie,
              ps_v_ie, wrk, evur2(&ps(ie,0), nf2, 1));
       calc_dp_fv(team, hvcoord, nf2, nlevpk, EVU<Real*>(&ps(ie,0), nf2), dp_fv_ie);
     }
@@ -354,8 +360,7 @@ void GllFvRemapImpl
       Real qmin, qmax;
       calc_extrema_real1(kv, np2, phis_g_ie, qmin, qmax);
       const evur2 wrk(rw1s.data(), np2, 1), phis_f_ie(&phis(ie,0), nf2, 1);
-      remapd(team, nf2, np2, 1, g2f_remapd,
-             1, gll_metdet_ie, w_ff, fv_metdet_ie,
+      remapd(team, nf2, np2, 1, g2f_remapd, gll_metdet_ie, w_ff, fv_metdet_ie,
              evucr2(phis_g_ie.data(), np2, 1), wrk, phis_f_ie);
       limiter_clip_and_sum_real1(team, nf2, w_ff, fv_metdet_ie, qmin, qmax,
                                  evur1(rw1s.data(), nf2), evur1(phis_f_ie.data(), nf2));
@@ -364,6 +369,10 @@ void GllFvRemapImpl
     // T
 
     // (u,v)
+    remapd<false>(team, nf2, np2, nlevpk, g2f_remapd,
+                  evur3(&Dinv(ie,0,0,0), np2, 2, 2), w_ff, evur3(&D_f(ie,0,0,0), nf2, 2, 2),
+                  evucs_2_np2_nlev(&v(ie,timeidx,0,0,0,0)), evus_2_np2_nlev(r2w.data()),
+                  evus3(&uv(ie,0,0,0), uv.extent_int(1), uv.extent_int(2), uv.extent_int(3)));
 
     // omega
 
@@ -448,8 +457,7 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
     const evus2 dp_fv_ie(&dp_fv(ie,0,0,0), nf2, nlevpk); {
       const evur2 ps_v_ie(&ps_v(ie,timeidx,0,0), np2, 1), w1(rw1s.data(), np2, 1);
       Real* const w2 = rw1s.data() + np2;
-      remapd(team, nf2, np2, 1, g2f_remapd,
-             1, gll_metdet_ie, w_ff, fv_metdet_ie,
+      remapd(team, nf2, np2, 1, g2f_remapd, gll_metdet_ie, w_ff, fv_metdet_ie,
              ps_v_ie, w1, evur2(w2, nf2, 1));
       calc_dp_fv(team, hvcoord, nf2, nlevpk, EVU<Real*>(w2, nf2), dp_fv_ie);
     }
