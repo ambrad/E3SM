@@ -15,6 +15,7 @@ typedef ExecViewUnmanaged<const Scalar[2][NP*NP][NUM_LEV]> evucs_2_np2_nlev;
 typedef ExecViewUnmanaged<Scalar*  > evus1;
 typedef ExecViewUnmanaged<Scalar** > evus2;
 typedef ExecViewUnmanaged<Scalar***> evus3;
+typedef ExecViewUnmanaged<const Scalar***> evucs3;
 typedef ExecViewUnmanaged<Real*  > evur1;
 typedef ExecViewUnmanaged<Real** > evur2;
 typedef ExecViewUnmanaged<Real***> evur3;
@@ -128,17 +129,17 @@ void GllFvRemapImpl
     ff2g_remapd(f2g_remapd_r, nf2_max, np2),
     ffv_metdet(fv_metdet_r, nf2, d.nelemd);
   const FV<const Real****>
-    fD_f(D_f_r, nf2, 2, 2, d.nelemd),
-    fDinv_f(Dinv_f_r, nf, 2, 2, d.nelemd);
+    fD_f   (D_f_r,    nf2, 2, 2, d.nelemd),
+    fDinv_f(Dinv_f_r, nf2, 2, 2, d.nelemd);
 
   d.w_ff = Real(4)/nf2;
 
   d.g2f_remapd = decltype(d.g2f_remapd)("g2f_remapd", nf2, np2);
   d.f2g_remapd = decltype(d.f2g_remapd)("f2g_remapd", np2, nf2);
   d.fv_metdet = decltype(d.fv_metdet)("fv_metdet", d.nelemd, nf2);
-  d.D = decltype(d.D)("D", d.nelemd, np2, 2, 2);
-  d.Dinv = decltype(d.D)("Dinv", d.nelemd, np2, 2, 2);
-  d.D_f = decltype(d.D)("D_f", d.nelemd, nf2, 2, 2);
+  d.D =      decltype(d.D)("D",      d.nelemd, np2, 2, 2);
+  d.Dinv =   decltype(d.D)("Dinv",   d.nelemd, np2, 2, 2);
+  d.D_f =    decltype(d.D)("D_f",    d.nelemd, nf2, 2, 2);
   d.Dinv_f = decltype(d.D)("Dinv_f", d.nelemd, nf2, 2, 2);
 
   const auto g2f_remapd = create_mirror_view(d.g2f_remapd);
@@ -440,6 +441,9 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
   const auto fv_metdet = m_data.fv_metdet;
   const auto g2f_remapd = m_data.g2f_remapd;
   const auto f2g_remapd = m_data.f2g_remapd;
+  const auto fm = m_forcing.m_fm;
+  const auto Dinv_f = m_data.Dinv_f;
+  const auto D_g = m_data.D;
   const auto hvcoord = m_hvcoord;
 
   const auto fe = KOKKOS_LAMBDA (const MT& team) {
@@ -448,6 +452,7 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
 
     const auto all = Kokkos::ALL();
     const auto rw1 = Kokkos::subview(m_data.buf1[0], kv.team_idx, all, all, all);
+    const auto r2w = Kokkos::subview(m_data.buf2[0], kv.team_idx, all, all, all, all);
     const EVU<Real*> rw1s(pack2real(rw1), nreal_per_slot1);
     
     const evucr1 fv_metdet_ie(&fv_metdet(ie,0), nf2),
@@ -463,6 +468,10 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
     }
 
     // (u,v)
+    remapd<true>(team, np2, nf2, nlevpk, f2g_remapd,
+                 evur3(&Dinv_f(ie,0,0,0), nf2, 2, 2), 1, evur3(&D_g(ie,0,0,0), np2, 2, 2),
+                 evucs3(&uv(ie,0,0,0), nf2, 2, nlevpk), evus3(r2w.data(), nf2, 2, nlevpk),
+                 EVU<Scalar[3][NP*NP][NUM_LEV]>(&fm(ie,0,0,0,0)));
 
     // T
 
@@ -492,7 +501,7 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
     if (q_adjustment) {
       // Get limiter bounds.
       const evus2 qf_ie(&r2w(1,0,0,0), nf2, nlevpk);
-      loop_ik(ttrg, tvr, [&] (int i, int k) { qf_ie(i,k) = q(ie,i,iq,k); });
+      loop_ik(ttrf, tvr, [&] (int i, int k) { qf_ie(i,k) = q(ie,i,iq,k); });
       calc_extrema(kv, nf2, nlevpk, qf_ie,
                    evus1(&qlim(ie,iq,0,0), nlevpk), evus1(&qlim(ie,iq,1,0), nlevpk));
       // FV Q_ten

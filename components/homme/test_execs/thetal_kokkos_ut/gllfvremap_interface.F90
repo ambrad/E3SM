@@ -186,8 +186,6 @@ contains
   end subroutine gfr_fv_phys_to_dyn_f90
 
   subroutine cmp_dyn_data_f90(nk, nq, thv, uv, q, fq, nerr) bind(c)
-    use element_state, only: timelevels
-
     integer (c_int), value, intent(in) :: nk, nq
     real (c_double), intent(in) :: thv(nk,np,np,nelemd), &
          uv(nk,np,np,3,nelemd), q(nk,np,np,nq,nelemd), fq(nk,np,np,nq,nelemd)
@@ -195,14 +193,22 @@ contains
 
     integer, parameter :: outmax = 20
 
-    integer :: ie, i, j, k, tl, iq
+    integer :: ie, i, j, k, iq, d
 
     nerr = 0
     do ie = 1,nelemd
        do i = 1,np
           do j = 1,np
              do k = 1,nlev
-                do tl = 1,timelevels
+                do d = 1,2
+                   if (elem(ie)%derived%FM(j,i,d,k) /= uv(k,j,i,d,ie)) then
+                      nerr = nerr+1
+                      if (nerr < outmax) then
+                         print '(a,i4,i3,i2,i2,i3,es18.10,es18.10)', &
+                              'uv: ie,d,i,j,k',ie,d,i,j,k, &
+                              elem(ie)%derived%FM(j,i,d,k), uv(k,j,i,d,ie)
+                      end if
+                   end if
                 end do
                 do iq = 1,qsize
                    if (elem(ie)%state%Q(j,i,k,iq) /= q(k,j,i,iq,ie)) then
@@ -211,7 +217,7 @@ contains
                          print '(a,i4,i3,i2,i2,i3,es18.10,es18.10)', &
                               'q: ie,iq,i,j,k',ie,iq,i,j,k, &
                               elem(ie)%state%Q(j,i,k,iq), q(k,j,i,iq,ie)
-                      end if                      
+                      end if
                    end if
                    if (elem(ie)%derived%FQ(j,i,k,iq) /= fq(k,j,i,iq,ie)) then
                       nerr = nerr+1

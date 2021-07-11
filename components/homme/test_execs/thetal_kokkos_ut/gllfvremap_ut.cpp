@@ -665,7 +665,7 @@ static void test_dyn_to_fv_phys (Session& s, const int nf, const int ftype) {
     for (int ie = 0; ie < s.nelemd; ++ie)
       for (int i = 0; i < nf2; ++i) {
         REQUIRE(equal(ps(ie,i), fps(ie,i)));
-        REQUIRE(phis(ie,i) == fphis(ie,i));
+        REQUIRE(equal(phis(ie,i), fphis(ie,i)));
         for (int k = 0; k < s.nlev; ++k) {
           for (int iq = 0; iq < s.qsize; ++iq)
             REQUIRE(equal(q(ie,i,iq,k), fq(ie,iq,k,i)));
