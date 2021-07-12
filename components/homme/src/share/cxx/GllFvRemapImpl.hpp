@@ -170,7 +170,7 @@ struct GllFvRemapImpl {
 
   // Handle (dof,d) vs (d,dof) index ordering.
   template <bool idx_dof_d> static KOKKOS_INLINE_FUNCTION void
-  remapd_idx_order (const int& dof, const int& d, int& i1, int& i2)
+  remapd_idx_order (const int dof, const int d, int& i1, int& i2)
   { if (idx_dof_d) { i1 = dof; i2 = d; } else { i1 = d; i2 = dof; } }
   template <bool idx_dof_d> static KOKKOS_INLINE_FUNCTION int
   remapd_idx_dof (const int n, const int idx) { return idx_dof_d ? idx / 2 : idx % n; }

@@ -54,7 +54,7 @@ extern "C" {
                               Real* omega_p, Real* q);
 
   void gfr_fv_phys_to_dyn_f90(int nf, int nt, Real dt, Real* T, Real* uv, Real* q);
-  void cmp_dyn_data_f90(int nlev_align, int nq, Real* thv, Real* uv, Real* q, Real* fq, int* nerr);
+  void cmp_dyn_data_f90(int nlev_align, int nq, Real* ft, Real* fm, Real* q, Real* fq, int* nerr);
 } // extern "C"
 
 using CA1d = Kokkos::View<Real*,     Kokkos::LayoutRight, Kokkos::HostSpace>;
@@ -718,11 +718,10 @@ static void test_fv_phys_to_dyn (Session& s, const int nf, const int ftype) {
     const auto& c = Context::singleton();
     auto& gfr = c.get<GllFvRemap>();
 
-    for (int nt = 0; nt < NUM_TIME_LEVELS; ++nt) {
-      gfr_fv_phys_to_dyn_f90(nf, nt+1, dt, fT.data(), fuv.data(), ffq.data());
-      gfr.run_fv_phys_to_dyn(nt, dt, dT, duv, dfq);
-      gfr.run_fv_phys_to_dyn_dss();
-    }
+    const int nt = 1;
+    gfr_fv_phys_to_dyn_f90(nf, nt+1, dt, fT.data(), fuv.data(), ffq.data());
+    gfr.run_fv_phys_to_dyn(nt, dt, dT, duv, dfq);
+    gfr.run_fv_phys_to_dyn_dss();
   }
 
   {
@@ -731,19 +730,20 @@ static void test_fv_phys_to_dyn (Session& s, const int nf, const int ftype) {
     const auto tracers = c.get<Tracers>();
 
     const g::EVU<Real****>
-      thv_s(g::pack2real(forcing.m_fvtheta), s.nelemd, NP, NP, g::num_lev_aligned);
+      ft_s(g::pack2real(forcing.m_ft), s.nelemd, NP, NP, g::num_lev_aligned);
     const g::EVU<Real*****>
-      q_s(g::pack2real(tracers.Q), s.nelemd, tracers.Q.extent_int(1), NP, NP, g::num_lev_aligned),
+      q_s( g::pack2real(tracers.Q), s.nelemd, tracers.Q.extent_int(1), NP, NP, g::num_lev_aligned),
       fq_s(g::pack2real(tracers.fq), s.nelemd, tracers.fq.extent_int(1), NP, NP, g::num_lev_aligned),
-      uv_s(g::pack2real(forcing.m_fm), s.nelemd, 3, NP, NP, g::num_lev_aligned);
+      fm_s(g::pack2real(forcing.m_fm), s.nelemd, forcing.m_fm.extent_int(1), NP, NP,
+           g::num_lev_aligned);
 
-    const auto thv = cmvdc(thv_s);
     const auto q = cmvdc(q_s);
+    const auto ft = cmvdc(ft_s);
     const auto fq = cmvdc(fq_s);
-    const auto uv = cmvdc(uv_s);
+    const auto fm = cmvdc(fm_s);
 
     int nerr = 0;
-    cmp_dyn_data_f90(g::num_lev_aligned, q.extent_int(1), thv.data(), uv.data(), q.data(),
+    cmp_dyn_data_f90(g::num_lev_aligned, q.extent_int(1), ft.data(), fm.data(), q.data(),
                      fq.data(), &nerr);
     REQUIRE(nerr == 0);
   }

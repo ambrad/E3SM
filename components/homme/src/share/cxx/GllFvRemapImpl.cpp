@@ -444,6 +444,7 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
   const auto fm = m_forcing.m_fm;
   const auto Dinv_f = m_data.Dinv_f;
   const auto D_g = m_data.D;
+  const auto ft = m_forcing.m_ft;
   const auto hvcoord = m_hvcoord;
 
   const auto fe = KOKKOS_LAMBDA (const MT& team) {
@@ -474,7 +475,8 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
                  EVU<Scalar[3][NP*NP][NUM_LEV]>(&fm(ie,0,0,0,0)));
 
     // T
-
+    const evus_np2_nlev ft_ie(&ft(ie,0,0,0));
+    //todo
   };
   parallel_for(m_tp_ne, fe);
 
@@ -514,7 +516,7 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
         evus_np2_nlev(rw1.data()), evus_np2_nlev(rw2.data()),
         0, evus3(dqf_ie.data(), nf2, 1, nlevpk));
       //   FV Q_ten = FV Q1 - FV Q0
-      loop_ik(ttrg, tvr, [&] (int i, int k) { dqf_ie(i,k) = qf_ie(i,k) - dqf_ie(i,k); });
+      loop_ik(ttrf, tvr, [&] (int i, int k) { dqf_ie(i,k) = qf_ie(i,k) - dqf_ie(i,k); });
       // GLL Q_ten
       const evus_np2_nlev dqg_ie(rw2.data());
       f2g_scalar_dp(kv, nf2, np2, nlevpk, f2g_remapd, fv_metdet_ie, gll_metdet_ie,
@@ -543,7 +545,7 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
         evus_np2_nlev(rw1.data()), evus_np2_nlev(rw2.data()),
         0, evus3(qf_ie.data(), nf2, 1, nlevpk));
       // FV Q1
-      loop_ik(ttrg, tvr, [&] (int i, int k) { qf_ie(i,k) += dqf_ie(i,k); });
+      loop_ik(ttrf, tvr, [&] (int i, int k) { qf_ie(i,k) += dqf_ie(i,k); });
       // Get limiter bounds.
       calc_extrema(kv, nf2, nlevpk, qf_ie,
                    evus1(&qlim(ie,iq,0,0), nlevpk), evus1(&qlim(ie,iq,1,0), nlevpk));

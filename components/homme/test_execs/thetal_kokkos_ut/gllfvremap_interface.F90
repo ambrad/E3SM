@@ -185,10 +185,10 @@ contains
     call gfr_f2g_dss(hybrid, elem, 1, nelemd)
   end subroutine gfr_fv_phys_to_dyn_f90
 
-  subroutine cmp_dyn_data_f90(nk, nq, thv, uv, q, fq, nerr) bind(c)
+  subroutine cmp_dyn_data_f90(nk, nq, ft, fm, q, fq, nerr) bind(c)
     integer (c_int), value, intent(in) :: nk, nq
-    real (c_double), intent(in) :: thv(nk,np,np,nelemd), &
-         uv(nk,np,np,3,nelemd), q(nk,np,np,nq,nelemd), fq(nk,np,np,nq,nelemd)
+    real (c_double), intent(in) :: ft(nk,np,np,nelemd), &
+         fm(nk,np,np,3,nelemd), q(nk,np,np,nq,nelemd), fq(nk,np,np,nq,nelemd)
     integer (c_int), intent(out) :: nerr
 
     integer, parameter :: outmax = 20
@@ -200,13 +200,21 @@ contains
        do i = 1,np
           do j = 1,np
              do k = 1,nlev
+                if (.false. .and. elem(ie)%derived%FT(j,i,k) /= ft(k,j,i,ie)) then
+                   nerr = nerr+1
+                   if (nerr < outmax) then
+                      print '(a,i4,i2,i2,i3,es18.10,es18.10)', &
+                           'ft: ie,i,j,k',ie,i,j,k, &
+                           elem(ie)%derived%FT(j,i,k), ft(k,j,i,ie)
+                   end if
+                end if
                 do d = 1,2
-                   if (elem(ie)%derived%FM(j,i,d,k) /= uv(k,j,i,d,ie)) then
+                   if (elem(ie)%derived%FM(j,i,d,k) /= fm(k,j,i,d,ie)) then
                       nerr = nerr+1
                       if (nerr < outmax) then
-                         print '(a,i4,i3,i2,i2,i3,es18.10,es18.10)', &
-                              'uv: ie,d,i,j,k',ie,d,i,j,k, &
-                              elem(ie)%derived%FM(j,i,d,k), uv(k,j,i,d,ie)
+                         print '(a,i4,i2,i2,i2,i3,es18.10,es18.10)', &
+                              'fm: ie,d,i,j,k',ie,d,i,j,k, &
+                              elem(ie)%derived%FM(j,i,d,k), fm(k,j,i,d,ie)
                       end if
                    end if
                 end do
