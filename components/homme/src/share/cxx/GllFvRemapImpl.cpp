@@ -334,6 +334,7 @@ void GllFvRemapImpl
   const auto Dinv = m_data.Dinv;
   const auto D_f = m_data.D_f;
   const auto v = m_state.m_v;
+  const auto omega_g = m_derived.m_omega_p;
   const auto hvcoord = m_hvcoord;
 
   const auto fe = KOKKOS_LAMBDA (const MT& team) {
@@ -376,7 +377,9 @@ void GllFvRemapImpl
                   evus3(&uv(ie,0,0,0), uv.extent_int(1), uv.extent_int(2), uv.extent_int(3)));
 
     // omega
-
+    remapd(team, nf2, np2, nlevpk, g2f_remapd, gll_metdet_ie, w_ff, fv_metdet_ie,
+           evucs_np2_nlev(&omega_g(ie,0,0,0)), evus_np2_nlev(rw1.data()),
+           evus2(&omega(ie,0,0), nf2, nlevpk));
   };
   Kokkos::parallel_for(m_tp_ne, fe);
 
