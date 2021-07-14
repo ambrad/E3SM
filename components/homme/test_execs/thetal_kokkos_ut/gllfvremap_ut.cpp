@@ -12,13 +12,10 @@
 #include "TimeLevel.hpp"
 #include "HybridVCoord.hpp"
 #include "KernelVariables.hpp"
-#include "PhysicalConstants.hpp"
-#include "ReferenceElement.hpp"
-#include "SphereOperators.hpp"
 #include "ElementOps.hpp"
+#include "EquationOfState.hpp"
 #include "profiling.hpp"
 #include "ErrorDefs.hpp"
-#include "VerticalRemapManager.hpp"
 
 #include "utilities/TestUtils.hpp"
 #include "utilities/SyncUtils.hpp"
@@ -48,8 +45,8 @@ extern "C" {
   void gfr_init_hxx();
   void gfr_finish_f90();
 
-  void init_dyn_data_f90(int nlev_align, int nq, Real* ps, Real* phis, Real* dp3d, Real* vthdp,
-                         Real* uv, Real* omega, Real* q);
+  void init_dyn_data_f90(int nlev_align, int nlevp_align, int nq, Real* ps, Real* phis, Real* dp3d,
+                         Real* vthdp, Real* uv, Real* omega, Real* q, Real* phinh_i);
   void gfr_dyn_to_fv_phys_f90(int nf, int nt, Real* ps, Real* phis, Real* T, Real* uv,
                               Real* omega_p, Real* q);
 
@@ -570,6 +567,7 @@ static void test_limiter (const int nlev, const int n, Random& r, const bool too
 }
 
 static void init_dyn_data (Session& s) {
+  using Kokkos::parallel_for;
   using Kokkos::deep_copy;
   using g = GllFvRemapImpl;
 
@@ -603,7 +601,7 @@ static void init_dyn_data (Session& s) {
     for (int i = 0; i < s.np; ++i)
       for (int j = 0; j < s.np; ++j)
         for (int k = 0; k < s.nlev; ++k) {
-          for (int t = 0; t < NUM_TIME_LEVELS; ++t) {
+          for (int t = 0; t < nt; ++t) {
             if (k == 0) ps(ie,t,i,j) = s.h.ps0*(s.r.urrng(0.9, 1.1));
             dp3d(ie,t,i,j,k) = ((hai(k+1) - hai(k))*s.h.ps0 +
                                 (bai(k+1) - bai(k))*ps(ie,t,i,j));
@@ -621,9 +619,46 @@ static void init_dyn_data (Session& s) {
   deep_copy(vthdp_s, vthdp);
   deep_copy(q_s, q);
   deep_copy(uv_s, uv);
+
+  {
+    EquationOfState eos; eos.init(c.get<SimulationParams>().theta_hydrostatic_mode, s.h);
+    ElementOps ops; ops.init(s.h);
+    const auto phis = geometry.m_phis;
+    const auto dp3d = state.m_dp3d;
+    const auto vthdp = state.m_vtheta_dp;
+    const auto phi_i = state.m_phinh_i;
+    const ExecViewManaged<Scalar*[NP][NP][NUM_LEV_P]> p_i("p_i", s.nelemd);
+    const ExecViewManaged<Scalar*[NP][NP][NUM_LEV]> p_m("p_m", s.nelemd);
+    for (int t = 0; t < nt; ++t) {
+      Kokkos::parallel_for(
+        Homme::get_default_team_policy<ExecSpace>(s.nelemd),
+        KOKKOS_LAMBDA (const g::MT& team) {
+          KernelVariables kv(team);
+          const auto ie = kv.ie;
+          parallel_for(
+            Kokkos::TeamThreadRange(team, NP*NP),
+            [&] (const int k) {
+              const auto i = k / NP, j = k % NP;
+              ops.compute_hydrostatic_p(kv, Homme::subview(dp3d,ie,t,i,j),
+                                        Homme::subview(p_i,ie,i,j), Homme::subview(p_m,ie,i,j));
+            });
+          kv.team_barrier();
+          eos.compute_phi_i(kv, Homme::subview(phis,ie), Homme::subview(vthdp,ie,t),
+                            Homme::subview(p_m,ie), Homme::subview(phi_i,ie,t));
+        });
+    }
+  }
+  const g::EVU<Real*****>
+    phinh_i_s(g::pack2real(state.m_phinh_i), s.nelemd, nt, NP, NP, g::num_levp_aligned);
+  const auto phinh_i = cmvdc(phinh_i_s);
   
-  init_dyn_data_f90(g::num_lev_aligned, q.extent_int(1), ps.data(), phis.data(), dp3d.data(),
-                    vthdp.data(), uv.data(), omega.data(), q.data());
+  init_dyn_data_f90(g::num_lev_aligned, g::num_levp_aligned, q.extent_int(1),
+                    ps.data(), phis.data(), dp3d.data(), vthdp.data(), uv.data(),
+                    omega.data(), q.data(), phinh_i.data());
+}
+
+static void test_get_temperature (Session& s) {
+  
 }
 
 static void test_dyn_to_fv_phys (Session& s, const int nf, const int ftype) {
@@ -777,6 +812,8 @@ TEST_CASE ("compose_transport_testing") {
     REQUIRE(nerr == 0);
     run_gfr_test(&nerr);
     REQUIRE(nerr == 0);
+
+    test_get_temperature(s);
 
     for (const int nf : {2,3,4})
       for (const int ftype : {2}) { // dyn_to_fv_phys is independent of ftype

@@ -120,13 +120,14 @@ contains
     call calc_dp_fv(nf, hvcoord, ps, dp_fv)
   end subroutine calc_dp_fv_f90
 
-  subroutine init_dyn_data_f90(nk, nq, ps, phis, dp3d, vthdp, uv, omega, q) bind(c)
+  subroutine init_dyn_data_f90(nk, nkp, nq, ps, phis, dp3d, vthdp, uv, omega, q, phinh_i) bind(c)
     use element_state, only: timelevels
 
-    integer (c_int), value, intent(in) :: nk, nq
+    integer (c_int), value, intent(in) :: nk, nkp, nq
     real (c_double), intent(in) :: ps(np,np,timelevels,nelemd), phis(np,np,nelemd), &
          dp3d(nk,np,np,timelevels,nelemd), vthdp(nk,np,np,timelevels,nelemd), &
-         uv(nk,np,np,2,timelevels,nelemd), omega(nk,np,np,nelemd), q(nk,np,np,nq,nelemd)
+         uv(nk,np,np,2,timelevels,nelemd), omega(nk,np,np,nelemd), q(nk,np,np,nq,nelemd), &
+         phinh_i(nkp,np,np,timelevels,nelemd)
     
     integer :: ie, k, tl, iq
 

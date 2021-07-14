@@ -263,15 +263,20 @@ g2f_mixing_ratio (const KernelVariables& kv, const int np2, const int nf2, const
 
   // Linearly remap qdp GLL->FV. w2 holds q_f at end of this block.
   g::loop_ik(ttrg, tvr, [&] (int i, int k) { w1(i,k) = dpg(i,k)*qg(i,k); });
+  kv.team_barrier();
   g::remapd(kv.team, nf2, np2, nlev, g2f_remap, geog, sf, geof, w1, w1, w2);
+  kv.team_barrier();
   g::loop_ik(ttrf, tvr, [&] (int i, int k) { w2(i,k) /= dpf(i,k); });
+  kv.team_barrier();
 
   // Compute extremal q values in element on GLL grid. Use qf as tmp space.
   const evus1 qmin(&qf(0,iqf,0), nlev), qmax(&qf(1,iqf,0), nlev);
   calc_extrema(kv, np2, nlev, qg, qmin, qmax);
+  kv.team_barrier();
 
   // Apply CAAS to w2, the provisional q_f values.
   g::limiter_clip_and_sum(kv.team, nf2, nlev, sf, geof, qmin, qmax, dpf, w1, w2);
+  kv.team_barrier();
   // Copy to qf array.
   g::loop_ik(ttrf, tvr, [&] (int i, int k) { qf(i,iqf,k) = w2(i,k); });
 }
@@ -290,7 +295,9 @@ f2g_scalar_dp (const KernelVariables& kv, const int nf2, const int np2, const in
   const int iq = kv.iq;
 
   g::loop_ik(ttrf, tvr, [&] (int i, int k) { w1(i,k) = dpf(i,k)*qf(i,k); });
+  kv.team_barrier();
   g::remapd(kv.team, np2, nf2, nlev, f2g_remap, geof, 1, geog, w1, w1, qg);
+  kv.team_barrier();
   g::loop_ik(ttrg, tvr, [&] (int i, int k) { qg(i,k) /= dpg(i,k); });
 }
 
@@ -354,16 +361,20 @@ void GllFvRemapImpl
       const evur2 ps_v_ie(&ps_v(ie,timeidx,0,0), np2, 1), wrk(rw1s.data(), np2, 1);
       remapd(team, nf2, np2, 1, g2f_remapd, gll_metdet_ie, w_ff, fv_metdet_ie,
              ps_v_ie, wrk, evur2(&ps(ie,0), nf2, 1));
+      kv.team_barrier();
       calc_dp_fv(team, hvcoord, nf2, nlevpk, EVU<Real*>(&ps(ie,0), nf2), dp_fv_ie);
+      kv.team_barrier();
     }
 
     { // phis
       const evucr1 phis_g_ie(&phis_g(ie,0,0), np2);
       Real qmin, qmax;
       calc_extrema_real1(kv, np2, phis_g_ie, qmin, qmax);
+      kv.team_barrier();
       const evur2 wrk(rw1s.data(), np2, 1), phis_f_ie(&phis(ie,0), nf2, 1);
       remapd(team, nf2, np2, 1, g2f_remapd, gll_metdet_ie, w_ff, fv_metdet_ie,
              evucr2(phis_g_ie.data(), np2, 1), wrk, phis_f_ie);
+      kv.team_barrier();
       limiter_clip_and_sum_real1(team, nf2, w_ff, fv_metdet_ie, qmin, qmax,
                                  evur1(rw1s.data(), nf2), evur1(phis_f_ie.data(), nf2));
     }
@@ -381,6 +392,7 @@ void GllFvRemapImpl
            evucs_np2_nlev(&omega_g(ie,0,0,0)), evus_np2_nlev(rw1.data()),
            evus2(&omega(ie,0,0), nf2, nlevpk));
   };
+  Kokkos::fence();
   Kokkos::parallel_for(m_tp_ne, fe);
 
   const auto dp_g = m_state.m_dp3d;
@@ -404,6 +416,7 @@ void GllFvRemapImpl
       evus_np2_nlev(rw1.data()), evus_np2_nlev(rw2.data()), iq,
       evus3(&q(ie,0,0,0), q.extent_int(1), q.extent_int(2), q.extent_int(3)));
   };
+  Kokkos::fence();
   Kokkos::parallel_for(m_tp_ne_qsize, feq);
 }
 
@@ -468,7 +481,9 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
       Real* const w2 = rw1s.data() + np2;
       remapd(team, nf2, np2, 1, g2f_remapd, gll_metdet_ie, w_ff, fv_metdet_ie,
              ps_v_ie, w1, evur2(w2, nf2, 1));
+      kv.team_barrier();
       calc_dp_fv(team, hvcoord, nf2, nlevpk, EVU<Real*>(w2, nf2), dp_fv_ie);
+      kv.team_barrier();
     }
 
     // (u,v)
@@ -481,6 +496,7 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
     const evus_np2_nlev ft_ie(&ft(ie,0,0,0));
     //todo
   };
+  Kokkos::fence();
   parallel_for(m_tp_ne, fe);
 
   const auto dp_g = m_state.m_dp3d;
@@ -507,8 +523,10 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
       // Get limiter bounds.
       const evus2 qf_ie(&r2w(1,0,0,0), nf2, nlevpk);
       loop_ik(ttrf, tvr, [&] (int i, int k) { qf_ie(i,k) = q(ie,i,iq,k); });
+      kv.team_barrier();
       calc_extrema(kv, nf2, nlevpk, qf_ie,
                    evus1(&qlim(ie,iq,0,0), nlevpk), evus1(&qlim(ie,iq,1,0), nlevpk));
+      kv.team_barrier();
       // FV Q_ten
       //   GLL Q0 -> FV Q0
       const evus2 dqf_ie(&r2w(0,0,0,0), nf2, nlevpk);
@@ -518,12 +536,15 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
         w_ff, fv_metdet_ie, dp_g_ie, dp_fv_ie, qg_ie,
         evus_np2_nlev(rw1.data()), evus_np2_nlev(rw2.data()),
         0, evus3(dqf_ie.data(), nf2, 1, nlevpk));
+      kv.team_barrier();
       //   FV Q_ten = FV Q1 - FV Q0
       loop_ik(ttrf, tvr, [&] (int i, int k) { dqf_ie(i,k) = qf_ie(i,k) - dqf_ie(i,k); });
+      kv.team_barrier();
       // GLL Q_ten
       const evus_np2_nlev dqg_ie(rw2.data());
       f2g_scalar_dp(kv, nf2, np2, nlevpk, f2g_remapd, fv_metdet_ie, gll_metdet_ie,
                     dp_fv_ie, dp_g_ie, dqf_ie, evus_np2_nlev(rw1.data()), dqg_ie);
+      kv.team_barrier();
       // GLL Q1
       const evus_np2_nlev fq_ie(&fq(ie,iq,0,0,0));
       loop_ik(ttrg, tvr, [&] (int i, int k) { fq_ie(i,k) = qg_ie(i,k) + dqg_ie(i,k); });
@@ -531,15 +552,18 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
       // FV Q_ten
       const evus2 dqf_ie(&r2w(0,0,0,0), nf2, nlevpk);
       loop_ik(ttrf, tvr, [&] (int i, int k) { dqf_ie(i,k) = dt*q(ie,i,iq,k)/dp_fv_ie(i,k); });
+      kv.team_barrier();
       // GLL Q_ten
       const evucs_np2_nlev dp_g_ie(&dp_g(ie,timeidx,0,0,0));
       const evus_np2_nlev dqg_ie(rw2.data());
       f2g_scalar_dp(kv, nf2, np2, nlevpk, f2g_remapd, fv_metdet_ie, gll_metdet_ie,
                     dp_fv_ie, dp_g_ie, dqf_ie, evus_np2_nlev(rw1.data()), dqg_ie);
+      kv.team_barrier();
       // GLL Q1
       const evucs_np2_nlev qg_ie(&q_g(ie,iq,0,0,0));
       const evus_np2_nlev fq_ie(&fq(ie,iq,0,0,0));
       loop_ik(ttrg, tvr, [&] (int i, int k) { fq_ie(i,k) = qg_ie(i,k) + dqg_ie(i,k); });
+      kv.team_barrier();
       // GLL Q0 -> FV Q0
       const evus2 qf_ie(&r2w(1,0,0,0), nf2, nlevpk);
       g2f_mixing_ratio(
@@ -547,13 +571,16 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
         w_ff, fv_metdet_ie, dp_g_ie, dp_fv_ie, qg_ie,
         evus_np2_nlev(rw1.data()), evus_np2_nlev(rw2.data()),
         0, evus3(qf_ie.data(), nf2, 1, nlevpk));
+      kv.team_barrier();
       // FV Q1
       loop_ik(ttrf, tvr, [&] (int i, int k) { qf_ie(i,k) += dqf_ie(i,k); });
+      kv.team_barrier();
       // Get limiter bounds.
       calc_extrema(kv, nf2, nlevpk, qf_ie,
                    evus1(&qlim(ie,iq,0,0), nlevpk), evus1(&qlim(ie,iq,1,0), nlevpk));
     }
   };
+  Kokkos::fence();
   parallel_for(m_tp_ne_qsize, feq);
 
   // Halo exchange extrema data.
@@ -569,6 +596,7 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
     const evucs_np2_nlev qg_ie(&q_g(ie,iq,0,0,0));
     const evus1 qmin(&qlim(ie,iq,0,0), nlevpk), qmax(&qlim(ie,iq,1,0), nlevpk);
     augment_extrema(kv, np2, nlevpk, qg_ie, qmin, qmax);
+    kv.team_barrier();
     // Final GLL Q1, except for DSS.
     const evucr1 gll_spheremp_ie(&gll_spheremp(ie,0,0), np2);
     const evucs_np2_nlev dp_g_ie(&dp_g(ie,timeidx,0,0,0));
@@ -576,6 +604,7 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
     limiter_clip_and_sum(kv.team, np2, nlevpk, 1, gll_spheremp_ie, qmin, qmax, dp_g_ie,
                          evus_np2_nlev(rw1.data()), fq_ie);
     if ( ! q_adjustment) {
+      kv.team_barrier();
       const auto ttrg = Kokkos::TeamThreadRange(kv.team, np2);
       const auto tvr  = Kokkos::ThreadVectorRange(kv.team, nlevpk);
       loop_ik(ttrg, tvr, [&] (int i, int k) {
@@ -583,6 +612,7 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
       });
     }
   };
+  Kokkos::fence();
   parallel_for(m_tp_ne_qsize, geq);
 }
 
@@ -607,6 +637,7 @@ void GllFvRemapImpl::run_fv_phys_to_dyn_dss () {
                      np2, nlevpk);
     loop_ik(ttrg, tvr, [&] (int i, int k) { f_ie(i,k) *= s(i); });
   };
+  Kokkos::fence();
   Kokkos::parallel_for(m_tp_ne_dss, f);
   m_dss_be->exchange(m_geometry.m_rspheremp);
 }
