@@ -33,7 +33,7 @@ contains
     qsize = qsize_in
     ftype = 2
     use_moisture = .true.
-    theta_hydrostatic_mode = .true.
+    theta_hydrostatic_mode = .false.
 
     call init_f90(ne, hyai, hybi, hyam, hybm, dvv, mp, ps0)
     call init_elements_c(nelemd)

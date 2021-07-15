@@ -140,7 +140,7 @@ struct Session {
     p.hypervis_scaling = 0;
     p.transport_alg = 0;
     p.moisture = MoistDry::MOIST;
-    p.theta_hydrostatic_mode = true;
+    p.theta_hydrostatic_mode = false;
     p.params_set = true;
 
     const auto hyai = cmvdc(h.hybrid_ai);
@@ -658,7 +658,41 @@ static void init_dyn_data (Session& s) {
 }
 
 static void test_get_temperature (Session& s) {
+  using g = GllFvRemapImpl;
+  const int nt = NUM_TIME_LEVELS;
   
+  const ExecViewManaged<Scalar*[NUM_TIME_LEVELS][NP][NP][NUM_LEV]> T("T", s.nelemd); {
+    auto& c = Context::singleton();
+    const auto& sp = c.get<SimulationParams>();
+    EquationOfState eos; eos.init(sp.theta_hydrostatic_mode, s.h);
+    ElementOps ops; ops.init(s.h);
+    const bool use_moisture = sp.moisture == MoistDry::MOIST;
+    const auto state = c.get<ElementsState>();
+    const auto tracers = c.get<Tracers>();
+    const auto dp3d = state.m_dp3d;
+    const auto vthdp = state.m_vtheta_dp;
+    const auto phi_i = state.m_phinh_i;
+    const auto q = tracers.Q;
+    const ExecViewManaged<Scalar*[NP][NP][NUM_LEV]> wrk("wrk", s.nelemd), exner("exner", s.nelemd);
+    for (int t = 0; t < nt; ++t) {
+      Kokkos::parallel_for(
+        Homme::get_default_team_policy<ExecSpace>(s.nelemd),
+        KOKKOS_LAMBDA (const g::MT& team) {
+          KernelVariables kv(team);
+          const auto ie = kv.ie;
+          parallel_for(
+            Kokkos::TeamThreadRange(team, NP*NP),
+            [&] (const int k) {
+              const auto i = k / NP, j = k % NP;
+              ops.get_temperature(kv, eos, use_moisture, Homme::subview(dp3d,ie,t,i,j),
+                                  Homme::subview(q,ie,0,i,j), Homme::subview(vthdp,ie,t,i,j),
+                                  Homme::subview(phi_i,ie,t,i,j), Homme::subview(wrk,ie,i,j),
+                                  Homme::subview(exner,ie,i,j), Homme::subview(T,ie,t,i,j));
+            });
+        });
+      
+    }
+  }
 }
 
 static void test_dyn_to_fv_phys (Session& s, const int nf, const int ftype) {
