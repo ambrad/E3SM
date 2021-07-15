@@ -120,14 +120,21 @@ contains
     call calc_dp_fv(nf, hvcoord, ps, dp_fv)
   end subroutine calc_dp_fv_f90
 
-  subroutine get_temperature_f90(ie, nt, T) bind(c)
+  subroutine get_temperature_f90(ie, nt, thm, T) bind(c)
     use thetal_test_interface, only: hvcoord
     use element_ops, only: get_temperature
+    use control_mod, only: theta_hydrostatic_mode
     
     integer (c_int), value, intent(in) :: ie, nt
     real (c_double), intent(out) :: T(np,np,nlev)
+    logical (c_bool), value, intent(in) :: thm
 
+    logical :: thm_save
+
+    thm_save = theta_hydrostatic_mode
+    theta_hydrostatic_mode = thm
     call get_temperature(elem(ie), T(:,:,:), hvcoord, nt)
+    theta_hydrostatic_mode = thm_save
   end subroutine get_temperature_f90
 
   subroutine init_dyn_data_f90(nk, nkp, nq, ps, phis, dp3d, vthdp, uv, omega, q, phinh_i) bind(c)

@@ -32,7 +32,7 @@ extern char** hommexx_catch2_argv;
 extern "C" {
   void limiter1_clip_and_sum_f90(int n, Real* spheremp, Real* qmin, Real* qmax, Real* dp, Real* q);
   void calc_dp_fv_f90(int nf, Real* ps, Real* dp_fv);
-  void get_temperature_f90(int ie, int nf, Real* T);
+  void get_temperature_f90(int ie, int nf, bool theta_hydrostatic_mode, Real* T);
 
   void init_gllfvremap_f90(int ne, const Real* hyai, const Real* hybi, const Real* hyam,
                            const Real* hybm, Real ps0, Real* dvv, Real* mp, int qsize,
@@ -662,58 +662,72 @@ static void test_get_temperature (Session& s) {
   using g = GllFvRemapImpl;
   const int nt = NUM_TIME_LEVELS;
 
-  init_dyn_data(s);
+  for (const bool theta_hydrostatic_mode : {false, true}) {
+    init_dyn_data(s);
   
-  const ExecViewManaged<Scalar*[NUM_TIME_LEVELS][NP][NP][NUM_LEV]> Td("T", s.nelemd); {
-    auto& c = Context::singleton();
-    const auto& sp = c.get<SimulationParams>();
-    EquationOfState eos; eos.init(sp.theta_hydrostatic_mode, s.h);
-    ElementOps ops; ops.init(s.h);
-    const bool use_moisture = sp.moisture == MoistDry::MOIST;
-    const auto state = c.get<ElementsState>();
-    const auto tracers = c.get<Tracers>();
-    const auto dp3d = state.m_dp3d;
-    const auto vthdp = state.m_vtheta_dp;
-    const auto phi_i = state.m_phinh_i;
-    const auto q = tracers.Q;
-    const ExecView<Scalar*[NP][NP][NUM_LEV]> wrk("wrk", s.nelemd), exner("exner", s.nelemd);
-    for (int t = 0; t < nt; ++t) {
-      Kokkos::parallel_for(
-        Homme::get_default_team_policy<ExecSpace>(s.nelemd),
-        KOKKOS_LAMBDA (const g::MT& team) {
-          KernelVariables kv(team);
-          const auto ie = kv.ie;
-          parallel_for(
-            Kokkos::TeamThreadRange(team, NP*NP),
-            [&] (const int k) {
-              const auto i = k / NP, j = k % NP;
-              ops.get_temperature(kv, eos, use_moisture, Homme::subview(dp3d,ie,t,i,j),
-                                  Homme::subview(q,ie,0,i,j), Homme::subview(vthdp,ie,t,i,j),
-                                  Homme::subview(phi_i,ie,t,i,j), Homme::subview(wrk,ie,i,j),
-                                  Homme::subview(exner,ie,i,j), Homme::subview(Td,ie,t,i,j));
-            });
-        });
+    const ExecViewManaged<Scalar*[NUM_TIME_LEVELS][NP][NP][NUM_LEV]> Td("T", s.nelemd); {
+      auto& c = Context::singleton();
+      const auto& sp = c.get<SimulationParams>();
+      EquationOfState eos; eos.init(theta_hydrostatic_mode, s.h);
+      ElementOps ops; ops.init(s.h);
+      const bool use_moisture = sp.moisture == MoistDry::MOIST;
+      const auto state = c.get<ElementsState>();
+      const auto tracers = c.get<Tracers>();
+      const auto dp3d = state.m_dp3d;
+      const auto vthdp = state.m_vtheta_dp;
+      const auto phi_i = state.m_phinh_i;
+      const auto q = tracers.Q;
+      const ExecView<Scalar*[NP][NP][NUM_LEV]> wrk("wrk", s.nelemd), exner("exner", s.nelemd);
+      const ExecView<Scalar*[NP][NP][NUM_LEV_P]> pi("pi", s.nelemd);
+      for (int t = 0; t < nt; ++t) {
+        Kokkos::parallel_for(
+          Homme::get_default_team_policy<ExecSpace>(s.nelemd),
+          KOKKOS_LAMBDA (const g::MT& team) {
+            KernelVariables kv(team);
+            const auto ie = kv.ie;
+            parallel_for(
+              Kokkos::TeamThreadRange(team, NP*NP),
+              [&] (const int ij) {
+                const auto i = ij / NP, j = ij % NP;
+                const auto dp3d_ij = Homme::subview(dp3d,ie,t,i,j);
+                const auto vthdp_ij = Homme::subview(vthdp,ie,t,i,j);
+                const auto wrk_ij = Homme::subview(wrk,ie,i,j);
+                const auto exner_ij = Homme::subview(exner,ie,i,j);
+                if (theta_hydrostatic_mode) {
+                  ops.compute_hydrostatic_p(kv, dp3d_ij, Homme::subview(pi,ie,i,j), exner_ij);
+                  eos.compute_exner(kv, exner_ij, exner_ij);
+                } else {
+                  eos.compute_pnh_and_exner(kv, vthdp_ij, Homme::subview(phi_i,ie,t,i,j), wrk_ij,
+                                            exner_ij);
+                }
+                ops.get_temperature(kv, eos, use_moisture, dp3d_ij, exner_ij,
+                                    vthdp_ij, Homme::subview(q,ie,0,i,j), wrk_ij,
+                                    Homme::subview(Td,ie,t,i,j));
+              });
+          });
+      }
     }
+
+    const CA5d Tf90("Tf90", s.nelemd, nt, s.nlev, s.np, s.np);
+    for (int ie = 0; ie < s.nelemd; ++ie)
+      for (int t = 0; t < nt; ++t)
+        get_temperature_f90(ie+1, t+1, theta_hydrostatic_mode, &Tf90(ie,t,0,0,0));
+
+    const g::EVU<Real*****> Ts(g::pack2real(Td), s.nelemd, nt, NP, NP, g::num_lev_aligned);
+    const auto T = cmvdc(Ts);
+    for (int ie = 0; ie < s.nelemd; ++ie)
+      for (int t = 0; t < nt; ++t)
+        for (int i = 0; i < s.np; ++i)
+          for (int j = 0; j < s.np; ++j)
+            for (int k = 0; k < s.nlev; ++k)
+              REQUIRE(equal(T(ie,t,i,j,k), Tf90(ie,t,k,i,j)));
   }
-
-  const CA5d Tf90("Tf90", s.nelemd, nt, s.nlev, s.np, s.np);
-  for (int ie = 0; ie < s.nelemd; ++ie)
-    for (int t = 0; t < nt; ++t)
-      get_temperature_f90(ie+1, t+1, &Tf90(ie,t,0,0,0));
-
-  const g::EVU<Real*****> Ts(g::pack2real(Td), s.nelemd, nt, NP, NP, g::num_lev_aligned);
-  const auto T = cmvdc(Ts);
-  for (int ie = 0; ie < s.nelemd; ++ie)
-    for (int t = 0; t < nt; ++t)
-      for (int i = 0; i < s.np; ++i)
-        for (int j = 0; j < s.np; ++j)
-          for (int k = 0; k < s.nlev; ++k)
-            REQUIRE(equal(T(ie,t,i,j,k), Tf90(ie,t,k,i,j)));
 }
 
 static void test_dyn_to_fv_phys (Session& s, const int nf, const int ftype) {
   using g = GllFvRemapImpl;
-  
+
+  static const Real eps = std::numeric_limits<Real>::epsilon();
   const int nf2 = nf*nf;
 
   gfr_init_f90(nf, ftype);
@@ -753,6 +767,7 @@ static void test_dyn_to_fv_phys (Session& s, const int nf, const int ftype) {
         REQUIRE(equal(phis(ie,i), fphis(ie,i)));
         for (int k = 0; k < s.nlev; ++k) {
           REQUIRE(equal(omega(ie,i,k), fomega(ie,k,i)));
+          //REQUIRE(equal(T(ie,i,k), fT(ie,k,i)));
           for (int iq = 0; iq < s.qsize; ++iq)
             REQUIRE(equal(q(ie,i,iq,k), fq(ie,iq,k,i)));
           for (int d = 0; d < 2; ++d)
@@ -840,7 +855,7 @@ static void test_fv_phys_to_dyn (Session& s, const int nf, const int ftype) {
 TEST_CASE ("compose_transport_testing") {
   static constexpr Real tol = std::numeric_limits<Real>::epsilon();
 
-  auto& s = Session::singleton(); //try {
+  auto& s = Session::singleton(); try {
     test_get_temperature(s);
     test_calc_dp_fv(s.r, s.h);
     
@@ -874,6 +889,6 @@ TEST_CASE ("compose_transport_testing") {
         printf("ut> f2g nf %d ftype %d\n", nf, ftype);
         test_fv_phys_to_dyn(s, nf, ftype);
       }
-  //} catch (...) {}
+  } catch (...) {}
   Session::delete_singleton();
 }

@@ -5,6 +5,8 @@
  *******************************************************************************/
 
 #include "GllFvRemapImpl.hpp"
+#include "EquationOfState.hpp"
+#include "ElementOps.hpp"
 
 namespace Homme {
 
@@ -121,6 +123,10 @@ void GllFvRemapImpl
     Errors::runtime_abort("GllFvRemap: In physics grid configuratoin nf x nf,"
                           " nf must be > 1.", Errors::err_not_implemented);
 
+  const auto& sp = Context::singleton().get<SimulationParams>();
+  m_data.q_adjustment = sp.ftype != ForcingAlg::FORCING_0;
+  m_data.use_moisture = sp.moisture == MoistDry::MOIST;
+
   const int nf2 = nf*nf, nf2_max = nf_max*nf_max;
   auto& d = m_data;
   d.nf2 = nf2;
@@ -183,11 +189,6 @@ void GllFvRemapImpl
   deep_copy(d.Dinv_f, Dinv_f);
 }
 
-/* todo
-   - add get_temperature to ElementOpts.hpp
-   x compute_hydrostatic_p is already available
-*/
-
 // Min/max of q in each level.
 template <typename TA, typename TE>
 static KOKKOS_FUNCTION void
@@ -247,6 +248,26 @@ augment_extrema (const KernelVariables& kv, const int n, const int nlev,
     });  
 }
 
+// Remap a mixing ratio conservatively.
+template <typename RT, typename GS, typename GT, typename DS, typename DT,
+          typename QS, typename WT, typename QT>
+static KOKKOS_FUNCTION void
+g2f_scalar_dp (const KernelVariables& kv, const int np2, const int nf2, const int nlev,
+               const RT& g2f_remap, const GS& geog, const Real sf, const GT& geof,
+               const DS& dpg, const DT& dpf, const QS& qg, const WT& w1, const QT& qf) {
+  using g = GllFvRemapImpl;
+  using Kokkos::parallel_for;
+  const auto ttrg = Kokkos::TeamThreadRange(kv.team, np2);
+  const auto ttrf = Kokkos::TeamThreadRange(kv.team, nf2);
+  const auto tvr  = Kokkos::ThreadVectorRange(kv.team, nlev);
+
+  g::loop_ik(ttrg, tvr, [&] (int i, int k) { w1(i,k) = dpg(i,k)*qg(i,k); });
+  kv.team_barrier();
+  g::remapd(kv.team, nf2, np2, nlev, g2f_remap, geog, sf, geof, w1, w1, qf);
+  kv.team_barrier();
+  g::loop_ik(ttrf, tvr, [&] (int i, int k) { qf(i,k) /= dpf(i,k); });
+}
+
 // Remap a mixing ratio conservatively and preventing new extrema.
 template <typename RT, typename GS, typename GT, typename DS, typename DT,
           typename QS, typename WT, typename QT>
@@ -261,12 +282,8 @@ g2f_mixing_ratio (const KernelVariables& kv, const int np2, const int nf2, const
   const auto ttrf = Kokkos::TeamThreadRange(kv.team, nf2);
   const auto tvr  = Kokkos::ThreadVectorRange(kv.team, nlev);
 
-  // Linearly remap qdp GLL->FV. w2 holds q_f at end of this block.
-  g::loop_ik(ttrg, tvr, [&] (int i, int k) { w1(i,k) = dpg(i,k)*qg(i,k); });
-  kv.team_barrier();
-  g::remapd(kv.team, nf2, np2, nlev, g2f_remap, geog, sf, geof, w1, w1, w2);
-  kv.team_barrier();
-  g::loop_ik(ttrf, tvr, [&] (int i, int k) { w2(i,k) /= dpf(i,k); });
+  // Linearly remap qdp GLL->FV.
+  g2f_scalar_dp(kv, np2, nf2, nlev, g2f_remap, geog, sf, geof, dpg, dpf, qg, w1, w2);
   kv.team_barrier();
 
   // Compute extremal q values in element on GLL grid. Use qf as tmp space.
@@ -331,6 +348,8 @@ void GllFvRemapImpl
     q(real2pack(qs), qs.extent_int(0), qs.extent_int(1), qs.extent_int(2),
       qs.extent_int(3)/packn);
 
+  const auto dp3d = m_state.m_dp3d;
+  const auto vthdp = m_state.m_vtheta_dp;
   const auto dp_fv = m_derived.m_divdp_proj; // store dp_fv between kernels
   const auto ps_v = m_state.m_ps_v;
   const auto phis_g = m_geometry.m_phis;
@@ -343,6 +362,8 @@ void GllFvRemapImpl
   const auto v = m_state.m_v;
   const auto omega_g = m_derived.m_omega_p;
   const auto hvcoord = m_hvcoord;
+  const bool use_moisture = m_data.use_moisture;
+  const auto q_g = m_tracers.Q;
 
   const auto fe = KOKKOS_LAMBDA (const MT& team) {
     KernelVariables kv(team, m_tu_ne);
@@ -378,9 +399,30 @@ void GllFvRemapImpl
       limiter_clip_and_sum_real1(team, nf2, w_ff, fv_metdet_ie, qmin, qmax,
                                  evur1(rw1s.data(), nf2), evur1(phis_f_ie.data(), nf2));
     }
-
-    // T
-
+#if 0
+    { // T. This is not a BFB conversion of the arithmetic in gllfvremap_mod;
+      // it's more efficient but specific to theta-l.
+      const g::EVU<Scalar[NP][NP][NUM_LEV]> thg(rw1.data()), pmg(rw2.data());
+      const g::EVU<Scalar[NP][NP][NUM_LEV]> w1(&r2w(0,0,0,0));
+      const g::EVU<Scalar*[NUM_LEV]> pmf(&r2w(1,0,0,0), nf2);
+      const auto f1 = [&] (int ij) {
+        using PhysicalConstants;
+        const auto i = ij / NP, j = ij % NP;
+        const auto dp3d_ij = Homme::subview(dp3d,ie,timeidxi,i,j);
+        ops.get_R_star(kv, use_moisture, Homme::subview(q_g,ie,0,i,j), Homme::subview(thg,i,j));
+        parallel_for(tvr, [&] (int k) { thg(i,j,k) = (vthdp(i,j,k)/dp3d_ij(k))*(Rgas/thg(i,j,k)); });
+        ops.compute_hydrostatic_p(kv, dp3d_ij, Homme::subview(w1,i,j), Homme::subview(pmg,ie,i,j));
+      }
+      parallel_for(ttrg, f1);
+      kv.team_barrier();
+      remapd(team, nf2, np2, ); // pmf
+      kv.team_barrier();
+      
+      g2f_scalar_dp(); // thf
+      kv.team_barrier();
+      loop_ik(ttrg, tvr, [&] (int i, int k) { T(ie,i,k) = thf(i,k)*exnerf(i,k); });
+    }
+#endif
     // (u,v)
     remapd<false>(team, nf2, np2, nlevpk, g2f_remapd,
                   evur3(&Dinv(ie,0,0,0), np2, 2, 2), w_ff, evur3(&D_f(ie,0,0,0), nf2, 2, 2),
@@ -396,7 +438,6 @@ void GllFvRemapImpl
   Kokkos::parallel_for(m_tp_ne, fe);
 
   const auto dp_g = m_state.m_dp3d;
-  const auto q_g = m_tracers.Q;
   const auto feq = KOKKOS_LAMBDA (const MT& team) {
     KernelVariables kv(team, qsize, m_tu_ne);
     const auto ie = kv.ie, iq = kv.iq;
@@ -437,9 +478,6 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
          uvs.extent_int(3) % packn == 0);
   assert(qs.extent_int(0) >= nelemd && qs.extent_int(1) >= nf2 && qs.extent_int(2) >= qsize &&
          qs.extent_int(3) % packn == 0);
-
-  const auto& sp = Context::singleton().get<SimulationParams>();
-  const bool q_adjustment = sp.ftype != ForcingAlg::FORCING_0;
 
   CVPhys2T
     T(creal2pack(Ts), Ts.extent_int(0), Ts.extent_int(1), Ts.extent_int(2)/packn);
@@ -503,6 +541,8 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
   const auto q_g = m_tracers.Q;
   const auto fq = m_tracers.fq;
   const auto qlim = m_tracers.qlim;
+  const bool q_adjustment = m_data.q_adjustment;
+
   const auto feq = KOKKOS_LAMBDA (const MT& team) {
     KernelVariables kv(team, qsize, m_tu_ne);
     const auto ie = kv.ie, iq = kv.iq;

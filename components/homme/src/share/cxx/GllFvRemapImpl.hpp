@@ -61,6 +61,7 @@ struct GllFvRemapImpl {
 
   struct Data {
     int nelemd, qsize, nf2, n_dss_fld;
+    bool q_adjustment, use_moisture;
 
     static constexpr int nbuf1 = 2, nbuf2 = 1;
     Buf1 buf1[nbuf1];

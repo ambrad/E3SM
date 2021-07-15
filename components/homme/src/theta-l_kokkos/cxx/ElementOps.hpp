@@ -86,14 +86,12 @@ public:
                         const EquationOfState& eos,
                         const bool use_moisture,
                         const ExecViewUnmanaged<const Scalar[NUM_LEV]>& dp,
-                        const ExecViewUnmanaged<const Scalar[NUM_LEV]>& qv,
+                        const ExecViewUnmanaged<const Scalar[NUM_LEV]>& exner,
                         const ExecViewUnmanaged<const Scalar[NUM_LEV]>& vtheta_dp,
-                        const ExecViewUnmanaged<const Scalar[NUM_LEV_P]>& phi_i,
+                        const ExecViewUnmanaged<const Scalar[NUM_LEV]>& qv,
                         const ExecViewUnmanaged<Scalar[NUM_LEV]>& Rstar,
-                        const ExecViewUnmanaged<Scalar[NUM_LEV]>& exner,
                         const ExecViewUnmanaged<Scalar[NUM_LEV]>& T) const {
     using namespace PhysicalConstants;
-    eos.compute_pnh_and_exner(kv, vtheta_dp, phi_i, Rstar /* workspace */, exner);
     get_R_star(kv, use_moisture, qv, Rstar);
     Kokkos::parallel_for(
       Kokkos::ThreadVectorRange(kv.team, NUM_LEV),

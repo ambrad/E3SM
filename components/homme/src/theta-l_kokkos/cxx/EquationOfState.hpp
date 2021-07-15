@@ -30,6 +30,18 @@ public:
     assert (m_hvcoord.m_inited);
   }
 
+  // On input, pe is pressure; on output, Exner pressure.
+  template<typename Scalar>
+  KOKKOS_INLINE_FUNCTION
+  static void pressure_to_exner (Scalar& pe) {
+    pe /= PhysicalConstants::p0;
+#ifdef HOMMEXX_BFB_TESTING
+    pe = bfb_pow(pe,PhysicalConstants::kappa);
+#else
+    pe = pow(pe,PhysicalConstants::kappa);
+#endif
+  }
+
   KOKKOS_INLINE_FUNCTION
   void compute_exner (const KernelVariables& kv,
                       const ExecViewUnmanaged<const Scalar[NUM_LEV]>& pi,
@@ -39,12 +51,7 @@ public:
                          [&](const int ilev) {
       // Avoid temporaries
       exner(ilev) = pi(ilev);
-      exner(ilev) /= PhysicalConstants::p0;
-#ifdef HOMMEXX_BFB_TESTING
-      exner(ilev) = bfb_pow(exner(ilev),PhysicalConstants::kappa);
-#else
-      exner(ilev) = pow(exner(ilev),PhysicalConstants::kappa);
-#endif
+      pressure_to_exner(exner(ilev));
     });
   }
 
@@ -232,7 +239,7 @@ public:
     ColumnOps::column_scan_mid_to_int<false>(kv,integrand_provider,phi_i);
   }
 
-private:
+public:
 
   bool            m_theta_hydrostatic_mode;
   HybridVCoord    m_hvcoord;
