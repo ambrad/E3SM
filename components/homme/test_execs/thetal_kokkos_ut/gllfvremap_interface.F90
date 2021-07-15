@@ -120,6 +120,16 @@ contains
     call calc_dp_fv(nf, hvcoord, ps, dp_fv)
   end subroutine calc_dp_fv_f90
 
+  subroutine get_temperature_f90(ie, nt, T) bind(c)
+    use thetal_test_interface, only: hvcoord
+    use element_ops, only: get_temperature
+    
+    integer (c_int), value, intent(in) :: ie, nt
+    real (c_double), intent(out) :: T(np,np,nlev)
+
+    call get_temperature(elem(ie), T(:,:,:), hvcoord, nt)
+  end subroutine get_temperature_f90
+
   subroutine init_dyn_data_f90(nk, nkp, nq, ps, phis, dp3d, vthdp, uv, omega, q, phinh_i) bind(c)
     use element_state, only: timelevels
 
@@ -139,6 +149,8 @@ contains
              elem(ie)%state%dp3d(:,:,k,tl) = dp3d(k,:,:,tl,ie)
              elem(ie)%state%vtheta_dp(:,:,k,tl) = vthdp(k,:,:,tl,ie)
              elem(ie)%state%v(:,:,:,k,tl) = uv(k,:,:,:,tl,ie)
+             elem(ie)%state%phinh_i(:,:,k,tl) = phinh_i(k,:,:,tl,ie)
+             if (k == nlev) elem(ie)%state%phinh_i(:,:,k+1,tl) = phinh_i(k+1,:,:,tl,ie)
           end do
           elem(ie)%derived%omega_p(:,:,k) = omega(k,:,:,ie)
           do iq = 1,nq
