@@ -7,8 +7,6 @@
 #ifndef HOMMEXX_GLLFVREMAP_HPP
 #define HOMMEXX_GLLFVREMAP_HPP
 
-#include "/home/ambrad/repo/sik/hommexx/dbg.hpp"
-
 #include "Types.hpp"
 #include <memory>
 
@@ -40,7 +38,7 @@ public:
 
   void init_data(const int nf, const int nf_max, bool theta_hydrostatic_mode,
                  const Real* fv_metdet, const Real* g2f_remapd, const Real* f2g_remapd,
-                 const Real* D_f, const Real* Dinv_f);;
+                 const Real* D_f, const Real* Dinv_f);
 
   void run_dyn_to_fv_phys(const int time_idx,
                           // ps,phis(ie,col)

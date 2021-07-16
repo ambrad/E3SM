@@ -88,7 +88,6 @@ struct GllFvRemapImpl {
   const ElementsForcing m_forcing;
   const ElementsGeometry m_geometry;
   const Tracers m_tracers;
-  int nslot;
   Data m_data;
 
   TeamPolicy m_tp_ne, m_tp_ne_qsize, m_tp_ne_dss;

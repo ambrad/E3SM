@@ -24,10 +24,11 @@ typedef ExecViewUnmanaged<Real***> evur3;
 typedef ExecViewUnmanaged<const Real*  > evucr1;
 typedef ExecViewUnmanaged<const Real** > evucr2;
 
-static int calc_nslot (const int nelemd) {
-  const auto tp = Homme::get_default_team_policy<ExecSpace>(nelemd);
+static int calc_nslot (const int nelemd, const int nq) {
+  const int n = nelemd*nq;
+  const auto tp = Homme::get_default_team_policy<ExecSpace>(n);
   const auto tu = TeamUtils<ExecSpace>(tp);
-  return std::min(nelemd, tu.get_num_ws_slots());
+  return std::min(n, tu.get_num_ws_slots());
 }
 
 GllFvRemapImpl::GllFvRemapImpl ()
@@ -41,9 +42,7 @@ GllFvRemapImpl::GllFvRemapImpl ()
     m_tp_ne(1,1,1), m_tu_ne(m_tp_ne), // throwaway settings
     m_tp_ne_qsize(1,1,1), m_tu_ne_qsize(m_tp_ne_qsize), // throwaway settings
     m_tp_ne_dss(1,1,1), m_tu_ne_dss(m_tp_ne_dss) // throwaway settings
-{
-  nslot = calc_nslot(m_geometry.num_elems());
-}
+{}
 
 void GllFvRemapImpl::reset (const SimulationParams& params) {
   const auto num_elems = Context::singleton().get<Connectivity>().get_num_local_elements();
@@ -67,12 +66,14 @@ void GllFvRemapImpl::reset (const SimulationParams& params) {
 
 int GllFvRemapImpl::requested_buffer_size () const {
   // FunctorsBuffersManager wants the size in terms of sizeof(Real).
+  const int nslot = calc_nslot(m_tracers.num_elems(), m_tracers.num_tracers());
   return (Data::nbuf1*Buf1::shmem_size(nslot) +
           Data::nbuf2*Buf2::shmem_size(nslot))/sizeof(Real);
 }
 
 void GllFvRemapImpl::init_buffers (const FunctorsBuffersManager& fbm) {
   Scalar* mem = reinterpret_cast<Scalar*>(fbm.get_memory());
+  const int nslot = calc_nslot(m_tracers.num_elems(), m_tracers.num_tracers());
   for (int i = 0; i < Data::nbuf1; ++i) {
     m_data.buf1[i] = Buf1(mem, nslot);
     mem += Buf1::shmem_size(nslot)/sizeof(Scalar);
@@ -312,7 +313,6 @@ f2g_scalar_dp (const KernelVariables& kv, const int nf2, const int np2, const in
   const auto ttrf = Kokkos::TeamThreadRange(kv.team, nf2);
   const auto ttrg = Kokkos::TeamThreadRange(kv.team, np2);
   const auto tvr  = Kokkos::ThreadVectorRange(kv.team, nlev);
-  const int iq = kv.iq;
 
   g::loop_ik(ttrf, tvr, [&] (int i, int k) { w1(i,k) = dpf(i,k)*qf(i,k); });
   kv.team_barrier();
@@ -324,6 +324,8 @@ f2g_scalar_dp (const KernelVariables& kv, const int nf2, const int np2, const in
 void GllFvRemapImpl
 ::run_dyn_to_fv_phys (const int timeidx, const Phys1T& ps, const Phys1T& phis, const Phys2T& Ts,
                       const Phys2T& omegas, const Phys3T& uvs, const Phys3T& qs) {
+  using Kokkos::parallel_for;
+
   const int np2 = GllFvRemapImpl::np2;
   const int nlevpk = num_lev_pack;
   const int nreal_per_slot1 = np2*max_num_lev_pack;
@@ -483,13 +485,13 @@ void GllFvRemapImpl
 
   const auto dp_g = m_state.m_dp3d;
   const auto feq = KOKKOS_LAMBDA (const MT& team) {
-    KernelVariables kv(team, qsize, m_tu_ne);
+    KernelVariables kv(team, qsize, m_tu_ne_qsize);
     const auto ie = kv.ie, iq = kv.iq;
 
     const auto all = Kokkos::ALL();
     const auto rw1 = Kokkos::subview(m_data.buf1[0], kv.team_idx, all, all, all);
     const auto rw2 = Kokkos::subview(m_data.buf1[1], kv.team_idx, all, all, all);
-    
+
     const evucr1 fv_metdet_ie(&fv_metdet(ie,0), nf2),
       gll_metdet_ie(&gll_metdet(ie,0,0), np2);
     const EVU<const Scalar**> dp_fv_ie(&dp_fv(ie,0,0,0), nf2, nlevpk);
@@ -544,6 +546,10 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
   const auto D_g = m_data.D;
   const auto fT = m_forcing.m_ft;
   const auto hvcoord = m_hvcoord;
+  const auto dp3d = m_state.m_dp3d;
+  const bool theta_hydrostatic_mode = m_data.theta_hydrostatic_mode;
+  EquationOfState eos; eos.init(theta_hydrostatic_mode, hvcoord);
+  ElementOps ops; ops.init(hvcoord);
 
   const auto fe = KOKKOS_LAMBDA (const MT& team) {
     KernelVariables kv(team, m_tu_ne);
@@ -583,11 +589,6 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
         w4g(&r2w(1,0,0,0));
       const EVU<Scalar*[NUM_LEV]> w3f(&r2w(0,0,0,0), nf2);
       const EVU<Scalar[NP][NP][NUM_LEV_P]> w3gp(&r2w(0,0,0,0));
-
-      const auto dp3d = m_state.m_dp3d;
-      const bool theta_hydrostatic_mode = m_data.theta_hydrostatic_mode;
-      EquationOfState eos; eos.init(theta_hydrostatic_mode, hvcoord);
-      ElementOps ops; ops.init(hvcoord);
 
       // p_g, exner_g
       const auto& p_g = w4g;
@@ -638,7 +639,7 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
   const bool q_adjustment = m_data.q_adjustment;
 
   const auto feq = KOKKOS_LAMBDA (const MT& team) {
-    KernelVariables kv(team, qsize, m_tu_ne);
+    KernelVariables kv(team, qsize, m_tu_ne_qsize);
     const auto ie = kv.ie, iq = kv.iq;
     const auto ttrf = Kokkos::TeamThreadRange(kv.team, nf2);
     const auto ttrg = Kokkos::TeamThreadRange(kv.team, np2);
@@ -721,7 +722,7 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
   m_extrema_be->exchange_min_max();
 
   const auto geq = KOKKOS_LAMBDA (const MT& team) {
-    KernelVariables kv(team, qsize, m_tu_ne);
+    KernelVariables kv(team, qsize, m_tu_ne_qsize);
     const auto ie = kv.ie, iq = kv.iq;
     const auto all = Kokkos::ALL();
     const auto rw1 = Kokkos::subview(m_data.buf1[0], kv.team_idx, all, all, all);
