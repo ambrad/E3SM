@@ -806,7 +806,7 @@ static void test_fv_phys_to_dyn (Session& s, const int nf, const int ftype,
     for (int ie = 0; ie < s.nelemd; ++ie)
       for (int k = 0; k < s.nlev; ++k)
         for (int i = 0; i < nf2; ++i) {
-          T(ie,i,k) = s.r.urrng(100, 300);
+          fT(ie,k,i) = T(ie,i,k) = s.r.urrng(100, 300);
           for (int d = 0; d < 2; ++d)
             fuv(ie,k,d,i) = uv(ie,i,d,k) = s.r.urrng(-30, 30);
           for (int iq = 0; iq < s.qsize; ++iq)
