@@ -260,6 +260,7 @@ contains
   end subroutine gfr_init
 
   subroutine gfr_init_hxx() bind(c)
+#ifdef MODEL_THETA_L
     use control_mod, only: ftype, theta_hydrostatic_mode
     use iso_c_binding, only: c_bool
     interface
@@ -278,6 +279,7 @@ contains
     thm = theta_hydrostatic_mode
     call init_gllfvremap_c(nelemd, np, gfr%nphys, nphys_max, ftype, thm, &
          gfr%fv_metdet, gfr%g2f_remapd, gfr%f2g_remapd, gfr%D_f, gfr%Dinv_f)
+#endif
   end subroutine gfr_init_hxx
 
   function gfr_get_nphys() result(nf)

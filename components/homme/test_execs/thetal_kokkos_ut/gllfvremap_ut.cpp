@@ -879,6 +879,7 @@ TEST_CASE ("gllfvremap_testing") {
     run_gfr_test(&nerr);
     REQUIRE(nerr == 0);
 
+    // Main remap routines.
     for (const bool theta_hydrostatic_mode : {false, true}) {
       auto& c = Context::singleton();
       for (const int nf : {2,3,4})
