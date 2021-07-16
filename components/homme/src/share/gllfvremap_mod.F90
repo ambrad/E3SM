@@ -40,6 +40,9 @@ module gllfvremap_mod
   use dimensions_mod, only: np, npsq, qsize, nelemd
   use element_mod, only: element_t
   use coordinate_systems_mod, only: cartesian3D_t
+#ifdef HOMMEXX_BFB_TESTING
+  use bfb_mod, only: bfb_pow
+#endif
 
   implicit none
 
@@ -257,19 +260,23 @@ contains
   end subroutine gfr_init
 
   subroutine gfr_init_hxx() bind(c)
-    use control_mod, only: ftype
+    use control_mod, only: ftype, theta_hydrostatic_mode
+    use iso_c_binding, only: c_bool
     interface
-       subroutine init_gllfvremap_c(nelemd, np, nf, nf_max, ftype, &
+       subroutine init_gllfvremap_c(nelemd, np, nf, nf_max, ftype, theta_hydrostatic_mode, &
             fv_metdet, g2f_remapd, f2g_remapd, D_f, Dinv_f) bind(c)
-         use iso_c_binding, only: c_int, c_double
+         use iso_c_binding, only: c_bool, c_int, c_double
          integer (c_int), value, intent(in) :: nelemd, np, nf, nf_max, ftype
+         logical (c_bool), value, intent(in) :: theta_hydrostatic_mode
          real (c_double), dimension(nf*nf,nelemd), intent(in) :: fv_metdet
          real (c_double), dimension(np,np,nf_max*nf_max), intent(in) :: g2f_remapd
          real (c_double), dimension(nf_max*nf_max,np,np), intent(in) :: f2g_remapd
          real (c_double), dimension(nf*nf,2,2,nelemd), intent(in) :: D_f, Dinv_f
        end subroutine init_gllfvremap_c
     end interface
-    call init_gllfvremap_c(nelemd, np, gfr%nphys, nphys_max, ftype, &
+    logical (c_bool) :: thm
+    thm = theta_hydrostatic_mode
+    call init_gllfvremap_c(nelemd, np, gfr%nphys, nphys_max, ftype, thm, &
          gfr%fv_metdet, gfr%g2f_remapd, gfr%f2g_remapd, gfr%D_f, gfr%Dinv_f)
   end subroutine gfr_init_hxx
 
@@ -330,10 +337,16 @@ contains
        call get_temperature(elem(ie), wg1, hvcoord, nt)
        call get_field(elem(ie), 'p', p, hvcoord, nt, -1)
        call gfr_g2f_scalar(ie, elem(ie)%metdet, p, p_fv)
+#ifndef HOMMEXX_BFB_TESTING
        wg1 = wg1*(p0/p)**kappa
        call gfr_g2f_scalar_dp(gfr, ie, elem(ie)%metdet, dp, dp_fv, wg1, wf1)
        T(:nf2,:,ie) = wf1(:nf2,:)*(p_fv(:nf2,:)/p0)**kappa
-
+#else
+       wg1 = wg1*bfb_pow(p0/p, kappa)
+       call gfr_g2f_scalar_dp(gfr, ie, elem(ie)%metdet, dp, dp_fv, wg1, wf1)
+       T(:nf2,:,ie) = wf1(:nf2,:)*bfb_pow(p_fv(:nf2,:)/p0, kappa)
+#endif
+       
        call gfr_g2f_vector(ie, elem, &
             elem(ie)%state%v(:,:,1,:,nt), elem(ie)%state%v(:,:,2,:,nt), &
             uv(:,1,:,ie), uv(:,2,:,ie))

@@ -108,9 +108,9 @@ struct GllFvRemapImpl {
   void init_buffers(const FunctorsBuffersManager& fbm);
   void init_boundary_exchanges();
 
-  void init_data(const int nf, const int nf_max, const Real* fv_metdet_r,
-                 const Real* g2f_remapd_r, const Real* f2g_remapd_r,
-                 const Real* D_f_r, const Real* Dinv_f_r);
+  void init_data(const int nf, const int nf_max, const bool theta_hydrostatic_mode,
+                 const Real* fv_metdet_r, const Real* g2f_remapd_r,
+                 const Real* f2g_remapd_r, const Real* D_f_r, const Real* Dinv_f_r);
 
   void run_dyn_to_fv_phys(const int time_idx, const Phys1T& ps, const Phys1T& phis,
                           const Phys2T& T, const Phys2T& omega, const Phys3T& uv,

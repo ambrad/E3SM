@@ -113,8 +113,8 @@ void GllFvRemapImpl::init_boundary_exchanges () {
 template <typename T> using FV = Kokkos::View<T, Kokkos::LayoutLeft, Kokkos::HostSpace>;
 
 void GllFvRemapImpl
-::init_data (const int nf, const int nf_max, const Real* fv_metdet_r,
-             const Real* g2f_remapd_r, const Real* f2g_remapd_r,
+::init_data (const int nf, const int nf_max, const bool theta_hydrostatic_mode,
+             const Real* fv_metdet_r, const Real* g2f_remapd_r, const Real* f2g_remapd_r,
              const Real* D_f_r, const Real* Dinv_f_r) {
   using Kokkos::create_mirror_view;
   using Kokkos::deep_copy;
@@ -123,10 +123,12 @@ void GllFvRemapImpl
     Errors::runtime_abort("GllFvRemap: In physics grid configuratoin nf x nf,"
                           " nf must be > 1.", Errors::err_not_implemented);
 
-  const auto& sp = Context::singleton().get<SimulationParams>();
+  auto& sp = Context::singleton().get<SimulationParams>();
   m_data.q_adjustment = sp.ftype != ForcingAlg::FORCING_0;
   m_data.use_moisture = sp.moisture == MoistDry::MOIST;
-  m_data.theta_hydrostatic_mode = sp.theta_hydrostatic_mode;
+  // Only in the unit test gllfvremap_ut does theta_hydrostatic_mode not already
+  // == sp.theta_hydrostatic_mode.
+  m_data.theta_hydrostatic_mode = sp.theta_hydrostatic_mode = theta_hydrostatic_mode;
 
   const int nf2 = nf*nf, nf2_max = nf_max*nf_max;
   auto& d = m_data;
