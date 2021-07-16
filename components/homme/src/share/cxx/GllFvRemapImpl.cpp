@@ -126,6 +126,7 @@ void GllFvRemapImpl
   const auto& sp = Context::singleton().get<SimulationParams>();
   m_data.q_adjustment = sp.ftype != ForcingAlg::FORCING_0;
   m_data.use_moisture = sp.moisture == MoistDry::MOIST;
+  m_data.theta_hydrostatic_mode = sp.theta_hydrostatic_mode;
 
   const int nf2 = nf*nf, nf2_max = nf_max*nf_max;
   auto& d = m_data;
@@ -350,20 +351,24 @@ void GllFvRemapImpl
 
   const auto dp3d = m_state.m_dp3d;
   const auto vthdp = m_state.m_vtheta_dp;
-  const auto dp_fv = m_derived.m_divdp_proj; // store dp_fv between kernels
+  const auto phi_i = m_state.m_phinh_i;
   const auto ps_v = m_state.m_ps_v;
   const auto phis_g = m_geometry.m_phis;
+  const auto v = m_state.m_v;
+  const auto omega_g = m_derived.m_omega_p;
+  const auto q_g = m_tracers.Q;
   const auto gll_metdet = m_geometry.m_metdet;
   const auto fv_metdet = m_data.fv_metdet;
   const auto w_ff = m_data.w_ff;
   const auto g2f_remapd = m_data.g2f_remapd;
   const auto Dinv = m_data.Dinv;
   const auto D_f = m_data.D_f;
-  const auto v = m_state.m_v;
-  const auto omega_g = m_derived.m_omega_p;
+  const auto dp_fv = m_derived.m_divdp_proj; // store dp_fv between kernels
   const auto hvcoord = m_hvcoord;
   const bool use_moisture = m_data.use_moisture;
-  const auto q_g = m_tracers.Q;
+  const bool theta_hydrostatic_mode = m_data.theta_hydrostatic_mode;
+  EquationOfState eos; eos.init(theta_hydrostatic_mode, hvcoord);
+  ElementOps ops; ops.init(hvcoord);
 
   const auto fe = KOKKOS_LAMBDA (const MT& team) {
     KernelVariables kv(team, m_tu_ne);
@@ -371,6 +376,7 @@ void GllFvRemapImpl
     
     const auto all = Kokkos::ALL();
     const auto rw1 = Kokkos::subview(m_data.buf1[0], kv.team_idx, all, all, all);
+    const auto rw2 = Kokkos::subview(m_data.buf1[1], kv.team_idx, all, all, all);
     const auto r2w = Kokkos::subview(m_data.buf2[0], kv.team_idx, all, all, all, all);
     const EVU<Real*> rw1s(pack2real(rw1), nreal_per_slot1);
     
@@ -399,30 +405,66 @@ void GllFvRemapImpl
       limiter_clip_and_sum_real1(team, nf2, w_ff, fv_metdet_ie, qmin, qmax,
                                  evur1(rw1s.data(), nf2), evur1(phis_f_ie.data(), nf2));
     }
-#if 0
-    { // T. This is not a BFB conversion of the arithmetic in gllfvremap_mod;
-      // it's more efficient but specific to theta-l.
-      const g::EVU<Scalar[NP][NP][NUM_LEV]> thg(rw1.data()), pmg(rw2.data());
-      const g::EVU<Scalar[NP][NP][NUM_LEV]> w1(&r2w(0,0,0,0));
-      const g::EVU<Scalar*[NUM_LEV]> pmf(&r2w(1,0,0,0), nf2);
-      const auto f1 = [&] (int ij) {
-        using PhysicalConstants;
-        const auto i = ij / NP, j = ij % NP;
-        const auto dp3d_ij = Homme::subview(dp3d,ie,timeidxi,i,j);
-        ops.get_R_star(kv, use_moisture, Homme::subview(q_g,ie,0,i,j), Homme::subview(thg,i,j));
-        parallel_for(tvr, [&] (int k) { thg(i,j,k) = (vthdp(i,j,k)/dp3d_ij(k))*(Rgas/thg(i,j,k)); });
-        ops.compute_hydrostatic_p(kv, dp3d_ij, Homme::subview(w1,i,j), Homme::subview(pmg,ie,i,j));
-      }
-      parallel_for(ttrg, f1);
-      kv.team_barrier();
-      remapd(team, nf2, np2, ); // pmf
-      kv.team_barrier();
+
+    { // T
+      const auto ttrg = Kokkos::TeamThreadRange(kv.team, np2);
+      const auto ttrf = Kokkos::TeamThreadRange(kv.team, nf2);
+      const auto tvr = Kokkos::ThreadVectorRange(kv.team, nlevpk);
       
-      g2f_scalar_dp(); // thf
-      kv.team_barrier();
-      loop_ik(ttrg, tvr, [&] (int i, int k) { T(ie,i,k) = thf(i,k)*exnerf(i,k); });
+      const EVU<Scalar[NP][NP][NUM_LEV]> w1g(rw1.data()), w2g(rw2.data()), w3g(&r2w(0,0,0,0)),
+        w4g(&r2w(1,0,0,0));
+      const EVU<Scalar[NP][NP][NUM_LEV_P]> w3gp(&r2w(0,0,0,0));
+      const EVU<Scalar*[NUM_LEV]> w2f(rw2.data(), nf2), w3f(&r2w(0,0,0,0), nf2);
+
+      const auto& p_g = w3g;
+      const auto& th_g = w4g;
+      const auto f1 = [&] (int ij) {
+        const auto i = ij / NP, j = ij % NP;
+        const auto dp3d_ij = Homme::subview(dp3d,ie,timeidx,i,j);
+        const auto vthdp_ij = Homme::subview(vthdp,ie,timeidx,i,j);
+        const auto p_g_ij = Homme::subview(p_g,i,j);
+        const auto exner_ij = Homme::subview(w1g,i,j);
+        const auto wrk_ij = Homme::subview(w2g,i,j);
+        const auto th_g_ij = Homme::subview(th_g,i,j);
+        // p_g
+        ops.compute_hydrostatic_p(kv, dp3d_ij, Homme::subview(w3gp,i,j), p_g_ij);
+        // exner_g
+        if (theta_hydrostatic_mode)
+          eos.compute_exner(kv, p_g_ij, exner_ij);
+        else
+          eos.compute_pnh_and_exner(kv, vthdp_ij, Homme::subview(phi_i,ie,timeidx,i,j),
+                                    wrk_ij, exner_ij);
+        // th_g
+        ops.get_temperature(kv, eos, use_moisture, dp3d_ij, exner_ij, vthdp_ij,
+                            Homme::subview(q_g,ie,0,i,j), wrk_ij, th_g_ij);
+        const auto& rexner_ij = exner_ij;
+        parallel_for(tvr, [&] (int k) { // could avoid this in H case but then would lose BFB
+          rexner_ij(k) = p_g_ij(k);
+          eos.pressure_to_recip_exner(rexner_ij(k));
+        });
+        parallel_for(tvr, [&] (int k) { th_g_ij(k) *= rexner_ij(k); });
+      };
+      parallel_for(ttrg, f1);
+      kv.team_barrier(); // w3, w4 in use
+      // exner_f
+      const auto& exner_f = w2f;
+      remapd(team, nf2, np2, nlevpk, g2f_remapd, gll_metdet_ie, w_ff, fv_metdet_ie,
+             evucs_np2_nlev(p_g.data()), evus_np2_nlev(w1g.data()),
+             evus2(exner_f.data(), nf2, nlevpk));
+      kv.team_barrier(); // w2, w3, w4 in use
+      loop_ik(ttrf, tvr, [&] (int i, int k) { eos.pressure_to_exner(exner_f(i,k)); });
+      kv.team_barrier(); // w2, w4 in use
+      // th_f
+      const auto& th_f = w3f;
+      g2f_scalar_dp(team, np2, nf2, nlevpk, g2f_remapd, gll_metdet_ie, w_ff, fv_metdet_ie,
+                    evucs_np2_nlev(&dp3d(ie,timeidx,0,0,0)), dp_fv_ie,
+                    evucs_np2_nlev(th_g.data()), evus_np2_nlev(w1g.data()),
+                    evus2(th_f.data(), nf2, nlevpk));
+      kv.team_barrier(); // w2, w3, w4 in use
+      // T_f
+      loop_ik(ttrf, tvr, [&] (int i, int k) { T(ie,i,k) = th_f(i,k)*exner_f(i,k); });
     }
-#endif
+
     // (u,v)
     remapd<false>(team, nf2, np2, nlevpk, g2f_remapd,
                   evur3(&Dinv(ie,0,0,0), np2, 2, 2), w_ff, evur3(&D_f(ie,0,0,0), nf2, 2, 2),

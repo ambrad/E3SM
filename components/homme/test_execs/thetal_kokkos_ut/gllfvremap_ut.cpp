@@ -42,7 +42,7 @@ extern "C" {
   void run_gfr_test(int* nerr);
   void run_gfr_check_api(int* nerr);
 
-  void gfr_init_f90(int nf, int ftype);
+  void gfr_init_f90(int nf, int ftype, bool theta_hydrostatic_mode);
   void gfr_init_hxx();
   void gfr_finish_f90();
 
@@ -724,13 +724,13 @@ static void test_get_temperature (Session& s) {
   }
 }
 
-static void test_dyn_to_fv_phys (Session& s, const int nf, const int ftype) {
+static void test_dyn_to_fv_phys (Session& s, const int nf, const int ftype,
+                                 const bool theta_hydrostatic_mode) {
   using g = GllFvRemapImpl;
 
-  static const Real eps = std::numeric_limits<Real>::epsilon();
   const int nf2 = nf*nf;
 
-  gfr_init_f90(nf, ftype);
+  gfr_init_f90(nf, ftype, theta_hydrostatic_mode);
   gfr_init_hxx();
 
   init_dyn_data(s);
@@ -767,7 +767,7 @@ static void test_dyn_to_fv_phys (Session& s, const int nf, const int ftype) {
         REQUIRE(equal(phis(ie,i), fphis(ie,i)));
         for (int k = 0; k < s.nlev; ++k) {
           REQUIRE(equal(omega(ie,i,k), fomega(ie,k,i)));
-          //REQUIRE(equal(T(ie,i,k), fT(ie,k,i)));
+          REQUIRE(almost_equal(T(ie,i,k), fT(ie,k,i), 5e-15));
           for (int iq = 0; iq < s.qsize; ++iq)
             REQUIRE(equal(q(ie,i,iq,k), fq(ie,iq,k,i)));
           for (int d = 0; d < 2; ++d)
@@ -779,14 +779,15 @@ static void test_dyn_to_fv_phys (Session& s, const int nf, const int ftype) {
   gfr_finish_f90();
 }
 
-static void test_fv_phys_to_dyn (Session& s, const int nf, const int ftype) {
+static void test_fv_phys_to_dyn (Session& s, const int nf, const int ftype,
+                                 const bool theta_hydrostatic_mode) {
   using Kokkos::deep_copy;
   using g = GllFvRemapImpl;
   
   const Real dt = 1800;
   const int nf2 = nf*nf;
 
-  gfr_init_f90(nf, ftype);
+  gfr_init_f90(nf, ftype, theta_hydrostatic_mode);
   gfr_init_hxx();
 
   {
@@ -878,17 +879,20 @@ TEST_CASE ("compose_transport_testing") {
     run_gfr_test(&nerr);
     REQUIRE(nerr == 0);
 
-    for (const int nf : {2,3,4})
-      for (const int ftype : {2}) { // dyn_to_fv_phys is independent of ftype
-        printf("ut> g2f nf %d ftype %d\n", nf, ftype);
-        test_dyn_to_fv_phys(s, nf, ftype);
-      }
+    for (const bool theta_hydrostatic_mode : {false, true}) {
+      auto& c = Context::singleton();
+      for (const int nf : {2,3,4})
+        for (const int ftype : {2}) { // dyn_to_fv_phys is independent of ftype
+          printf("ut> g2f nf %d ftype %d thm %d\n", nf, ftype, (int) theta_hydrostatic_mode);
+          test_dyn_to_fv_phys(s, nf, ftype, theta_hydrostatic_mode);
+        }
 
-    for (const int nf : {2,3,4})
-      for (const int ftype : {2,0}) {
-        printf("ut> f2g nf %d ftype %d\n", nf, ftype);
-        test_fv_phys_to_dyn(s, nf, ftype);
-      }
+      for (const int nf : {2,3,4})
+        for (const int ftype : {2,0}) {
+          printf("ut> f2g nf %d ftype %d thm %d\n", nf, ftype, (int) theta_hydrostatic_mode);
+          test_fv_phys_to_dyn(s, nf, ftype, theta_hydrostatic_mode);
+        }
+    }
   } catch (...) {}
   Session::delete_singleton();
 }

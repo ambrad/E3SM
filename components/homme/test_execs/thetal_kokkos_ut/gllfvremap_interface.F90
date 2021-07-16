@@ -67,13 +67,15 @@ contains
     nerr = gfr_test(hybrid, dom_mt, hvcoord, deriv, elem)
   end subroutine run_gfr_test
 
-  subroutine gfr_init_f90(nf, ftype_in) bind(c)
+  subroutine gfr_init_f90(nf, ftype_in, thm) bind(c)
     use gllfvremap_mod, only: gfr_init
-    use control_mod, only: ftype
+    use control_mod, only: ftype, theta_hydrostatic_mode
     
     integer (c_int), value, intent(in) :: nf, ftype_in
+    logical (c_bool), value, intent(in) :: thm
 
     ftype = ftype_in
+    theta_hydrostatic_mode = thm
     call gfr_init(par, elem, nf, 2, .false.)
   end subroutine gfr_init_f90
   

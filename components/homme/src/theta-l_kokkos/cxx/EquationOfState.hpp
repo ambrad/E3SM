@@ -30,11 +30,23 @@ public:
     assert (m_hvcoord.m_inited);
   }
 
-  // On input, pe is pressure; on output, Exner pressure.
+  // On input, pe is pressure; on output, the Exner function.
   template<typename Scalar>
   KOKKOS_INLINE_FUNCTION
   static void pressure_to_exner (Scalar& pe) {
     pe /= PhysicalConstants::p0;
+#ifdef HOMMEXX_BFB_TESTING
+    pe = bfb_pow(pe,PhysicalConstants::kappa);
+#else
+    pe = pow(pe,PhysicalConstants::kappa);
+#endif
+  }
+
+  // On input, pe is pressure; on output, the reciprocal of the Exner function.
+  template<typename Scalar>
+  KOKKOS_INLINE_FUNCTION
+  static void pressure_to_recip_exner (Scalar& pe) {
+    pe = PhysicalConstants::p0 / pe;
 #ifdef HOMMEXX_BFB_TESTING
     pe = bfb_pow(pe,PhysicalConstants::kappa);
 #else
