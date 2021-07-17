@@ -260,7 +260,7 @@ contains
   end subroutine gfr_init
 
   subroutine gfr_init_hxx() bind(c)
-#ifdef MODEL_THETA_L
+#if KOKKOS_TARGET
     use control_mod, only: ftype, theta_hydrostatic_mode
     use iso_c_binding, only: c_bool
     interface
