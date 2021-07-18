@@ -248,7 +248,7 @@ static bool almost_equal (const Real& a, const Real& b,
 
 static bool equal (const Real& a, const Real& b,
                    // Used only if not defined HOMMEXX_BFB_TESTING.
-                   const Real tol = 0) {
+                   const Real tol = 1e4*std::numeric_limits<Real>::epsilon()) {
 #ifdef HOMMEXX_BFB_TESTING
   if (a != b)
     printf("equal: a,b = %23.16e %23.16e re = %23.16e\n",

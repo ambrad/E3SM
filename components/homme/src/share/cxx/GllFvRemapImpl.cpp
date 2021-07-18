@@ -330,9 +330,10 @@ void GllFvRemapImpl
   const int nlevpk = num_lev_pack;
   const int nreal_per_slot1 = np2*max_num_lev_pack;
   const auto nf2 = m_data.nf2;
-  const auto nelemd = m_data.nelemd;
   const auto qsize = m_data.qsize;
 
+#ifndef NDEBUG
+  const auto nelemd = m_data.nelemd;
   assert(ps.extent_int(0) >= nelemd && ps.extent_int(1) >= nf2);
   assert(phis.extent_int(0) >= nelemd && phis.extent_int(1) >= nf2);
   assert(Ts.extent_int(0) >= nelemd && Ts.extent_int(1) >= nf2 && Ts.extent_int(2) % packn == 0);
@@ -342,6 +343,7 @@ void GllFvRemapImpl
          uvs.extent_int(3) % packn == 0);
   assert(qs.extent_int(0) >= nelemd && qs.extent_int(1) >= nf2 && qs.extent_int(2) >= qsize &&
          qs.extent_int(3) % packn == 0);
+#endif
 
   VPhys2T
     T(real2pack(Ts), Ts.extent_int(0), Ts.extent_int(1), Ts.extent_int(2)/packn),
@@ -524,14 +526,16 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
   const int nlevpk = num_lev_pack;
   const int nreal_per_slot1 = np2*max_num_lev_pack;
   const auto nf2 = m_data.nf2;
-  const auto nelemd = m_data.nelemd;
   const auto qsize = m_data.qsize;
 
+#ifndef NDEBUG
+  const auto nelemd = m_data.nelemd;
   assert(Ts.extent_int(0) >= nelemd && Ts.extent_int(1) >= nf2 && Ts.extent_int(2) % packn == 0);
   assert(uvs.extent_int(0) >= nelemd && uvs.extent_int(1) >= nf2 && uvs.extent_int(2) == 2 &&
          uvs.extent_int(3) % packn == 0);
   assert(qs.extent_int(0) >= nelemd && qs.extent_int(1) >= nf2 && qs.extent_int(2) >= qsize &&
          qs.extent_int(3) % packn == 0);
+#endif
 
   CVPhys2T
     T(creal2pack(Ts), Ts.extent_int(0), Ts.extent_int(1), Ts.extent_int(2)/packn);
