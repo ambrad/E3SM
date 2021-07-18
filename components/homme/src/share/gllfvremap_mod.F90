@@ -435,10 +435,17 @@ contains
 
        call get_field(elem(ie), 'p', p, hvcoord, nt, -1)
        call gfr_g2f_scalar(ie, elem(ie)%metdet, p, p_fv)
+#ifndef HOMMEXX_BFB_TESTING
        wf1(:nf2,:) = T(:nf2,:,ie)*(p0/p_fv(:nf2,:))**kappa
        call gfr_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wf1, &
             elem(ie)%derived%FT)
        elem(ie)%derived%FT = elem(ie)%derived%FT*(p/p0)**kappa
+#else
+       wf1(:nf2,:) = T(:nf2,:,ie)*bfb_pow(p0/p_fv(:nf2,:), kappa)
+       call gfr_f2g_scalar_dp(gfr, ie, elem(ie)%metdet, dp_fv, dp, wf1, &
+            elem(ie)%derived%FT)
+       elem(ie)%derived%FT = elem(ie)%derived%FT*bfb_pow(p/p0, kappa)
+#endif
 
        do qi = 1,qsize
           if (q_adjustment) then

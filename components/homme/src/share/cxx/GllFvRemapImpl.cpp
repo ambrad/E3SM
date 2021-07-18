@@ -417,12 +417,22 @@ void GllFvRemapImpl
       
       const EVU<Scalar[NP][NP][NUM_LEV]> w1g(rw1.data()), w2g(rw2.data()), w3g(&r2w(0,0,0,0)),
         w4g(&r2w(1,0,0,0));
-      const EVU<Scalar[NP][NP][NUM_LEV_P]> w3gp(&r2w(0,0,0,0));
+      const EVU<Scalar[NP][NP][NUM_LEV_P]> w1gp(rw1.data());
       const EVU<Scalar*[NUM_LEV]> w2f(rw2.data(), nf2), w3f(&r2w(0,0,0,0), nf2);
 
+      // Break f1 and f2 up so we can reduce the workspace by one slot.
       const auto& p_g = w3g;
-      const auto& th_g = w4g;
       const auto f1 = [&] (int ij) {
+        const auto i = ij / NP, j = ij % NP;
+        const auto dp3d_ij = Homme::subview(dp3d,ie,timeidx,i,j);
+        const auto p_g_ij = Homme::subview(p_g,i,j);
+        // p_g
+        ops.compute_hydrostatic_p(kv, dp3d_ij, Homme::subview(w1gp,i,j), p_g_ij);
+      };
+      parallel_for(ttrg, f1);
+      kv.team_barrier(); // w3 in use
+      const auto& th_g = w4g;
+      const auto f2 = [&] (int ij) {
         const auto i = ij / NP, j = ij % NP;
         const auto dp3d_ij = Homme::subview(dp3d,ie,timeidx,i,j);
         const auto vthdp_ij = Homme::subview(vthdp,ie,timeidx,i,j);
@@ -430,8 +440,6 @@ void GllFvRemapImpl
         const auto exner_ij = Homme::subview(w1g,i,j);
         const auto wrk_ij = Homme::subview(w2g,i,j);
         const auto th_g_ij = Homme::subview(th_g,i,j);
-        // p_g
-        ops.compute_hydrostatic_p(kv, dp3d_ij, Homme::subview(w3gp,i,j), p_g_ij);
         // exner_g
         if (theta_hydrostatic_mode)
           eos.compute_exner(kv, p_g_ij, exner_ij);
@@ -448,14 +456,14 @@ void GllFvRemapImpl
         });
         parallel_for(tvr, [&] (int k) { th_g_ij(k) *= rexner_ij(k); });
       };
-      parallel_for(ttrg, f1);
+      parallel_for(ttrg, f2);
       kv.team_barrier(); // w3, w4 in use
       // exner_f
       const auto& exner_f = w2f;
       remapd(team, nf2, np2, nlevpk, g2f_remapd, gll_metdet_ie, w_ff, fv_metdet_ie,
              evucs_np2_nlev(p_g.data()), evus_np2_nlev(w1g.data()),
              evus2(exner_f.data(), nf2, nlevpk));
-      kv.team_barrier(); // w2, w3, w4 in use
+      kv.team_barrier(); // w2, w4 in use
       loop_ik(ttrf, tvr, [&] (int i, int k) { eos.pressure_to_exner(exner_f(i,k)); });
       kv.team_barrier(); // w2, w4 in use
       // theta_f
@@ -588,7 +596,7 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
       const EVU<Scalar[NP][NP][NUM_LEV]> w1g(rw1.data()), w3g(&r2w(0,0,0,0)),
         w4g(&r2w(1,0,0,0));
       const EVU<Scalar*[NUM_LEV]> w3f(&r2w(0,0,0,0), nf2);
-      const EVU<Scalar[NP][NP][NUM_LEV_P]> w3gp(&r2w(0,0,0,0));
+      const EVU<Scalar[NP][NP][NUM_LEV_P]> w1gp(rw1.data());
 
       // p_g, exner_g
       const auto& p_g = w4g;
@@ -596,7 +604,7 @@ run_fv_phys_to_dyn (const int timeidx, const Real dt,
         const auto i = ij / NP, j = ij % NP;
         const auto dp3d_ij = Homme::subview(dp3d,ie,timeidx,i,j);
         const auto p_g_ij = Homme::subview(p_g,i,j);
-        ops.compute_hydrostatic_p(kv, dp3d_ij, Homme::subview(w3gp,i,j), p_g_ij);
+        ops.compute_hydrostatic_p(kv, dp3d_ij, Homme::subview(w1gp,i,j), p_g_ij);
       };
       parallel_for(ttrg, f1);
       kv.team_barrier(); // w4 in use

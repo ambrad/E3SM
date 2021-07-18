@@ -222,7 +222,7 @@ contains
        do i = 1,np
           do j = 1,np
              do k = 1,nlev
-                if (.false. .and. elem(ie)%derived%FT(j,i,k) /= ft(k,j,i,ie)) then
+                if (elem(ie)%derived%FT(j,i,k) /= ft(k,j,i,ie)) then
                    nerr = nerr+1
                    if (nerr < outmax) then
                       print '(a,i4,i2,i2,i3,es18.10,es18.10)', &

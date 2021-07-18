@@ -768,8 +768,7 @@ static void test_dyn_to_fv_phys (Session& s, const int nf, const int ftype,
         REQUIRE(equal(phis(ie,i), fphis(ie,i)));
         for (int k = 0; k < s.nlev; ++k) {
           REQUIRE(equal(omega(ie,i,k), fomega(ie,k,i)));
-#pragma message "fix T and f2g dir; uncomment .false. in interface when done"
-          //REQUIRE(equal(T(ie,i,k), fT(ie,k,i)));
+          REQUIRE(equal(T(ie,i,k), fT(ie,k,i)));
           for (int iq = 0; iq < s.qsize; ++iq)
             REQUIRE(equal(q(ie,i,iq,k), fq(ie,iq,k,i)));
           for (int d = 0; d < 2; ++d)
