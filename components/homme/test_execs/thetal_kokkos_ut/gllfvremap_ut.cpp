@@ -229,8 +229,15 @@ private:
     if ( ! ok && am_root)
       printf("gllfvremap_ut> Failed to parse command line, starting with: %s\n",
              hommexx_catch2_argv[i]);
-    if (am_root)
-      printf("gllfvremap_ut> ne %d qsize %d\n", ne, qsize);
+    if (am_root) {
+      const int bfb =
+#ifdef HOMMEXX_BFB_TESTING
+        1;
+#else
+        0;
+#endif
+      printf("gllfvremap_ut> bfb %d ne %d qsize %d\n", bfb, ne, qsize);
+    }
   }
 };
 
