@@ -388,7 +388,7 @@ TEST_CASE("1-norm minimal", "limiters") {
     lv_other.fromdevice();
     get_norm1(lv_other, othernorm1);
     for (int k = 0; k < NUM_PHYSICAL_LEV; ++k)
-      REQUIRE(std::abs(lim8norm1[k] - othernorm1[k]) <= 1e3*LimiterTester::eps*othernorm1[k]);
+      REQUIRE(std::abs(lim8norm1[k] - othernorm1[k]) <= 1e5*LimiterTester::eps*othernorm1[k]);
   }
 
   if ( ! OnGpu<ExecSpace>::value) {
