@@ -1511,6 +1511,7 @@ contains
     type (element_t), intent(inout) :: elem(:)
     integer, intent(in) :: nets, nete
 
+    real(kind=real_kind) :: tmp(np,np,nlev)
     integer :: ie, q, k, npack
 
     npack = (qsize + 3)*nlev
@@ -1526,7 +1527,10 @@ contains
              elem(ie)%derived%FM(:,:,q,k) = elem(ie)%derived%FM(:,:,q,k)*elem(ie)%spheremp(:,:)
           end do
        end do
-       call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%FM, 2*nlev, qsize*nlev, npack)
+       do q = 1,2
+          tmp = elem(ie)%derived%FM(:,:,q,:)
+          call edgeVpack_nlyr(edge_g, elem(ie)%desc, tmp, nlev, (qsize+q-1)*nlev, npack)
+       end do
        do k = 1,nlev
           elem(ie)%derived%FT(:,:,k) = elem(ie)%derived%FT(:,:,k)*elem(ie)%spheremp(:,:)
        end do
@@ -1540,7 +1544,11 @@ contains
              elem(ie)%derived%FQ(:,:,k,q) = elem(ie)%derived%FQ(:,:,k,q)*elem(ie)%rspheremp(:,:)
           end do
        end do
-       call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%FM, 2*nlev, qsize*nlev, npack)
+       do q = 1,2
+          tmp = elem(ie)%derived%FM(:,:,q,:)
+          call edgeVunpack_nlyr(edge_g, elem(ie)%desc, tmp, nlev, (qsize+q-1)*nlev, npack)
+          elem(ie)%derived%FM(:,:,q,:) = tmp
+       end do
        do q = 1,2
           do k = 1,nlev
              elem(ie)%derived%FM(:,:,q,k) = elem(ie)%derived%FM(:,:,q,k)*elem(ie)%rspheremp(:,:)
