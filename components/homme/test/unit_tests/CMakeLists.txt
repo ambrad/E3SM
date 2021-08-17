@@ -15,8 +15,8 @@ macro(cxx_unit_test target_name target_f90_srcs target_cxx_srcs include_dirs con
 
   TARGET_LINK_LIBRARIES(${target_name} timing ${BLAS_LIBRARIES} ${LAPACK_LIBRARIES} kokkos)
   IF (HOMME_USE_MKL)
-    TARGET_COMPILE_OPTIONS(${execName} PUBLIC -mkl)
-    TARGET_LINK_LIBRARIES(${execName} -mkl)
+    TARGET_COMPILE_OPTIONS(${target_name} PUBLIC -mkl)
+    TARGET_LINK_LIBRARIES(${target_name} -mkl)
   ENDIF()
 
   STRING(TOUPPER "${PERFORMANCE_PROFILE}" PERF_PROF_UPPER)
