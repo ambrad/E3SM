@@ -948,6 +948,10 @@
 					description="If .true. then fluxes are limited to produce a monotonic advection scheme"
 					possible_values=".true. and .false."
 		/>
+		<nml_option name="config_passive_tracers_supercycle_timestep" type="integer" default_value="0" units="unitless"
+			description="if value > 1, then the passive tracer time step is this value times the baroclinic time step"
+			possible_values="Any positive integer value greater than or equal to 0."
+		/>
 	</nml_record>
 	<nml_record name="bottom_drag" mode="forward">
 		<nml_option name="config_use_implicit_bottom_drag" type="logical" default_value=".true." units="unitless"
@@ -1406,6 +1410,7 @@
 		<package name="tidalPotentialForcingPKG" description="This package controls variables required for tidal potential forcing"/>
 		<package name="topographicWaveDragPKG" description="This package controls variables required for topographic wave drag"/>
 		<package name="gotmPKG" description="This package is for GOTM variables, which are only needed when using GOTM for the vertical turbulence closure."/>
+    <package name="passiveTracerSupercyclePKG" description="This package controls variables required to supercycle passive tracers over the baroclinic timestep."/>
 	</packages>
 
 	<streams>
@@ -2365,6 +2370,31 @@
 			 description="time tendency of low frequency-filtered divergence"
 			 packages="thicknessFilter"
 		/>
+    <!-- Fields for passive tracer supercycling -->
+    <var name="scLayerThickness0" type="real" dimensions="nVertLevels nCells" units="m"
+      description="layer thickness at start of supercycled timestep"
+      packages="passiveTracerSupercyclePKG"
+    />
+    <var name="scAccumLayerThickness" type="real" dimensions="nVertLevels nCells" units="m"
+      description="layer thickness accumulated over supercycled tracer timestep"
+      packages="passiveTracerSupercyclePKG"
+    />
+    <var name="scAccumZMid" type="real" dimensions="nVertLevels nCells" units="m"
+      description="zMid accumulated over supercycled tracer timestep"
+      packages="passiveTracerSupercyclePKG"
+    />
+    <var name="scAccumVertAleTransportTop" type="real" dimensions="nVertLevelsP1 nCells" units="m"
+      description="vertAleTransportTop accumulated over supercycled tracer timestep"
+      packages="passiveTracerSupercyclePKG"
+    />
+    <var name="scAccumLayerThicknessEdge" type="real" dimensions="nVertLevels nEdges" units="m"
+      description="layer thickness accumulated over supercycled tracer timestep"
+      packages="passiveTracerSupercyclePKG"
+    />
+    <var name="scAccumNormalThicknessFlux" type="real" dimensions="nVertLevels nEdges" units="m s^{-1}"
+      description="normalThicknessFlux accumulated over supercycled tracer timestep"
+      packages="passiveTracerSupercyclePKG"
+    />
 	</var_struct>
 	<var_struct name="diagnostics" time_levs="1">
 		<var name="xtime" type="text" dimensions="Time" units="unitless"

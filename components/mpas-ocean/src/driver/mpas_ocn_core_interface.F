@@ -133,6 +133,7 @@ module ocn_core_interface
       logical, pointer :: timeVaryingAtmosphericForcingPKGActive
       logical, pointer :: timeVaryingLandIceForcingPKGActive
       logical, pointer :: gotmPKGActive
+      logical, pointer :: passiveTracerSupercyclePKGActive
 
       type (mpas_pool_iterator_type) :: pkgItr
       logical, pointer :: packageActive
@@ -164,6 +165,7 @@ module ocn_core_interface
       logical, pointer :: config_use_time_varying_atmospheric_forcing
       logical, pointer :: config_use_time_varying_land_ice_forcing
       logical, pointer :: config_use_gotm
+      integer, pointer :: config_passive_tracers_supercycle_timestep
 
       character (len=StrKIND), pointer :: config_time_integrator
       character (len=StrKIND), pointer :: config_ocean_run_mode
@@ -390,6 +392,18 @@ module ocn_core_interface
          call ocn_init_mode_validate_configuration(configPool, packagePool, iocontext, ierr)
       endif
 #endif
+
+      !
+      ! test for passive tracer supercycling
+      !
+      call mpas_pool_get_package(packagePool, 'passiveTracerSupercyclePKGActive', &
+           passiveTracerSupercyclePKGActive)
+      call mpas_pool_get_config(configPool, 'config_passive_tracers_supercycle_timestep', &
+           config_passive_tracers_supercycle_timestep)
+      passiveTracerSupercyclePKGActive = &
+           config_passive_tracers_supercycle_timestep > 1 .and. &
+           (    config_time_integrator == trim('split_explicit') &
+           .or. config_time_integrator == trim('unsplit_explicit'))
 
       !
       ! iterate over tracer groups

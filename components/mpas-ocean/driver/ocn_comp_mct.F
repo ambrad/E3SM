@@ -645,6 +645,8 @@ contains
        call mpas_log_write('Model is not properly configured for coupling interval.', MPAS_LOG_CRIT)
     end if
 
+    call check_passive_tracer_supercycling(domain, EClock, ocn_cpl_dt, numDivs)
+
     if ( remInterval > zeroInterval ) then
        ierr = 1
     end if
@@ -2915,6 +2917,121 @@ contains
 
    end subroutine datetime!}}}
 
+   function seq_timemgr_alarmGetSecondsUntilNextRing(EClock, alarmname) result(s)
+     ! This routine can go into seq_timemgr_mod.F90, but I'm putting it here, at
+     ! least for now, so I don't need to get a PR into CIME to do the check in
+     ! check_passive_tracer_supercycling.
+
+     use shr_kind_mod, only: SHR_KIND_IN
+
+     type(ESMF_Clock), intent(IN) :: EClock     ! clock/alarm
+     character(len=*), intent(IN) :: alarmname  ! which alarm
+     integer(I8KIND) :: s ! time until next alarm ring in seconds
+
+     character(len=*),parameter :: subname = '(seq_timemgr_alarmGetSecondsUntilNextRing)'
+     character(len=*), parameter :: xalarm = 'unset'
+
+     integer :: n, rc
+     logical :: found
+     character(len=64) :: name
+     type(ESMF_Alarm),pointer :: EAlarm_list(:)
+     integer(SHR_KIND_IN) :: AlarmCount ! Number of valid alarms
+     type(ESMF_Time) :: ETime1, ETime2
+     type(ESMF_TimeInterval) :: ETimeInterval
+
+     s = 0
+     call seq_timemgr_EClockGetData(EClock, AlarmCount=AlarmCount)
+#ifdef USE_ESMF_LIB
+     allocate(EAlarm_list(AlarmCount))
+     call ESMF_ClockGetAlarmList(EClock, alarmListFlag=ESMF_ALARMLIST_ALL, &
+          alarmList=EAlarm_list, alarmCount=AlarmCount, rc=rc)
+#else
+     call ESMF_ClockGetAlarmList(EClock, EAlarm_list, rc=rc)
+#endif
+     found = .false.
+     if (rc == ESMF_SUCCESS) then
+        ! Follow procedure in seq_timemgr_alarmIsOn to find the timer.
+        do n = 1,AlarmCount
+           name = trim(xalarm)
+           call ESMF_AlarmGet(EAlarm_list(n), name=name)
+           if (trim(name) == trim(alarmname)) then
+              call ESMF_ClockGet(EClock, CurrTime=ETime1, rc=rc)
+              if (rc /= ESMF_SUCCESS) continue
+              call ESMF_AlarmGet(EAlarm_list(n), RingTime=ETime2, rc=rc)
+              if (rc /= ESMF_SUCCESS) continue
+              ETimeInterval = ETime2 - ETime1
+              call ESMF_TimeIntervalGet(ETimeInterval, S_i8=s)
+              found = .true.
+           endif
+        enddo
+     end if
+     if (.not.found) then
+        write(logunit,*) subname//': ERROR alarm not valid for EClock '//trim(alarmname)
+        call shr_sys_abort(subname//'ERROR: alarm invalid '//trim(alarmname))
+     endif
+#ifdef USE_ESMF_LIB
+     deallocate(EAlarm_list)
+#endif
+   end function seq_timemgr_alarmGetSecondsUntilNextRing
+
+   subroutine check_passive_tracer_supercycling(domain, EClock, ocn_cpl_dt_sec, &
+        num_div_per_cpl)!{{{
+     type(domain_type), intent(in) :: domain
+     type(ESMF_Clock), intent(in) :: EClock
+     integer, intent(in) :: ocn_cpl_dt_sec
+     integer(kind=I8KIND), intent(in) :: num_div_per_cpl
+
+     integer, pointer :: sc
+     integer :: nd, passive_tracer_dt_sec
+     integer(kind=I8KIND) :: restart_sec, config_dt_sec
+
+     call mpas_pool_get_config(domain % configs, &
+          'config_passive_tracers_supercycle_timestep', sc)
+     if (sc <= 1) return
+
+     ! The supercycle factor, sc, must be either a factor of num_div_per_cpl or
+     ! a multiple. This constraint is not actually necessary, but it's unlikely
+     ! the user would intend for neither of these divisibility conditions to
+     ! hold, so we enforce the constraint.
+     if ( (sc <= num_div_per_cpl .and. modulo(num_div_per_cpl, sc) /= 0) .or. &
+          (sc >  num_div_per_cpl .and. modulo(sc, num_div_per_cpl) /= 0)) then
+        nd = num_div_per_cpl
+        call mpas_log_write('Number of time steps per coupling interval: $i', &
+             MPAS_LOG_ERR, intArgs=(/nd/))
+        call mpas_log_write('Number of time steps per passive tracer time step: $i', &
+             MPAS_LOG_ERR, intArgs=(/sc/))
+        call mpas_log_write('One of these must divide the other.', MPAS_LOG_CRIT)
+     end if
+
+     if (sc <= num_div_per_cpl) return
+
+     ! Get the restart time in seconds.
+     restart_sec = seq_timemgr_alarmGetSecondsUntilNextRing( &
+          EClock, seq_timemgr_alarm_restart)
+
+     ! Calculate the passive tracer advection timestep in seconds. Both the
+     ! coupler and config_dt time intervals are specified to precision seconds,
+     ! so the quotient ocn_cpl_dt_sec/num_div_per_cpl is an integer.
+     passive_tracer_dt_sec = sc*(ocn_cpl_dt_sec/num_div_per_cpl)
+
+     if (modulo(restart_sec, passive_tracer_dt_sec) /= 0) then
+        call mpas_log_write( &
+             'Passive tracer timestep with superycle $i does not divide restart interval', &
+             MPAS_LOG_CRIT, intArgs=(/sc/))
+     end if
+     if (restart_sec > 86400) then
+        ! If the restart interval is at least 1 day, then we require the tracer
+        ! time step to divide a day. That is because the restart option nmonths
+        ! varies in time. But it is always a multiple of a day, so we can use a
+        ! day as a common divisor against which to check. This overconstrains
+        ! restart options but should not be a practical limitation.
+        if (modulo(86400, passive_tracer_dt_sec) /= 0) then
+           call mpas_log_write( &
+                'Passive tracer timestep with superycle $i does not divide length of day', &
+             MPAS_LOG_CRIT, intArgs=(/sc/))
+        end if
+     end if
+   end subroutine check_passive_tracer_supercycling!}}}
 end module ocn_comp_mct
 
 !|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||

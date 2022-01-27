@@ -33,6 +33,7 @@ module ocn_time_integration
    use ocn_time_integration_rk4
    use ocn_time_integration_split
    use ocn_time_integration_si
+   use ocn_tracer_supercycle
 
    implicit none
    private
@@ -117,6 +118,8 @@ module ocn_time_integration
       ! End preamble
       !-------------
       ! Begin code
+
+      call ocn_tracer_supercycle_set_timestep()
 
       ! Advance the model base on choice of time integration scheme
       select case (timeIntegratorChoice)

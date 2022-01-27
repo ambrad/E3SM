@@ -34,6 +34,7 @@ module ocn_vmix
    use ocn_vmix_gotm
    use ocn_vmix_coefs_redi
    use ocn_diagnostics_variables
+   use ocn_tracer_supercycle
 
    implicit none
    private
@@ -1116,6 +1117,8 @@ contains
       type (mpas_pool_iterator_type) :: groupItr
 
       character (len=StrKIND) :: modifiedGroupName
+      real (kind=RKIND) :: dtUse
+      
       err = 0
 
       call mpas_timer_start('vmix imp')
@@ -1246,6 +1249,14 @@ contains
       do while ( mpas_pool_get_next_member(tracersPool, groupItr) )
 
          if ( groupItr % memberType == MPAS_POOL_FIELD ) then
+            dtUse = dt
+            if (ocn_tracer_supercycle_use()) then
+               if (trim(groupItr % memberName) /= 'activeTracers') then
+                  if (.not. ocn_tracer_supercycle_is_tracer_step()) cycle
+                  dtUse = ocn_tracer_supercycle_get_supercycle()*dt
+               end if
+            end if
+
             call mpas_pool_get_array(tracersPool, groupItr % memberName, tracersGroup, timeLevel)
 #ifdef MPAS_OPENACC
             !$acc enter data copyin(tracersGroup)
@@ -1287,12 +1298,12 @@ contains
             !$acc enter data copyin(tracerGroupSurfaceFlux)
 #endif
 
-               call ocn_tracer_vmix_tend_implicit(dt, vertDiffTopOfCell, layerThickness, tracersGroup, &
+               call ocn_tracer_vmix_tend_implicit(dtUse, vertDiffTopOfCell, layerThickness, tracersGroup, &
                         vertNonLocalFlux, tracerGroupSurfaceFlux,  &
                         config_cvmix_kpp_nonlocal_with_implicit_mix, err)
             end if
 
-            ! difference tracers to compute influence of vertical mixing and divide by dt
+            ! difference tracers to compute influence of vertical mixing and divide by dtUse
             if (trim(groupItr % memberName) == 'activeTracers') then
                if (config_compute_active_tracer_budgets) then
 #ifdef MPAS_OPENACC
@@ -1305,7 +1316,7 @@ contains
                   do k = 1, nVertLevels
                   do iTracer = 1, num_tracers
                      activeTracerVertMixTendency(iTracer,k,iCell) = &
-                        (tracersGroup(iTracer,k,iCell) - activeTracerVertMixTendency(iTracer,k,iCell)) / dt
+                        (tracersGroup(iTracer,k,iCell) - activeTracerVertMixTendency(iTracer,k,iCell)) / dtUse
                   end do
                   end do
                   end do

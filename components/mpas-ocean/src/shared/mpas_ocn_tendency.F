@@ -51,7 +51,8 @@ module ocn_tendency
    use ocn_tracer_DMS
    use ocn_tracer_MacroMolecules
    use ocn_tracer_CFC
-
+   use ocn_tracer_supercycle
+   
    use ocn_thick_hadv
    use ocn_thick_vadv
    use ocn_thick_surface_flux
@@ -588,6 +589,14 @@ contains
       real (kind=RKIND), dimension(:,:), allocatable :: &
          normalThicknessFlux ! Flux of thickness through edge (m^2/s)
 
+      ! For passive tracer supercycling.
+      real(RKIND) :: dtUse
+      integer :: poolIdx
+      logical :: zeroSurfaceFlux
+      real (kind=RKIND), dimension(:,:), pointer :: &
+           layerThicknessLcl, zMidLcl, vertAleTransportTopLcl, &
+           layerThickEdgeLcl
+      
       ! End preamble
       !-----------------------------------------------------------------
       ! Begin code
@@ -678,6 +687,7 @@ contains
       !
 
       ! loop over groups
+      poolIdx = 0
       call mpas_pool_begin_iteration(tracersPool)
       do while ( mpas_pool_get_next_member(tracersPool, groupItr) )
 
@@ -701,7 +711,41 @@ contains
                                 config_use_tracerGroup)
 
       if ( config_use_tracerGroup ) then
-
+         ! Generalize and alias data to support passive tracer supercycling.
+         zeroSurfaceFlux = .true.
+         dtUse = dt
+         layerThickEdgeLcl => layerThickEdge
+         layerThicknessLcl => layerThickness
+         zMidLcl => zMid
+         vertAleTransportTopLcl => vertAleTransportTop
+         if (ocn_tracer_supercycle_use()) then
+            ! For passive tracers, decide whether it is time to compute
+            ! tendencies.
+            poolIdx = poolIdx + 1
+            if (isActiveTracer) then
+               if (poolIdx /= 1) print *, 'amb> passive must come after active'
+               call ocn_tracer_supercycle_accum( &
+                    tendPool, nCellsAll, maxLevelCell, nEdgesAll, nVertLevels, &
+                    layerThicknessLcl, layerThickEdgeLcl, zMidLcl, &
+                    normalThicknessFlux, vertAleTransportTopLcl)
+            else
+               if (trim(groupItr % memberName) == 'ecosysTracers') then
+                  modifiedGroupName = trim(groupItr % memberName) // "SurfaceFlux"
+                  call mpas_pool_get_array(tracersSurfaceFluxPool, &
+                       trim(modifiedGroupName), tracerGroupSurfaceFlux)
+                  call ocn_tracer_ecosys_surface_flux_accumulate_fluxes( &
+                       forcingPool, nCellsOwned, tracerGroupSurfaceFlux)
+                  zeroSurfaceFlux = .false.
+               end if
+               if (.not. ocn_tracer_supercycle_is_tracer_step()) cycle
+               dtUse = ocn_tracer_supercycle_get_supercycle()*dt
+               call ocn_tracer_supercycle_fill( &
+                    tendPool, nCellsAll, maxLevelCell, nEdgesAll, nVertLevels, &
+                    layerThicknessLcl, layerThickEdgeLcl, zMidLcl, &
+                    normalThicknessFlux, vertAleTransportTopLcl)
+            end if
+         end if
+         
          ! This group meets all requirements, now check for 
          ! requested options
 
@@ -779,16 +823,18 @@ contains
          end do
          !$omp end do
 
-         !$omp do schedule(runtime) private(n)
-         do iCell = 1, nCellsAll
-         do n=1,nTracersGroup
-            tracerGroupSurfaceFlux       (n,iCell) = 0.0_RKIND
-            tracerGroupSurfaceFluxRunoff (n,iCell) = 0.0_RKIND
-            tracerGroupSurfaceFluxRemoved(n,iCell) = 0.0_RKIND
-         end do
-         end do
-         !$omp end do
-         !$omp end parallel
+         if (zeroSurfaceFlux) then
+            !$omp do schedule(runtime) private(n)
+            do iCell = 1, nCellsAll
+            do n=1,nTracersGroup
+               tracerGroupSurfaceFlux       (n,iCell) = 0.0_RKIND
+               tracerGroupSurfaceFluxRunoff (n,iCell) = 0.0_RKIND
+               tracerGroupSurfaceFluxRemoved(n,iCell) = 0.0_RKIND
+            end do
+            end do
+            !$omp end do
+            !$omp end parallel
+         end if
 
          !
          ! compute surface tracer flux from bulk forcing
@@ -800,7 +846,7 @@ contains
                                   tracerGroupSurfaceFlux, &
                                   tracerGroupSurfaceFluxRunoff, &
                                   tracerGroupSurfaceFluxRemoved, &
-                                  dt, layerThickness, err)
+                                  dtUse, layerThicknessLcl, err)
 
          end if ! sfc bulk forcing
 
@@ -816,14 +862,14 @@ contains
                                            forcingPool, nTracersGroup, &
                                            nCellsOwned, latCell, minLevelCell, &
                                            maxLevelCell, nVertLevels, &
-                                           layerThickness, zMid, &
+                                           layerThicknessLcl, zMidLcl, &
                                            indxTemp, indxSalt, &
-                                           tracerGroupTend, err)
+                                           tracerGroupTend, dtUse, err)
 
             call ocn_tracer_ecosys_surface_flux_compute(activeTracers, &
                                            tracerGroup, forcingPool,  &
                                            nTracersGroup, nCellsOwned, &
-                                           zMid, minLevelCell, indxTemp, &
+                                           zMidLcl, minLevelCell, indxTemp, &
                                            indxSalt, tracerGroupSurfaceFlux, &
                                            err)
                                            
@@ -842,14 +888,14 @@ contains
                                         nTracersEcosys, forcingPool, &
                                         nCellsOwned, minLevelCell, &
                                         maxLevelCell, nVertLevels, &
-                                        layerThickness, indxTemp, &
+                                        layerThicknessLcl, indxTemp, &
                                         indxSalt, tracerGroupTend, &
                                         err)
 
             call ocn_tracer_DMS_surface_flux_compute(activeTracers, &
                                         tracerGroup, forcingPool,  &
                                         nTracersGroup, nCellsOwned, &
-                                        zMid, minLevelCell, indxTemp, &
+                                        zMidLcl, minLevelCell, indxTemp, &
                                         indxSalt, tracerGroupSurfaceFlux,  &
                                         tracerGroupSurfaceFluxRemoved, err)
          endif ! DMS
@@ -867,13 +913,13 @@ contains
                                   nTracersEcosys, forcingPool, &
                                   nCellsOwned, minLevelCell, &
                                   maxLevelCell, nVertLevels, &
-                                  layerThickness,  &
+                                  layerThicknessLcl,  &
                                   tracerGroupTend, err)
 
             call ocn_tracer_MacroMolecules_surface_flux_compute( &
                                   activeTracers, tracerGroup, &
                                   forcingPool, nTracersGroup, &
-                                  nCellsOwned, zMid, &
+                                  nCellsOwned, zMidLcl, &
                                   indxTemp, indxSalt, &
                                   tracerGroupSurfaceFlux, err)
 
@@ -973,7 +1019,7 @@ contains
 
             call ocn_tracer_interior_restoring_compute(nTracersGroup, &
                         nCellsAll, minLevelCell, maxLevelCell, &
-                        layerThickness, tracerGroup, &
+                        layerThicknessLcl, tracerGroup, &
                         tracerGroupInteriorRestoringRate, &
                         tracerGroupInteriorRestoringValue, &
                         tracerGroupTend, err)
@@ -1001,7 +1047,7 @@ contains
 
             call ocn_tracer_exponential_decay_compute(nTracersGroup, &
                         nCellsAll, minLevelCell, maxLevelCell, &
-                        layerThickness, tracerGroup, &
+                        layerThicknessLcl, tracerGroup, &
                         tracerGroupExponentialDecayRate, &
                         tracerGroupTend, err)
 
@@ -1030,7 +1076,7 @@ contains
                                      tracerGroupIdealAgeMask)
             call ocn_tracer_ideal_age_compute(nTracersGroup, nCellsAll,&
                                       minLevelCell, maxLevelCell, &
-                                      layerThickness, &
+                                      layerThicknessLcl, &
                                       tracerGroupIdealAgeMask, &
                                       tracerGroup, tracerGroupTend, err)
 
@@ -1058,7 +1104,7 @@ contains
                                      modifiedGroupName, &
                                      tracerGroupTTDMask)
             call ocn_tracer_TTD_compute(nTracersGroup, nCellsAll, &
-                                        maxLevelCell, layerThickness, &
+                                        maxLevelCell, layerThicknessLcl, &
                                         tracerGroupTTDMask, &
                                         tracerGroup, err)
 
@@ -1075,8 +1121,8 @@ contains
          ! Tracer budget is computed and stored within the tracer adv
          ! routine
          call ocn_tracer_advection_tend(tracerGroup, &
-                            normalThicknessFlux, vertAleTransportTop, &
-                            layerThickness, dt, tracerGroupTend, &
+                            normalThicknessFlux, vertAleTransportTopLcl, &
+                            layerThicknessLcl, dtUse, tracerGroupTend, &
                             computeBudgets)
 
          !$acc update host (activeTracerHorizontalAdvectionEdgeFlux, &
@@ -1111,10 +1157,10 @@ contains
             !$omp end parallel
          endif ! compute budgets
 
-         call ocn_tracer_hmix_tend(meshPool, layerThickEdge, &
-                                   layerThickness, zMid, tracerGroup, &
+         call ocn_tracer_hmix_tend(meshPool, layerThickEdgeLcl, &
+                                   layerThicknessLcl, zMidLcl, tracerGroup, &
                                    RediKappa, slopeTriadUp, &
-                                   slopeTriadDown, dt, isActiveTracer, &
+                                   slopeTriadDown, dtUse, isActiveTracer, &
                                    RediKappaSfcTaper, RediKappaScaling,&
                                    rediLimiterCount, tracerGroupTend, err)
 
@@ -1157,7 +1203,7 @@ contains
          endif ! compute budgets
 
          call ocn_tracer_surface_flux_tend(meshPool, fractionAbsorbed, &
-                               fractionAbsorbedRunoff, layerThickness, &
+                               fractionAbsorbedRunoff, layerThicknessLcl, &
                                tracerGroupSurfaceFlux, &
                                tracerGroupSurfaceFluxRunoff,  &
                                tracerGroupTend, err)
@@ -1191,7 +1237,7 @@ contains
          if (isActiveTracer) &
             call ocn_tracer_short_wave_absorption_tend(meshPool, &
                        swForcingPool, forcingPool, indxTemp, &
-                       layerThickness, penetrativeTemperatureFlux, &
+                       layerThicknessLcl, penetrativeTemperatureFlux, &
                        penetrativeTemperatureFluxOBL, tracerGroupTend, &
                        bottomLayerShortwaveTemperatureFlux, err)
 

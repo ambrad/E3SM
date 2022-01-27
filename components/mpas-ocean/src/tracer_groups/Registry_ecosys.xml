@@ -75,6 +75,10 @@
 			description="if true, make variables in ecosysDiagFieldsLevel5 available for output"
 			possible_values=".true. or .false."
 		/>
+		<nml_option name="config_ecosysTracers_subcycle_param" type="logical" default_value=".false." units="unitless"
+			description="if true and supercycle_timestep > 1, the ecosys parameterization is subcycled to match the baroclinic time step"
+			possible_values=".true. or .false."
+		/>
 	</nml_record>
 
 	<packages>
