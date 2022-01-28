@@ -1478,6 +1478,13 @@ Valid values: .true. and .false.
 Default: Defined in namelist_defaults.xml
 </entry>
 
+<entry id="config_passive_tracers_supercycle_timestep" type="integer"
+	category="tracer_forcing_ecosysTracers" group="advection">
+if value > 1, then the passive tracer time step is this value times the baroclinic time step
+
+Valid values: Any positive integer value greater than or equal to 0.
+Default: Defined in namelist_defaults.xml
+</entry>
 
 <!-- bottom_drag -->
 
@@ -2593,6 +2600,13 @@ Valid values: .true. or .false.
 Default: Defined in namelist_defaults.xml
 </entry>
 
+<entry id="config_ecosysTracers_subcycle_param" type="logical"
+	category="tracer_forcing_ecosysTracers" group="tracer_forcing_ecosysTracers">
+if true and supercycle_timestep > 1, the ecosys parameterization is subcycled to match the baroclinic time step
+
+Valid values: .true. or .false.
+Default: Defined in namelist_defaults.xml
+</entry>
 
 <!-- tracer_forcing_DMSTracers -->
 

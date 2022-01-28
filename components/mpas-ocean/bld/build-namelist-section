@@ -288,6 +288,7 @@ add_default($nl, 'config_vert_tracer_adv_order');
 add_default($nl, 'config_horiz_tracer_adv_order');
 add_default($nl, 'config_coef_3rd_order');
 add_default($nl, 'config_monotonic');
+add_default($nl, 'config_passive_tracers_supercycle_timestep');
 
 ###############################
 # Namelist group: bottom_drag #
@@ -506,6 +507,7 @@ add_default($nl, 'config_ecosysTracers_diagnostic_fields_level2');
 add_default($nl, 'config_ecosysTracers_diagnostic_fields_level3');
 add_default($nl, 'config_ecosysTracers_diagnostic_fields_level4');
 add_default($nl, 'config_ecosysTracers_diagnostic_fields_level5');
+add_default($nl, 'config_ecosysTracers_subcycle_param');
 
 #############################################
 # Namelist group: tracer_forcing_DMSTracers #

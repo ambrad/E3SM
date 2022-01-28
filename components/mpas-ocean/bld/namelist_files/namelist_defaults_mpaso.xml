@@ -327,6 +327,7 @@
 <config_horiz_tracer_adv_order>3</config_horiz_tracer_adv_order>
 <config_coef_3rd_order>0.25</config_coef_3rd_order>
 <config_monotonic>.true.</config_monotonic>
+<config_passive_tracers_supercycle_timestep>0</config_passive_tracers_supercycle_timestep>
 
 <!-- bottom_drag -->
 <config_use_implicit_bottom_drag>.true.</config_use_implicit_bottom_drag>
@@ -517,6 +518,7 @@
 <config_ecosysTracers_diagnostic_fields_level3>.false.</config_ecosysTracers_diagnostic_fields_level3>
 <config_ecosysTracers_diagnostic_fields_level4>.false.</config_ecosysTracers_diagnostic_fields_level4>
 <config_ecosysTracers_diagnostic_fields_level5>.false.</config_ecosysTracers_diagnostic_fields_level5>
+<config_ecosysTracers_subcycle_param>.false.</config_ecosysTracers_subcycle_param>
 
 <!-- tracer_forcing_DMSTracers -->
 <config_use_DMSTracers>.false.</config_use_DMSTracers>
