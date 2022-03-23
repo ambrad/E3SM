@@ -63,15 +63,17 @@ module ocn_transport_tests
   ! Private module variables
   !
   !--------------------------------------------------------------------
-  real(kind=RKIND), parameter :: pi = 3.141592653589793d0, &
-                                 two_pi = 2.0_RKIND*pi, &
-                                 one_day = 86400.0_RKIND, &
-                                 twelve_days = 12.0_RKIND*one_day
+  real(kind=RKIND), parameter :: &
+       pi = 3.141592653589793d0, two_pi = 2.0_RKIND*pi, &
+       one_day = 86400.0_RKIND, twelve_days = 12.0_RKIND*one_day, &
+       ztop = 12000.0_RKIND, T0 = 300.0_RKIND, Rd = 287.04_RKIND, &
+       grav = 9.80616_RKIND, p0 = 100000.0_RKIND, H = Rd*T0/grav
 
   character(len=32), parameter :: tc1str = "rotation"
   character(len=32), parameter :: tc2str = "nondivergent2D"
   character(len=32), parameter :: tc3str = "divergent2D"
   character(len=32), parameter :: tc4str = "correlatedTracers2D"
+  character(len=32), parameter :: tc5str = "nondivergent3D"
 
 #ifdef MPAS_DEBUG
   logical, parameter :: flush_log = .true.
@@ -262,7 +264,7 @@ module ocn_transport_tests
 !
 !  routine ocn_transport_test_init_validate
 !
-!> \brief Ensures that vertical levels = 3 for 2D tests
+!> \brief Sets number of vertical levels.
 !> \author Andrew Bradley
 !> \date   12/2/2020
 !> \details
@@ -274,12 +276,14 @@ subroutine ocn_transport_test_init_validate(cfgpl, pkgpl, iocontext, err)
   type (mpas_io_context_type), intent(inout) :: iocontext
   integer, intent(out) :: err
 
-  integer, pointer :: config_vert_levels
+  integer, pointer :: config_vert_levels, config_transport_tests_vert_levels
 
   err = 0
 
   call mpas_pool_get_config(cfgpl, 'config_vert_levels', config_vert_levels)
-  config_vert_levels = 3
+  call mpas_pool_get_config(cfgpl, 'config_transport_tests_vert_levels', &
+       config_transport_tests_vert_levels)
+  config_vert_levels = config_transport_tests_vert_levels
 end subroutine ocn_transport_test_init_validate
 
 !***********************************************************************
@@ -301,9 +305,10 @@ subroutine ocn_transport_test_velocity(meshPool, days_since_start, dt, normalVel
     real(RKIND), dimension(:), pointer :: latEdge, lonEdge, latVertex, lonVertex
     integer, dimension(:,:), pointer :: verticesOnEdge
     real(RKIND), pointer :: sphere_radius
-    real(RKIND) :: time_sec, nml(2)
+    real(RKIND) :: time_sec, nml(2), z
     integer, pointer :: nEdges
-    integer :: i
+    integer :: i, k, nlev
+    logical :: is_3D
 
     time_sec = days_since_start*one_day + dt
     call mpas_pool_get_config(meshPool, 'sphere_radius', sphere_radius)
@@ -315,14 +320,27 @@ subroutine ocn_transport_test_velocity(meshPool, days_since_start, dt, normalVel
     call mpas_pool_get_array(meshPool, 'lonVertex', lonVertex)
     call mpas_pool_get_array(meshPool, 'verticesOnEdge', verticesOnEdge)
 
+    is_3D = is_test_3D(config_transport_tests_flow_id)
+    z = 0.0_RKIND
     do i = 1, nEdges
        call calc_edge_normal( &
             lonEdge(i), latEdge(i), &
             lonVertex(verticesOnEdge(1,i)), latVertex(verticesOnEdge(1,i)), &
             lonVertex(verticesOnEdge(2,i)), latVertex(verticesOnEdge(2,i)), &
             nml)
-       normalVelocity(:,i) = calc_vnml( &
-            time_sec, sphere_radius, lonEdge(i), latEdge(i), nml)
+       if (is_3D) then
+          nlev = size(normalVelocity,1)
+          do k = 1, nlev
+             z = ((k - 0.5)/nlev)*ztop
+             normalVelocity(k,i) = calc_vnml( &
+                  config_transport_tests_flow_id, time_sec, sphere_radius, &
+                  z, lonEdge(i), latEdge(i), nml)
+          end do
+       else
+          normalVelocity(:,i) = calc_vnml( &
+               config_transport_tests_flow_id, time_sec, sphere_radius, &
+               z, lonEdge(i), latEdge(i), nml)
+       end if
     end do
   end subroutine ocn_transport_test_velocity
 
@@ -342,8 +360,15 @@ subroutine ocn_transport_test_velocity(meshPool, days_since_start, dt, normalVel
       case (2) ; tcname = tc2str
       case (3) ; tcname = tc3str
       case (4) ; tcname = tc4str
+      case (5) ; tcname = tc5str
     end select
-  end function
+  end function flow_id_name
+
+  pure function is_test_3D(fid) result(is_3D)
+    integer, intent(in) :: fid
+    logical :: is_3D
+    is_3D = fid == 5
+  end function is_test_3D
 
 !***********************************************************************
 !
@@ -357,15 +382,17 @@ subroutine ocn_transport_test_velocity(meshPool, days_since_start, dt, normalVel
 !> a prescribed flow advection test.
 !
 !-----------------------------------------------------------------------
-  function calc_vnml(t, radius, lon, lat, nml) result(vnml)
-    real(RKIND), intent(in) :: t, radius, lon, lat, &
+  function calc_vnml(fid, t, radius, z, lon, lat, nml) result(vnml)
+    integer, intent(in) :: fid
+    real(RKIND), intent(in) :: t, radius, z, lon, lat, &
       nml(2) !< edge normal vector
-    real(RKIND) :: vnml, u, v
+    real(RKIND) :: vnml, u, v, w
     u = 0; v = 0
-    select case(config_transport_tests_flow_id)
-       case(1); call flow_rotation    (   lon, lat, u, v)
-       case(2,4); call flow_nondivergent(t, lon, lat, u, v)
-       case(3); call flow_divergent   (t, lon, lat, u, v)
+    select case(fid)
+       case(1);   call flow_rotation      (   lon, lat, u, v)
+       case(2,4); call flow_nondivergent  (t, lon, lat, u, v)
+       case(3);   call flow_divergent     (t, lon, lat, u, v)
+       case(5);   call flow_nondivergent3d(t, lon, lat, z, u, v, w)
     end select
     vnml = radius*(nml(1)*u + nml(2)*v)
   end function calc_vnml
@@ -446,6 +473,55 @@ subroutine ocn_transport_test_velocity(meshPool, days_since_start, dt, normalVel
     u = (1/twelve_days)*(-5*(sin(lon_p/2)**2)*sin(2*lat)*(coslat**2)*cost + two_pi*coslat)
     v = (2.5_RKIND/twelve_days)*sin(lon_p)*(coslat**3)*cost
   end subroutine flow_divergent
+
+!***********************************************************************
+!
+!  routine flow_nondivergent3D
+!
+!> \brief non-divergent deformational flow velocity: 3D variant
+!> \author Andrew Bradley
+!> \date   3/21/2022
+!> \details
+!>  This function computes the velocity [u(lon,lat,t), v(lon,lat,t),
+!> w(lon,lat,t)] for a non-divergent flow field defined in DCMIP 2012 Test 1-1,
+!> with two exceptions. First, the factor 2 appearing in cos(2 pi t/T) is
+!> removed, as it leads to nonperiodic trajectories. Second, the shape
+!> parameter b is 1 rather than 0.1 to make the test easier and thus useful at
+!> coarser resolutions.
+!
+!-----------------------------------------------------------------------
+  pure subroutine flow_nondivergent3D(t, lon, lat, z, u, v, w)
+    real(RKIND), intent(in) :: t, lon, lat, z
+    real(RKIND), intent(out) :: u, v, w
+    real(RKIND), parameter :: b = 1.0_RKIND, omega0 = (2*23000.0_RKIND*pi)/twelve_days
+    real(RKIND) :: lon_p, coslat, cost, sinlonp, ptop, p, s, s_p, ud, rho
+    lon_p = lon - two_pi*t/twelve_days
+    coslat = cos(lat)
+    cost = cos(pi*t/twelve_days)
+    sinlonp = sin(lon_p)
+    ptop = calc_z2p(ztop)
+    p = calc_z2p(z)
+    s = (1 + exp((ptop-p0)/(b*ptop)) - exp((p-p0)/(b*ptop)) - exp((ptop-p)/(b*ptop)))
+    s_p = (-exp((p-p0)/(b*ptop)) + exp((ptop-p)/(b*ptop)))/(b*ptop)
+    ud = omega0*cos(lon_p)*coslat**2*cost*s_p
+    u = (1/twelve_days)*(10*(sin(lon_p)**2)*sin(2*lat)*cost + two_pi*coslat) + ud
+    v = (10/twelve_days)*sin(2*lon_p)*coslat*cost
+    rho = p/(Rd*T0)
+    w = (-omega0/(grav*get_rho(p)))*sinlonp*coslat*cost*s
+  end subroutine flow_nondivergent3D
+
+  ! 3D test helpers.
+  pure function get_rho(p) result (rho)
+    real(RKIND), intent(in) :: p
+    real(RKIND) :: rho
+    rho = p/(Rd*T0)
+  end function get_rho
+
+  pure function calc_z2p(z) result (p)
+    real(RKIND), intent(in) :: z
+    real(RKIND) :: p
+    p = p0*exp(-z/H)
+  end function calc_z2p
 
 !
 ! end prescribed velocities
