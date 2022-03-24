@@ -104,51 +104,25 @@ module ocn_transport_tests
     integer, intent(out) :: err
 
     type (block_type), pointer :: block_ptr
-    type (mpas_pool_type), pointer :: meshPool, &
-                                      verticalMeshPool, &
-                                      statePool, &
-                                      diagnosticsPool, &
-                                      forcingPool, &
-                                      tracersPool
-    integer, pointer :: nVertLevels, &
-                        nCellsSolve, &
-                        nEdgesSolve, &
-                        nEdge, &
-                        nVerticesSolve, &
-                        index_temperature, &
-                        index_salinity,&
-                        index_tracer1
-    integer, dimension(:), pointer :: minLevelCell, &
-                                      maxLevelCell
+    type (mpas_pool_type), pointer :: meshPool, verticalMeshPool, statePool, &
+         diagnosticsPool, forcingPool, tracersPool
+    integer, pointer :: nVertLevels, nCellsSolve, nEdgesSolve, nEdge, &
+         nVerticesSolve, index_temperature, index_salinity, index_tracer1
+    integer, dimension(:), pointer :: minLevelCell, maxLevelCell
     real (kind=RKIND), pointer :: sphere_radius
-    real (kind=RKIND), dimension(:), pointer :: refBottomDepth,&
-                                                refZMid, &
-                                                lonCell, &
-                                                latEdge, &
-                                                latCell, &
-                                                latVertex, &
-                                                bottomDepth, &
-                                                fCell, &
-                                                fEdge, &
-                                                fVertex, &
-                                                xCell, &
-                                                yCell
+    real (kind=RKIND), dimension(:), pointer :: refBottomDepth, refZMid, &
+         lonCell, latEdge, latCell, latVertex, bottomDepth, fCell, fEdge, &
+         fVertex, xCell, yCell
     real (kind=RKIND), dimension(:,:), pointer :: layerThickness, &
-                                                  restingThickness, &
-                                                  normalVelocity
+         restingThickness, normalVelocity
     real (kind=RKIND), dimension(:,:,:), pointer :: activeTracers,&
                                                     debugTracers
     character (len=StrKIND), pointer :: config_init_configuration
-
-    integer :: iCell, &
-               iEdge, &
-               iVertex, &
-               k
-
-    real (kind=RKIND) :: vs
+    integer :: iCell, iEdge, iVertex, k, i
+    real (kind=RKIND) :: vs, shape
+    logical :: is_3D
 
     err = 0
-
 
 #ifdef MPAS_DEBUG
     call mpas_log_write("entered subroutine ocn_transport_tests_init_setup", MPAS_LOG_OUT, flushNow=flush_log)
@@ -200,34 +174,44 @@ module ocn_transport_tests
        call mpas_pool_get_array(tracersPool, 'debugTracers',debugTracers, 1)
        call mpas_pool_get_array(statePool, 'layerThickness',layerThickness, 1)
 
-       ! Set refBottomDepth and refBottomDepthTopOfCell
+       is_3D = is_test_3D(config_transport_tests_flow_id)
+
+       ! These don't matter, but set them anyway.
        do k = 1, nVertLevels
-          refBottomDepth(k) = 100.0_RKIND
-          refZMid(k) = 50.0_RKIND
+          refBottomDepth(k) = (real(k,RKIND)/nVertLevels)*ztop
+          refZMid(k) = ((k - 0.5_RKIND)/nVertLevels)*ztop
        end do
 
        do iCell = 1, nCellsSolve
-          if (associated(activeTracers) ) then
+          if (associated(activeTracers)) then
              activeTracers(index_temperature, :, iCell) = 15.0d0
              activeTracers(index_salinity, :, iCell) = 35.0d0
           endif
 
           vs = 1.0_RKIND
           if (associated(debugTracers)) then
-            if (config_transport_tests_flow_id /= 4) then
-              do k = 1, nVertLevels
-                 debugTracers(1, k, iCell) = vs*xyztrig(lonCell(iCell), latCell(iCell))
-                 debugTracers(2, k, iCell) = vs*cosine_bells(lonCell(iCell), latCell(iCell))
-                 debugTracers(3, k, iCell) = vs*slotted_cylinders(lonCell(iCell), latCell(iCell))
-              end do
+             if (config_transport_tests_flow_id /= 4) then
+                do k = 1, nVertLevels
+                   debugTracers(1,k,iCell) = vs*xyztrig(lonCell(iCell), latCell(iCell))
+                   debugTracers(2,k,iCell) = vs*cosine_bells(lonCell(iCell), latCell(iCell))
+                   debugTracers(3,k,iCell) = vs*slotted_cylinders(lonCell(iCell), latCell(iCell))
+                end do
              else
-              ! Correlated Tracers test case
-              do k=1, nVertLevels
-                 debugTracers(1, k, iCell) = vs*xyztrig(lonCell(iCell), latCell(iCell))
-                 debugTracers(2, k, iCell) = vs*cosine_bells(lonCell(iCell), latCell(iCell))
-                 debugTracers(3, k, iCell) = correlation_fn(debugTracers(2, k, iCell))
-              enddo
+                ! Correlated Tracers test case
+                do k = 1, nVertLevels
+                   debugTracers(1,k,iCell) = vs*xyztrig(lonCell(iCell), latCell(iCell))
+                   debugTracers(2,k,iCell) = vs*cosine_bells(lonCell(iCell), latCell(iCell))
+                   debugTracers(3,k,iCell) = correlation_fn(debugTracers(2, k, iCell))
+                enddo
              endif
+             if (is_3D) then
+                do k = 1, nVertLevels
+                   shape = (1 - cos(2*pi*(k - 0.5)/nVertLevels))/2
+                   do i = 1, 3
+                      debugTracers(i,k,iCell) = shape*debugTracers(i,k,iCell)
+                   end do
+                end do
+             end if
           endif
 
           do k = 1, nVertLevels
@@ -236,7 +220,7 @@ module ocn_transport_tests
           end do
 
           fCell(iCell) = 0.0_RKIND ! 0 Coriolis
-          bottomDepth(iCell) = 100.0_RKIND
+          bottomDepth(iCell) = ztop
           minLevelCell(iCell) = 1
           maxLevelCell(iCell) = nVertLevels
        end do
@@ -604,6 +588,26 @@ subroutine ocn_transport_test_velocity(meshPool, days_since_start, dt, normalVel
        end if
     end if
   end function slotted_cylinders
+
+  ! Lauritzen et al. 2012 eqn. (9)
+  pure function gaussian_hills(lon, lat) result (ghs)
+    real(RKIND), intent(in) :: lon, lat
+    real(RKIND), parameter :: &
+         lon1 = 5*(pi/6), lat1 = 0, lon2 = -5*(pi/6), lat2 = 0
+    real(RKIND) :: ghs, x, y, z, x1, y1, z1, x2, y2, z2
+    call lonlat2xyz(lon, lat, x, y, z)
+    call lonlat2xyz(lon1, lat1, x1, y1, z1)
+    call lonlat2xyz(lon2, lat2, x2, y2, z2)
+    ghs = gaussian_hill(x, y, z, x1, y1, z1) + gaussian_hill(x, y, z, x2, y2, z2)
+  end function gaussian_hills
+
+  ! Lauritzen et al. 2012 eqn. (7)
+  pure function gaussian_hill(x, y, z, xi, yi, zi) result(gh)
+    real(RKIND), intent(in) :: x, y, z, xi, yi, zi
+    real(RKIND) :: gh
+    real(RKIND), parameter :: hmax = 0.95_RKIND, b = 5.0_RKIND
+    gh = hmax*exp(-b*((x - xi)**2 + (y - yi)**2 + (z - zi)**2))
+  end function gaussian_hill
 
 !
 ! end tracer initial conditions
