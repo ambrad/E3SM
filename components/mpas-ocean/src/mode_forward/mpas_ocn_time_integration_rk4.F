@@ -384,7 +384,7 @@ module ocn_time_integration_rk4
         if (config_transport_tests_flow_id > 0) then
           ! This is a transport test. Write advection velocity from prescribed
           ! flow field.
-          call ocn_transport_test_velocity(meshPool, daysSinceStartOfSim, &
+          call ocn_transport_test_velocity_edge(meshPool, daysSinceStartOfSim, &
             rk_substep_weights(rk_step), normalVelocityNew)
         endif
 

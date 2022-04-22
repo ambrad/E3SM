@@ -37,6 +37,7 @@ module ocn_diagnostics
    use ocn_diagnostics_variables
    use ocn_mesh
    use ocn_surface_land_ice_fluxes
+   use ocn_transport_tests
 
    implicit none
    private
@@ -2214,6 +2215,11 @@ contains
       deallocate(div_hu, &
                  projectedSSH, &
                  ALE_Thickness)
+
+      if (config_transport_tests_flow_id > 0) then
+         call ocn_transport_test_velocity_vert(meshPool, daysSinceStartOfSim, &
+              dt, vertAleTransportTop)
+      end if
 
    end subroutine ocn_vert_transport_velocity_top!}}}
 

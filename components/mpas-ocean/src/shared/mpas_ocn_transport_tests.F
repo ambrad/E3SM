@@ -35,6 +35,7 @@ module ocn_transport_tests
   use mpas_constants
   use mpas_stream_manager
   use mpas_dmpar
+  use mpi !amb debug
 
 #ifndef EXCLUDE_INIT_MODE
   use ocn_config, only : config_init_configuration, &
@@ -56,7 +57,8 @@ module ocn_transport_tests
 
   public :: ocn_transport_test_init_setup, &
             ocn_transport_test_init_validate, &
-            ocn_transport_test_velocity
+            ocn_transport_test_velocity_edge, &
+            ocn_transport_test_velocity_vert
 
   !--------------------------------------------------------------------
   !
@@ -78,6 +80,12 @@ module ocn_transport_tests
 #ifdef MPAS_DEBUG
   logical, parameter :: flush_log = .true.
 #endif
+
+  !amb debug stuff
+  logical :: first = .true.
+  integer :: mpirank, comm_global, verbosity
+  logical :: amroot
+  public :: amb_amroot, amb_get_rank, amb_get_verbosity
 
 !***********************************************************************
   contains
@@ -179,7 +187,7 @@ module ocn_transport_tests
        ! These don't matter, but set them anyway.
        do k = 1, nVertLevels
           refBottomDepth(k) = (real(k,RKIND)/nVertLevels)*ztop
-          refZMid(k) = ((k - 0.5_RKIND)/nVertLevels)*ztop
+          refZMid(k) = -((k - 0.5_RKIND)/nVertLevels)*ztop
        end do
 
        do iCell = 1, nCellsSolve
@@ -215,7 +223,7 @@ module ocn_transport_tests
           endif
 
           do k = 1, nVertLevels
-             layerThickness(k, iCell) = 100.0_RKIND
+             layerThickness(k, iCell) = ztop/nVertLevels
              restingThickness(k, iCell) = layerThickness(k, iCell)
           end do
 
@@ -234,8 +242,10 @@ module ocn_transport_tests
        end do
 
        do iEdge = 1,nEdgesSolve
-          call ocn_transport_test_velocity(meshPool, 0.0_RKIND, 0.0_RKIND, normalVelocity)
+          call ocn_transport_test_velocity_edge(meshPool, 0.0_RKIND, 0.0_RKIND, &
+               normalVelocity)
        enddo
+       ! We don't need to initialize vertAleTransportTop because it's diagnostic.
 
        block_ptr => block_ptr % next
     end do
@@ -255,33 +265,33 @@ module ocn_transport_tests
 !>
 !
 !-----------------------------------------------------------------------
-subroutine ocn_transport_test_init_validate(cfgpl, pkgpl, iocontext, err)
-  type (mpas_pool_type), intent(inout) :: cfgpl, pkgpl
-  type (mpas_io_context_type), intent(inout) :: iocontext
-  integer, intent(out) :: err
+  subroutine ocn_transport_test_init_validate(cfgpl, pkgpl, iocontext, err)
+    type (mpas_pool_type), intent(inout) :: cfgpl, pkgpl
+    type (mpas_io_context_type), intent(inout) :: iocontext
+    integer, intent(out) :: err
 
-  integer, pointer :: config_vert_levels, config_transport_tests_vert_levels
+    integer, pointer :: config_vert_levels, config_transport_tests_vert_levels
 
-  err = 0
+    err = 0
 
-  call mpas_pool_get_config(cfgpl, 'config_vert_levels', config_vert_levels)
-  call mpas_pool_get_config(cfgpl, 'config_transport_tests_vert_levels', &
-       config_transport_tests_vert_levels)
-  config_vert_levels = config_transport_tests_vert_levels
-end subroutine ocn_transport_test_init_validate
+    call mpas_pool_get_config(cfgpl, 'config_vert_levels', config_vert_levels)
+    call mpas_pool_get_config(cfgpl, 'config_transport_tests_vert_levels', &
+         config_transport_tests_vert_levels)
+    config_vert_levels = config_transport_tests_vert_levels
+  end subroutine ocn_transport_test_init_validate
 
 !***********************************************************************
 !
-!  routine ocn_transport_test_velocity
+!  routine ocn_transport_test_velocity_edge
 !
 !> \brief Sets edge normal velocities for prescribed flow fields
 !> \author Andrew Bradley
 !> \date   12/2/2020
-!> \details Sets edge normal velocities for prescribed flow fields
+!> \details Sets edge normal velocities for prescribed flow fields.
 !>
 !
 !-----------------------------------------------------------------------
-subroutine ocn_transport_test_velocity(meshPool, days_since_start, dt, normalVelocity)
+  subroutine ocn_transport_test_velocity_edge(meshPool, days_since_start, dt, normalVelocity)
     type (mpas_pool_type), intent(in) :: meshPool
     real(RKIND), intent(in) :: days_since_start, dt
     real(RKIND), intent(out) :: normalVelocity(:,:)
@@ -305,6 +315,7 @@ subroutine ocn_transport_test_velocity(meshPool, days_since_start, dt, normalVel
     call mpas_pool_get_array(meshPool, 'verticesOnEdge', verticesOnEdge)
 
     is_3D = is_test_3D(config_transport_tests_flow_id)
+    nlev = size(normalVelocity,1)
     z = 0.0_RKIND
     do i = 1, nEdges
        call calc_edge_normal( &
@@ -313,7 +324,6 @@ subroutine ocn_transport_test_velocity(meshPool, days_since_start, dt, normalVel
             lonVertex(verticesOnEdge(2,i)), latVertex(verticesOnEdge(2,i)), &
             nml)
        if (is_3D) then
-          nlev = size(normalVelocity,1)
           do k = 1, nlev
              z = ((k - 0.5)/nlev)*ztop
              normalVelocity(k,i) = calc_vnml( &
@@ -326,8 +336,54 @@ subroutine ocn_transport_test_velocity(meshPool, days_since_start, dt, normalVel
                z, lonEdge(i), latEdge(i), nml)
        end if
     end do
-  end subroutine ocn_transport_test_velocity
+  end subroutine ocn_transport_test_velocity_edge
 
+!***********************************************************************
+!
+!  routine ocn_transport_test_velocity_vert
+!
+!> \brief Sets edge normal velocities for prescribed flow fields
+!> \author Andrew Bradley
+!> \date   4/21/2022
+!> \details Sets vertical velocity at vertical interface cell centers.
+!>
+!
+!-----------------------------------------------------------------------
+  subroutine ocn_transport_test_velocity_vert(meshPool, days_since_start, dt, w)
+    type (mpas_pool_type), intent(in) :: meshPool
+    real(RKIND), intent(in) :: days_since_start, dt
+    real(RKIND), intent(out) :: w(:,:)
+
+    real(RKIND), dimension(:), pointer :: latCell, lonCell
+    real(RKIND), pointer :: sphere_radius
+    real(RKIND) :: time_sec, nml(2), z
+    integer, pointer :: nCells
+    integer :: i, k, nlevi
+    logical :: is_3D
+
+    time_sec = days_since_start*one_day + dt
+    call mpas_pool_get_config(meshPool, 'sphere_radius', sphere_radius)
+
+    call mpas_pool_get_dimension(meshPool, 'nCells', nCells)
+    call mpas_pool_get_array(meshPool, 'latCell', latCell)
+    call mpas_pool_get_array(meshPool, 'lonCell', lonCell)
+
+    is_3D = is_test_3D(config_transport_tests_flow_id)
+    nlevi = size(w,1)
+    z = 0.0_RKIND
+    if (is_3D) then
+       do i = 1, nCells
+          do k = 1, nlevi
+             z = (real(k-1, RKIND)/nlevi)*ztop
+             w(k,i) = calc_vvert( &
+                  config_transport_tests_flow_id, time_sec, sphere_radius, &
+                  z, lonCell(i), latCell(i))
+          end do
+       end do
+    else
+       w = 0
+    end if
+  end subroutine ocn_transport_test_velocity_vert
 
 !--------------------------------------------------------------------
 !
@@ -380,6 +436,27 @@ subroutine ocn_transport_test_velocity(meshPool, days_since_start, dt, normalVel
     end select
     vnml = radius*(nml(1)*u + nml(2)*v)
   end function calc_vnml
+
+!***********************************************************************
+!
+!  routine calc_vvert
+!
+!> \brief calculates edge normal velocity for prescribed flow
+!> \author Andrew Bradley
+!> \date   4/21/2022
+!> \details
+!>  This function computes the vertical velocity.
+!
+!-----------------------------------------------------------------------
+  function calc_vvert(fid, t, radius, z, lon, lat) result(w)
+    integer, intent(in) :: fid
+    real(RKIND), intent(in) :: t, radius, z, lon, lat
+    real(RKIND) :: u, v, w
+    w = 0
+    select case(fid)
+    case(5); call flow_nondivergent3d(t, lon, lat, z, u, v, w)
+    end select
+  end function calc_vvert
 
 !--------------------------------------------------------------------
 !
@@ -701,4 +778,49 @@ subroutine ocn_transport_test_velocity(meshPool, days_since_start, dt, normalVel
 ! end utilities
 !--------------------------------------------------------------------
 
+  !amb debug stuff
+  subroutine amb_init(comm)
+    integer, intent(in), optional :: comm
+
+    integer :: err
+    character (len=255) :: env_str
+    integer :: tmp
+
+    if (.not. first) return
+    first = .false.
+
+    if (present(comm)) then
+       comm_global = comm
+    else
+       comm_global = MPI_COMM_WORLD
+    end if
+
+    call mpi_comm_rank(comm_global, mpirank, err)
+    amroot = mpirank == 0
+
+    verbosity = 10
+    call get_environment_variable("amb_verbosity", env_str, status=err)
+    if (err /= 1) then
+       read(env_str, '(i)', iostat=err) tmp
+       if (tmp) verbosity = tmp
+    end if
+    if (amroot .and. verbosity > 0) then
+       print *,'amb>_init test id', config_transport_tests_flow_id
+    end if
+  end subroutine amb_init
+  function amb_amroot() result(ar)
+    logical :: ar
+    call amb_init()
+    ar = amroot
+  end function amb_amroot
+  function amb_get_rank() result(r)
+    integer :: r
+    call amb_init()
+    r = mpirank
+  end function amb_get_rank
+  function amb_get_verbosity() result(r)
+    integer :: r
+    call amb_init()
+    r = verbosity
+  end function amb_get_verbosity
 end module ocn_transport_tests
