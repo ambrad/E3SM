@@ -221,7 +221,6 @@ contains
       call ocn_tidal_forcing_layer_thickness(meshPool, forcingPool, &
                                              tendThick, err)
 
-      tendThick = 0 !amb debug
       call mpas_timer_stop("ocn_tend_thick")
 
    !--------------------------------------------------------------------

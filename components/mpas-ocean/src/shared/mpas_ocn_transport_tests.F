@@ -358,7 +358,7 @@ module ocn_transport_tests
     real(RKIND), pointer :: sphere_radius
     real(RKIND) :: time_sec, nml(2), z
     integer, pointer :: nCells
-    integer :: i, k, nlevi
+    integer :: i, k, nlev
     logical :: is_3D
 
     time_sec = days_since_start*one_day + dt
@@ -369,13 +369,15 @@ module ocn_transport_tests
     call mpas_pool_get_array(meshPool, 'lonCell', lonCell)
 
     is_3D = is_test_3D(config_transport_tests_flow_id)
-    nlevi = size(w,1)
+    nlev = size(w,1) - 1
     z = 0.0_RKIND
     if (is_3D) then
        do i = 1, nCells
-          do k = 1, nlevi
-             z = (real(k-1, RKIND)/nlevi)*ztop
-             w(k,i) = calc_vvert( &
+          do k = 1, nlev+1
+             z = (real(k-1, RKIND)/nlev)*ztop
+             ! Negative because vertical direction sign convention is the
+             ! opposite of the 3D test's.
+             w(k,i) = -calc_vvert( &
                   config_transport_tests_flow_id, time_sec, sphere_radius, &
                   z, lonCell(i), latCell(i))
           end do
