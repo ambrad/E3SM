@@ -355,36 +355,31 @@ module ocn_transport_tests
     real(RKIND), intent(out) :: w(:,:)
 
     real(RKIND), dimension(:), pointer :: latCell, lonCell
-    real(RKIND), pointer :: sphere_radius
     real(RKIND) :: time_sec, nml(2), z
-    integer, pointer :: nCells
+    integer, pointer :: nCells, nVertLevels
     integer :: i, k, nlev
-    logical :: is_3D
+
+    if (.not. is_test_3D(config_transport_tests_flow_id)) then
+       w = 0.0_RKIND
+       return
+    end if
 
     time_sec = days_since_start*one_day + dt
-    call mpas_pool_get_config(meshPool, 'sphere_radius', sphere_radius)
-
+    call mpas_pool_get_dimension(meshPool, 'nVertLevels', nVertLevels)
     call mpas_pool_get_dimension(meshPool, 'nCells', nCells)
     call mpas_pool_get_array(meshPool, 'latCell', latCell)
     call mpas_pool_get_array(meshPool, 'lonCell', lonCell)
-
-    is_3D = is_test_3D(config_transport_tests_flow_id)
-    nlev = size(w,1) - 1
-    z = 0.0_RKIND
-    if (is_3D) then
-       do i = 1, nCells
-          do k = 1, nlev+1
-             z = (real(k-1, RKIND)/nlev)*ztop
-             ! Negative because vertical direction sign convention is the
-             ! opposite of the 3D test's.
-             w(k,i) = -calc_vvert( &
-                  config_transport_tests_flow_id, time_sec, sphere_radius, &
-                  z, lonCell(i), latCell(i))
-          end do
+    
+    nlev = nVertLevels
+    do i = 1, nCells
+       do k = 1, nlev+1
+          z = (real(k-1, RKIND)/nlev)*ztop
+          ! Negative because vertical direction sign convention is the
+          ! opposite of the 3D test's.
+          w(k,i) = -calc_vvert(config_transport_tests_flow_id, time_sec, &
+               z, lonCell(i), latCell(i))
        end do
-    else
-       w = 0
-    end if
+    end do
   end subroutine ocn_transport_test_velocity_vert
 
 !--------------------------------------------------------------------
@@ -392,7 +387,6 @@ module ocn_transport_tests
 ! Private module functions
 !
 !--------------------------------------------------------------------
-
 
   pure function flow_id_name(fid) result(tcname)
     integer, intent(in) :: fid
@@ -450,9 +444,9 @@ module ocn_transport_tests
 !>  This function computes the vertical velocity.
 !
 !-----------------------------------------------------------------------
-  function calc_vvert(fid, t, radius, z, lon, lat) result(w)
+  function calc_vvert(fid, t, z, lon, lat) result(w)
     integer, intent(in) :: fid
-    real(RKIND), intent(in) :: t, radius, z, lon, lat
+    real(RKIND), intent(in) :: t, z, lon, lat
     real(RKIND) :: u, v, w
     w = 0
     select case(fid)
@@ -557,7 +551,7 @@ module ocn_transport_tests
     real(RKIND), intent(in) :: t, lon, lat, z
     real(RKIND), intent(out) :: u, v, w
     real(RKIND), parameter :: b = 1.0_RKIND, omega0 = (2*23000.0_RKIND*pi)/twelve_days
-    real(RKIND) :: lon_p, coslat, cost, sinlonp, ptop, p, s, s_p, ud, rho
+    real(RKIND) :: lon_p, coslat, cost, sinlonp, ptop, p, s, s_p, ud
     lon_p = lon - two_pi*t/twelve_days
     coslat = cos(lat)
     cost = cos(pi*t/twelve_days)
@@ -569,7 +563,6 @@ module ocn_transport_tests
     ud = omega0*cos(lon_p)*coslat**2*cost*s_p
     u = (1/twelve_days)*(10*(sin(lon_p)**2)*sin(2*lat)*cost + two_pi*coslat) + ud
     v = (10/twelve_days)*sin(2*lon_p)*coslat*cost
-    rho = p/(Rd*T0)
     w = (-omega0/(grav*get_rho(p)))*sinlonp*coslat*cost*s
   end subroutine flow_nondivergent3D
 
