@@ -363,7 +363,7 @@ module ocn_time_integration_split
         ! This is a transport test. Write advection velocity from prescribed
         ! flow field.
         call ocn_transport_test_velocity_edge(meshPool, daysSinceStartOfSim, &
-          0.5*dt, normalVelocityCur)
+          0.5*dt, normalVelocityCur, 0.5*dt)
       endif
 
       ! Initialize * variables that are used to compute baroclinic

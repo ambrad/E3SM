@@ -81,6 +81,8 @@ module ocn_transport_tests
   logical, parameter :: flush_log = .true.
 #endif
 
+  real (RKIND) :: dt_for_vert
+
   !amb debug stuff
   logical :: first = .true.
   integer :: mpirank, comm_global, verbosity
@@ -126,8 +128,8 @@ module ocn_transport_tests
     real (kind=RKIND), dimension(:,:,:), pointer :: activeTracers,&
                                                     debugTracers
     character (len=StrKIND), pointer :: config_init_configuration
-    integer :: iCell, iEdge, iVertex, k, i
-    real (kind=RKIND) :: vs, shape
+    integer :: iCell, iEdge, iVertex, k, i, n
+    real (kind=RKIND) :: shape
     logical :: is_3D
 
     err = 0
@@ -196,26 +198,35 @@ module ocn_transport_tests
              activeTracers(index_salinity, :, iCell) = 35.0d0
           endif
 
-          vs = 1.0_RKIND
           if (associated(debugTracers)) then
-             if (config_transport_tests_flow_id /= 4) then
+             select case(config_transport_tests_flow_id)
+             case (1,2,3,5)
                 do k = 1, nVertLevels
-                   debugTracers(1,k,iCell) = vs*xyztrig(lonCell(iCell), latCell(iCell))
-                   debugTracers(2,k,iCell) = vs*cosine_bells(lonCell(iCell), latCell(iCell))
-                   debugTracers(3,k,iCell) = vs*slotted_cylinders(lonCell(iCell), latCell(iCell))
+                   debugTracers(1,k,iCell) = xyztrig(lonCell(iCell), latCell(iCell))
+                   debugTracers(2,k,iCell) = cosine_bells(lonCell(iCell), latCell(iCell))
+                   debugTracers(3,k,iCell) = slotted_cylinders(lonCell(iCell), latCell(iCell))
                 end do
-             else
+             case (4)
                 ! Correlated Tracers test case
                 do k = 1, nVertLevels
-                   debugTracers(1,k,iCell) = vs*xyztrig(lonCell(iCell), latCell(iCell))
-                   debugTracers(2,k,iCell) = vs*cosine_bells(lonCell(iCell), latCell(iCell))
+                   debugTracers(1,k,iCell) = xyztrig(lonCell(iCell), latCell(iCell))
+                   debugTracers(2,k,iCell) = cosine_bells(lonCell(iCell), latCell(iCell))
                    debugTracers(3,k,iCell) = correlation_fn(debugTracers(2, k, iCell))
                 enddo
-             endif
+             case (6)
+                do k = 1, nVertLevels
+                   debugTracers(1,k,iCell) = xyztrig(lonCell(iCell), latCell(iCell))
+                   debugTracers(2,k,iCell) = gaussian_hills(lonCell(iCell), latCell(iCell))
+                   debugTracers(3,k,iCell) = 1.0_RKIND
+                end do
+             end select
              if (is_3D) then
+                n = 3
+                if (config_transport_tests_flow_id == 6) n = 2
                 do k = 1, nVertLevels
                    shape = (1 - cos(2*pi*(k - 0.5)/nVertLevels))/2
-                   do i = 1, 3
+                   shape = nint(1 + 4*shape)/5.0_RKIND
+                   do i = 1, n
                       debugTracers(i,k,iCell) = shape*debugTracers(i,k,iCell)
                    end do
                 end do
@@ -243,7 +254,7 @@ module ocn_transport_tests
 
        do iEdge = 1,nEdgesSolve
           call ocn_transport_test_velocity_edge(meshPool, 0.0_RKIND, 0.0_RKIND, &
-               normalVelocity)
+               normalVelocity, 0.0_RKIND)
        enddo
        ! We don't need to initialize vertAleTransportTop because it's diagnostic.
 
@@ -291,9 +302,10 @@ module ocn_transport_tests
 !>
 !
 !-----------------------------------------------------------------------
-  subroutine ocn_transport_test_velocity_edge(meshPool, days_since_start, dt, normalVelocity)
+  subroutine ocn_transport_test_velocity_edge(meshPool, days_since_start, dt, &
+       normalVelocity, dt_for_vert_in)
     type (mpas_pool_type), intent(in) :: meshPool
-    real(RKIND), intent(in) :: days_since_start, dt
+    real(RKIND), intent(in) :: days_since_start, dt, dt_for_vert_in
     real(RKIND), intent(out) :: normalVelocity(:,:)
 
     real(RKIND), dimension(:), pointer :: latEdge, lonEdge, latVertex, lonVertex
@@ -304,6 +316,8 @@ module ocn_transport_tests
     integer :: i, k, nlev
     logical :: is_3D
 
+    dt_for_vert = dt_for_vert_in
+    
     time_sec = days_since_start*one_day + dt
     call mpas_pool_get_config(meshPool, 'sphere_radius', sphere_radius)
 
@@ -364,7 +378,7 @@ module ocn_transport_tests
        return
     end if
 
-    time_sec = days_since_start*one_day + dt
+    time_sec = days_since_start*one_day + dt_for_vert
     call mpas_pool_get_dimension(meshPool, 'nVertLevels', nVertLevels)
     call mpas_pool_get_dimension(meshPool, 'nCells', nCells)
     call mpas_pool_get_array(meshPool, 'latCell', latCell)
@@ -397,13 +411,14 @@ module ocn_transport_tests
       case (3) ; tcname = tc3str
       case (4) ; tcname = tc4str
       case (5) ; tcname = tc5str
+      case default ; tcname = "unnamed"
     end select
   end function flow_id_name
 
   pure function is_test_3D(fid) result(is_3D)
     integer, intent(in) :: fid
     logical :: is_3D
-    is_3D = fid == 5
+    is_3D = fid == 5 .or. fid == 6
   end function is_test_3D
 
 !***********************************************************************
@@ -428,7 +443,7 @@ module ocn_transport_tests
        case(1);   call flow_rotation      (   lon, lat, u, v)
        case(2,4); call flow_nondivergent  (t, lon, lat, u, v)
        case(3);   call flow_divergent     (t, lon, lat, u, v)
-       case(5);   call flow_nondivergent3d(t, lon, lat, z, u, v, w)
+       case(5,6); call flow_nondivergent3d(t, lon, lat, z, u, v, w)
     end select
     vnml = radius*(nml(1)*u + nml(2)*v)
   end function calc_vnml
@@ -450,7 +465,7 @@ module ocn_transport_tests
     real(RKIND) :: u, v, w
     w = 0
     select case(fid)
-    case(5); call flow_nondivergent3d(t, lon, lat, z, u, v, w)
+    case(5,6); call flow_nondivergent3d(t, lon, lat, z, u, v, w)
     end select
   end function calc_vvert
 
@@ -564,6 +579,10 @@ module ocn_transport_tests
     u = (1/twelve_days)*(10*(sin(lon_p)**2)*sin(2*lat)*cost + two_pi*coslat) + ud
     v = (10/twelve_days)*sin(2*lon_p)*coslat*cost
     w = (-omega0/(grav*get_rho(p)))*sinlonp*coslat*cost*s
+    if (.false.) then
+       u = 0; v = 0
+       w = (-omega0/(grav*get_rho(p)))*cost*s
+    end if
   end subroutine flow_nondivergent3D
 
   ! 3D test helpers.

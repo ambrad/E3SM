@@ -221,6 +221,8 @@ contains
       call ocn_tidal_forcing_layer_thickness(meshPool, forcingPool, &
                                              tendThick, err)
 
+      if (config_transport_tests_flow_id == 6) tendThick = 0
+      
       call mpas_timer_stop("ocn_tend_thick")
 
    !--------------------------------------------------------------------

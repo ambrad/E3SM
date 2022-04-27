@@ -110,7 +110,8 @@ module ocn_time_integration_rk4
 
       type (mpas_pool_type), pointer :: nextProvisPool, prevProvisPool
 
-      real (kind=RKIND), dimension(4) :: rk_weights, rk_substep_weights
+      real (kind=RKIND), dimension(4) :: rk_weights
+      real (kind=RKIND) :: rk_substep_weights(0:4)
 
       real (kind=RKIND) :: coef
       real (kind=RKIND), dimension(:,:), pointer :: &
@@ -365,6 +366,7 @@ module ocn_time_integration_rk4
       ! That is why the coefficients of h are one index early in the following, i.e.
       ! a = (1/2, 1/2, 1)
 
+      rk_substep_weights(0) = 0
       rk_substep_weights(1) = dt/2.
       rk_substep_weights(2) = dt/2.
       rk_substep_weights(3) = dt
@@ -385,7 +387,7 @@ module ocn_time_integration_rk4
           ! This is a transport test. Write advection velocity from prescribed
           ! flow field.
           call ocn_transport_test_velocity_edge(meshPool, daysSinceStartOfSim, &
-            rk_substep_weights(rk_step), normalVelocityNew)
+            rk_substep_weights(rk_step), normalVelocityNew, rk_substep_weights(rk_step-1))
         endif
 
 
