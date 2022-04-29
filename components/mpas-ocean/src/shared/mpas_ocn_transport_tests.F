@@ -312,9 +312,9 @@ module ocn_transport_tests
     real(RKIND), dimension(:), pointer :: latEdge, lonEdge, latVertex, lonVertex
     integer, dimension(:,:), pointer :: verticesOnEdge, cellsOnEdge
     real(RKIND), pointer :: sphere_radius
-    real(RKIND) :: time_sec, nml(2), z
+    real(RKIND) :: time_sec, nml(2), z, zsum
     integer, pointer :: nEdges
-    integer :: i, k, nlev
+    integer :: i, k, nlev, i1, i2
     logical :: is_3D
 
     dt_for_vert = dt_for_vert_in
@@ -340,14 +340,22 @@ module ocn_transport_tests
             lonVertex(verticesOnEdge(2,i)), latVertex(verticesOnEdge(2,i)), &
             nml)
        if (is_3D) then
+          i1 = cellsOnEdge(1,i)
+          i2 = cellsOnEdge(2,i)
+          ! Numerical divergence may make the column thinner or thicker than
+          ! ztop. Scale z by a factor so we sample [0,ztop] in proportion to the
+          ! layer thicknesses.
+          zsum = 0
+          do k = 1, nlev
+             zsum = zsum + (layerThickness(k,i1) + layerThickness(k,i2))/2
+          end do
           z = 0
           do k = 1, nlev
-             z = z + (layerThickness(k,cellsOnEdge(1,i)) + &
-                      layerThickness(k,cellsOnEdge(2,i)))/2
+             z = z + (layerThickness(k,i1) + layerThickness(k,i2))/2
              !z = ((k - 0.5)/nlev)*ztop !amb debug
              normalVelocity(k,i) = calc_vnml( &
                   config_transport_tests_flow_id, time_sec, sphere_radius, &
-                  z, lonEdge(i), latEdge(i), nml)
+                  (ztop/zsum)*z, lonEdge(i), latEdge(i), nml)
           end do
        else
           normalVelocity(:,i) = calc_vnml( &
@@ -373,17 +381,18 @@ module ocn_transport_tests
     type (mpas_pool_type), intent(in) :: meshPool
     real(RKIND), intent(in) :: days_since_start, dt
     real(RKIND), intent(in) :: layerThickness(:,:)
-    real(RKIND), intent(out) :: w(:,:)
+    real(RKIND), intent(inout) :: w(:,:)
 
     real(RKIND), dimension(:), pointer :: latCell, lonCell
-    real(RKIND) :: time_sec, nml(2), z
+    real(RKIND) :: time_sec, nml(2), z, zsum
     integer, pointer :: nCells, nVertLevels
     integer :: i, k, nlev
 
-    if (.not. is_test_3D(config_transport_tests_flow_id)) then
-       w = 0.0_RKIND
-       return
-    end if
+    ! Don't modify input w if the test is 2D; w isn't used in such a test.
+    if (.not. is_test_3D(config_transport_tests_flow_id)) return
+    ! In this test, we let MPAS-O's nondivergence constraint determine the
+    ! vertical motion, so don't overwrite w here.
+    if (config_transport_tests_flow_id == 5) return
 
     time_sec = days_since_start*one_day + dt_for_vert
     call mpas_pool_get_dimension(meshPool, 'nVertLevels', nVertLevels)
@@ -393,14 +402,24 @@ module ocn_transport_tests
     
     nlev = nVertLevels
     do i = 1, nCells
+       ! See ocn_transport_test_velocity_edge re: zsum. We do this here for
+       ! consistency, but in practice the only test to use this routine have a
+       ! constant vertical grid.
+       zsum = 0
+       do k = 1, nlev
+          zsum = zsum + layerThickness(k,i)
+       end do
        z = 0
        do k = 1, nlev+1
           !z = (real(k-1, RKIND)/nlev)*ztop !amb debug
           ! Negative because vertical direction sign convention is the
           ! opposite of the 3D test's.
           w(k,i) = -calc_vvert(config_transport_tests_flow_id, time_sec, &
-               z, lonCell(i), latCell(i))
-          if (k <= nlev) z = z + layerThickness(k,i)
+               (ztop/zsum)*z, lonCell(i), latCell(i))
+          if (k <= nlev) then
+             z = z + layerThickness(k,i)
+             if (z > ztop) z = ztop
+          end if
        end do
     end do
   end subroutine ocn_transport_test_velocity_vert
