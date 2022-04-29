@@ -2218,7 +2218,7 @@ contains
 
       if (config_transport_tests_flow_id > 0) then
          call ocn_transport_test_velocity_vert(meshPool, daysSinceStartOfSim, &
-              dt, vertAleTransportTop)
+              dt, oldLayerThickness, vertAleTransportTop)
       end if
 
    end subroutine ocn_vert_transport_velocity_top!}}}

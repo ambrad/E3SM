@@ -254,7 +254,7 @@ module ocn_transport_tests
 
        do iEdge = 1,nEdgesSolve
           call ocn_transport_test_velocity_edge(meshPool, 0.0_RKIND, 0.0_RKIND, &
-               normalVelocity, 0.0_RKIND)
+               layerThickness, normalVelocity, 0.0_RKIND)
        enddo
        ! We don't need to initialize vertAleTransportTop because it's diagnostic.
 
@@ -303,13 +303,14 @@ module ocn_transport_tests
 !
 !-----------------------------------------------------------------------
   subroutine ocn_transport_test_velocity_edge(meshPool, days_since_start, dt, &
-       normalVelocity, dt_for_vert_in)
+       layerThickness, normalVelocity, dt_for_vert_in)
     type (mpas_pool_type), intent(in) :: meshPool
     real(RKIND), intent(in) :: days_since_start, dt, dt_for_vert_in
+    real(RKIND), intent(in) :: layerThickness(:,:)
     real(RKIND), intent(out) :: normalVelocity(:,:)
 
     real(RKIND), dimension(:), pointer :: latEdge, lonEdge, latVertex, lonVertex
-    integer, dimension(:,:), pointer :: verticesOnEdge
+    integer, dimension(:,:), pointer :: verticesOnEdge, cellsOnEdge
     real(RKIND), pointer :: sphere_radius
     real(RKIND) :: time_sec, nml(2), z
     integer, pointer :: nEdges
@@ -327,6 +328,7 @@ module ocn_transport_tests
     call mpas_pool_get_array(meshPool, 'latVertex', latVertex)
     call mpas_pool_get_array(meshPool, 'lonVertex', lonVertex)
     call mpas_pool_get_array(meshPool, 'verticesOnEdge', verticesOnEdge)
+    call mpas_pool_get_array(meshPool, 'cellsOnEdge', cellsOnEdge)
 
     is_3D = is_test_3D(config_transport_tests_flow_id)
     nlev = size(normalVelocity,1)
@@ -338,8 +340,11 @@ module ocn_transport_tests
             lonVertex(verticesOnEdge(2,i)), latVertex(verticesOnEdge(2,i)), &
             nml)
        if (is_3D) then
+          z = 0
           do k = 1, nlev
-             z = ((k - 0.5)/nlev)*ztop
+             z = z + (layerThickness(k,cellsOnEdge(1,i)) + &
+                      layerThickness(k,cellsOnEdge(2,i)))/2
+             !z = ((k - 0.5)/nlev)*ztop !amb debug
              normalVelocity(k,i) = calc_vnml( &
                   config_transport_tests_flow_id, time_sec, sphere_radius, &
                   z, lonEdge(i), latEdge(i), nml)
@@ -363,9 +368,11 @@ module ocn_transport_tests
 !>
 !
 !-----------------------------------------------------------------------
-  subroutine ocn_transport_test_velocity_vert(meshPool, days_since_start, dt, w)
+  subroutine ocn_transport_test_velocity_vert(meshPool, days_since_start, dt, &
+       layerThickness, w)
     type (mpas_pool_type), intent(in) :: meshPool
     real(RKIND), intent(in) :: days_since_start, dt
+    real(RKIND), intent(in) :: layerThickness(:,:)
     real(RKIND), intent(out) :: w(:,:)
 
     real(RKIND), dimension(:), pointer :: latCell, lonCell
@@ -386,12 +393,14 @@ module ocn_transport_tests
     
     nlev = nVertLevels
     do i = 1, nCells
+       z = 0
        do k = 1, nlev+1
-          z = (real(k-1, RKIND)/nlev)*ztop
+          !z = (real(k-1, RKIND)/nlev)*ztop !amb debug
           ! Negative because vertical direction sign convention is the
           ! opposite of the 3D test's.
           w(k,i) = -calc_vvert(config_transport_tests_flow_id, time_sec, &
                z, lonCell(i), latCell(i))
+          if (k <= nlev) z = z + layerThickness(k,i)
        end do
     end do
   end subroutine ocn_transport_test_velocity_vert
@@ -623,13 +632,13 @@ module ocn_transport_tests
     real(RKIND) :: cbs, x, y, z, x1, y1, z1, x2, y2, z2, r1, r2
     call lonlat2xyz(lon, lat, x, y, z)
     call lonlat2xyz(lon1, lat1, x1, y1, z1)
-    r1 = great_circle_dist_xyz(x, y, z, x1, y1, z1)
+    r1 = unit_great_circle_dist_xyz(x, y, z, x1, y1, z1)
     cbs = 0
     if (r1 < r) then
        cbs = cosine_bell(r1, r)
     else
        call lonlat2xyz(lon2, lat2, x2, y2, z2)
-       r2 = great_circle_dist_xyz(x, y, z, x2, y2, z2)
+       r2 = unit_great_circle_dist_xyz(x, y, z, x2, y2, z2)
        if (r2 < r) cbs = cosine_bell(r2, r)
     end if
     cbs = b + c*cbs
@@ -662,7 +671,7 @@ module ocn_transport_tests
     lon0 = lon
     if (lon0 > pi) lon0 = lon0 - two_pi
     call lonlat2xyz(lon1, lat1, x1, y1, z1)
-    r1 = great_circle_dist_xyz(x, y, z, x1, y1, z1)
+    r1 = unit_great_circle_dist_xyz(x, y, z, x1, y1, z1)
     scs = b
     if (r1 <= Rh) then
        if ( (abs(lon0 - lon1) >= lon_thr) .or. &
@@ -671,7 +680,7 @@ module ocn_transport_tests
        end if
     else
        call lonlat2xyz(lon2, lat2, x2, y2, z2)
-       r2 = great_circle_dist_xyz(x, y, z, x2, y2, z2)
+       r2 = unit_great_circle_dist_xyz(x, y, z, x2, y2, z2)
        if (r2 <= Rh .and. &
            ((abs(lon0 - lon2) >= lon_thr) .or. &
             (abs(lon0 - lon2) <  lon_thr .and. lat - lat2 >  lat_thr))) then
@@ -768,8 +777,7 @@ module ocn_transport_tests
     lat = asin(z/r);
   end subroutine xyz2lonlat
 
-  ! TODO: Does this fn need radius, or is it always just used for arc length?
-  pure function great_circle_dist_xyz(xA, yA, zA, xB, yB, zB) result(dist)
+  pure function unit_great_circle_dist_xyz(xA, yA, zA, xB, yB, zB) result(dist)
     real(RKIND), intent(in) :: xA, yA, zA, xB, yB, zB
     real(RKIND) :: dist, cp1, cp2, cp3, cpnorm, dotprod
     cp1 = yA*zB - yB*zA
@@ -778,15 +786,15 @@ module ocn_transport_tests
     cpnorm = sqrt(cp1*cp1 + cp2*cp2 + cp3*cp3)
     dotprod = xA*xB + yA*yB + zA*zB
     dist = atan2(cpnorm, dotprod)
-  end function great_circle_dist_xyz
+  end function unit_great_circle_dist_xyz
 
-  pure function great_circle_dist_ll(lon1, lat1, lon2, lat2, radius) result(dist)
+  pure function unit_great_circle_dist_ll(lon1, lat1, lon2, lat2, radius) result(dist)
     real(RKIND), intent(in) :: lon1, lat1, lon2, lat2, radius
     real(RKIND) :: dist, xA, yA, zA, xB, yB, zB
     call lonlat2xyz(lon1, lat1, xA, yA, zA)
     call lonlat2xyz(lon2, lat2, xB, yB, zB)
-    dist = radius*great_circle_dist_xyz(xA, yA, zA, xB, yB, zB)
-  end function great_circle_dist_ll
+    dist = radius*unit_great_circle_dist_xyz(xA, yA, zA, xB, yB, zB)
+  end function unit_great_circle_dist_ll
 
 !
 ! end utilities
