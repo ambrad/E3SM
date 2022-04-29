@@ -352,7 +352,6 @@ module ocn_transport_tests
           z = 0
           do k = 1, nlev
              z = z + (layerThickness(k,i1) + layerThickness(k,i2))/2
-             !z = ((k - 0.5)/nlev)*ztop !amb debug
              normalVelocity(k,i) = calc_vnml( &
                   config_transport_tests_flow_id, time_sec, sphere_radius, &
                   (ztop/zsum)*z, lonEdge(i), latEdge(i), nml)
@@ -411,7 +410,6 @@ module ocn_transport_tests
        end do
        z = 0
        do k = 1, nlev+1
-          !z = (real(k-1, RKIND)/nlev)*ztop !amb debug
           ! Negative because vertical direction sign convention is the
           ! opposite of the 3D test's.
           w(k,i) = -calc_vvert(config_transport_tests_flow_id, time_sec, &
@@ -584,10 +582,11 @@ module ocn_transport_tests
 !> \details
 !>  This function computes the velocity [u(lon,lat,t), v(lon,lat,t),
 !> w(lon,lat,t)] for a non-divergent flow field defined in DCMIP 2012 Test 1-1,
-!> with two exceptions. First, the factor 2 appearing in cos(2 pi t/T) is
-!> removed, as it leads to nonperiodic trajectories. Second, the shape
-!> parameter b is 1 rather than 0.1 to make the test easier and thus useful at
-!> coarser resolutions.
+!> with three exceptions. First, the factor 2 appearing in cos(2 pi t/T) is
+!> removed, as it leads to nonperiodic trajectories. Second, the shape parameter
+!> b is 1 rather than 0.1 to make the test easier and thus useful at coarser
+!> resolutions. Third, omega0 is twice as large to make the flow more
+!> interesting.
 !
 !-----------------------------------------------------------------------
   pure subroutine flow_nondivergent3D(t, lon, lat, z, u, v, w)
@@ -607,10 +606,6 @@ module ocn_transport_tests
     u = (1/twelve_days)*(10*(sin(lon_p)**2)*sin(2*lat)*cost + two_pi*coslat) + ud
     v = (10/twelve_days)*sin(2*lon_p)*coslat*cost
     w = (-omega0/(grav*get_rho(p)))*sinlonp*coslat*cost*s
-    if (.false.) then
-       u = 0; v = 0
-       w = (-omega0/(grav*get_rho(p)))*cost*s
-    end if
   end subroutine flow_nondivergent3D
 
   ! 3D test helpers.
