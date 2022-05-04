@@ -201,9 +201,9 @@ module ocn_transport_tests
           ptop = calc_height2p(ztop)
           do k = 1, nVertLevels
              refBottomDepth(k) = (real(nVertLevels-k,RKIND)/nVertLevels)*ztop
-             refBottomDepth(k) = calc_height2p(refBottomDepth(k))
+             refBottomDepth(k) = calc_p2coord(ptop, calc_height2p(refBottomDepth(k)))
           end do
-          refZMid(1) = (ptop + refBottomDepth(1))/2
+          refZMid(1) = (calc_p2coord(ptop, ptop) + refBottomDepth(1))/2
           do k = 2, nVertLevels
              refZMid(k) = (refBottomDepth(k-1) + refBottomDepth(k))/2
           end do
@@ -256,7 +256,7 @@ module ocn_transport_tests
           endif
 
           if (pform) then
-             layerThickness(1,iCell) = refBottomDepth(1) - ptop
+             layerThickness(1,iCell) = refBottomDepth(1) - calc_p2coord(ptop, ptop)
              do k = 2, nVertLevels
                 layerThickness(k,iCell) = refBottomDepth(k) - refBottomDepth(k-1)
              end do
@@ -331,11 +331,10 @@ module ocn_transport_tests
 !
 !  routine ocn_transport_test_velocity_edge
 !
-!> \brief Sets edge normal velocities for prescribed flow fields
+!> \brief Sets edge normal velocities at vertical midpoints.
 !> \author Andrew Bradley
 !> \date   12/2/2020
 !> \details Sets edge normal velocities at vertical midpoints.
-!>
 !
 !-----------------------------------------------------------------------
   subroutine ocn_transport_test_velocity_edge(meshPool, days_since_start, dt, &
@@ -413,7 +412,7 @@ module ocn_transport_tests
 !
 !  routine ocn_transport_test_velocity_vert
 !
-!> \brief Sets edge normal velocities for prescribed flow fields
+!> \brief Sets vertical velocities at vertical interface cell centers.
 !> \author Andrew Bradley
 !> \date   4/21/2022
 !> \details Sets vertical velocities at vertical interface cell centers.
@@ -527,7 +526,7 @@ module ocn_transport_tests
        case(3);   call flow_divergent   (t, lon, lat, u, v)
        case(5,6)
           pform = is_test_pressure_form(fid)
-          call flow_nondivergent3d(t, pform, lon, lat, z, u, v, w)
+          call flow_nondivergent3D(t, pform, lon, lat, z, u, v, w)
     end select
     vnml = radius*(nml(1)*u + nml(2)*v)
   end function calc_vnml
@@ -552,7 +551,7 @@ module ocn_transport_tests
     select case(fid)
     case(5,6)
        pform = is_test_pressure_form(fid)
-       call flow_nondivergent3d(t, pform, lon, lat, z, u, v, w)
+       call flow_nondivergent3D(t, pform, lon, lat, z, u, v, w)
     end select
   end function calc_vvert
 
@@ -701,6 +700,18 @@ module ocn_transport_tests
     real(RKIND) :: z
     z = -H*log(p/p0)
   end function calc_p2height
+
+  pure function calc_p2coord(ptop, p) result (pout)
+    real(RKIND), intent(in) :: ptop, p
+    real(RKIND) :: pout
+    pout = p - ptop
+  end function calc_p2coord
+
+  pure function calc_coord2p(ptop, p) result (pout)
+    real(RKIND), intent(in) :: ptop, p
+    real(RKIND) :: pout
+    pout = p + ptop
+  end function calc_coord2p
 
 !
 ! end prescribed velocities
