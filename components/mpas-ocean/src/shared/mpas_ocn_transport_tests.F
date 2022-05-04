@@ -37,20 +37,11 @@ module ocn_transport_tests
   use mpas_dmpar
   use mpi !amb debug
 
-#ifndef EXCLUDE_INIT_MODE
-  use ocn_config, only : config_init_configuration, &
-                         config_ocean_run_mode, &
-                         config_transport_tests_flow_id, &
-                         config_transport_tests_salinity, &
-                         config_transport_tests_temperature, &
-                         config_transport_tests_vert_levels
-#else
-  use ocn_config, only:  config_ocean_run_mode, &
-                         config_transport_tests_flow_id, &
-                         config_transport_tests_salinity, &
-                         config_transport_tests_temperature, &
-                         config_transport_tests_vert_levels
-#endif
+  use ocn_config, only: &
+       config_transport_tests_flow_id, &
+       config_transport_tests_salinity, config_transport_tests_temperature, &
+       config_transport_tests_vert_levels, &
+       config_disable_thick_all_tend, config_disable_thick_hadv, config_disable_thick_vadv
 
   implicit none
   private
@@ -140,22 +131,12 @@ module ocn_transport_tests
          fVertex, xCell, yCell
     real (kind=RKIND), dimension(:,:), pointer :: layerThickness, &
          restingThickness, normalVelocity
-    real (kind=RKIND), dimension(:,:,:), pointer :: activeTracers,&
-                                                    debugTracers
-    character (len=StrKIND), pointer :: config_init_configuration
+    real (kind=RKIND), dimension(:,:,:), pointer :: activeTracers, debugTracers
     integer :: iCell, iEdge, iVertex, k, i, n
     real (kind=RKIND) :: shape, ptop
     logical :: is_3D, pform
 
     err = 0
-
-#ifdef MPAS_DEBUG
-    call mpas_log_write("entered subroutine ocn_transport_tests_init_setup", MPAS_LOG_OUT, flushNow=flush_log)
-    call mpas_pool_get_config(domain % configs, 'config_init_configuration', config_init_configuration)
-    call mpas_log_write("config data : "//trim(config_init_configuration), MPAS_LOG_OUT, &
-         intArgs=[config_transport_tests_flow_id], &
-         realArgs=[config_transport_tests_temperature, config_transport_tests_salinity], flushNow=flush_log)
-#endif
 
     block_ptr => domain % blocklist
     do while(associated(block_ptr))
@@ -317,10 +298,6 @@ module ocn_transport_tests
 
        block_ptr => block_ptr % next
     end do
-#ifdef MPAS_DEBUG
-    call mpas_log_write("exiting subroutine ocn_transport_test_init_setup", MPAS_LOG_OUT, .true., &
-         flushNow=flush_log)
-#endif
   end subroutine ocn_transport_test_init_setup
 
 !***********************************************************************
@@ -373,6 +350,21 @@ module ocn_transport_tests
     integer :: i, k, nlev, i1, i2
     logical :: is_3D, pform
 
+    ! Check for configuration errors in thickness tendencies.
+    if (config_transport_tests_flow_id == 6) then
+       if (.not. config_disable_thick_all_tend) then
+          call mpas_log_write('If config_transport_tests_flow_id = 6, &
+               &then config_disable_thick_all_tend must be .true.', MPAS_LOG_CRIT)
+       end if
+    else
+       if (config_disable_thick_all_tend .or. &
+            config_disable_thick_hadv .or. config_disable_thick_vadv) then
+          call mpas_log_write('If config_transport_tests_flow_id != 6, &
+               &then config_disable_thick_{all_tend,hadv,vadv} must be .false.', &
+               MPAS_LOG_CRIT)
+       end if
+    end if
+    
     dt_for_vert = dt_for_vert_in
     
     time_sec = days_since_start*one_day + dt
@@ -388,6 +380,7 @@ module ocn_transport_tests
 
     is_3D = is_test_3D(config_transport_tests_flow_id)
     pform = is_test_pressure_form(config_transport_tests_flow_id)
+
     nlev = size(normalVelocity,1)
     v = 0
     ptop = calc_height2p(ztop)
