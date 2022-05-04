@@ -71,17 +71,25 @@ module ocn_transport_tests
        ztop = 12000.0_RKIND, T0 = 300.0_RKIND, Rd = 287.04_RKIND, &
        grav = 9.80616_RKIND, p0 = 100000.0_RKIND, H = Rd*T0/grav
 
+  ! 2D tests. Each layer runs the same test independently. The layer thickness
+  ! acts as the density variable.
   character(len=32), parameter :: tc1str = "rotation"
   character(len=32), parameter :: tc2str = "nondivergent2D"
   character(len=32), parameter :: tc3str = "divergent2D"
   character(len=32), parameter :: tc4str = "correlatedTracers2D"
-  ! Use const-dp layers. Do not prescribe w; instead, let mpas-o's discrete
-  ! nondivergence condition set it.
+  ! 3D tests. These use one of two vertical coordinates: height and pressure. In
+  ! both cases, the reference layer thickness is uniform in height.  Use
+  ! const-dz layers.
+  !   The nondivergent3D test is implemented in two ways.
+  !   1. Do not prescribe w; instead, let mpas-o's discrete nondivergence
+  ! condition set it. The exact solution has a thickness tendency of 0. This
+  ! implementation is meant to work as closely with MPAS-O's calculations as
+  ! possible.
   character(len=32), parameter :: tc5str = "nondivergent3D"
-  ! Use const-dz layers. Prescribe w. Set tendThick = 0 in ocn_tend_thick and
-  ! use debugTracers 3 to track density. This approach bypassesses mpas-o's
-  ! discrete nondivergence condition, so debugTracers 3 then shows numerical
-  ! divergence.
+  !   2. Use const-dz layers. Prescribe w. Set tendThick = 0 in ocn_tend_thick
+  ! and use debugTracers 3 to track the density. This approach bypasses mpas-o's
+  ! discrete nondivergence condition. This implementation is meant for the test
+  ! developers' analysis and isn't meant to be run in practice.
   character(len=32), parameter :: tc6str = "nondivergent3D_prescribe-w_tendThick=0"
 
 #ifdef MPAS_DEBUG
@@ -649,8 +657,7 @@ module ocn_transport_tests
 !> interesting.
 !
 !-----------------------------------------------------------------------
-  !pure
-  subroutine flow_nondivergent3D(t, pform, lon, lat, z, u, v, w)
+  pure subroutine flow_nondivergent3D(t, pform, lon, lat, z, u, v, w)
     real(RKIND), intent(in) :: t, lon, lat, z
     logical, intent(in) :: pform
     real(RKIND), intent(out) :: u, v, w
@@ -663,13 +670,11 @@ module ocn_transport_tests
     sinlonp = sin(lon_p)
     ptop = calc_height2p(ztop)
     if (pform) then
+       ! The vertical coordinate is pressure.
        p = z
     else
+       ! The vertical coordinate is height.
        p = calc_height2p(z)
-    end if
-    if (p < (1-1.e-6)*ptop .or. p > (1+1.e-6)*p0) then
-       print *,'p',p,pform,config_transport_tests_flow_id,ptop,p0
-       call mpi_abort(MPI_COMM_WORLD,-1,ierr)
     end if
     if (p < ptop) p = ptop
     if (p > p0) p = p0
@@ -678,35 +683,45 @@ module ocn_transport_tests
     ud = omega0*cos(lon_p)*coslat**2*cost*s_p
     u = (1/twelve_days)*(10*(sin(lon_p)**2)*sin(2*lat)*cost + two_pi*coslat) + ud
     v = (10/twelve_days)*sin(2*lon_p)*coslat*cost
+    ! The vertical speed needs to be w.r.t. the vertical coordinate.
     w = omega0*sinlonp*coslat*cost*s
     if (.not. pform) w = (-1.0_RKIND/(grav*get_rho(p)))*w
   end subroutine flow_nondivergent3D
 
-  ! 3D test helpers.
+  !! 3D test helpers.
+
+  ! pressure -> density
   pure function get_rho(p) result (rho)
     real(RKIND), intent(in) :: p
     real(RKIND) :: rho
     rho = p/(Rd*T0)
   end function get_rho
 
+  ! height -> pressure
   pure function calc_height2p(z) result (p)
     real(RKIND), intent(in) :: z
     real(RKIND) :: p
     p = p0*exp(-z/H)
   end function calc_height2p
 
+  ! pressure -> height
   pure function calc_p2height(p) result (z)
     real(RKIND), intent(in) :: p
     real(RKIND) :: z
     z = -H*log(p/p0)
   end function calc_p2height
 
+  ! The vertical reference coordinate value at the k=1 interface is expected to
+  ! be 0 somewhere in MPAS-O. Thus, the vertical coordinate from MPAS-O's
+  ! perspective is pressure - ptop. These two functions transform between true
+  ! pressure and the pressure coordinate. The true pressure should be used in
+  ! the call to flow_nondivergent3D; the coordinate is used only when setting us
+  ! the vertical grid in ocn_transport_test_init_setup.
   pure function calc_p2coord(ptop, p) result (pout)
     real(RKIND), intent(in) :: ptop, p
     real(RKIND) :: pout
     pout = p - ptop
   end function calc_p2coord
-
   pure function calc_coord2p(ptop, p) result (pout)
     real(RKIND), intent(in) :: ptop, p
     real(RKIND) :: pout
