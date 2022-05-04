@@ -75,7 +75,14 @@ module ocn_transport_tests
   character(len=32), parameter :: tc2str = "nondivergent2D"
   character(len=32), parameter :: tc3str = "divergent2D"
   character(len=32), parameter :: tc4str = "correlatedTracers2D"
+  ! Use const-dp layers. Do not prescribe w; instead, let mpas-o's discrete
+  ! nondivergence condition set it.
   character(len=32), parameter :: tc5str = "nondivergent3D"
+  ! Use const-dz layers. Prescribe w. Set tendThick = 0 in ocn_tend_thick and
+  ! use debugTracers 3 to track density. This approach bypassesses mpas-o's
+  ! discrete nondivergence condition, so debugTracers 3 then shows numerical
+  ! divergence.
+  character(len=32), parameter :: tc6str = "nondivergent3D_prescribe-w_tendThick=0"
 
 #ifdef MPAS_DEBUG
   logical, parameter :: flush_log = .true.
@@ -129,8 +136,8 @@ module ocn_transport_tests
                                                     debugTracers
     character (len=StrKIND), pointer :: config_init_configuration
     integer :: iCell, iEdge, iVertex, k, i, n
-    real (kind=RKIND) :: shape
-    logical :: is_3D
+    real (kind=RKIND) :: shape, ptop
+    logical :: is_3D, pform
 
     err = 0
 
@@ -185,12 +192,27 @@ module ocn_transport_tests
        call mpas_pool_get_array(statePool, 'layerThickness',layerThickness, 1)
 
        is_3D = is_test_3D(config_transport_tests_flow_id)
+       pform = is_test_pressure_form(config_transport_tests_flow_id)
 
-       ! These don't matter, but set them anyway.
-       do k = 1, nVertLevels
-          refBottomDepth(k) = (real(k,RKIND)/nVertLevels)*ztop
-          refZMid(k) = -((k - 0.5_RKIND)/nVertLevels)*ztop
-       end do
+       if (pform) then
+          ! Pressure levels with const dz spacing. To make the vertical
+          ! coordinate monotonically increasing in k, increasing k goes from
+          ! ptop to p0.
+          ptop = calc_height2p(ztop)
+          do k = 1, nVertLevels
+             refBottomDepth(k) = (real(nVertLevels-k,RKIND)/nVertLevels)*ztop
+             refBottomDepth(k) = calc_height2p(refBottomDepth(k))
+          end do
+          refZMid(1) = (ptop + refBottomDepth(1))/2
+          do k = 2, nVertLevels
+             refZMid(k) = (refBottomDepth(k-1) + refBottomDepth(k))/2
+          end do
+       else
+          do k = 1, nVertLevels
+             refBottomDepth(k) = (real(k,RKIND)/nVertLevels)*ztop
+             refZMid(k) = -((k - 0.5_RKIND)/nVertLevels)*ztop
+          end do
+       end if
 
        do iCell = 1, nCellsSolve
           if (associated(activeTracers)) then
@@ -233,23 +255,30 @@ module ocn_transport_tests
              end if
           endif
 
-          do k = 1, nVertLevels
-             layerThickness(k, iCell) = ztop/nVertLevels
-             restingThickness(k, iCell) = layerThickness(k, iCell)
-          end do
+          if (pform) then
+             layerThickness(1,iCell) = refBottomDepth(1) - ptop
+             do k = 2, nVertLevels
+                layerThickness(k,iCell) = refBottomDepth(k) - refBottomDepth(k-1)
+             end do
+          else
+             do k = 1, nVertLevels
+                layerThickness(k,iCell) = ztop/nVertLevels
+             end do
+          end if
+          restingThickness(1:nVertLevels,iCell) = layerThickness(1:nVertLevels,iCell)
 
-          fCell(iCell) = 0.0_RKIND ! 0 Coriolis
-          bottomDepth(iCell) = ztop
+          fCell(iCell) = 0 ! 0 Coriolis
+          bottomDepth(iCell) = refBottomDepth(nVertLevels)
           minLevelCell(iCell) = 1
           maxLevelCell(iCell) = nVertLevels
        end do
 
        do iEdge = 1, nEdgesSolve
-          fEdge(iEdge) = 0.0_RKIND
+          fEdge(iEdge) = 0
        end do
 
        do iVertex=1, nVerticesSolve
-          fVertex(iVertex) = 0.0_RKIND
+          fVertex(iVertex) = 0
        end do
 
        do iEdge = 1,nEdgesSolve
@@ -257,6 +286,13 @@ module ocn_transport_tests
                layerThickness, normalVelocity, 0.0_RKIND)
        enddo
        ! We don't need to initialize vertAleTransportTop because it's diagnostic.
+
+       if (amb_amroot()) then
+          iCell = 1
+          do k = 1, nVertLevels
+             print *,k,refBottomDepth(k),refZMid(k),layerThickness(k,iCell),restingThickness(k,iCell)
+          end do
+       end if
 
        block_ptr => block_ptr % next
     end do
@@ -298,7 +334,7 @@ module ocn_transport_tests
 !> \brief Sets edge normal velocities for prescribed flow fields
 !> \author Andrew Bradley
 !> \date   12/2/2020
-!> \details Sets edge normal velocities for prescribed flow fields.
+!> \details Sets edge normal velocities at vertical midpoints.
 !>
 !
 !-----------------------------------------------------------------------
@@ -312,10 +348,10 @@ module ocn_transport_tests
     real(RKIND), dimension(:), pointer :: latEdge, lonEdge, latVertex, lonVertex
     integer, dimension(:,:), pointer :: verticesOnEdge, cellsOnEdge
     real(RKIND), pointer :: sphere_radius
-    real(RKIND) :: time_sec, nml(2), z, zsum
+    real(RKIND) :: time_sec, nml(2), v, vadj, vsum, vscale, ptop
     integer, pointer :: nEdges
     integer :: i, k, nlev, i1, i2
-    logical :: is_3D
+    logical :: is_3D, pform
 
     dt_for_vert = dt_for_vert_in
     
@@ -331,8 +367,10 @@ module ocn_transport_tests
     call mpas_pool_get_array(meshPool, 'cellsOnEdge', cellsOnEdge)
 
     is_3D = is_test_3D(config_transport_tests_flow_id)
+    pform = is_test_pressure_form(config_transport_tests_flow_id)
     nlev = size(normalVelocity,1)
-    z = 0.0_RKIND
+    v = 0
+    ptop = calc_height2p(ztop)
     do i = 1, nEdges
        call calc_edge_normal( &
             lonEdge(i), latEdge(i), &
@@ -345,21 +383,28 @@ module ocn_transport_tests
           ! Numerical divergence may make the column thinner or thicker than
           ! ztop. Scale z by a factor so we sample [0,ztop] in proportion to the
           ! layer thicknesses.
-          zsum = 0
+          vsum = 0
           do k = 1, nlev
-             zsum = zsum + (layerThickness(k,i1) + layerThickness(k,i2))/2
+             vsum = vsum + (layerThickness(k,i1) + layerThickness(k,i2))/2
           end do
-          z = 0
+          if (pform) then
+             vscale = (p0 - ptop)/vsum
+          else
+             vscale = ztop/vsum
+          end if
+          v = 0
           do k = 1, nlev
-             z = z + (layerThickness(k,i1) + layerThickness(k,i2))/2
+             vadj = vscale*(v + (layerThickness(k,i1) + layerThickness(k,i2))/4)
+             if (pform) vadj = ptop + vadj
              normalVelocity(k,i) = calc_vnml( &
                   config_transport_tests_flow_id, time_sec, sphere_radius, &
-                  (ztop/zsum)*z, lonEdge(i), latEdge(i), nml)
+                  vadj, lonEdge(i), latEdge(i), nml)
+             v = v + (layerThickness(k,i1) + layerThickness(k,i2))/2
           end do
        else
           normalVelocity(:,i) = calc_vnml( &
                config_transport_tests_flow_id, time_sec, sphere_radius, &
-               z, lonEdge(i), latEdge(i), nml)
+               v, lonEdge(i), latEdge(i), nml)
        end if
     end do
   end subroutine ocn_transport_test_velocity_edge
@@ -371,8 +416,7 @@ module ocn_transport_tests
 !> \brief Sets edge normal velocities for prescribed flow fields
 !> \author Andrew Bradley
 !> \date   4/21/2022
-!> \details Sets vertical velocity at vertical interface cell centers.
-!>
+!> \details Sets vertical velocities at vertical interface cell centers.
 !
 !-----------------------------------------------------------------------
   subroutine ocn_transport_test_velocity_vert(meshPool, days_since_start, dt, &
@@ -383,9 +427,10 @@ module ocn_transport_tests
     real(RKIND), intent(inout) :: w(:,:)
 
     real(RKIND), dimension(:), pointer :: latCell, lonCell
-    real(RKIND) :: time_sec, nml(2), z, zsum
+    real(RKIND) :: time_sec, nml(2), v, vsum, vscale, vadj, ptop
     integer, pointer :: nCells, nVertLevels
     integer :: i, k, nlev
+    logical :: pform
 
     ! Don't modify input w if the test is 2D; w isn't used in such a test.
     if (.not. is_test_3D(config_transport_tests_flow_id)) return
@@ -398,26 +443,29 @@ module ocn_transport_tests
     call mpas_pool_get_dimension(meshPool, 'nCells', nCells)
     call mpas_pool_get_array(meshPool, 'latCell', latCell)
     call mpas_pool_get_array(meshPool, 'lonCell', lonCell)
-    
+
+    pform = is_test_pressure_form(config_transport_tests_flow_id)
     nlev = nVertLevels
+    ptop = calc_height2p(ztop)
     do i = 1, nCells
-       ! See ocn_transport_test_velocity_edge re: zsum. We do this here for
-       ! consistency, but in practice the only test to use this routine have a
-       ! constant vertical grid.
-       zsum = 0
+       vsum = 0
        do k = 1, nlev
-          zsum = zsum + layerThickness(k,i)
+          vsum = vsum + layerThickness(k,i)
        end do
-       z = 0
+       if (pform) then
+          vscale = (p0 - ptop)/vsum
+       else
+          vscale = ztop/vsum
+       end if
+       v = 0
        do k = 1, nlev+1
+          vadj = vscale*v
+          if (pform) vadj = ptop + vadj
           ! Negative because vertical direction sign convention is the
           ! opposite of the 3D test's.
           w(k,i) = -calc_vvert(config_transport_tests_flow_id, time_sec, &
-               (ztop/zsum)*z, lonCell(i), latCell(i))
-          if (k <= nlev) then
-             z = z + layerThickness(k,i)
-             if (z > ztop) z = ztop
-          end if
+               vadj, lonCell(i), latCell(i))
+          if (k <= nlev) v = v + layerThickness(k,i)
        end do
     end do
   end subroutine ocn_transport_test_velocity_vert
@@ -432,12 +480,13 @@ module ocn_transport_tests
     integer, intent(in) :: fid
     character(len=32) :: tcname
     select case (fid)
-      case (1) ; tcname = tc1str
-      case (2) ; tcname = tc2str
-      case (3) ; tcname = tc3str
-      case (4) ; tcname = tc4str
-      case (5) ; tcname = tc5str
-      case default ; tcname = "unnamed"
+      case (1); tcname = tc1str
+      case (2); tcname = tc2str
+      case (3); tcname = tc3str
+      case (4); tcname = tc4str
+      case (5); tcname = tc5str
+      case (6); tcname = tc6str
+      case default; tcname = "unnamed"
     end select
   end function flow_id_name
 
@@ -446,6 +495,12 @@ module ocn_transport_tests
     logical :: is_3D
     is_3D = fid == 5 .or. fid == 6
   end function is_test_3D
+
+  pure function is_test_pressure_form(fid) result (b)
+    integer, intent(in) :: fid
+    logical :: b
+    b = fid == 5 .or. fid == 6
+  end function is_test_pressure_form
 
 !***********************************************************************
 !
@@ -464,12 +519,15 @@ module ocn_transport_tests
     real(RKIND), intent(in) :: t, radius, z, lon, lat, &
       nml(2) !< edge normal vector
     real(RKIND) :: vnml, u, v, w
+    logical :: pform
     u = 0; v = 0
     select case(fid)
-       case(1);   call flow_rotation      (   lon, lat, u, v)
-       case(2,4); call flow_nondivergent  (t, lon, lat, u, v)
-       case(3);   call flow_divergent     (t, lon, lat, u, v)
-       case(5,6); call flow_nondivergent3d(t, lon, lat, z, u, v, w)
+       case(1);   call flow_rotation    (   lon, lat, u, v)
+       case(2,4); call flow_nondivergent(t, lon, lat, u, v)
+       case(3);   call flow_divergent   (t, lon, lat, u, v)
+       case(5,6)
+          pform = is_test_pressure_form(fid)
+          call flow_nondivergent3d(t, pform, lon, lat, z, u, v, w)
     end select
     vnml = radius*(nml(1)*u + nml(2)*v)
   end function calc_vnml
@@ -489,9 +547,12 @@ module ocn_transport_tests
     integer, intent(in) :: fid
     real(RKIND), intent(in) :: t, z, lon, lat
     real(RKIND) :: u, v, w
+    logical :: pform
     w = 0
     select case(fid)
-    case(5,6); call flow_nondivergent3d(t, lon, lat, z, u, v, w)
+    case(5,6)
+       pform = is_test_pressure_form(fid)
+       call flow_nondivergent3d(t, pform, lon, lat, z, u, v, w)
     end select
   end function calc_vvert
 
@@ -534,7 +595,7 @@ module ocn_transport_tests
 !> \details
 !>  This function computes the velocity [u(lon,lat,t), v(lon,lat,t)]
 !> for a non-divergent flow field defined in Lauritzen et al. 2012 section 3
-!> equations (16) -- (20)
+!> equations (16) -- (20).
 !
 !-----------------------------------------------------------------------
   pure subroutine flow_nondivergent(t, lon, lat, u, v)
@@ -589,23 +650,37 @@ module ocn_transport_tests
 !> interesting.
 !
 !-----------------------------------------------------------------------
-  pure subroutine flow_nondivergent3D(t, lon, lat, z, u, v, w)
+  !pure
+  subroutine flow_nondivergent3D(t, pform, lon, lat, z, u, v, w)
     real(RKIND), intent(in) :: t, lon, lat, z
+    logical, intent(in) :: pform
     real(RKIND), intent(out) :: u, v, w
     real(RKIND), parameter :: b = 1.0_RKIND, omega0 = (2*23000.0_RKIND*pi)/twelve_days
     real(RKIND) :: lon_p, coslat, cost, sinlonp, ptop, p, s, s_p, ud
+    integer :: ierr
     lon_p = lon - two_pi*t/twelve_days
     coslat = cos(lat)
     cost = cos(pi*t/twelve_days)
     sinlonp = sin(lon_p)
-    ptop = calc_z2p(ztop)
-    p = calc_z2p(z)
+    ptop = calc_height2p(ztop)
+    if (pform) then
+       p = z
+    else
+       p = calc_height2p(z)
+    end if
+    if (p < (1-1.e-6)*ptop .or. p > (1+1.e-6)*p0) then
+       print *,'p',p,pform,config_transport_tests_flow_id,ptop,p0
+       call mpi_abort(MPI_COMM_WORLD,-1,ierr)
+    end if
+    if (p < ptop) p = ptop
+    if (p > p0) p = p0
     s = (1 + exp((ptop-p0)/(b*ptop)) - exp((p-p0)/(b*ptop)) - exp((ptop-p)/(b*ptop)))
     s_p = (-exp((p-p0)/(b*ptop)) + exp((ptop-p)/(b*ptop)))/(b*ptop)
     ud = omega0*cos(lon_p)*coslat**2*cost*s_p
     u = (1/twelve_days)*(10*(sin(lon_p)**2)*sin(2*lat)*cost + two_pi*coslat) + ud
     v = (10/twelve_days)*sin(2*lon_p)*coslat*cost
-    w = (-omega0/(grav*get_rho(p)))*sinlonp*coslat*cost*s
+    w = omega0*sinlonp*coslat*cost*s
+    if (.not. pform) w = (-1.0_RKIND/(grav*get_rho(p)))*w
   end subroutine flow_nondivergent3D
 
   ! 3D test helpers.
@@ -615,11 +690,17 @@ module ocn_transport_tests
     rho = p/(Rd*T0)
   end function get_rho
 
-  pure function calc_z2p(z) result (p)
+  pure function calc_height2p(z) result (p)
     real(RKIND), intent(in) :: z
     real(RKIND) :: p
     p = p0*exp(-z/H)
-  end function calc_z2p
+  end function calc_height2p
+
+  pure function calc_p2height(p) result (z)
+    real(RKIND), intent(in) :: p
+    real(RKIND) :: z
+    z = -H*log(p/p0)
+  end function calc_p2height
 
 !
 ! end prescribed velocities
