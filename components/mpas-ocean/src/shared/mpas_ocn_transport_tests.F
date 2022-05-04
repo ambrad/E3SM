@@ -152,7 +152,9 @@ module ocn_transport_tests
 #ifdef MPAS_DEBUG
     call mpas_log_write("entered subroutine ocn_transport_tests_init_setup", MPAS_LOG_OUT, flushNow=flush_log)
     call mpas_pool_get_config(domain % configs, 'config_init_configuration', config_init_configuration)
-    call mpas_log_write("config data : "//trim(config_init_configuration), MPAS_LOG_OUT, intArgs=[config_transport_tests_flow_id], realArgs=[config_transport_tests_temperature, config_transport_tests_salinity], flushNow=flush_log)
+    call mpas_log_write("config data : "//trim(config_init_configuration), MPAS_LOG_OUT, &
+         intArgs=[config_transport_tests_flow_id], &
+         realArgs=[config_transport_tests_temperature, config_transport_tests_salinity], flushNow=flush_log)
 #endif
 
     block_ptr => domain % blocklist
@@ -189,7 +191,6 @@ module ocn_transport_tests
        call mpas_pool_get_array(meshPool, 'fVertex', fVertex)
        call mpas_pool_get_array(meshPool, 'xCell', xCell)
        call mpas_pool_get_array(meshPool, 'yCell', yCell)
-
 
        call mpas_pool_get_array(verticalMeshPool, 'refZMid', refZMid)
        call mpas_pool_get_array(verticalMeshPool, 'restingThickness',restingThickness)
@@ -244,10 +245,25 @@ module ocn_transport_tests
                    debugTracers(3,k,iCell) = correlation_fn(debugTracers(2, k, iCell))
                 enddo
              case (6)
+                ! In this test, the layerThickness is constant in time, and the
+                ! tracers are densities rather than mixing ratios. debugTracer 3
+                ! tracks the total density; then debugTracers(i,:,:) /
+                ! debugTracers(3,:,:) for i=1,2 are mixing ratios.
                 do k = 1, nVertLevels
-                   debugTracers(1,k,iCell) = xyztrig(lonCell(iCell), latCell(iCell))
-                   debugTracers(2,k,iCell) = gaussian_hills(lonCell(iCell), latCell(iCell))
-                   debugTracers(3,k,iCell) = 1.0_RKIND
+                   if (pform) then
+                      ! This is pseudodensity for vertical coordinate s = p =>
+                      ! dz/ds = dz/dp => dz/dp rho \propto 1.
+                      debugTracers(3,k,iCell) = 1
+                   else
+                      ! s = z, so dz/ds = 1 and dz/dp rho = rho. Note refZMid is
+                      ! -ve b/c of MPAS-O conventions, so negate it here to
+                      ! compute p.
+                      debugTracers(3,k,iCell) = calc_rho(calc_height2p(-refZMid(k)))
+                   end if
+                   debugTracers(1,k,iCell) = debugTracers(3,k,iCell)* &
+                        xyztrig(lonCell(iCell), latCell(iCell))
+                   debugTracers(2,k,iCell) = debugTracers(3,k,iCell)* &
+                        gaussian_hills(lonCell(iCell), latCell(iCell))
                 end do
              end select
              if (is_3D) then
@@ -255,6 +271,10 @@ module ocn_transport_tests
                 if (config_transport_tests_flow_id == 6) n = 2
                 do k = 1, nVertLevels
                    shape = (1 - cos(2*pi*(k - 0.5)/nVertLevels))/2
+                   ! This line makes a stair-step vertical profile that is
+                   ! useful for visualizing the flow. But it can't be used when
+                   ! doing convergence testing since it constructs
+                   ! discontinuities in the tracers.
                    shape = nint(1 + 4*shape)/5.0_RKIND
                    do i = 1, n
                       debugTracers(i,k,iCell) = shape*debugTracers(i,k,iCell)
@@ -295,17 +315,11 @@ module ocn_transport_tests
        enddo
        ! We don't need to initialize vertAleTransportTop because it's diagnostic.
 
-       if (amb_amroot()) then
-          iCell = 1
-          do k = 1, nVertLevels
-             print *,k,refBottomDepth(k),refZMid(k),layerThickness(k,iCell),restingThickness(k,iCell)
-          end do
-       end if
-
        block_ptr => block_ptr % next
     end do
 #ifdef MPAS_DEBUG
-    call mpas_log_write("exiting subroutine ocn_transport_test_init_setup", MPAS_LOG_OUT, .true. , flushNow=flush_log)
+    call mpas_log_write("exiting subroutine ocn_transport_test_init_setup", MPAS_LOG_OUT, .true., &
+         flushNow=flush_log)
 #endif
   end subroutine ocn_transport_test_init_setup
 
@@ -317,7 +331,6 @@ module ocn_transport_tests
 !> \author Andrew Bradley
 !> \date   12/2/2020
 !> \details
-!>
 !
 !-----------------------------------------------------------------------
   subroutine ocn_transport_test_init_validate(cfgpl, pkgpl, iocontext, err)
@@ -685,17 +698,17 @@ module ocn_transport_tests
     v = (10/twelve_days)*sin(2*lon_p)*coslat*cost
     ! The vertical speed needs to be w.r.t. the vertical coordinate.
     w = omega0*sinlonp*coslat*cost*s
-    if (.not. pform) w = (-1.0_RKIND/(grav*get_rho(p)))*w
+    if (.not. pform) w = (-1.0_RKIND/(grav*calc_rho(p)))*w
   end subroutine flow_nondivergent3D
 
   !! 3D test helpers.
 
   ! pressure -> density
-  pure function get_rho(p) result (rho)
+  pure function calc_rho(p) result (rho)
     real(RKIND), intent(in) :: p
     real(RKIND) :: rho
     rho = p/(Rd*T0)
-  end function get_rho
+  end function calc_rho
 
   ! height -> pressure
   pure function calc_height2p(z) result (p)
