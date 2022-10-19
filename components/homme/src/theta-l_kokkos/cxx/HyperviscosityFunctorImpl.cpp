@@ -318,18 +318,14 @@ void HyperviscosityFunctorImpl::run (const int np1, const Real dt, const Real et
 
   Kokkos::fence();
 
-  //sponge layer 
-  if(m_data.nu_top > 0){ 
+  // sponge layer 
+  if (m_data.nu_top > 0) {
     for (int icycle = 0; icycle < m_data.hypervis_subcycle_tom; ++icycle) {
-
-      //m_policy_first_laplace has ref states, so cannot be reused now
-      //laplace(fields) --> ttens, etc.
+      // laplace(fields) --> ttens, etc.
       Kokkos::parallel_for(m_policy_nutop_laplace, *this);
       Kokkos::fence();
 
-      //exchange is done on ttens, dptens, vtens, etc.
-      ///? do another timer or the same for all mpi in HV?
-      ///exchange on a subset of levels in future? 
+      // exchange is done on ttens, dptens, vtens, etc.
       assert (m_be->is_registration_completed());
       GPTLstart("hvf-bexch");
       m_be->exchange();
@@ -338,8 +334,8 @@ void HyperviscosityFunctorImpl::run (const int np1, const Real dt, const Real et
       Kokkos::parallel_for(m_policy_update_states2, *this);
       Kokkos::fence();
     }
-  } //for for sponge layer
-} //run()
+  } // for for sponge layer
+} // run()
 
 void HyperviscosityFunctorImpl::biharmonic_wk_theta() const
 {
@@ -366,5 +362,79 @@ void HyperviscosityFunctorImpl::biharmonic_wk_theta() const
   }
   Kokkos::fence();
 } //biharmonic
+
+  // Laplace for nu_top
+KOKKOS_INLINE_FUNCTION
+void HyperviscosityFunctorImpl::operator() (const TagNutopLaplace&, const TeamMember& team) const {
+  KernelVariables kv(team, m_tu);
+
+  using MidColumn = decltype(Homme::subview(m_buffers.wtens,0,0,0));
+
+  // Laplacian of layer thickness
+  m_sphere_ops.laplace_simple(kv,
+                              Homme::subview(m_state.m_dp3d,kv.ie,m_data.np1),
+                              Homme::subview(m_buffers.dptens,kv.ie));
+  // Laplacian of theta
+  m_sphere_ops.laplace_simple(kv,
+                              Homme::subview(m_state.m_vtheta_dp,kv.ie,m_data.np1),
+                              Homme::subview(m_buffers.ttens,kv.ie));
+
+  if (m_process_nh_vars) {
+    // Laplacian of vertical velocity (do not compute last interface)
+    m_sphere_ops.laplace_simple<NUM_LEV,NUM_LEV_P>(kv,
+                                                   Homme::subview(m_state.m_w_i,kv.ie,m_data.np1),
+                                                   Homme::subview(m_buffers.wtens,kv.ie));
+    // Laplacian of geopotential (do not compute last interface)
+    m_sphere_ops.laplace_simple<NUM_LEV,NUM_LEV_P>(kv,
+                                                   Homme::subview(m_state.m_phinh_i,kv.ie,m_data.np1),
+                                                   Homme::subview(m_buffers.phitens,kv.ie));
+  }
+
+  // Laplacian of velocity
+  m_sphere_ops.vlaplace_sphere_wk_contra(kv, m_data.nu_ratio1,
+                                         Homme::subview(m_state.m_v,kv.ie,m_data.np1),
+                                         Homme::subview(m_buffers.vtens,kv.ie));
+
+  kv.team_barrier();
+
+  Kokkos::parallel_for(
+    Kokkos::TeamThreadRange(kv.team,NP*NP),
+    [&] (const int idx) {
+      const int igp = idx / NP;
+      const int jgp = idx % NP;
+
+      auto utens   = Homme::subview(m_buffers.vtens,kv.ie,0,igp,jgp);
+      auto vtens   = Homme::subview(m_buffers.vtens,kv.ie,1,igp,jgp);
+      auto ttens   = Homme::subview(m_buffers.ttens,kv.ie,igp,jgp);
+      auto dptens  = Homme::subview(m_buffers.dptens,kv.ie,igp,jgp);
+     
+      //why not auto here?
+      MidColumn wtens, phitens;
+
+      if (m_process_nh_vars) {
+        wtens   = Homme::subview(m_buffers.wtens,kv.ie,igp,jgp);
+        phitens = Homme::subview(m_buffers.phitens,kv.ie,igp,jgp);
+      }
+
+      Kokkos::parallel_for(
+        Kokkos::ThreadVectorRange(kv.team,NUM_LEV),
+        [&] (const int ilev) {
+          
+          const auto xf = m_data.dt_hvs_tom  * m_nu_scale_top(ilev) * m_data.nu_top;
+          utens(ilev) *= xf;
+          vtens(ilev) *= xf;
+          ttens(ilev) *= xf;
+          dptens(ilev) *= xf;
+
+          if (m_process_nh_vars) {
+            wtens(ilev)   *= xf;
+            phitens(ilev) *= xf;
+          }
+
+        }); // threadvectorrange
+
+    }); // teamthreadrange
+
+} // TagNutopLaplace
 
 } // namespace Homme
