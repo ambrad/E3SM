@@ -468,6 +468,7 @@ protected:
   std::shared_ptr<BoundaryExchange> m_be;
 
   ExecViewManaged<Scalar[NUM_LEV]> m_nu_scale_top;
+  int m_nu_scale_top_ilev_pack_lim;
 }; //HVfunctorImpl
 
 } // namespace Homme

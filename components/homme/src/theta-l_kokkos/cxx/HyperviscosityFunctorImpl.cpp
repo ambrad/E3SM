@@ -101,12 +101,14 @@ void HyperviscosityFunctorImpl::init_params(const SimulationParams& params)
       if ( val < 0.15 ) val = 0.0;
       h_nu_scale_top(ilev)[ivec] = val;
 
-      //set nlev_tom here for the future
-      //if (val > 0.0) nlev_tom = phys_lev;
-
+      // This is the equivalent of nlev_tom in the F90 code.
+      if (val != 0) m_nu_scale_top_ilev_pack_lim = phys_lev;
     }
     Kokkos::deep_copy(m_nu_scale_top, h_nu_scale_top);
 
+    // Convert to pack index.
+    m_nu_scale_top_ilev_pack_lim = ((m_nu_scale_top_ilev_pack_lim + VECTOR_SIZE - 1) /
+                                    VECTOR_SIZE);
   }
 
   // Init ElementOps
@@ -334,7 +336,7 @@ void HyperviscosityFunctorImpl::run (const int np1, const Real dt, const Real et
       Kokkos::parallel_for(m_policy_update_states2, *this);
       Kokkos::fence();
     }
-  } // for for sponge layer
+  } // for sponge layer
 } // run()
 
 void HyperviscosityFunctorImpl::biharmonic_wk_theta() const
@@ -363,7 +365,7 @@ void HyperviscosityFunctorImpl::biharmonic_wk_theta() const
   Kokkos::fence();
 } //biharmonic
 
-  // Laplace for nu_top
+// Laplace for nu_top
 KOKKOS_INLINE_FUNCTION
 void HyperviscosityFunctorImpl::operator() (const TagNutopLaplace&, const TeamMember& team) const {
   KernelVariables kv(team, m_tu);
@@ -403,27 +405,25 @@ void HyperviscosityFunctorImpl::operator() (const TagNutopLaplace&, const TeamMe
       const int igp = idx / NP;
       const int jgp = idx % NP;
 
-      auto utens   = Homme::subview(m_buffers.vtens,kv.ie,0,igp,jgp);
-      auto vtens   = Homme::subview(m_buffers.vtens,kv.ie,1,igp,jgp);
-      auto ttens   = Homme::subview(m_buffers.ttens,kv.ie,igp,jgp);
-      auto dptens  = Homme::subview(m_buffers.dptens,kv.ie,igp,jgp);
+      const auto utens  = Homme::subview(m_buffers.vtens,kv.ie,0,igp,jgp);
+      const auto vtens  = Homme::subview(m_buffers.vtens,kv.ie,1,igp,jgp);
+      const auto ttens  = Homme::subview(m_buffers.ttens,kv.ie,igp,jgp);
+      const auto dptens = Homme::subview(m_buffers.dptens,kv.ie,igp,jgp);
      
-      //why not auto here?
       MidColumn wtens, phitens;
-
       if (m_process_nh_vars) {
         wtens   = Homme::subview(m_buffers.wtens,kv.ie,igp,jgp);
         phitens = Homme::subview(m_buffers.phitens,kv.ie,igp,jgp);
       }
 
       Kokkos::parallel_for(
-        Kokkos::ThreadVectorRange(kv.team,NUM_LEV),
+        Kokkos::ThreadVectorRange(kv.team, m_nu_scale_top_ilev_pack_lim),
         [&] (const int ilev) {
           
           const auto xf = m_data.dt_hvs_tom  * m_nu_scale_top(ilev) * m_data.nu_top;
-          utens(ilev) *= xf;
-          vtens(ilev) *= xf;
-          ttens(ilev) *= xf;
+          utens(ilev)  *= xf;
+          vtens(ilev)  *= xf;
+          ttens(ilev)  *= xf;
           dptens(ilev) *= xf;
 
           if (m_process_nh_vars) {
@@ -432,9 +432,7 @@ void HyperviscosityFunctorImpl::operator() (const TagNutopLaplace&, const TeamMe
           }
 
         }); // threadvectorrange
-
     }); // teamthreadrange
-
 } // TagNutopLaplace
 
 } // namespace Homme
