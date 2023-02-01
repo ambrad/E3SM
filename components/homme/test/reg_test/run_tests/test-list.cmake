@@ -80,11 +80,17 @@ ENDIF()
 
 IF (BUILD_HOMME_THETA_KOKKOS)
 
+  # Various one-off tests.
+  SET(HOMME_RUN_TESTS_DIR ${HOMME_SOURCE_DIR}/test/reg_test/run_tests)
   IF (HOMME_ENABLE_COMPOSE)
     LIST(APPEND HOMME_TESTS thetah-sl-test11conv-r0t1-cdr30-rrm-kokkos.cmake)
-    IF (HOMMEXX_BFB_TESTING)
-      include(${HOMME_SOURCE_DIR}/test/reg_test/run_tests/thetah-sl-test11conv-r0t1-cdr30-rrm-cxx_vs_f90.cmake)
-    ENDIF()
+  ENDIF()
+  LIST(APPEND HOMME_TESTS thetanh-moist-bubble-kokkos.cmake)
+  IF (HOMMEXX_BFB_TESTING)
+    LIST(APPEND HOMME_ONEOFF_CVF_TESTS
+      thetah-sl-test11conv-r0t1-cdr30-rrm
+      thetanh-moist-bubble)
+    CREATE_CXX_VS_F90_TESTS_WITH_PROFILE(HOMME_ONEOFF_CVF_TESTS short)
   ENDIF()
 
   #cmake/namelist will be built with create-... script
