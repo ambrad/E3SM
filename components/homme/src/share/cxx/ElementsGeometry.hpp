@@ -48,10 +48,10 @@ public:
 
   ElementsGeometry() : m_num_elems(0) {}
 
-  Real m_rearth;
+  Real m_rearth, m_scale_factor, m_laplacian_rigid_factor;
 
   void init (const int num_elems, const bool consthv, const bool alloc_gradphis,
-             const Real rearth,
+             const Real scale_factor, const Real laplacian_rigid_factor,
              const bool alloc_sphere_coords=false);
 
   void randomize (const int seed);

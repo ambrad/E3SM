@@ -62,12 +62,11 @@ public:
   }
 
   //only for unit tests
-  SphereOperators (const Real rearth)
+  SphereOperators (const Real scale_factor, const Real laplacian_rigid_factor)
   {
-    m_rearth   = rearth;
-    //amb todo
-    m_scale_factor_inv = 1/rearth;
-    m_laplacian_rigid_factor = m_scale_factor_inv;
+    m_rearth = scale_factor;
+    m_scale_factor_inv = 1/scale_factor;
+    m_laplacian_rigid_factor = laplacian_rigid_factor;
   }
 
   void setup (const ElementsGeometry& geometry,
@@ -83,9 +82,8 @@ public:
     m_metinv   = geometry.m_metinv;
     m_spheremp = geometry.m_spheremp;
     m_rearth   = geometry.m_rearth;
-    //amb todo
-    m_scale_factor_inv = 1/m_rearth;
-    m_laplacian_rigid_factor = m_scale_factor_inv;
+    m_scale_factor_inv = 1/geometry.m_scale_factor;
+    m_laplacian_rigid_factor = geometry.m_laplacian_rigid_factor;
   }
 
   template<typename... Tags>
