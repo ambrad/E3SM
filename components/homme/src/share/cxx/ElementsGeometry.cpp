@@ -27,7 +27,6 @@ void ElementsGeometry::init(const int num_elems, const bool consthv, const bool 
 
   assert(scale_factor > 0);
   m_scale_factor = scale_factor;
-  m_scale_factor_inv = 1/scale_factor;
   assert(laplacian_rigid_factor >= 0);
   m_laplacian_rigid_factor = laplacian_rigid_factor;
   //amb todo
