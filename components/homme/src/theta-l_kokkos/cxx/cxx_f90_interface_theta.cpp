@@ -275,7 +275,8 @@ void init_elements_c (const int& num_elems)
 
   const bool consthv = (params.hypervis_scaling==0.0);
   e.init (num_elems, consthv, /* alloc_gradphis = */ true,
-          params.rearth,
+          //amb todo
+          params.rearth, 1/params.rearth,
           /* alloc_sphere_coords = */ params.transport_alg > 0);
 
   // Init also the tracers structure

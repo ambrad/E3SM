@@ -234,7 +234,10 @@ void init_elements_c (const int& num_elems)
   const SimulationParams& params = c.get<SimulationParams>();
 
   const bool consthv = (params.hypervis_scaling==0.0);
-  e.init (num_elems, consthv, /* alloc_gradphis = */ false, params.rearth);
+  e.init (num_elems, consthv, /* alloc_gradphis = */ false,
+          // SphereOperators parameters; preqx supports only the sphere.
+          params.rearth, 1/params.rearth,
+          /* alloc_sphere_coords = */ false);
 
   // Init also the tracers structure
   Tracers& t = c.create<Tracers> ();
