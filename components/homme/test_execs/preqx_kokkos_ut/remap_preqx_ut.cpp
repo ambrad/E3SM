@@ -25,7 +25,9 @@ TEST_CASE("remap_interface", "vertical remap") {
   std::cout << "seed: " << seed << (catchRngSeed==0 ? " (catch rng seed was 0)\n" : "\n");
 
   Elements elements;
-  elements.init(num_elems,seed, /*alloc_gradphis = */ false, PhysicalConstants::rearth0);
+  elements.init(num_elems,seed, /*alloc_gradphis = */ false,
+                PhysicalConstants::rearth0, 1/PhysicalConstants::rearth0,
+                false);
   elements.randomize(seed);
 
   Tracers tracers;

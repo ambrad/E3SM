@@ -65,7 +65,9 @@ TEST_CASE("forcing", "forcing") {
   hv.random_init(seed);
 
   auto& geo     = c.create<ElementsGeometry>();
-  geo.init(num_elems,true, /* alloc_gradphis = */ true, PhysicalConstants::rearth0);
+  geo.init(num_elems,true, /* alloc_gradphis = */ true,
+           PhysicalConstants::rearth0, 1/PhysicalConstants::rearth0,
+           false);
   geo.randomize(seed);
 
   auto& state   = c.create<ElementsState>();
