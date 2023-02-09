@@ -52,7 +52,7 @@ public:
 
   void init (const int num_elems, const bool consthv, const bool alloc_gradphis,
              const Real scale_factor, const Real laplacian_rigid_factor,
-             const bool alloc_sphere_coords=false);
+             const bool alloc_sphere_coords);
 
   void randomize (const int seed);
 

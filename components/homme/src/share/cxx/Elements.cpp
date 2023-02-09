@@ -20,7 +20,8 @@ void Elements::init(const int num_elems, const bool consthv, const bool alloc_gr
 
   m_num_elems = num_elems;
 
-  m_geometry.init(num_elems,consthv,alloc_gradphis,rearth,alloc_sphere_coords);
+  //amb todo
+  m_geometry.init(num_elems,consthv,alloc_gradphis,rearth,1/rearth,alloc_sphere_coords);
   m_state.init(num_elems);
   m_derived.init(num_elems);
   m_forcing.init(num_elems);
