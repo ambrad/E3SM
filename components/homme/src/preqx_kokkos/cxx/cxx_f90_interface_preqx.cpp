@@ -89,7 +89,9 @@ void init_simulation_params_c (const int& remap_alg, const int& limiter_option, 
   params.moisture                      = (moisture ? MoistDry::MOIST : MoistDry::DRY);
   params.use_cpstar                    = use_cpstar;
   params.transport_alg                 = transport_alg;
-  params.rearth                        = rearth;
+  // SphereOperators parameters; preqx supports only the sphere.
+  params.scale_factor                  = rearth;
+  params.laplacian_rigid_factor        = 1/rearth;
 
   //set nu_ratios values
   if (params.nu != params.nu_div) {
@@ -235,8 +237,7 @@ void init_elements_c (const int& num_elems)
 
   const bool consthv = (params.hypervis_scaling==0.0);
   e.init (num_elems, consthv, /* alloc_gradphis = */ false,
-          // SphereOperators parameters; preqx supports only the sphere.
-          params.rearth, 1/params.rearth,
+          params.scale_factor, params.laplacian_rigid_factor,
           /* alloc_sphere_coords = */ false);
 
   // Init also the tracers structure

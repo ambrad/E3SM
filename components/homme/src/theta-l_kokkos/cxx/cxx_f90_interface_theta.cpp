@@ -115,7 +115,9 @@ void init_simulation_params_c (const int& remap_alg, const int& limiter_option, 
   params.theta_hydrostatic_mode        = theta_hydrostatic_mode;
   params.dcmip16_mu                    = dcmip16_mu;
   params.nsplit                        = nsplit;
-  params.rearth                        = rearth;
+  params.scale_factor                  = rearth;
+  //amb todo
+  params.laplacian_rigid_factor        = 1/rearth;
   params.pgrad_correction              = pgrad_correction;
   params.dp3d_thresh                   = dp3d_thresh;
   params.vtheta_thresh                 = vtheta_thresh;
@@ -275,8 +277,7 @@ void init_elements_c (const int& num_elems)
 
   const bool consthv = (params.hypervis_scaling==0.0);
   e.init (num_elems, consthv, /* alloc_gradphis = */ true,
-          //amb todo
-          params.rearth, 1/params.rearth,
+          params.scale_factor, params.laplacian_rigid_factor,
           /* alloc_sphere_coords = */ params.transport_alg > 0);
 
   // Init also the tracers structure
