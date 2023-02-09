@@ -64,7 +64,6 @@ public:
   //only for unit tests
   SphereOperators (const Real scale_factor, const Real laplacian_rigid_factor)
   {
-    m_rearth = scale_factor;
     m_scale_factor_inv = 1/scale_factor;
     m_laplacian_rigid_factor = laplacian_rigid_factor;
   }
@@ -81,7 +80,6 @@ public:
     m_metdet   = geometry.m_metdet;
     m_metinv   = geometry.m_metinv;
     m_spheremp = geometry.m_spheremp;
-    m_rearth   = geometry.m_rearth;
     m_scale_factor_inv = 1/geometry.m_scale_factor;
     m_laplacian_rigid_factor = geometry.m_laplacian_rigid_factor;
   }
@@ -1175,8 +1173,7 @@ public:
   ExecViewManaged<const Real * [2][2][NP][NP]>  m_d;
   ExecViewManaged<const Real * [2][2][NP][NP]>  m_dinv;
 
-  //amb get rid of m_rearth
-  Real m_rearth, m_scale_factor_inv, m_laplacian_rigid_factor;
+  Real m_scale_factor_inv, m_laplacian_rigid_factor;
 };
 
 } // namespace Homme

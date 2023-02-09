@@ -48,7 +48,7 @@ public:
 
   ElementsGeometry() : m_num_elems(0) {}
 
-  Real m_rearth, m_scale_factor, m_laplacian_rigid_factor;
+  Real m_scale_factor, m_laplacian_rigid_factor;
 
   void init (const int num_elems, const bool consthv, const bool alloc_gradphis,
              const Real scale_factor, const Real laplacian_rigid_factor,

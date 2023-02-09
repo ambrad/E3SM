@@ -29,8 +29,6 @@ void ElementsGeometry::init(const int num_elems, const bool consthv, const bool 
   m_scale_factor = scale_factor;
   assert(laplacian_rigid_factor >= 0);
   m_laplacian_rigid_factor = laplacian_rigid_factor;
-  //amb todo
-  m_rearth     = m_scale_factor;
   
   // Coriolis force
   m_fcor = ExecViewManaged<Real * [NP][NP]>("FCOR", m_num_elems);
