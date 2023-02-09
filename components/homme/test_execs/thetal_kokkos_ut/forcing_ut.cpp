@@ -66,8 +66,7 @@ TEST_CASE("forcing", "forcing") {
 
   auto& geo     = c.create<ElementsGeometry>();
   geo.init(num_elems,true, /* alloc_gradphis = */ true,
-           PhysicalConstants::rearth0, 1/PhysicalConstants::rearth0,
-           false);
+           PhysicalConstants::rearth0);
   geo.randomize(seed);
 
   auto& state   = c.create<ElementsState>();

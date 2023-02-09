@@ -26,8 +26,7 @@ TEST_CASE("remap_interface", "vertical remap") {
 
   Elements elements;
   elements.init(num_elems,seed, /*alloc_gradphis = */ false,
-                PhysicalConstants::rearth0, 1/PhysicalConstants::rearth0,
-                false);
+                PhysicalConstants::rearth0);
   elements.randomize(seed);
 
   Tracers tracers;

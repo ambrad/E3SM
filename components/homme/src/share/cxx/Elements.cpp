@@ -21,7 +21,8 @@ void Elements::init(const int num_elems, const bool consthv, const bool alloc_gr
   m_num_elems = num_elems;
 
   m_geometry.init(num_elems,consthv,alloc_gradphis,
-                  scale_factor,laplacian_rigid_factor,
+                  scale_factor,
+                  laplacian_rigid_factor < 0 ? 1/scale_factor : laplacian_rigid_factor,
                   alloc_sphere_coords);
   m_state.init(num_elems);
   m_derived.init(num_elems);
