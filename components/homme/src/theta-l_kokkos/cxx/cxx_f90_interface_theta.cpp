@@ -46,7 +46,7 @@ void init_simulation_params_c (const int& remap_alg, const int& limiter_option, 
                                const int& ftype, const int& theta_adv_form, const bool& prescribed_wind, const bool& moisture, const bool& disable_diagnostics,
                                const bool& use_cpstar, const int& transport_alg, const bool& theta_hydrostatic_mode, const char** test_case,
                                const int& dt_remap_factor, const int& dt_tracer_factor,
-                               const double& rearth, const int& nsplit, const bool& pgrad_correction,
+                               const double& scale_factor, const double& laplacian_rigid_factor, const int& nsplit, const bool& pgrad_correction,
                                const double& dp3d_thresh, const double& vtheta_thresh)
 {
   // Check that the simulation options are supported. This helps us in the future, since we
@@ -115,9 +115,8 @@ void init_simulation_params_c (const int& remap_alg, const int& limiter_option, 
   params.theta_hydrostatic_mode        = theta_hydrostatic_mode;
   params.dcmip16_mu                    = dcmip16_mu;
   params.nsplit                        = nsplit;
-  params.scale_factor                  = rearth;
-  //amb todo
-  params.laplacian_rigid_factor        = 1/rearth;
+  params.scale_factor                  = scale_factor;
+  params.laplacian_rigid_factor        = laplacian_rigid_factor;
   params.pgrad_correction              = pgrad_correction;
   params.dp3d_thresh                   = dp3d_thresh;
   params.vtheta_thresh                 = vtheta_thresh;
