@@ -84,12 +84,18 @@ IF (BUILD_HOMME_THETA_KOKKOS)
   SET(HOMME_RUN_TESTS_DIR ${HOMME_SOURCE_DIR}/test/reg_test/run_tests)
   IF (HOMME_ENABLE_COMPOSE)
     LIST(APPEND HOMME_TESTS thetah-sl-test11conv-r0t1-cdr30-rrm-kokkos.cmake)
+    IF (HOMMEXX_BFB_TESTING)
+      LIST(APPEND HOMME_ONEOFF_CVF_TESTS
+        thetah-sl-test11conv-r0t1-cdr30-rrm)
+    ENDIF()
   ENDIF()
-  LIST(APPEND HOMME_TESTS thetanh-moist-bubble-kokkos.cmake)
+  LIST(APPEND HOMME_TESTS
+    thetanh-moist-bubble-kokkos.cmake
+    thetanh-nhgw-slice-kokkos.cmake)
   IF (HOMMEXX_BFB_TESTING)
     LIST(APPEND HOMME_ONEOFF_CVF_TESTS
-      thetah-sl-test11conv-r0t1-cdr30-rrm
-      thetanh-moist-bubble)
+      thetanh-moist-bubble
+      thetanh-nhgw-slice)
     CREATE_CXX_VS_F90_TESTS_WITH_PROFILE(HOMME_ONEOFF_CVF_TESTS short)
   ENDIF()
 

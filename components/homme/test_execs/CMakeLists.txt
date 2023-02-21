@@ -234,8 +234,9 @@ IF (${BUILD_HOMME_THETA_KOKKOS})
 
     ADD_SUBDIRECTORY(theta-nlev128-kokkos)
 
-    # For rising moist bubble test.
+    # For doubly periodic tests.
     ADD_SUBDIRECTORY(theta-l-nlev20-native-kokkos)
+    ADD_SUBDIRECTORY(theta-l-nlev10-native-kokkos)
 
     # This one we build it only if both theta and theta_kokkos are requested,
     # since it's just needed for perf/correctness comparisons
