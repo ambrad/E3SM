@@ -100,6 +100,7 @@ IF (BUILD_HOMME_THETA_KOKKOS)
   ENDIF()
   LIST(APPEND HOMME_TESTS
     thetanh-moist-bubble-kokkos.cmake
+    thetanh-dry-bubble-kokkos.cmake
     thetah-nhgw-kokkos.cmake
     thetanh-nhgw-kokkos.cmake
     thetah-nhgw-slice-kokkos.cmake
@@ -107,6 +108,7 @@ IF (BUILD_HOMME_THETA_KOKKOS)
   IF (HOMMEXX_BFB_TESTING)
     LIST(APPEND HOMME_ONEOFF_CVF_TESTS
       thetanh-moist-bubble
+      thetanh-dry-bubble
       thetah-nhgw
       thetanh-nhgw
       thetah-nhgw-slice
