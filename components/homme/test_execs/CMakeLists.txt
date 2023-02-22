@@ -270,6 +270,8 @@ IF (${BUILD_HOMME_PREQX_KOKKOS})
     ADD_SUBDIRECTORY(preqx-nlev72)
     ADD_SUBDIRECTORY(preqx_kokkos_ut)
   ENDIF ()
+    # For doubly periodic tests.
+    ADD_SUBDIRECTORY(preqx-nlev10-native-kokkos)
 ENDIF ()
 
 # Read the test-list.cmake file to get the HOMME_TESTS list

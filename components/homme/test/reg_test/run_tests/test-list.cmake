@@ -91,10 +91,20 @@ IF (BUILD_HOMME_THETA_KOKKOS)
   ENDIF()
   LIST(APPEND HOMME_TESTS
     thetanh-moist-bubble-kokkos.cmake
+    preqx-nhgw-kokkos.cmake
+    preqx-nhgw-slice-kokkos.cmake
+    thetah-nhgw-kokkos.cmake
+    thetanh-nhgw-kokkos.cmake
+    thetah-nhgw-slice-kokkos.cmake
     thetanh-nhgw-slice-kokkos.cmake)
   IF (HOMMEXX_BFB_TESTING)
     LIST(APPEND HOMME_ONEOFF_CVF_TESTS
       thetanh-moist-bubble
+      preqx-nhgw
+      preqx-nhgw-slice
+      thetah-nhgw
+      thetanh-nhgw
+      thetah-nhgw-slice
       thetanh-nhgw-slice)
     CREATE_CXX_VS_F90_TESTS_WITH_PROFILE(HOMME_ONEOFF_CVF_TESTS short)
   ENDIF()
