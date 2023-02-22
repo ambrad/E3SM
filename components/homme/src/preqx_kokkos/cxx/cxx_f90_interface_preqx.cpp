@@ -40,19 +40,20 @@ void init_simulation_params_c (const int& remap_alg, const int& limiter_option, 
                                const int& ftype, const bool& prescribed_wind, const bool& moisture, const bool& disable_diagnostics,
                                const bool& use_cpstar, const int& transport_alg,
                                const int& dt_remap_factor, const int& dt_tracer_factor,
-                               const double& rearth)
+                               const double& scale_factor, const double& laplacian_rigid_factor)
 {
   // Check that the simulation options are supported. This helps us in the future, since we
   // are currently 'assuming' some option have/not have certain values. As we support for more
   // options in the C++ build, we will remove some checks
-  Errors::check_option("init_simulation_params_c","vert_remap_q_alg",remap_alg,{1,3});
+  Errors::check_option("init_simulation_params_c","vert_remap_q_alg",remap_alg,{1,3,10});
   Errors::check_option("init_simulation_params_c","prescribed_wind",prescribed_wind,{false});
   Errors::check_option("init_simulation_params_c","hypervis_order",hypervis_order,{2});
   Errors::check_option("init_simulation_params_c","transport_alg",transport_alg,{0});
   Errors::check_option("init_simulation_params_c","time_step_type",time_step_type,{5});
   Errors::check_option("init_simulation_params_c","qsize",qsize,0,Errors::ComparisonOp::GE);
   Errors::check_option("init_simulation_params_c","qsize",qsize,QSIZE_D,Errors::ComparisonOp::LE);
-  Errors::check_option("init_simulation_params_c","limiter_option",limiter_option,{8,9});
+  if (qsize > 0)
+    Errors::check_option("init_simulation_params_c","limiter_option",limiter_option,{8,9});
   Errors::check_option("init_simulation_params_c","ftype",ftype, {-1, 0, 2});
   Errors::check_option("init_simulation_params_c","nu_p",nu_p,0.0,Errors::ComparisonOp::GT);
   Errors::check_option("init_simulation_params_c","nu",nu,0.0,Errors::ComparisonOp::GT);
@@ -63,7 +64,10 @@ void init_simulation_params_c (const int& remap_alg, const int& limiter_option, 
 
   if (remap_alg==1) {
     params.remap_alg = RemapAlg::PPM_MIRRORED;
+  } else if (remap_alg == 10) {
+    params.remap_alg = RemapAlg::PPM_LIMITED_EXTRAP;
   }
+
   if (time_step_type==5) {
     params.time_step_type = TimeStepType::ttype5;
   }
@@ -90,8 +94,8 @@ void init_simulation_params_c (const int& remap_alg, const int& limiter_option, 
   params.use_cpstar                    = use_cpstar;
   params.transport_alg                 = transport_alg;
   // SphereOperators parameters; preqx supports only the sphere.
-  params.scale_factor                  = rearth;
-  params.laplacian_rigid_factor        = 1/rearth;
+  params.scale_factor                  = scale_factor;
+  params.laplacian_rigid_factor        = laplacian_rigid_factor;
 
   //set nu_ratios values
   if (params.nu != params.nu_div) {
