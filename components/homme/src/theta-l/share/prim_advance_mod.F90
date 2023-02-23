@@ -58,13 +58,48 @@ module prim_advance_mod
   private
   save
   public :: prim_advance_exp, prim_advance_init1, advance_hypervis, &
-            applycamforcing_dynamics, compute_andor_apply_rhs, limiter_dp3d_k
-
+       applycamforcing_dynamics, compute_andor_apply_rhs, limiter_dp3d_k
+  
 contains
+  
+  subroutine xor_fld(elem,nets,nete,lbl)
+    use iso_c_binding
+    type (element_t), intent(inout) :: elem(:)
 
+    integer, intent(in) :: nets, nete
+    character(len=*), intent(in) :: lbl
 
+    interface
+       subroutine amb_xor_dbl(a, ie, tl, i, j, k, b) bind(c)
+         use iso_c_binding
+         integer(kind=c_long_long), intent(inout) :: a
+         integer(kind=c_int), value, intent(in) :: ie, tl, i, j, k
+         real(kind=c_double), value, intent(in) :: b
+       end subroutine amb_xor_dbl
+    end interface
 
+    integer :: ie, i, j, k, tl
+    integer(kind=c_long_long) :: acc, a
+    real(8) :: d
 
+    acc = 0
+    d = 0
+    do ie = nets,nete
+       do tl = 1,size(elem(ie)%state%ps_v,3)
+          a = 0
+          do j = 1,np
+             do i = 1,np
+                do k = 1,nlev
+                   call amb_xor_dbl(a, ie-1, tl-1, j-1, i-1, k-1, elem(ie)%state%vtheta_dp(i,j,k,tl))
+                   d = d + elem(ie)%state%vtheta_dp(i,j,k,tl)
+                end do
+             end do
+          end do
+          acc = acc + a
+       end do
+    end do
+    print '(a,a,a,i20,a,es23.16)','amb> ',trim(lbl),' ',acc,' ',d
+  end subroutine xor_fld
 
   subroutine prim_advance_init1(par, elem,integration)
         
@@ -284,26 +319,31 @@ contains
        ! KGU5-3 (3rd order) with IMEX backward euler (2nd order)
        ! 
        ! u1 = u0 + dt/5 RHS(u0)  (save u1 in timelevel nm1)
+       call xor_fld(elem,nets,nete,'c1')
        call compute_andor_apply_rhs(nm1,n0,n0,dt/5,elem,hvcoord,hybrid,&
             deriv,nets,nete,compute_diagnostics,eta_ave_w/4,1.d0,0.d0,1.d0)
+       call xor_fld(elem,nets,nete,'c2')
        call compute_stage_value_dirk(nm1,0d0,n0,0d0,nm1,dt/5,elem,hvcoord,hybrid,&
             deriv,nets,nete,maxiter,itertol)
 
        ! u2 = u0 + dt/5 RHS(u1)
        call compute_andor_apply_rhs(np1,n0,nm1,dt/5,elem,hvcoord,hybrid,&
             deriv,nets,nete,.false.,0d0,1.d0,0.d0,1.d0)
+       call xor_fld(elem,nets,nete,'c3')
        call compute_stage_value_dirk(nm1,0d0,n0,0d0,np1,dt/5,elem,hvcoord,hybrid,&
             deriv,nets,nete,maxiter,itertol)
 
        ! u3 = u0 + dt/3 RHS(u2)
        call compute_andor_apply_rhs(np1,n0,np1,dt/3,elem,hvcoord,hybrid,&
             deriv,nets,nete,.false.,0d0,1.d0,0.d0,1.d0)
+       call xor_fld(elem,nets,nete,'c4')
        call compute_stage_value_dirk(nm1,0d0,n0,0d0,np1,dt/3,elem,hvcoord,hybrid,&
             deriv,nets,nete,maxiter,itertol)
 
        ! u4 = u0 + 2dt/3 RHS(u3)
        call compute_andor_apply_rhs(np1,n0,np1,2*dt/3,elem,hvcoord,hybrid,&
             deriv,nets,nete,.false.,0d0,1.d0,0.d0,1.d0)
+       call xor_fld(elem,nets,nete,'c5')
        call compute_stage_value_dirk(nm1,0d0,n0,0d0,np1,2*dt/3,elem,hvcoord,hybrid,&
             deriv,nets,nete,maxiter,itertol)
 
@@ -311,6 +351,7 @@ contains
        ! u5 = u1 + dt 3/4 RHS(u4)
        call compute_andor_apply_rhs(np1,nm1,np1,3*dt/4,elem,hvcoord,hybrid,&
             deriv,nets,nete,.false.,3*eta_ave_w/4,1.d0,0.d0,1.d0)
+       call xor_fld(elem,nets,nete,'c6')
        ! u(np1) = [u1 + 3dt/4 RHS(u4)] +  1/4 (u1 - u0)    STABLE
        do ie=nets,nete
           elem(ie)%state%v(:,:,:,:,np1)=elem(ie)%state%v(:,:,:,:,np1)+&
@@ -326,6 +367,7 @@ contains
           call limiter_dp3d_k(elem(ie)%state%dp3d(:,:,:,np1),elem(ie)%state%vtheta_dp(:,:,:,np1),&
                elem(ie)%spheremp,hvcoord%dp0)
        enddo
+       call xor_fld(elem,nets,nete,'c7')
 
        !  n0          nm1       np1 
        ! u0*5/18  + u1*5/18  + u5*8/18
@@ -334,7 +376,7 @@ contains
        a3=8*dt/18
        call compute_stage_value_dirk(nm1,a2,n0,a1,np1,a3,elem,hvcoord,hybrid,&
             deriv,nets,nete,maxiter,itertol)
-
+       call xor_fld(elem,nets,nete,'c8')
     else if (tstep_type==10) then ! KG5(2nd order CFL=4) + optimized
       dt2=dt/4
       call compute_andor_apply_rhs(nm1,n0,n0,dt2,elem,hvcoord,hybrid,&

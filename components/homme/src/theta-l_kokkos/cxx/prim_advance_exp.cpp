@@ -17,8 +17,30 @@
 
 #include "profiling.hpp"
 
+#include "/home/ac.ambradl/compy-goodies/util/mpi_lxor_op.hpp"
+
 namespace Homme
 {
+
+static void xor_vtheta_dp (const ExecViewManaged<Scalar*[NUM_TIME_LEVELS][NP][NP][NUM_LEV]>& f,
+                           const std::string& lbl) {
+  long long acc = 0;
+  double d = 0;
+  for (int ie = 0; ie < f.extent_int(0); ++ie)
+    for (int tl = 0; tl < NUM_TIME_LEVELS; ++tl) {
+      long long a = 0;
+      for (int i = 0; i < NP; ++i)
+        for (int j = 0; j < NP; ++j) {
+          const Real* c = reinterpret_cast<const Real*>(&f(ie,tl,i,j,0));
+          for (int k = 0; k < NUM_PHYSICAL_LEV; ++k) {
+            a ^= (ie*19739 + tl*377 + i*17 + j*11 + k)*(*reinterpret_cast<const long long*>(&c[k]));
+            d += c[k];
+          }
+        }
+      acc += a;
+    }
+  printf("amb> %s %20lld %23.16E\n", lbl.c_str(), acc, d);
+}
 
 // Declare all the timestepping schemes routines
 void ttype5_timestep      (const TimeLevel& tl, const Real dt, const Real eta_ave_w);
@@ -249,27 +271,33 @@ void ttype9_imex_timestep(const TimeLevel& tl,
 //
 // Names of timelevels in RK:
 //         RKStageData (const int nm1_in, const int n0_in, const int np1_in, const int n0_qdp_in ...
+  xor_vtheta_dp(elements.m_state.m_vtheta_dp,"c1");
   caar.run(RKStageData(n0, n0, nm1, qn0, dt, eta_ave_w/4.0, 1.0, 0.0, 1.0));
+  xor_vtheta_dp(elements.m_state.m_vtheta_dp,"c2");
   dirk.run(nm1, 0.0, n0, 0.0, nm1, dt, elements, hvcoord);
 
   // Stage 2
   dt = dt_dyn/5.0;
   caar.run(RKStageData(n0, nm1, np1, qn0, dt, 0.0, 1.0, 0.0, 1.0));
+  xor_vtheta_dp(elements.m_state.m_vtheta_dp,"c3");
   dirk.run(nm1, 0.0, n0, 0.0, np1, dt, elements, hvcoord);
 
   // Stage 3
   dt = dt_dyn/3.0;
   caar.run(RKStageData(n0, np1, np1, qn0, dt, 0.0, 1.0, 0.0, 1.0));
+  xor_vtheta_dp(elements.m_state.m_vtheta_dp,"c4");
   dirk.run(nm1, 0.0, n0, 0.0, np1, dt, elements, hvcoord);
 
   // Stage 4
   dt = 2.0*dt_dyn/3.0;
   caar.run(RKStageData(n0, np1, np1, qn0, dt, 0.0, 1.0, 0.0, 1.0));
+  xor_vtheta_dp(elements.m_state.m_vtheta_dp,"c5");
   dirk.run(nm1, 0.0, n0, 0.0, np1, dt, elements, hvcoord);
 
   // Stage 5
   dt = 3.0*dt_dyn/4.0;
   caar.run(RKStageData(nm1, np1, np1, qn0, dt, 3.0*eta_ave_w/4.0, 1.0, 0.0, 1.0));
+  xor_vtheta_dp(elements.m_state.m_vtheta_dp,"c6");
   // u(np1) = [u1 + 3dt/4 RHS(u4)] +  1/4 (u1 - u0)
   { 
     const auto v         = elements.m_state.m_v;
@@ -309,14 +337,15 @@ void ttype9_imex_timestep(const TimeLevel& tl,
   }
   Kokkos::fence();
   limiter.run(np1);
+  xor_vtheta_dp(elements.m_state.m_vtheta_dp,"c7");
 
   Real a1 = 5.0*dt_dyn/18.0;
   Real a2 = dt_dyn/36.0;
   Real a3 = 8.0*dt_dyn/18.0;
   dirk.run(nm1, a2, n0, a1, np1, a3, elements, hvcoord);
 
+  xor_vtheta_dp(elements.m_state.m_vtheta_dp,"c8");
   GPTLstop("ttype9_imex_timestep");
-
 }
 
 

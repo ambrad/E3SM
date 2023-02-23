@@ -1,5 +1,9 @@
 #include "compose_homme.hpp"
 
+extern "C" void amb_xor_dbl (long long* a, int ie, int tl, int i, int j, int k, const double b) {
+  *a ^= (ie*19739 + tl*377 + i*17 + j*11 + k)*(*reinterpret_cast<const long long*>(&b));
+}
+
 namespace homme {
 
 template <typename MT>
