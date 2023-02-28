@@ -32,6 +32,9 @@
 
 #include <assert.h>
 
+static long long acc[16];
+static double dacc[16];
+
 namespace Homme {
 
 // Theta does not use tracers in caar. A fwd decl is enough here
@@ -335,6 +338,10 @@ struct CaarFunctorImpl {
 
   void run (const RKStageData& data)
   {
+    for (int i = 0; i < 16; ++i) {
+      acc[i] = 0;
+      dacc[i] = 0;
+    }
 
     auto& limiter  = Context::singleton().get<LimiterFunctor>();
 
@@ -365,6 +372,9 @@ struct CaarFunctorImpl {
     limiter.run(data.np1);
 
     profiling_pause();
+
+    for (int i = 0; i < 4; ++i) fprintf(stderr,"amb> caar %2d%21lld%24.16E\n", i, acc[i], dacc[i]);
+    //for (int i = 0; i < 1; ++i) printf("amb> caar %2d%21lld\n", i, acc[i]);
   }
 
   KOKKOS_INLINE_FUNCTION
@@ -373,6 +383,17 @@ struct CaarFunctorImpl {
     // Note: make sure the same temp is not used within each epoch!
 
     KernelVariables kv(team, m_tu);
+
+    const int ne = m_state.m_vtheta_dp.extent_int(0);
+    for (int i = 0; i < NP; ++i)
+      for (int j = 0; j < NP; ++j) {
+        const auto vtheta_dp = Homme::subview(m_state.m_vtheta_dp,kv.ie,m_data.n0);
+        for (int k = 0; k < NUM_PHYSICAL_LEV; ++k) {
+          const int a = 0;
+          acc[a] += *reinterpret_cast<const long long*>(&vtheta_dp(i,j,k)[0]);
+          dacc[a] += vtheta_dp(i,j,k)[0];
+        }
+      }
 
     // =========== EPOCH 1 =========== //
     compute_div_vdp(kv);
@@ -1052,6 +1073,16 @@ struct CaarFunctorImpl {
           }
         }
       });
+
+      for (int k = 0; k < NUM_PHYSICAL_LEV; ++k) {
+        const int a = 1;
+        acc[a] += *reinterpret_cast<const long long*>(&theta_tens(0)[0]);
+        dacc[a] -= theta_tens(0)[0];
+        acc[a+1] += *reinterpret_cast<const long long*>(&vtheta(igp,jgp,k)[0]);
+        dacc[a+1] += vtheta(igp,jgp,k)[0];
+        acc[a+2] += *reinterpret_cast<const long long*>(&vtheta_dp(igp,jgp,k)[0]);
+        dacc[a+2] += vtheta_dp(igp,jgp,k)[0];
+      }
     });
   }
 

@@ -23,6 +23,9 @@ void prim_step (const Real, const bool);
 void prim_step_flexible (const Real, const bool);
 void vertical_remap (const Real);
 void update_q (const int np1_qdp, const int np1);
+void xor_vtheta_dp(const ExecViewManaged<Scalar*[NUM_TIME_LEVELS][NP][NP][NUM_LEV]>& f,
+                   const std::string& lbl);
+
 
 extern "C" {
 
@@ -34,6 +37,7 @@ void initialize_dp3d_from_ps_c () {
   auto& tl = context.get<TimeLevel>();
 
   Elements& elements = context.get<Elements>();
+  xor_vtheta_dp(elements.m_state.m_dp3d,"sub0-dp3d-hrm4");
   HybridVCoord& hvcoord = context.get<HybridVCoord>();
   const auto hybrid_ai_delta = hvcoord.hybrid_ai_delta;
   const auto hybrid_bi_delta = hvcoord.hybrid_bi_delta;
@@ -55,6 +59,7 @@ void initialize_dp3d_from_ps_c () {
   }
   Kokkos::fence();
   GPTLstop("tl-sc dp3d-from-ps");
+  xor_vtheta_dp(elements.m_state.m_dp3d,"sub0-dp3d-hrm5");
 }
 
 void prim_run_subcycle_c (const Real& dt, int& nstep, int& nm1, int& n0, int& np1, 
@@ -63,6 +68,9 @@ void prim_run_subcycle_c (const Real& dt, int& nstep, int& nm1, int& n0, int& np
   GPTLstart("tl-sc prim_run_subcycle_c");
 
   auto& context = Context::singleton();
+
+  const auto& elements = context.get<Elements>();
+  xor_vtheta_dp(elements.m_state.m_dp3d,"sub0-dp3d");
 
   // Get simulation params
   SimulationParams& params = context.get<SimulationParams>();
@@ -102,6 +110,9 @@ void prim_run_subcycle_c (const Real& dt, int& nstep, int& nm1, int& n0, int& np
   if ( ! independent_time_steps) {
     tl.update_tracers_levels(params.dt_tracer_factor);
 
+    const auto& elements = context.get<Elements>();
+    xor_vtheta_dp(elements.m_state.m_vtheta_dp,"s1");
+
     // Apply forcing.
 #if defined(CAM) || defined(SCREAM)
     // CAM and SCREAM support only ftype 0 and 2.
@@ -120,9 +131,13 @@ void prim_run_subcycle_c (const Real& dt, int& nstep, int& nm1, int& n0, int& np
     // ftype0 != ftype2 for dt_remap<dt_tracer
     if (params.ftype == ForcingAlg::FORCING_0 || 
         params.ftype == ForcingAlg::FORCING_2) {
-      apply_cam_forcing(dt_remap);
+      //apply_cam_forcing(dt_remap);
+      apply_cam_forcing_tracers(dt_remap);
+      xor_vtheta_dp(elements.m_state.m_vtheta_dp,"s2");
+      apply_cam_forcing_dynamics(dt_remap);
     }
 #endif
+    xor_vtheta_dp(elements.m_state.m_vtheta_dp,"s3");
 
     if (compute_diagnostics) {
       Diagnostics& diags = context.get<Diagnostics>();

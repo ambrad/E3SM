@@ -31,6 +31,8 @@ module prim_driver_base
   use restart_io_mod ,  only : readrestart
   use test_mod,         only: set_test_initial_conditions, compute_test_forcing
 #endif
+  use prim_advance_mod, only: amb_xor_dbl
+  use iso_c_binding
 
   implicit none
 
@@ -1066,6 +1068,7 @@ contains
 #if USE_OPENACC
     use openacc_utils_mod,  only: copy_qdp_h2d, copy_qdp_d2h
 #endif
+    use prim_advance_mod, only: xor_fld
 
     implicit none
 
@@ -1084,6 +1087,8 @@ contains
     integer :: ie,i,j,k,n,q,t,scm_dum
     integer :: n0_qdp,np1_qdp,r,nstep_end,nets_in,nete_in,step_factor
     logical :: compute_diagnostics
+
+    call xor_fld(elem,nets,nete,'sub0-dp3d',1)
 
     ! compute timesteps for tracer transport and vertical remap
     dt_q = dt*dt_tracer_factor
@@ -1114,10 +1119,13 @@ contains
        ! compute HOMME test case forcing
        ! by calling it here, it mimics eam forcings computations in standalone
        ! homme.
+       print *,'amb> compute_test_forcing_f',tl%n0,n0_qdp
        call compute_test_forcing(elem,hybrid,hvcoord,tl%n0,n0_qdp,dt_remap,nets,nete,tl)
 #endif
 
+       call xor_fld(elem,nets,nete,'s1',0)
        call applyCAMforcing_remap(elem,hvcoord,tl%n0,n0_qdp,dt_remap,nets,nete)
+       call xor_fld(elem,nets,nete,'s3',0)
 
        ! E(1) Energy after CAM forcing
        if (compute_diagnostics) call run_diagnostics(elem,hvcoord,tl,1,.true.,nets,nete)
@@ -1357,9 +1365,9 @@ contains
 #endif
     if (apply_forcing) then
        ! Apply tracer forcings over tracer time step.
-       do ie = nets,nete
-          call ApplyCAMForcing_tracers(elem(ie),hvcoord,tl%n0,n0_qdp,dt_q,.false.)
-       enddo
+       !do ie = nets,nete
+          call ApplyCAMForcing_tracers(elem,hvcoord,tl%n0,n0_qdp,dt_q,.false.)
+       !enddo
     end if
 
     call set_tracer_transport_derived_values(elem, nets, nete, tl)
@@ -1500,6 +1508,7 @@ contains
   use control_mod,        only : ftype
   use hybvcoord_mod,      only : hvcoord_t
   use prim_advance_mod,   only : applycamforcing_dynamics
+  use prim_advance_mod, only: xor_fld
   implicit none
   type (element_t),       intent(inout) :: elem(:)
   real (kind=real_kind),  intent(in)    :: dt_remap
@@ -1511,26 +1520,27 @@ contains
   if (ftype==-1) then
     !do nothing
   elseif (ftype==0) then
-    do ie = nets,nete
-       call applyCAMforcing_tracers (elem(ie),hvcoord,n0,n0qdp,dt_remap,.false.)
-    enddo
+    !do ie = nets,nete
+       call applyCAMforcing_tracers (elem,hvcoord,n0,n0qdp,dt_remap,.false.)
+    !enddo
+       call xor_fld(elem,nets,nete,'s2',0)
     call applyCAMforcing_dynamics(elem,hvcoord,n0,dt_remap,nets,nete)
   elseif (ftype==1) then
     !do nothing
   elseif (ftype==2) then
     ! with CAM physics, tracers were adjusted in dp coupling layer
 #ifndef CAM
-    do ie = nets,nete
-       call ApplyCAMForcing_tracers (elem(ie),hvcoord,n0,n0qdp,dt_remap,.false.)
-    enddo
+    !do ie = nets,nete
+       call ApplyCAMForcing_tracers (elem,hvcoord,n0,n0qdp,dt_remap,.false.)
+    !enddo
 #endif
     call ApplyCAMForcing_dynamics(elem,hvcoord,n0,dt_remap,nets,nete)
  elseif (ftype==4) then
     ! with CAM physics, tracers were adjusted in dp coupling layer
 #ifndef CAM
-    do ie = nets,nete
-       call ApplyCAMForcing_tracers (elem(ie),hvcoord,n0,n0qdp,dt_remap,.false.)
-    enddo
+    !do ie = nets,nete
+       call ApplyCAMForcing_tracers (elem,hvcoord,n0,n0qdp,dt_remap,.false.)
+    !enddo
 #endif
   endif
 
@@ -1579,14 +1589,14 @@ contains
 #endif
 #endif
   implicit none
-  type (element_t),       intent(inout) :: elem
+  type (element_t),       intent(inout) :: elem(:)
   real (kind=real_kind),  intent(in)    :: dt
   type (hvcoord_t),       intent(in)    :: hvcoord
   integer,                intent(in)    :: np1,np1_qdp
   logical,                intent(in)    :: adjustment
 
   ! local
-  integer :: i,j,k,q
+  integer :: i,j,k,q,ie
   real (kind=real_kind)  :: fq
   real (kind=real_kind)  :: dp(np,np,nlev), ps(np,np), dp_adj(np,np,nlev)
   real (kind=real_kind)  :: phydro(np,np,nlev)  ! hydrostatic pressure
@@ -1602,6 +1612,10 @@ contains
   real (kind=real_kind)  :: dpnh_dp_i(np,np,nlevp)
 #endif
 
+  integer(c_long_long) :: acc(16)
+  real(8) :: dacc(16)
+  integer :: a
+
 #ifdef HOMMEXX_BFB_TESTING
   ! BFB comparison with C++ requires to perform the reduction
   ! of FQ over the whole column *before* adding to ps
@@ -1609,7 +1623,25 @@ contains
   sum_fq = 0
 #endif
 
+  do i = 1,size(acc)
+     acc(i) = 0
+     dacc(i) = 0
+  end do
   call t_startf("ApplyCAMForcing_tracers")
+  
+  do ie = 1,nelemd   
+     do j = 1,np
+        do i = 1,np
+           do k = 1,nlev
+              a = 1
+              call amb_xor_dbl(acc(a), elem(ie)%state%vtheta_dp(i,j,k,np1))
+              dacc(a) = dacc(a) + elem(ie)%state%vtheta_dp(i,j,k,np1)
+              a = 12
+              call amb_xor_dbl(acc(a), elem(ie)%state%dp3d(i,j,k,np1))
+              dacc(a) = dacc(a) + elem(ie)%state%dp3d(i,j,k,np1)
+           end do
+        end do
+     end do
 
 #ifdef MODEL_THETA_L
   if (dt_remap_factor==0) then
@@ -1625,13 +1657,13 @@ contains
   adjust_ps=.true.      ! preqx requires forcing to stay on reference levels
 #endif
 
-  dp=elem%state%dp3d(:,:,:,np1)
+  dp=elem(ie)%state%dp3d(:,:,:,np1)
   dp_adj=dp
-  ps=elem%state%ps_v(:,:,np1)
+  ps=elem(ie)%state%ps_v(:,:,np1)
   !ps=hvcoord%hyai(1)*hvcoord%ps0 + sum(dp(:,:,:),3) ! introduces roundoff
 
   ! after calling this routine, ps_v may not be valid and should not be used
-  elem%state%ps_v(:,:,np1)=0
+  elem(ie)%state%ps_v(:,:,np1)=0
 
 #ifdef MODEL_THETA_L
    !compute temperatue and NH perturbation pressure before Q tendency
@@ -1641,13 +1673,31 @@ contains
 
    !one can set pprime=0 to hydro regime but it is not done in master
    !compute pnh, here only pnh is needed
-   call pnh_and_exner_from_eos(hvcoord,elem%state%vtheta_dp(:,:,:,np1),dp,&
-        elem%state%phinh_i(:,:,:,np1),pnh,exner,dpnh_dp_i)
+   call pnh_and_exner_from_eos(hvcoord,elem(ie)%state%vtheta_dp(:,:,:,np1),dp,&
+        elem(ie)%state%phinh_i(:,:,:,np1),pnh,exner,dpnh_dp_i)
    do k=1,nlev
       pprime(:,:,k) = pnh(:,:,k)-phydro(:,:,k)
    enddo
-   call get_R_star(rstarn1,elem%state%Q(:,:,:,1))
-   tn1=exner* elem%state%vtheta_dp(:,:,:,np1)*(Rgas/rstarn1) / dp
+   call get_R_star(rstarn1,elem(ie)%state%Q(:,:,:,1))
+   tn1=exner* elem(ie)%state%vtheta_dp(:,:,:,np1)*(Rgas/rstarn1) / dp
+   do j = 1,np
+      do i = 1,np
+         do k = 1,nlev
+            a = 8
+            call amb_xor_dbl(acc(a), tn1(i,j,k))
+            dacc(a) = dacc(a) + tn1(i,j,k)
+            a = 9
+            call amb_xor_dbl(acc(a), dp(i,j,k))
+            dacc(a) = dacc(a) + dp(i,j,k)
+            a = 10
+            call amb_xor_dbl(acc(a), rstarn1(i,j,k))
+            dacc(a) = dacc(a) + rstarn1(i,j,k)
+            a = 11
+            call amb_xor_dbl(acc(a), exner(i,j,k))
+            dacc(a) = dacc(a) + exner(i,j,k)
+         end do
+      end do
+   end do
 #endif
 
    if (adjustment) then 
@@ -1660,12 +1710,12 @@ contains
                   ! apply forcing to Qdp
                   ! dyn_in%elem(ie)%state%Qdp(i,j,k,q,tl_fQdp) = &
                   !        dyn_in%elem(ie)%state%Qdp(i,j,k,q,tl_fQdp) + fq 
-                  elem%state%Qdp(i,j,k,q,np1_qdp) = &
-                       dp(i,j,k)*elem%derived%FQ(i,j,k,q)
+                  elem(ie)%state%Qdp(i,j,k,q,np1_qdp) = &
+                       dp(i,j,k)*elem(ie)%derived%FQ(i,j,k,q)
                   
                   if (q==1) then
-                     fq = dp(i,j,k)*( elem%derived%FQ(i,j,k,q) -&
-                          elem%state%Q(i,j,k,q))
+                     fq = dp(i,j,k)*( elem(ie)%derived%FQ(i,j,k,q) -&
+                          elem(ie)%state%Q(i,j,k,q))
                      ! force ps to conserve mass:  
 #ifdef HOMMEXX_BFB_TESTING
                      sum_fq(i,j) = sum_fq(i,j) + fq
@@ -1687,22 +1737,22 @@ contains
 #endif
    else ! end of adjustment
       ! apply forcing to Qdp
-      elem%derived%FQps(:,:)=0
+      elem(ie)%derived%FQps(:,:)=0
       do q=1,qsize
          do k=1,nlev
             do j=1,np
                do i=1,np
-                  fq = dt*elem%derived%FQ(i,j,k,q)
-                  if (elem%state%Qdp(i,j,k,q,np1_qdp) + fq < 0 .and. fq<0) then
-                     if (elem%state%Qdp(i,j,k,q,np1_qdp) < 0 ) then
+                  fq = dt*elem(ie)%derived%FQ(i,j,k,q)
+                  if (elem(ie)%state%Qdp(i,j,k,q,np1_qdp) + fq < 0 .and. fq<0) then
+                     if (elem(ie)%state%Qdp(i,j,k,q,np1_qdp) < 0 ) then
                         fq=0  ! Q already negative, dont make it more so
                      else
-                        fq = -elem%state%Qdp(i,j,k,q,np1_qdp)
+                        fq = -elem(ie)%state%Qdp(i,j,k,q,np1_qdp)
                      endif
                   endif
-                  elem%state%Qdp(i,j,k,q,np1_qdp) = elem%state%Qdp(i,j,k,q,np1_qdp)+fq
+                  elem(ie)%state%Qdp(i,j,k,q,np1_qdp) = elem(ie)%state%Qdp(i,j,k,q,np1_qdp)+fq
                   if (q==1) then
-                     elem%derived%FQps(i,j)=elem%derived%FQps(i,j)+fq/dt
+                     elem(ie)%derived%FQps(i,j)=elem(ie)%derived%FQps(i,j)+fq/dt
                      dp_adj(i,j,k)=dp_adj(i,j,k) + fq
                   endif
                enddo
@@ -1711,7 +1761,7 @@ contains
       enddo
 
       ! to conserve dry mass in the precese of Q1 forcing:
-      ps(:,:) = ps(:,:) + dt*elem%derived%FQps(:,:)
+      ps(:,:) = ps(:,:) + dt*elem(ie)%derived%FQps(:,:)
    endif ! if adjustment
 
 
@@ -1724,12 +1774,12 @@ contains
                  ( hvcoord%hybi(k+1) - hvcoord%hybi(k))*ps(:,:)
          enddo
       endif
-      elem%state%dp3d(:,:,:,np1)=dp_adj(:,:,:)
+      elem(ie)%state%dp3d(:,:,:,np1)=dp_adj(:,:,:)
    endif
 
    ! Qdp(np1) was updated by forcing - update Q(np1)
    do q=1,qsize
-      elem%state%Q(:,:,:,q) = elem%state%Qdp(:,:,:,q,np1_qdp)/elem%state%dp3d(:,:,:,np1)
+      elem(ie)%state%Q(:,:,:,q) = elem(ie)%state%Qdp(:,:,:,q,np1_qdp)/elem(ie)%state%dp3d(:,:,:,np1)
    enddo
    
 
@@ -1743,7 +1793,7 @@ contains
          enddo
       else
          ! recompute hydrostatic pressure from dp3d
-         call get_hydro_pressure(phydro,elem%state%dp3d(:,:,:,np1),hvcoord)
+         call get_hydro_pressure(phydro,elem(ie)%state%dp3d(:,:,:,np1),hvcoord)
       endif
       do k=1,nlev
          pnh(:,:,k)=phydro(:,:,k) + pprime(:,:,k)
@@ -1756,31 +1806,74 @@ contains
    endif
    
    !update temperature
-   call get_R_star(rstarn1,elem%state%Q(:,:,:,1))
-   tn1(:,:,:) = tn1(:,:,:) + dt*elem%derived%FT(:,:,:)
+   call get_R_star(rstarn1,elem(ie)%state%Q(:,:,:,1))
+   tn1(:,:,:) = tn1(:,:,:) + dt*elem(ie)%derived%FT(:,:,:)
    
    
    ! now we have tn1,dp,pnh - compute corresponding theta and phi:
-   vthn1 =  (rstarn1(:,:,:)/Rgas)*tn1(:,:,:)*elem%state%dp3d(:,:,:,np1)/exner(:,:,:)
+#if 0
+   vthn1 =  (rstarn1(:,:,:)/Rgas)*tn1(:,:,:)*elem(ie)%state%dp3d(:,:,:,np1)/exner(:,:,:)
+#else
+   vthn1 =  (rstarn1(:,:,:)/Rgas)
+   vthn1 = vthn1*tn1(:,:,:)
+   vthn1 = vthn1*elem(ie)%state%dp3d(:,:,:,np1)
+   vthn1 = vthn1/exner(:,:,:)
+#endif
      
-   phi_n1(:,:,nlevp)=elem%state%phinh_i(:,:,nlevp,np1)
+   phi_n1(:,:,nlevp)=elem(ie)%state%phinh_i(:,:,nlevp,np1)
    do k=nlev,1,-1
       phi_n1(:,:,k)=phi_n1(:,:,k+1) + Rgas*vthn1(:,:,k)*exner(:,:,k)/pnh(:,:,k)
    enddo
    
    !finally, compute difference for FVTheta
    ! this method is using new dp, new exner, new-new r*, new t
-   elem%derived%FVTheta(:,:,:) = &
-        (vthn1 - elem%state%vtheta_dp(:,:,:,np1))/dt
+   elem(ie)%derived%FVTheta(:,:,:) = &
+        (vthn1 - elem(ie)%state%vtheta_dp(:,:,:,np1))/dt
    
-   elem%derived%FPHI(:,:,:) = &
-        (phi_n1 - elem%state%phinh_i(:,:,:,np1))/dt
+   elem(ie)%derived%FPHI(:,:,:) = &
+        (phi_n1 - elem(ie)%state%phinh_i(:,:,:,np1))/dt
+
+   do j = 1,np
+      do i = 1,np
+         do k = 1,nlev
+            a = 2
+            call amb_xor_dbl(acc(a), elem(ie)%state%vtheta_dp(i,j,k,np1))
+            dacc(a) = dacc(a) + elem(ie)%state%vtheta_dp(i,j,k,np1)
+            a = 3
+            call amb_xor_dbl(acc(a), vthn1(i,j,k))
+            dacc(a) = dacc(a) + vthn1(i,j,k)
+            a = 4
+            call amb_xor_dbl(acc(a), rstarn1(i,j,k))
+            dacc(a) = dacc(a) + rstarn1(i,j,k)
+            a = 5
+            call amb_xor_dbl(acc(a), exner(i,j,k))
+            dacc(a) = dacc(a) + exner(i,j,k)
+            a = 6
+            call amb_xor_dbl(acc(a), elem(ie)%state%dp3d(i,j,k,np1))
+            dacc(a) = dacc(a) + elem(ie)%state%dp3d(i,j,k,np1)
+         end do
+      end do
+   end do
    
 #endif
 
-  call t_stopf("ApplyCAMForcing_tracers")
 
-  end subroutine applyCAMforcing_tracers
+     do j = 1,np
+        do i = 1,np
+           do k = 1,nlev
+              a = 7
+              call amb_xor_dbl(acc(a), elem(ie)%state%vtheta_dp(i,j,k,np1))
+              dacc(a) = dacc(a) + elem(ie)%state%vtheta_dp(i,j,k,np1)
+           end do
+        end do
+     end do
+  end do
+  do i = 1,13
+     print '(a,i2,i21,es24.16)','amb> frc ',i-1,acc(i),dacc(i)
+     !print '(a,i2,i21)','amb> frc ',i-1,acc(i)
+  end do
+  call t_stopf("ApplyCAMForcing_tracers")
+end subroutine applyCAMforcing_tracers
   
   
   subroutine prim_step_scm(elem, nets,nete, dt, tl, hvcoord)

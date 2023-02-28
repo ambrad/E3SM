@@ -22,24 +22,26 @@
 namespace Homme
 {
 
-static void xor_vtheta_dp (const ExecViewManaged<Scalar*[NUM_TIME_LEVELS][NP][NP][NUM_LEV]>& f,
-                           const std::string& lbl) {
-  long long acc = 0;
-  double d = 0;
-  for (int ie = 0; ie < f.extent_int(0); ++ie)
-    for (int tl = 0; tl < NUM_TIME_LEVELS; ++tl) {
+void xor_vtheta_dp (const ExecViewManaged<Scalar*[NUM_TIME_LEVELS][NP][NP][NUM_LEV]>& f,
+                    const std::string& lbl) {
+  for (int tl = 0; tl < NUM_TIME_LEVELS; ++tl) {
+    long long acc = 0;
+    double d = 0;
+    for (int ie = 0; ie < f.extent_int(0); ++ie) {
       long long a = 0;
       for (int i = 0; i < NP; ++i)
         for (int j = 0; j < NP; ++j) {
           const Real* c = reinterpret_cast<const Real*>(&f(ie,tl,i,j,0));
           for (int k = 0; k < NUM_PHYSICAL_LEV; ++k) {
-            a ^= (ie*19739 + tl*377 + i*17 + j*11 + k)*(*reinterpret_cast<const long long*>(&c[k]));
+            //a ^= (ie*19739 + tl*377 + i*17 + j*11 + k)*(*reinterpret_cast<const long long*>(&c[k]));
+            a += *reinterpret_cast<const long long*>(&c[k]);
             d += c[k];
           }
         }
       acc += a;
     }
-  printf("amb> %s %20lld %23.16E\n", lbl.c_str(), acc, d);
+    fprintf(stderr,"amb> %s%2d %20lld %23.16E\n", lbl.c_str(), tl+1, acc, d);
+  }
 }
 
 // Declare all the timestepping schemes routines

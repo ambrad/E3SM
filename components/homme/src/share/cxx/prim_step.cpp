@@ -19,6 +19,8 @@ namespace Homme
 void prim_advance_exp (TimeLevel& tl, const Real dt, const bool compute_diagnostics);
 void prim_advec_tracers_remap (const Real);
 void vertical_remap (const Real);
+void xor_vtheta_dp(const ExecViewManaged<Scalar*[NUM_TIME_LEVELS][NP][NP][NUM_LEV]>& f,
+                   const std::string& lbl);
 
 static void set_tracer_transport_derived_values (
   const SimulationParams& params, const Elements& elements, const TimeLevel& tl)

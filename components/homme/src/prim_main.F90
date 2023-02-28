@@ -38,6 +38,8 @@ program prim_main
   use prim_movie_mod,   only : prim_movie_output, prim_movie_finish,prim_movie_init
   use interpolate_driver_mod, only : pio_read_phis
 #endif
+  use prim_advance_mod, only: amb_xor_dbl
+  use dimensions_mod, only: np, nlev
 
   implicit none
 
@@ -68,6 +70,10 @@ program prim_main
   character (len=20) :: numtrac_char
   
   logical :: dir_e ! boolean existence of directory where output netcdf goes
+
+  integer :: i,j,k,ie,tli
+  integer(8) :: lla(3)
+  real(8) :: da(3)
   
   ! =====================================================
   ! Begin executable code set distributed memory world...
@@ -241,6 +247,23 @@ program prim_main
      nstep = nextoutputstep(tl)
      do while(tl%nstep<nstep)
         call t_startf('prim_run')
+        lla = 0
+        da = 0
+        do tli = 1,3
+           do ie = nets,nete
+              do j = 1,np
+                 do i = 1,np
+                    do k = 1,nlev
+                       call amb_xor_dbl(lla(tli), elem(ie)%state%dp3d(i,j,k,tli))
+                       da(tli) = da(tli) + elem(ie)%state%dp3d(i,j,k,tli)
+                    end do
+                 end do
+              end do
+           end do
+        end do
+        do tli = 1,3
+           print '(a,i4,i2,i21,es24.16)','amb> main ',tl%nstep,tli,lla(tli),da(tli)
+        end do
         call prim_run_subcycle(elem, hybrid,nets,nete, tstep, .false., tl, hvcoord,1)
         call t_stopf('prim_run')
      end do

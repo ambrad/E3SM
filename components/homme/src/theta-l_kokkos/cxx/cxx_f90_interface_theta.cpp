@@ -35,6 +35,9 @@
 namespace Homme
 {
 
+void xor_vtheta_dp(const ExecViewManaged<Scalar*[NUM_TIME_LEVELS][NP][NP][NUM_LEV]>& f,
+                   const std::string& lbl);
+
 extern "C"
 {
 
@@ -225,6 +228,9 @@ void push_forcing_to_c (F90Ptr elem_derived_FM,
                         F90Ptr elem_derived_FT,
                         F90Ptr elem_derived_FPHI,
                         F90Ptr elem_derived_FQ) {
+  const auto& elements = Context::singleton().get<Elements>();
+  xor_vtheta_dp(elements.m_state.m_dp3d,"sub0-dp3d-hrm1");
+  
   ElementsForcing &forcing = Context::singleton().get<ElementsForcing>();
   const int num_elems = forcing.num_elems();
 
@@ -301,6 +307,8 @@ void init_elements_c (const int& num_elems)
   c.create_ref<ElementsState>(e.m_state);
   c.create_ref<ElementsDerivedState>(e.m_derived);
   c.create_ref<ElementsForcing>(e.m_forcing);
+  const auto& elements = Context::singleton().get<Elements>();
+  xor_vtheta_dp(elements.m_state.m_dp3d,"sub0-dp3d-hrm0");
 }
 
 void init_functors_c (const bool& allocate_buffer)
@@ -525,6 +533,9 @@ void init_elements_states_c (CF90Ptr& elem_state_v_ptr,       CF90Ptr& elem_stat
 
     q (ie,iq,igp,jgp,k) = qdp (ie,n0_qdp,iq,igp,jgp,k) / dp(ie,n0,igp,jgp,k);
   });
+
+  const auto& elements = Context::singleton().get<Elements>();
+  xor_vtheta_dp(elements.m_state.m_dp3d,"sub0-dp3d-hrm2");
 }
 
 void init_reference_states_c (CF90Ptr& elem_theta_ref_ptr, 

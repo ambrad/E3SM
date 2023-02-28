@@ -21,6 +21,9 @@
 
 #include "utilities/BfbUtils.hpp"
 
+static long long acc[16];
+static double dacc[16];
+
 namespace Homme {
 
 class ForcingFunctor
@@ -188,6 +191,19 @@ public:
     m_dt = dt;
     m_np1 = np1;
 
+    const auto q = m_forcing.m_fvtheta;
+    long long lla = 0;
+    double da = 0;
+    for (int ie = 0; ie < q.extent_int(0); ++ie)
+      for (int i = 0; i < NP; ++i)
+        for (int j = 0; j < NP; ++j)
+          for (int k = 0; k < NUM_LEV; ++k) {
+            const auto v = q(ie,i,j,k)[0];
+            lla += *reinterpret_cast<const long long*>(&v);
+            da += v;
+          }
+    fprintf(stderr, "amb> frc-dyn-pre %21lld%24.16E\n", lla, da);
+
     Kokkos::parallel_for("compute states forcing",m_policy_states,*this);
     Kokkos::fence();
   }
@@ -240,6 +256,11 @@ public:
     // The Functor needs to be fully setup to use this function
     assert (is_setup);
 
+    for (int i = 0; i < 16; ++i) {
+      acc[i] = 0;
+      dacc[i] = 0;
+    }
+
     m_dt = dt;
     m_np1 = np1;
     m_np1_qdp = np1_qdp;
@@ -247,14 +268,50 @@ public:
 
     m_moist = (moisture==MoistDry::MOIST);
 
+    const int ne = m_tracers.Q.extent_int(0);
+    for (int ie = 0; ie < ne; ++ie) {
+      for (int i = 0; i < NP; ++i)
+        for (int j = 0; j < NP; ++j) {
+          for (int k = 0; k < NUM_LEV; ++k) {
+            const int a = 0;
+            if (0) {
+              const auto& q = m_tracers.qdp(ie,np1_qdp,0,i,j,k);
+              acc[a] += *reinterpret_cast<const long long*>(&q[0]);
+              dacc[a] += q[0];
+            } {
+              const auto& q = m_state.m_vtheta_dp(ie,m_np1,i,j,k);
+              acc[a] += *reinterpret_cast<const long long*>(&q[0]);
+              dacc[a] += q[0];
+            }
+          }
+        }
+    }
     Kokkos::parallel_for("temperature, NH perturb press, FQps",m_policy_tracers_pre,*this);
     Kokkos::fence();
-
     Kokkos::parallel_for("apply tracers forcing", m_policy_tracers,*this);
     Kokkos::fence();
 
     Kokkos::parallel_for("update temperature, pressure and phi", m_policy_tracers_post,*this);
     Kokkos::fence();
+    for (int ie = 0; ie < ne; ++ie) {
+      for (int i = 0; i < NP; ++i)
+        for (int j = 0; j < NP; ++j) {
+          for (int k = 0; k < NUM_LEV; ++k) {
+            const int a = 6;
+            if (0) {
+              const auto& q = m_tracers.qdp(ie,np1_qdp,0,i,j,k);
+              acc[a] += *reinterpret_cast<const long long*>(&q[0]);
+              dacc[a] += q[0];
+            } {
+              const auto& q = m_state.m_vtheta_dp(ie,m_np1,i,j,k);
+              acc[a] += *reinterpret_cast<const long long*>(&q[0]);
+              dacc[a] += q[0];
+            }
+          }
+        }
+    }
+
+    for (int i = 0; i < 13; ++i) fprintf(stderr,"amb> frc %2d%21lld%24.16E\n", i, acc[i], dacc[i]);
   }
 
   KOKKOS_INLINE_FUNCTION
@@ -305,6 +362,14 @@ public:
       const int jgp = idx % NP;
 
       auto dp = Homme::subview(m_state.m_dp3d,kv.ie,m_np1,igp,jgp);
+      for (int k = 0; k < NUM_LEV; ++k) {
+        int a = 11;
+        {
+          const auto& q = dp(k)[0];
+          acc[a] += *reinterpret_cast<const long long*>(&q);
+          dacc[a] += q;
+        }
+      }
       Real& ps = m_state.m_ps_v(kv.ie,m_np1,igp,jgp);
 
       // The hydrostatic pressure in compute_pnh_and_exner in EOS is only used
@@ -342,6 +407,27 @@ public:
                            [&](const int ilev) {
         tn1(ilev) = exner(ilev) * vtheta(ilev)*(Rgas/Rstar(ilev)) / dp(ilev);
       });
+
+      for (int k = 0; k < NUM_LEV; ++k) {
+        int a = 7;
+        {
+          const auto& q = tn1(k)[0];
+          acc[a] += *reinterpret_cast<const long long*>(&q);
+          dacc[a] += q;
+        } a++; {
+          const auto& q = dp(k)[0];
+          acc[a] += *reinterpret_cast<const long long*>(&q);
+          dacc[a] += q;
+        } a++; {
+          const auto& q = Rstar(k)[0];
+          acc[a] += *reinterpret_cast<const long long*>(&q);
+          dacc[a] += q;
+        } a++; {
+          const auto& q = exner(k)[0];
+          acc[a] += *reinterpret_cast<const long long*>(&q);
+          dacc[a] += q;
+        }
+      }
 
       if (m_moist) {
         auto fq = Homme::subview(m_tracers.fq,kv.ie,0,igp,jgp);
@@ -507,6 +593,34 @@ public:
         ftheta(ilev) = (tn1(ilev) - vtheta(ilev)) / m_dt;
         fphi(ilev) = (fphi(ilev) - phi_i(ilev)) / m_dt;
       });
+
+      for (int k = 0; k < NUM_LEV; ++k) {
+        const int a = 1;
+        {
+          const auto& q = vtheta(k)[0];
+          acc[a] += *reinterpret_cast<const long long*>(&q);
+          dacc[a] += q;
+        } {
+          const auto& q = tn1(k)[0];
+          acc[a+1] += *reinterpret_cast<const long long*>(&q);
+          dacc[a+1] += q;
+        }
+        {
+          const auto& q = Rstar(k)[0];
+          acc[a+2] += *reinterpret_cast<const long long*>(&q);
+          dacc[a+2] += q;
+        }
+        {
+          const auto& q = exner(k)[0];
+          acc[a+3] += *reinterpret_cast<const long long*>(&q);
+          dacc[a+3] += q;
+        }
+        {
+          const auto& q = dp(k)[0];
+          acc[a+4] += *reinterpret_cast<const long long*>(&q);
+          dacc[a+4] += q;
+        }
+      }
 
       // If NUM_LEV=NUM_LEV_P, the code above already took care of the last level
       if (NUM_LEV!=NUM_LEV_P) {

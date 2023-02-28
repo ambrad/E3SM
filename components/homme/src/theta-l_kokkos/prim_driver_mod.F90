@@ -434,6 +434,7 @@ contains
 
     ! Test forcing is only for standalone Homme (and only for some tests/configurations)
     if (compute_forcing_and_push_to_c) then
+       print *,'amb> compute_test_forcing_f',tl%n0,n0_qdp
       call compute_test_forcing_f(elem,hybrid,hvcoord,tl%n0,n0_qdp,max(dt_q,dt_remap),nets,nete,tl)
       call t_startf('push_to_cxx')
       call push_forcing_to_c(elem_derived_FM,   elem_derived_FVTheta, elem_derived_FT, &
@@ -441,6 +442,7 @@ contains
       call t_stopf('push_to_cxx')
     end if
     if (prescribed_wind == 1) then ! standalone Homme
+       print *,'amb> prescribed_wind'
       call set_prescribed_wind_f(elem,deriv1,hybrid,hvcoord,dt,tl,nets,nete)
     end if
    
@@ -455,6 +457,7 @@ contains
     push_to_f = is_push_to_f_required(tl,statefreq,nextOutputStep,compute_diagnostics,nsplit_iteration)
 
     if (push_to_f) then
+       print *,'amb> push_to_f'
       ! Set pointers to states
       elem_state_v_ptr         = c_loc(elem_state_v)
       elem_state_w_i_ptr       = c_loc(elem_state_w_i)

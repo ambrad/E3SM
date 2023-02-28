@@ -14,6 +14,7 @@
 !
 module prim_advance_mod
 
+  use iso_c_binding
   use bndry_mod,          only: bndry_exchangev
   use control_mod,        only: dcmip16_mu, dcmip16_mu_s, hypervis_order, hypervis_subcycle,&
     integration, nu, nu_div, nu_p, nu_s, nu_top, prescribed_wind, qsplit, rsplit, test_case,&
@@ -58,47 +59,60 @@ module prim_advance_mod
   private
   save
   public :: prim_advance_exp, prim_advance_init1, advance_hypervis, &
-       applycamforcing_dynamics, compute_andor_apply_rhs, limiter_dp3d_k
+       applycamforcing_dynamics, compute_andor_apply_rhs, limiter_dp3d_k, xor_fld, amb_xor_dbl
   
+  interface
+     subroutine amb_xor_dbl(a, b) bind(c)
+       use iso_c_binding
+       integer(kind=c_long_long), intent(inout) :: a
+       real(kind=c_double), value, intent(in) :: b
+     end subroutine amb_xor_dbl
+  end interface
+
 contains
   
-  subroutine xor_fld(elem,nets,nete,lbl)
+  subroutine xor_fld(elem,nets,nete,lbl,fldno)
     use iso_c_binding
     type (element_t), intent(inout) :: elem(:)
 
-    integer, intent(in) :: nets, nete
+    integer, intent(in) :: nets, nete, fldno
     character(len=*), intent(in) :: lbl
 
     interface
-       subroutine amb_xor_dbl(a, ie, tl, i, j, k, b) bind(c)
+       subroutine amb_xor_dbl_idx(a, ie, tl, i, j, k, b) bind(c)
          use iso_c_binding
          integer(kind=c_long_long), intent(inout) :: a
          integer(kind=c_int), value, intent(in) :: ie, tl, i, j, k
          real(kind=c_double), value, intent(in) :: b
-       end subroutine amb_xor_dbl
+       end subroutine amb_xor_dbl_idx
     end interface
 
     integer :: ie, i, j, k, tl
     integer(kind=c_long_long) :: acc, a
-    real(8) :: d
-
-    acc = 0
-    d = 0
-    do ie = nets,nete
-       do tl = 1,size(elem(ie)%state%ps_v,3)
+    real(8) :: d, tmp
+    
+    do tl = 1,size(elem(ie)%state%ps_v,3)
+       acc = 0
+       d = 0
+       do ie = nets,nete
           a = 0
           do j = 1,np
              do i = 1,np
                 do k = 1,nlev
-                   call amb_xor_dbl(a, ie-1, tl-1, j-1, i-1, k-1, elem(ie)%state%vtheta_dp(i,j,k,tl))
-                   d = d + elem(ie)%state%vtheta_dp(i,j,k,tl)
+                   if (fldno == 0) then
+                      tmp = elem(ie)%state%vtheta_dp(i,j,k,tl)
+                   else
+                      tmp = elem(ie)%state%dp3d(i,j,k,tl)
+                   end if
+                   call amb_xor_dbl_idx(a, ie-1, tl-1, j-1, i-1, k-1, tmp)
+                   d = d + tmp
                 end do
              end do
           end do
           acc = acc + a
        end do
+       print '(a,a,i2,a,i20,a,es23.16)','amb> ',trim(lbl),tl,' ',acc,' ',d
     end do
-    print '(a,a,a,i20,a,es23.16)','amb> ',trim(lbl),' ',acc,' ',d
   end subroutine xor_fld
 
   subroutine prim_advance_init1(par, elem,integration)
@@ -319,31 +333,31 @@ contains
        ! KGU5-3 (3rd order) with IMEX backward euler (2nd order)
        ! 
        ! u1 = u0 + dt/5 RHS(u0)  (save u1 in timelevel nm1)
-       call xor_fld(elem,nets,nete,'c1')
+       call xor_fld(elem,nets,nete,'c1',0)
        call compute_andor_apply_rhs(nm1,n0,n0,dt/5,elem,hvcoord,hybrid,&
             deriv,nets,nete,compute_diagnostics,eta_ave_w/4,1.d0,0.d0,1.d0)
-       call xor_fld(elem,nets,nete,'c2')
+       call xor_fld(elem,nets,nete,'c2',0)
        call compute_stage_value_dirk(nm1,0d0,n0,0d0,nm1,dt/5,elem,hvcoord,hybrid,&
             deriv,nets,nete,maxiter,itertol)
 
        ! u2 = u0 + dt/5 RHS(u1)
        call compute_andor_apply_rhs(np1,n0,nm1,dt/5,elem,hvcoord,hybrid,&
             deriv,nets,nete,.false.,0d0,1.d0,0.d0,1.d0)
-       call xor_fld(elem,nets,nete,'c3')
+       call xor_fld(elem,nets,nete,'c3',0)
        call compute_stage_value_dirk(nm1,0d0,n0,0d0,np1,dt/5,elem,hvcoord,hybrid,&
             deriv,nets,nete,maxiter,itertol)
 
        ! u3 = u0 + dt/3 RHS(u2)
        call compute_andor_apply_rhs(np1,n0,np1,dt/3,elem,hvcoord,hybrid,&
             deriv,nets,nete,.false.,0d0,1.d0,0.d0,1.d0)
-       call xor_fld(elem,nets,nete,'c4')
+       call xor_fld(elem,nets,nete,'c4',0)
        call compute_stage_value_dirk(nm1,0d0,n0,0d0,np1,dt/3,elem,hvcoord,hybrid,&
             deriv,nets,nete,maxiter,itertol)
 
        ! u4 = u0 + 2dt/3 RHS(u3)
        call compute_andor_apply_rhs(np1,n0,np1,2*dt/3,elem,hvcoord,hybrid,&
             deriv,nets,nete,.false.,0d0,1.d0,0.d0,1.d0)
-       call xor_fld(elem,nets,nete,'c5')
+       call xor_fld(elem,nets,nete,'c5',0)
        call compute_stage_value_dirk(nm1,0d0,n0,0d0,np1,2*dt/3,elem,hvcoord,hybrid,&
             deriv,nets,nete,maxiter,itertol)
 
@@ -351,7 +365,7 @@ contains
        ! u5 = u1 + dt 3/4 RHS(u4)
        call compute_andor_apply_rhs(np1,nm1,np1,3*dt/4,elem,hvcoord,hybrid,&
             deriv,nets,nete,.false.,3*eta_ave_w/4,1.d0,0.d0,1.d0)
-       call xor_fld(elem,nets,nete,'c6')
+       call xor_fld(elem,nets,nete,'c6',0)
        ! u(np1) = [u1 + 3dt/4 RHS(u4)] +  1/4 (u1 - u0)    STABLE
        do ie=nets,nete
           elem(ie)%state%v(:,:,:,:,np1)=elem(ie)%state%v(:,:,:,:,np1)+&
@@ -367,7 +381,7 @@ contains
           call limiter_dp3d_k(elem(ie)%state%dp3d(:,:,:,np1),elem(ie)%state%vtheta_dp(:,:,:,np1),&
                elem(ie)%spheremp,hvcoord%dp0)
        enddo
-       call xor_fld(elem,nets,nete,'c7')
+       call xor_fld(elem,nets,nete,'c7',0)
 
        !  n0          nm1       np1 
        ! u0*5/18  + u1*5/18  + u5*8/18
@@ -376,7 +390,7 @@ contains
        a3=8*dt/18
        call compute_stage_value_dirk(nm1,a2,n0,a1,np1,a3,elem,hvcoord,hybrid,&
             deriv,nets,nete,maxiter,itertol)
-       call xor_fld(elem,nets,nete,'c8')
+       call xor_fld(elem,nets,nete,'c8',0)
     else if (tstep_type==10) then ! KG5(2nd order CFL=4) + optimized
       dt2=dt/4
       call compute_andor_apply_rhs(nm1,n0,n0,dt2,elem,hvcoord,hybrid,&
@@ -565,8 +579,23 @@ contains
   type (hvcoord_t),       intent(in)    :: hvcoord
   integer,                intent(in)    :: np1,nets,nete
 
-  integer :: k,ie
+  integer :: k,ie,i,j
+  integer(8) :: lla
+  real(8) :: da
+
+  lla = 0
+  da = 0
+  
   do ie=nets,nete
+     do j = 1,np
+        do i = 1,np
+           do k = 1,nlev
+              call amb_xor_dbl(lla, elem(ie)%derived%FVTheta(i,j,k))
+              da = da + elem(ie)%derived%FVTheta(i,j,k)
+           end do
+        end do
+     end do
+     
 
      elem(ie)%state%vtheta_dp(:,:,:,np1) = elem(ie)%state%vtheta_dp(:,:,:,np1) + dt*elem(ie)%derived%FVTheta(:,:,:)
      elem(ie)%state%phinh_i(:,:,1:nlev,np1) = elem(ie)%state%phinh_i(:,:,1:nlev,np1) + dt*elem(ie)%derived%FPHI(:,:,1:nlev)
@@ -581,6 +610,8 @@ contains
      elem(ie)%state%w_i(:,:,nlevp,np1) = (elem(ie)%state%v(:,:,1,nlev,np1)*elem(ie)%derived%gradphis(:,:,1) + &
           elem(ie)%state%v(:,:,2,nlev,np1)*elem(ie)%derived%gradphis(:,:,2))/g
   enddo
+
+  print '(a,i21,es24.16)','amb> frc-dyn-pre ',lla,da
   
   end subroutine applyCAMforcing_dynamics
 
@@ -1142,6 +1173,15 @@ contains
   real (kind=real_kind) ::  v1,v2,w,d_eta_dot_dpdn_dn, T0
   integer :: i,j,k,kptr,ie, nlyr_tot
 
+  integer(c_long_long) :: acc(16)
+  real(8) :: dacc(16)
+  integer :: a
+
+  do i = 1,size(acc)
+     acc(i) = 0
+     dacc(i) = 0
+  end do
+  
   call t_startf('compute_andor_apply_rhs')
 
   if (theta_hydrostatic_mode) then
@@ -1155,6 +1195,17 @@ contains
      vtheta_dp  => elem(ie)%state%vtheta_dp(:,:,:,n0)
      vtheta(:,:,:) = vtheta_dp(:,:,:)/dp3d(:,:,:)
      phi_i => elem(ie)%state%phinh_i(:,:,:,n0)
+
+     do k = 1,nlev
+        do i = 1,np
+           do j = 1,np
+              a = 1
+              call amb_xor_dbl(acc(a), vtheta_dp(i,j,k))
+              dacc(a) = dacc(a) + vtheta_dp(i,j,k)
+           end do
+        end do
+     end do
+
 
 #ifdef ENERGY_DIAGNOSTICS
      if (.not. theta_hydrostatic_mode) then
@@ -1425,6 +1476,17 @@ contains
 #else
         theta_tens(:,:,k)=(-theta_vadv(:,:,k)-div_v_theta(:,:,k))*scale1
 #endif
+        do i = 1,np
+           do j = 1,np
+              a = 2
+              call amb_xor_dbl(acc(a), theta_tens(i,j,k))
+              dacc(a) = dacc(a) + theta_tens(i,j,k)
+              call amb_xor_dbl(acc(a+1), vtheta(i,j,k))
+              dacc(a+1) = dacc(a+1) + vtheta(i,j,k)
+              call amb_xor_dbl(acc(a+2), vtheta_dp(i,j,k))
+              dacc(a+2) = dacc(a+2) + vtheta_dp(i,j,k)
+           end do
+        end do
 
         ! w vorticity correction term
         temp(:,:,k) = (elem(ie)%state%w_i(:,:,k,n0)**2 + &
@@ -1831,6 +1893,11 @@ contains
      endif
   end do
   call t_stopf('compute_andor_apply_rhs')
+
+  do i = 1,4
+     print '(a,i2,i21,es24.16)','amb> caar ',i-1,acc(i),dacc(i)
+     !print '(a,i2,i21)','amb> caar ',i-1,acc(i)
+  end do
 
   end subroutine compute_andor_apply_rhs
 

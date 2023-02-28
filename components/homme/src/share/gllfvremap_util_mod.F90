@@ -267,7 +267,7 @@ contains
                   (elem(ie)%derived%FQ(:,:,:,q) - elem(ie)%state%Q(:,:,:,q))/dt
           end do
        end if
-       call applyCAMforcing_tracers(elem(ie), hvcoord, nt2, nt2, dt, logical(ftype /= 0))
+       !call applyCAMforcing_tracers(elem(ie), hvcoord, nt2, nt2, dt, logical(ftype /= 0))
     end do
     call applyCAMforcing_dynamics(elem, hvcoord, nt2, dt, nets, nete)
 
