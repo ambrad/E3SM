@@ -24,7 +24,8 @@ module seq_map_mod
   implicit none
   save
   private  ! except
-
+#include <mpif.h>
+  
   !--------------------------------------------------------------------------
   ! Public interfaces
   !--------------------------------------------------------------------------
@@ -820,6 +821,9 @@ contains
     logical                :: lnorm
     character(*),parameter :: subName = '(seq_map_avNormArr) '
     character(len=*),parameter :: ffld = 'norm8wt'  ! want something unique
+    logical :: ambgclip, use_frac, amroot
+    integer(IN) :: mpicom, ierr, iam, k, natt
+    real(r8), allocatable, dimension(:) :: lmins, gmins, lmaxs, gmaxs
     !-----------------------------------------------------
 
     lsize_i = mct_aVect_lsize(av_i)
@@ -857,7 +861,28 @@ contains
     !--- this will do the right thing for the norm_i normalization
 
     call mct_aVect_copy(aVin=av_i, aVout=avp_i, VECTOR=mct_usevector)
+
+    ambgclip = .true.
+    if (ambgclip) then
+       call seq_comm_setptrs(CPLID, mpicom=mpicom)
+       call mpi_comm_rank(mpicom, iam, ierr)
+       amroot = iam == 0
+       if (amroot) print *,'amb> start',trim(mapper%mapfile),mapper%gsmap_s%comp_id,mapper%gsmap_d%comp_id
+       if (index(mapper%mapfile, '.amb.') == 0) ambgclip = .false.
+       if (amroot .and. .not. ambgclip) print *,'amb> stop'
+    end if
+    if (ambgclip) then
+       natt = size(avp_i%rAttr, 1)
+       allocate(lmins(natt), gmins(natt), lmaxs(natt), gmaxs(natt))
+       do k = 1,natt
+          lmins(k) = minval(avp_i%rAttr(k,:))
+          lmaxs(k) = maxval(avp_i%rAttr(k,:))
+       end do
+    end if
+
+    use_frac = .false.
     if (lnorm .or. present(norm_i)) then
+       use_frac = .true.
        kf = mct_aVect_indexRA(avp_i,ffld)
        do j = 1,lsize_i
           avp_i%rAttr(kf,j) = 1.0_r8
@@ -868,9 +893,22 @@ contains
           do j = 1,lsize_i
              avp_i%rAttr(:,j) = avp_i%rAttr(:,j)*norm_i(j)
           enddo
+          if (ambgclip) then
+             k = kf
+             lmins(k) = minval(norm_i(:))
+             lmaxs(k) = maxval(norm_i(:))
+          end if
        endif
     endif
-
+    
+    if (ambgclip) then
+       call mpi_allreduce(lmins, gmins, natt, MPI_DOUBLE_PRECISION, MPI_MIN, mpicom, ierr)
+       call mpi_allreduce(lmaxs, gmaxs, natt, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, ierr)
+       if (amroot) then
+          print *,'amb> gmins',use_frac,natt,gmins
+          print *,'amb> gmaxs',use_frac,natt,gmaxs
+       end if
+    end if
     !--- map ---
 
     if (mapper%esmf_map) then
@@ -894,12 +932,28 @@ contains
        enddo
     endif
 
+    if (ambgclip) then
+       do j = 1,lsize_o
+          do k = 1,natt
+             ! hack to handle case of A(i,:) empty
+             if (avp_o%rAttr(k,j) == 0) cycle
+             ! global clipping
+             if (avp_o%rAttr(k,j) < gmins(k)) avp_o%rAttr(k,j) = gmins(k)
+             if (avp_o%rAttr(k,j) > gmaxs(k)) avp_o%rAttr(k,j) = gmaxs(k)
+          end do
+       end do
+    end if
+
     !--- copy back into av_o and we are done ---
 
     call mct_aVect_copy(aVin=avp_o, aVout=av_o, VECTOR=mct_usevector)
 
     call mct_aVect_clean(avp_i)
     call mct_aVect_clean(avp_o)
+
+    if (ambgclip) then
+       if (amroot) print *,'amb> stop'
+    end if
 
   end subroutine seq_map_avNormArr
 
