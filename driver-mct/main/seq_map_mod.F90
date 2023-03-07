@@ -935,8 +935,6 @@ contains
     if (ambgclip) then
        do j = 1,lsize_o
           do k = 1,natt
-             ! hack to handle case of A(i,:) empty
-             if (avp_o%rAttr(k,j) == 0) cycle
              ! global clipping
              if (avp_o%rAttr(k,j) < gmins(k)) avp_o%rAttr(k,j) = gmins(k)
              if (avp_o%rAttr(k,j) > gmaxs(k)) avp_o%rAttr(k,j) = gmaxs(k)
