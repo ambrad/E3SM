@@ -22,6 +22,7 @@ module seq_map_mod
   use seq_map_type_mod
   !amb
   use shr_reprosum_mod  ,only: shr_reprosum_calc
+  use shr_infnan_mod    ,only: shr_infnan_isnan, shr_infnan_isinf
 
   implicit none
   save
@@ -828,9 +829,10 @@ contains
     character(*),parameter :: subName = '(seq_map_avNormArr) '
     character(len=*),parameter :: ffld = 'norm8wt'  ! want something unique
     !amb
+    character(len=*), parameter :: afldname  = 'aream'
     logical :: ambgclip, ambgint, use_frac, amroot
-    integer(IN) :: mpicom, ierr, iam, k, natt, nsum, dsum, nfld
-    real(r8), allocatable, dimension(:) :: lmins, gmins, lmaxs, gmaxs, glbl_masses
+    integer(IN) :: mpicom, ierr, iam, k, natt, nsum, dsum, nfld, kArea, lidata(2), gidata(2)
+    real(r8), allocatable, dimension(:) :: lmins, gmins, lmaxs, gmaxs, glbl_masses_in, glbl_masses_out
     real(r8), allocatable, dimension(:,:) :: dof_masses
     !-----------------------------------------------------
 
@@ -874,16 +876,6 @@ contains
     !--- this will do the right thing for the norm_i normalization
 
     call mct_aVect_copy(aVin=av_i, aVout=avp_i, VECTOR=mct_usevector)
-
-    !amb
-    if (amroot) then
-       print *,'amb> checking mapper%dom'
-       k = mct_aVect_lSize(mapper%dom_cx_s%data)
-       print *,'amb> mapper%dom_cx_s',k
-       k = mct_aVect_lSize(mapper%dom_cx_d%data)
-       print *,'amb> mapper%dom_cx_d',k
-       print *,'amb> checked mapper%dom'
-    end if
     
     ambgclip = .true.
     if (ambgclip .or. ambgint) natt = size(avp_i%rAttr, 1)
@@ -891,19 +883,18 @@ contains
        if (amroot) print *,'amb> ',trim(mapper%mapfile)
        if (index(mapper%mapfile, '.amb.') == 0) ambgclip = .false.
     end if
+    if (.true.) then
+       lidata(1) = lsize_i
+       lidata(2) = lsize_o
+       call mpi_allreduce(lidata, gidata, 2, MPI_INTEGER, MPI_SUM, mpicom, ierr)
+       if (amroot) print *,'amb> src/dst sizes',gidata(1),gidata(2)
+    end if
     if (ambgclip) then
        allocate(lmins(natt), gmins(natt), lmaxs(natt), gmaxs(natt))
        do k = 1,natt
           lmins(k) = minval(avp_i%rAttr(k,:))
           lmaxs(k) = maxval(avp_i%rAttr(k,:))
        end do
-    end if
-
-    if (ambgint) then
-       nsum = lsize_i
-       dsum = nsum
-       nfld = natt
-       allocate(dof_masses(dsum,nfld), glbl_masses(nfld))
     end if
 
     use_frac = .false.
@@ -928,16 +919,31 @@ contains
     endif
 
     if (ambgint) then
-       !call shr_reprosum_calc(dof_masses, glbl_masses, nsum, dsum, nfld)
+       kArea = mct_aVect_indexRA(mapper%dom_cx_s%data, afldname)
+       nsum = lsize_i
+       dsum = nsum
+       nfld = natt
+       allocate(dof_masses(dsum,nfld), glbl_masses_in(nfld))
+       if (mct_avect_lSize(mapper%dom_cx_s%data) /= lsize_i) then
+          print *,'amb> gint in sizes do not match',lsize_i,mct_avect_lSize(mapper%dom_cx_s%data)
+          call shr_sys_abort(subname//' ERROR: ambgint sizes do not match')
+       end if
+       do j = 1,lsize_i
+          dof_masses(j,:) = avp_i%rAttr(:,j)*mapper%dom_cx_s%data%rAttr(kArea,j)
+       end do
+       do k = 1,natt
+          do j = 1,lsize_i
+             if (shr_infnan_isnan(dof_masses(j,k)) .or. shr_infnan_isinf(dof_masses(j,k))) &
+                  dof_masses(j,k) = 0
+          end do
+       end do
+       call shr_reprosum_calc(dof_masses, glbl_masses_in, nsum, dsum, nfld)
+       deallocate(dof_masses)
        if (amroot) then
           do k = 1,natt
-             print '(a,i2,es22.15)', 'amb> src ', k, glbl_masses(k)
+             print '(a,i2,es23.15)', 'amb> src ', k, glbl_masses_in(k)
           end do
        end if
-       deallocate(dof_masses)
-       nsum = lsize_o
-       dsum = nsum
-       allocate(dof_masses(dsum,nfld))
     end if
     
     if (ambgclip) then
@@ -955,6 +961,36 @@ contains
     endif
 
     !--- renormalize avp_o by mapped norm_i  ---
+
+    if (ambgint) then
+       kArea = mct_aVect_indexRA(mapper%dom_cx_d%data, afldname)
+       nsum = lsize_o
+       dsum = nsum
+       allocate(dof_masses(dsum,nfld), glbl_masses_out(nfld))
+       if (mct_avect_lSize(mapper%dom_cx_d%data) /= lsize_o) then
+          print *,'amb> gint out sizes do not match',lsize_i,mct_avect_lSize(mapper%dom_cx_d%data)
+          call shr_sys_abort(subname//' ERROR: ambgint sizes do not match')
+       end if
+       do j = 1,lsize_o
+          dof_masses(j,:) = avp_o%rAttr(:,j)*mapper%dom_cx_d%data%rAttr(kArea,j)
+       end do
+       do k = 1,natt
+          do j = 1,lsize_o
+             if (shr_infnan_isnan(dof_masses(j,k)) .or. shr_infnan_isinf(dof_masses(j,k))) &
+                  dof_masses(j,k) = 0
+          end do
+       end do
+       call shr_reprosum_calc(dof_masses, glbl_masses_out, nsum, dsum, nfld)
+       deallocate(dof_masses)
+       if (amroot) then
+          do k = 1,natt
+             normval = glbl_masses_in(k)
+             if (normval == 0) normval = 1
+             print '(a,i2,es23.15,es10.2)', 'amb> tgt ', k, glbl_masses_out(k), &
+                  (glbl_masses_out(k) - glbl_masses_in(k))/normval
+          end do
+       end if
+    end if
 
     if (lnorm) then
        kf = mct_aVect_indexRA(avp_o,ffld)
@@ -976,15 +1012,6 @@ contains
              if (avp_o%rAttr(k,j) > gmaxs(k)) avp_o%rAttr(k,j) = gmaxs(k)
           end do
        end do
-    end if
-
-    if (ambgint) then
-       !call shr_reprosum_calc(dof_masses, glbl_masses, nsum, dsum, nfld)
-       if (amroot) then
-          do k = 1,natt
-             print '(a,i2,es22.15)', 'amb> tgt ', k, glbl_masses(k)
-          end do
-       end if
     end if
 
     !--- copy back into av_o and we are done ---
