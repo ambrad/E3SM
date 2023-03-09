@@ -20,6 +20,8 @@ module seq_map_mod
   use seq_comm_mct
   use component_type_mod
   use seq_map_type_mod
+  !amb
+  use shr_reprosum_mod  ,only: shr_reprosum_calc
 
   implicit none
   save
@@ -156,6 +158,10 @@ contains
             mapper%counter,' ',trim(mapper%strategy),' ',trim(mapper%mapfile)
        call shr_sys_flush(logunit)
     endif
+
+    !amb
+    mapper%dom_cx_s => comp_s%dom_cx
+    mapper%dom_cx_d => comp_d%dom_cx
 
   end subroutine seq_map_init_rcfile
 
@@ -821,10 +827,17 @@ contains
     logical                :: lnorm
     character(*),parameter :: subName = '(seq_map_avNormArr) '
     character(len=*),parameter :: ffld = 'norm8wt'  ! want something unique
-    logical :: ambgclip, use_frac, amroot
-    integer(IN) :: mpicom, ierr, iam, k, natt
-    real(r8), allocatable, dimension(:) :: lmins, gmins, lmaxs, gmaxs
+    !amb
+    logical :: ambgclip, ambgint, use_frac, amroot
+    integer(IN) :: mpicom, ierr, iam, k, natt, nsum, dsum, nfld
+    real(r8), allocatable, dimension(:) :: lmins, gmins, lmaxs, gmaxs, glbl_masses
+    real(r8), allocatable, dimension(:,:) :: dof_masses
     !-----------------------------------------------------
+
+    call seq_comm_setptrs(CPLID, mpicom=mpicom)
+    call mpi_comm_rank(mpicom, iam, ierr)
+    amroot = iam == 0
+    ambgint = .true.
 
     lsize_i = mct_aVect_lsize(av_i)
     lsize_o = mct_aVect_lsize(av_o)
@@ -862,22 +875,35 @@ contains
 
     call mct_aVect_copy(aVin=av_i, aVout=avp_i, VECTOR=mct_usevector)
 
+    !amb
+    if (amroot) then
+       print *,'amb> checking mapper%dom'
+       k = mct_aVect_lSize(mapper%dom_cx_s%data)
+       print *,'amb> mapper%dom_cx_s',k
+       k = mct_aVect_lSize(mapper%dom_cx_d%data)
+       print *,'amb> mapper%dom_cx_d',k
+       print *,'amb> checked mapper%dom'
+    end if
+    
     ambgclip = .true.
+    if (ambgclip .or. ambgint) natt = size(avp_i%rAttr, 1)
     if (ambgclip) then
-       call seq_comm_setptrs(CPLID, mpicom=mpicom)
-       call mpi_comm_rank(mpicom, iam, ierr)
-       amroot = iam == 0
-       if (amroot) print *,'amb> start',trim(mapper%mapfile),mapper%gsmap_s%comp_id,mapper%gsmap_d%comp_id
+       if (amroot) print *,'amb> ',trim(mapper%mapfile)
        if (index(mapper%mapfile, '.amb.') == 0) ambgclip = .false.
-       if (amroot .and. .not. ambgclip) print *,'amb> stop'
     end if
     if (ambgclip) then
-       natt = size(avp_i%rAttr, 1)
        allocate(lmins(natt), gmins(natt), lmaxs(natt), gmaxs(natt))
        do k = 1,natt
           lmins(k) = minval(avp_i%rAttr(k,:))
           lmaxs(k) = maxval(avp_i%rAttr(k,:))
        end do
+    end if
+
+    if (ambgint) then
+       nsum = lsize_i
+       dsum = nsum
+       nfld = natt
+       allocate(dof_masses(dsum,nfld), glbl_masses(nfld))
     end if
 
     use_frac = .false.
@@ -900,15 +926,25 @@ contains
           end if
        endif
     endif
+
+    if (ambgint) then
+       !call shr_reprosum_calc(dof_masses, glbl_masses, nsum, dsum, nfld)
+       if (amroot) then
+          do k = 1,natt
+             print '(a,i2,es22.15)', 'amb> src ', k, glbl_masses(k)
+          end do
+       end if
+       deallocate(dof_masses)
+       nsum = lsize_o
+       dsum = nsum
+       allocate(dof_masses(dsum,nfld))
+    end if
     
     if (ambgclip) then
        call mpi_allreduce(lmins, gmins, natt, MPI_DOUBLE_PRECISION, MPI_MIN, mpicom, ierr)
        call mpi_allreduce(lmaxs, gmaxs, natt, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, ierr)
-       if (amroot) then
-          print *,'amb> gmins',use_frac,natt,gmins
-          print *,'amb> gmaxs',use_frac,natt,gmaxs
-       end if
     end if
+    
     !--- map ---
 
     if (mapper%esmf_map) then
@@ -942,16 +978,21 @@ contains
        end do
     end if
 
+    if (ambgint) then
+       !call shr_reprosum_calc(dof_masses, glbl_masses, nsum, dsum, nfld)
+       if (amroot) then
+          do k = 1,natt
+             print '(a,i2,es22.15)', 'amb> tgt ', k, glbl_masses(k)
+          end do
+       end if
+    end if
+
     !--- copy back into av_o and we are done ---
 
     call mct_aVect_copy(aVin=avp_o, aVout=av_o, VECTOR=mct_usevector)
 
     call mct_aVect_clean(avp_i)
     call mct_aVect_clean(avp_o)
-
-    if (ambgclip) then
-       if (amroot) print *,'amb> stop'
-    end if
 
   end subroutine seq_map_avNormArr
 

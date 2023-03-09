@@ -33,7 +33,8 @@ module seq_map_type_mod
      real(R8), pointer       :: slat_d(:)
      real(R8), pointer       :: clat_d(:)
      integer(IN)             :: mpicom    ! mpicom
-     !
+     !amb
+     type(mct_ggrid), pointer :: dom_cx_s, dom_cx_d
   end type seq_map
   public seq_map
 
