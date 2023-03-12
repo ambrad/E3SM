@@ -831,8 +831,8 @@ contains
     !amb
     character(len=*), parameter :: afldname  = 'aream'
     logical :: ambcaas, amroot, verbose
-    integer(IN) :: mpicom, ierr, iam, k, natt, nsum, nfld, kArea, lidata(2), gidata(2)
-    real(r8) :: tmp, area
+    integer(IN) :: mpicom, ierr, iam, k, natt, nsum, nfld, kArea, lidata(2), gidata(2), ndev
+    real(r8) :: tmp, area, maxdev
     real(r8), allocatable, dimension(:) :: lmins, gmins, lmaxs, gmaxs, glbl_masses, gwts
     real(r8), allocatable, dimension(:,:) :: dof_masses, caas_wgt
     !-----------------------------------------------------
@@ -890,9 +890,15 @@ contains
        end if
        natt = size(avp_i%rAttr, 1)
        allocate(lmins(natt), gmins(natt), lmaxs(natt), gmaxs(natt))
-       do k = 1,natt
-          lmins(k) = minval(avp_i%rAttr(k,:))
-          lmaxs(k) = maxval(avp_i%rAttr(k,:))
+       lmins(:) =  1.e30_r8
+       lmaxs(:) = -1.e30_r8
+       do j = 1,lsize_i
+          do k = 1,natt
+             tmp = avp_i%rAttr(k,j)
+             if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) cycle
+             lmins(k) = min(lmins(k), tmp)
+             lmaxs(k) = max(lmaxs(k), tmp)
+          end do
        end do
     end if
 
@@ -976,43 +982,77 @@ contains
           area = mapper%dom_cx_d%data%rAttr(kArea,j)
           do k = 1,natt
              tmp = avp_o%rAttr(k,j)
-             if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) tmp = 0
+             if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
+                tmp = 0
+                avp_o%rAttr(k,j) = tmp
+             end if
+             caas_wgt(j,  natt+k) = (tmp - gmins(k))*area
+             caas_wgt(j,2*natt+k) = (gmaxs(k) - tmp)*area
              if (tmp < gmins(k)) then
                 caas_wgt(j,k) = (tmp - gmins(k))*area
+                caas_wgt(j,natt+k) = 0
                 avp_o%rAttr(k,j) = gmins(k)
              else if (tmp > gmaxs(k)) then
                 caas_wgt(j,k) = (tmp - gmaxs(k))*area
+                caas_wgt(j,2*natt+k) = 0
                 avp_o%rAttr(k,j) = gmaxs(k)
-             else
-                caas_wgt(j,  natt+k) = (tmp - gmins(k))*area
-                caas_wgt(j,2*natt+k) = (gmaxs(k) - tmp)*area
              end if
           end do
        end do
        allocate(gwts(nfld))
        call shr_reprosum_calc(caas_wgt, gwts, nsum, nsum, nfld)
        deallocate(caas_wgt)
+       if (verbose .and. amroot) then
+          do k = 1,natt
+             if (gwts(k) /= 0 .or. glbl_masses(k) /= 0) then
+                print '(a,i2,a,i2,es23.15,es23.15,es10.2)', &
+                     'amb> dmss ', k, '/', natt, glbl_masses(k), gwts(k), &
+                     gwts(k)/abs(glbl_masses(k))
+             end if
+          end do
+       end if
        do k = 1,natt
           if (gwts(k) > 0) then
              tmp = gwts(2*natt+k)
-             do j = 1,lsize_o
-                avp_o%rAttr(k,j) = avp_o%rAttr(k,j) + &
-                     ((gmaxs(k) - avp_o%rAttr(k,j))/tmp)*gwts(k)
-                ! clip for numerics
-                avp_o%rAttr(k,j) = min(gmaxs(k), avp_o%rAttr(k,j))
-             end do
+             if (tmp /= 0) then
+                do j = 1,lsize_o
+                   avp_o%rAttr(k,j) = avp_o%rAttr(k,j) + &
+                        ((gmaxs(k) - avp_o%rAttr(k,j))/tmp)*gwts(k)
+                   ! clip for numerics
+                   avp_o%rAttr(k,j) = min(gmaxs(k), avp_o%rAttr(k,j))
+                end do
+             end if
           else if (gwts(k) < 0) then
              tmp = gwts(natt+k)
-             do j = 1,lsize_o
-                avp_o%rAttr(k,j) = avp_o%rAttr(k,j) + &
-                     ((avp_o%rAttr(k,j) - gmins(k))/tmp)*gwts(k)
-                ! clip for numerics
-                avp_o%rAttr(k,j) = max(gmins(k), avp_o%rAttr(k,j))
-             end do
+             if (tmp /= 0) then
+                do j = 1,lsize_o
+                   avp_o%rAttr(k,j) = avp_o%rAttr(k,j) + &
+                        ((avp_o%rAttr(k,j) - gmins(k))/tmp)*gwts(k)
+                   ! clip for numerics
+                   avp_o%rAttr(k,j) = max(gmins(k), avp_o%rAttr(k,j))
+                end do
+             end if
           end if
        end do
-       deallocate(gwts, gmins, gmaxs)
+       deallocate(gwts)
        if (verbose) then
+          ! check bounds
+          do k = 1,natt
+             maxdev = 0
+             ndev = 0
+             do j = 1,lsize_o
+                if (avp_o%rAttr(k,j) < gmins(k)) then
+                   ndev = ndev + 1
+                   maxdev = max(maxdev, gmins(k) - avp_o%rAttr(k,j))
+                else if (avp_o%rAttr(k,j) > gmaxs(k)) then
+                   ndev = ndev + 1
+                   maxdev = max(maxdev, avp_o%rAttr(k,j) - gmaxs(k))
+                end if
+             end do
+             if (ndev > 0) then
+                print *,'amb> oob',k,ndev,maxdev
+             end if
+          end do
           ! check global mass
           nsum = lsize_o
           allocate(dof_masses(nsum,natt), gwts(natt))
@@ -1027,7 +1067,7 @@ contains
           end do
           call shr_reprosum_calc(dof_masses, gwts, nsum, nsum, natt)
           deallocate(dof_masses)
-          if (amroot .and. verbose) then
+          if (amroot) then
              do k = 1,natt
                 if (gwts(k) /= 0 .or. glbl_masses(k) /= 0) then
                    print '(a,i2,a,i2,es23.15,es23.15,es10.2)', &
@@ -1038,7 +1078,7 @@ contains
           end if
           deallocate(gwts)
        end if
-       deallocate(glbl_masses)
+       deallocate(gmins, gmaxs, glbl_masses)
     end if
 
     !--- copy back into av_o and we are done ---
