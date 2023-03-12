@@ -937,7 +937,17 @@ contains
        ! bounds
        call mpi_allreduce(lmins, gmins, natt, MPI_DOUBLE_PRECISION, MPI_MIN, mpicom, ierr)
        call mpi_allreduce(lmaxs, gmaxs, natt, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, ierr)
+       if (amroot .and. verbose) then
+          do k = 1,natt
+             print '(a,i2,a,i2,es23.15,es23.15)', &
+                  'amb> bnds ', k, '/', natt, gmins(k), gmaxs(k)
+          end do
+       end if
        deallocate(lmins, lmaxs)
+       do k = 1,natt
+          if (shr_infnan_isnan(gmins(k)) .or. shr_infnan_isinf(gmins(k))) gmins(k) = 0
+          if (shr_infnan_isnan(gmaxs(k)) .or. shr_infnan_isinf(gmaxs(k))) gmaxs(k) = 0
+       end do
        ! global mass
        kArea = mct_aVect_indexRA(mapper%dom_cx_d%data, afldname)
        nsum = lsize_o
@@ -963,9 +973,9 @@ contains
        allocate(caas_wgt(nsum,nfld)) ! dm, cap low, cap high
        caas_wgt(:,:) = 0
        do j = 1,lsize_o
+          area = mapper%dom_cx_d%data%rAttr(kArea,j)
           do k = 1,natt
              tmp = avp_o%rAttr(k,j)
-             area = mapper%dom_cx_d%data%rAttr(kArea,j)
              if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) tmp = 0
              if (tmp < gmins(k)) then
                 caas_wgt(j,k) = (tmp - gmins(k))*area
@@ -1002,28 +1012,33 @@ contains
           end if
        end do
        deallocate(gwts, gmins, gmaxs)
-       ! check global mass
-       kArea = mct_aVect_indexRA(mapper%dom_cx_d%data, afldname)
-       nsum = lsize_o
-       allocate(dof_masses(nsum,natt), gwts(natt))
-       do j = 1,lsize_o
-          dof_masses(j,:) = avp_o%rAttr(:,j)*mapper%dom_cx_d%data%rAttr(kArea,j)
-       end do
-       do k = 1,natt
+       if (verbose) then
+          ! check global mass
+          nsum = lsize_o
+          allocate(dof_masses(nsum,natt), gwts(natt))
           do j = 1,lsize_o
-             if (shr_infnan_isnan(dof_masses(j,k)) .or. shr_infnan_isinf(dof_masses(j,k))) &
-                  dof_masses(j,k) = 0
+             dof_masses(j,:) = avp_o%rAttr(:,j)*mapper%dom_cx_d%data%rAttr(kArea,j)
           end do
-       end do
-       call shr_reprosum_calc(dof_masses, gwts, nsum, nsum, natt)
-       deallocate(dof_masses)
-       if (amroot .and. verbose) then
           do k = 1,natt
-             print '(i2,es23.15,es23.15,es10.2)', k, glbl_masses(k), gwts(k), &
-                  (gwts(k) - glbl_masses(k))/max(abs(gwts(k)), abs(glbl_masses(k)))
+             do j = 1,lsize_o
+                if (shr_infnan_isnan(dof_masses(j,k)) .or. shr_infnan_isinf(dof_masses(j,k))) &
+                     dof_masses(j,k) = 0
+             end do
           end do
+          call shr_reprosum_calc(dof_masses, gwts, nsum, nsum, natt)
+          deallocate(dof_masses)
+          if (amroot .and. verbose) then
+             do k = 1,natt
+                if (gwts(k) /= 0 .or. glbl_masses(k) /= 0) then
+                   print '(a,i2,a,i2,es23.15,es23.15,es10.2)', &
+                        'amb> mass ', k, '/', natt, glbl_masses(k), gwts(k), &
+                        (gwts(k) - glbl_masses(k))/abs(glbl_masses(k))
+                end if
+             end do
+          end if
+          deallocate(gwts)
        end if
-       deallocate(gwts, glbl_masses)
+       deallocate(glbl_masses)
     end if
 
     !--- copy back into av_o and we are done ---
