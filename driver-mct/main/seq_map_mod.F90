@@ -832,7 +832,7 @@ contains
     character(len=*), parameter :: afldname  = 'aream'
     logical :: ambcaas, amroot, verbose
     integer(IN) :: mpicom, ierr, iam, k, natt, nsum, nfld, kArea, lidata(2), gidata(2)
-    real(r8) :: tmp, area, fullcap
+    real(r8) :: tmp, area
     real(r8), allocatable, dimension(:) :: lmins, gmins, lmaxs, gmaxs, glbl_masses, gwts
     real(r8), allocatable, dimension(:,:) :: dof_masses, caas_wgt, oglims
     !-----------------------------------------------------
@@ -1002,7 +1002,6 @@ contains
        caas_wgt(:,:) = 0
        do j = 1,lsize_o
           area = mapper%dom_cx_d%data%rAttr(kArea,j)
-          fullcap = (gmaxs(k) - gmins(k))*area
           do k = 1,natt
              tmp = avp_o%rAttr(k,j)
              if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
@@ -1012,15 +1011,15 @@ contains
              if (tmp < gmins(k)) then
                 caas_wgt(j,k) = (tmp - gmins(k))*area
                 avp_o%rAttr(k,j) = gmins(k)
-                caas_wgt(j,2*natt+k) = fullcap
              else if (tmp > gmaxs(k)) then
                 caas_wgt(j,k) = (tmp - gmaxs(k))*area
                 avp_o%rAttr(k,j) = gmaxs(k)
-                caas_wgt(j,  natt+k) = fullcap
-             else
-                caas_wgt(j,  natt+k) = (tmp - gmins(k))*area
-                caas_wgt(j,2*natt+k) = (gmaxs(k) - tmp)*area
              end if
+             !todo If we stick with gmin/gmax as our bounds, this is overkill;
+             ! can sum just the area.
+             tmp = avp_o%rAttr(k,j)
+             caas_wgt(j,  natt+k) = (tmp - gmins(k))*area
+             caas_wgt(j,2*natt+k) = (gmaxs(k) - tmp)*area
           end do
        end do
        allocate(gwts(nfld))
