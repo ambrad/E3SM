@@ -834,7 +834,7 @@ contains
     integer(IN) :: mpicom, ierr, iam, k, natt, nsum, nfld, kArea, lidata(2), gidata(2), ndev
     real(r8) :: tmp, area, maxdev
     real(r8), allocatable, dimension(:) :: lmins, gmins, lmaxs, gmaxs, glbl_masses, gwts
-    real(r8), allocatable, dimension(:,:) :: dof_masses, caas_wgt
+    real(r8), allocatable, dimension(:,:) :: dof_masses, caas_wgt, oglims
     !-----------------------------------------------------
 
     call seq_comm_setptrs(CPLID, mpicom=mpicom)
@@ -948,6 +948,28 @@ contains
              print '(a,i2,a,i2,es23.15,es23.15)', &
                   'amb> bnds ', k, '/', natt, gmins(k), gmaxs(k)
           end do
+       end if
+       if (verbose) then
+          allocate(oglims(natt,2))
+          lmins(:) =  1.e30_r8
+          lmaxs(:) = -1.e30_r8
+          do j = 1,lsize_o
+             do k = 1,natt
+                tmp = avp_o%rAttr(k,j)
+                if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) cycle
+                lmins(k) = min(lmins(k), tmp)
+                lmaxs(k) = max(lmaxs(k), tmp)
+             end do
+          end do
+          call mpi_allreduce(lmins, oglims(:,1), natt, MPI_DOUBLE_PRECISION, MPI_MIN, mpicom, ierr)
+          call mpi_allreduce(lmaxs, oglims(:,2), natt, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, ierr)
+          if (amroot) then
+             do k = 1,natt
+                print '(a,i2,a,i2,es23.15,es23.15)', &
+                     'amb> olim ', k, '/', natt, oglims(k,1), oglims(k,2)
+             end do
+          end if
+          deallocate(oglims)
        end if
        deallocate(lmins, lmaxs)
        do k = 1,natt
