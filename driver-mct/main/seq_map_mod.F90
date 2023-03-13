@@ -831,8 +831,8 @@ contains
     !amb
     character(len=*), parameter :: afldname  = 'aream'
     logical :: ambcaas, amroot, verbose
-    integer(IN) :: mpicom, ierr, iam, k, natt, nsum, nfld, kArea, lidata(2), gidata(2), ndev
-    real(r8) :: tmp, area, maxdev
+    integer(IN) :: mpicom, ierr, iam, k, natt, nsum, nfld, kArea, lidata(2), gidata(2)
+    real(r8) :: tmp, area, fullcap
     real(r8), allocatable, dimension(:) :: lmins, gmins, lmaxs, gmaxs, glbl_masses, gwts
     real(r8), allocatable, dimension(:,:) :: dof_masses, caas_wgt, oglims
     !-----------------------------------------------------
@@ -949,6 +949,10 @@ contains
                   'amb> bnds ', k, '/', natt, gmins(k), gmaxs(k)
           end do
        end if
+       do k = 1,natt
+          if (shr_infnan_isnan(gmins(k)) .or. shr_infnan_isinf(gmins(k))) gmins(k) = 0
+          if (shr_infnan_isnan(gmaxs(k)) .or. shr_infnan_isinf(gmaxs(k))) gmaxs(k) = 0
+       end do
        if (verbose) then
           allocate(oglims(natt,2))
           lmins(:) =  1.e30_r8
@@ -972,16 +976,12 @@ contains
           deallocate(oglims)
        end if
        deallocate(lmins, lmaxs)
-       do k = 1,natt
-          if (shr_infnan_isnan(gmins(k)) .or. shr_infnan_isinf(gmins(k))) gmins(k) = 0
-          if (shr_infnan_isnan(gmaxs(k)) .or. shr_infnan_isinf(gmaxs(k))) gmaxs(k) = 0
-       end do
        ! global mass
        kArea = mct_aVect_indexRA(mapper%dom_cx_d%data, afldname)
        nsum = lsize_o
        allocate(dof_masses(nsum,natt), glbl_masses(natt))
        if (mct_avect_lSize(mapper%dom_cx_d%data) /= lsize_o) then
-          print *,'amb> gint out sizes do not match',lsize_i,mct_avect_lSize(mapper%dom_cx_d%data)
+          print *,'amb> gint out sizes do not match',lsize_o,mct_avect_lSize(mapper%dom_cx_d%data)
           call shr_sys_abort(subname//' ERROR: ambgint sizes do not match')
        end if
        do j = 1,lsize_o
@@ -1002,22 +1002,24 @@ contains
        caas_wgt(:,:) = 0
        do j = 1,lsize_o
           area = mapper%dom_cx_d%data%rAttr(kArea,j)
+          fullcap = (gmaxs(k) - gmins(k))*area
           do k = 1,natt
              tmp = avp_o%rAttr(k,j)
              if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
                 tmp = 0
                 avp_o%rAttr(k,j) = tmp
              end if
-             caas_wgt(j,  natt+k) = (tmp - gmins(k))*area
-             caas_wgt(j,2*natt+k) = (gmaxs(k) - tmp)*area
              if (tmp < gmins(k)) then
                 caas_wgt(j,k) = (tmp - gmins(k))*area
-                caas_wgt(j,natt+k) = 0
                 avp_o%rAttr(k,j) = gmins(k)
+                caas_wgt(j,2*natt+k) = fullcap
              else if (tmp > gmaxs(k)) then
                 caas_wgt(j,k) = (tmp - gmaxs(k))*area
-                caas_wgt(j,2*natt+k) = 0
                 avp_o%rAttr(k,j) = gmaxs(k)
+                caas_wgt(j,  natt+k) = fullcap
+             else
+                caas_wgt(j,  natt+k) = (tmp - gmins(k))*area
+                caas_wgt(j,2*natt+k) = (gmaxs(k) - tmp)*area
              end if
           end do
        end do
@@ -1058,23 +1060,6 @@ contains
        end do
        deallocate(gwts)
        if (verbose) then
-          ! check bounds
-          do k = 1,natt
-             maxdev = 0
-             ndev = 0
-             do j = 1,lsize_o
-                if (avp_o%rAttr(k,j) < gmins(k)) then
-                   ndev = ndev + 1
-                   maxdev = max(maxdev, gmins(k) - avp_o%rAttr(k,j))
-                else if (avp_o%rAttr(k,j) > gmaxs(k)) then
-                   ndev = ndev + 1
-                   maxdev = max(maxdev, avp_o%rAttr(k,j) - gmaxs(k))
-                end if
-             end do
-             if (ndev > 0) then
-                print *,'amb> oob',k,ndev,maxdev
-             end if
-          end do
           ! check global mass
           nsum = lsize_o
           allocate(dof_masses(nsum,natt), gwts(natt))
@@ -1099,6 +1084,27 @@ contains
              end do
           end if
           deallocate(gwts)
+          ! check bounds
+          allocate(lmins(natt), lmaxs(natt), oglims(natt,2))
+          lmins(:) =  1.e30_r8
+          lmaxs(:) = -1.e30_r8
+          do j = 1,lsize_o
+             do k = 1,natt
+                tmp = avp_o%rAttr(k,j)
+                if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) cycle
+                lmins(k) = min(lmins(k), tmp)
+                lmaxs(k) = max(lmaxs(k), tmp)
+             end do
+          end do
+          call mpi_allreduce(lmins, oglims(:,1), natt, MPI_DOUBLE_PRECISION, MPI_MIN, mpicom, ierr)
+          call mpi_allreduce(lmaxs, oglims(:,2), natt, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, ierr)
+          if (amroot) then
+             do k = 1,natt
+                print '(a,i2,a,i2,es23.15,es23.15)', &
+                     'amb> plim ', k, '/', natt, oglims(k,1), oglims(k,2)
+             end do
+          end if
+          deallocate(lmins, lmaxs, oglims)
        end if
        deallocate(gmins, gmaxs, glbl_masses)
     end if
