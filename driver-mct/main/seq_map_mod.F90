@@ -1078,8 +1078,9 @@ contains
              do k = 1,natt
                 if (gwts(k) /= 0 .or. glbl_masses(k) /= 0) then
                    tmp = (gwts(k) - glbl_masses(k))/abs(glbl_masses(k))
-                   if (tmp < 1e-15) msg = ''
-                   if (tmp < 1e-13) then
+                   if (tmp < 1e-15) then
+                      msg = ''
+                   else if (tmp < 1e-13) then
                       msg = ' OK'
                    else
                       msg = ' ALARM'
