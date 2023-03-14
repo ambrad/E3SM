@@ -831,17 +831,18 @@ contains
     !amb
     character(len=*), parameter :: afldname  = 'aream'
     character(len=128) :: msg
-    logical :: ambcaas, amroot, verbose
+    logical :: ambcaas, amroot, verbose, infnanfilt
     integer(IN) :: mpicom, ierr, iam, k, natt, nsum, nfld, kArea, lidata(2), gidata(2)
     real(r8) :: tmp, area
     real(r8), allocatable, dimension(:) :: lmins, gmins, lmaxs, gmaxs, glbl_masses, gwts
     real(r8), allocatable, dimension(:,:) :: dof_masses, caas_wgt, oglims
     !-----------------------------------------------------
 
+    infnanfilt = .false.
+    verbose = .true.
     call seq_comm_setptrs(CPLID, mpicom=mpicom)
     call mpi_comm_rank(mpicom, iam, ierr)
     amroot = iam == 0
-    verbose = .true.
 
     lsize_i = mct_aVect_lsize(av_i)
     lsize_o = mct_aVect_lsize(av_o)
@@ -896,7 +897,9 @@ contains
        do j = 1,lsize_i
           do k = 1,natt
              tmp = avp_i%rAttr(k,j)
-             if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) cycle
+             if (infnanfilt) then
+                if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) cycle
+             end if
              lmins(k) = min(lmins(k), tmp)
              lmaxs(k) = max(lmaxs(k), tmp)
           end do
@@ -950,10 +953,12 @@ contains
                   'amb> src-bnds ', k, '/', natt, gmins(k), gmaxs(k)
           end do
        end if
-       do k = 1,natt
-          if (shr_infnan_isnan(gmins(k)) .or. shr_infnan_isinf(gmins(k))) gmins(k) = 0
-          if (shr_infnan_isnan(gmaxs(k)) .or. shr_infnan_isinf(gmaxs(k))) gmaxs(k) = 0
-       end do
+       if (infnanfilt) then
+          do k = 1,natt
+             if (shr_infnan_isnan(gmins(k)) .or. shr_infnan_isinf(gmins(k))) gmins(k) = 0
+             if (shr_infnan_isnan(gmaxs(k)) .or. shr_infnan_isinf(gmaxs(k))) gmaxs(k) = 0
+          end do
+       end if
        if (verbose) then
           allocate(oglims(natt,2))
           lmins(:) =  1.e30_r8
@@ -961,7 +966,9 @@ contains
           do j = 1,lsize_o
              do k = 1,natt
                 tmp = avp_o%rAttr(k,j)
-                if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) cycle
+                if (infnanfilt) then
+                   if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) cycle
+                end if
                 lmins(k) = min(lmins(k), tmp)
                 lmaxs(k) = max(lmaxs(k), tmp)
              end do
@@ -988,12 +995,14 @@ contains
        do j = 1,lsize_o
           dof_masses(j,:) = avp_o%rAttr(:,j)*mapper%dom_cx_d%data%rAttr(kArea,j)
        end do
-       do k = 1,natt
-          do j = 1,lsize_o
-             if (shr_infnan_isnan(dof_masses(j,k)) .or. shr_infnan_isinf(dof_masses(j,k))) &
-                  dof_masses(j,k) = 0
+       if (infnanfilt) then
+          do k = 1,natt
+             do j = 1,lsize_o
+                if (shr_infnan_isnan(dof_masses(j,k)) .or. shr_infnan_isinf(dof_masses(j,k))) &
+                     dof_masses(j,k) = 0
+             end do
           end do
-       end do
+       end if
        call shr_reprosum_calc(dof_masses, glbl_masses, nsum, nsum, natt)
        deallocate(dof_masses)
        ! clip
@@ -1005,9 +1014,11 @@ contains
           area = mapper%dom_cx_d%data%rAttr(kArea,j)
           do k = 1,natt
              tmp = avp_o%rAttr(k,j)
-             if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
-                tmp = 0
-                avp_o%rAttr(k,j) = tmp
+             if (infnanfilt) then
+                if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
+                   tmp = 0
+                   avp_o%rAttr(k,j) = tmp
+                end if
              end if
              if (tmp < gmins(k)) then
                 caas_wgt(j,k) = (tmp - gmins(k))*area
@@ -1066,12 +1077,14 @@ contains
           do j = 1,lsize_o
              dof_masses(j,:) = avp_o%rAttr(:,j)*mapper%dom_cx_d%data%rAttr(kArea,j)
           end do
-          do k = 1,natt
-             do j = 1,lsize_o
-                if (shr_infnan_isnan(dof_masses(j,k)) .or. shr_infnan_isinf(dof_masses(j,k))) &
-                     dof_masses(j,k) = 0
+          if (infnanfilt) then
+             do k = 1,natt
+                do j = 1,lsize_o
+                   if (shr_infnan_isnan(dof_masses(j,k)) .or. shr_infnan_isinf(dof_masses(j,k))) &
+                        dof_masses(j,k) = 0
+                end do
              end do
-          end do
+          end if
           call shr_reprosum_calc(dof_masses, gwts, nsum, nsum, natt)
           deallocate(dof_masses)
           if (amroot) then
@@ -1098,7 +1111,9 @@ contains
           do j = 1,lsize_o
              do k = 1,natt
                 tmp = avp_o%rAttr(k,j)
-                if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) cycle
+                if (infnanfilt) then
+                   if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) cycle
+                end if
                 lmins(k) = min(lmins(k), tmp)
                 lmaxs(k) = max(lmaxs(k), tmp)
              end do
