@@ -947,7 +947,7 @@ contains
        if (amroot .and. verbose) then
           do k = 1,natt
              print '(a,i2,a,i2,es23.15,es23.15)', &
-                  'amb> bnds ', k, '/', natt, gmins(k), gmaxs(k)
+                  'amb> src-bnds ', k, '/', natt, gmins(k), gmaxs(k)
           end do
        end if
        do k = 1,natt
@@ -971,7 +971,7 @@ contains
           if (amroot) then
              do k = 1,natt
                 print '(a,i2,a,i2,es23.15,es23.15)', &
-                     'amb> olim ', k, '/', natt, oglims(k,1), oglims(k,2)
+                     'amb> pre-bnds ', k, '/', natt, oglims(k,1), oglims(k,2)
              end do
           end if
           deallocate(oglims)
@@ -982,8 +982,8 @@ contains
        nsum = lsize_o
        allocate(dof_masses(nsum,natt), glbl_masses(natt))
        if (mct_avect_lSize(mapper%dom_cx_d%data) /= lsize_o) then
-          print *,'amb> gint out sizes do not match',lsize_o,mct_avect_lSize(mapper%dom_cx_d%data)
-          call shr_sys_abort(subname//' ERROR: ambgint sizes do not match')
+          print *,'amb> sizes do not match',lsize_o,mct_avect_lSize(mapper%dom_cx_d%data)
+          call shr_sys_abort(subname//' ERROR: amb> sizes do not match')
        end if
        do j = 1,lsize_o
           dof_masses(j,:) = avp_o%rAttr(:,j)*mapper%dom_cx_d%data%rAttr(kArea,j)
@@ -1030,7 +1030,7 @@ contains
           do k = 1,natt
              if (gwts(k) /= 0 .or. glbl_masses(k) /= 0) then
                 print '(a,i2,a,i2,es23.15,es23.15,es10.2)', &
-                     'amb> dmss ', k, '/', natt, glbl_masses(k), gwts(k), &
+                     'amb>  caas-dm ', k, '/', natt, glbl_masses(k), gwts(k), &
                      gwts(k)/abs(glbl_masses(k))
              end if
           end do
@@ -1086,7 +1086,7 @@ contains
                       msg = ' ALARM'
                    end if
                    print '(a,i2,a,i2,es23.15,es23.15,es10.2,a)', &
-                        'amb> mass ', k, '/', natt, glbl_masses(k), gwts(k), tmp, trim(msg)
+                        'amb> fin-mass ', k, '/', natt, glbl_masses(k), gwts(k), tmp, trim(msg)
                 end if
              end do
           end if
@@ -1113,7 +1113,7 @@ contains
                    msg = ' ALARM'
                 end if
                 print '(a,i2,a,i2,es23.15,es23.15,a)', &
-                     'amb> plim ', k, '/', natt, oglims(k,1), oglims(k,2), trim(msg)
+                     'amb> fin-bnds ', k, '/', natt, oglims(k,1), oglims(k,2), trim(msg)
              end do
           end if
           deallocate(lmins, lmaxs, oglims)
