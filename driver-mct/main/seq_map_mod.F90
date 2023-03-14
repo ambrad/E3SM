@@ -830,6 +830,7 @@ contains
     character(len=*),parameter :: ffld = 'norm8wt'  ! want something unique
     !amb
     character(len=*), parameter :: afldname  = 'aream'
+    character(len=128) :: msg
     logical :: ambcaas, amroot, verbose
     integer(IN) :: mpicom, ierr, iam, k, natt, nsum, nfld, kArea, lidata(2), gidata(2)
     real(r8) :: tmp, area
@@ -1076,9 +1077,15 @@ contains
           if (amroot) then
              do k = 1,natt
                 if (gwts(k) /= 0 .or. glbl_masses(k) /= 0) then
-                   print '(a,i2,a,i2,es23.15,es23.15,es10.2)', &
-                        'amb> mass ', k, '/', natt, glbl_masses(k), gwts(k), &
-                        (gwts(k) - glbl_masses(k))/abs(glbl_masses(k))
+                   tmp = (gwts(k) - glbl_masses(k))/abs(glbl_masses(k))
+                   if (tmp < 1e-15) msg = ''
+                   if (tmp < 1e-13) then
+                      msg = ' OK'
+                   else
+                      msg = ' ALARM'
+                   end if
+                   print '(a,i2,a,i2,es23.15,es23.15,es10.2,a)', &
+                        'amb> mass ', k, '/', natt, glbl_masses(k), gwts(k), tmp, trim(msg)
                 end if
              end do
           end if
@@ -1099,8 +1106,13 @@ contains
           call mpi_allreduce(lmaxs, oglims(:,2), natt, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, ierr)
           if (amroot) then
              do k = 1,natt
-                print '(a,i2,a,i2,es23.15,es23.15)', &
-                     'amb> plim ', k, '/', natt, oglims(k,1), oglims(k,2)
+                if (oglims(k,1) >= gmins(k) .and. oglims(k,2) <= gmaxs(k)) then
+                   msg = ''
+                else
+                   msg = ' ALARM'
+                end if
+                print '(a,i2,a,i2,es23.15,es23.15,a)', &
+                     'amb> plim ', k, '/', natt, oglims(k,1), oglims(k,2), trim(msg)
              end do
           end if
           deallocate(lmins, lmaxs, oglims)
