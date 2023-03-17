@@ -3747,6 +3747,19 @@
     </values>
   </entry>
 
+  <entry id="atm2ocn_fmapname_highorder"    modify_via_xml="ATM2OCN_FMAPNAME_HIGHORDER">
+    <type>char</type>
+    <category>mapping</category>
+    <input_pathname>abs</input_pathname>
+    <group>seq_maps</group>
+    <desc>
+      atm to ocn flux mapping file for fluxes
+    </desc>
+    <values>
+      <value>$ATM2OCN_FMAPNAME_HIGHORDER</value>
+    </values>
+  </entry>
+
   <entry id="ocn2atm_fmapname"    modify_via_xml="OCN2ATM_FMAPNAME">
     <type>char</type>
     <category>mapping</category>
@@ -4014,6 +4027,19 @@
     <values>
       <value>$ATM2LND_SMAPTYPE</value>
       <value bfbflag="on">X</value>
+    </values>
+  </entry>
+
+  <entry id="atm2lnd_fmapname_highorder"    modify_via_xml="ATM2LND_FMAPNAME_HIGHORDER">
+    <type>char</type>
+    <category>mapping</category>
+    <input_pathname>abs</input_pathname>
+    <group>seq_maps</group>
+    <desc>
+      atm to land mapping file for fluxes
+    </desc>
+    <values>
+      <value>$ATM2LND_FMAPNAME_HIGHORDER</value>
     </values>
   </entry>
 

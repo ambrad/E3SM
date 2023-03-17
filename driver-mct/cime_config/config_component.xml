@@ -1410,6 +1410,14 @@
     <desc>atm2ocn vector mapping file decomp type</desc>
   </entry>
 
+  <entry id="ATM2OCN_FMAPNAME_HIGHORDER">
+    <type>char</type>
+    <default_value>idmap_ignore</default_value>
+    <group>run_domain</group>
+    <file>env_run.xml</file>
+    <desc>atm2ocn flux mapping file</desc>
+  </entry>
+
   <entry id="ATM2LND_FMAPNAME">
     <type>char</type>
     <default_value>idmap</default_value>
@@ -1442,6 +1450,14 @@
     <group>run_domain</group>
     <file>env_run.xml</file>
     <desc>atm2lnd state mapping file decomp type</desc>
+  </entry>
+
+  <entry id="ATM2LND_FMAPNAME_HIGHORDER">
+    <type>char</type>
+    <default_value>idmap_ignore</default_value>
+    <group>run_domain</group>
+    <file>env_run.xml</file>
+    <desc>atm2lnd flux mapping file</desc>
   </entry>
 
   <entry id="ATM2ROF_FMAPNAME">
