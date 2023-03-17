@@ -897,6 +897,9 @@ contains
        do j = 1,lsize_i
           do k = 1,natt
              tmp = avp_i%rAttr(k,j)
+             if (k == natt) then
+                if (shr_infnan_isinf(tmp)) cycle
+             end if
              if (infnanfilt) then
                 if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) cycle
              end if
