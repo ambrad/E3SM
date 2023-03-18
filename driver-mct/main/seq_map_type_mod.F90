@@ -34,7 +34,11 @@ module seq_map_type_mod
      real(R8), pointer       :: clat_d(:)
      integer(IN)             :: mpicom    ! mpicom
      !amb
+     logical :: ho_on
      type(mct_ggrid), pointer :: dom_cx_s, dom_cx_d
+     ! todo: need to think about cleanup, although above sMatp doesn't seem to
+     ! be cleaned up, either
+     type(mct_sMatp) :: sMatp_ho
   end type seq_map
   public seq_map
 

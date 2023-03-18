@@ -88,6 +88,8 @@ contains
     character(CL)               :: maptype
     integer(IN)                 :: mapid
     character(len=*),parameter  :: subname = "(seq_map_init_rcfile) "
+    character(len=128)          :: ho_label
+    logical                     :: ho_found
     !-----------------------------------------------------
 
     if (seq_comm_iamroot(CPLID) .and. present(string)) then
@@ -149,8 +151,22 @@ contains
 
           if (mapper%esmf_map) then
              call shr_sys_abort(subname//' ERROR: esmf SMM not supported')
-          endif  ! esmf_map
+          endif  ! esmf_map          
 
+          ! Optional high-order map
+          mapper%ho_on = .false.
+          ho_label = maprcname(1:len(maprcname)-1)//'_highorder:'
+          if (seq_comm_iamroot(CPLID)) print *,'amb> init',trim(ho_label)
+          call shr_mct_queryConfigFile(mpicom, maprcfile, trim(ho_label), mapfile, &
+               Label1Found=ho_found)
+          if (ho_found) then
+             if (mapfile /= "idmap_ignore") then
+                if (seq_comm_iamroot(CPLID)) print *,'amb> init',trim(mapfile)
+                mapper%ho_on = .true.
+                call shr_mct_sMatPInitnc(mapper%sMatp_ho, mapper%gsMap_s, mapper%gsMap_d, &
+                     trim(mapfile), trim(maptype), mpicom)
+             end if
+          end if
        endif  ! mapid >= 0
     endif
 
