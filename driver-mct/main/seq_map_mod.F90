@@ -1015,9 +1015,11 @@ contains
           deallocate(oglims)
        end if
        deallocate(lmins, lmaxs)
-       ! Mask high-order field against low-order.
+       ! Mask high-order field against low-order. Occasionally an exact 0 in the
+       ! low-order field will map the high-order field unnecessarily, but that's
+       ! OK: it's a local reduction in order to one, not a wrong value.
        do j = 1,lsize_o
-          do k = 1,nfld
+          do k = 1,natt
              if (avp_o%rAttr(k,j) == 0) ho_avp_o%rAttr(k,j) = 0
           end do
        end do
