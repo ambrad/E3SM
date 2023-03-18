@@ -1101,8 +1101,6 @@ contains
                 do j = 1,lsize_o
                    avp_o%rAttr(k,j) = ho_avp_o%rAttr(k,j) + &
                         ((gmaxs(k) - ho_avp_o%rAttr(k,j))/tmp)*gwts(k)
-                   ! Clip for numerics.
-                   avp_o%rAttr(k,j) = min(gmaxs(k), avp_o%rAttr(k,j))
                 end do
              end if
           else if (gwts(k) < 0) then
@@ -1111,11 +1109,15 @@ contains
                 do j = 1,lsize_o
                    avp_o%rAttr(k,j) = ho_avp_o%rAttr(k,j) + &
                         ((ho_avp_o%rAttr(k,j) - gmins(k))/tmp)*gwts(k)
-                   ! Clip for numerics.
-                   avp_o%rAttr(k,j) = max(gmins(k), avp_o%rAttr(k,j))
                 end do
              end if
           end if
+       end do
+       ! Clip for numerics.
+       do j = 1,lsize_o
+          do k = 1,natt
+             avp_o%rAttr(k,j) = max(gmins(k), min(gmaxs(k), avp_o%rAttr(k,j)))
+          end do
        end do
        deallocate(gwts)
        call mct_aVect_clean(ho_avp_o)
