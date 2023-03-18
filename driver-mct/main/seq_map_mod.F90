@@ -164,7 +164,7 @@ contains
                 if (seq_comm_iamroot(CPLID)) print *,'amb> init',trim(mapfile)
                 mapper%ho_on = .true.
                 mapper%ho_mapfile = trim(mapfile)
-                call shr_mct_sMatPInitnc(mapper%sMatp_ho, mapper%gsMap_s, mapper%gsMap_d, &
+                call shr_mct_sMatPInitnc(mapper%ho_sMatp, mapper%gsMap_s, mapper%gsMap_d, &
                      trim(mapfile), trim(maptype), mpicom)
              end if
           end if
@@ -955,7 +955,7 @@ contains
        ! MCT based SMM
        call mct_sMat_avMult(avp_i, mapper%sMatp, avp_o, VECTOR=mct_usevector)
        if (ambcaas) then
-          call mct_sMat_avMult(avp_i, mapper%sMatp, ho_avp_o, VECTOR=mct_usevector)
+          call mct_sMat_avMult(avp_i, mapper%ho_sMatp, ho_avp_o, VECTOR=mct_usevector)
        end if
     endif
 
@@ -1047,7 +1047,7 @@ contains
        end if
        call shr_reprosum_calc(dof_masses, glbl_masses, nsum, nsum, nfld)
        deallocate(dof_masses)
-       ! clip
+       ! Clip against source-derived bounds.
        nsum = lsize_o
        nfld = 3*natt
        allocate(caas_wgt(nsum,nfld)) ! dm, cap low, cap high
@@ -1101,7 +1101,7 @@ contains
                 do j = 1,lsize_o
                    avp_o%rAttr(k,j) = ho_avp_o%rAttr(k,j) + &
                         ((gmaxs(k) - ho_avp_o%rAttr(k,j))/tmp)*gwts(k)
-                   ! clip for numerics
+                   ! Clip for numerics.
                    avp_o%rAttr(k,j) = min(gmaxs(k), avp_o%rAttr(k,j))
                 end do
              end if
@@ -1111,7 +1111,7 @@ contains
                 do j = 1,lsize_o
                    avp_o%rAttr(k,j) = ho_avp_o%rAttr(k,j) + &
                         ((ho_avp_o%rAttr(k,j) - gmins(k))/tmp)*gwts(k)
-                   ! clip for numerics
+                   ! Clip for numerics.
                    avp_o%rAttr(k,j) = max(gmins(k), avp_o%rAttr(k,j))
                 end do
              end if
