@@ -1113,14 +1113,14 @@ contains
              end if
           end if
        end do
+       deallocate(gwts)
+       call mct_aVect_clean(ho_avp_o)
        ! Clip for numerics.
        do j = 1,lsize_o
           do k = 1,natt
              avp_o%rAttr(k,j) = max(gmins(k), min(gmaxs(k), avp_o%rAttr(k,j)))
           end do
        end do
-       deallocate(gwts)
-       call mct_aVect_clean(ho_avp_o)
        if (verbose) then
           ! check global mass
           nsum = lsize_o
