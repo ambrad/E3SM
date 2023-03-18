@@ -163,6 +163,7 @@ contains
              if (mapfile /= "idmap_ignore") then
                 if (seq_comm_iamroot(CPLID)) print *,'amb> init',trim(mapfile)
                 mapper%ho_on = .true.
+                mapper%ho_mapfile = trim(mapfile)
                 call shr_mct_sMatPInitnc(mapper%sMatp_ho, mapper%gsMap_s, mapper%gsMap_d, &
                      trim(mapfile), trim(maptype), mpicom)
              end if
@@ -836,7 +837,7 @@ contains
     !
     ! Local variables
     !
-    type(mct_aVect)        :: avp_i , avp_o
+    type(mct_aVect)        :: avp_i , avp_o, ho_avp_o
     integer(IN)            :: j,kf
     integer(IN)            :: lsize_i,lsize_o
     real(r8)               :: normval
@@ -859,6 +860,7 @@ contains
     call seq_comm_setptrs(CPLID, mpicom=mpicom)
     call mpi_comm_rank(mpicom, iam, ierr)
     amroot = iam == 0
+    ambcaas = mapper%ho_on
 
     lsize_i = mct_aVect_lsize(av_i)
     lsize_o = mct_aVect_lsize(av_o)
@@ -883,11 +885,17 @@ contains
     if (present(rList)) then
        call mct_aVect_init(avp_i, rList=trim( rList)//trim(appnd), lsize=lsize_i)
        call mct_aVect_init(avp_o, rList=trim( rList)//trim(appnd), lsize=lsize_o)
+       if (ambcaas) then
+          call mct_aVect_init(ho_avp_o, rList=trim( rList)//trim(appnd), lsize=lsize_o)
+       end if
     else
        lrList = mct_aVect_exportRList2c(av_i)
        call mct_aVect_init(avp_i, rList=trim(lrList)//trim(appnd), lsize=lsize_i)
        lrList = mct_aVect_exportRList2c(av_o)
        call mct_aVect_init(avp_o, rList=trim(lrList)//trim(appnd), lsize=lsize_o)
+       if (ambcaas) then
+          call mct_aVect_init(ho_avp_o, rList=trim(lrList)//trim(appnd), lsize=lsize_o)
+       end if
     endif
 
     !--- copy av_i to avp_i and set ffld value to 1.0
@@ -896,10 +904,10 @@ contains
 
     call mct_aVect_copy(aVin=av_i, aVout=avp_i, VECTOR=mct_usevector)
 
-    ambcaas = index(mapper%mapfile, '.amb.') /= 0
     if (ambcaas) then
+       !amb-todo Support norm_i.
        if (present(norm_i)) call shr_sys_abort('ambcaas does not support norm_i')
-       if (verbose .and. amroot) print *,'amb> ',trim(mapper%mapfile),lnorm,present(norm_i)
+       if (verbose .and. amroot) print *,'amb> ',trim(mapper%ho_mapfile),lnorm,present(norm_i)
        if (verbose) then
           lidata(1) = lsize_i
           lidata(2) = lsize_o
@@ -946,6 +954,9 @@ contains
     else
        ! MCT based SMM
        call mct_sMat_avMult(avp_i, mapper%sMatp, avp_o, VECTOR=mct_usevector)
+       if (ambcaas) then
+          call mct_sMat_avMult(avp_i, mapper%sMatp, ho_avp_o, VECTOR=mct_usevector)
+       end if
     endif
 
     !--- renormalize avp_o by mapped norm_i  ---
@@ -963,7 +974,8 @@ contains
     endif
 
     if (ambcaas) then
-       ! bounds
+       ! Compute global bounds.
+       !amb-todo Impl local bounds as an option.
        call mpi_allreduce(lmins, gmins, natt, MPI_DOUBLE_PRECISION, MPI_MIN, mpicom, ierr)
        call mpi_allreduce(lmaxs, gmaxs, natt, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, ierr)
        if (amroot .and. verbose) then
@@ -984,7 +996,7 @@ contains
           lmaxs(:) = -1.e30_r8
           do j = 1,lsize_o
              do k = 1,natt
-                tmp = avp_o%rAttr(k,j)
+                tmp = ho_avp_o%rAttr(k,j)
                 if (infnanfilt) then
                    if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) cycle
                 end if
@@ -1003,26 +1015,35 @@ contains
           deallocate(oglims)
        end if
        deallocate(lmins, lmaxs)
-       ! global mass
+       ! Mask high-order field against low-order.
+       do j = 1,lsize_o
+          do k = 1,nfld
+             if (avp_o%rAttr(k,j) == 0) ho_avp_o%rAttr(k,j) = 0
+          end do
+       end do
+       ! Compute global mass in low-order and high-order fields.
        kArea = mct_aVect_indexRA(mapper%dom_cx_d%data, afldname)
        nsum = lsize_o
-       allocate(dof_masses(nsum,natt), glbl_masses(natt))
+       nfld = 2*natt
+       allocate(dof_masses(nsum,nfld), glbl_masses(nfld)) ! low- and high-order
        if (mct_avect_lSize(mapper%dom_cx_d%data) /= lsize_o) then
           print *,'amb> sizes do not match',lsize_o,mct_avect_lSize(mapper%dom_cx_d%data)
           call shr_sys_abort(subname//' ERROR: amb> sizes do not match')
        end if
        do j = 1,lsize_o
-          dof_masses(j,:) = avp_o%rAttr(:,j)*mapper%dom_cx_d%data%rAttr(kArea,j)
+          area = mapper%dom_cx_d%data%rAttr(kArea,j)
+          dof_masses(j,1:natt) = avp_o%rAttr(:,j)*area
+          dof_masses(j,natt+1:nfld) = ho_avp_o%rAttr(:,j)*area
        end do
        if (infnanfilt) then
-          do k = 1,natt
+          do k = 1,nfld
              do j = 1,lsize_o
                 if (shr_infnan_isnan(dof_masses(j,k)) .or. shr_infnan_isinf(dof_masses(j,k))) &
                      dof_masses(j,k) = 0
              end do
           end do
        end if
-       call shr_reprosum_calc(dof_masses, glbl_masses, nsum, nsum, natt)
+       call shr_reprosum_calc(dof_masses, glbl_masses, nsum, nsum, nfld)
        deallocate(dof_masses)
        ! clip
        nsum = lsize_o
@@ -1032,23 +1053,23 @@ contains
        do j = 1,lsize_o
           area = mapper%dom_cx_d%data%rAttr(kArea,j)
           do k = 1,natt
-             tmp = avp_o%rAttr(k,j)
+             tmp = ho_avp_o%rAttr(k,j)
              if (infnanfilt) then
                 if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
                    tmp = 0
-                   avp_o%rAttr(k,j) = tmp
+                   ho_avp_o%rAttr(k,j) = tmp
                 end if
              end if
              if (tmp < gmins(k)) then
                 caas_wgt(j,k) = (tmp - gmins(k))*area
-                avp_o%rAttr(k,j) = gmins(k)
+                ho_avp_o%rAttr(k,j) = gmins(k)
              else if (tmp > gmaxs(k)) then
                 caas_wgt(j,k) = (tmp - gmaxs(k))*area
-                avp_o%rAttr(k,j) = gmaxs(k)
+                ho_avp_o%rAttr(k,j) = gmaxs(k)
              end if
              !todo If we stick with gmin/gmax as our bounds, this is overkill;
              ! can sum just the area.
-             tmp = avp_o%rAttr(k,j)
+             tmp = ho_avp_o%rAttr(k,j)
              caas_wgt(j,  natt+k) = (tmp - gmins(k))*area
              caas_wgt(j,2*natt+k) = (gmaxs(k) - tmp)*area
           end do
@@ -1059,19 +1080,25 @@ contains
        if (verbose .and. amroot) then
           do k = 1,natt
              if (gwts(k) /= 0 .or. glbl_masses(k) /= 0) then
-                print '(a,i2,a,i2,es23.15,es23.15,es10.2)', &
-                     'amb>  caas-dm ', k, '/', natt, glbl_masses(k), gwts(k), &
-                     gwts(k)/abs(glbl_masses(k))
+                print '(a,i2,a,i2,es23.15,es23.15,es23.15,es10.2)', &
+                     'amb>  caas-dm ', k, '/', natt, &
+                     glbl_masses(k), glbl_masses(k) - glbl_masses(natt+k), gwts(k), &
+                     ! Relative amount of global mass difference + global
+                     ! clipping mass adjustment
+                     (glbl_masses(k) - glbl_masses(natt+k) + gwts(k))/abs(glbl_masses(k))
              end if
           end do
        end if
+       ! Combine clipping and global mass error into a single dm value.
+       gwts(1:natt) = gwts(1:natt) + (glbl_masses(1:natt) - glbl_masses(natt+1:2*natt))
+       ! Adjust high-order solution and set avp_o.
        do k = 1,natt
           if (gwts(k) > 0) then
              tmp = gwts(2*natt+k)
              if (tmp /= 0) then
                 do j = 1,lsize_o
-                   avp_o%rAttr(k,j) = avp_o%rAttr(k,j) + &
-                        ((gmaxs(k) - avp_o%rAttr(k,j))/tmp)*gwts(k)
+                   avp_o%rAttr(k,j) = ho_avp_o%rAttr(k,j) + &
+                        ((gmaxs(k) - ho_avp_o%rAttr(k,j))/tmp)*gwts(k)
                    ! clip for numerics
                    avp_o%rAttr(k,j) = min(gmaxs(k), avp_o%rAttr(k,j))
                 end do
@@ -1080,8 +1107,8 @@ contains
              tmp = gwts(natt+k)
              if (tmp /= 0) then
                 do j = 1,lsize_o
-                   avp_o%rAttr(k,j) = avp_o%rAttr(k,j) + &
-                        ((avp_o%rAttr(k,j) - gmins(k))/tmp)*gwts(k)
+                   avp_o%rAttr(k,j) = ho_avp_o%rAttr(k,j) + &
+                        ((ho_avp_o%rAttr(k,j) - gmins(k))/tmp)*gwts(k)
                    ! clip for numerics
                    avp_o%rAttr(k,j) = max(gmins(k), avp_o%rAttr(k,j))
                 end do
@@ -1089,6 +1116,7 @@ contains
           end if
        end do
        deallocate(gwts)
+       call mct_aVect_clean(ho_avp_o)
        if (verbose) then
           ! check global mass
           nsum = lsize_o

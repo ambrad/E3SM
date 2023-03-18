@@ -36,9 +36,10 @@ module seq_map_type_mod
      !amb
      logical :: ho_on
      type(mct_ggrid), pointer :: dom_cx_s, dom_cx_d
-     ! todo: need to think about cleanup, although above sMatp doesn't seem to
-     ! be cleaned up, either
+     !amb-todo: Need to think about cleanup, although above sMatp doesn't seem
+     ! to be cleaned up, either.
      type(mct_sMatp) :: sMatp_ho
+     character(CX) :: ho_mapfile
   end type seq_map
   public seq_map
 
