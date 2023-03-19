@@ -165,7 +165,7 @@ contains
                 mapper%ho_on = .true.
                 mapper%ho_mapfile = trim(mapfile)
                 call shr_mct_sMatPInitnc(mapper%ho_sMatp, mapper%gsMap_s, mapper%gsMap_d, &
-                     trim(mapfile), trim(maptype), mpicom)
+                     trim(mapfile), 'Xonly', mpicom)
              end if
           end if
        endif  ! mapid >= 0
@@ -1029,8 +1029,8 @@ contains
        nsum = lsize_o
        nfld = 2*natt
        allocate(dof_masses(nsum,nfld), glbl_masses(nfld)) ! low- and high-order
-       if (mct_avect_lSize(mapper%dom_cx_d%data) /= lsize_o) then
-          print *,'amb> sizes do not match',lsize_o,mct_avect_lSize(mapper%dom_cx_d%data)
+       if (mct_aVect_lSize(mapper%dom_cx_d%data) /= lsize_o) then
+          print *,'amb> sizes do not match',lsize_o,mct_aVect_lSize(mapper%dom_cx_d%data)
           call shr_sys_abort(subname//' ERROR: amb> sizes do not match')
        end if
        do j = 1,lsize_o
@@ -1199,27 +1199,62 @@ contains
 
   subroutine sMat_avMult_and_clip(xAV, sMatPlus, yAV)
     ! Compute
-    !     y' = A*x
-    !     l, u = bounds(A, x)
+    !     x' = rearrange(x)
+    !     y' = A*x'
+    !     l, u = bounds(A, x')
     !     y = clip(y', l, u)
     ! where for each entry i, bounds(A, x) returns min/maxval(x such that A(i,:)
     ! is a structural non-0). That is, l(i), u(i) are bounds derived from the
     ! discrete domain of dependence of y(i).
+    !   During initialization, strategy 'Xonly' was specified. Thus each y(i)
+    ! has full access to its discrete domain of dependence.
 
     type (mct_aVect), intent(in)    :: xAV
     type (mct_sMatp), intent(inout) :: sMatPlus
     type (mct_aVect), intent(out)   :: yAV
 
     type (mct_aVect) :: xPrimeAV
-    integer :: ierr
+    integer :: ierr, ne, natt, irow, icol, iwgt, i, j, row, col, ysize
+    real(r8) :: wgt, tmp
+    real(r8), dimension(:,:), allocatable :: lo, hi
 
+    ! y = 0
     call mct_aVect_init(xPrimeAV, xAV, sMatPlus%XPrimeLength)
     call mct_aVect_zero(xPrimeAV)
+    ! x' = rearrange(x)
     call mct_rearr_rearrange(xAV, xPrimeAV, sMatPlus%XToXPrime, &
          tag=sMatPlus%Tag, vector=mct_usevector, &
          alltoall=.true., handshake=.true.)
+    ! y' = A*x'
     call mct_sMat_avMult(xPrimeAV, sMatPlus%Matrix, yAV, vector=mct_usevector)
+    ! l, u = bounds(A, x')
+    ysize = mct_aVect_lsize(yAV)
+    natt = size(yAV%rAttr, 1)
+    allocate(lo(natt,ysize), hi(natt,ysize))
+    lo(:,:) =  1.e30_r8
+    hi(:,:) = -1.e30_r8
+    ne = mct_sMat_lsize(sMatPlus%Matrix)
+    irow = mct_sMat_indexIA(sMatPlus%Matrix,'lrow')
+    icol = mct_sMat_indexIA(sMatPlus%Matrix,'lcol')
+    iwgt = mct_sMat_indexRA(sMatPlus%Matrix,'weight')
+    do i = 1, ne
+       row = sMatPlus%Matrix%data%iAttr(irow,i)
+       col = sMatPlus%Matrix%data%iAttr(icol,i)
+       wgt = sMatPlus%Matrix%data%rAttr(iwgt,i)
+       if (wgt == 0) cycle
+       do j = 1, natt
+          tmp = xPrimeAV%rAttr(j,col)
+          lo(j,row) = min(lo(j,row), tmp)
+          hi(j,row) = max(hi(j,row), tmp)
+       end do
+    end do
     call mct_aVect_clean(xPrimeAV, ierr)
+    ! y = clip(y', l, u)
+    do i = 1, ysize
+       do j = 1, natt
+          yAV%rAttr(j,i) = max(lo(j,i), min(hi(j,i), yAV%rAttr(j,i)))
+       end do
+    end do
   end subroutine sMat_avMult_and_clip
 
 end module seq_map_mod
