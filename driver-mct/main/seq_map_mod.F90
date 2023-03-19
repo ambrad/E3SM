@@ -957,7 +957,7 @@ contains
        call mct_sMat_avMult(avp_i, mapper%sMatp, avp_o, VECTOR=mct_usevector)
        if (ambcaas) then
           if (lclbnds) then
-             allocate(lcl_lo(lsize_o,natt), lcl_hi(lsize_o,natt))
+             allocate(lcl_lo(natt,lsize_o), lcl_hi(natt,lsize_o))
              call sMat_avMult_and_calc_bounds(avp_i, mapper%ho_sMatp, ho_avp_o, &
                   lcl_lo, lcl_hi, infnanfilt)
           else
@@ -982,7 +982,6 @@ contains
 
     if (ambcaas) then
        ! Compute global bounds.
-       !amb-todo Impl local bounds as an option.
        call mpi_allreduce(lmins, gmins, natt, MPI_DOUBLE_PRECISION, MPI_MIN, mpicom, ierr)
        call mpi_allreduce(lmaxs, gmaxs, natt, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, ierr)
        if (amroot .and. verbose) then
@@ -1011,6 +1010,14 @@ contains
                 lmaxs(k) = max(lmaxs(k), tmp)
              end do
           end do
+          if (infnanfilt) then
+             do k = 1,natt
+                if (lmins(k) > lmaxs(k)) then
+                   lmins(k) = 0
+                   lmaxs(k) = 0
+                end if
+             end do
+          end if
           call mpi_allreduce(lmins, oglims(:,1), natt, MPI_DOUBLE_PRECISION, MPI_MIN, mpicom, ierr)
           call mpi_allreduce(lmaxs, oglims(:,2), natt, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, ierr)
           if (amroot) then
@@ -1275,6 +1282,16 @@ contains
           hi(j,row) = max(hi(j,row), tmp)
        end do
     end do
+    if (infnanfilt) then
+       do i = 1, ysize
+          do j = 1, natt
+             if (lo(j,i) > hi(j,i)) then
+                lo(j,i) = 0
+                hi(j,i) = 0
+             end if
+          end do
+       end do
+    end if
     call mct_aVect_clean(xPrimeAV, ierr)
   end subroutine sMat_avMult_and_calc_bounds
 
