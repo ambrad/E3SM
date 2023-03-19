@@ -848,11 +848,11 @@ contains
     !amb
     character(len=*), parameter :: afldname  = 'aream'
     character(len=128) :: msg
-    logical :: ambcaas, amroot, verbose, infnanfilt
+    logical :: ambcaas, amroot, verbose, infnanfilt, lclbnds
     integer(IN) :: mpicom, ierr, iam, k, natt, nsum, nfld, kArea, lidata(2), gidata(2)
-    real(r8) :: tmp, area
+    real(r8) :: tmp, area, lo, hi
     real(r8), allocatable, dimension(:) :: lmins, gmins, lmaxs, gmaxs, glbl_masses, gwts
-    real(r8), allocatable, dimension(:,:) :: dof_masses, caas_wgt, oglims
+    real(r8), allocatable, dimension(:,:) :: dof_masses, caas_wgt, oglims, lcl_lo, lcl_hi
     !-----------------------------------------------------
 
     infnanfilt = .false.
@@ -861,6 +861,7 @@ contains
     call mpi_comm_rank(mpicom, iam, ierr)
     amroot = iam == 0
     ambcaas = mapper%ho_on
+    lclbnds = .true.
 
     lsize_i = mct_aVect_lsize(av_i)
     lsize_o = mct_aVect_lsize(av_o)
@@ -955,8 +956,13 @@ contains
        ! MCT based SMM
        call mct_sMat_avMult(avp_i, mapper%sMatp, avp_o, VECTOR=mct_usevector)
        if (ambcaas) then
-          !call mct_sMat_avMult(avp_i, mapper%ho_sMatp, ho_avp_o, VECTOR=mct_usevector)
-          call sMat_avMult_and_clip(avp_i, mapper%ho_sMatp, ho_avp_o)
+          if (lclbnds) then
+             allocate(lcl_lo(lsize_o,natt), lcl_hi(lsize_o,natt))
+             call sMat_avMult_and_calc_bounds(avp_i, mapper%ho_sMatp, ho_avp_o, &
+                  lcl_lo, lcl_hi, infnanfilt)
+          else
+             call mct_sMat_avMult(avp_i, mapper%ho_sMatp, ho_avp_o, VECTOR=mct_usevector)
+          end if
        end if
     endif
 
@@ -1051,6 +1057,7 @@ contains
        ! Clip against source-derived bounds.
        nsum = lsize_o
        nfld = 3*natt
+       !amb-todo safety problem if lclbnds
        allocate(caas_wgt(nsum,nfld)) ! dm, cap low, cap high
        caas_wgt(:,:) = 0
        do j = 1,lsize_o
@@ -1063,18 +1070,23 @@ contains
                    ho_avp_o%rAttr(k,j) = tmp
                 end if
              end if
-             if (tmp < gmins(k)) then
-                caas_wgt(j,k) = (tmp - gmins(k))*area
-                ho_avp_o%rAttr(k,j) = gmins(k)
-             else if (tmp > gmaxs(k)) then
-                caas_wgt(j,k) = (tmp - gmaxs(k))*area
-                ho_avp_o%rAttr(k,j) = gmaxs(k)
+             if (lclbnds) then
+                lo = lcl_lo(k,j)
+                hi = lcl_hi(k,j)
+             else
+                lo = gmins(k)
+                hi = gmaxs(k)
              end if
-             !todo If we stick with gmin/gmax as our bounds, this is overkill;
-             ! can sum just the area.
+             if (tmp < lo) then
+                caas_wgt(j,k) = (tmp - lo)*area
+                ho_avp_o%rAttr(k,j) = lo
+             else if (tmp > hi) then
+                caas_wgt(j,k) = (tmp - hi)*area
+                ho_avp_o%rAttr(k,j) = hi
+             end if
              tmp = ho_avp_o%rAttr(k,j)
-             caas_wgt(j,  natt+k) = (tmp - gmins(k))*area
-             caas_wgt(j,2*natt+k) = (gmaxs(k) - tmp)*area
+             caas_wgt(j,  natt+k) = (tmp - lo)*area
+             caas_wgt(j,2*natt+k) = (hi - tmp)*area
           end do
        end do
        allocate(gwts(nfld))
@@ -1100,23 +1112,34 @@ contains
              tmp = gwts(2*natt+k)
              if (tmp /= 0) then
                 do j = 1,lsize_o
+                   if (lclbnds) then
+                      hi = lcl_hi(k,j)
+                   else
+                      hi = gmaxs(k)
+                   end if
                    avp_o%rAttr(k,j) = ho_avp_o%rAttr(k,j) + &
-                        ((gmaxs(k) - ho_avp_o%rAttr(k,j))/tmp)*gwts(k)
+                        ((hi - ho_avp_o%rAttr(k,j))/tmp)*gwts(k)
                 end do
              end if
           else if (gwts(k) < 0) then
              tmp = gwts(natt+k)
              if (tmp /= 0) then
                 do j = 1,lsize_o
+                   if (lclbnds) then
+                      lo = lcl_lo(k,j)
+                   else
+                      lo = gmins(k)
+                   end if
                    avp_o%rAttr(k,j) = ho_avp_o%rAttr(k,j) + &
-                        ((ho_avp_o%rAttr(k,j) - gmins(k))/tmp)*gwts(k)
+                        ((ho_avp_o%rAttr(k,j) - lo)/tmp)*gwts(k)
                 end do
              end if
           end if
        end do
        deallocate(gwts)
+       if (lclbnds) deallocate(lcl_lo, lcl_hi)
        call mct_aVect_clean(ho_avp_o)
-       ! Clip for numerics.
+       ! Clip for numerics, just against the global extrema.
        do j = 1,lsize_o
           do k = 1,natt
              avp_o%rAttr(k,j) = max(gmins(k), min(gmaxs(k), avp_o%rAttr(k,j)))
@@ -1197,14 +1220,15 @@ contains
 
   end subroutine seq_map_avNormArr
 
-  subroutine sMat_avMult_and_clip(xAV, sMatPlus, yAV)
+  subroutine sMat_avMult_and_calc_bounds(xAV, sMatPlus, yAV, lo, hi, infnanfilt)
     ! Compute
     !     x' = rearrange(x)
     !     y' = A*x'
-    !     l, u = bounds(A, x')
-    !     y = clip(y', l, u)
-    ! where for each entry i, bounds(A, x) returns min/maxval(x such that A(i,:)
-    ! is a structural non-0). That is, l(i), u(i) are bounds derived from the
+    !     l, u = bounds(A, x').
+    ! l, u can the ben used to compute
+    !     y = clip(y', l, u).
+    ! For each entry i, bounds(A, x) returns min/maxval(x such that A(i,:) is a
+    ! structural non-0). That is, l(i), u(i) are bounds derived from the
     ! discrete domain of dependence of y(i).
     !   During initialization, strategy 'Xonly' was specified. Thus each y(i)
     ! has full access to its discrete domain of dependence.
@@ -1212,11 +1236,12 @@ contains
     type (mct_aVect), intent(in)    :: xAV
     type (mct_sMatp), intent(inout) :: sMatPlus
     type (mct_aVect), intent(out)   :: yAV
+    real(r8), dimension(:,:), intent(out) :: lo, hi
+    logical, intent(in) :: infnanfilt
 
     type (mct_aVect) :: xPrimeAV
     integer :: ierr, ne, natt, irow, icol, iwgt, i, j, row, col, ysize
     real(r8) :: wgt, tmp
-    real(r8), dimension(:,:), allocatable :: lo, hi
 
     ! y = 0
     call mct_aVect_init(xPrimeAV, xAV, sMatPlus%XPrimeLength)
@@ -1230,7 +1255,6 @@ contains
     ! l, u = bounds(A, x')
     ysize = mct_aVect_lsize(yAV)
     natt = size(yAV%rAttr, 1)
-    allocate(lo(natt,ysize), hi(natt,ysize))
     lo(:,:) =  1.e30_r8
     hi(:,:) = -1.e30_r8
     ne = mct_sMat_lsize(sMatPlus%Matrix)
@@ -1244,17 +1268,14 @@ contains
        if (wgt == 0) cycle
        do j = 1, natt
           tmp = xPrimeAV%rAttr(j,col)
+          if (infnanfilt) then
+             if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) cycle
+          end if
           lo(j,row) = min(lo(j,row), tmp)
           hi(j,row) = max(hi(j,row), tmp)
        end do
     end do
     call mct_aVect_clean(xPrimeAV, ierr)
-    ! y = clip(y', l, u)
-    do i = 1, ysize
-       do j = 1, natt
-          yAV%rAttr(j,i) = max(lo(j,i), min(hi(j,i), yAV%rAttr(j,i)))
-       end do
-    end do
-  end subroutine sMat_avMult_and_clip
+  end subroutine sMat_avMult_and_calc_bounds
 
 end module seq_map_mod
