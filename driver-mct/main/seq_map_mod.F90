@@ -955,7 +955,8 @@ contains
        ! MCT based SMM
        call mct_sMat_avMult(avp_i, mapper%sMatp, avp_o, VECTOR=mct_usevector)
        if (ambcaas) then
-          call mct_sMat_avMult(avp_i, mapper%ho_sMatp, ho_avp_o, VECTOR=mct_usevector)
+          !call mct_sMat_avMult(avp_i, mapper%ho_sMatp, ho_avp_o, VECTOR=mct_usevector)
+          call sMat_avMult_and_clip(avp_i, mapper%ho_sMatp, ho_avp_o)
        end if
     endif
 
@@ -1195,5 +1196,30 @@ contains
     call mct_aVect_clean(avp_o)
 
   end subroutine seq_map_avNormArr
+
+  subroutine sMat_avMult_and_clip(xAV, sMatPlus, yAV)
+    ! Compute
+    !     y' = A*x
+    !     l, u = bounds(A, x)
+    !     y = clip(y', l, u)
+    ! where for each entry i, bounds(A, x) returns min/maxval(x such that A(i,:)
+    ! is a structural non-0). That is, l(i), u(i) are bounds derived from the
+    ! discrete domain of dependence of y(i).
+
+    type (mct_aVect), intent(in)    :: xAV
+    type (mct_sMatp), intent(inout) :: sMatPlus
+    type (mct_aVect), intent(out)   :: yAV
+
+    type (mct_aVect) :: xPrimeAV
+    integer :: ierr
+
+    call mct_aVect_init(xPrimeAV, xAV, sMatPlus%XPrimeLength)
+    call mct_aVect_zero(xPrimeAV)
+    call mct_rearr_rearrange(xAV, xPrimeAV, sMatPlus%XToXPrime, &
+         tag=sMatPlus%Tag, vector=mct_usevector, &
+         alltoall=.true., handshake=.true.)
+    call mct_sMat_avMult(xPrimeAV, sMatPlus%Matrix, yAV, vector=mct_usevector)
+    call mct_aVect_clean(xPrimeAV, ierr)
+  end subroutine sMat_avMult_and_clip
 
 end module seq_map_mod
