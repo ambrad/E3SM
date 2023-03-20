@@ -88,7 +88,7 @@ contains
     character(CL)               :: maptype
     integer(IN)                 :: mapid
     character(len=128)          :: nl_label
-    logical                     :: nl_found, conservative
+    logical                     :: nl_found, nl_conservative
     character(len=*),parameter  :: nl_strategy = 'X'
     character(len=*),parameter  :: subname = "(seq_map_init_rcfile) "
     !-----------------------------------------------------
@@ -142,11 +142,11 @@ contains
        call shr_mct_queryConfigFile(mpicom, maprcfile, trim(nl_label), nl_mapfile, &
             Label1Found=nl_found)
        if (nl_found) nl_found = nl_mapfile /= "idmap_ignore"
-       conservative = .false.
-       if (nl_found) conservative = seq_map_should_nonlinear_map_conserve(maprcname)
+       nl_conservative = .false.
+       if (nl_found) nl_conservative = seq_map_should_nonlinear_map_conserve(maprcname)
 
        call seq_map_mapmatch(mapid,gsMap_s=gsMap_s,gsMap_d=gsMap_d,mapfile=mapfile,strategy=maptype, &
-            nl_on=nl_found,nl_mapfile=nl_mapfile,nl_conservative=conservative)
+            nl_on=nl_found,nl_mapfile=nl_mapfile,nl_conservative=nl_conservative)
 
        if (mapid > 0) then
           call seq_map_mappoint(mapid,mapper)
@@ -170,7 +170,7 @@ contains
           if (nl_found) then
              if (seq_comm_iamroot(CPLID)) print *,'amb> init',trim(nl_mapfile)
              mapper%nl_on = .true.
-             mapper%nl_conservative = conservative
+             mapper%nl_conservative = nl_conservative
              mapper%nl_mapfile = trim(nl_mapfile)
              call shr_mct_sMatPInitnc(mapper%nl_sMatp, mapper%gsMap_s, mapper%gsMap_d, &
                   trim(nl_mapfile), nl_strategy, mpicom)
