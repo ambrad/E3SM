@@ -931,7 +931,7 @@ contains
 
     if (mapper%nl_on) then
        if (verbose .and. amroot) then
-          print *,'amb> ', trim(mapper%nl_mapfile), &
+          print *,'amb> ', trim(mapper%nl_mapfile), ' ', &
                trim(mapper%strategy), lnorm, present(norm_i)
        end if
        natt = size(avp_i%rAttr, 1)
@@ -1068,9 +1068,9 @@ contains
           if (((gwts(k) < 0 .and. -gwts(k) > gwts(  natt+k))  .or.  &
                (gwts(k) > 0 .and.  gwts(k) > gwts(2*natt+k))) .and. &
                ! A common case where the above filter triggers unnecessarily is
-               ! when gmins(k) == gmaxs(k) and there is a
-               ! machine-precision-level global mass difference in the low- and
-               ! high-order maps. Skip this index in this case.
+               ! when gmins(k) == gmaxs(k) and there is a machine-precision-
+               ! level global mass difference in the low- and high-order maps.
+               ! Skip this index in this case.
                gmins(k) < gmaxs(k)) then
              idxs_need_safety(n+1) = k
              mask_safety(k) = 1
