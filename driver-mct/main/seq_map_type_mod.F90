@@ -33,11 +33,11 @@ module seq_map_type_mod
      real(R8), pointer       :: slat_d(:)
      real(R8), pointer       :: clat_d(:)
      integer(IN)             :: mpicom    ! mpicom
-     !amb
+     !
+     !---- optional nonlinear map
+     !amb-todo document
      logical :: nl_on, nl_conservative
      type(mct_ggrid), pointer :: dom_cx_s, dom_cx_d
-     !amb-todo: Need to think about cleanup, although above sMatp doesn't seem
-     ! to be cleaned up, either.
      type(mct_sMatp) :: nl_sMatp
      character(CX) :: nl_mapfile
   end type seq_map

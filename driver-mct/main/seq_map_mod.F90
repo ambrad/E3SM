@@ -89,7 +89,7 @@ contains
     integer(IN)                 :: mapid
     character(len=128)          :: nl_label
     logical                     :: nl_found, conservative
-    character(len=*),parameter  :: nl_strategy = 'Xonly'
+    character(len=*),parameter  :: nl_strategy = 'X'
     character(len=*),parameter  :: subname = "(seq_map_init_rcfile) "
     !-----------------------------------------------------
 
@@ -182,8 +182,9 @@ contains
        write(logunit,'(2A,I6,4A)') subname,' mapper counter, strategy, mapfile = ', &
             mapper%counter,' ',trim(mapper%strategy),' ',trim(mapper%mapfile)
        if (mapper%nl_on) then
-          write(logunit,'(2A,I6,4A)') subname,' mapper counter, nl_strategy, nl_mapfile = ', &
-               mapper%counter,' ',nl_strategy,' ',trim(mapper%nl_mapfile)
+          write(logunit,'(2A,I6,4A,2L)') subname, &
+               ' mapper counter, nl_strategy, nl_conservative, nl_mapfile = ', &
+               mapper%counter,' ',nl_strategy,' ',nl_conservative,trim(mapper%nl_mapfile)
        end if
        call shr_sys_flush(logunit)
     endif
@@ -237,6 +238,7 @@ contains
           mapper%strategy = "copy"
           mapper%gsmap_s => component_get_gsmap_cx(comp_s)
           mapper%gsmap_d => component_get_gsmap_cx(comp_d)
+          mapper%nl_on = .false.
        endif
 
     else
@@ -251,6 +253,7 @@ contains
           mapper%strategy = "rearrange"
           mapper%gsmap_s => component_get_gsmap_cx(comp_s)
           mapper%gsmap_d => component_get_gsmap_cx(comp_d)
+          mapper%nl_on = .false.
           call seq_map_gsmapcheck(gsmap_s, gsmap_d)
           call mct_rearr_init(gsmap_s, gsmap_d, mpicom, mapper%rearr)
        endif
@@ -1296,8 +1299,8 @@ contains
     ! For each entry i, bounds(A, x) returns min/maxval(x such that A(i,:) is a
     ! structural non-0). That is, l(i), u(i) are bounds derived from the
     ! discrete domain of dependence of y(i).
-    !   During initialization, strategy 'Xonly' was specified. Thus each y(i)
-    ! has full access to its discrete domain of dependence.
+    !   During initialization, strategy 'X' ('Xonly') was specified. Thus each
+    ! y(i) has full access to its discrete domain of dependence.
 
     type (mct_aVect), intent(in)    :: xAV
     type (mct_sMatp), intent(inout) :: sMatPlus
