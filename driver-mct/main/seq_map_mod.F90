@@ -88,8 +88,8 @@ contains
     character(CL)               :: maptype
     integer(IN)                 :: mapid
     character(len=*),parameter  :: subname = "(seq_map_init_rcfile) "
-    character(len=128)          :: ho_label
-    logical                     :: ho_found
+    character(len=128)          :: nl_label
+    logical                     :: nl_found
     !-----------------------------------------------------
 
     if (seq_comm_iamroot(CPLID) .and. present(string)) then
@@ -154,17 +154,17 @@ contains
           endif  ! esmf_map          
 
           ! Optional high-order map
-          mapper%ho_on = .false.
-          ho_label = maprcname(1:len(maprcname)-1)//'_highorder:'
-          if (seq_comm_iamroot(CPLID)) print *,'amb> init',trim(ho_label)
-          call shr_mct_queryConfigFile(mpicom, maprcfile, trim(ho_label), mapfile, &
-               Label1Found=ho_found)
-          if (ho_found) then
+          mapper%nl_on = .false.
+          nl_label = maprcname(1:len(maprcname)-1)//'_highorder:'
+          if (seq_comm_iamroot(CPLID)) print *,'amb> init',trim(nl_label)
+          call shr_mct_queryConfigFile(mpicom, maprcfile, trim(nl_label), mapfile, &
+               Label1Found=nl_found)
+          if (nl_found) then
              if (mapfile /= "idmap_ignore") then
                 if (seq_comm_iamroot(CPLID)) print *,'amb> init',trim(mapfile)
-                mapper%ho_on = .true.
-                mapper%ho_mapfile = trim(mapfile)
-                call shr_mct_sMatPInitnc(mapper%ho_sMatp, mapper%gsMap_s, mapper%gsMap_d, &
+                mapper%nl_on = .true.
+                mapper%nl_mapfile = trim(mapfile)
+                call shr_mct_sMatPInitnc(mapper%nl_sMatp, mapper%gsMap_s, mapper%gsMap_d, &
                      trim(mapfile), 'Xonly', mpicom)
              end if
           end if
@@ -837,7 +837,7 @@ contains
     !
     ! Local variables
     !
-    type(mct_aVect)        :: avp_i , avp_o, ho_avp_o
+    type(mct_aVect)        :: avp_i , avp_o, nl_avp_o
     integer(IN)            :: j,kf
     integer(IN)            :: lsize_i,lsize_o
     real(r8)               :: normval
@@ -848,7 +848,7 @@ contains
     !amb
     character(len=*), parameter :: afldname  = 'aream'
     character(len=128) :: msg
-    logical :: ambcaas, amroot, verbose, infnanfilt, lclbnds
+    logical :: amroot, verbose, infnanfilt
     integer(IN) :: mpicom, ierr, iam, k, natt, nsum, nfld, kArea, lidata(2), gidata(2)
     real(r8) :: tmp, area, lo, hi
     real(r8), allocatable, dimension(:) :: lmins, gmins, lmaxs, gmaxs, glbl_masses, gwts
@@ -860,8 +860,6 @@ contains
     call seq_comm_setptrs(CPLID, mpicom=mpicom)
     call mpi_comm_rank(mpicom, iam, ierr)
     amroot = iam == 0
-    ambcaas = mapper%ho_on
-    lclbnds = .true.
 
     lsize_i = mct_aVect_lsize(av_i)
     lsize_o = mct_aVect_lsize(av_o)
@@ -886,16 +884,16 @@ contains
     if (present(rList)) then
        call mct_aVect_init(avp_i, rList=trim( rList)//trim(appnd), lsize=lsize_i)
        call mct_aVect_init(avp_o, rList=trim( rList)//trim(appnd), lsize=lsize_o)
-       if (ambcaas) then
-          call mct_aVect_init(ho_avp_o, rList=trim( rList)//trim(appnd), lsize=lsize_o)
+       if (mapper%nl_on) then
+          call mct_aVect_init(nl_avp_o, rList=trim( rList)//trim(appnd), lsize=lsize_o)
        end if
     else
        lrList = mct_aVect_exportRList2c(av_i)
        call mct_aVect_init(avp_i, rList=trim(lrList)//trim(appnd), lsize=lsize_i)
        lrList = mct_aVect_exportRList2c(av_o)
        call mct_aVect_init(avp_o, rList=trim(lrList)//trim(appnd), lsize=lsize_o)
-       if (ambcaas) then
-          call mct_aVect_init(ho_avp_o, rList=trim(lrList)//trim(appnd), lsize=lsize_o)
+       if (mapper%nl_on) then
+          call mct_aVect_init(nl_avp_o, rList=trim(lrList)//trim(appnd), lsize=lsize_o)
        end if
     endif
 
@@ -904,35 +902,6 @@ contains
     !--- this will do the right thing for the norm_i normalization
 
     call mct_aVect_copy(aVin=av_i, aVout=avp_i, VECTOR=mct_usevector)
-
-    if (ambcaas) then
-       !amb-todo Support norm_i.
-       if (present(norm_i)) call shr_sys_abort('ambcaas does not support norm_i')
-       if (verbose .and. amroot) print *,'amb> ',trim(mapper%ho_mapfile),lnorm,present(norm_i)
-       if (verbose) then
-          lidata(1) = lsize_i
-          lidata(2) = lsize_o
-          call mpi_allreduce(lidata, gidata, 2, MPI_INTEGER, MPI_SUM, mpicom, ierr)
-          if (amroot) print *,'amb> src/dst sizes',gidata(1),gidata(2)
-       end if
-       natt = size(avp_i%rAttr, 1)
-       allocate(lmins(natt), gmins(natt), lmaxs(natt), gmaxs(natt))
-       lmins(:) =  1.e30_r8
-       lmaxs(:) = -1.e30_r8
-       do j = 1,lsize_i
-          do k = 1,natt
-             tmp = avp_i%rAttr(k,j)
-             if (k == natt) then
-                if (shr_infnan_isinf(tmp)) cycle
-             end if
-             if (infnanfilt) then
-                if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) cycle
-             end if
-             lmins(k) = min(lmins(k), tmp)
-             lmaxs(k) = max(lmaxs(k), tmp)
-          end do
-       end do
-    end if
 
     if (lnorm .or. present(norm_i)) then
        kf = mct_aVect_indexRA(avp_i,ffld)
@@ -948,39 +917,21 @@ contains
        endif
     endif
 
-    !--- map ---
+    !--- linear map ---
 
     if (mapper%esmf_map) then
        call shr_sys_abort(subname//' ERROR: esmf SMM not supported')
     else
        ! MCT based SMM
        call mct_sMat_avMult(avp_i, mapper%sMatp, avp_o, VECTOR=mct_usevector)
-       if (ambcaas) then
-          if (lclbnds) then
-             allocate(lcl_lo(natt,lsize_o), lcl_hi(natt,lsize_o))
-             call sMat_avMult_and_calc_bounds(avp_i, mapper%ho_sMatp, ho_avp_o, &
-                  lcl_lo, lcl_hi, infnanfilt)
-          else
-             call mct_sMat_avMult(avp_i, mapper%ho_sMatp, ho_avp_o, VECTOR=mct_usevector)
-          end if
-       end if
     endif
 
-    !--- renormalize avp_o by mapped norm_i  ---
+    !--- optional nonlinear map ---
 
-    if (lnorm) then
-       kf = mct_aVect_indexRA(avp_o,ffld)
-       !$omp simd
-       do j = 1,lsize_o
-          normval = avp_o%rAttr(kf,j)
-          if (normval /= 0.0_r8) then
-             normval = 1.0_r8/normval
-          endif
-          avp_o%rAttr(:,j) = avp_o%rAttr(:,j)*normval
-       enddo
-    endif
-
-    if (ambcaas) then
+    if (mapper%nl_on) then
+       allocate(lcl_lo(natt,lsize_o), lcl_hi(natt,lsize_o))
+       call sMat_avMult_and_calc_bounds(avp_i, mapper%nl_sMatp, nl_avp_o, &
+            lcl_lo, lcl_hi, infnanfilt)
        ! Compute global bounds.
        call mpi_allreduce(lmins, gmins, natt, MPI_DOUBLE_PRECISION, MPI_MIN, mpicom, ierr)
        call mpi_allreduce(lmaxs, gmaxs, natt, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, ierr)
@@ -1002,7 +953,7 @@ contains
           lmaxs(:) = -1.e30_r8
           do j = 1,lsize_o
              do k = 1,natt
-                tmp = ho_avp_o%rAttr(k,j)
+                tmp = nl_avp_o%rAttr(k,j)
                 if (infnanfilt) then
                    if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) cycle
                 end if
@@ -1034,7 +985,7 @@ contains
        ! OK: it's a local reduction in order to one, not a wrong value.
        do j = 1,lsize_o
           do k = 1,natt
-             if (avp_o%rAttr(k,j) == 0) ho_avp_o%rAttr(k,j) = 0
+             if (avp_o%rAttr(k,j) == 0) nl_avp_o%rAttr(k,j) = 0
           end do
        end do
        ! Compute global mass in low-order and high-order fields.
@@ -1049,7 +1000,7 @@ contains
        do j = 1,lsize_o
           area = mapper%dom_cx_d%data%rAttr(kArea,j)
           dof_masses(j,1:natt) = avp_o%rAttr(:,j)*area
-          dof_masses(j,natt+1:nfld) = ho_avp_o%rAttr(:,j)*area
+          dof_masses(j,natt+1:nfld) = nl_avp_o%rAttr(:,j)*area
        end do
        if (infnanfilt) then
           do k = 1,nfld
@@ -1070,28 +1021,23 @@ contains
        do j = 1,lsize_o
           area = mapper%dom_cx_d%data%rAttr(kArea,j)
           do k = 1,natt
-             tmp = ho_avp_o%rAttr(k,j)
+             tmp = nl_avp_o%rAttr(k,j)
              if (infnanfilt) then
                 if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
                    tmp = 0
-                   ho_avp_o%rAttr(k,j) = tmp
+                   nl_avp_o%rAttr(k,j) = tmp
                 end if
              end if
-             if (lclbnds) then
-                lo = lcl_lo(k,j)
-                hi = lcl_hi(k,j)
-             else
-                lo = gmins(k)
-                hi = gmaxs(k)
-             end if
+             lo = lcl_lo(k,j)
+             hi = lcl_hi(k,j)
              if (tmp < lo) then
                 caas_wgt(j,k) = (tmp - lo)*area
-                ho_avp_o%rAttr(k,j) = lo
+                nl_avp_o%rAttr(k,j) = lo
              else if (tmp > hi) then
                 caas_wgt(j,k) = (tmp - hi)*area
-                ho_avp_o%rAttr(k,j) = hi
+                nl_avp_o%rAttr(k,j) = hi
              end if
-             tmp = ho_avp_o%rAttr(k,j)
+             tmp = nl_avp_o%rAttr(k,j)
              caas_wgt(j,  natt+k) = (tmp - lo)*area
              caas_wgt(j,2*natt+k) = (hi - tmp)*area
           end do
@@ -1119,33 +1065,25 @@ contains
              tmp = gwts(2*natt+k)
              if (tmp /= 0) then
                 do j = 1,lsize_o
-                   if (lclbnds) then
-                      hi = lcl_hi(k,j)
-                   else
-                      hi = gmaxs(k)
-                   end if
-                   avp_o%rAttr(k,j) = ho_avp_o%rAttr(k,j) + &
-                        ((hi - ho_avp_o%rAttr(k,j))/tmp)*gwts(k)
+                   hi = lcl_hi(k,j)
+                   avp_o%rAttr(k,j) = nl_avp_o%rAttr(k,j) + &
+                        ((hi - nl_avp_o%rAttr(k,j))/tmp)*gwts(k)
                 end do
              end if
           else if (gwts(k) < 0) then
              tmp = gwts(natt+k)
              if (tmp /= 0) then
                 do j = 1,lsize_o
-                   if (lclbnds) then
-                      lo = lcl_lo(k,j)
-                   else
-                      lo = gmins(k)
-                   end if
-                   avp_o%rAttr(k,j) = ho_avp_o%rAttr(k,j) + &
-                        ((ho_avp_o%rAttr(k,j) - lo)/tmp)*gwts(k)
+                   lo = lcl_lo(k,j)
+                   avp_o%rAttr(k,j) = nl_avp_o%rAttr(k,j) + &
+                        ((nl_avp_o%rAttr(k,j) - lo)/tmp)*gwts(k)
                 end do
              end if
           end if
        end do
        deallocate(gwts)
-       if (lclbnds) deallocate(lcl_lo, lcl_hi)
-       call mct_aVect_clean(ho_avp_o)
+       deallocate(lcl_lo, lcl_hi)
+       call mct_aVect_clean(nl_avp_o)
        ! Clip for numerics, just against the global extrema.
        do j = 1,lsize_o
           do k = 1,natt
@@ -1217,6 +1155,20 @@ contains
        end if
        deallocate(gmins, gmaxs, glbl_masses)
     end if
+
+    !--- renormalize avp_o by mapped norm_i  ---
+
+    if (lnorm) then
+       kf = mct_aVect_indexRA(avp_o,ffld)
+       !$omp simd
+       do j = 1,lsize_o
+          normval = avp_o%rAttr(kf,j)
+          if (normval /= 0.0_r8) then
+             normval = 1.0_r8/normval
+          endif
+          avp_o%rAttr(:,j) = avp_o%rAttr(:,j)*normval
+       enddo
+    endif
 
     !--- copy back into av_o and we are done ---
 
