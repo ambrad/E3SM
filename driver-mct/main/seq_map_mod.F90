@@ -1055,15 +1055,15 @@ contains
        allocate(gwts(nfld))
        call shr_reprosum_calc(caas_wgt, gwts, nsum, nsum, nfld)
        ! Check whether we need to relax to the safety problem.
-       allocate(mask_safety(natt))
+       allocate(idxs_need_safety(natt), mask_safety(natt))
        mask_safety(:) = 0
        n = 0
        do k = 1,natt
           if ( (gwts(k) < 0 .and. -gwts(k) < gwts(  natt+k)) .or. &
                (gwts(k) > 0 .and.  gwts(k) < gwts(2*natt+k))) then
              idxs_need_safety(n+1) = k
-             n = n + 1
              mask_safety(k) = 1
+             n = n + 1
           end if
        end do
        ! Solve safety problem where needed.
@@ -1100,7 +1100,7 @@ contains
              k = idxs_need_safety(i)
              gwts(k) = gwts_safety(i)
           end do
-          deallocate(gwts_safety)
+          deallocate(gwts_safety, idxs_need_safety)
        end if
        deallocate(caas_wgt)
        if (verbose .and. amroot) then
@@ -1119,7 +1119,7 @@ contains
        gwts(1:natt) = gwts(1:natt) + (glbl_masses(1:natt) - glbl_masses(natt+1:2*natt))
        ! Adjust high-order solution and set avp_o.
        do k = 1,natt
-          if (mask_safety(k)) then
+          if (mask_safety(k) == 1) then
              lo = gmins(k)
              hi = gmaxs(k)
              if (gwts(k) > 0) then
@@ -1161,7 +1161,7 @@ contains
              end if
           end if
        end do
-       deallocate(gwts, lcl_lo, lcl_hi)
+       deallocate(gwts, lcl_lo, lcl_hi, mask_safety)
        call mct_aVect_clean(nl_avp_o)
        ! Clip for numerics, just against the global extrema.
        do j = 1,lsize_o
