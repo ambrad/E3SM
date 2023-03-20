@@ -182,9 +182,9 @@ contains
        write(logunit,'(2A,I6,4A)') subname,' mapper counter, strategy, mapfile = ', &
             mapper%counter,' ',trim(mapper%strategy),' ',trim(mapper%mapfile)
        if (mapper%nl_on) then
-          write(logunit,'(2A,I6,4A,2L)') subname, &
+          write(logunit,'(2A,I6,3A,L,2A)') subname, &
                ' mapper counter, nl_strategy, nl_conservative, nl_mapfile = ', &
-               mapper%counter,' ',nl_strategy,' ',nl_conservative,trim(mapper%nl_mapfile)
+               mapper%counter,' ',nl_strategy,' ',nl_conservative,' ',trim(mapper%nl_mapfile)
        end if
        call shr_sys_flush(logunit)
     endif
@@ -947,6 +947,9 @@ contains
        if (verbose .and. amroot) then
           print *,'amb> ', trim(mapper%nl_mapfile), ' ', &
                trim(mapper%strategy), mapper%nl_conservative, lnorm, present(norm_i)
+       end if
+       if (.not. mapper%nl_conservative) then
+          call shr_sys_abort(subname//' .not. nl_conservative is not impled yet')
        end if
        natt = size(avp_i%rAttr, 1)
        allocate(lcl_lo(natt,lsize_o), lcl_hi(natt,lsize_o))
