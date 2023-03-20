@@ -849,9 +849,10 @@ contains
     character(len=*), parameter :: afldname  = 'aream'
     character(len=128) :: msg
     logical :: amroot, verbose, infnanfilt
-    integer(IN) :: mpicom, ierr, iam, k, natt, nsum, nfld, kArea, lidata(2), gidata(2)
+    integer(IN) :: mpicom, ierr, iam, k, natt, nsum, nfld, kArea, lidata(2), gidata(2), i, n
+    integer(IN), dimension(:), allocatable :: idxs_need_safety, mask_safety
     real(r8) :: tmp, area, lo, hi
-    real(r8), allocatable, dimension(:) :: lmins, gmins, lmaxs, gmaxs, glbl_masses, gwts
+    real(r8), allocatable, dimension(:) :: lmins, gmins, lmaxs, gmaxs, glbl_masses, gwts, gwts_safety
     real(r8), allocatable, dimension(:,:) :: dof_masses, caas_wgt, oglims, lcl_lo, lcl_hi
     !-----------------------------------------------------
 
@@ -929,10 +930,20 @@ contains
     !--- optional nonlinear map ---
 
     if (mapper%nl_on) then
+       natt = size(avp_i%rAttr, 1)
        allocate(lcl_lo(natt,lsize_o), lcl_hi(natt,lsize_o))
        call sMat_avMult_and_calc_bounds(avp_i, mapper%nl_sMatp, nl_avp_o, &
             lcl_lo, lcl_hi, infnanfilt)
        ! Compute global bounds.
+       allocate(lmins(natt), gmins(natt), lmaxs(natt), gmaxs(natt))
+       lmins(:) =  1.e30_r8
+       lmaxs(:) = -1.e30_r8
+       do j = 1,lsize_o
+          do k = 1,natt
+             lmins(k) = min(lmins(k), lcl_lo(k,j))
+             lmaxs(k) = max(lmaxs(k), lcl_hi(k,j))
+          end do
+       end do
        call mpi_allreduce(lmins, gmins, natt, MPI_DOUBLE_PRECISION, MPI_MIN, mpicom, ierr)
        call mpi_allreduce(lmaxs, gmaxs, natt, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, ierr)
        if (amroot .and. verbose) then
@@ -1015,7 +1026,6 @@ contains
        ! Clip against source-derived bounds.
        nsum = lsize_o
        nfld = 3*natt
-       !amb-todo safety problem if lclbnds
        allocate(caas_wgt(nsum,nfld)) ! dm, cap low, cap high
        caas_wgt(:,:) = 0
        do j = 1,lsize_o
@@ -1044,6 +1054,54 @@ contains
        end do
        allocate(gwts(nfld))
        call shr_reprosum_calc(caas_wgt, gwts, nsum, nsum, nfld)
+       ! Check whether we need to relax to the safety problem.
+       allocate(mask_safety(natt))
+       mask_safety(:) = 0
+       n = 0
+       do k = 1,natt
+          if ( (gwts(k) < 0 .and. -gwts(k) < gwts(  natt+k)) .or. &
+               (gwts(k) > 0 .and.  gwts(k) < gwts(2*natt+k))) then
+             idxs_need_safety(n+1) = k
+             n = n + 1
+             mask_safety(k) = 1
+          end if
+       end do
+       ! Solve safety problem where needed.
+       if (n > 0) then
+          do j = 1,lsize_o
+             area = mapper%dom_cx_d%data%rAttr(kArea,j)
+             do i = 1,n
+                k = idxs_need_safety(i)
+                tmp = nl_avp_o%rAttr(k,j)
+                if (infnanfilt) then
+                   if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
+                      tmp = 0
+                      nl_avp_o%rAttr(k,j) = tmp
+                   end if
+                end if
+                lo = gmins(k)
+                hi = gmaxs(k)
+                if (tmp < lo) then
+                   caas_wgt(j,i) = (tmp - lo)*area
+                   nl_avp_o%rAttr(k,j) = lo
+                else if (tmp > hi) then
+                   caas_wgt(j,i) = (tmp - hi)*area
+                   nl_avp_o%rAttr(k,j) = hi
+                end if
+                tmp = nl_avp_o%rAttr(k,j)
+                caas_wgt(j,  n+i) = (tmp - lo)*area
+                caas_wgt(j,2*n+i) = (hi - tmp)*area
+             end do
+          end do
+          nfld = 3*n
+          allocate(gwts_safety(nfld))
+          call shr_reprosum_calc(caas_wgt, gwts_safety, nsum, nsum, nfld)
+          do i = 1,n
+             k = idxs_need_safety(i)
+             gwts(k) = gwts_safety(i)
+          end do
+          deallocate(gwts_safety)
+       end if
        deallocate(caas_wgt)
        if (verbose .and. amroot) then
           do k = 1,natt
@@ -1061,28 +1119,49 @@ contains
        gwts(1:natt) = gwts(1:natt) + (glbl_masses(1:natt) - glbl_masses(natt+1:2*natt))
        ! Adjust high-order solution and set avp_o.
        do k = 1,natt
-          if (gwts(k) > 0) then
-             tmp = gwts(2*natt+k)
-             if (tmp /= 0) then
-                do j = 1,lsize_o
-                   hi = lcl_hi(k,j)
-                   avp_o%rAttr(k,j) = nl_avp_o%rAttr(k,j) + &
-                        ((hi - nl_avp_o%rAttr(k,j))/tmp)*gwts(k)
-                end do
+          if (mask_safety(k)) then
+             lo = gmins(k)
+             hi = gmaxs(k)
+             if (gwts(k) > 0) then
+                tmp = gwts(2*natt+k)
+                if (tmp /= 0) then
+                   do j = 1,lsize_o
+                      avp_o%rAttr(k,j) = nl_avp_o%rAttr(k,j) + &
+                           ((hi - nl_avp_o%rAttr(k,j))/tmp)*gwts(k)
+                   end do
+                end if
+             else if (gwts(k) < 0) then
+                tmp = gwts(natt+k)
+                if (tmp /= 0) then
+                   do j = 1,lsize_o
+                      avp_o%rAttr(k,j) = nl_avp_o%rAttr(k,j) + &
+                           ((nl_avp_o%rAttr(k,j) - lo)/tmp)*gwts(k)
+                   end do
+                end if
              end if
-          else if (gwts(k) < 0) then
-             tmp = gwts(natt+k)
-             if (tmp /= 0) then
-                do j = 1,lsize_o
-                   lo = lcl_lo(k,j)
-                   avp_o%rAttr(k,j) = nl_avp_o%rAttr(k,j) + &
-                        ((nl_avp_o%rAttr(k,j) - lo)/tmp)*gwts(k)
-                end do
+          else
+             if (gwts(k) > 0) then
+                tmp = gwts(2*natt+k)
+                if (tmp /= 0) then
+                   do j = 1,lsize_o
+                      hi = lcl_hi(k,j)
+                      avp_o%rAttr(k,j) = nl_avp_o%rAttr(k,j) + &
+                           ((hi - nl_avp_o%rAttr(k,j))/tmp)*gwts(k)
+                   end do
+                end if
+             else if (gwts(k) < 0) then
+                tmp = gwts(natt+k)
+                if (tmp /= 0) then
+                   do j = 1,lsize_o
+                      lo = lcl_lo(k,j)
+                      avp_o%rAttr(k,j) = nl_avp_o%rAttr(k,j) + &
+                           ((nl_avp_o%rAttr(k,j) - lo)/tmp)*gwts(k)
+                   end do
+                end if
              end if
           end if
        end do
-       deallocate(gwts)
-       deallocate(lcl_lo, lcl_hi)
+       deallocate(gwts, lcl_lo, lcl_hi)
        call mct_aVect_clean(nl_avp_o)
        ! Clip for numerics, just against the global extrema.
        do j = 1,lsize_o
