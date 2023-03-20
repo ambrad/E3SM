@@ -84,12 +84,13 @@ contains
     type(mct_gsmap), pointer    :: gsmap_s ! temporary pointers
     type(mct_gsmap), pointer    :: gsmap_d ! temporary pointers
     integer(IN)                 :: mpicom
-    character(CX)               :: mapfile
+    character(CX)               :: mapfile, nl_mapfile
     character(CL)               :: maptype
     integer(IN)                 :: mapid
-    character(len=*),parameter  :: subname = "(seq_map_init_rcfile) "
     character(len=128)          :: nl_label
-    logical                     :: nl_found
+    logical                     :: nl_found, conservative
+    character(len=*),parameter  :: nl_strategy = 'Xonly'
+    character(len=*),parameter  :: subname = "(seq_map_init_rcfile) "
     !-----------------------------------------------------
 
     if (seq_comm_iamroot(CPLID) .and. present(string)) then
@@ -112,6 +113,7 @@ contains
           mapper%strategy = "copy"
           mapper%gsmap_s => component_get_gsmap_cx(comp_s)
           mapper%gsmap_d => component_get_gsmap_cx(comp_d)
+          mapper%nl_on = .false.
        endif
 
     elseif (samegrid) then
@@ -128,6 +130,7 @@ contains
           mapper%gsmap_d => component_get_gsmap_cx(comp_d)
           call seq_map_gsmapcheck(gsmap_s, gsmap_d)
           call mct_rearr_init(gsmap_s, gsmap_d, mpicom, mapper%rearr)
+          mapper%nl_on = .false.
        endif
 
     else
@@ -135,7 +138,15 @@ contains
        ! --- Initialize Smatp
        call shr_mct_queryConfigFile(mpicom,maprcfile,maprcname,mapfile,maprctype,maptype)
 
-       call seq_map_mapmatch(mapid,gsMap_s=gsMap_s,gsMap_d=gsMap_d,mapfile=mapfile,strategy=maptype)
+       nl_label = maprcname(1:len(maprcname)-1)//'_highorder:'
+       call shr_mct_queryConfigFile(mpicom, maprcfile, trim(nl_label), nl_mapfile, &
+            Label1Found=nl_found)
+       if (nl_found) nl_found = nl_mapfile /= "idmap_ignore"
+       conservative = .false.
+       if (nl_found) conservative = seq_map_should_nonlinear_map_conserve(maprcname)
+
+       call seq_map_mapmatch(mapid,gsMap_s=gsMap_s,gsMap_d=gsMap_d,mapfile=mapfile,strategy=maptype, &
+            nl_on=nl_found,nl_mapfile=nl_mapfile,nl_conservative=conservative)
 
        if (mapid > 0) then
           call seq_map_mappoint(mapid,mapper)
@@ -154,19 +165,15 @@ contains
           endif  ! esmf_map          
 
           ! Optional high-order map
-          mapper%nl_on = .false.
-          nl_label = maprcname(1:len(maprcname)-1)//'_highorder:'
           if (seq_comm_iamroot(CPLID)) print *,'amb> init',trim(nl_label)
-          call shr_mct_queryConfigFile(mpicom, maprcfile, trim(nl_label), mapfile, &
-               Label1Found=nl_found)
+          mapper%nl_on = nl_found
           if (nl_found) then
-             if (mapfile /= "idmap_ignore") then
-                if (seq_comm_iamroot(CPLID)) print *,'amb> init',trim(mapfile)
-                mapper%nl_on = .true.
-                mapper%nl_mapfile = trim(mapfile)
-                call shr_mct_sMatPInitnc(mapper%nl_sMatp, mapper%gsMap_s, mapper%gsMap_d, &
-                     trim(mapfile), 'Xonly', mpicom)
-             end if
+             if (seq_comm_iamroot(CPLID)) print *,'amb> init',trim(nl_mapfile)
+             mapper%nl_on = .true.
+             mapper%nl_conservative = conservative
+             mapper%nl_mapfile = trim(nl_mapfile)
+             call shr_mct_sMatPInitnc(mapper%nl_sMatp, mapper%gsMap_s, mapper%gsMap_d, &
+                  trim(nl_mapfile), nl_strategy, mpicom)
           end if
        endif  ! mapid >= 0
     endif
@@ -174,6 +181,10 @@ contains
     if (seq_comm_iamroot(CPLID)) then
        write(logunit,'(2A,I6,4A)') subname,' mapper counter, strategy, mapfile = ', &
             mapper%counter,' ',trim(mapper%strategy),' ',trim(mapper%mapfile)
+       if (mapper%nl_on) then
+          write(logunit,'(2A,I6,4A)') subname,' mapper counter, nl_strategy, nl_mapfile = ', &
+               mapper%counter,' ',nl_strategy,' ',trim(mapper%nl_mapfile)
+       end if
        call shr_sys_flush(logunit)
     endif
 
@@ -932,7 +943,7 @@ contains
     if (mapper%nl_on) then
        if (verbose .and. amroot) then
           print *,'amb> ', trim(mapper%nl_mapfile), ' ', &
-               trim(mapper%strategy), lnorm, present(norm_i)
+               trim(mapper%strategy), mapper%nl_conservative, lnorm, present(norm_i)
        end if
        natt = size(avp_i%rAttr, 1)
        allocate(lcl_lo(natt,lsize_o), lcl_hi(natt,lsize_o))
