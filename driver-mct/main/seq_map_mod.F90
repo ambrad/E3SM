@@ -930,6 +930,10 @@ contains
     !--- optional nonlinear map ---
 
     if (mapper%nl_on) then
+       if (verbose .and. amroot) then
+          print *,'amb> ', trim(mapper%nl_mapfile), &
+               trim(mapper%strategy), lnorm, present(norm_i)
+       end if
        natt = size(avp_i%rAttr, 1)
        allocate(lcl_lo(natt,lsize_o), lcl_hi(natt,lsize_o))
        call sMat_avMult_and_calc_bounds(avp_i, mapper%nl_sMatp, nl_avp_o, &
@@ -1054,16 +1058,27 @@ contains
        end do
        allocate(gwts(nfld))
        call shr_reprosum_calc(caas_wgt, gwts, nsum, nsum, nfld)
+       ! Combine clipping and global mass error into a single dm value.
+       gwts(1:natt) = gwts(1:natt) + (glbl_masses(1:natt) - glbl_masses(natt+1:2*natt))
        ! Check whether we need to relax to the safety problem.
        allocate(idxs_need_safety(natt), mask_safety(natt))
        mask_safety(:) = 0
        n = 0
        do k = 1,natt
-          if ( (gwts(k) < 0 .and. -gwts(k) < gwts(  natt+k)) .or. &
-               (gwts(k) > 0 .and.  gwts(k) < gwts(2*natt+k))) then
+          if (((gwts(k) < 0 .and. -gwts(k) > gwts(  natt+k))  .or.  &
+               (gwts(k) > 0 .and.  gwts(k) > gwts(2*natt+k))) .and. &
+               ! A common case where the above filter triggers unnecessarily is
+               ! when gmins(k) == gmaxs(k) and there is a
+               ! machine-precision-level global mass difference in the low- and
+               ! high-order maps. Skip this index in this case.
+               gmins(k) < gmaxs(k)) then
              idxs_need_safety(n+1) = k
              mask_safety(k) = 1
              n = n + 1
+             if (verbose .and. amroot) then
+                print '(a,i2,a,i2,3es25.15)','amb>   safety', &
+                     k, '/', natt, gwts(k), gwts(natt+k), gwts(2*natt+k)
+             end if
           end if
        end do
        ! Solve safety problem where needed.
@@ -1098,7 +1113,7 @@ contains
           call shr_reprosum_calc(caas_wgt, gwts_safety, nsum, nsum, nfld)
           do i = 1,n
              k = idxs_need_safety(i)
-             gwts(k) = gwts_safety(i)
+             gwts(k) = gwts_safety(i) + (glbl_masses(k) - glbl_masses(natt+k))
           end do
           deallocate(gwts_safety, idxs_need_safety)
        end if
@@ -1108,15 +1123,17 @@ contains
              if (gwts(k) /= 0 .or. glbl_masses(k) /= 0) then
                 print '(a,i2,a,i2,es23.15,es23.15,es23.15,es10.2)', &
                      'amb>  caas-dm ', k, '/', natt, &
-                     glbl_masses(k), glbl_masses(k) - glbl_masses(natt+k), gwts(k), &
-                     ! Relative amount of global mass difference + global
-                     ! clipping mass adjustment
-                     (glbl_masses(k) - glbl_masses(natt+k) + gwts(k))/abs(glbl_masses(k))
+                     ! true global mass
+                     glbl_masses(k), &
+                     ! dm due to global mass nonconservation in the linear map
+                     glbl_masses(k) - glbl_masses(natt+k), &
+                     ! dm due to clipping
+                     gwts(k) - (glbl_masses(k) - glbl_masses(natt+k)), &
+                     ! dm relative to true global mass
+                     gwts(k)/abs(glbl_masses(k))
              end if
           end do
        end if
-       ! Combine clipping and global mass error into a single dm value.
-       gwts(1:natt) = gwts(1:natt) + (glbl_masses(1:natt) - glbl_masses(natt+1:2*natt))
        ! Adjust high-order solution and set avp_o.
        do k = 1,natt
           if (mask_safety(k) == 1) then
