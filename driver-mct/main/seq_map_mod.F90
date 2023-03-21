@@ -165,10 +165,10 @@ contains
           endif  ! esmf_map          
 
           ! Optional high-order map
-          if (seq_comm_iamroot(CPLID)) print *,'amb> init ',trim(nl_label)
+          if (seq_comm_iamroot(CPLID)) write(logunit, '(A)') 'amb> init '//trim(nl_label)
           mapper%nl_available = nl_found
           if (nl_found) then
-             if (seq_comm_iamroot(CPLID)) print *,'amb> init',trim(nl_mapfile)
+             if (seq_comm_iamroot(CPLID)) write(logunit, '(A)') 'amb> init '//trim(nl_mapfile)
              mapper%nl_available = .true.
              mapper%nl_conservative = nl_conservative
              mapper%nl_mapfile = trim(nl_mapfile)
@@ -271,7 +271,7 @@ contains
   !=======================================================================
 
   subroutine seq_map_map( mapper, av_s, av_d, fldlist, norm, avwts_s, avwtsfld_s, &
-       string, msgtag, use_nonlinear )
+       string, msgtag, omit_nonlinear )
 
     implicit none
     !-----------------------------------------------------
@@ -287,11 +287,11 @@ contains
     character(len=*),intent(in),optional :: avwtsfld_s
     character(len=*),intent(in),optional :: string
     integer(IN)     ,intent(in),optional :: msgtag
-    logical         ,intent(in),optional :: use_nonlinear
+    logical         ,intent(in),optional :: omit_nonlinear
     !
     ! Local Variables
     !
-    logical :: lnorm
+    logical :: lnorm, lomit_nonlinear
     integer(IN),save :: ltag    ! message tag for rearrange
     character(len=*),parameter :: subname = "(seq_map_map) "
     !-----------------------------------------------------
@@ -303,6 +303,11 @@ contains
     lnorm = .true.
     if (present(norm)) then
        lnorm = norm
+    endif
+
+    lomit_nonlinear = .false.
+    if (present(omit_nonlinear)) then
+       lomit_nonlinear = omit_nonlinear
     endif
 
     if (present(msgtag)) then
@@ -349,18 +354,18 @@ contains
        if (present(avwts_s)) then
           if (present(fldlist)) then
              call seq_map_avNorm(mapper, av_s, av_d, avwts_s, trim(avwtsfld_s), &
-                  rList=fldlist, norm=lnorm, use_nonlinear=use_nonlinear)
+                  rList=fldlist, norm=lnorm, omit_nonlinear=lomit_nonlinear)
           else
              call seq_map_avNorm(mapper, av_s, av_d, avwts_s, trim(avwtsfld_s), &
-                  norm=lnorm, use_nonlinear=use_nonlinear)
+                  norm=lnorm, omit_nonlinear=lomit_nonlinear)
           endif
        else
           if (present(fldlist)) then
              call seq_map_avNorm(mapper, av_s, av_d, rList=fldlist, norm=lnorm, &
-                  use_nonlinear=use_nonlinear)
+                  omit_nonlinear=lomit_nonlinear)
           else
              call seq_map_avNorm(mapper, av_s, av_d, norm=lnorm, &
-                  use_nonlinear=use_nonlinear)
+                  omit_nonlinear=lomit_nonlinear)
           endif
        endif
     end if
@@ -786,7 +791,7 @@ contains
   !=======================================================================
 
   subroutine seq_map_avNormAvF(mapper, av_i, av_o, avf_i, avfifld, rList, norm, &
-       use_nonlinear)
+       omit_nonlinear)
 
     implicit none
     !-----------------------------------------------------
@@ -800,17 +805,22 @@ contains
     character(len=*), intent(in)          :: avfifld ! field name in avf_i
     character(len=*), intent(in),optional :: rList   ! fields list
     logical         , intent(in),optional :: norm    ! normalize at end
-    logical         , intent(in),optional :: use_nonlinear
+    logical         , intent(in),optional :: omit_nonlinear
     !
     integer(IN) :: lsize_i, lsize_f, kf, j
     real(r8),allocatable :: frac_i(:)
-    logical :: lnorm
+    logical :: lnorm, lomit_nonlinear
     character(*),parameter :: subName = '(seq_map_avNormAvF) '
     !-----------------------------------------------------
 
     lnorm = .true.
     if (present(norm)) then
        lnorm = norm
+    endif
+
+    lomit_nonlinear = .false.
+    if (present(omit_nonlinear)) then
+       lomit_nonlinear = omit_nonlinear
     endif
 
     lsize_i = mct_aVect_lsize(av_i)
@@ -830,10 +840,10 @@ contains
 
     if (present(rList)) then
        call seq_map_avNormArr(mapper, av_i, av_o, frac_i, rList=rList, norm=lnorm, &
-            use_nonlinear=use_nonlinear)
+            omit_nonlinear=lomit_nonlinear)
     else
        call seq_map_avNormArr(mapper, av_i, av_o, frac_i, norm=lnorm, &
-            use_nonlinear=use_nonlinear)
+            omit_nonlinear=lomit_nonlinear)
     endif
 
     deallocate(frac_i)
@@ -842,7 +852,7 @@ contains
 
   !=======================================================================
 
-  subroutine seq_map_avNormArr(mapper, av_i, av_o, norm_i, rList, norm, use_nonlinear)
+  subroutine seq_map_avNormArr(mapper, av_i, av_o, norm_i, rList, norm, omit_nonlinear)
 
     implicit none
     !-----------------------------------------------------
@@ -855,7 +865,7 @@ contains
     real(r8)        , intent(in), optional :: norm_i(:)  ! source "weight"
     character(len=*), intent(in), optional :: rList ! fields list
     logical         , intent(in), optional :: norm  ! normalize at end
-    logical         , intent(in), optional :: use_nonlinear ! use nonlinear map if available
+    logical         , intent(in), optional :: omit_nonlinear ! use nonlinear map if available
     !
     ! Local variables
     !
@@ -878,9 +888,10 @@ contains
     real(r8), allocatable, dimension(:,:) :: dof_masses, caas_wgt, oglims, lcl_lo, lcl_hi
     !-----------------------------------------------------
 
-    nl_on = .false.
-    if (present(use_nonlinear)) nl_on = use_nonlinear
-    if (nl_on .and. .not. mapper%nl_available) nl_on = .false.
+    nl_on = mapper%nl_available
+    if (present(omit_nonlinear)) then
+       if (omit_nonlinear) nl_on = .false.
+    end if
 
     infnanfilt = .false.
     verbose = .true.
@@ -956,12 +967,12 @@ contains
 
     if (nl_on) then
        if (verbose .and. amroot) then
-          print *,'amb> ', trim(mapper%nl_mapfile), ' ', &
+          write(logunit, '(4A,3L2)') 'amb> ', trim(mapper%nl_mapfile), ' ', &
                trim(mapper%strategy), mapper%nl_conservative, lnorm, present(norm_i)
        end if
        if (.not. mapper%nl_conservative) then
           !amb-todo
-          if (amroot) print *,'amb> Conserving b/c .not. nl_conservative is not impled yet'
+          if (amroot) write(logunit, '(A)') 'amb> Conserving b/c .not. nl_conservative is not impled yet'
           !call shr_sys_abort(subname//' .not. nl_conservative is not impled yet')
        end if
        natt = size(avp_i%rAttr, 1)
@@ -969,7 +980,8 @@ contains
           kf = mct_aVect_indexRA(avp_i,ffld)
           if (kf /= natt) then
              call shr_sys_abort(subname// &
-                  ' ERROR: Nonlinear map code expects weight field in final AV column.')
+                  ' ERROR: Nonlinear map code expects weight field, '// &
+                  'if present, to be in final AV column.')
           end if
           natt = natt - 1
        end if
@@ -990,7 +1002,7 @@ contains
        call mpi_allreduce(lmaxs, gmaxs, natt, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, ierr)
        if (amroot .and. verbose) then
           do k = 1,natt
-             print '(a,i2,a,i2,es23.15,es23.15)', &
+             write(logunit, '(a,i2,a,i2,es23.15,es23.15)') &
                   'amb> src-bnds ', k, '/', natt, gmins(k), gmaxs(k)
           end do
        end if
@@ -1026,7 +1038,7 @@ contains
           call mpi_allreduce(lmaxs, oglims(:,2), natt, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, ierr)
           if (amroot) then
              do k = 1,natt
-                print '(a,i2,a,i2,es23.15,es23.15)', &
+                write(logunit, '(a,i2,a,i2,es23.15,es23.15)') &
                      'amb> pre-bnds ', k, '/', natt, oglims(k,1), oglims(k,2)
              end do
           end if
@@ -1047,7 +1059,7 @@ contains
        nfld = 2*natt
        allocate(dof_masses(nsum,nfld), glbl_masses(nfld)) ! low- and high-order
        if (mct_aVect_lSize(mapper%dom_cx_d%data) /= lsize_o) then
-          print *,'amb> sizes do not match',lsize_o,mct_aVect_lSize(mapper%dom_cx_d%data)
+          write(logunit, '(A,2I)') 'amb> sizes do not match',lsize_o,mct_aVect_lSize(mapper%dom_cx_d%data)
           call shr_sys_abort(subname//' ERROR: amb> sizes do not match')
        end if
        do j = 1,lsize_o
@@ -1114,7 +1126,7 @@ contains
              mask_safety(k) = 1
              n = n + 1
              if (verbose .and. amroot) then
-                print '(a,i2,a,i2,3es23.15)','amb>   safety ', &
+                write(logunit, '(a,i2,a,i2,3es23.15)') 'amb>   safety ', &
                      k, '/', natt, gwts(k), gwts(natt+k), gwts(2*natt+k)
              end if
           end if
@@ -1159,7 +1171,7 @@ contains
        if (verbose .and. amroot) then
           do k = 1,natt
              if (gwts(k) /= 0 .or. glbl_masses(k) /= 0) then
-                print '(a,i2,a,i2,es23.15,es23.15,es23.15,es10.2)', &
+                write(logunit, '(a,i2,a,i2,es23.15,es23.15,es23.15,es10.2)') &
                      'amb>  caas-dm ', k, '/', natt, &
                      ! true global mass
                      glbl_masses(k), &
@@ -1252,7 +1264,7 @@ contains
                    else
                       msg = ' ALARM'
                    end if
-                   print '(a,i2,a,i2,es23.15,es23.15,es10.2,a)', &
+                   write(logunit, '(a,i2,a,i2,es23.15,es23.15,es10.2,a)') &
                         'amb> fin-mass ', k, '/', natt, glbl_masses(k), gwts(k), tmp, trim(msg)
                 end if
              end do
@@ -1281,7 +1293,7 @@ contains
                 else
                    msg = ' ALARM'
                 end if
-                print '(a,i2,a,i2,es23.15,es23.15,a)', &
+                write(logunit, '(a,i2,a,i2,es23.15,es23.15,a)') &
                      'amb> fin-bnds ', k, '/', natt, oglims(k,1), oglims(k,2), trim(msg)
              end do
           end if
