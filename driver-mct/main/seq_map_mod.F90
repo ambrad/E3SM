@@ -949,7 +949,9 @@ contains
                trim(mapper%strategy), mapper%nl_conservative, lnorm, present(norm_i)
        end if
        if (.not. mapper%nl_conservative) then
-          call shr_sys_abort(subname//' .not. nl_conservative is not impled yet')
+          !amb-todo
+          if (amroot) print *,'amb> Conserving b/c .not. nl_conservative is not impled yet'
+          !call shr_sys_abort(subname//' .not. nl_conservative is not impled yet')
        end if
        natt = size(avp_i%rAttr, 1)
        allocate(lcl_lo(natt,lsize_o), lcl_hi(natt,lsize_o))
