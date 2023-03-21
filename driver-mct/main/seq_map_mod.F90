@@ -855,7 +855,7 @@ contains
     real(r8)        , intent(in), optional :: norm_i(:)  ! source "weight"
     character(len=*), intent(in), optional :: rList ! fields list
     logical         , intent(in), optional :: norm  ! normalize at end
-    logical         , intent(in),optional :: use_nonlinear
+    logical         , intent(in), optional :: use_nonlinear ! use nonlinear map if available
     !
     ! Local variables
     !
@@ -871,19 +871,21 @@ contains
     character(len=*), parameter :: afldname  = 'aream'
     character(len=128) :: msg
     logical :: nl_on, amroot, verbose, infnanfilt
-    integer(IN) :: mpicom, ierr, iam, k, natt, nsum, nfld, kArea, lidata(2), gidata(2), i, n
+    integer(IN) :: mpicom, ierr, k, natt, nsum, nfld, kArea, lidata(2), gidata(2), i, n
     integer(IN), dimension(:), allocatable :: idxs_need_safety, mask_safety
     real(r8) :: tmp, area, lo, hi
     real(r8), allocatable, dimension(:) :: lmins, gmins, lmaxs, gmaxs, glbl_masses, gwts, gwts_safety
     real(r8), allocatable, dimension(:,:) :: dof_masses, caas_wgt, oglims, lcl_lo, lcl_hi
     !-----------------------------------------------------
 
-    nl_on = use_nonlinear .and. mapper%nl_available
+    nl_on = .false.
+    if (present(use_nonlinear)) nl_on = use_nonlinear
+    if (nl_on .and. .not. mapper%nl_available) nl_on = .false.
+
     infnanfilt = .false.
     verbose = .true.
     call seq_comm_setptrs(CPLID, mpicom=mpicom)
-    call mpi_comm_rank(mpicom, iam, ierr)
-    amroot = iam == 0
+    amroot = seq_comm_iamroot(CPLID)
 
     lsize_i = mct_aVect_lsize(av_i)
     lsize_o = mct_aVect_lsize(av_o)
