@@ -1095,7 +1095,7 @@ contains
              mask_safety(k) = 1
              n = n + 1
              if (verbose .and. amroot) then
-                print '(a,i2,a,i2,3es25.15)','amb>   safety', &
+                print '(a,i2,a,i2,3es23.15)','amb>   safety ', &
                      k, '/', natt, gwts(k), gwts(natt+k), gwts(2*natt+k)
              end if
           end if
