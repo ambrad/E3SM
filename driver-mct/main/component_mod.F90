@@ -892,14 +892,16 @@ contains
              else
                 mpi_tag = comp(eci)%cplcompid*10000+eci*10+2
              end if
-             call seq_map_map(comp(eci)%mapper_Cx2c, comp(eci)%x2c_cx, comp(eci)%x2c_cc, msgtag=mpi_tag)
+             call seq_map_map(comp(eci)%mapper_Cx2c, comp(eci)%x2c_cx, comp(eci)%x2c_cc, msgtag=mpi_tag, &
+                  use_nonlinear=.true.)
           else if (flow == 'c2x') then ! component to coupler
              if ( size(comp) > 1) then
                 mpi_tag = comp(eci)%cplcompid*100+eci*10+4
              else
                 mpi_tag = comp(eci)%cplcompid*10000+eci*10+4
              end if
-             call seq_map_map(comp(eci)%mapper_Cc2x, comp(eci)%c2x_cc, comp(eci)%c2x_cx, msgtag=mpi_tag)
+             call seq_map_map(comp(eci)%mapper_Cc2x, comp(eci)%c2x_cc, comp(eci)%c2x_cx, msgtag=mpi_tag, &
+                  use_nonlinear=.true.)
           end if
 
           if (present(timer_map_exch)) then

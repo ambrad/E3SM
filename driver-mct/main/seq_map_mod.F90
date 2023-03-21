@@ -113,7 +113,7 @@ contains
           mapper%strategy = "copy"
           mapper%gsmap_s => component_get_gsmap_cx(comp_s)
           mapper%gsmap_d => component_get_gsmap_cx(comp_d)
-          mapper%nl_on = .false.
+          mapper%nl_available = .false.
        endif
 
     elseif (samegrid) then
@@ -130,7 +130,7 @@ contains
           mapper%gsmap_d => component_get_gsmap_cx(comp_d)
           call seq_map_gsmapcheck(gsmap_s, gsmap_d)
           call mct_rearr_init(gsmap_s, gsmap_d, mpicom, mapper%rearr)
-          mapper%nl_on = .false.
+          mapper%nl_available = .false.
        endif
 
     else
@@ -146,7 +146,7 @@ contains
        if (nl_found) nl_conservative = seq_map_should_nonlinear_map_conserve(maprcname)
 
        call seq_map_mapmatch(mapid,gsMap_s=gsMap_s,gsMap_d=gsMap_d,mapfile=mapfile,strategy=maptype, &
-            nl_on=nl_found,nl_mapfile=nl_mapfile,nl_conservative=nl_conservative)
+            nl_available=nl_found,nl_mapfile=nl_mapfile,nl_conservative=nl_conservative)
 
        if (mapid > 0) then
           call seq_map_mappoint(mapid,mapper)
@@ -166,10 +166,10 @@ contains
 
           ! Optional high-order map
           if (seq_comm_iamroot(CPLID)) print *,'amb> init ',trim(nl_label)
-          mapper%nl_on = nl_found
+          mapper%nl_available = nl_found
           if (nl_found) then
              if (seq_comm_iamroot(CPLID)) print *,'amb> init',trim(nl_mapfile)
-             mapper%nl_on = .true.
+             mapper%nl_available = .true.
              mapper%nl_conservative = nl_conservative
              mapper%nl_mapfile = trim(nl_mapfile)
              call shr_mct_sMatPInitnc(mapper%nl_sMatp, mapper%gsMap_s, mapper%gsMap_d, &
@@ -181,7 +181,7 @@ contains
     if (seq_comm_iamroot(CPLID)) then
        write(logunit,'(2A,I6,4A)') subname,' mapper counter, strategy, mapfile = ', &
             mapper%counter,' ',trim(mapper%strategy),' ',trim(mapper%mapfile)
-       if (mapper%nl_on) then
+       if (mapper%nl_available) then
           write(logunit,'(2A,I6,3A,L,2A)') subname, &
                ' mapper counter, nl_strategy, nl_conservative, nl_mapfile = ', &
                mapper%counter,' ',nl_strategy,' ',nl_conservative,' ',trim(mapper%nl_mapfile)
@@ -238,7 +238,7 @@ contains
           mapper%strategy = "copy"
           mapper%gsmap_s => component_get_gsmap_cx(comp_s)
           mapper%gsmap_d => component_get_gsmap_cx(comp_d)
-          mapper%nl_on = .false.
+          mapper%nl_available = .false.
        endif
 
     else
@@ -253,7 +253,7 @@ contains
           mapper%strategy = "rearrange"
           mapper%gsmap_s => component_get_gsmap_cx(comp_s)
           mapper%gsmap_d => component_get_gsmap_cx(comp_d)
-          mapper%nl_on = .false.
+          mapper%nl_available = .false.
           call seq_map_gsmapcheck(gsmap_s, gsmap_d)
           call mct_rearr_init(gsmap_s, gsmap_d, mpicom, mapper%rearr)
        endif
@@ -271,7 +271,7 @@ contains
   !=======================================================================
 
   subroutine seq_map_map( mapper, av_s, av_d, fldlist, norm, avwts_s, avwtsfld_s, &
-       string, msgtag )
+       string, msgtag, use_nonlinear )
 
     implicit none
     !-----------------------------------------------------
@@ -287,6 +287,7 @@ contains
     character(len=*),intent(in),optional :: avwtsfld_s
     character(len=*),intent(in),optional :: string
     integer(IN)     ,intent(in),optional :: msgtag
+    logical         ,intent(in),optional :: use_nonlinear
     !
     ! Local Variables
     !
@@ -348,16 +349,18 @@ contains
        if (present(avwts_s)) then
           if (present(fldlist)) then
              call seq_map_avNorm(mapper, av_s, av_d, avwts_s, trim(avwtsfld_s), &
-                  rList=fldlist, norm=lnorm)
+                  rList=fldlist, norm=lnorm, use_nonlinear=use_nonlinear)
           else
              call seq_map_avNorm(mapper, av_s, av_d, avwts_s, trim(avwtsfld_s), &
-                  norm=lnorm)
+                  norm=lnorm, use_nonlinear=use_nonlinear)
           endif
        else
           if (present(fldlist)) then
-             call seq_map_avNorm(mapper, av_s, av_d, rList=fldlist, norm=lnorm)
+             call seq_map_avNorm(mapper, av_s, av_d, rList=fldlist, norm=lnorm, &
+                  use_nonlinear=use_nonlinear)
           else
-             call seq_map_avNorm(mapper, av_s, av_d, norm=lnorm)
+             call seq_map_avNorm(mapper, av_s, av_d, norm=lnorm, &
+                  use_nonlinear=use_nonlinear)
           endif
        endif
     end if
@@ -782,7 +785,8 @@ contains
 
   !=======================================================================
 
-  subroutine seq_map_avNormAvF(mapper, av_i, av_o, avf_i, avfifld, rList, norm)
+  subroutine seq_map_avNormAvF(mapper, av_i, av_o, avf_i, avfifld, rList, norm, &
+       use_nonlinear)
 
     implicit none
     !-----------------------------------------------------
@@ -796,6 +800,7 @@ contains
     character(len=*), intent(in)          :: avfifld ! field name in avf_i
     character(len=*), intent(in),optional :: rList   ! fields list
     logical         , intent(in),optional :: norm    ! normalize at end
+    logical         , intent(in),optional :: use_nonlinear
     !
     integer(IN) :: lsize_i, lsize_f, kf, j
     real(r8),allocatable :: frac_i(:)
@@ -824,9 +829,11 @@ contains
     enddo
 
     if (present(rList)) then
-       call seq_map_avNormArr(mapper, av_i, av_o, frac_i, rList=rList, norm=lnorm)
+       call seq_map_avNormArr(mapper, av_i, av_o, frac_i, rList=rList, norm=lnorm, &
+            use_nonlinear=use_nonlinear)
     else
-       call seq_map_avNormArr(mapper, av_i, av_o, frac_i, norm=lnorm)
+       call seq_map_avNormArr(mapper, av_i, av_o, frac_i, norm=lnorm, &
+            use_nonlinear=use_nonlinear)
     endif
 
     deallocate(frac_i)
@@ -835,7 +842,7 @@ contains
 
   !=======================================================================
 
-  subroutine seq_map_avNormArr(mapper, av_i, av_o, norm_i, rList, norm)
+  subroutine seq_map_avNormArr(mapper, av_i, av_o, norm_i, rList, norm, use_nonlinear)
 
     implicit none
     !-----------------------------------------------------
@@ -848,6 +855,7 @@ contains
     real(r8)        , intent(in), optional :: norm_i(:)  ! source "weight"
     character(len=*), intent(in), optional :: rList ! fields list
     logical         , intent(in), optional :: norm  ! normalize at end
+    logical         , intent(in),optional :: use_nonlinear
     !
     ! Local variables
     !
@@ -862,7 +870,7 @@ contains
     !amb
     character(len=*), parameter :: afldname  = 'aream'
     character(len=128) :: msg
-    logical :: amroot, verbose, infnanfilt
+    logical :: nl_on, amroot, verbose, infnanfilt
     integer(IN) :: mpicom, ierr, iam, k, natt, nsum, nfld, kArea, lidata(2), gidata(2), i, n
     integer(IN), dimension(:), allocatable :: idxs_need_safety, mask_safety
     real(r8) :: tmp, area, lo, hi
@@ -870,6 +878,7 @@ contains
     real(r8), allocatable, dimension(:,:) :: dof_masses, caas_wgt, oglims, lcl_lo, lcl_hi
     !-----------------------------------------------------
 
+    nl_on = use_nonlinear .and. mapper%nl_available
     infnanfilt = .false.
     verbose = .true.
     call seq_comm_setptrs(CPLID, mpicom=mpicom)
@@ -899,7 +908,7 @@ contains
     if (present(rList)) then
        call mct_aVect_init(avp_i, rList=trim( rList)//trim(appnd), lsize=lsize_i)
        call mct_aVect_init(avp_o, rList=trim( rList)//trim(appnd), lsize=lsize_o)
-       if (mapper%nl_on) then
+       if (nl_on) then
           call mct_aVect_init(nl_avp_o, rList=trim( rList)//trim(appnd), lsize=lsize_o)
        end if
     else
@@ -907,7 +916,7 @@ contains
        call mct_aVect_init(avp_i, rList=trim(lrList)//trim(appnd), lsize=lsize_i)
        lrList = mct_aVect_exportRList2c(av_o)
        call mct_aVect_init(avp_o, rList=trim(lrList)//trim(appnd), lsize=lsize_o)
-       if (mapper%nl_on) then
+       if (nl_on) then
           call mct_aVect_init(nl_avp_o, rList=trim(lrList)//trim(appnd), lsize=lsize_o)
        end if
     endif
@@ -943,7 +952,7 @@ contains
 
     !--- optional nonlinear map ---
 
-    if (mapper%nl_on) then
+    if (nl_on) then
        if (verbose .and. amroot) then
           print *,'amb> ', trim(mapper%nl_mapfile), ' ', &
                trim(mapper%strategy), mapper%nl_conservative, lnorm, present(norm_i)
@@ -954,9 +963,17 @@ contains
           !call shr_sys_abort(subname//' .not. nl_conservative is not impled yet')
        end if
        natt = size(avp_i%rAttr, 1)
+       if (lnorm) then
+          kf = mct_aVect_indexRA(avp_i,ffld)
+          if (kf /= natt) then
+             call shr_sys_abort(subname// &
+                  ' ERROR: Nonlinear map code expects weight field in final AV column.')
+          end if
+          natt = natt - 1
+       end if
        allocate(lcl_lo(natt,lsize_o), lcl_hi(natt,lsize_o))
-       call sMat_avMult_and_calc_bounds(avp_i, mapper%nl_sMatp, nl_avp_o, &
-            lcl_lo, lcl_hi, infnanfilt)
+       call sMat_avMult_and_calc_bounds(avp_i, mapper%nl_sMatp, natt, infnanfilt, &
+            nl_avp_o, lcl_lo, lcl_hi)
        ! Compute global bounds.
        allocate(lmins(natt), gmins(natt), lmaxs(natt), gmaxs(natt))
        lmins(:) =  1.e30_r8
@@ -1294,7 +1311,7 @@ contains
 
   end subroutine seq_map_avNormArr
 
-  subroutine sMat_avMult_and_calc_bounds(xAV, sMatPlus, yAV, lo, hi, infnanfilt)
+  subroutine sMat_avMult_and_calc_bounds(xAV, sMatPlus, natt, infnanfilt, yAV, lo, hi)
     ! Compute
     !     x' = rearrange(x)
     !     y' = A*x'
@@ -1310,11 +1327,12 @@ contains
     type (mct_aVect), intent(in)    :: xAV
     type (mct_sMatp), intent(inout) :: sMatPlus
     type (mct_aVect), intent(out)   :: yAV
-    real(r8), dimension(:,:), intent(out) :: lo, hi
     logical, intent(in) :: infnanfilt
+    integer, intent(in) :: natt
+    real(r8), dimension(:,:), intent(out) :: lo, hi
 
     type (mct_aVect) :: xPrimeAV
-    integer :: ierr, ne, natt, irow, icol, iwgt, i, j, row, col, ysize
+    integer :: ierr, ne, irow, icol, iwgt, i, j, row, col, ysize
     real(r8) :: wgt, tmp
 
     ! y = 0
@@ -1328,7 +1346,6 @@ contains
     call mct_sMat_avMult(xPrimeAV, sMatPlus%Matrix, yAV, vector=mct_usevector)
     ! l, u = bounds(A, x')
     ysize = mct_aVect_lsize(yAV)
-    natt = size(yAV%rAttr, 1)
     lo(:,:) =  1.e30_r8
     hi(:,:) = -1.e30_r8
     ne = mct_sMat_lsize(sMatPlus%Matrix)

@@ -36,7 +36,7 @@ module seq_map_type_mod
      !
      !---- optional nonlinear map
      !amb-todo document
-     logical :: nl_on, nl_conservative
+     logical :: nl_available, nl_conservative
      type(mct_ggrid), pointer :: dom_cx_s, dom_cx_d
      type(mct_sMatp) :: nl_sMatp
      character(CX) :: nl_mapfile
@@ -67,7 +67,7 @@ contains
   !===============================================================================
 
   subroutine seq_map_mapmatch(mapid,gsMap_s,gsMap_d,mapfile,strategy, &
-       nl_on,nl_mapfile,nl_conservative)
+       nl_available,nl_mapfile,nl_conservative)
 
     ! This method searches through the current seq_maps to find a
     ! mapping file that matches the values passed in
@@ -78,7 +78,7 @@ contains
     type(mct_gsMap) ,intent(in),optional :: gsMap_d
     character(len=*),intent(in),optional :: mapfile
     character(len=*),intent(in),optional :: strategy
-    logical         ,intent(in),optional :: nl_on
+    logical         ,intent(in),optional :: nl_available
     character(len=*),intent(in),optional :: nl_mapfile
     logical         ,intent(in),optional :: nl_conservative
 
@@ -105,9 +105,9 @@ contains
        if (match .and. present(gsMap_d)) then
           if (.not.mct_gsmap_Identical(gsmap_d,seq_maps(m)%gsmap_d)) match = .false.
        endif
-       if (match .and. present(nl_on)) then
-          if (nl_on /= seq_maps(m)%nl_on) match = .false.
-          if (match .and. nl_on) then
+       if (match .and. present(nl_available)) then
+          if (nl_available /= seq_maps(m)%nl_available) match = .false.
+          if (match .and. nl_available) then
              if (match .and. present(nl_mapfile)) then
                 if (trim(nl_mapfile) /= trim(seq_maps(m)%nl_mapfile)) match = .false.
              end if
