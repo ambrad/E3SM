@@ -1538,7 +1538,7 @@
 
   <entry id="OCN2ATM_FMAPNAME_NONLINEAR">
     <type>char</type>
-    <default_value>idmap</default_value>
+    <default_value>idmap_ignore</default_value>
     <group>run_domain</group>
     <file>env_run.xml</file>
     <desc>ocn2atm flux mapping file</desc>
@@ -1563,7 +1563,7 @@
 
   <entry id="OCN2ATM_SMAPNAME_NONLINEAR">
     <type>char</type>
-    <default_value>idmap</default_value>
+    <default_value>idmap_ignore</default_value>
     <group>run_domain</group>
     <file>env_run.xml</file>
     <desc>ocn2atm state mapping file</desc>
@@ -1588,7 +1588,7 @@
 
   <entry id="LND2ATM_FMAPNAME_NONLINEAR">
     <type>char</type>
-    <default_value>idmap</default_value>
+    <default_value>idmap_ignore</default_value>
     <group>run_domain</group>
     <file>env_run.xml</file>
     <desc>lnd2atm flux mapping file</desc>
@@ -1613,7 +1613,7 @@
 
   <entry id="LND2ATM_SMAPNAME_NONLINEAR">
     <type>char</type>
-    <default_value>idmap</default_value>
+    <default_value>idmap_ignore</default_value>
     <group>run_domain</group>
     <file>env_run.xml</file>
     <desc>lnd2atm state mapping file</desc>
