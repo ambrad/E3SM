@@ -138,7 +138,7 @@ contains
        ! --- Initialize Smatp
        call shr_mct_queryConfigFile(mpicom,maprcfile,maprcname,mapfile,maprctype,maptype)
 
-       nl_label = maprcname(1:len(maprcname)-1)//'_highorder:'
+       nl_label = maprcname(1:len(maprcname)-1)//'_nonlinear:'
        call shr_mct_queryConfigFile(mpicom, maprcfile, trim(nl_label), nl_mapfile, &
             Label1Found=nl_found)
        if (nl_found) nl_found = nl_mapfile /= "idmap_ignore"
@@ -165,7 +165,7 @@ contains
           endif  ! esmf_map          
 
           ! Optional high-order map
-          if (seq_comm_iamroot(CPLID)) print *,'amb> init',trim(nl_label)
+          if (seq_comm_iamroot(CPLID)) print *,'amb> init ',trim(nl_label)
           mapper%nl_on = nl_found
           if (nl_found) then
              if (seq_comm_iamroot(CPLID)) print *,'amb> init',trim(nl_mapfile)
