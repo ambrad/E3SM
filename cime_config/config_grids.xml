@@ -4062,7 +4062,7 @@
 
     <gridmap atm_grid="ne30np4.pg2" rof_grid="r05">
       <map name="ATM2ROF_FMAPNAME">cpl/gridmaps/ne30pg2/map_ne30pg2_to_r05_mono.200220.nc</map>
-      <map name="ATM2ROF_SMAPNAME">cpl/gridmaps/ne30pg2/map_ne30pg2_to_r05_mono.200220.nc</map>
+      <map name="ATM2ROF_SMAPNAME">cpl/gridmaps/ne30pg2/map_ne30pg2_to_r05_bilin.200220.nc</map>
     </gridmap>
 
     <gridmap atm_grid="ne30np4.pg3" rof_grid="r05">
