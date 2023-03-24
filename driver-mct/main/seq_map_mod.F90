@@ -883,7 +883,7 @@ contains
     logical :: nl_on, amroot, verbose, infnanfilt
     integer(IN) :: mpicom, ierr, k, natt, nsum, nfld, kArea, lidata(2), gidata(2), i, n
     integer(IN), dimension(:), allocatable :: idxs_need_safety, mask_safety
-    real(r8) :: tmp, area, lo, hi
+    real(r8) :: tmp, area, lo, hi, y
     real(r8), allocatable, dimension(:) :: lmins, gmins, lmaxs, gmaxs, glbl_masses, gwts, gwts_safety
     real(r8), allocatable, dimension(:,:) :: dof_masses, caas_wgt, oglims, lcl_lo, lcl_hi
     !-----------------------------------------------------
@@ -1050,7 +1050,12 @@ contains
        ! OK: it's a local reduction in order to one, not a wrong value.
        do j = 1,lsize_o
           do k = 1,natt
-             if (avp_o%rAttr(k,j) == 0) nl_avp_o%rAttr(k,j) = 0
+             if (avp_o%rAttr(k,j) == 0) then
+                nl_avp_o%rAttr(k,j) = 0
+                ! Need to set bounds to 0 so that the mass is not modified.
+                lcl_lo(k,j) = 0
+                lcl_hi(k,j) = 0
+             end if
           end do
        end do
        ! Compute global mass in low-order and high-order fields.
@@ -1077,32 +1082,34 @@ contains
        end if
        call shr_reprosum_calc(dof_masses, glbl_masses, nsum, nsum, nfld)
        deallocate(dof_masses)
-       ! Try to use local bounds.
+       ! Try to use local bounds. Can't clip here because we may have to solve
+       ! the safety problem instead.
        nsum = lsize_o
        nfld = 3*natt
        allocate(caas_wgt(nsum,nfld)) ! dm, cap low, cap high
-       caas_wgt(:,:) = 0
        do j = 1,lsize_o
           area = mapper%dom_cx_d%data%rAttr(kArea,j)
           do k = 1,natt
-             tmp = nl_avp_o%rAttr(k,j)
+             y = nl_avp_o%rAttr(k,j)
              if (infnanfilt) then
-                if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
-                   tmp = 0
-                   nl_avp_o%rAttr(k,j) = tmp
+                if (shr_infnan_isnan(y) .or. shr_infnan_isinf(y)) then
+                   y = 0
+                   nl_avp_o%rAttr(k,j) = y
                 end if
              end if
              lo = lcl_lo(k,j)
              hi = lcl_hi(k,j)
-             if (tmp < lo) then
-                caas_wgt(j,k) = (tmp - lo)*area
-                tmp = lo
-             else if (tmp > hi) then
-                caas_wgt(j,k) = (tmp - hi)*area
-                tmp = hi
+             if (y < lo) then
+                caas_wgt(j,k) = (y - lo)*area
+                y = lo
+             else if (y > hi) then
+                caas_wgt(j,k) = (y - hi)*area
+                y = hi
+             else
+                caas_wgt(j,k) = 0
              end if
-             caas_wgt(j,  natt+k) = (tmp - lo)*area
-             caas_wgt(j,2*natt+k) = (hi - tmp)*area
+             caas_wgt(j,  natt+k) = (y - lo)*area
+             caas_wgt(j,2*natt+k) = (hi - y)*area
           end do
        end do
        allocate(gwts(nfld))
@@ -1122,8 +1129,8 @@ contains
                ! Skip this index in this case.
                gmins(k) < gmaxs(k)) then
              idxs_need_safety(n+1) = k
-             mask_safety(k) = 1
              n = n + 1
+             mask_safety(k) = 1
              if (verbose .and. amroot) then
                 write(logunit, '(a,i2,a,i2,3es23.15)') 'amb>   safety ', &
                      k, '/', natt, gwts(k), gwts(natt+k), gwts(2*natt+k)
@@ -1136,24 +1143,27 @@ contains
              area = mapper%dom_cx_d%data%rAttr(kArea,j)
              do i = 1,n
                 k = idxs_need_safety(i)
-                tmp = nl_avp_o%rAttr(k,j)
-                if (infnanfilt) then
-                   if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
-                      tmp = 0
-                      nl_avp_o%rAttr(k,j) = tmp
+                y = nl_avp_o%rAttr(k,j)
+                if (avp_o%rAttr(k,j) == 0) then
+                   ! Respect the low-order 0-mask.
+                   caas_wgt(j,i) = 0
+                   caas_wgt(j,  n+i) = 0
+                   caas_wgt(j,2*n+i) = 0
+                else
+                   lo = gmins(k)
+                   hi = gmaxs(k)
+                   if (y < lo) then
+                      caas_wgt(j,i) = (y - lo)*area
+                      y = lo
+                   else if (y > hi) then
+                      caas_wgt(j,i) = (y - hi)*area
+                      y = hi
+                   else
+                      caas_wgt(j,i) = 0
                    end if
+                   caas_wgt(j,  n+i) = (y - lo)*area
+                   caas_wgt(j,2*n+i) = (hi - y)*area
                 end if
-                lo = gmins(k)
-                hi = gmaxs(k)
-                if (tmp < lo) then
-                   caas_wgt(j,i) = (tmp - lo)*area
-                   tmp = lo
-                else if (tmp > hi) then
-                   caas_wgt(j,i) = (tmp - hi)*area
-                   tmp = hi
-                end if
-                caas_wgt(j,  n+i) = (tmp - lo)*area
-                caas_wgt(j,2*n+i) = (hi - tmp)*area
              end do
           end do
           nfld = 3*n
@@ -1188,7 +1198,8 @@ contains
              end if
           end do
        end if
-       ! Adjust high-order solution and set avp_o.
+       ! Adjust high-order solution and set avp_o. The adjustment consists of a
+       ! clip, if needed, and adding or removing mass up to the capacity.
        do k = 1,natt
           if (mask_safety(k) == 1) then
              lo = gmins(k)
@@ -1197,16 +1208,18 @@ contains
                 tmp = gwts(2*natt+k)
                 if (tmp /= 0) then
                    do j = 1,lsize_o
-                      avp_o%rAttr(k,j) = max(lo, min(hi, nl_avp_o%rAttr(k,j))) + &
-                           ((hi - nl_avp_o%rAttr(k,j))/tmp)*gwts(k)
+                      if (avp_o%rAttr(k,j) == 0) cycle ! low-order 0-mask
+                      y = max(lo, min(hi, nl_avp_o%rAttr(k,j)))
+                      avp_o%rAttr(k,j) = y + ((hi - y)/tmp)*gwts(k)
                    end do
                 end if
              else if (gwts(k) < 0) then
                 tmp = gwts(natt+k)
                 if (tmp /= 0) then
                    do j = 1,lsize_o
-                      avp_o%rAttr(k,j) = max(lo, min(hi, nl_avp_o%rAttr(k,j))) + &
-                           ((nl_avp_o%rAttr(k,j) - lo)/tmp)*gwts(k)
+                      if (avp_o%rAttr(k,j) == 0) cycle
+                      y = max(lo, min(hi, nl_avp_o%rAttr(k,j)))
+                      avp_o%rAttr(k,j) = y + ((y - lo)/tmp)*gwts(k)
                    end do
                 end if
              end if
@@ -1217,8 +1230,8 @@ contains
                    do j = 1,lsize_o
                       lo = lcl_lo(k,j)
                       hi = lcl_hi(k,j)
-                      avp_o%rAttr(k,j) = max(lo, min(hi, nl_avp_o%rAttr(k,j))) + &
-                           ((hi - nl_avp_o%rAttr(k,j))/tmp)*gwts(k)
+                      y = max(lo, min(hi, nl_avp_o%rAttr(k,j)))
+                      avp_o%rAttr(k,j) = y + ((hi - y)/tmp)*gwts(k)
                    end do
                 end if
              else if (gwts(k) < 0) then
@@ -1227,8 +1240,8 @@ contains
                    do j = 1,lsize_o
                       lo = lcl_lo(k,j)
                       hi = lcl_hi(k,j)
-                      avp_o%rAttr(k,j) = max(lo, min(hi, nl_avp_o%rAttr(k,j))) + &
-                           ((nl_avp_o%rAttr(k,j) - lo)/tmp)*gwts(k)
+                      y = max(lo, min(hi, nl_avp_o%rAttr(k,j)))
+                      avp_o%rAttr(k,j) = y + ((y - lo)/tmp)*gwts(k)
                    end do
                 end if
              end if
@@ -1239,6 +1252,7 @@ contains
        ! Clip for numerics, just against the global extrema.
        do j = 1,lsize_o
           do k = 1,natt
+             if (avp_o%rAttr(k,j) == 0) cycle ! 0-mask
              avp_o%rAttr(k,j) = max(gmins(k), min(gmaxs(k), avp_o%rAttr(k,j)))
           end do
        end do
