@@ -1164,6 +1164,8 @@ contains
           do i = 1,n
              k = idxs_need_safety(i)
              gwts(k) = gwts_safety(i) + (glbl_masses(k) - glbl_masses(natt+k))
+             gwts(  natt+k) = gwts_safety(  n+i)
+             gwts(2*natt+k) = gwts_safety(2*n+i)
           end do
           deallocate(gwts_safety, idxs_need_safety)
        end if
@@ -1257,9 +1259,9 @@ contains
              do k = 1,natt
                 if (gwts(k) /= 0 .or. glbl_masses(k) /= 0) then
                    tmp = (gwts(k) - glbl_masses(k))/abs(glbl_masses(k))
-                   if (tmp < 1e-15) then
+                   if (abs(tmp) < 1e-15) then
                       msg = ''
-                   else if (tmp < 1e-13) then
+                   else if (abs(tmp) < 1e-13) then
                       msg = ' OK'
                    else
                       msg = ' ALARM'
@@ -1380,16 +1382,15 @@ contains
           hi(j,row) = max(hi(j,row), tmp)
        end do
     end do
-    if (infnanfilt) then
-       do i = 1, ysize
-          do j = 1, natt
-             if (lo(j,i) > hi(j,i)) then
-                lo(j,i) = 0
-                hi(j,i) = 0
-             end if
-          end do
+    ! Set bounds to 0 if there are no valid matrix entries for this row.
+    do i = 1, ysize
+       do j = 1, natt
+          if (lo(j,i) > hi(j,i)) then
+             lo(j,i) = 0
+             hi(j,i) = 0
+          end if
        end do
-    end if
+    end do
     call mct_aVect_clean(xPrimeAV, ierr)
   end subroutine sMat_avMult_and_calc_bounds
 
