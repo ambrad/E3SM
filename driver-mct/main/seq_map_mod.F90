@@ -1077,7 +1077,7 @@ contains
        end if
        call shr_reprosum_calc(dof_masses, glbl_masses, nsum, nsum, nfld)
        deallocate(dof_masses)
-       ! Clip against source-derived bounds.
+       ! Try to use local bounds.
        nsum = lsize_o
        nfld = 3*natt
        allocate(caas_wgt(nsum,nfld)) ! dm, cap low, cap high
@@ -1096,12 +1096,11 @@ contains
              hi = lcl_hi(k,j)
              if (tmp < lo) then
                 caas_wgt(j,k) = (tmp - lo)*area
-                nl_avp_o%rAttr(k,j) = lo
+                tmp = lo
              else if (tmp > hi) then
                 caas_wgt(j,k) = (tmp - hi)*area
-                nl_avp_o%rAttr(k,j) = hi
+                tmp = hi
              end if
-             tmp = nl_avp_o%rAttr(k,j)
              caas_wgt(j,  natt+k) = (tmp - lo)*area
              caas_wgt(j,2*natt+k) = (hi - tmp)*area
           end do
@@ -1148,24 +1147,27 @@ contains
                 hi = gmaxs(k)
                 if (tmp < lo) then
                    caas_wgt(j,i) = (tmp - lo)*area
-                   nl_avp_o%rAttr(k,j) = lo
+                   tmp = lo
                 else if (tmp > hi) then
                    caas_wgt(j,i) = (tmp - hi)*area
-                   nl_avp_o%rAttr(k,j) = hi
+                   tmp = hi
                 end if
-                tmp = nl_avp_o%rAttr(k,j)
                 caas_wgt(j,  n+i) = (tmp - lo)*area
                 caas_wgt(j,2*n+i) = (hi - tmp)*area
              end do
           end do
           nfld = 3*n
           allocate(gwts_safety(nfld))
-          call shr_reprosum_calc(caas_wgt, gwts_safety, nsum, nsum, nfld)
+          call shr_reprosum_calc(caas_wgt(:,:nfld), gwts_safety, nsum, nsum, nfld)
           do i = 1,n
              k = idxs_need_safety(i)
              gwts(k) = gwts_safety(i) + (glbl_masses(k) - glbl_masses(natt+k))
              gwts(  natt+k) = gwts_safety(  n+i)
              gwts(2*natt+k) = gwts_safety(2*n+i)
+             if (verbose .and. amroot) then
+                write(logunit, '(a,i2,a,i2,3es23.15)') 'amb> w-safety ', &
+                     k, '/', natt, gwts(k), gwts(natt+k), gwts(2*natt+k)
+             end if
           end do
           deallocate(gwts_safety, idxs_need_safety)
        end if
@@ -1195,7 +1197,7 @@ contains
                 tmp = gwts(2*natt+k)
                 if (tmp /= 0) then
                    do j = 1,lsize_o
-                      avp_o%rAttr(k,j) = nl_avp_o%rAttr(k,j) + &
+                      avp_o%rAttr(k,j) = max(lo, min(hi, nl_avp_o%rAttr(k,j))) + &
                            ((hi - nl_avp_o%rAttr(k,j))/tmp)*gwts(k)
                    end do
                 end if
@@ -1203,7 +1205,7 @@ contains
                 tmp = gwts(natt+k)
                 if (tmp /= 0) then
                    do j = 1,lsize_o
-                      avp_o%rAttr(k,j) = nl_avp_o%rAttr(k,j) + &
+                      avp_o%rAttr(k,j) = max(lo, min(hi, nl_avp_o%rAttr(k,j))) + &
                            ((nl_avp_o%rAttr(k,j) - lo)/tmp)*gwts(k)
                    end do
                 end if
@@ -1213,8 +1215,9 @@ contains
                 tmp = gwts(2*natt+k)
                 if (tmp /= 0) then
                    do j = 1,lsize_o
+                      lo = lcl_lo(k,j)
                       hi = lcl_hi(k,j)
-                      avp_o%rAttr(k,j) = nl_avp_o%rAttr(k,j) + &
+                      avp_o%rAttr(k,j) = max(lo, min(hi, nl_avp_o%rAttr(k,j))) + &
                            ((hi - nl_avp_o%rAttr(k,j))/tmp)*gwts(k)
                    end do
                 end if
@@ -1223,7 +1226,8 @@ contains
                 if (tmp /= 0) then
                    do j = 1,lsize_o
                       lo = lcl_lo(k,j)
-                      avp_o%rAttr(k,j) = nl_avp_o%rAttr(k,j) + &
+                      hi = lcl_hi(k,j)
+                      avp_o%rAttr(k,j) = max(lo, min(hi, nl_avp_o%rAttr(k,j))) + &
                            ((nl_avp_o%rAttr(k,j) - lo)/tmp)*gwts(k)
                    end do
                 end if
