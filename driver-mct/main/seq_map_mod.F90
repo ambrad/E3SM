@@ -1119,10 +1119,10 @@ contains
           do k = 1,natt
              if (((gwts(k) < 0 .and. -gwts(k) > gwts(  natt+k))  .or.  &
                   (gwts(k) > 0 .and.  gwts(k) > gwts(2*natt+k))) .and. &
-                                ! A common case where the above filter triggers unnecessarily is
-                                ! when gmins(k) == gmaxs(k) and there is a machine-precision-
-                                ! level global mass difference in the low- and high-order maps.
-                                ! Skip this index in this case.
+                  ! A common case where the above filter triggers unnecessarily
+                  ! is when gmins(k) == gmaxs(k) and there is a
+                  ! machine-precision- level global mass difference in the low-
+                  ! and high-order maps.  Skip this index in this case.
                   gmins(k) < gmaxs(k)) then
                 idxs_need_safety(n+1) = k
                 n = n + 1
@@ -1183,13 +1183,13 @@ contains
                 if (gwts(k) /= 0 .or. glbl_masses(k) /= 0) then
                    write(logunit, '(a,i2,a,i2,es23.15,es23.15,es23.15,es10.2)') &
                         'amb>  caas-dm ', k, '/', natt, &
-                                ! true global mass
+                        ! true global mass
                         glbl_masses(k), &
-                                ! dm due to global mass nonconservation in the linear map
+                        ! dm due to global mass nonconservation in the linear map
                         glbl_masses(k) - glbl_masses(natt+k), &
-                                ! dm due to clipping
+                        ! dm due to clipping
                         gwts(k) - (glbl_masses(k) - glbl_masses(natt+k)), &
-                                ! dm relative to true global mass
+                        ! dm relative to true global mass
                         gwts(k)/abs(glbl_masses(k))
                 end if
              end do
