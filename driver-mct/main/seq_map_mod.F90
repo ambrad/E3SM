@@ -1068,12 +1068,11 @@ contains
              dof_masses(j,     1:natt) =    avp_o%rAttr(:,j)*area
              dof_masses(j,natt+1:nfld) = nl_avp_o%rAttr(:,j)*area
           end do
-          if (.true.) then !(infnanfilt) then
+          if (infnanfilt) then
              do k = 1,nfld
                 do j = 1,lsize_o
                    if (shr_infnan_isnan(dof_masses(j,k)) .or. shr_infnan_isinf(dof_masses(j,k))) &
-                                !dof_masses(j,k) = 0
-                        print *,'amb> inf/nan',j,k,dof_masses(j,k)
+                        dof_masses(j,k) = 0
                 end do
              end do
           end if
