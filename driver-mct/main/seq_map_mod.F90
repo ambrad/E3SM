@@ -970,11 +970,6 @@ contains
           write(logunit, '(4A,3L2)') 'amb> ', trim(mapper%nl_mapfile), ' ', &
                trim(mapper%strategy), mapper%nl_conservative, lnorm, present(norm_i)
        end if
-       if (.not. mapper%nl_conservative) then
-          !amb-todo
-          if (amroot) write(logunit, '(A)') 'amb> Conserving b/c .not. nl_conservative is not impled yet'
-          !call shr_sys_abort(subname//' .not. nl_conservative is not impled yet')
-       end if
        natt = size(avp_i%rAttr, 1)
        if (lnorm) then
           kf = mct_aVect_indexRA(avp_i,ffld)
@@ -988,63 +983,6 @@ contains
        allocate(lcl_lo(natt,lsize_o), lcl_hi(natt,lsize_o))
        call sMat_avMult_and_calc_bounds(avp_i, mapper%nl_sMatp, natt, infnanfilt, &
             nl_avp_o, lcl_lo, lcl_hi)
-       ! Compute global bounds.
-       allocate(lmins(natt), gmins(natt), lmaxs(natt), gmaxs(natt))
-       lmins(:) =  1.e30_r8
-       lmaxs(:) = -1.e30_r8
-       do j = 1,lsize_o
-          do k = 1,natt
-             lmins(k) = min(lmins(k), lcl_lo(k,j))
-             lmaxs(k) = max(lmaxs(k), lcl_hi(k,j))
-          end do
-       end do
-       call mpi_allreduce(lmins, gmins, natt, MPI_DOUBLE_PRECISION, MPI_MIN, mpicom, ierr)
-       call mpi_allreduce(lmaxs, gmaxs, natt, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, ierr)
-       if (amroot .and. verbose) then
-          do k = 1,natt
-             write(logunit, '(a,i2,a,i2,es23.15,es23.15)') &
-                  'amb> src-bnds ', k, '/', natt, gmins(k), gmaxs(k)
-          end do
-       end if
-       if (infnanfilt) then
-          do k = 1,natt
-             if (shr_infnan_isnan(gmins(k)) .or. shr_infnan_isinf(gmins(k))) gmins(k) = 0
-             if (shr_infnan_isnan(gmaxs(k)) .or. shr_infnan_isinf(gmaxs(k))) gmaxs(k) = 0
-          end do
-       end if
-       if (verbose) then
-          allocate(oglims(natt,2))
-          lmins(:) =  1.e30_r8
-          lmaxs(:) = -1.e30_r8
-          do j = 1,lsize_o
-             do k = 1,natt
-                tmp = nl_avp_o%rAttr(k,j)
-                if (infnanfilt) then
-                   if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) cycle
-                end if
-                lmins(k) = min(lmins(k), tmp)
-                lmaxs(k) = max(lmaxs(k), tmp)
-             end do
-          end do
-          if (infnanfilt) then
-             do k = 1,natt
-                if (lmins(k) > lmaxs(k)) then
-                   lmins(k) = 0
-                   lmaxs(k) = 0
-                end if
-             end do
-          end if
-          call mpi_allreduce(lmins, oglims(:,1), natt, MPI_DOUBLE_PRECISION, MPI_MIN, mpicom, ierr)
-          call mpi_allreduce(lmaxs, oglims(:,2), natt, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, ierr)
-          if (amroot) then
-             do k = 1,natt
-                write(logunit, '(a,i2,a,i2,es23.15,es23.15)') &
-                     'amb> pre-bnds ', k, '/', natt, oglims(k,1), oglims(k,2)
-             end do
-          end if
-          deallocate(oglims)
-       end if
-       deallocate(lmins, lmaxs)
        ! Mask high-order field against low-order. Occasionally an exact 0 in the
        ! low-order field will map the high-order field unnecessarily, but that's
        ! OK: it's a local reduction in order to one, not a wrong value.
@@ -1058,268 +996,334 @@ contains
              end if
           end do
        end do
-       ! Compute global mass in low-order and high-order fields.
-       kArea = mct_aVect_indexRA(mapper%dom_cx_d%data, afldname)
-       nsum = lsize_o
-       nfld = 2*natt
-       allocate(dof_masses(nsum,nfld), glbl_masses(nfld)) ! low- and high-order
-       if (mct_aVect_lSize(mapper%dom_cx_d%data) /= lsize_o) then
-          write(logunit, '(A,2I)') 'amb> sizes do not match',lsize_o,mct_aVect_lSize(mapper%dom_cx_d%data)
-          call shr_sys_abort(subname//' ERROR: amb> sizes do not match')
-       end if
-       do j = 1,lsize_o
-          area = mapper%dom_cx_d%data%rAttr(kArea,j)
-          dof_masses(j,1:natt) = avp_o%rAttr(:,j)*area
-          dof_masses(j,natt+1:nfld) = nl_avp_o%rAttr(:,j)*area
-       end do
-       if (infnanfilt) then
-          do k = 1,nfld
-             do j = 1,lsize_o
-                if (shr_infnan_isnan(dof_masses(j,k)) .or. shr_infnan_isinf(dof_masses(j,k))) &
-                     dof_masses(j,k) = 0
-             end do
-          end do
-       end if
-       call shr_reprosum_calc(dof_masses, glbl_masses, nsum, nsum, nfld)
-       deallocate(dof_masses)
-       ! Try to use local bounds. Can't clip here because we may have to solve
-       ! the safety problem instead.
-       nsum = lsize_o
-       nfld = 3*natt
-       allocate(caas_wgt(nsum,nfld)) ! dm, cap low, cap high
-       do j = 1,lsize_o
-          area = mapper%dom_cx_d%data%rAttr(kArea,j)
-          do k = 1,natt
-             y = nl_avp_o%rAttr(k,j)
-             if (infnanfilt) then
-                if (shr_infnan_isnan(y) .or. shr_infnan_isinf(y)) then
-                   y = 0
-                   nl_avp_o%rAttr(k,j) = y
-                end if
-             end if
-             lo = lcl_lo(k,j)
-             hi = lcl_hi(k,j)
-             if (y < lo) then
-                caas_wgt(j,k) = (y - lo)*area
-                y = lo
-             else if (y > hi) then
-                caas_wgt(j,k) = (y - hi)*area
-                y = hi
-             else
-                caas_wgt(j,k) = 0
-             end if
-             caas_wgt(j,  natt+k) = (y - lo)*area
-             caas_wgt(j,2*natt+k) = (hi - y)*area
-          end do
-       end do
-       allocate(gwts(nfld))
-       call shr_reprosum_calc(caas_wgt, gwts, nsum, nsum, nfld)
-       ! Combine clipping and global mass error into a single dm value.
-       gwts(1:natt) = gwts(1:natt) + (glbl_masses(1:natt) - glbl_masses(natt+1:2*natt))
-       ! Check whether we need to relax to the safety problem.
-       allocate(idxs_need_safety(natt), mask_safety(natt))
-       mask_safety(:) = 0
-       n = 0
-       do k = 1,natt
-          if (((gwts(k) < 0 .and. -gwts(k) > gwts(  natt+k))  .or.  &
-               (gwts(k) > 0 .and.  gwts(k) > gwts(2*natt+k))) .and. &
-               ! A common case where the above filter triggers unnecessarily is
-               ! when gmins(k) == gmaxs(k) and there is a machine-precision-
-               ! level global mass difference in the low- and high-order maps.
-               ! Skip this index in this case.
-               gmins(k) < gmaxs(k)) then
-             idxs_need_safety(n+1) = k
-             n = n + 1
-             mask_safety(k) = 1
-             if (verbose .and. amroot) then
-                write(logunit, '(a,i2,a,i2,3es23.15)') 'amb>   safety ', &
-                     k, '/', natt, gwts(k), gwts(natt+k), gwts(2*natt+k)
-             end if
-          end if
-       end do
-       ! Solve safety problem where needed.
-       if (n > 0) then
-          do j = 1,lsize_o
-             area = mapper%dom_cx_d%data%rAttr(kArea,j)
-             do i = 1,n
-                k = idxs_need_safety(i)
-                y = nl_avp_o%rAttr(k,j)
-                if (avp_o%rAttr(k,j) == 0) then
-                   ! Respect the low-order 0-mask.
-                   caas_wgt(j,i) = 0
-                   caas_wgt(j,  n+i) = 0
-                   caas_wgt(j,2*n+i) = 0
-                else
-                   lo = gmins(k)
-                   hi = gmaxs(k)
-                   if (y < lo) then
-                      caas_wgt(j,i) = (y - lo)*area
-                      y = lo
-                   else if (y > hi) then
-                      caas_wgt(j,i) = (y - hi)*area
-                      y = hi
-                   else
-                      caas_wgt(j,i) = 0
-                   end if
-                   caas_wgt(j,  n+i) = (y - lo)*area
-                   caas_wgt(j,2*n+i) = (hi - y)*area
-                end if
-             end do
-          end do
-          nfld = 3*n
-          allocate(gwts_safety(nfld))
-          call shr_reprosum_calc(caas_wgt(:,:nfld), gwts_safety, nsum, nsum, nfld)
-          do i = 1,n
-             k = idxs_need_safety(i)
-             gwts(k) = gwts_safety(i) + (glbl_masses(k) - glbl_masses(natt+k))
-             gwts(  natt+k) = gwts_safety(  n+i)
-             gwts(2*natt+k) = gwts_safety(2*n+i)
-             if (verbose .and. amroot) then
-                write(logunit, '(a,i2,a,i2,3es23.15)') 'amb> w-safety ', &
-                     k, '/', natt, gwts(k), gwts(natt+k), gwts(2*natt+k)
-             end if
-          end do
-          deallocate(gwts_safety, idxs_need_safety)
-       end if
-       deallocate(caas_wgt)
-       if (verbose .and. amroot) then
-          do k = 1,natt
-             if (gwts(k) /= 0 .or. glbl_masses(k) /= 0) then
-                write(logunit, '(a,i2,a,i2,es23.15,es23.15,es23.15,es10.2)') &
-                     'amb>  caas-dm ', k, '/', natt, &
-                     ! true global mass
-                     glbl_masses(k), &
-                     ! dm due to global mass nonconservation in the linear map
-                     glbl_masses(k) - glbl_masses(natt+k), &
-                     ! dm due to clipping
-                     gwts(k) - (glbl_masses(k) - glbl_masses(natt+k)), &
-                     ! dm relative to true global mass
-                     gwts(k)/abs(glbl_masses(k))
-             end if
-          end do
-       end if
-       ! Adjust high-order solution and set avp_o. The adjustment consists of a
-       ! clip, if needed, and adding or removing mass up to the capacity.
-       do k = 1,natt
-          if (mask_safety(k) == 1) then
-             lo = gmins(k)
-             hi = gmaxs(k)
-             if (gwts(k) > 0) then
-                tmp = gwts(2*natt+k)
-                if (tmp /= 0) then
-                   do j = 1,lsize_o
-                      if (avp_o%rAttr(k,j) == 0) cycle ! low-order 0-mask
-                      y = max(lo, min(hi, nl_avp_o%rAttr(k,j)))
-                      avp_o%rAttr(k,j) = y + ((hi - y)/tmp)*gwts(k)
-                   end do
-                end if
-             else if (gwts(k) < 0) then
-                tmp = gwts(natt+k)
-                if (tmp /= 0) then
-                   do j = 1,lsize_o
-                      if (avp_o%rAttr(k,j) == 0) cycle
-                      y = max(lo, min(hi, nl_avp_o%rAttr(k,j)))
-                      avp_o%rAttr(k,j) = y + ((y - lo)/tmp)*gwts(k)
-                   end do
-                end if
-             end if
-          else
-             if (gwts(k) > 0) then
-                tmp = gwts(2*natt+k)
-                if (tmp /= 0) then
-                   do j = 1,lsize_o
-                      lo = lcl_lo(k,j)
-                      hi = lcl_hi(k,j)
-                      y = max(lo, min(hi, nl_avp_o%rAttr(k,j)))
-                      avp_o%rAttr(k,j) = y + ((hi - y)/tmp)*gwts(k)
-                   end do
-                end if
-             else if (gwts(k) < 0) then
-                tmp = gwts(natt+k)
-                if (tmp /= 0) then
-                   do j = 1,lsize_o
-                      lo = lcl_lo(k,j)
-                      hi = lcl_hi(k,j)
-                      y = max(lo, min(hi, nl_avp_o%rAttr(k,j)))
-                      avp_o%rAttr(k,j) = y + ((y - lo)/tmp)*gwts(k)
-                   end do
-                end if
-             end if
-          end if
-       end do
-       deallocate(gwts, lcl_lo, lcl_hi, mask_safety)
-       call mct_aVect_clean(nl_avp_o)
-       ! Clip for numerics, just against the global extrema.
-       do j = 1,lsize_o
-          do k = 1,natt
-             if (avp_o%rAttr(k,j) == 0) cycle ! 0-mask
-             avp_o%rAttr(k,j) = max(gmins(k), min(gmaxs(k), avp_o%rAttr(k,j)))
-          end do
-       end do
-       if (verbose) then
-          ! check global mass
-          nsum = lsize_o
-          allocate(dof_masses(nsum,natt), gwts(natt))
-          do j = 1,lsize_o
-             dof_masses(j,:) = avp_o%rAttr(:,j)*mapper%dom_cx_d%data%rAttr(kArea,j)
-          end do
-          if (infnanfilt) then
-             do k = 1,natt
-                do j = 1,lsize_o
-                   if (shr_infnan_isnan(dof_masses(j,k)) .or. shr_infnan_isinf(dof_masses(j,k))) &
-                        dof_masses(j,k) = 0
-                end do
-             end do
-          end if
-          call shr_reprosum_calc(dof_masses, gwts, nsum, nsum, natt)
-          deallocate(dof_masses)
-          if (amroot) then
-             do k = 1,natt
-                if (gwts(k) /= 0 .or. glbl_masses(k) /= 0) then
-                   tmp = (gwts(k) - glbl_masses(k))/abs(glbl_masses(k))
-                   if (abs(tmp) < 1e-15) then
-                      msg = ''
-                   else if (abs(tmp) < 1e-13) then
-                      msg = ' OK'
-                   else
-                      msg = ' ALARM'
-                   end if
-                   write(logunit, '(a,i2,a,i2,es23.15,es23.15,es10.2,a)') &
-                        'amb> fin-mass ', k, '/', natt, glbl_masses(k), gwts(k), tmp, trim(msg)
-                end if
-             end do
-          end if
-          deallocate(gwts)
-          ! check bounds
-          allocate(lmins(natt), lmaxs(natt), oglims(natt,2))
+       if (mapper%nl_conservative) then
+          ! Compute global bounds.
+          allocate(lmins(natt), gmins(natt), lmaxs(natt), gmaxs(natt))
           lmins(:) =  1.e30_r8
           lmaxs(:) = -1.e30_r8
           do j = 1,lsize_o
              do k = 1,natt
-                tmp = avp_o%rAttr(k,j)
-                if (infnanfilt) then
-                   if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) cycle
-                end if
-                lmins(k) = min(lmins(k), tmp)
-                lmaxs(k) = max(lmaxs(k), tmp)
+                lmins(k) = min(lmins(k), lcl_lo(k,j))
+                lmaxs(k) = max(lmaxs(k), lcl_hi(k,j))
              end do
           end do
-          call mpi_allreduce(lmins, oglims(:,1), natt, MPI_DOUBLE_PRECISION, MPI_MIN, mpicom, ierr)
-          call mpi_allreduce(lmaxs, oglims(:,2), natt, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, ierr)
-          if (amroot) then
+          call mpi_allreduce(lmins, gmins, natt, MPI_DOUBLE_PRECISION, MPI_MIN, mpicom, ierr)
+          call mpi_allreduce(lmaxs, gmaxs, natt, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, ierr)
+          if (amroot .and. verbose) then
              do k = 1,natt
-                if (oglims(k,1) >= gmins(k) .and. oglims(k,2) <= gmaxs(k)) then
-                   msg = ''
-                else
-                   msg = ' ALARM'
-                end if
-                write(logunit, '(a,i2,a,i2,es23.15,es23.15,a)') &
-                     'amb> fin-bnds ', k, '/', natt, oglims(k,1), oglims(k,2), trim(msg)
+                write(logunit, '(a,i2,a,i2,es23.15,es23.15)') &
+                     'amb> src-bnds ', k, '/', natt, gmins(k), gmaxs(k)
              end do
           end if
-          deallocate(lmins, lmaxs, oglims)
+          if (infnanfilt) then
+             do k = 1,natt
+                if (shr_infnan_isnan(gmins(k)) .or. shr_infnan_isinf(gmins(k))) gmins(k) = 0
+                if (shr_infnan_isnan(gmaxs(k)) .or. shr_infnan_isinf(gmaxs(k))) gmaxs(k) = 0
+             end do
+          end if
+          if (verbose) then
+             allocate(oglims(natt,2))
+             lmins(:) =  1.e30_r8
+             lmaxs(:) = -1.e30_r8
+             do j = 1,lsize_o
+                do k = 1,natt
+                   tmp = nl_avp_o%rAttr(k,j)
+                   if (infnanfilt) then
+                      if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) cycle
+                   end if
+                   lmins(k) = min(lmins(k), tmp)
+                   lmaxs(k) = max(lmaxs(k), tmp)
+                end do
+             end do
+             if (infnanfilt) then
+                do k = 1,natt
+                   if (lmins(k) > lmaxs(k)) then
+                      lmins(k) = 0
+                      lmaxs(k) = 0
+                   end if
+                end do
+             end if
+             call mpi_allreduce(lmins, oglims(:,1), natt, MPI_DOUBLE_PRECISION, MPI_MIN, mpicom, ierr)
+             call mpi_allreduce(lmaxs, oglims(:,2), natt, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, ierr)
+             if (amroot) then
+                do k = 1,natt
+                   write(logunit, '(a,i2,a,i2,es23.15,es23.15)') &
+                        'amb> pre-bnds ', k, '/', natt, oglims(k,1), oglims(k,2)
+                end do
+             end if
+             deallocate(oglims)
+          end if
+          deallocate(lmins, lmaxs)
+          ! Compute global mass in low-order and high-order fields.
+          kArea = mct_aVect_indexRA(mapper%dom_cx_d%data, afldname)
+          nsum = lsize_o
+          nfld = 2*natt
+          allocate(dof_masses(nsum,nfld), glbl_masses(nfld)) ! low- and high-order
+          if (mct_aVect_lSize(mapper%dom_cx_d%data) /= lsize_o) then
+             write(logunit, '(A,2I)') 'amb> sizes do not match',lsize_o,mct_aVect_lSize(mapper%dom_cx_d%data)
+             call shr_sys_abort(subname//' ERROR: amb> sizes do not match')
+          end if
+          do j = 1,lsize_o
+             area = mapper%dom_cx_d%data%rAttr(kArea,j)
+             dof_masses(j,     1:natt) =    avp_o%rAttr(:,j)*area
+             dof_masses(j,natt+1:nfld) = nl_avp_o%rAttr(:,j)*area
+          end do
+          if (.true.) then !(infnanfilt) then
+             do k = 1,nfld
+                do j = 1,lsize_o
+                   if (shr_infnan_isnan(dof_masses(j,k)) .or. shr_infnan_isinf(dof_masses(j,k))) &
+                                !dof_masses(j,k) = 0
+                        print *,'amb> inf/nan',j,k,dof_masses(j,k)
+                end do
+             end do
+          end if
+          call shr_reprosum_calc(dof_masses, glbl_masses, nsum, nsum, nfld)
+          deallocate(dof_masses)
+          ! Try to use local bounds. Can't clip here because we may have to solve
+          ! the safety problem instead.
+          nsum = lsize_o
+          nfld = 3*natt
+          allocate(caas_wgt(nsum,nfld)) ! dm, cap low, cap high
+          do j = 1,lsize_o
+             area = mapper%dom_cx_d%data%rAttr(kArea,j)
+             do k = 1,natt
+                y = nl_avp_o%rAttr(k,j)
+                if (infnanfilt) then
+                   if (shr_infnan_isnan(y) .or. shr_infnan_isinf(y)) then
+                      y = 0
+                      nl_avp_o%rAttr(k,j) = y
+                   end if
+                end if
+                lo = lcl_lo(k,j)
+                hi = lcl_hi(k,j)
+                if (y < lo) then
+                   caas_wgt(j,k) = (y - lo)*area
+                   y = lo
+                else if (y > hi) then
+                   caas_wgt(j,k) = (y - hi)*area
+                   y = hi
+                else
+                   caas_wgt(j,k) = 0
+                end if
+                caas_wgt(j,  natt+k) = (y - lo)*area
+                caas_wgt(j,2*natt+k) = (hi - y)*area
+             end do
+          end do
+          allocate(gwts(nfld))
+          call shr_reprosum_calc(caas_wgt, gwts, nsum, nsum, nfld)
+          ! Combine clipping and global mass error into a single dm value.
+          gwts(1:natt) = gwts(1:natt) + (glbl_masses(1:natt) - glbl_masses(natt+1:2*natt))
+          ! Check whether we need to relax to the safety problem.
+          allocate(idxs_need_safety(natt), mask_safety(natt))
+          mask_safety(:) = 0
+          n = 0
+          do k = 1,natt
+             if (((gwts(k) < 0 .and. -gwts(k) > gwts(  natt+k))  .or.  &
+                  (gwts(k) > 0 .and.  gwts(k) > gwts(2*natt+k))) .and. &
+                                ! A common case where the above filter triggers unnecessarily is
+                                ! when gmins(k) == gmaxs(k) and there is a machine-precision-
+                                ! level global mass difference in the low- and high-order maps.
+                                ! Skip this index in this case.
+                  gmins(k) < gmaxs(k)) then
+                idxs_need_safety(n+1) = k
+                n = n + 1
+                mask_safety(k) = 1
+                if (verbose .and. amroot) then
+                   write(logunit, '(a,i2,a,i2,3es23.15)') 'amb>   safety ', &
+                        k, '/', natt, gwts(k), gwts(natt+k), gwts(2*natt+k)
+                end if
+             end if
+          end do
+          ! Solve safety problem where needed.
+          if (n > 0) then
+             do j = 1,lsize_o
+                area = mapper%dom_cx_d%data%rAttr(kArea,j)
+                do i = 1,n
+                   k = idxs_need_safety(i)
+                   y = nl_avp_o%rAttr(k,j)
+                   if (avp_o%rAttr(k,j) == 0) then
+                      ! Respect the low-order 0-mask.
+                      caas_wgt(j,i) = 0
+                      caas_wgt(j,  n+i) = 0
+                      caas_wgt(j,2*n+i) = 0
+                   else
+                      lo = gmins(k)
+                      hi = gmaxs(k)
+                      if (y < lo) then
+                         caas_wgt(j,i) = (y - lo)*area
+                         y = lo
+                      else if (y > hi) then
+                         caas_wgt(j,i) = (y - hi)*area
+                         y = hi
+                      else
+                         caas_wgt(j,i) = 0
+                      end if
+                      caas_wgt(j,  n+i) = (y - lo)*area
+                      caas_wgt(j,2*n+i) = (hi - y)*area
+                   end if
+                end do
+             end do
+             nfld = 3*n
+             allocate(gwts_safety(nfld))
+             call shr_reprosum_calc(caas_wgt(:,:nfld), gwts_safety, nsum, nsum, nfld)
+             do i = 1,n
+                k = idxs_need_safety(i)
+                gwts(k) = gwts_safety(i) + (glbl_masses(k) - glbl_masses(natt+k))
+                gwts(  natt+k) = gwts_safety(  n+i)
+                gwts(2*natt+k) = gwts_safety(2*n+i)
+                if (verbose .and. amroot) then
+                   write(logunit, '(a,i2,a,i2,3es23.15)') 'amb> w-safety ', &
+                        k, '/', natt, gwts(k), gwts(natt+k), gwts(2*natt+k)
+                end if
+             end do
+             deallocate(gwts_safety, idxs_need_safety)
+          end if
+          deallocate(caas_wgt)
+          if (verbose .and. amroot) then
+             do k = 1,natt
+                if (gwts(k) /= 0 .or. glbl_masses(k) /= 0) then
+                   write(logunit, '(a,i2,a,i2,es23.15,es23.15,es23.15,es10.2)') &
+                        'amb>  caas-dm ', k, '/', natt, &
+                                ! true global mass
+                        glbl_masses(k), &
+                                ! dm due to global mass nonconservation in the linear map
+                        glbl_masses(k) - glbl_masses(natt+k), &
+                                ! dm due to clipping
+                        gwts(k) - (glbl_masses(k) - glbl_masses(natt+k)), &
+                                ! dm relative to true global mass
+                        gwts(k)/abs(glbl_masses(k))
+                end if
+             end do
+          end if
+          ! Adjust high-order solution and set avp_o. The adjustment consists of a
+          ! clip, if needed, and adding or removing mass up to the capacity.
+          do k = 1,natt
+             if (mask_safety(k) == 1) then
+                lo = gmins(k)
+                hi = gmaxs(k)
+                if (gwts(k) > 0) then
+                   tmp = gwts(2*natt+k)
+                   if (tmp /= 0) then
+                      do j = 1,lsize_o
+                         if (avp_o%rAttr(k,j) == 0) cycle ! low-order 0-mask
+                         y = max(lo, min(hi, nl_avp_o%rAttr(k,j)))
+                         avp_o%rAttr(k,j) = y + ((hi - y)/tmp)*gwts(k)
+                      end do
+                   end if
+                else if (gwts(k) < 0) then
+                   tmp = gwts(natt+k)
+                   if (tmp /= 0) then
+                      do j = 1,lsize_o
+                         if (avp_o%rAttr(k,j) == 0) cycle
+                         y = max(lo, min(hi, nl_avp_o%rAttr(k,j)))
+                         avp_o%rAttr(k,j) = y + ((y - lo)/tmp)*gwts(k)
+                      end do
+                   end if
+                end if
+             else
+                if (gwts(k) > 0) then
+                   tmp = gwts(2*natt+k)
+                   if (tmp /= 0) then
+                      do j = 1,lsize_o
+                         lo = lcl_lo(k,j)
+                         hi = lcl_hi(k,j)
+                         y = max(lo, min(hi, nl_avp_o%rAttr(k,j)))
+                         avp_o%rAttr(k,j) = y + ((hi - y)/tmp)*gwts(k)
+                      end do
+                   end if
+                else if (gwts(k) < 0) then
+                   tmp = gwts(natt+k)
+                   if (tmp /= 0) then
+                      do j = 1,lsize_o
+                         lo = lcl_lo(k,j)
+                         hi = lcl_hi(k,j)
+                         y = max(lo, min(hi, nl_avp_o%rAttr(k,j)))
+                         avp_o%rAttr(k,j) = y + ((y - lo)/tmp)*gwts(k)
+                      end do
+                   end if
+                end if
+             end if
+          end do
+          deallocate(gwts, lcl_lo, lcl_hi, mask_safety)
+          call mct_aVect_clean(nl_avp_o)
+          ! Clip for numerics, just against the global extrema.
+          do j = 1,lsize_o
+             do k = 1,natt
+                if (avp_o%rAttr(k,j) == 0) cycle ! 0-mask
+                avp_o%rAttr(k,j) = max(gmins(k), min(gmaxs(k), avp_o%rAttr(k,j)))
+             end do
+          end do
+          if (verbose) then
+             ! check global mass
+             nsum = lsize_o
+             allocate(dof_masses(nsum,natt), gwts(natt))
+             do j = 1,lsize_o
+                dof_masses(j,:) = avp_o%rAttr(:,j)*mapper%dom_cx_d%data%rAttr(kArea,j)
+             end do
+             if (infnanfilt) then
+                do k = 1,natt
+                   do j = 1,lsize_o
+                      if (shr_infnan_isnan(dof_masses(j,k)) .or. shr_infnan_isinf(dof_masses(j,k))) &
+                           dof_masses(j,k) = 0
+                   end do
+                end do
+             end if
+             call shr_reprosum_calc(dof_masses, gwts, nsum, nsum, natt)
+             deallocate(dof_masses)
+             if (amroot) then
+                do k = 1,natt
+                   if (gwts(k) /= 0 .or. glbl_masses(k) /= 0) then
+                      tmp = (gwts(k) - glbl_masses(k))/abs(glbl_masses(k))
+                      if (abs(tmp) < 1e-15) then
+                         msg = ''
+                      else if (abs(tmp) < 1e-13) then
+                         msg = ' OK'
+                      else
+                         msg = ' ALARM'
+                      end if
+                      write(logunit, '(a,i2,a,i2,es23.15,es23.15,es10.2,a)') &
+                           'amb> fin-mass ', k, '/', natt, glbl_masses(k), gwts(k), tmp, trim(msg)
+                   end if
+                end do
+             end if
+             deallocate(gwts)
+             ! check bounds
+             allocate(lmins(natt), lmaxs(natt), oglims(natt,2))
+             lmins(:) =  1.e30_r8
+             lmaxs(:) = -1.e30_r8
+             do j = 1,lsize_o
+                do k = 1,natt
+                   tmp = avp_o%rAttr(k,j)
+                   if (infnanfilt) then
+                      if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) cycle
+                   end if
+                   lmins(k) = min(lmins(k), tmp)
+                   lmaxs(k) = max(lmaxs(k), tmp)
+                end do
+             end do
+             call mpi_allreduce(lmins, oglims(:,1), natt, MPI_DOUBLE_PRECISION, MPI_MIN, mpicom, ierr)
+             call mpi_allreduce(lmaxs, oglims(:,2), natt, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, ierr)
+             if (amroot) then
+                do k = 1,natt
+                   if (oglims(k,1) >= gmins(k) .and. oglims(k,2) <= gmaxs(k)) then
+                      msg = ''
+                   else
+                      msg = ' ALARM'
+                   end if
+                   write(logunit, '(a,i2,a,i2,es23.15,es23.15,a)') &
+                        'amb> fin-bnds ', k, '/', natt, oglims(k,1), oglims(k,2), trim(msg)
+                end do
+             end if
+             deallocate(lmins, lmaxs, oglims)
+          end if
+          deallocate(gmins, gmaxs, glbl_masses)
+       else
+          do j = 1,lsize_o
+             do k = 1,natt
+                avp_o%rAttr(k,j) = max(lcl_lo(k,j), min(lcl_hi(k,j), nl_avp_o%rAttr(k,j)))
+             end do
+          end do
        end if
-       deallocate(gmins, gmaxs, glbl_masses)
     end if
 
     !--- renormalize avp_o by mapped norm_i  ---
