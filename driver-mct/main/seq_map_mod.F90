@@ -185,6 +185,7 @@ contains
           write(logunit,'(2A,I6,3A,L,2A)') subname, &
                ' mapper counter, nl_strategy, nl_conservative, nl_mapfile = ', &
                mapper%counter,' ',nl_strategy,' ',nl_conservative,' ',trim(mapper%nl_mapfile)
+          call check_matrices(mapper)
        end if
        call shr_sys_flush(logunit)
     endif
@@ -983,6 +984,18 @@ contains
        allocate(lcl_lo(natt,lsize_o), lcl_hi(natt,lsize_o))
        call sMat_avMult_and_calc_bounds(avp_i, mapper%nl_sMatp, natt, infnanfilt, &
             nl_avp_o, lcl_lo, lcl_hi)
+       if (.true.) then
+          n = 0
+          do j = 1,lsize_o
+             do k = 1,natt
+                if (n < 100 .and. abs(nl_avp_o%rAttr(k,j) - avp_o%rAttr(k,j)) > 1e-6*abs(avp_o%rAttr(k,j))) then
+                   if (n == 0) write(logunit,'(a)') trim(mapper%mapfile)
+                   write(logunit, '(a,i4,i4,2es23.15)') 'amb> hrm ',k,j,nl_avp_o%rAttr(k,j),avp_o%rAttr(k,j)
+                   n = n + 1
+                end if
+             end do
+          end do
+       end if
        ! Mask high-order field against low-order. Occasionally an exact 0 in the
        ! low-order field will map the high-order field unnecessarily, but that's
        ! OK: it's a local reduction in order to one, not a wrong value.
@@ -1390,10 +1403,10 @@ contains
     call mct_sMat_avMult(xPrimeAV, sMatPlus%Matrix, tmpav, vector=mct_usevector)
     ! y' -> y
     call mct_rearr_rearrange(tmpav, yAV, sMatPlus%YPrimeToY, &
-         tag=sMatPlus%Tag, sum=.false., vector=mct_usevector, &
+         tag=sMatPlus%Tag, sum=.true., vector=mct_usevector, &
          alltoall=.true., handshake=.true.)
     call mct_aVect_clean(tmpav)
-
+    
     ! l',u' = bounds(A, x')
     call mct_aVect_init(lop, yAV, sMatPlus%YPrimeLength)
     call mct_aVect_init(hip, yAV, sMatPlus%YPrimeLength)
@@ -1433,12 +1446,12 @@ contains
     call mct_aVect_init(tmpav, yAV, ysize)
     call mct_aVect_zero(tmpav)
     call mct_rearr_rearrange(lop, tmpav, sMatPlus%YPrimeToY, &
-         tag=sMatPlus%Tag, sum=.false., vector=mct_usevector, &
+         tag=sMatPlus%Tag, sum=.true., vector=mct_usevector, &
          alltoall=.true., handshake=.true.)
     lo(:natt,:ysize) = tmpav%rAttr(:natt,:ysize)
     call mct_aVect_zero(tmpav)
     call mct_rearr_rearrange(hip, tmpav, sMatPlus%YPrimeToY, &
-         tag=sMatPlus%Tag, sum=.false., vector=mct_usevector, &
+         tag=sMatPlus%Tag, sum=.true., vector=mct_usevector, &
          alltoall=.true., handshake=.true.)
     hi(:natt,:ysize) = tmpav%rAttr(:natt,:ysize)
     
@@ -1447,5 +1460,41 @@ contains
     call mct_aVect_clean(hip)
 
   end subroutine sMat_avMult_and_calc_bounds
+
+  subroutine check_matrices(m)
+    type(seq_map), intent(in) :: m
+
+    integer :: i, i1, i2, irow, icol, iwgt, row1, col1, wgt1, row2, col2, wgt2, cnt
+
+    !amb-todo Rewrite to check that nnzpat(A_nl) in nnzpat(A).
+
+    write(logunit, '(a,i11,i11)') trim(m%mapfile), m%sMatp%XPrimeLength, m%sMatp%YPrimeLength
+    write(logunit, '(a,i11,i11)') trim(m%mapfile), m%sMatp%Matrix%nrows, m%sMatp%Matrix%ncols
+    write(logunit, '(a,i11,i11)') trim(m%nl_mapfile), m%nl_sMatp%XPrimeLength, m%nl_sMatp%YPrimeLength
+    write(logunit, '(a,i11,i11)') trim(m%nl_mapfile), m%nl_sMatp%Matrix%nrows, m%nl_sMatp%Matrix%ncols
+
+    i1 = mct_aVect_lsize(m%sMatp%Matrix%data)
+    i2 = mct_aVect_lsize(m%nl_sMatp%Matrix%data)
+    if (i1 /= i2) then
+       write(logunit, '(a,2i7)') 'amb> CM sizes do not match ', i1, i2
+       return
+    end if
+    cnt = 0
+    do i = 1,i1
+       row1 = m%sMatp%Matrix%data%iAttr(irow,i)
+       col1 = m%sMatp%Matrix%data%iAttr(icol,i)
+       wgt1 = m%sMatp%Matrix%data%rAttr(iwgt,i)
+       row2 = m%nl_sMatp%Matrix%data%iAttr(irow,i)
+       col2 = m%nl_sMatp%Matrix%data%iAttr(icol,i)
+       wgt2 = m%nl_sMatp%Matrix%data%rAttr(iwgt,i)
+       if (row1 /= row2 .or. col1 /= col2 .or. wgt1 .ne. wgt2) then
+          write(logunit, '(a,6i11,2es23.15)') 'amb> CM entries do not match ', &
+               i, i1, row1, row2, col1, col2, wgt1, wgt2
+          cnt = cnt + 1
+          if (cnt > 20) return
+       end if
+    end do
+    if (cnt == 0) write(logunit, '(a)') 'amb> CM same'
+  end subroutine check_matrices
 
 end module seq_map_mod
