@@ -1373,7 +1373,8 @@ contains
     real(r8) :: wgt, tmp
 
     ysize = mct_aVect_lsize(yAV)
-    if (size(lo,1) /= ysize) then
+    if (size(lo,2) /= ysize) then
+       print *, 'amb> size(lo,1),ysize =',size(lo,2),ysize
        call shr_sys_abort('(seq_map_avNormArr) ERROR: lo,hi and y sizes do not match')
     end if
 
@@ -1444,7 +1445,7 @@ contains
     call mct_aVect_clean(tmpav)
     call mct_aVect_clean(lop)
     call mct_aVect_clean(hip)
-    
+
   end subroutine sMat_avMult_and_calc_bounds
 
 end module seq_map_mod
