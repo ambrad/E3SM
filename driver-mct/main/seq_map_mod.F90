@@ -881,7 +881,7 @@ contains
     !amb
     character(len=*), parameter :: afldname  = 'aream'
     character(len=128) :: msg
-    logical :: nl_on, amroot, verbose, infnanfilt
+    logical :: nl_on, amroot, verbose
     integer(IN) :: mpicom, ierr, k, natt, nsum, nfld, kArea, lidata(2), gidata(2), i, n
     real(r8) :: tmp, area, lo, hi, y
     real(r8), allocatable, dimension(:) :: lmins, gmins, lmaxs, gmaxs, glbl_masses, gwts
@@ -893,7 +893,6 @@ contains
        if (omit_nonlinear) nl_on = .false.
     end if
 
-    infnanfilt = .false.
     verbose = .true.
     call seq_comm_setptrs(CPLID, mpicom=mpicom)
     amroot = seq_comm_iamroot(CPLID)
@@ -981,20 +980,8 @@ contains
           natt = natt - 1
        end if
        allocate(lcl_lo(natt,lsize_o), lcl_hi(natt,lsize_o))
-       call sMat_avMult_and_calc_bounds(avp_i, mapper%nl_sMatp, lnorm, natt, infnanfilt, &
+       call sMat_avMult_and_calc_bounds(avp_i, mapper%nl_sMatp, lnorm, natt, &
             nl_avp_o, lcl_lo, lcl_hi)
-       if (.true.) then
-          n = 0
-          do j = 1,lsize_o
-             do k = 1,natt
-                if (n < 100 .and. abs(nl_avp_o%rAttr(k,j) - avp_o%rAttr(k,j)) > 1e-6*abs(avp_o%rAttr(k,j))) then
-                   if (n == 0) write(logunit,'(a)') trim(mapper%mapfile)
-                   write(logunit, '(a,i4,i4,2es23.15)') 'amb> hrm ',k,j,nl_avp_o%rAttr(k,j),avp_o%rAttr(k,j)
-                   n = n + 1
-                end if
-             end do
-          end do
-       end if
        ! Mask high-order field against low-order. Occasionally an exact 0 in the
        ! low-order field will map the high-order field unnecessarily, but that's
        ! OK: it's a local reduction in order to one, not a wrong value.
@@ -1027,12 +1014,6 @@ contains
                      'amb> src-bnds ', k, '/', natt, gmins(k), gmaxs(k)
              end do
           end if
-          if (infnanfilt) then
-             do k = 1,natt
-                if (shr_infnan_isnan(gmins(k)) .or. shr_infnan_isinf(gmins(k))) gmins(k) = 0
-                if (shr_infnan_isnan(gmaxs(k)) .or. shr_infnan_isinf(gmaxs(k))) gmaxs(k) = 0
-             end do
-          end if
           if (verbose) then
              allocate(oglims(natt,2))
              lmins(:) =  1.e30_r8
@@ -1040,21 +1021,10 @@ contains
              do j = 1,lsize_o
                 do k = 1,natt
                    tmp = nl_avp_o%rAttr(k,j)
-                   if (infnanfilt) then
-                      if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) cycle
-                   end if
                    lmins(k) = min(lmins(k), tmp)
                    lmaxs(k) = max(lmaxs(k), tmp)
                 end do
              end do
-             if (infnanfilt) then
-                do k = 1,natt
-                   if (lmins(k) > lmaxs(k)) then
-                      lmins(k) = 0
-                      lmaxs(k) = 0
-                   end if
-                end do
-             end if
              call mpi_allreduce(lmins, oglims(:,1), natt, MPI_DOUBLE_PRECISION, MPI_MIN, mpicom, ierr)
              call mpi_allreduce(lmaxs, oglims(:,2), natt, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, ierr)
              if (amroot) then
@@ -1072,7 +1042,8 @@ contains
           nfld = 2*natt
           allocate(dof_masses(nsum,nfld), glbl_masses(nfld)) ! low- and high-order
           if (mct_aVect_lSize(mapper%dom_cx_d%data) /= lsize_o) then
-             write(logunit, '(A,2I)') 'amb> sizes do not match',lsize_o,mct_aVect_lSize(mapper%dom_cx_d%data)
+             write(logunit, '(A,2I)') 'amb> sizes do not match', &
+                  lsize_o, mct_aVect_lSize(mapper%dom_cx_d%data)
              call shr_sys_abort(subname//' ERROR: amb> sizes do not match')
           end if
           do j = 1,lsize_o
@@ -1080,14 +1051,6 @@ contains
              dof_masses(j,     1:natt) =    avp_o%rAttr(:,j)*area
              dof_masses(j,natt+1:nfld) = nl_avp_o%rAttr(:,j)*area
           end do
-          if (infnanfilt) then
-             do k = 1,nfld
-                do j = 1,lsize_o
-                   if (shr_infnan_isnan(dof_masses(j,k)) .or. shr_infnan_isinf(dof_masses(j,k))) &
-                        dof_masses(j,k) = 0
-                end do
-             end do
-          end if
           call shr_reprosum_calc(dof_masses, glbl_masses, nsum, nsum, nfld)
           deallocate(dof_masses)
           ! Check solution against local bounds.
@@ -1098,12 +1061,6 @@ contains
              area = mapper%dom_cx_d%data%rAttr(kArea,j)
              do k = 1,natt
                 y = nl_avp_o%rAttr(k,j)
-                if (infnanfilt) then
-                   if (shr_infnan_isnan(y) .or. shr_infnan_isinf(y)) then
-                      y = 0
-                      nl_avp_o%rAttr(k,j) = y
-                   end if
-                end if
                 lo = lcl_lo(k,j)
                 hi = lcl_hi(k,j)
                 if (lnorm) then
@@ -1193,14 +1150,6 @@ contains
              do j = 1,lsize_o
                 dof_masses(j,:) = avp_o%rAttr(:,j)*mapper%dom_cx_d%data%rAttr(kArea,j)
              end do
-             if (infnanfilt) then
-                do k = 1,natt
-                   do j = 1,lsize_o
-                      if (shr_infnan_isnan(dof_masses(j,k)) .or. shr_infnan_isinf(dof_masses(j,k))) &
-                           dof_masses(j,k) = 0
-                   end do
-                end do
-             end if
              call shr_reprosum_calc(dof_masses, gwts, nsum, nsum, natt)
              deallocate(dof_masses)
              if (amroot) then
@@ -1227,9 +1176,6 @@ contains
              do j = 1,lsize_o
                 do k = 1,natt
                    tmp = avp_o%rAttr(k,j)
-                   if (infnanfilt) then
-                      if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) cycle
-                   end if
                    lmins(k) = min(lmins(k), tmp)
                    lmaxs(k) = max(lmaxs(k), tmp)
                 end do
@@ -1282,7 +1228,7 @@ contains
 
   end subroutine seq_map_avNormArr
 
-  subroutine sMat_avMult_and_calc_bounds(xAV, sMatPlus, lnorm, natt, infnanfilt, yAV, lo, hi)
+  subroutine sMat_avMult_and_calc_bounds(xAV, sMatPlus, lnorm, natt, yAV, lo, hi)
     ! Compute
     !     y = A*x
     !     l, u = bounds(A, x).
@@ -1298,7 +1244,7 @@ contains
     type (mct_aVect), intent(in)    :: xAV
     type (mct_sMatp), intent(inout) :: sMatPlus
     type (mct_aVect), intent(out)   :: yAV
-    logical, intent(in) :: lnorm, infnanfilt
+    logical, intent(in) :: lnorm
     integer, intent(in) :: natt
     real(r8), dimension(:,:), intent(out) :: lo, hi
 
@@ -1344,9 +1290,6 @@ contains
        if (wgt == 0) cycle
        do j = 1, natt
           tmp = xPrimeAV%rAttr(j,col)
-          if (infnanfilt) then
-             if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) cycle
-          end if
           if (lnorm) then
              if (xPrimeAV%rAttr(natt+1,col) /= 0) then
                 tmp = tmp/xPrimeAV%rAttr(natt+1,col)
