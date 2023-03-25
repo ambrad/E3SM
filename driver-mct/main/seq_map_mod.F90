@@ -1350,14 +1350,14 @@ contains
 
   subroutine sMat_avMult_and_calc_bounds(xAV, sMatPlus, natt, infnanfilt, yAV, lo, hi)
     ! Compute
-    !     x' = rearrange(x)
-    !     y' = A*x'
-    !     l, u = bounds(A, x').
-    ! l, u can the ben used to compute
-    !     y = clip(y', l, u).
-    ! For each entry i, bounds(A, x) returns min/maxval(x such that A(i,:) is a
-    ! structural non-0). That is, l(i), u(i) are bounds derived from the
-    ! discrete domain of dependence of y(i).
+    !     y = A*x
+    !     l, u = bounds(A, x).
+    ! l, u can then be used to compute
+    !     y = clip(y, l, u).
+    ! For each entry i, bounds(A, x) returns
+    !     min/maxval(x such that A(i,:) is a non-0).
+    ! That is, l(i), u(i) are bounds derived from the discrete domain of
+    ! dependence of y(i).
     !   During initialization, strategy 'X' ('Xonly') was specified. Thus each
     ! y(i) has full access to its discrete domain of dependence.
 
@@ -1368,23 +1368,31 @@ contains
     integer, intent(in) :: natt
     real(r8), dimension(:,:), intent(out) :: lo, hi
 
-    type (mct_aVect) :: xPrimeAV
+    type (mct_aVect) :: xPrimeAV, tmpav, lop, hip
     integer :: ierr, ne, irow, icol, iwgt, i, j, row, col, ysize
     real(r8) :: wgt, tmp
 
-    ! y = 0
+    ! x -> x'
     call mct_aVect_init(xPrimeAV, xAV, sMatPlus%XPrimeLength)
     call mct_aVect_zero(xPrimeAV)
-    ! x' = rearrange(x)
     call mct_rearr_rearrange(xAV, xPrimeAV, sMatPlus%XToXPrime, &
          tag=sMatPlus%Tag, vector=mct_usevector, &
          alltoall=.true., handshake=.true.)
-    ! y' = A*x'
-    call mct_sMat_avMult(xPrimeAV, sMatPlus%Matrix, yAV, vector=mct_usevector)
-    ! l, u = bounds(A, x')
-    ysize = mct_aVect_lsize(yAV)
-    lo(:,:) =  1.e30_r8
-    hi(:,:) = -1.e30_r8
+    ! y' = A x'
+    call mct_aVect_init(tmpav, yAV, sMatPlus%YPrimeLength)
+    call mct_aVect_zero(tmpav)
+    call mct_sMat_avMult(xPrimeAV, sMatPlus%Matrix, tmpav, vector=mct_usevector)
+    ! y' -> y
+    call mct_rearr_rearrange(tmpav, yAV, sMatPlus%YPrimeToY, &
+         tag=sMatPlus%Tag, sum=.false., vector=mct_usevector, &
+         alltoall=.true., handshake=.true.)
+    call mct_aVect_clean(tmpav)
+
+    ! l',u' = bounds(A, x')
+    call mct_aVect_init(lop, yAV, sMatPlus%YPrimeLength)
+    call mct_aVect_init(hip, yAV, sMatPlus%YPrimeLength)
+    lop%rAttr(:,:) =  1.e30_r8
+    hip%rAttr(:,:) = -1.e30_r8
     ne = mct_sMat_lsize(sMatPlus%Matrix)
     irow = mct_sMat_indexIA(sMatPlus%Matrix,'lrow')
     icol = mct_sMat_indexIA(sMatPlus%Matrix,'lcol')
@@ -1399,20 +1407,41 @@ contains
           if (infnanfilt) then
              if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) cycle
           end if
-          lo(j,row) = min(lo(j,row), tmp)
-          hi(j,row) = max(hi(j,row), tmp)
+          lop%rAttr(j,row) = min(lop%rAttr(j,row), tmp)
+          hip%rAttr(j,row) = max(hip%rAttr(j,row), tmp)
        end do
     end do
     ! Set bounds to 0 if there are no valid matrix entries for this row.
-    do i = 1, ysize
+    do i = 1, sMatPlus%YPrimeLength
        do j = 1, natt
-          if (lo(j,i) > hi(j,i)) then
-             lo(j,i) = 0
-             hi(j,i) = 0
+          if (lop%rAttr(j,i) > hip%rAttr(j,i)) then
+             lop%rAttr(j,i) = 0
+             hip%rAttr(j,i) = 0
           end if
        end do
     end do
+
     call mct_aVect_clean(xPrimeAV, ierr)
+
+    ! l',u' -> l,u
+    ysize = mct_aVect_lsize(yAV)
+    call mct_aVect_init(tmpav, yAV, ysize)
+    call mct_aVect_zero(tmpav)
+    call mct_rearr_rearrange(lop, tmpav, sMatPlus%YPrimeToY, &
+         tag=sMatPlus%Tag, sum=.false., vector=mct_usevector, &
+         alltoall=.true., handshake=.true.)
+    if (size(lo,1) /= size(tmpav%rAttr,1)) print *,'amb> ysize fiasco'
+    lo(:natt,:ysize) = tmpav%rAttr(:natt,:ysize)
+    call mct_aVect_zero(tmpav)
+    call mct_rearr_rearrange(hip, tmpav, sMatPlus%YPrimeToY, &
+         tag=sMatPlus%Tag, sum=.false., vector=mct_usevector, &
+         alltoall=.true., handshake=.true.)
+    hi(:natt,:ysize) = tmpav%rAttr(:natt,:ysize)
+    
+    call mct_aVect_clean(tmpav)
+    call mct_aVect_clean(lop)
+    call mct_aVect_clean(hip)
+    
   end subroutine sMat_avMult_and_calc_bounds
 
 end module seq_map_mod
