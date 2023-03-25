@@ -1372,6 +1372,11 @@ contains
     integer :: ierr, ne, irow, icol, iwgt, i, j, row, col, ysize
     real(r8) :: wgt, tmp
 
+    ysize = mct_aVect_lsize(yAV)
+    if (size(lo,1) /= ysize) then
+       call shr_sys_abort('(seq_map_avNormArr) ERROR: lo,hi and y sizes do not match')
+    end if
+
     ! x -> x'
     call mct_aVect_init(xPrimeAV, xAV, sMatPlus%XPrimeLength)
     call mct_aVect_zero(xPrimeAV)
@@ -1424,13 +1429,11 @@ contains
     call mct_aVect_clean(xPrimeAV, ierr)
 
     ! l',u' -> l,u
-    ysize = mct_aVect_lsize(yAV)
     call mct_aVect_init(tmpav, yAV, ysize)
     call mct_aVect_zero(tmpav)
     call mct_rearr_rearrange(lop, tmpav, sMatPlus%YPrimeToY, &
          tag=sMatPlus%Tag, sum=.false., vector=mct_usevector, &
          alltoall=.true., handshake=.true.)
-    if (size(lo,1) /= size(tmpav%rAttr,1)) print *,'amb> ysize fiasco'
     lo(:natt,:ysize) = tmpav%rAttr(:natt,:ysize)
     call mct_aVect_zero(tmpav)
     call mct_rearr_rearrange(hip, tmpav, sMatPlus%YPrimeToY, &
