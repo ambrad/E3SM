@@ -883,9 +883,8 @@ contains
     character(len=128) :: msg
     logical :: nl_on, amroot, verbose, infnanfilt
     integer(IN) :: mpicom, ierr, k, natt, nsum, nfld, kArea, lidata(2), gidata(2), i, n
-    integer(IN), dimension(:), allocatable :: idxs_need_safety, mask_safety
     real(r8) :: tmp, area, lo, hi, y
-    real(r8), allocatable, dimension(:) :: lmins, gmins, lmaxs, gmaxs, glbl_masses, gwts, gwts_safety
+    real(r8), allocatable, dimension(:) :: lmins, gmins, lmaxs, gmaxs, glbl_masses, gwts
     real(r8), allocatable, dimension(:,:) :: dof_masses, caas_wgt, oglims, lcl_lo, lcl_hi
     !-----------------------------------------------------
 
@@ -982,7 +981,7 @@ contains
           natt = natt - 1
        end if
        allocate(lcl_lo(natt,lsize_o), lcl_hi(natt,lsize_o))
-       call sMat_avMult_and_calc_bounds(avp_i, mapper%nl_sMatp, natt, infnanfilt, &
+       call sMat_avMult_and_calc_bounds(avp_i, mapper%nl_sMatp, lnorm, natt, infnanfilt, &
             nl_avp_o, lcl_lo, lcl_hi)
        if (.true.) then
           n = 0
@@ -1091,8 +1090,7 @@ contains
           end if
           call shr_reprosum_calc(dof_masses, glbl_masses, nsum, nsum, nfld)
           deallocate(dof_masses)
-          ! Try to use local bounds. Can't clip here because we may have to solve
-          ! the safety problem instead.
+          ! Check solution against local bounds.
           nsum = lsize_o
           nfld = 3*natt
           allocate(caas_wgt(nsum,nfld)) ! dm, cap low, cap high
@@ -1108,6 +1106,10 @@ contains
                 end if
                 lo = lcl_lo(k,j)
                 hi = lcl_hi(k,j)
+                if (lnorm) then
+                   lo = lo*avp_o%rAttr(natt+1,j)
+                   hi = hi*avp_o%rAttr(natt+1,j)
+                end if
                 if (y < lo) then
                    caas_wgt(j,k) = (y - lo)*area
                    y = lo
@@ -1123,74 +1125,9 @@ contains
           end do
           allocate(gwts(nfld))
           call shr_reprosum_calc(caas_wgt, gwts, nsum, nsum, nfld)
+          deallocate(caas_wgt)
           ! Combine clipping and global mass error into a single dm value.
           gwts(1:natt) = gwts(1:natt) + (glbl_masses(1:natt) - glbl_masses(natt+1:2*natt))
-          ! Check whether we need to relax to the safety problem.
-          allocate(idxs_need_safety(natt), mask_safety(natt))
-          mask_safety(:) = 0
-          n = 0
-          do k = 1,natt
-             if (((gwts(k) < 0 .and. -gwts(k) > gwts(  natt+k))  .or.  &
-                  (gwts(k) > 0 .and.  gwts(k) > gwts(2*natt+k))) .and. &
-                  ! A common case where the above filter triggers unnecessarily
-                  ! is when gmins(k) == gmaxs(k) and there is a
-                  ! machine-precision- level global mass difference in the low-
-                  ! and high-order maps.  Skip this index in this case.
-                  gmins(k) < gmaxs(k)) then
-                idxs_need_safety(n+1) = k
-                n = n + 1
-                mask_safety(k) = 1
-                if (verbose .and. amroot) then
-                   write(logunit, '(a,i2,a,i2,3es23.15)') 'amb>   safety ', &
-                        k, '/', natt, gwts(k), gwts(natt+k), gwts(2*natt+k)
-                end if
-             end if
-          end do
-          ! Solve safety problem where needed.
-          if (n > 0) then
-             do j = 1,lsize_o
-                area = mapper%dom_cx_d%data%rAttr(kArea,j)
-                do i = 1,n
-                   k = idxs_need_safety(i)
-                   y = nl_avp_o%rAttr(k,j)
-                   if (avp_o%rAttr(k,j) == 0) then
-                      ! Respect the low-order 0-mask.
-                      caas_wgt(j,i) = 0
-                      caas_wgt(j,  n+i) = 0
-                      caas_wgt(j,2*n+i) = 0
-                   else
-                      lo = gmins(k)
-                      hi = gmaxs(k)
-                      if (y < lo) then
-                         caas_wgt(j,i) = (y - lo)*area
-                         y = lo
-                      else if (y > hi) then
-                         caas_wgt(j,i) = (y - hi)*area
-                         y = hi
-                      else
-                         caas_wgt(j,i) = 0
-                      end if
-                      caas_wgt(j,  n+i) = (y - lo)*area
-                      caas_wgt(j,2*n+i) = (hi - y)*area
-                   end if
-                end do
-             end do
-             nfld = 3*n
-             allocate(gwts_safety(nfld))
-             call shr_reprosum_calc(caas_wgt(:,:nfld), gwts_safety, nsum, nsum, nfld)
-             do i = 1,n
-                k = idxs_need_safety(i)
-                gwts(k) = gwts_safety(i) + (glbl_masses(k) - glbl_masses(natt+k))
-                gwts(  natt+k) = gwts_safety(  n+i)
-                gwts(2*natt+k) = gwts_safety(2*n+i)
-                if (verbose .and. amroot) then
-                   write(logunit, '(a,i2,a,i2,3es23.15)') 'amb> w-safety ', &
-                        k, '/', natt, gwts(k), gwts(natt+k), gwts(2*natt+k)
-                end if
-             end do
-             deallocate(gwts_safety, idxs_need_safety)
-          end if
-          deallocate(caas_wgt)
           if (verbose .and. amroot) then
              do k = 1,natt
                 if (gwts(k) /= 0 .or. glbl_masses(k) /= 0) then
@@ -1210,53 +1147,37 @@ contains
           ! Adjust high-order solution and set avp_o. The adjustment consists of a
           ! clip, if needed, and adding or removing mass up to the capacity.
           do k = 1,natt
-             if (mask_safety(k) == 1) then
-                lo = gmins(k)
-                hi = gmaxs(k)
-                if (gwts(k) > 0) then
-                   tmp = gwts(2*natt+k)
-                   if (tmp /= 0) then
-                      do j = 1,lsize_o
-                         if (avp_o%rAttr(k,j) == 0) cycle ! low-order 0-mask
-                         y = max(lo, min(hi, nl_avp_o%rAttr(k,j)))
-                         avp_o%rAttr(k,j) = y + ((hi - y)/tmp)*gwts(k)
-                      end do
-                   end if
-                else if (gwts(k) < 0) then
-                   tmp = gwts(natt+k)
-                   if (tmp /= 0) then
-                      do j = 1,lsize_o
-                         if (avp_o%rAttr(k,j) == 0) cycle
-                         y = max(lo, min(hi, nl_avp_o%rAttr(k,j)))
-                         avp_o%rAttr(k,j) = y + ((y - lo)/tmp)*gwts(k)
-                      end do
-                   end if
+             if (gwts(k) > 0) then
+                tmp = gwts(2*natt+k)
+                if (tmp /= 0) then
+                   do j = 1,lsize_o
+                      lo = lcl_lo(k,j)
+                      hi = lcl_hi(k,j)
+                      if (lnorm) then
+                         lo = lo*avp_o%rAttr(natt+1,j)
+                         hi = hi*avp_o%rAttr(natt+1,j)
+                      end if
+                      y = max(lo, min(hi, nl_avp_o%rAttr(k,j)))
+                      avp_o%rAttr(k,j) = y + ((hi - y)/tmp)*gwts(k)
+                   end do
                 end if
-             else
-                if (gwts(k) > 0) then
-                   tmp = gwts(2*natt+k)
-                   if (tmp /= 0) then
-                      do j = 1,lsize_o
-                         lo = lcl_lo(k,j)
-                         hi = lcl_hi(k,j)
-                         y = max(lo, min(hi, nl_avp_o%rAttr(k,j)))
-                         avp_o%rAttr(k,j) = y + ((hi - y)/tmp)*gwts(k)
-                      end do
-                   end if
-                else if (gwts(k) < 0) then
-                   tmp = gwts(natt+k)
-                   if (tmp /= 0) then
-                      do j = 1,lsize_o
-                         lo = lcl_lo(k,j)
-                         hi = lcl_hi(k,j)
-                         y = max(lo, min(hi, nl_avp_o%rAttr(k,j)))
-                         avp_o%rAttr(k,j) = y + ((y - lo)/tmp)*gwts(k)
-                      end do
-                   end if
+             else if (gwts(k) < 0) then
+                tmp = gwts(natt+k)
+                if (tmp /= 0) then
+                   do j = 1,lsize_o
+                      lo = lcl_lo(k,j)
+                      hi = lcl_hi(k,j)
+                      if (lnorm) then
+                         lo = lo*avp_o%rAttr(natt+1,j)
+                         hi = hi*avp_o%rAttr(natt+1,j)
+                      end if
+                      y = max(lo, min(hi, nl_avp_o%rAttr(k,j)))
+                      avp_o%rAttr(k,j) = y + ((y - lo)/tmp)*gwts(k)
+                   end do
                 end if
              end if
           end do
-          deallocate(gwts, lcl_lo, lcl_hi, mask_safety)
+          deallocate(gwts, lcl_lo, lcl_hi)
           call mct_aVect_clean(nl_avp_o)
           ! Clip for numerics, just against the global extrema.
           do j = 1,lsize_o
@@ -1361,7 +1282,7 @@ contains
 
   end subroutine seq_map_avNormArr
 
-  subroutine sMat_avMult_and_calc_bounds(xAV, sMatPlus, natt, infnanfilt, yAV, lo, hi)
+  subroutine sMat_avMult_and_calc_bounds(xAV, sMatPlus, lnorm, natt, infnanfilt, yAV, lo, hi)
     ! Compute
     !     y = A*x
     !     l, u = bounds(A, x).
@@ -1377,7 +1298,7 @@ contains
     type (mct_aVect), intent(in)    :: xAV
     type (mct_sMatp), intent(inout) :: sMatPlus
     type (mct_aVect), intent(out)   :: yAV
-    logical, intent(in) :: infnanfilt
+    logical, intent(in) :: lnorm, infnanfilt
     integer, intent(in) :: natt
     real(r8), dimension(:,:), intent(out) :: lo, hi
 
@@ -1426,6 +1347,11 @@ contains
           if (infnanfilt) then
              if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) cycle
           end if
+          if (lnorm) then
+             if (xPrimeAV%rAttr(natt+1,col) /= 0) then
+                tmp = tmp/xPrimeAV%rAttr(natt+1,col)
+             end if
+          end if
           lop%rAttr(j,row) = min(lop%rAttr(j,row), tmp)
           hip%rAttr(j,row) = max(hip%rAttr(j,row), tmp)
        end do
@@ -1464,37 +1390,7 @@ contains
   subroutine check_matrices(m)
     type(seq_map), intent(in) :: m
 
-    integer :: i, i1, i2, irow, icol, iwgt, row1, col1, wgt1, row2, col2, wgt2, cnt
-
-    !amb-todo Rewrite to check that nnzpat(A_nl) in nnzpat(A).
-
-    write(logunit, '(a,i11,i11)') trim(m%mapfile), m%sMatp%XPrimeLength, m%sMatp%YPrimeLength
-    write(logunit, '(a,i11,i11)') trim(m%mapfile), m%sMatp%Matrix%nrows, m%sMatp%Matrix%ncols
-    write(logunit, '(a,i11,i11)') trim(m%nl_mapfile), m%nl_sMatp%XPrimeLength, m%nl_sMatp%YPrimeLength
-    write(logunit, '(a,i11,i11)') trim(m%nl_mapfile), m%nl_sMatp%Matrix%nrows, m%nl_sMatp%Matrix%ncols
-
-    i1 = mct_aVect_lsize(m%sMatp%Matrix%data)
-    i2 = mct_aVect_lsize(m%nl_sMatp%Matrix%data)
-    if (i1 /= i2) then
-       write(logunit, '(a,2i7)') 'amb> CM sizes do not match ', i1, i2
-       return
-    end if
-    cnt = 0
-    do i = 1,i1
-       row1 = m%sMatp%Matrix%data%iAttr(irow,i)
-       col1 = m%sMatp%Matrix%data%iAttr(icol,i)
-       wgt1 = m%sMatp%Matrix%data%rAttr(iwgt,i)
-       row2 = m%nl_sMatp%Matrix%data%iAttr(irow,i)
-       col2 = m%nl_sMatp%Matrix%data%iAttr(icol,i)
-       wgt2 = m%nl_sMatp%Matrix%data%rAttr(iwgt,i)
-       if (row1 /= row2 .or. col1 /= col2 .or. wgt1 .ne. wgt2) then
-          write(logunit, '(a,6i11,2es23.15)') 'amb> CM entries do not match ', &
-               i, i1, row1, row2, col1, col2, wgt1, wgt2
-          cnt = cnt + 1
-          if (cnt > 20) return
-       end if
-    end do
-    if (cnt == 0) write(logunit, '(a)') 'amb> CM same'
+    !amb-todo
   end subroutine check_matrices
 
 end module seq_map_mod
