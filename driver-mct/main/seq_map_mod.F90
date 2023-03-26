@@ -1299,11 +1299,12 @@ contains
        col = sMatPlus%Matrix%data%iAttr(icol,i)
        wgt = sMatPlus%Matrix%data%rAttr(iwgt,i)
        if (wgt == 0) cycle
+       if (lnorm) then
+          if (xPrimeAV%rAttr(natt+1,col) == 0.0_r8) cycle
+          tmp = tmp / xPrimeAV%rAttr(natt+1,col)
+       end if
        do j = 1, natt
           tmp = xPrimeAV%rAttr(j,col)
-          if (lnorm) then
-             if (xPrimeAV%rAttr(natt+1,col) == 0.0_r8) cycle
-          end if
           lop%rAttr(j,row) = min(lop%rAttr(j,row), tmp)
           hip%rAttr(j,row) = max(hip%rAttr(j,row), tmp)
        end do
