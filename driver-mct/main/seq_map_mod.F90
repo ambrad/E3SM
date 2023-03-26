@@ -1103,6 +1103,17 @@ contains
           end if
           ! Adjust high-order solution and set avp_o. The adjustment consists of a
           ! clip, if needed, and adding or removing mass up to the capacity.
+          if (nl_on) then
+             do j = 1,lsize_o
+                do k = 1,natt
+                   tmp = nl_avp_o%rAttr(k,j)
+                   if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
+                      write(logunit, '(a,a,l2,i3,i6,es23.15)'), 'amb> inf/nan 0 ', &
+                           trim(mapper%mapfile), mapper%nl_conservative, k, j, tmp
+                   end if
+                end do
+             end do
+          end if
           do k = 1,natt
              if (gwts(k) > 0) then
                 tmp = gwts(2*natt+k)
@@ -1136,6 +1147,17 @@ contains
           end do
           deallocate(gwts, lcl_lo, lcl_hi)
           call mct_aVect_clean(nl_avp_o)
+          if (nl_on) then
+             do j = 1,lsize_o
+                do k = 1,natt
+                   tmp = avp_o%rAttr(k,j)
+                   if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
+                      write(logunit, '(a,a,l2,i3,i6,es23.15)'), 'amb> inf/nan 1 ', &
+                           trim(mapper%mapfile), mapper%nl_conservative, k, j, tmp
+                   end if
+                end do
+             end do
+          end if
           ! Clip for numerics, just against the global extrema.
           do j = 1,lsize_o
              do k = 1,natt
@@ -1199,10 +1221,28 @@ contains
        else
           do j = 1,lsize_o
              do k = 1,natt
-                avp_o%rAttr(k,j) = max(lcl_lo(k,j), min(lcl_hi(k,j), nl_avp_o%rAttr(k,j)))
+                lo = lcl_lo(k,j)
+                hi = lcl_hi(k,j)
+                if (lnorm) then
+                   lo = lo*avp_o%rAttr(natt+1,j)
+                   hi = hi*avp_o%rAttr(natt+1,j)
+                end if
+                avp_o%rAttr(k,j) = max(lo, min(hi, nl_avp_o%rAttr(k,j)))
              end do
           end do
        end if
+    end if
+
+    if (nl_on) then
+       do j = 1,lsize_o
+          do k = 1,natt
+             tmp = avp_o%rAttr(k,j)
+             if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
+                write(logunit, '(a,a,l2,i3,i6,es23.15)'), 'amb> inf/nan 2 ', &
+                     trim(mapper%mapfile), mapper%nl_conservative, k, j, tmp
+             end if
+          end do
+       end do
     end if
 
     !--- renormalize avp_o by mapped norm_i  ---
@@ -1224,7 +1264,8 @@ contains
           do k = 1,natt
              tmp = avp_o%rAttr(k,j)
              if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
-                write(logunit, '(a,a,i3,i6,es23.15)'), 'amb> inf/nan ', trim(mapper%mapfile), k, j, tmp
+                write(logunit, '(a,a,l2,i3,i6,es23.15)'), 'amb> inf/nan 3 ', &
+                     trim(mapper%mapfile), mapper%nl_conservative, k, j, tmp
              end if
           end do
        end do
