@@ -1219,6 +1219,17 @@ contains
        enddo
     endif
 
+    if (nl_on) then
+       do j = 1,lsize_o
+          do k = 1,natt
+             tmp = avp_o%rAttr(k,j)
+             if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
+                write(logunit, '(a,a,i3,i6,es23.15)'), 'amb> inf/nan ', trim(mapper%mapfile), k, j, tmp
+             end if
+          end do
+       end do
+    end if
+
     !--- copy back into av_o and we are done ---
 
     call mct_aVect_copy(aVin=avp_o, aVout=av_o, VECTOR=mct_usevector)
@@ -1291,9 +1302,7 @@ contains
        do j = 1, natt
           tmp = xPrimeAV%rAttr(j,col)
           if (lnorm) then
-             if (xPrimeAV%rAttr(natt+1,col) /= 0) then
-                tmp = tmp/xPrimeAV%rAttr(natt+1,col)
-             end if
+             if (xPrimeAV%rAttr(natt+1,col) == 0.0_r8) cycle
           end if
           lop%rAttr(j,row) = min(lop%rAttr(j,row), tmp)
           hip%rAttr(j,row) = max(hip%rAttr(j,row), tmp)
