@@ -893,7 +893,7 @@ contains
        if (omit_nonlinear) nl_on = .false.
     end if
 
-    verbose = .true.
+    verbose = .false.
     call seq_comm_setptrs(CPLID, mpicom=mpicom)
     amroot = seq_comm_iamroot(CPLID)
 
