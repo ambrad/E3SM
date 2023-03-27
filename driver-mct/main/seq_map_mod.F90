@@ -963,13 +963,22 @@ contains
     endif
 
     !--- optional nonlinear map ---
-
+    
     if (nl_on) then
+       natt = size(avp_i%rAttr, 1)
+       do j = 1,lsize_i
+          do k = 1,natt
+             tmp = avp_i%rAttr(k,j)
+             if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
+                write(logunit, '(a,a,l2,i5,i6,es23.15)'), 'amb> inf/nan-1 ', &
+                     trim(mapper%mapfile), mapper%nl_conservative, k, j, tmp
+             end if
+          end do
+       end do
        if (verbose .and. amroot) then
           write(logunit, '(4A,3L2)') 'amb> ', trim(mapper%nl_mapfile), ' ', &
                trim(mapper%strategy), mapper%nl_conservative, lnorm, present(norm_i)
        end if
-       natt = size(avp_i%rAttr, 1)
        if (lnorm) then
           kf = mct_aVect_indexRA(avp_i,ffld)
           if (kf /= natt) then
@@ -1108,7 +1117,12 @@ contains
                 do k = 1,natt
                    tmp = nl_avp_o%rAttr(k,j)
                    if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
-                      write(logunit, '(a,a,l2,i3,i6,es23.15)'), 'amb> inf/nan 0 ', &
+                      write(logunit, '(a,a,l2,i3,i6,es23.15)'), 'amb> inf/nan0a ', &
+                           trim(mapper%mapfile), mapper%nl_conservative, k, j, tmp
+                   end if
+                   tmp = avp_o%rAttr(k,j)
+                   if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
+                      write(logunit, '(a,a,l2,i3,i6,es23.15)'), 'amb> inf/nan0b ', &
                            trim(mapper%mapfile), mapper%nl_conservative, k, j, tmp
                    end if
                 end do
@@ -1231,9 +1245,6 @@ contains
              end do
           end do
        end if
-    end if
-
-    if (nl_on) then
        do j = 1,lsize_o
           do k = 1,natt
              tmp = avp_o%rAttr(k,j)
@@ -1384,7 +1395,15 @@ contains
   subroutine check_matrices(m)
     type(seq_map), intent(in) :: m
 
-    !amb-todo
+    if (.not. m%nl_available) return
+
+    
   end subroutine check_matrices
+
+  subroutine coopat2csrpat(coo_rows, coo_cols, cols, rowptrs)
+    integer, dimension(:), intent(in) :: coo_rows, coo_cols
+    integer, dimension(:), allocatable, intent(out) :: cols, rowptrs
+    
+  end subroutine coopat2csrpat
 
 end module seq_map_mod
