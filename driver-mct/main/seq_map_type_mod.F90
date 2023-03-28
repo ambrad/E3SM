@@ -106,13 +106,13 @@ contains
           if (.not.mct_gsmap_Identical(gsmap_d,seq_maps(m)%gsmap_d)) match = .false.
        endif
        if (match .and. present(nl_available)) then
-          if (nl_available /= seq_maps(m)%nl_available) match = .false.
+          if (nl_available .neqv. seq_maps(m)%nl_available) match = .false.
           if (match .and. nl_available) then
              if (match .and. present(nl_mapfile)) then
                 if (trim(nl_mapfile) /= trim(seq_maps(m)%nl_mapfile)) match = .false.
              end if
              if (match .and. present(nl_conservative)) then
-                if (nl_conservative /= seq_maps(m)%nl_conservative) match = .false.
+                if (nl_conservative .neqv. seq_maps(m)%nl_conservative) match = .false.
              end if
           end if
        end if
