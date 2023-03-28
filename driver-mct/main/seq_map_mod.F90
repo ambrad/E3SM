@@ -970,7 +970,7 @@ contains
           do k = 1,natt
              tmp = avp_i%rAttr(k,j)
              if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
-                write(logunit, '(a,a,l2,i5,i6,es23.15)'), 'amb> inf/nan-1 ', &
+                write(logunit, '(a,a,l2,i5,i6,es23.15)') 'amb> inf/nan-1 ', &
                      trim(mapper%mapfile), mapper%nl_conservative, k, j, tmp
              end if
           end do
@@ -1051,7 +1051,7 @@ contains
           nfld = 2*natt
           allocate(dof_masses(nsum,nfld), glbl_masses(nfld)) ! low- and high-order
           if (mct_aVect_lSize(mapper%dom_cx_d%data) /= lsize_o) then
-             write(logunit, '(A,2I)') 'amb> sizes do not match', &
+             write(logunit, '(A,2I8)') 'amb> sizes do not match', &
                   lsize_o, mct_aVect_lSize(mapper%dom_cx_d%data)
              call shr_sys_abort(subname//' ERROR: amb> sizes do not match')
           end if
@@ -1117,12 +1117,12 @@ contains
                 do k = 1,natt
                    tmp = nl_avp_o%rAttr(k,j)
                    if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
-                      write(logunit, '(a,a,l2,i3,i6,es23.15)'), 'amb> inf/nan0a ', &
+                      write(logunit, '(a,a,l2,i3,i6,es23.15)') 'amb> inf/nan0a ', &
                            trim(mapper%mapfile), mapper%nl_conservative, k, j, tmp
                    end if
                    tmp = avp_o%rAttr(k,j)
                    if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
-                      write(logunit, '(a,a,l2,i3,i6,es23.15)'), 'amb> inf/nan0b ', &
+                      write(logunit, '(a,a,l2,i3,i6,es23.15)') 'amb> inf/nan0b ', &
                            trim(mapper%mapfile), mapper%nl_conservative, k, j, tmp
                    end if
                 end do
@@ -1166,7 +1166,7 @@ contains
                 do k = 1,natt
                    tmp = avp_o%rAttr(k,j)
                    if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
-                      write(logunit, '(a,a,l2,i3,i6,es23.15)'), 'amb> inf/nan 1 ', &
+                      write(logunit, '(a,a,l2,i3,i6,es23.15)') 'amb> inf/nan 1 ', &
                            trim(mapper%mapfile), mapper%nl_conservative, k, j, tmp
                    end if
                 end do
@@ -1249,7 +1249,7 @@ contains
           do k = 1,natt
              tmp = avp_o%rAttr(k,j)
              if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
-                write(logunit, '(a,a,l2,i3,i6,es23.15)'), 'amb> inf/nan 2 ', &
+                write(logunit, '(a,a,l2,i3,i6,es23.15)') 'amb> inf/nan 2 ', &
                      trim(mapper%mapfile), mapper%nl_conservative, k, j, tmp
              end if
           end do
@@ -1275,7 +1275,7 @@ contains
           do k = 1,natt
              tmp = avp_o%rAttr(k,j)
              if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
-                write(logunit, '(a,a,l2,i3,i6,es23.15)'), 'amb> inf/nan 3 ', &
+                write(logunit, '(a,a,l2,i3,i6,es23.15)') 'amb> inf/nan 3 ', &
                      trim(mapper%mapfile), mapper%nl_conservative, k, j, tmp
              end if
           end do
