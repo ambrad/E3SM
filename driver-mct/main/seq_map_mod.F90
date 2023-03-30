@@ -966,6 +966,12 @@ contains
     
     if (nl_on) then
        natt = size(avp_i%rAttr, 1)
+       if (verbose) then
+          if (amroot) then
+             write(logunit, '(4A,3L2,I3)') 'amb> ', trim(mapper%nl_mapfile), ' ', &
+                  trim(mapper%strategy), mapper%nl_conservative, lnorm, present(norm_i), natt
+          end if
+       end if
        do j = 1,lsize_i
           do k = 1,natt
              tmp = avp_i%rAttr(k,j)
@@ -975,10 +981,6 @@ contains
              end if
           end do
        end do
-       if (verbose .and. amroot) then
-          write(logunit, '(4A,3L2)') 'amb> ', trim(mapper%nl_mapfile), ' ', &
-               trim(mapper%strategy), mapper%nl_conservative, lnorm, present(norm_i)
-       end if
        if (lnorm) then
           kf = mct_aVect_indexRA(avp_i,ffld)
           if (kf /= natt) then
@@ -1007,8 +1009,8 @@ contains
        if (mapper%nl_conservative) then
           ! Compute global bounds.
           allocate(lmins(natt), gmins(natt), lmaxs(natt), gmaxs(natt))
-          lmins(:) =  1.e30_r8
-          lmaxs(:) = -1.e30_r8
+          lmins(:) =  1.e300_r8
+          lmaxs(:) = -1.e300_r8
           do j = 1,lsize_o
              do k = 1,natt
                 lmins(k) = min(lmins(k), lcl_lo(k,j))
@@ -1025,8 +1027,8 @@ contains
           end if
           if (verbose) then
              allocate(oglims(natt,2))
-             lmins(:) =  1.e30_r8
-             lmaxs(:) = -1.e30_r8
+             lmins(:) =  1.e300_r8
+             lmaxs(:) = -1.e300_r8
              do j = 1,lsize_o
                 do k = 1,natt
                    tmp = nl_avp_o%rAttr(k,j)
@@ -1060,7 +1062,7 @@ contains
              dof_masses(j,     1:natt) =    avp_o%rAttr(:,j)*area
              dof_masses(j,natt+1:nfld) = nl_avp_o%rAttr(:,j)*area
           end do
-          call shr_reprosum_calc(dof_masses, glbl_masses, nsum, nsum, nfld)
+          call shr_reprosum_calc(dof_masses, glbl_masses, nsum, nsum, nfld, commid=mpicom)
           deallocate(dof_masses)
           ! Check solution against local bounds.
           nsum = lsize_o
@@ -1090,7 +1092,7 @@ contains
              end do
           end do
           allocate(gwts(nfld))
-          call shr_reprosum_calc(caas_wgt, gwts, nsum, nsum, nfld)
+          call shr_reprosum_calc(caas_wgt, gwts, nsum, nsum, nfld, commid=mpicom)
           deallocate(caas_wgt)
           ! Combine clipping and global mass error into a single dm value.
           gwts(1:natt) = gwts(1:natt) + (glbl_masses(1:natt) - glbl_masses(natt+1:2*natt))
@@ -1112,22 +1114,20 @@ contains
           end if
           ! Adjust high-order solution and set avp_o. The adjustment consists of a
           ! clip, if needed, and adding or removing mass up to the capacity.
-          if (nl_on) then
-             do j = 1,lsize_o
-                do k = 1,natt
-                   tmp = nl_avp_o%rAttr(k,j)
-                   if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
-                      write(logunit, '(a,a,l2,i3,i6,es23.15)') 'amb> inf/nan0a ', &
-                           trim(mapper%mapfile), mapper%nl_conservative, k, j, tmp
-                   end if
-                   tmp = avp_o%rAttr(k,j)
-                   if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
-                      write(logunit, '(a,a,l2,i3,i6,es23.15)') 'amb> inf/nan0b ', &
-                           trim(mapper%mapfile), mapper%nl_conservative, k, j, tmp
-                   end if
-                end do
+          do j = 1,lsize_o
+             do k = 1,natt
+                tmp = nl_avp_o%rAttr(k,j)
+                if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
+                   write(logunit, '(a,a,l2,i3,i6,es23.15)') 'amb> inf/nan0a ', &
+                        trim(mapper%mapfile), mapper%nl_conservative, k, j, tmp
+                end if
+                tmp = avp_o%rAttr(k,j)
+                if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
+                   write(logunit, '(a,a,l2,i3,i6,es23.15)') 'amb> inf/nan0b ', &
+                        trim(mapper%mapfile), mapper%nl_conservative, k, j, tmp
+                end if
              end do
-          end if
+          end do
           do k = 1,natt
              if (gwts(k) > 0) then
                 tmp = gwts(2*natt+k)
@@ -1161,17 +1161,15 @@ contains
           end do
           deallocate(gwts, lcl_lo, lcl_hi)
           call mct_aVect_clean(nl_avp_o)
-          if (nl_on) then
-             do j = 1,lsize_o
-                do k = 1,natt
-                   tmp = avp_o%rAttr(k,j)
-                   if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
-                      write(logunit, '(a,a,l2,i3,i6,es23.15)') 'amb> inf/nan 1 ', &
-                           trim(mapper%mapfile), mapper%nl_conservative, k, j, tmp
-                   end if
-                end do
+          do j = 1,lsize_o
+             do k = 1,natt
+                tmp = avp_o%rAttr(k,j)
+                if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
+                   write(logunit, '(a,a,l2,i3,i6,es23.15)') 'amb> inf/nan 1 ', &
+                        trim(mapper%mapfile), mapper%nl_conservative, k, j, tmp
+                end if
              end do
-          end if
+          end do
           ! Clip for numerics, just against the global extrema.
           do j = 1,lsize_o
              do k = 1,natt
@@ -1186,7 +1184,7 @@ contains
              do j = 1,lsize_o
                 dof_masses(j,:) = avp_o%rAttr(:,j)*mapper%dom_cx_d%data%rAttr(kArea,j)
              end do
-             call shr_reprosum_calc(dof_masses, gwts, nsum, nsum, natt)
+             call shr_reprosum_calc(dof_masses, gwts, nsum, nsum, natt, commid=mpicom)
              deallocate(dof_masses)
              if (amroot) then
                 do k = 1,natt
@@ -1207,8 +1205,8 @@ contains
              deallocate(gwts)
              ! check bounds
              allocate(lmins(natt), lmaxs(natt), oglims(natt,2))
-             lmins(:) =  1.e30_r8
-             lmaxs(:) = -1.e30_r8
+             lmins(:) =  1.e300_r8
+             lmaxs(:) = -1.e300_r8
              do j = 1,lsize_o
                 do k = 1,natt
                    tmp = avp_o%rAttr(k,j)
@@ -1340,8 +1338,8 @@ contains
     ! l',u' = bounds(A, x')
     call mct_aVect_init(lop, yAV, sMatPlus%YPrimeLength)
     call mct_aVect_init(hip, yAV, sMatPlus%YPrimeLength)
-    lop%rAttr(:,:) =  1.e30_r8
-    hip%rAttr(:,:) = -1.e30_r8
+    lop%rAttr(:,:) =  1.e300_r8
+    hip%rAttr(:,:) = -1.e300_r8
     ne = mct_sMat_lsize(sMatPlus%Matrix)
     irow = mct_sMat_indexIA(sMatPlus%Matrix,'lrow')
     icol = mct_sMat_indexIA(sMatPlus%Matrix,'lcol')
