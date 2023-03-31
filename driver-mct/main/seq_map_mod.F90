@@ -875,16 +875,11 @@ contains
     character(len=*),parameter :: ffld = 'norm8wt'  ! want something unique
     !-----------------------------------------------------
 
-    ! If a nonlinear map is available and omit_nonlinear is not present or
-    ! .false., then call seq_nlmap_avNormArr and then return.
+    use_nonlinear_map = .false.
     if (mapper%nl_available) then
        use_nonlinear_map = .true.
        if (present(omit_nonlinear)) then
           if (omit_nonlinear) use_nonlinear_map = .false.
-       end if
-       if (use_nonlinear_map) then
-          call seq_nlmap_avNormArr(mapper, av_i, av_o, norm_i, rList, norm)
-          return
        end if
     end if
 
@@ -943,7 +938,11 @@ contains
        call shr_sys_abort(subname//' ERROR: esmf SMM not supported')
     else
        ! MCT based SMM
-       call mct_sMat_avMult(avp_i, mapper%sMatp, avp_o, VECTOR=mct_usevector)
+       if (use_nonlinear_map) then
+          call seq_nlmap_avNormArr(mapper, avp_i, avp_o, norm)
+       else
+          call mct_sMat_avMult(avp_i, mapper%sMatp, avp_o, VECTOR=mct_usevector)
+       end if
     endif
 
     !--- renormalize avp_o by mapped norm_i  ---
