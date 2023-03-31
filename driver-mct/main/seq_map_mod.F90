@@ -875,6 +875,8 @@ contains
     character(len=*),parameter :: ffld = 'norm8wt'  ! want something unique
     !-----------------------------------------------------
 
+    ! If a nonlinear map is available and omit_nonlinear is not present or
+    ! .false., then call seq_nlmap_avNormArr and then return.
     if (mapper%nl_available) then
        use_nonlinear_map = .true.
        if (present(omit_nonlinear)) then

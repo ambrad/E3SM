@@ -1,12 +1,21 @@
 module seq_nlmap_mod
 
-  !---------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   !
-  ! Purpose: Apply a high-order map followed by a property restoring
-  ! nonlinear global fixer. This module adds to the capabilities of
-  ! seq_map_mod.
+  ! Purpose: Apply a high-order linear map followed by a property restoring
+  ! nonlinear global fixer. This module adds to the capabilities of seq_map_mod
+  ! and extends its seq_map_avNormArr subroutine. The objective is to improve
+  ! coarse-to-fine, conservative, monotone maps. Area-averaged (aave) maps
+  ! produce grid imprint on the target fine grid because each coarse source cell
+  ! has a constant field. This module applies a high-order linear map that
+  ! produces smooth data on the fine target grid, then applies a nonlinear
+  ! global fixer to restore conservation and bounds.
   !
-  ! Following is a description of the algorithm and its properties.
+  ! Following is a description of the algorithm and its properties,
+  ! specializations of Alg 3.1 of the following reference for this use case:
+  !   Bradley, A. M., Bosler, P. A., Guba, O., Taylor, M. A., and Barnett,
+  !   G. A. (2019). Communication-efficient property preservation in tracer
+  !   transport. SIAM Journal on Scientific Computing, 41(3), C161-C193.
   !
   ! Notation:
   !   A x is the matrix-vector product A times x.
@@ -16,8 +25,8 @@ module seq_nlmap_mod
   !     and 0 otherwise.
   !   (In)equalities and / are applied element-wise.
   !   In practice:
-  !     Am is the area-average conservative and monotone map.
-  !     A  is the high-order map.
+  !     Am is the area-average conservative and monotone linear map.
+  !     A  is the high-order linear map.
   !     f  is a vector of area fractions.
   ! On input:
   !   1. Am is a monotone and conservative linear operator, where s is the
@@ -87,9 +96,16 @@ module seq_nlmap_mod
   !   0 <= (dM / (t g)'w) <= 1,
   ! permitting the final line to hold.
   !
+  ! Usage:
+  !   For any existing aave mapfile SRC2TGT_TMAPFILE, where T is 'F' or 'S',
+  ! optionally provide a second, high-order map by specifying
+  ! SRC2TGT_TMAPFILE_NONLINEAR. If T is 'F', then the fixer restores global
+  ! mass, as defined by the SRC2TGT_TMAPFILE map, and local bounds. If T is 'S',
+  ! then the fixer restores the bounds.
+  !
   ! Author: A.M. Bradley, Mar,Apr-2023
   !
-  !---------------------------------------------------------------------  
+  !-----------------------------------------------------------------------------
   
   implicit none
   save
@@ -130,9 +146,8 @@ contains
     real(r8)               :: normval
     character(CX)          :: lrList,appnd
     logical                :: lnorm
-    character(*),parameter :: subName = '(seq_map_avNormArr) '
-    character(len=*),parameter :: ffld = 'norm8wt'  ! want something unique
-    !amb
+    character(*),parameter :: subName = '(seq_nlmap_avNormArr) '
+    character(len=*),parameter :: ffld = 'norm8wt'
     character(len=*), parameter :: afldname  = 'aream'
     character(len=128) :: msg
     logical :: nl_on, amroot, verbose
@@ -218,7 +233,7 @@ contains
        natt = size(avp_i%rAttr, 1)
        if (verbose) then
           if (amroot) then
-             write(logunit, '(4A,3L2,I3)') 'amb> ', trim(mapper%nl_mapfile), ' ', &
+             write(logunit, '(4A,3L2,I3)') 'nlmap> ', trim(mapper%nl_mapfile), ' ', &
                   trim(mapper%strategy), mapper%nl_conservative, lnorm, present(norm_i), natt
           end if
        end if
@@ -226,7 +241,7 @@ contains
           do k = 1,natt
              tmp = avp_i%rAttr(k,j)
              if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
-                write(logunit, '(a,a,l2,i5,i6,es23.15)') 'amb> inf/nan-1 ', &
+                write(logunit, '(a,a,l2,i5,i6,es23.15)') 'nlmap> inf/nan-1 ', &
                      trim(mapper%mapfile), mapper%nl_conservative, k, j, tmp
              end if
           end do
@@ -272,7 +287,7 @@ contains
           if (amroot .and. verbose) then
              do k = 1,natt
                 write(logunit, '(a,i2,a,i2,es23.15,es23.15)') &
-                     'amb> src-bnds ', k, '/', natt, gmins(k), gmaxs(k)
+                     'nlmap> src-bnds ', k, '/', natt, gmins(k), gmaxs(k)
              end do
           end if
           if (verbose) then
@@ -291,7 +306,7 @@ contains
              if (amroot) then
                 do k = 1,natt
                    write(logunit, '(a,i2,a,i2,es23.15,es23.15)') &
-                        'amb> pre-bnds ', k, '/', natt, oglims(k,1), oglims(k,2)
+                        'nlmap> pre-bnds ', k, '/', natt, oglims(k,1), oglims(k,2)
                 end do
              end if
              deallocate(oglims)
@@ -303,9 +318,9 @@ contains
           nfld = 2*natt
           allocate(dof_masses(nsum,nfld), glbl_masses(nfld)) ! low- and high-order
           if (mct_aVect_lSize(mapper%dom_cx_d%data) /= lsize_o) then
-             write(logunit, '(A,2I8)') 'amb> sizes do not match', &
+             write(logunit, '(A,2I8)') 'nlmap> sizes do not match', &
                   lsize_o, mct_aVect_lSize(mapper%dom_cx_d%data)
-             call shr_sys_abort(subname//' ERROR: amb> sizes do not match')
+             call shr_sys_abort(subname//' ERROR: nlmap> sizes do not match')
           end if
           do j = 1,lsize_o
              area = mapper%dom_cx_d%data%rAttr(kArea,j)
@@ -350,7 +365,7 @@ contains
              do k = 1,natt
                 if (gwts(k) /= 0 .or. glbl_masses(k) /= 0) then
                    write(logunit, '(a,i2,a,i2,es23.15,es23.15,es23.15,es10.2)') &
-                        'amb>  caas-dm ', k, '/', natt, &
+                        'nlmap>  caas-dm ', k, '/', natt, &
                         ! true global mass
                         glbl_masses(k), &
                         ! dm due to global mass nonconservation in the linear map
@@ -368,12 +383,12 @@ contains
              do k = 1,natt
                 tmp = nl_avp_o%rAttr(k,j)
                 if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
-                   write(logunit, '(a,a,l2,i3,i6,es23.15)') 'amb> inf/nan0a ', &
+                   write(logunit, '(a,a,l2,i3,i6,es23.15)') 'nlmap> inf/nan0a ', &
                         trim(mapper%mapfile), mapper%nl_conservative, k, j, tmp
                 end if
                 tmp = avp_o%rAttr(k,j)
                 if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
-                   write(logunit, '(a,a,l2,i3,i6,es23.15)') 'amb> inf/nan0b ', &
+                   write(logunit, '(a,a,l2,i3,i6,es23.15)') 'nlmap> inf/nan0b ', &
                         trim(mapper%mapfile), mapper%nl_conservative, k, j, tmp
                 end if
              end do
@@ -415,7 +430,7 @@ contains
              do k = 1,natt
                 tmp = avp_o%rAttr(k,j)
                 if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
-                   write(logunit, '(a,a,l2,i3,i6,es23.15)') 'amb> inf/nan 1 ', &
+                   write(logunit, '(a,a,l2,i3,i6,es23.15)') 'nlmap> inf/nan 1 ', &
                         trim(mapper%mapfile), mapper%nl_conservative, k, j, tmp
                 end if
              end do
@@ -448,7 +463,7 @@ contains
                          msg = ' ALARM'
                       end if
                       write(logunit, '(a,i2,a,i2,es23.15,es23.15,es10.2,a)') &
-                           'amb> fin-mass ', k, '/', natt, glbl_masses(k), gwts(k), tmp, trim(msg)
+                           'nlmap> fin-mass ', k, '/', natt, glbl_masses(k), gwts(k), tmp, trim(msg)
                    end if
                 end do
              end if
@@ -474,7 +489,7 @@ contains
                       msg = ' ALARM'
                    end if
                    write(logunit, '(a,i2,a,i2,es23.15,es23.15,a)') &
-                        'amb> fin-bnds ', k, '/', natt, oglims(k,1), oglims(k,2), trim(msg)
+                        'nlmap> fin-bnds ', k, '/', natt, oglims(k,1), oglims(k,2), trim(msg)
                 end do
              end if
              deallocate(lmins, lmaxs, oglims)
@@ -497,7 +512,7 @@ contains
           do k = 1,natt
              tmp = avp_o%rAttr(k,j)
              if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
-                write(logunit, '(a,a,l2,i3,i6,es23.15)') 'amb> inf/nan 2 ', &
+                write(logunit, '(a,a,l2,i3,i6,es23.15)') 'nlmap> inf/nan 2 ', &
                      trim(mapper%mapfile), mapper%nl_conservative, k, j, tmp
              end if
           end do
@@ -523,7 +538,7 @@ contains
           do k = 1,natt
              tmp = avp_o%rAttr(k,j)
              if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
-                write(logunit, '(a,a,l2,i3,i6,es23.15)') 'amb> inf/nan 3 ', &
+                write(logunit, '(a,a,l2,i3,i6,es23.15)') 'nlmap> inf/nan 3 ', &
                      trim(mapper%mapfile), mapper%nl_conservative, k, j, tmp
              end if
           end do
@@ -565,7 +580,7 @@ contains
 
     ysize = mct_aVect_lsize(yAV)
     if (size(lo,2) /= ysize) then
-       print *, 'amb> size(lo,1),ysize =',size(lo,2),ysize
+       print *, 'nlmap> size(lo,1),ysize =',size(lo,2),ysize
        call shr_sys_abort('(seq_map_avNormArr) ERROR: lo,hi and y sizes do not match')
     end if
 
