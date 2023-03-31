@@ -34,8 +34,7 @@ module seq_map_type_mod
      real(R8), pointer       :: clat_d(:)
      integer(IN)             :: mpicom    ! mpicom
      !
-     !---- optional nonlinear map
-     !amb-todo document
+     !---- optional nonlinear map; see seq_nlmap_mod.F90
      logical :: nl_available, nl_conservative
      type(mct_ggrid), pointer :: dom_cx_s, dom_cx_d
      type(mct_sMatp) :: nl_sMatp

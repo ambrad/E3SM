@@ -181,7 +181,7 @@ contains
           write(logunit,'(2A,I6,3A,L,2A)') subname, &
                ' mapper counter, nl_strategy, nl_conservative, nl_mapfile = ', &
                mapper%counter,' ',nl_strategy,' ',nl_conservative,' ',trim(mapper%nl_mapfile)
-          call check_matrices(mapper)
+          call seq_nlmap_check_matrices(mapper)
        end if
        call shr_sys_flush(logunit)
     endif

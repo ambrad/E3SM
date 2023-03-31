@@ -107,10 +107,6 @@ module seq_nlmap_mod
   !
   !-----------------------------------------------------------------------------
   
-  implicit none
-  save
-  private
-
   use shr_kind_mod     , only: R8 => SHR_KIND_R8, IN=>SHR_KIND_IN
   use shr_kind_mod     , only: CX => SHR_KIND_CX
   use shr_sys_mod
@@ -122,6 +118,14 @@ module seq_nlmap_mod
   use shr_reprosum_mod , only: shr_reprosum_calc
   use shr_infnan_mod   , only: shr_infnan_isnan, shr_infnan_isinf
 
+  implicit none
+  save
+  private
+#include <mpif.h>
+
+  public :: seq_nlmap_check_matrices
+  public :: seq_nlmap_avNormArr
+
 contains
 
   subroutine seq_nlmap_avNormArr(mapper, av_i, av_o, norm_i, rList, norm)
@@ -131,10 +135,10 @@ contains
     !
     ! Arguments
     !
-    type(seq_map)   , intent(inout) :: mapper! mapper
-    type(mct_aVect) , intent(in)    :: av_i  ! input
-    type(mct_aVect) , intent(inout) :: av_o  ! output
-    real(r8)        , intent(in), optional :: norm_i(:)  ! source "weight"
+    type(seq_map)   , intent(inout) :: mapper ! mapper
+    type(mct_aVect) , intent(in)    :: av_i   ! input
+    type(mct_aVect) , intent(inout) :: av_o   ! output
+    real(r8)        , intent(in), optional :: norm_i(:) ! source "weight"
     character(len=*), intent(in), optional :: rList ! fields list
     logical         , intent(in), optional :: norm  ! normalize at end
     !
@@ -552,7 +556,7 @@ contains
     call mct_aVect_clean(avp_i)
     call mct_aVect_clean(avp_o)
 
-  end subroutine seq_map_avNormArr
+  end subroutine seq_nlmap_avNormArr
 
   subroutine sMat_avMult_and_calc_bounds(xAV, sMatPlus, lnorm, natt, yAV, lo, hi)
     ! Compute
@@ -655,12 +659,12 @@ contains
 
   end subroutine sMat_avMult_and_calc_bounds
 
-  subroutine check_matrices(m)
+  subroutine seq_nlmap_check_matrices(m)
     type(seq_map), intent(in) :: m
 
     if (.not. m%nl_available) return
 
     
-  end subroutine check_matrices
+  end subroutine seq_nlmap_check_matrices
 
 end module seq_nlmap_mod
