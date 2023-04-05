@@ -63,9 +63,11 @@ module seq_nlmap_mod
   ! CAAS (Alg. 3.1 in doi:10.1137/18M1165414) applied to this case:
   !   CAAS(Am, A, f, x)
   !     g := Am f
-  !     M := t'(Am (f x))
+  !     gym := Am (f x)
+  !     M := t'gym
   !     y0 := (A (f x)) / g
   !     l, u := bounds(A, x)
+  !     zero y0, l, u in any cell in which  gym is 0
   !     y1 := max(l, min(u, y0))
   !     dM := M - t'(g y1)
   !     if dM >= 0
@@ -97,11 +99,20 @@ module seq_nlmap_mod
   ! permitting the final line to hold.
   !
   ! Usage:
-  !   For any existing aave mapfile SRC2TGT_TMAPFILE, where T is 'F' or 'S',
-  ! optionally provide a second, high-order map by specifying
-  ! SRC2TGT_TMAPFILE_NONLINEAR. If T is 'F', then the fixer restores global
-  ! mass, as defined by the SRC2TGT_TMAPFILE map, and local bounds. If T is 'S',
-  ! then the fixer restores the bounds.
+  !   For any existing (area-averaged; see the next paragraph) mapfile
+  ! SRC2TGT_TMAPFILE, where T is 'F' or 'S', optionally provide a second,
+  ! high-order map by specifying SRC2TGT_TMAPFILE_NONLINEAR. If T is 'F', then
+  ! the fixer restores global mass, as defined by the SRC2TGT_TMAPFILE map, and
+  ! local bounds. If T is 'S', then the fixer restores the bounds.
+  !   In practice, SRC2TGT_TMAPFILE should be an area-averaged map ('aave', aka
+  ! 'mono'). This map provides the reference global mass on the target grid and
+  ! the non-0 target cells. SRC2TGT_TMAPFILE_NONLINEAR can be anything, but its
+  ! non-0 pattern must be a superset of SRC2TGT_TMAPFILE's. An initialization-
+  ! time check of this requirement is performed; if it is not satisfied, the run
+  ! exits. This requirement assures that SRC2TGT_TMAPFILE_NONLINEAR provides
+  ! data in any target cell that SRC2TGT_TMAPFILE does. In the opposite
+  ! direction, at runtime, any target cell that SRC2TGT_TMAPFILE does not affect
+  ! is zeroed after SRC2TGT_TMAPFILE_NONLINEAR is applied.
   !
   ! Author: A.M. Bradley, Mar,Apr-2023
   !
@@ -161,6 +172,8 @@ contains
     !amb-todo remove inf/nan code
     !amb-todo change ALARM check on mass to sum over abs values
     !amb-todo then nightly runs post-test py looking at cpl.log for ALARM lines
+    !amb-todo combine into one matvec
+    !amb-todo combine min/max reduction using a custom reduce
 
     call t_startf('seq_nlmap_avNormArr')
 
@@ -174,7 +187,6 @@ contains
 
     call mct_aVect_init(nl_avp_o, avp_o, lsize=lsize_o)
 
-    !amb-todo Combine into one matvec.
     call mct_sMat_avMult(avp_i, mapper%sMatp, avp_o, VECTOR=mct_usevector)
     
     if (verbose) then
@@ -267,7 +279,6 @@ contains
                 lmaxs(k) = max(lmaxs(k), tmp)
              end do
           end do
-          !amb-todo combine using a custom reducer
           call mpi_allreduce(lmins, oglims(:,1), natt, MPI_DOUBLE_PRECISION, MPI_MIN, mpicom, ierr)
           call mpi_allreduce(lmaxs, oglims(:,2), natt, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, ierr)
           if (amroot) then
