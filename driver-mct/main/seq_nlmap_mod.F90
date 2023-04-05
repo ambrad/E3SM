@@ -107,7 +107,7 @@ module seq_nlmap_mod
   !
   !-----------------------------------------------------------------------------
   
-  use shr_kind_mod     , only: R8 => SHR_KIND_R8, IN=>SHR_KIND_IN
+  use shr_kind_mod     , only: R8 => SHR_KIND_R8, IN => SHR_KIND_IN, I8 => SHR_KIND_I8
   use shr_kind_mod     , only: CX => SHR_KIND_CX
   use shr_sys_mod
   use shr_const_mod
@@ -131,7 +131,6 @@ contains
 
   subroutine seq_nlmap_avNormArr(mapper, avp_i, avp_o, lnorm)
 
-    implicit none
     !-----------------------------------------------------
     !
     ! Arguments
@@ -160,6 +159,8 @@ contains
     !-----------------------------------------------------
 
     !amb-todo remove inf/nan code
+    !amb-todo change ALARM check on mass to sum over abs values
+    !amb-todo then nightly runs post-test py looking at cpl.log for ALARM lines
 
     call t_startf('seq_nlmap_avNormArr')
 
@@ -266,6 +267,7 @@ contains
                 lmaxs(k) = max(lmaxs(k), tmp)
              end do
           end do
+          !amb-todo combine using a custom reducer
           call mpi_allreduce(lmins, oglims(:,1), natt, MPI_DOUBLE_PRECISION, MPI_MIN, mpicom, ierr)
           call mpi_allreduce(lmaxs, oglims(:,2), natt, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, ierr)
           if (amroot) then
@@ -334,13 +336,13 @@ contains
              if (gwts(k) /= 0 .or. glbl_masses(k) /= 0) then
                 write(logunit, '(a,i2,a,i2,es23.15,es23.15,es23.15,es10.2)') &
                      'nlmap>  caas-dm ', k, '/', natt, &
-                                ! true global mass
+                     ! true global mass
                      glbl_masses(k), &
-                                ! dm due to global mass nonconservation in the linear map
+                     ! dm due to global mass nonconservation in the linear map
                      glbl_masses(k) - glbl_masses(natt+k), &
-                                ! dm due to clipping
+                     ! dm due to clipping
                      gwts(k) - (glbl_masses(k) - glbl_masses(natt+k)), &
-                                ! dm relative to true global mass
+                     ! dm relative to true global mass
                      gwts(k)/abs(glbl_masses(k))
              end if
           end do
@@ -536,9 +538,9 @@ contains
     lop%rAttr(:,:) =  1.e300_r8
     hip%rAttr(:,:) = -1.e300_r8
     ne = mct_sMat_lsize(sMatPlus%Matrix)
-    irow = mct_sMat_indexIA(sMatPlus%Matrix,'lrow')
-    icol = mct_sMat_indexIA(sMatPlus%Matrix,'lcol')
-    iwgt = mct_sMat_indexRA(sMatPlus%Matrix,'weight')
+    irow = mct_sMat_indexIA(sMatPlus%Matrix, 'lrow')
+    icol = mct_sMat_indexIA(sMatPlus%Matrix, 'lcol')
+    iwgt = mct_sMat_indexRA(sMatPlus%Matrix, 'weight')
     do i = 1, ne
        row = sMatPlus%Matrix%data%iAttr(irow,i)
        col = sMatPlus%Matrix%data%iAttr(icol,i)
@@ -586,11 +588,109 @@ contains
   end subroutine sMat_avMult_and_calc_bounds
 
   subroutine seq_nlmap_check_matrices(m)
+    ! Check that m%sMatp%Matrix's non-0 pattern is a subset of the pattern of
+    ! m%nl_sMatp%Matrix. This assures that the second will provide data to every
+    ! target index that the first does, regardless of source mask.
+    
     type(seq_map), intent(in) :: m
+
+    integer :: i, j, ln, nln, arow, acol, awgt, irow, icol, jrow, jcol
+    real(r8) :: iwgt, jwgt
+    logical :: found
+    integer, allocatable, dimension(:) :: l_idxs, nl_idxs
 
     if (.not. m%nl_available) return
 
-    
+    if (trim(m%strategy) /= 'X') then
+       if (seq_comm_iamroot(CPLID)) then
+          write(logunit, '(5A)') 'seq_nlmap_check_matrices) WARNING: Skipping check of ', &
+               trim(m%nl_mapfile), ' against ', trim(m%mapfile), &
+               ' because the second does not use strategy X'
+       end if
+       return
+    end if
+
+    call sort_rowcols(m%sMatp%Matrix, l_idxs)
+    call sort_rowcols(m%nl_sMatp%Matrix, nl_idxs)
+    ln = size(l_idxs)
+    nln = size(nl_idxs)
+
+    arow = mct_sMat_indexIA(m%sMatp%Matrix, 'grow')
+    acol = mct_sMat_indexIA(m%sMatp%Matrix, 'gcol')
+    awgt = mct_sMat_indexRA(m%sMatp%Matrix, 'weight')
+
+    found = .true.
+    j = 1
+    do i = 1, ln
+       irow = m%sMatp%Matrix%data%iAttr(arow,l_idxs(i))
+       icol = m%sMatp%Matrix%data%iAttr(acol,l_idxs(i))
+       iwgt = m%sMatp%Matrix%data%rAttr(awgt,l_idxs(i))
+       if (iwgt == 0.0_r8) cycle
+       found = .false.
+       do while (j <= nln)
+          jrow = m%nl_sMatp%Matrix%data%iAttr(arow,nl_idxs(j))
+          jcol = m%nl_sMatp%Matrix%data%iAttr(acol,nl_idxs(j))
+          jwgt = m%nl_sMatp%Matrix%data%rAttr(awgt,nl_idxs(j))
+          if (jrow == irow .and. jcol == icol) then
+             found = jwgt /= 0.0_r8
+             exit
+          end if
+          j = j + 1
+       end do
+       if (.not. found) exit
+    end do
+
+    deallocate(l_idxs, nl_idxs)
+
+    if (.not. found) then
+       call shr_sys_abort('(seq_nlmap_check_matrices) ERROR: '// &
+            'low-order map non-0 structure not a subset of high-order map non-0 structure: '// &
+            trim(m%mapfile)//' '//trim(m%nl_mapfile))
+    end if
+
   end subroutine seq_nlmap_check_matrices
+
+  subroutine sort_rowcols(m, idxs)
+    ! On output, idxs(i) is the i'th ordered non-0 entry (r,c) in m, ordered by
+    ! global column c, then global row r.
+    
+    type(mct_sMat), intent(in) :: m
+    integer, allocatable, intent(out) :: idxs(:)
+
+    integer :: arow, acol, nnz, i, minrow, mincol, maxrow, nrow, row
+    integer(i8) :: col
+    integer(i8), allocatable :: v(:)
+
+    nnz = mct_sMat_lsize(m)
+    arow = mct_sMat_indexIA(m, 'grow')
+    acol = mct_sMat_indexIA(m, 'gcol')
+
+    allocate(idxs(nnz), v(nnz))
+
+    maxrow = 0
+    do i = 1, nnz
+       row = m%data%iAttr(arow,i)
+       maxrow = max(maxrow, row)
+    end do
+    minrow = maxrow
+    do i = 1, nnz
+       row = m%data%iAttr(arow,i)
+       col = m%data%iAttr(acol,i)
+       minrow = min(minrow, row)
+       mincol = min(mincol, col)
+    end do
+    nrow = maxrow - minrow + 1
+    
+    do i = 1, nnz
+       row = m%data%iAttr(arow,i) - minrow
+       col = m%data%iAttr(acol,i) - mincol
+       v(i) = nrow*col + int(row, i8)
+    end do
+    
+    call mct_indexset(nnz, idxs)
+    call mct_indexsort(nnz, idxs, v)
+    deallocate(v)
+
+  end subroutine sort_rowcols
 
 end module seq_nlmap_mod
