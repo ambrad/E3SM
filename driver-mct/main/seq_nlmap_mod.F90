@@ -169,7 +169,6 @@ contains
     real(r8), allocatable, dimension(:,:) :: dof_masses, caas_wgt, oglims, lcl_lo, lcl_hi
     !-----------------------------------------------------
 
-    !amb-todo remove inf/nan code
     !amb-todo change ALARM check on mass to sum over abs values
     !amb-todo then nightly runs post-test py looking at cpl.log for ALARM lines
     !amb-todo combine into one matvec
@@ -195,15 +194,6 @@ contains
                trim(mapper%strategy), mapper%nl_conservative, lnorm, natt
        end if
     end if
-    do j = 1,lsize_i
-       do k = 1,natt
-          tmp = avp_i%rAttr(k,j)
-          if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
-             write(logunit, '(a,a,l2,i5,i6,es23.15)') 'nlmap> inf/nan-1 ', &
-                  trim(mapper%mapfile), mapper%nl_conservative, k, j, tmp
-          end if
-       end do
-    end do
 
     if (lnorm) then
        kf = mct_aVect_indexRA(avp_i,ffld)
@@ -219,24 +209,9 @@ contains
     call sMat_avMult_and_calc_bounds(avp_i, mapper%nl_sMatp, lnorm, natt, &
          nl_avp_o, lcl_lo, lcl_hi)
 
-    do j = 1,lsize_o
-       do k = 1,natt
-          tmp = nl_avp_o%rAttr(k,j)
-          if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
-             write(logunit, '(a,a,l2,i3,i6,es23.15)') 'nlmap> inf/nan0a ', &
-                  trim(mapper%mapfile), mapper%nl_conservative, k, j, tmp
-          end if
-          tmp = avp_o%rAttr(k,j)
-          if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
-             write(logunit, '(a,a,l2,i3,i6,es23.15)') 'nlmap> inf/nan0b ', &
-                  trim(mapper%mapfile), mapper%nl_conservative, k, j, tmp
-          end if
-       end do
-    end do
-
-    ! Mask high-order field against low-order. Occasionally an exact 0 in the
-    ! low-order field will map the high-order field unnecessarily, but that's
-    ! OK: it's a local reduction in order to one, not a wrong value.
+    ! Mask high-order field against low-order. An exact 0 in the low-order field
+    ! will mask the high-order field unnecessarily, but that's OK: it's a rare,
+    ! local reduction in order to one, not a wrong value.
     do j = 1,lsize_o
        do k = 1,natt
           if (avp_o%rAttr(k,j) == 0) then
@@ -395,16 +370,6 @@ contains
        deallocate(gwts, lcl_lo, lcl_hi)
        call mct_aVect_clean(nl_avp_o)
 
-       do j = 1,lsize_o
-          do k = 1,natt
-             tmp = avp_o%rAttr(k,j)
-             if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
-                write(logunit, '(a,a,l2,i3,i6,es23.15)') 'nlmap> inf/nan 1 ', &
-                     trim(mapper%mapfile), mapper%nl_conservative, k, j, tmp
-             end if
-          end do
-       end do
-
        ! Clip for numerics, just against the global extrema.
        do j = 1,lsize_o
           do k = 1,natt
@@ -482,16 +447,6 @@ contains
           end do
        end do
     end if
-
-    do j = 1,lsize_o
-       do k = 1,natt
-          tmp = avp_o%rAttr(k,j)
-          if (shr_infnan_isnan(tmp) .or. shr_infnan_isinf(tmp)) then
-             write(logunit, '(a,a,l2,i3,i6,es23.15)') 'nlmap> inf/nan 2 ', &
-                  trim(mapper%mapfile), mapper%nl_conservative, k, j, tmp
-          end if
-       end do
-    end do
 
     call t_stopf('seq_nlmap_avNormArr')
 
