@@ -141,18 +141,15 @@ module seq_nlmap_mod
 contains
 
   subroutine seq_nlmap_avNormArr(mapper, avp_i, avp_o, lnorm)
+    ! When mapper%nl_available, the call to mct_sMat_avMult in seq_map_avNormArr
+    ! can be replaced with a call to this routine. This routine applies the
+    ! nonlinear map, just as mct_sMat_avMult applies a linear map.
 
-    !-----------------------------------------------------
-    !
-    ! Arguments
-    !
     type(seq_map)   , intent(inout) :: mapper ! mapper
     type(mct_aVect) , intent(in)    :: avp_i  ! input
     type(mct_aVect) , intent(inout) :: avp_o  ! output
     logical         , intent(in)    :: lnorm  ! normalize at end
-    !
-    ! Local variables
-    !
+
     type(mct_aVect)        :: nl_avp_o
     integer(IN)            :: j,kf
     integer(IN)            :: lsize_i,lsize_o
@@ -167,9 +164,7 @@ contains
     real(r8) :: tmp, area, lo, hi, y
     real(r8), allocatable, dimension(:) :: lmins, gmins, lmaxs, gmaxs, glbl_masses, gwts
     real(r8), allocatable, dimension(:,:) :: dof_masses, caas_wgt, oglims, lcl_lo, lcl_hi
-    !-----------------------------------------------------
 
-    !amb-todo change ALARM check on mass to sum over abs values
     !amb-todo then nightly runs post-test py looking at cpl.log for ALARM lines
     !amb-todo combine into one matvec
     !amb-todo combine min/max reduction using a custom reduce
@@ -278,8 +273,8 @@ contains
        end if
        do j = 1,lsize_o
           area = mapper%dom_cx_d%data%rAttr(kArea,j)
-          dof_masses(j,     1:natt) =    avp_o%rAttr(:,j)*area
-          dof_masses(j,natt+1:nfld) = nl_avp_o%rAttr(:,j)*area
+          dof_masses(j,     1:natt) =    avp_o%rAttr(1:natt,j)*area
+          dof_masses(j,natt+1:nfld) = nl_avp_o%rAttr(1:natt,j)*area
        end do
        call shr_reprosum_calc(dof_masses, glbl_masses, nsum, nsum, nfld, commid=mpicom)
        deallocate(dof_masses)
@@ -382,16 +377,21 @@ contains
           ! Final diagnostics.
           ! Check global mass.
           nsum = lsize_o
-          allocate(dof_masses(nsum,natt), gwts(natt))
+          nfld = 2*natt
+          allocate(dof_masses(nsum,nfld), gwts(nfld))
           do j = 1,lsize_o
-             dof_masses(j,:) = avp_o%rAttr(:,j)*mapper%dom_cx_d%data%rAttr(kArea,j)
+             dof_masses(j,:natt) = avp_o%rAttr(:natt,j)*mapper%dom_cx_d%data%rAttr(kArea,j)
+             ! Sum |cell mass|. If all cell masses are >= 0, then the abs does
+             ! not matter; if the signs are mixed, we use this quantity to
+             ! compute a meaningful relative error.
+             dof_masses(j,natt+1:) = abs(avp_o%rAttr(1:natt,j))*area
           end do
-          call shr_reprosum_calc(dof_masses, gwts, nsum, nsum, natt, commid=mpicom)
+          call shr_reprosum_calc(dof_masses, gwts, nsum, nsum, nfld, commid=mpicom)
           deallocate(dof_masses)
           if (amroot) then
              do k = 1,natt
                 if (gwts(k) /= 0 .or. glbl_masses(k) /= 0) then
-                   tmp = (gwts(k) - glbl_masses(k))/abs(glbl_masses(k))
+                   tmp = (gwts(k) - glbl_masses(k))/gwts(natt+k)
                    if (abs(tmp) < 1e-15) then
                       msg = ''
                    else if (abs(tmp) < 1e-13) then
