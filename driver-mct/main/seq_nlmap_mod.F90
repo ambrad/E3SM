@@ -135,10 +135,125 @@ module seq_nlmap_mod
   private
 #include <mpif.h>
 
+  public :: seq_nlmap_setopts
   public :: seq_nlmap_check_matrices
   public :: seq_nlmap_avNormArr
 
+  integer :: nlmaps_verbosity
+
 contains
+
+  subroutine seq_nlmap_setopts(nlmaps_verbosity_in)
+    integer, optional, intent(in) :: nlmaps_verbosity_in
+
+    if (present(nlmaps_verbosity_in)) nlmaps_verbosity = nlmaps_verbosity_in
+  end subroutine seq_nlmap_setopts
+
+  subroutine seq_nlmap_check_matrices(m)
+    ! Check that m%sMatp%Matrix's non-0 pattern is a subset of the pattern of
+    ! m%nl_sMatp%Matrix. This assures that the second will provide data to every
+    ! target index that the first does, regardless of source mask.
+    
+    type(seq_map), intent(in) :: m
+
+    integer :: i, j, ln, nln, arow, acol, awgt, irow, icol, jrow, jcol
+    real(r8) :: iwgt, jwgt
+    logical :: found
+    integer, allocatable, dimension(:) :: l_idxs, nl_idxs
+
+    if (.not. m%nl_available) return
+
+    if (trim(m%strategy) /= 'X') then
+       if (seq_comm_iamroot(CPLID)) then
+          write(logunit, '(5A)') 'seq_nlmap_check_matrices) WARNING: Skipping check of ', &
+               trim(m%nl_mapfile), ' against ', trim(m%mapfile), &
+               ' because the second does not use strategy X'
+       end if
+       return
+    end if
+
+    call sort_rowcols(m%sMatp%Matrix, l_idxs)
+    call sort_rowcols(m%nl_sMatp%Matrix, nl_idxs)
+    ln = size(l_idxs)
+    nln = size(nl_idxs)
+
+    arow = mct_sMat_indexIA(m%sMatp%Matrix, 'grow')
+    acol = mct_sMat_indexIA(m%sMatp%Matrix, 'gcol')
+    awgt = mct_sMat_indexRA(m%sMatp%Matrix, 'weight')
+
+    found = .true.
+    j = 1
+    do i = 1, ln
+       irow = m%sMatp%Matrix%data%iAttr(arow,l_idxs(i))
+       icol = m%sMatp%Matrix%data%iAttr(acol,l_idxs(i))
+       iwgt = m%sMatp%Matrix%data%rAttr(awgt,l_idxs(i))
+       if (iwgt == 0.0_r8) cycle
+       found = .false.
+       do while (j <= nln)
+          jrow = m%nl_sMatp%Matrix%data%iAttr(arow,nl_idxs(j))
+          jcol = m%nl_sMatp%Matrix%data%iAttr(acol,nl_idxs(j))
+          jwgt = m%nl_sMatp%Matrix%data%rAttr(awgt,nl_idxs(j))
+          if (jrow == irow .and. jcol == icol) then
+             found = jwgt /= 0.0_r8
+             exit
+          end if
+          j = j + 1
+       end do
+       if (.not. found) exit
+    end do
+
+    deallocate(l_idxs, nl_idxs)
+
+    if (.not. found) then
+       call shr_sys_abort('(seq_nlmap_check_matrices) ERROR: '// &
+            'low-order map non-0 structure not a subset of high-order map non-0 structure: '// &
+            trim(m%mapfile)//' '//trim(m%nl_mapfile))
+    end if
+
+  end subroutine seq_nlmap_check_matrices
+
+  subroutine sort_rowcols(m, idxs)
+    ! On output, idxs(i) is the i'th ordered non-0 entry (r,c) in m, ordered by
+    ! global column c, then global row r.
+    
+    type(mct_sMat), intent(in) :: m
+    integer, allocatable, intent(out) :: idxs(:)
+
+    integer :: arow, acol, nnz, i, minrow, mincol, maxrow, nrow, row
+    integer(i8) :: col
+    integer(i8), allocatable :: v(:)
+
+    nnz = mct_sMat_lsize(m)
+    arow = mct_sMat_indexIA(m, 'grow')
+    acol = mct_sMat_indexIA(m, 'gcol')
+
+    allocate(idxs(nnz), v(nnz))
+
+    maxrow = 0
+    do i = 1, nnz
+       row = m%data%iAttr(arow,i)
+       maxrow = max(maxrow, row)
+    end do
+    minrow = maxrow
+    do i = 1, nnz
+       row = m%data%iAttr(arow,i)
+       col = m%data%iAttr(acol,i)
+       minrow = min(minrow, row)
+       mincol = min(mincol, col)
+    end do
+    nrow = maxrow - minrow + 1
+    
+    do i = 1, nnz
+       row = m%data%iAttr(arow,i) - minrow
+       col = m%data%iAttr(acol,i) - mincol
+       v(i) = nrow*col + int(row, i8)
+    end do
+    
+    call mct_indexset(nnz, idxs)
+    call mct_indexsort(nnz, idxs, v)
+    deallocate(v)
+
+  end subroutine sort_rowcols
 
   subroutine seq_nlmap_avNormArr(mapper, avp_i, avp_o, lnorm)
     ! When mapper%nl_available, the call to mct_sMat_avMult in seq_map_avNormArr
@@ -171,7 +286,7 @@ contains
 
     call t_startf('seq_nlmap_avNormArr')
 
-    verbose = .false.
+    verbose = nlmaps_verbosity > 0
     call seq_comm_setptrs(CPLID, mpicom=mpicom)
     amroot = seq_comm_iamroot(CPLID)
 
@@ -552,111 +667,5 @@ contains
     call mct_aVect_clean(hip)
 
   end subroutine sMat_avMult_and_calc_bounds
-
-  subroutine seq_nlmap_check_matrices(m)
-    ! Check that m%sMatp%Matrix's non-0 pattern is a subset of the pattern of
-    ! m%nl_sMatp%Matrix. This assures that the second will provide data to every
-    ! target index that the first does, regardless of source mask.
-    
-    type(seq_map), intent(in) :: m
-
-    integer :: i, j, ln, nln, arow, acol, awgt, irow, icol, jrow, jcol
-    real(r8) :: iwgt, jwgt
-    logical :: found
-    integer, allocatable, dimension(:) :: l_idxs, nl_idxs
-
-    if (.not. m%nl_available) return
-
-    if (trim(m%strategy) /= 'X') then
-       if (seq_comm_iamroot(CPLID)) then
-          write(logunit, '(5A)') 'seq_nlmap_check_matrices) WARNING: Skipping check of ', &
-               trim(m%nl_mapfile), ' against ', trim(m%mapfile), &
-               ' because the second does not use strategy X'
-       end if
-       return
-    end if
-
-    call sort_rowcols(m%sMatp%Matrix, l_idxs)
-    call sort_rowcols(m%nl_sMatp%Matrix, nl_idxs)
-    ln = size(l_idxs)
-    nln = size(nl_idxs)
-
-    arow = mct_sMat_indexIA(m%sMatp%Matrix, 'grow')
-    acol = mct_sMat_indexIA(m%sMatp%Matrix, 'gcol')
-    awgt = mct_sMat_indexRA(m%sMatp%Matrix, 'weight')
-
-    found = .true.
-    j = 1
-    do i = 1, ln
-       irow = m%sMatp%Matrix%data%iAttr(arow,l_idxs(i))
-       icol = m%sMatp%Matrix%data%iAttr(acol,l_idxs(i))
-       iwgt = m%sMatp%Matrix%data%rAttr(awgt,l_idxs(i))
-       if (iwgt == 0.0_r8) cycle
-       found = .false.
-       do while (j <= nln)
-          jrow = m%nl_sMatp%Matrix%data%iAttr(arow,nl_idxs(j))
-          jcol = m%nl_sMatp%Matrix%data%iAttr(acol,nl_idxs(j))
-          jwgt = m%nl_sMatp%Matrix%data%rAttr(awgt,nl_idxs(j))
-          if (jrow == irow .and. jcol == icol) then
-             found = jwgt /= 0.0_r8
-             exit
-          end if
-          j = j + 1
-       end do
-       if (.not. found) exit
-    end do
-
-    deallocate(l_idxs, nl_idxs)
-
-    if (.not. found) then
-       call shr_sys_abort('(seq_nlmap_check_matrices) ERROR: '// &
-            'low-order map non-0 structure not a subset of high-order map non-0 structure: '// &
-            trim(m%mapfile)//' '//trim(m%nl_mapfile))
-    end if
-
-  end subroutine seq_nlmap_check_matrices
-
-  subroutine sort_rowcols(m, idxs)
-    ! On output, idxs(i) is the i'th ordered non-0 entry (r,c) in m, ordered by
-    ! global column c, then global row r.
-    
-    type(mct_sMat), intent(in) :: m
-    integer, allocatable, intent(out) :: idxs(:)
-
-    integer :: arow, acol, nnz, i, minrow, mincol, maxrow, nrow, row
-    integer(i8) :: col
-    integer(i8), allocatable :: v(:)
-
-    nnz = mct_sMat_lsize(m)
-    arow = mct_sMat_indexIA(m, 'grow')
-    acol = mct_sMat_indexIA(m, 'gcol')
-
-    allocate(idxs(nnz), v(nnz))
-
-    maxrow = 0
-    do i = 1, nnz
-       row = m%data%iAttr(arow,i)
-       maxrow = max(maxrow, row)
-    end do
-    minrow = maxrow
-    do i = 1, nnz
-       row = m%data%iAttr(arow,i)
-       col = m%data%iAttr(acol,i)
-       minrow = min(minrow, row)
-       mincol = min(mincol, col)
-    end do
-    nrow = maxrow - minrow + 1
-    
-    do i = 1, nnz
-       row = m%data%iAttr(arow,i) - minrow
-       col = m%data%iAttr(acol,i) - mincol
-       v(i) = nrow*col + int(row, i8)
-    end do
-    
-    call mct_indexset(nnz, idxs)
-    call mct_indexsort(nnz, idxs, v)
-    deallocate(v)
-
-  end subroutine sort_rowcols
 
 end module seq_nlmap_mod
