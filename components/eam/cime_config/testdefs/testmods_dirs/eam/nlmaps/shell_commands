@@ -1,5 +1,9 @@
 alg=trfvnp2
 
+# This line is separate from the nonlinear maps. It corrects an oversight in the
+# existing default trigrid grid configuration.
+./xmlchange ATM2ROF_SMAPNAME=${DIN_LOC_ROOT}/cpl/gridmaps/ne30pg2/map_ne30pg2_to_r05_bilinear.200220.nc
+
 a2l=/home/ac.ambradl/compy-goodies/cplcaas/current/map_ne30pg2_to_r05_${alg}.amb.nc
 a2o=/home/ac.ambradl/compy-goodies/cplcaas/current/map_ne30pg2_to_EC30to60E2r2_${alg}.amb.nc
 l2a=/home/ac.ambradl/compy-goodies/cplcaas/current/map_r05_to_ne30pg2_${alg}.amb.nc
@@ -13,4 +17,4 @@ o2a=/home/ac.ambradl/compy-goodies/cplcaas/current/map_EC30to60E2r2_to_ne30pg2_$
 ./xmlchange OCN2ATM_FMAPNAME_NONLINEAR=$o2a
 ./xmlchange OCN2ATM_SMAPNAME_NONLINEAR=$o2a
 
-./xmlchange POSTRUN_SCRIPT="$CIMEROOT/../components/eam/cime_config/testdefs/testmods_dirs/eam/nlmaps/nlmaps_check.py"
+./xmlchange POSTRUN_SCRIPT="${CIMEROOT}/../components/eam/cime_config/testdefs/testmods_dirs/eam/nlmaps/nlmaps_check.py"
