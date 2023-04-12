@@ -190,7 +190,7 @@ _TESTS = {
         },
 
     "e3sm_integration" : {
-        "inherit" : ("e3sm_developer", "e3sm_atm_integration", "e3sm_mmf_integration", "v3_trigrid"),
+        "inherit" : ("e3sm_developer", "e3sm_atm_integration", "e3sm_mmf_integration"),
         "time"    : "03:00:00",
         "tests"   : (
             "ERS.ne11_oQU240.WCYCL1850NS",
@@ -293,6 +293,7 @@ _TESTS = {
             "SMS_D_Lm6.1x1_brazil.IELMFATES",
             )
         },
+
 
     #atmopheric tests for ftypes with 2 builds only
     #ftype2 is a default and tested in other suites for preqx
