@@ -38,7 +38,11 @@ def main(case_dir):
     cpl_fn = uncompress(cpl_fn)
     print('Using log file {}'.format(cpl_fn))
     alarms = grep('nlmap>.*ALARM', cpl_fn)
-    return len(alarms) == 0
+    ok = len(alarms) == 0
+    if not ok:
+        for ln in alarms:
+            print(ln)
+    return ok
 
 good = main(sys.argv[1])
 
