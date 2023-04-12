@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import os, sys, re
+import os, sys, re, glob
 
 def readall(fn):
     with open(fn,'r') as f:
@@ -20,13 +20,10 @@ def get_run_dir(case_dir):
     return ln.split()[2].split('"')[1]
 
 def get_cpl_log(run_dir):
-    filenames = os.listdir(run_dir)
-    atm_fn = None
-    for f in filenames:
-        if 'cpl.log' in f:
-            atm_fn = f
-            break
-    return run_dir + os.path.sep + atm_fn
+    filenames = glob.glob(run_dir + os.path.sep + 'cpl.log.*')
+    if len(filenames) == 0: return None
+    filenames.sort()
+    return filenames[-1]
 
 def uncompress(filename):
     if '.gz' in filename:
@@ -34,10 +31,16 @@ def uncompress(filename):
         return filename[:-3]
     return filename
 
-case_dir = sys.argv[1]
-run_dir = get_run_dir(case_dir)
+def main(case_dir):
+    run_dir = get_run_dir(case_dir)
+    cpl_fn = get_cpl_log(run_dir)
+    if cpl_fn is None: return False
+    cpl_fn = uncompress(cpl_fn)
+    print('Using log file {}'.format(cpl_fn))
+    alarms = grep('nlmap>.*ALARM', cpl_fn)
+    return len(alarms) == 0
 
-good = True
+good = main(sys.argv[1])
 
 if good:
     print('PASS')
