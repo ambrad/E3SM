@@ -183,6 +183,7 @@ MACRO(THETAL_KOKKOS_SETUP)
     ${SRC_SHARE_DIR}/cxx/mpi/MpiBuffersManager.cpp
     ${SRC_SHARE_DIR}/cxx/mpi/mpi_cxx_f90_interface.cpp
     ${SRC_SHARE_DIR}/cxx/utilities/BfbUtils.cpp
+    ${SRC_SHARE_DIR}/cxx/utilities/InternalDiagnostics.cpp
   )
 
   IF (HOMME_USE_ARKODE)
