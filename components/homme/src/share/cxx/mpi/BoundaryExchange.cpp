@@ -51,6 +51,8 @@ BoundaryExchange::BoundaryExchange()
   m_cleaned_up = true;
   m_send_pending = false;
   m_recv_pending = false;
+
+  m_diagnostics_level = 0;
 }
 
 BoundaryExchange::BoundaryExchange(std::shared_ptr<Connectivity> connectivity, std::shared_ptr<MpiBuffersManager> buffers_manager)
@@ -61,6 +63,8 @@ BoundaryExchange::BoundaryExchange(std::shared_ptr<Connectivity> connectivity, s
 
   // Set the buffers manager
   set_buffers_manager (buffers_manager);
+
+  m_diagnostics_level = 0;
 }
 
 BoundaryExchange::~BoundaryExchange()
@@ -73,6 +77,10 @@ BoundaryExchange::~BoundaryExchange()
     m_buffers_manager->remove_customer(this);
   }
 }
+
+void BoundaryExchange::set_label (const std::string& label) { m_label = label; }
+const std::string& BoundaryExchange::get_label () const { return m_label; }
+void BoundaryExchange::set_diagnostics_level (const int level) { m_diagnostics_level = level; }
 
 void BoundaryExchange::set_connectivity (std::shared_ptr<Connectivity> connectivity)
 {
