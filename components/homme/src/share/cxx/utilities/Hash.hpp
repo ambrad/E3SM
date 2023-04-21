@@ -1,21 +1,56 @@
+/********************************************************************************
+ * HOMMEXX 1.0: Copyright of Sandia Corporation
+ * This software is released under the BSD license
+ * See the file 'COPYRIGHT' in the HOMMEXX/src/share/cxx directory
+ *******************************************************************************/
+
 #ifndef HASH_HPP
 #define HASH_HPP
 
 #include <cstdint>
 
+#include "Types.hpp"
+
 namespace Homme {
 
 typedef std::uint64_t HashType;
 
-// Accumulate v into accum using a hash of its bits.
-KOKKOS_INLINE_FUNCTION void hash (const double v_, HashType& accum) {
+// Each hash function accumulates v into accum using a hash of its bits.
+
+KOKKOS_INLINE_FUNCTION void hash (const HashType v, HashType& accum) {
   constexpr auto first_bit = 1ULL << 63;
-  // reinterpret_cast leads to -Wstrict-aliasing warnings; memcpy instead.
+  accum += ~first_bit & v; // no overflow
+  accum ^=  first_bit & v; // handle most significant bit  
+}
+
+KOKKOS_INLINE_FUNCTION void hash (const double v_, HashType& accum) {
   HashType v;
   std::memcpy(&v, &v_, sizeof(HashType));
-  accum += ~first_bit & v; // no overflow
-  accum ^=  first_bit & v; // handle most significant bit
+  hash(v, accum);
 }
+
+// Final n argument for Scalar views is in terms of Real, e.g., NUM_PHYSICAL_LEV
+// and not NUM_LEV.
+void hash(const ExecViewManaged<Scalar******>& v,
+          int n0, int n1, int n2, int n3, int n4, int n5,
+          HashType& accum);
+
+template <typename ExecSpace>
+struct HashReducer {
+  typedef HashReducer reducer;
+  typedef HashType value_type;
+  typedef Kokkos::View<value_type*, ExecSpace, Kokkos::MemoryUnmanaged> result_view_type;
+
+  KOKKOS_INLINE_FUNCTION HashReducer (value_type& value_) : value(value_) {}
+  KOKKOS_INLINE_FUNCTION void join (value_type& dest, const value_type& src) const { hash(src, dest); }
+  KOKKOS_INLINE_FUNCTION void init (value_type& val) const { val = 0; }
+  KOKKOS_INLINE_FUNCTION value_type& reference () const { return value; }
+  KOKKOS_INLINE_FUNCTION bool references_scalar() const { return true; }
+  KOKKOS_INLINE_FUNCTION result_view_type view() const { return result_view_type(&value, 1); }
+
+private:
+  value_type& value;
+};
 
 } // Homme
 

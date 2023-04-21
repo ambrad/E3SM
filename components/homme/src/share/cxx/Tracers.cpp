@@ -69,4 +69,10 @@ void Tracers::push_qdp(F90Ptr &state_qdp) const {
   sync_to_host(qdp, state_qdp_f90);
 }
 
+HashType Tracers::hash () const {  
+  HashType accum = 0;
+  Homme::hash(qdp, ne, Q_NUM_TIME_LEVELS, nt, NP, NP, NUM_PHYSICAL_LEV, accum);
+  return accum;
+}
+
 } // namespace Homme
