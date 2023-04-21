@@ -34,7 +34,15 @@ KOKKOS_INLINE_FUNCTION void hash (const double v_, HashType& accum) {
 void hash(const ExecViewManaged<Scalar******>& v,
           int n0, int n1, int n2, int n3, int n4, int n5,
           HashType& accum);
+void hash(const ExecViewManaged<Scalar*****>& v,
+          int n0, int n1, int n2, int n3, int n4,
+          HashType& accum);
 
+void hash(const ExecViewManaged<Real****>& v,
+          int n0, int n1, int n2, int n3,
+          HashType& accum);
+
+// For Kokkos::parallel_reduce.
 template <typename ExecSpace>
 struct HashReducer {
   typedef HashReducer reducer;

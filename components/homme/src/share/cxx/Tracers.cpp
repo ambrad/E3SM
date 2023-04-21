@@ -72,6 +72,8 @@ void Tracers::push_qdp(F90Ptr &state_qdp) const {
 HashType Tracers::hash () const {  
   HashType accum = 0;
   Homme::hash(qdp, ne, Q_NUM_TIME_LEVELS, nt, NP, NP, NUM_PHYSICAL_LEV, accum);
+  Homme::hash(Q, ne, nt, NP, NP, NUM_PHYSICAL_LEV, accum);
+  Homme::hash(fq, ne, nt, NP, NP, NUM_PHYSICAL_LEV, accum);
   return accum;
 }
 

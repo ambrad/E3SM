@@ -394,7 +394,14 @@ void check_print_abort_on_bad_elems (const std::string& label, const int tlvl,
 }
 
 HashType ElementsState::hash () const {
-  return 0;
+  HashType accum = 0;
+  Homme::hash(m_v,         m_num_elems, NUM_TIME_LEVELS, 2, NP, NP, NUM_PHYSICAL_LEV, accum);
+  Homme::hash(m_w_i,       m_num_elems, NUM_TIME_LEVELS,    NP, NP, NUM_PHYSICAL_LEV, accum);
+  Homme::hash(m_vtheta_dp, m_num_elems, NUM_TIME_LEVELS,    NP, NP, NUM_PHYSICAL_LEV, accum);
+  Homme::hash(m_phinh_i,   m_num_elems, NUM_TIME_LEVELS,    NP, NP, NUM_PHYSICAL_LEV, accum);
+  Homme::hash(m_dp3d,      m_num_elems, NUM_TIME_LEVELS,    NP, NP, NUM_PHYSICAL_LEV, accum);
+  Homme::hash(m_ps_v,      m_num_elems, NUM_TIME_LEVELS,    NP, NP,                   accum);
+  return accum;
 }
 
 } // namespace Homme
