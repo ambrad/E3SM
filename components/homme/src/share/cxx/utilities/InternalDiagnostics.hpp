@@ -4,8 +4,8 @@
  * See the file 'COPYRIGHT' in the HOMMEXX/src/share/cxx directory
  *******************************************************************************/
 
-#ifndef INTERNAL_DIAGNOSTICS
-#define INTERNAL_DIAGNOSTICS
+#ifndef INTERNAL_DIAGNOSTICS_HPP
+#define INTERNAL_DIAGNOSTICS_HPP
 
 #include <string>
 
@@ -15,4 +15,4 @@ void print_global_state_hash(const std::string& label);
 
 } // Homme
 
-#endif // INTERNAL_DIAGNOSTICS
+#endif // INTERNAL_DIAGNOSTICS_HPP

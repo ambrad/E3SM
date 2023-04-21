@@ -393,4 +393,8 @@ void check_print_abort_on_bad_elems (const std::string& label, const int tlvl,
                         error_code < 0 ? Errors::err_bad_column_value : error_code);
 }
 
+HashType ElementsState::hash () const {
+  return 0;
+}
+
 } // namespace Homme
