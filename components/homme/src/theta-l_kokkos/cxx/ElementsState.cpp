@@ -393,14 +393,14 @@ void check_print_abort_on_bad_elems (const std::string& label, const int tlvl,
                         error_code < 0 ? Errors::err_bad_column_value : error_code);
 }
 
-HashType ElementsState::hash () const {
+HashType ElementsState::hash (const int tl) const {
   HashType accum = 0;
-  Homme::hash(m_v,         m_num_elems, NUM_TIME_LEVELS, 2, NP, NP, NUM_PHYSICAL_LEV, accum);
-  Homme::hash(m_w_i,       m_num_elems, NUM_TIME_LEVELS,    NP, NP, NUM_PHYSICAL_LEV, accum);
-  Homme::hash(m_vtheta_dp, m_num_elems, NUM_TIME_LEVELS,    NP, NP, NUM_PHYSICAL_LEV, accum);
-  Homme::hash(m_phinh_i,   m_num_elems, NUM_TIME_LEVELS,    NP, NP, NUM_PHYSICAL_LEV, accum);
-  Homme::hash(m_dp3d,      m_num_elems, NUM_TIME_LEVELS,    NP, NP, NUM_PHYSICAL_LEV, accum);
-  Homme::hash(m_ps_v,      m_num_elems, NUM_TIME_LEVELS,    NP, NP,                   accum);
+  Homme::hash(tl, m_v,         NUM_PHYSICAL_LEV, accum);
+  Homme::hash(tl, m_w_i,       NUM_PHYSICAL_LEV, accum);
+  Homme::hash(tl, m_vtheta_dp, NUM_PHYSICAL_LEV, accum);
+  Homme::hash(tl, m_phinh_i,   NUM_PHYSICAL_LEV, accum);
+  Homme::hash(tl, m_dp3d,      NUM_PHYSICAL_LEV, accum);
+  Homme::hash(tl, m_ps_v,                        accum);
   return accum;
 }
 

@@ -341,7 +341,7 @@ void BoundaryExchange::exchange_min_max ()
   // --- Recv and unpack --- //
   recv_and_unpack_min_max ();
 
-  if (m_diagnostics_level > 1)
+  if (m_diagnostics_level > 0)
     Homme::print_global_state_hash(std::string("BE-minmax-post-") + m_label);
 }
 

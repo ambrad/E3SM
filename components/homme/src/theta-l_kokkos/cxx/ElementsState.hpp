@@ -79,7 +79,7 @@ public:
   void push_to_f90_pointers(F90Ptr& state_v, F90Ptr& state_w_i, F90Ptr& state_vtheta_dp,
                             F90Ptr& state_phinh_i, F90Ptr& state_dp) const;
 
-  HashType hash() const;
+  HashType hash(const int time_level) const;
 
 private:
   int m_num_elems;

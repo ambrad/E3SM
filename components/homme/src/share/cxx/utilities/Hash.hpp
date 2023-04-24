@@ -31,16 +31,16 @@ KOKKOS_INLINE_FUNCTION void hash (const double v_, HashType& accum) {
 
 // Final n argument for Scalar views is in terms of Real, e.g., NUM_PHYSICAL_LEV
 // and not NUM_LEV.
-void hash(const ExecViewManaged<Scalar******>& v,
-          int n0, int n1, int n2, int n3, int n4, int n5,
-          HashType& accum);
-void hash(const ExecViewManaged<Scalar*****>& v,
-          int n0, int n1, int n2, int n3, int n4,
-          HashType& accum);
+void hash(const int tl,                           // time level
+          const ExecViewManaged<Scalar******>& v, // full view
+          int n5,                                 // max index of final slot
+          HashType& accum);                       // accumulate into input value
+void hash(const int tl, const ExecViewManaged<Scalar*****>& v, int n4, HashType& accum);
+void hash(const ExecViewManaged<Scalar*****>& v, int n4, HashType& accum);
+void hash(const int tl, const ExecViewManaged<Real****>& v, HashType& accum);
 
-void hash(const ExecViewManaged<Real****>& v,
-          int n0, int n1, int n2, int n3,
-          HashType& accum);
+// No time level slot.
+void hash(const ExecViewManaged<Scalar*****>& v, HashType& accum);
 
 // For Kokkos::parallel_reduce.
 template <typename ExecSpace>

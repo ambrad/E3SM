@@ -778,6 +778,8 @@ void HommeDynamics::init_homme_views () {
   auto& tracers = c.get<Homme::Tracers>();
   auto& forcing = c.get<Homme::ElementsForcing>();
 
+  params.internal_diagnostics_level = 1; //todo make a namelist option and rm
+
   constexpr int NGP  = HOMMEXX_NP;
   constexpr int NTL  = HOMMEXX_NUM_TIME_LEVELS;
   constexpr int QTL  = HOMMEXX_Q_NUM_TIME_LEVELS;

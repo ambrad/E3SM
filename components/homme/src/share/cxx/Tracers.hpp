@@ -40,7 +40,7 @@ struct Tracers {
   ExecViewManaged<Scalar**[NP][NP][NUM_LEV]>                    Q;
   ExecViewManaged<Scalar**[NP][NP][NUM_LEV]>                    fq;
 
-  HashType hash() const;
+  HashType hash(const int qdp_time_level) const;
 
 private:
   int nt;
