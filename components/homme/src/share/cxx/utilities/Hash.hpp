@@ -11,6 +11,10 @@
 
 #include "Types.hpp"
 
+/* Utilities to calculate a hash for a given model state. Hash values can be
+   compared between runs to find instances of non-BFBness.
+ */
+
 namespace Homme {
 
 typedef std::uint64_t HashType;

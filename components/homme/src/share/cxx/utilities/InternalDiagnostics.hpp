@@ -11,6 +11,7 @@
 
 namespace Homme {
 
+// Print a hash of ElementsState and Tracer values on rank 0.
 void print_global_state_hash(const std::string& label);
 
 } // Homme
