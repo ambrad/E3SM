@@ -57,8 +57,8 @@ struct HashReducer {
   KOKKOS_INLINE_FUNCTION void join (value_type& dest, const value_type& src) const { hash(src, dest); }
   KOKKOS_INLINE_FUNCTION void init (value_type& val) const { val = 0; }
   KOKKOS_INLINE_FUNCTION value_type& reference () const { return value; }
-  KOKKOS_INLINE_FUNCTION bool references_scalar() const { return true; }
-  KOKKOS_INLINE_FUNCTION result_view_type view() const { return result_view_type(&value, 1); }
+  KOKKOS_INLINE_FUNCTION bool references_scalar () const { return true; }
+  KOKKOS_INLINE_FUNCTION result_view_type view () const { return result_view_type(&value, 1); }
 
 private:
   value_type& value;
