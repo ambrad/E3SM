@@ -40,7 +40,7 @@ module seq_nlmap_mod
   !     => l(i) := min(x where Am(i,:) /= 0)
   !        u(i) similarly
   !   l <= Am x <= u
-  !   => 4. 0 <= A(i,j) <= 1
+  !   => 4. 0 <= Am(i,j) <= 1
   ! With fractions:
   !   g := Am f
   !   ym := (Am (f x)) / g
@@ -67,7 +67,7 @@ module seq_nlmap_mod
   !     M := t'gym
   !     y0 := (A (f x)) / g
   !     l, u := bounds(A, x)
-  !     zero y0, l, u in any cell in which  gym is 0
+  !     zero y0, l, u in any cell in which gym is 0
   !     y1 := max(l, min(u, y0))
   !     dM := M - t'(g y1)
   !     if dM >= 0
@@ -94,7 +94,7 @@ module seq_nlmap_mod
   !         = dM + [(t g)'u - M] >= dM by 8
   !     => y2 = y1 + (dM / (t g)'w) w <= y1 + w = u => y2 <= u.
   ! In this proof, the crucial part is point 8; it is equivalent to the
-  ! statement that the constraint is nonempty. This in turn makes
+  ! statement that the constraint set is nonempty. This in turn makes
   !   0 <= (dM / (t g)'w) <= 1,
   ! permitting the final line to hold.
   !
@@ -295,8 +295,9 @@ contains
     natt = size(avp_i%rAttr, 1)
 
     call mct_aVect_init(nl_avp_o, avp_o, lsize=lsize_o)
-
+    call t_startf('nlmap-Am')
     call mct_sMat_avMult(avp_i, mapper%sMatp, avp_o, VECTOR=mct_usevector)
+    call t_stopf('nlmap-Am')
     
     if (verbose) then
        if (amroot) then
@@ -316,8 +317,10 @@ contains
     end if
     
     allocate(lcl_lo(natt,lsize_o), lcl_hi(natt,lsize_o))
+    call t_startf('nlmap-A')
     call sMat_avMult_and_calc_bounds(avp_i, mapper%nl_sMatp, lnorm, natt, &
          nl_avp_o, lcl_lo, lcl_hi)
+    call t_stopf('nlmap-A')
 
     ! Mask high-order field against low-order. An exact 0 in the low-order field
     ! will mask the high-order field unnecessarily, but that's OK: it's a rare,
@@ -344,8 +347,10 @@ contains
              lmaxs(k) = max(lmaxs(k), lcl_hi(k,j))
           end do
        end do
+       call t_startf('nlmap-min/max')
        call mpi_allreduce(lmins, gmins, natt, MPI_DOUBLE_PRECISION, MPI_MIN, mpicom, ierr)
        call mpi_allreduce(lmaxs, gmaxs, natt, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, ierr)
+       call t_stopf('nlmap-min/max')
 
        if (amroot .and. verbose) then
           do k = 1,natt
@@ -422,8 +427,10 @@ contains
           end do
        end do
        allocate(gwts(nfld))
+       call t_startf('nlmap-sum')
        call shr_reprosum_calc(caas_wgt, gwts, nsum, nsum, nfld, commid=mpicom)
        deallocate(caas_wgt)
+       call t_stopf('nlmap-sum')
 
        ! Combine clipping and global mass error into a single dm value.
        gwts(1:natt) = gwts(1:natt) + (glbl_masses(1:natt) - glbl_masses(natt+1:2*natt))
