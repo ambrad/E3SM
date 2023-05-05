@@ -47,7 +47,7 @@ void hash(const int tl, const ExecViewManaged<Real****>& v, HashType& accum);
 void hash(const ExecViewManaged<Scalar*****>& v, HashType& accum);
 
 // For Kokkos::parallel_reduce.
-template <typename ExecSpace>
+template <typename ExecSpace = Kokkos::HostSpace>
 struct HashReducer {
   typedef HashReducer reducer;
   typedef HashType value_type;

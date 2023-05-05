@@ -18,7 +18,7 @@ void hash (const int tl, const ExecViewManaged<Scalar******>& v, int n5,
     KOKKOS_LAMBDA(int i0, int i1, int i2, int i3, int i4, int i5, HashType& accum) {
       const auto* vcol = &v(i0,i1,i2,i3,i4,0)[0];
       Homme::hash(vcol[i5], accum);
-    }, HashReducer<ExecSpace>(accum));
+    }, HashReducer<>(accum));
   hash(accum, accum_out);
 }
 
@@ -32,7 +32,7 @@ void hash (const int tl, const ExecViewManaged<Scalar*****>& v, int n4,
     KOKKOS_LAMBDA(int i0, int i1, int i2, int i3, int i4, HashType& accum) {
       const auto* vcol = &v(i0,i1,i2,i3,0)[0];
       Homme::hash(vcol[i4], accum);
-    }, HashReducer<ExecSpace>(accum));
+    }, HashReducer<>(accum));
   hash(accum, accum_out);
 }
 
@@ -46,7 +46,7 @@ void hash (const ExecViewManaged<Scalar*****>& v, int n4,
     KOKKOS_LAMBDA(int i0, int i1, int i2, int i3, int i4, HashType& accum) {
       const auto* vcol = &v(i0,i1,i2,i3,0)[0];
       Homme::hash(vcol[i4], accum);
-    }, HashReducer<ExecSpace>(accum));
+    }, HashReducer<>(accum));
   hash(accum, accum_out);
 }
 
@@ -59,7 +59,7 @@ void hash (const int tl, const ExecViewManaged<Real****>& v,
       {v.extent_int(0), tl+1, v.extent_int(2), v.extent_int(3)}),
     KOKKOS_LAMBDA(int i0, int i1, int i2, int i3, HashType& accum) {
       Homme::hash(v(i0,i1,i2,i3), accum);
-    }, HashReducer<ExecSpace>(accum));
+    }, HashReducer<>(accum));
   hash(accum, accum_out);
 }
 
