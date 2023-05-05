@@ -11,6 +11,22 @@ module seq_nlmap_mod
   ! produces smooth data on the fine target grid, then applies a nonlinear
   ! global fixer to restore conservation and bounds.
   !
+  ! Usage:
+  !   For any existing (area-averaged; see the next paragraph) mapfile
+  ! SRC2TGT_TMAPFILE, where T is 'F' or 'S', optionally provide a second,
+  ! high-order map by specifying SRC2TGT_TMAPFILE_NONLINEAR. If T is 'F', then
+  ! the fixer restores global mass, as defined by the SRC2TGT_TMAPFILE map, and
+  ! local bounds. If T is 'S', then the fixer restores the bounds.
+  !   In practice, SRC2TGT_TMAPFILE should be an area-averaged map ('aave', aka
+  ! 'mono'). This map provides the reference global mass on the target grid and
+  ! the non-0 target cells. SRC2TGT_TMAPFILE_NONLINEAR can be anything, but its
+  ! non-0 pattern must be a superset of SRC2TGT_TMAPFILE's. An initialization-
+  ! time check of this requirement is performed; if it is not satisfied, the run
+  ! exits. This requirement assures that SRC2TGT_TMAPFILE_NONLINEAR provides
+  ! data in any target cell that SRC2TGT_TMAPFILE does. In the opposite
+  ! direction, at runtime, any target cell that SRC2TGT_TMAPFILE does not affect
+  ! is zeroed after SRC2TGT_TMAPFILE_NONLINEAR is applied.
+  !
   ! Following is a description of the algorithm and its properties,
   ! specializations of Alg. 3.1 of the following reference for this use case:
   !   Bradley, A. M., Bosler, P. A., Guba, O., Taylor, M. A., and Barnett,
@@ -79,7 +95,7 @@ module seq_nlmap_mod
   ! This algorithm has a nonempty constraint set because, by 5 and 6,
   !   ym := (Am (f x)) / g is conservative and in bounds.
   ! CAAS finds a solution if the constraint set is nonempty, proving y2 is
-  ! conservative and in bounds. We can prove this in details, as follows:
+  ! conservative and in bounds. We can prove this in detail, as follows:
   !   y2 is conservative:
   !     t'(g y2) = t'(g y1 + (dM / (t g)'w) g w)
   !              = M - dM + (dM / (t g)'w) t'(g w)
@@ -97,22 +113,6 @@ module seq_nlmap_mod
   ! statement that the constraint set is nonempty. This in turn makes
   !   0 <= (dM / (t g)'w) <= 1,
   ! permitting the final line to hold.
-  !
-  ! Usage:
-  !   For any existing (area-averaged; see the next paragraph) mapfile
-  ! SRC2TGT_TMAPFILE, where T is 'F' or 'S', optionally provide a second,
-  ! high-order map by specifying SRC2TGT_TMAPFILE_NONLINEAR. If T is 'F', then
-  ! the fixer restores global mass, as defined by the SRC2TGT_TMAPFILE map, and
-  ! local bounds. If T is 'S', then the fixer restores the bounds.
-  !   In practice, SRC2TGT_TMAPFILE should be an area-averaged map ('aave', aka
-  ! 'mono'). This map provides the reference global mass on the target grid and
-  ! the non-0 target cells. SRC2TGT_TMAPFILE_NONLINEAR can be anything, but its
-  ! non-0 pattern must be a superset of SRC2TGT_TMAPFILE's. An initialization-
-  ! time check of this requirement is performed; if it is not satisfied, the run
-  ! exits. This requirement assures that SRC2TGT_TMAPFILE_NONLINEAR provides
-  ! data in any target cell that SRC2TGT_TMAPFILE does. In the opposite
-  ! direction, at runtime, any target cell that SRC2TGT_TMAPFILE does not affect
-  ! is zeroed after SRC2TGT_TMAPFILE_NONLINEAR is applied.
   !
   ! Author: A.M. Bradley, Mar,Apr-2023
   !
