@@ -2,7 +2,7 @@ alg=trfvnp2
 
 # This line is separate from the nonlinear maps. It corrects an oversight in the
 # existing default trigrid grid configuration.
-./xmlchange ATM2ROF_SMAPNAME=cpl/gridmaps/ne30pg2/map_ne30pg2_to_r05_bilinear.200220.nc
+./xmlchange ATM2ROF_SMAPNAME=cpl/gridmaps/ne30pg2/map_ne30pg2_to_r05_bilin.200220.nc
 
 # We want these in v3.
 a2l=cpl/gridmaps/ne30pg2/map_ne30pg2_to_r05_trfvnp2.230516.nc
