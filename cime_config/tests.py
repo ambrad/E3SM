@@ -210,7 +210,7 @@ _TESTS = {
             "SMS_D_Ld1.T62_oEC60to30v3.DTESTM",
             "SMS_D_Ld3.T62_oQU120.CMPASO-IAF",
             "SMS_D_Ld1.ne30pg2_r05_EC30to60E2r2.WCYCL1850",
-            "ERS_Ln22.ne30pg2_r05_EC30to60E2r2.WCYCL1850.eam-nlmaps",
+            "ERS_Ld3.ne30pg2_r05_EC30to60E2r2.WCYCL1850.eam-nlmaps",
             )
         },
 
