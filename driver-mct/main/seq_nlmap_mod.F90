@@ -280,9 +280,9 @@ contains
     real(r8), allocatable, dimension(:) :: lmins, gmins, lmaxs, gmaxs, glbl_masses, gwts
     real(r8), allocatable, dimension(:,:) :: dof_masses, caas_wgt, oglims, lcl_lo, lcl_hi
 
-    !amb-todo then nightly runs post-test py looking at cpl.log for ALARM lines
-    !amb-todo combine into one matvec
-    !amb-todo combine min/max reduction using a custom reduce
+    ! BFB speedups to do:
+    ! * Combine matvecs into one routine that shares the X->X' comm.
+    ! * Combine the min/max reductions using a custom reduce.
 
     call t_startf('seq_nlmap_avNormArr')
 
@@ -295,9 +295,7 @@ contains
     natt = size(avp_i%rAttr, 1)
 
     call mct_aVect_init(nl_avp_o, avp_o, lsize=lsize_o)
-    call t_startf('nlmap-Am')
     call mct_sMat_avMult(avp_i, mapper%sMatp, avp_o, VECTOR=mct_usevector)
-    call t_stopf('nlmap-Am')
     
     if (verbose) then
        if (amroot) then
@@ -317,10 +315,8 @@ contains
     end if
     
     allocate(lcl_lo(natt,lsize_o), lcl_hi(natt,lsize_o))
-    call t_startf('nlmap-A')
     call sMat_avMult_and_calc_bounds(avp_i, mapper%nl_sMatp, lnorm, natt, &
          nl_avp_o, lcl_lo, lcl_hi)
-    call t_stopf('nlmap-A')
 
     ! Mask high-order field against low-order. An exact 0 in the low-order field
     ! will mask the high-order field unnecessarily, but that's OK: it's a rare,
@@ -347,10 +343,8 @@ contains
              lmaxs(k) = max(lmaxs(k), lcl_hi(k,j))
           end do
        end do
-       call t_startf('nlmap-min/max')
        call mpi_allreduce(lmins, gmins, natt, MPI_DOUBLE_PRECISION, MPI_MIN, mpicom, ierr)
        call mpi_allreduce(lmaxs, gmaxs, natt, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, ierr)
-       call t_stopf('nlmap-min/max')
 
        if (amroot .and. verbose) then
           do k = 1,natt
@@ -427,10 +421,8 @@ contains
           end do
        end do
        allocate(gwts(nfld))
-       call t_startf('nlmap-sum')
        call shr_reprosum_calc(caas_wgt, gwts, nsum, nsum, nfld, commid=mpicom)
        deallocate(caas_wgt)
-       call t_stopf('nlmap-sum')
 
        ! Combine clipping and global mass error into a single dm value.
        gwts(1:natt) = gwts(1:natt) + (glbl_masses(1:natt) - glbl_masses(natt+1:2*natt))
