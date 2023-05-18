@@ -139,7 +139,7 @@ module seq_nlmap_mod
   public :: seq_nlmap_check_matrices
   public :: seq_nlmap_avNormArr
 
-  integer :: nlmaps_verbosity
+  integer :: nlmaps_verbosity = 0
 
 contains
 
