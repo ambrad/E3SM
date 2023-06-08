@@ -91,12 +91,10 @@ SET (BOUNDARY_EXCHANGE_UT_CXX_SRCS
   ${SRC_SHARE_DIR}/cxx/mpi/Connectivity.cpp
   ${SRC_SHARE_DIR}/cxx/mpi/MpiBuffersManager.cpp
   ${SRC_SHARE_DIR}/cxx/utilities/BfbUtils.cpp
-  ${SRC_SHARE_DIR}/cxx/utilities/InternalDiagnostics.cpp
-  ${SRC_SHARE_DIR}/cxx/utilities/Hash.cpp
   ${SHARE_UT_DIR}/boundary_exchange_ut.cpp
 )
 
-SET (CONFIG_DEFINES PLEV=12 QSIZE_D=4 _MPI=1 _PRIM ${COMMON_DEFINITIONS})
+SET (CONFIG_DEFINES PLEV=12 QSIZE_D=4 _MPI=1 HOMME_BE_NO_HASHER _PRIM ${COMMON_DEFINITIONS})
 SET (BOUNDARY_EXCHANGE_UT_INCLUDE_DIRS
   ${SRC_SHARE_DIR}
   ${SRC_SHARE_DIR}/cxx
