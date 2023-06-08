@@ -91,6 +91,8 @@ SET (BOUNDARY_EXCHANGE_UT_CXX_SRCS
   ${SRC_SHARE_DIR}/cxx/mpi/Connectivity.cpp
   ${SRC_SHARE_DIR}/cxx/mpi/MpiBuffersManager.cpp
   ${SRC_SHARE_DIR}/cxx/utilities/BfbUtils.cpp
+  ${SRC_SHARE_DIR}/cxx/utilities/InternalDiagnostics.cpp
+  ${SRC_SHARE_DIR}/cxx/utilities/Hash.cpp
   ${SHARE_UT_DIR}/boundary_exchange_ut.cpp
 )
 
