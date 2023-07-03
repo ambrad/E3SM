@@ -4,8 +4,8 @@ set(NOOPT
 
 if (NOT DEBUG)
   foreach(ITEM IN LISTS NOOPT)
-    e3sm_remove_flags("${ITEM}" "-O2")
-    e3sm_remove_flags("${ITEM}" "-O")
+    #e3sm_remove_flags("${ITEM}" "-O2")
+    #e3sm_remove_flags("${ITEM}" "-O")
   endforeach()
 endif()
 
