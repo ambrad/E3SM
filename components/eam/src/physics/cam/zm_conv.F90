@@ -1,11 +1,12 @@
+! - rewrite s20 to move if out of loops
+! - then old_snow, possibly same
+! - bring back code for s01
+
 ! uninteresting
 #define amb_s01 0
-! focus
+! diffs for sure
 #define amb_s20 0
-#define amb_s21 0
-#define amb_s22 0
-#define amb_s23 0
-#define amb_s24 0
+! focus
 ! to study: old_snow
 #define amb_s06 0
 #define amb_s07 0
@@ -16,8 +17,8 @@
 ! all good
 #define amb_s02 1
 #define amb_s03 1
-#define amb_s05 1
 #define amb_s04 1
+#define amb_s05 1
 #define amb_s12 1
 #define amb_s13 1
 #define amb_s14 1
@@ -26,6 +27,10 @@
 #define amb_s17 1
 #define amb_s18 1
 #define amb_s19 1
+#define amb_s21 1
+#define amb_s22 1
+#define amb_s23 1
+#define amb_s24 1
 #define amb_s25 1
 #define amb_s26 1
 #define amb_s27 1
@@ -3326,7 +3331,7 @@ subroutine cldprp(lchnk   , &
               else
 #endif               
                 hu(i,k) = mu(i,k+1)/mu(i,k)*hu(i,k+1) + &
-                         dz(i,k)/mu(i,k)* (eu(i,k)*hmn(i,k)- du(i,k)*hsat(i,k))
+                          dz(i,k)/mu(i,k)* (eu(i,k)*hmn(i,k)- du(i,k)*hsat(i,k))
 #if amb_s20
               end if
 #endif
