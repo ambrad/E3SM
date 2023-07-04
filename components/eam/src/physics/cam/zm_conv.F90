@@ -677,7 +677,9 @@ subroutine zm_convr(lchnk   ,ncol    , &
    rice(:ncol)   = 0._r8    
 !
 ! Allocate microphysics arrays 
-   !if (zm_microp) call zm_microp_st_alloc(loc_microp_st)
+#if 0
+   if (zm_microp) call zm_microp_st_alloc(loc_microp_st)
+#endif
 !
 ! initialize convective tendencies
 !
@@ -730,8 +732,9 @@ subroutine zm_convr(lchnk   ,ncol    , &
    end do
 
 ! Initialize microphysics arrays
-   !if (zm_microp) call zm_microp_st_ini(microp_st,loc_microp_st,ncol)
-
+#if 0
+   if (zm_microp) call zm_microp_st_ini(microp_st,loc_microp_st,ncol)
+#endif
    lambdadpcu  = (mucon + 1._r8)/dcon
    mudpcu      = mucon
    lambdadpcug = lambdadpcu
@@ -901,7 +904,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
          vg(i,k) = 0._r8
       end do
    end do
-
+#if 0
    if (zm_microp) then
 
       if (aero%scheme == 'modal') then
@@ -938,7 +941,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
       end if
 
    end if
-
+#endif
 !
    do i = 1,lengath
       zfg(i,pver+1) = zf(ideep(i),pver+1)
@@ -1088,7 +1091,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
          sprdg(i,k)  = sprdg(i,k)*mb(i)
          frzg(i,k)   = frzg(i,k)*mb(i)
 
-
+#if 0
          if ( zm_microp .and. mb(i).eq.0._r8) then
             qlg (i,k) = 0._r8
             dsfmg(i,k) = 0._r8
@@ -1178,6 +1181,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
             loc_microp_st%fallgn(i,k) = 0._r8
             loc_microp_st%fhmrm (i,k) = 0._r8
          end if
+#endif
       end do
    end do
 !
@@ -1224,13 +1228,17 @@ subroutine zm_convr(lchnk   ,ncol    , &
          lambdadpcu(ideep(i),k) = lambdadpcug(i,k)
          mudpcu(ideep(i),k)     = mudpcug(i,k)
          frz(ideep(i),k)  = frzg(i,k)*latice/cpres
+#if 0
          if (zm_microp) qi(ideep(i),k) = loc_microp_st%qice(i,k)
+#endif
       end do
    end do
 
 ! Gather back microphysics arrays.
-   !if (zm_microp)  call zm_microp_st_gb(microp_st,loc_microp_st,ideep,lengath)
-   
+#if 0
+   if (zm_microp)  call zm_microp_st_gb(microp_st,loc_microp_st,ideep,lengath)
+#endif
+#if 0
    if (zm_microp) then
      do k = msg + 1,pver
        do i = 1,ncol
@@ -1279,6 +1287,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
        end do
      end do
    end if
+#endif
 !
 #ifdef CPRCRAY
 !DIR$ CONCURRENT
@@ -1314,9 +1323,10 @@ subroutine zm_convr(lchnk   ,ncol    , &
    rliq(:ncol) = rliq(:ncol) /1000._r8
    rice(:ncol) = rice(:ncol) /1000._r8    
 
-! Deallocate microphysics arrays.
-   !if (zm_microp) call zm_microp_st_dealloc(loc_microp_st)
-
+   ! Deallocate microphysics arrays.
+#if 0
+   if (zm_microp) call zm_microp_st_dealloc(loc_microp_st)
+#endif
    return
 end subroutine zm_convr
 
@@ -1410,8 +1420,10 @@ subroutine zm_conv_evap(ncol,lchnk, &
     do k = 1, pver
        do i = 1, ncol
 
-! Melt snow falling into layer, if necessary. 
+! Melt snow falling into layer, if necessary.
+#if 0
         if( old_snow ) then
+#endif
           if (t(i,k) > tmelt) then
              flxsntm(i) = 0._r8
              snowmlt(i) = flxsnow(i,k) * gravit/ pdel(i,k)
@@ -1419,6 +1431,7 @@ subroutine zm_conv_evap(ncol,lchnk, &
              flxsntm(i) = flxsnow(i,k)
              snowmlt(i) = 0._r8
           end if
+#if 0
         else
         ! make sure melting snow doesn't reduce temperature below threshold
           if (t(i,k) > tmelt) then
@@ -1439,7 +1452,7 @@ subroutine zm_conv_evap(ncol,lchnk, &
              snowmlt(i) = 0._r8
            end if
          end if
-
+#endif
 
 ! relative humidity depression must be > 0 for evaporation
           evplimit = max(1._r8 - q(i,k)/qs(i,k), 0._r8)
@@ -1465,18 +1478,20 @@ subroutine zm_conv_evap(ncol,lchnk, &
           evplimit   = min(evplimit, (prec(i) - evpvint(i)) * gravit / pdel(i,k))
 
           evpprec(i) = min(evplimit, evpprec(i))
-
+#if 0
           if( .not.old_snow ) then
             evpprec(i) = max(0._r8, evpprec(i))
             evpprec(i) = evpprec(i)*omsm
           end if
-
+#endif
 ! evaporation of snow depends on snow fraction of total precipitation in the top after melting
           if (flxprec(i,k) > 0._r8) then
 !            evpsnow(i) = evpprec(i) * flxsntm(i) / flxprec(i,k)
 !            prevent roundoff problems
              work1 = min(max(0._r8,flxsntm(i)/flxprec(i,k)),1._r8)
+#if 0
              if (.not.old_snow .and. prdsnow(i,k)>prdprec(i,k)) work1 = 1._r8
+#endif
              evpsnow(i) = evpprec(i) * work1
           else
              evpsnow(i) = 0._r8
@@ -1493,8 +1508,9 @@ subroutine zm_conv_evap(ncol,lchnk, &
 ! the small amount added to flxprec in the work1 expression has been increased from 
 ! 1e-36 to 8.64e-11 (1e-5 mm/day).  This causes the temperature based partitioning
 ! scheme to be used for small flxprec amounts.  This is to address error growth problems.
-
+#if 0
       if( old_snow ) then
+#endif
 #ifdef PERGRO
           work1 = min(max(0._r8,flxsnow(i,k)/(flxprec(i,k)+8.64e-11_r8)),1._r8)
 #else
@@ -1510,12 +1526,13 @@ subroutine zm_conv_evap(ncol,lchnk, &
           ntsnprd(i,k) = prdprec(i,k)*work2 - evpsnow(i) - snowmlt(i)
           tend_s_snwprd  (i,k) = prdprec(i,k)*work2*latice
           tend_s_snwevmlt(i,k) = - ( evpsnow(i) + snowmlt(i) )*latice
+#if 0
        else
           ntsnprd(i,k) = prdsnow(i,k) - min(flxsnow(i,k)*gravit/pdel(i,k), evpsnow(i)+snowmlt(i))
           tend_s_snwprd  (i,k) = prdsnow(i,k)*latice
           tend_s_snwevmlt(i,k) = -min(flxsnow(i,k)*gravit/pdel(i,k), evpsnow(i)+snowmlt(i) )*latice
        end if
-
+#endif
 ! precipitation fluxes
           flxprec(i,k+1) = flxprec(i,k) + ntprprd(i,k) * pdel(i,k)/gravit
           flxsnow(i,k+1) = flxsnow(i,k) + ntsnprd(i,k) * pdel(i,k)/gravit
@@ -1529,17 +1546,21 @@ subroutine zm_conv_evap(ncol,lchnk, &
 ! heating (cooling) and moistening due to evaporation 
 ! - latent heat of vaporization for precip production has already been accounted for
 ! - snow is contained in prec
+#if 0
           if( old_snow ) then
+#endif
              tend_s(i,k)   =-evpprec(i)*latvap + ntsnprd(i,k)*latice
+#if 0
           else
              tend_s(i,k)   =-evpprec(i)*latvap + tend_s_snwevmlt(i,k)
           end if
-
+#endif
           tend_q(i,k) = evpprec(i)
        end do
     end do
 
 ! protect against rounding error
+#if 0
     if( .not.old_snow ) then
       do i = 1, ncol
         if(flxsnow(i,pverp).gt.flxprec(i,pverp)) then
@@ -1556,7 +1577,7 @@ subroutine zm_conv_evap(ncol,lchnk, &
         end if
       end do
     end if
-
+#endif
 
 ! set output precipitation rates (m/s)
     prec(:ncol) = flxprec(:ncol,pver+1) / 1000._r8
@@ -1854,6 +1875,7 @@ subroutine convtran(lchnk   , &
          end do
 
        ! Conservation check
+#if 0
        if (zm_microp) then
          do i = il1g,il2g
            do k = jt(i),mx(i)
@@ -1893,7 +1915,7 @@ subroutine convtran(lchnk   , &
            end do
          end do
        end if
-
+#endif
 ! Initialize to zero everywhere, then scatter tendency back to full array
          dqdt(:,:,m) = 0._r8
          do k = 1,pver
@@ -2831,6 +2853,7 @@ subroutine cldprp(lchnk   , &
 !------------------------------------------------------------------------------
    dsfm  (:il2g,:) = 0._r8
    dsfn  (:il2g,:) = 0._r8
+#if 0
    if (zm_microp) then
       loc_microp_st%autolm(:il2g,:) = 0._r8
       loc_microp_st%accrlm(:il2g,:) = 0._r8
@@ -2906,6 +2929,7 @@ subroutine cldprp(lchnk   , &
        end do
       end do
    end if
+#endif
 !
    do i = 1,il2g
       ftemp(i) = 0._r8
@@ -2974,6 +2998,7 @@ subroutine cldprp(lchnk   , &
          nsde(i,k) = 0._r8
          frz(i,k)  = 0._r8
          frz1(i,k) = 0._r8
+#if 0
          if (zm_microp) then
            loc_microp_st%cmel(i,k) = 0._r8
            loc_microp_st%cmei(i,k) = 0._r8
@@ -2989,6 +3014,7 @@ subroutine cldprp(lchnk   , &
            loc_microp_st%qns(i,k)  = 0._r8
            loc_microp_st%qng(i,k)  = 0._r8
          end if
+#endif
       end do
    end do
 !
@@ -3075,14 +3101,18 @@ subroutine cldprp(lchnk   , &
            ! removed. In addition, current calculation of PBL temperature perturbation is not 
            ! accurate enough so that a new tunable parameter tp_fac was introduced. This introduced
            ! new uncertainties into the ZM scheme. The original code of ZM scheme will be used 
-           ! when tpert_fix=.true.  
+           ! when tpert_fix=.true.
+#if 0
            if(tpert_fix) then
              hu(i,k) = hmn(i,mx(i)) + cp*tiedke_add 
              su(i,k) = s(i,mx(i)) + tiedke_add
            else
+#endif
              hu(i,k) = hmn(i,mx(i)) + cp*(tiedke_add+tp_fac*tpertg(i)) 
              su(i,k) = s(i,mx(i)) + tiedke_add+tp_fac*tpertg(i)
+#if 0
            end if
+#endif
          end if
       end do
    end do
@@ -3181,22 +3211,27 @@ subroutine cldprp(lchnk   , &
 
 
    itnum = 1
+#if 0
    if (zm_microp) itnum = 2
-
+#endif
    do iter=1, itnum
 
       do k = pver,msg + 1,-1
         do i = 1,il2g
            cu(i,k) = 0._r8
+#if 0
            if (zm_microp)  loc_microp_st%qliq(i,k) = 0._r8
            if (zm_microp)  loc_microp_st%qice(i,k) = 0._r8
+#endif
            ql(i,k) = 0._r8
            frz1(i,k) = 0._r8
         end do
       end do
       do i = 1,il2g
           totpcp(i) = 0._r8
+#if 0
           if (zm_microp)  hu(i,jb(i)) = hmn(i,jb(i)) + cp*tiedke_add
+#endif
       end do
 
 !
@@ -3209,11 +3244,15 @@ subroutine cldprp(lchnk   , &
          mu(i,jb(i)) = 1._r8
          eu(i,jb(i)) = mu(i,jb(i))/dz(i,jb(i))
       end if
+#if 0
       if (zm_microp) then
         tmplel(i) = lel(i)
       else
+#endif
         tmplel(i) = jt(i)
+#if 0
       end if
+#endif
    end do
    do k = pver,msg + 1,-1
       do i = 1,il2g
@@ -3243,13 +3282,17 @@ subroutine cldprp(lchnk   , &
                eu(i,k) = 0._r8
                du(i,k) = mu(i,k+1)/dz(i,k)
             else
+#if 0
               if (zm_microp) then
                 hu(i,k) = (mu(i,k+1)*hu(i,k+1) + dz(i,k)*(eu(i,k)*hmn(i,k) +   &
                             latice*frz(i,k)))/(mu(i,k)+ dz(i,k)*du(i,k))
               else
+#endif               
                 hu(i,k) = mu(i,k+1)/mu(i,k)*hu(i,k+1) + &
                          dz(i,k)/mu(i,k)* (eu(i,k)*hmn(i,k)- du(i,k)*hsat(i,k))
+#if 0
               end if
+#endif
             end if
          end if
       end do
@@ -3343,32 +3386,39 @@ subroutine cldprp(lchnk   , &
    end do
 
    do i = 1,il2g
+#if 0
      if (zm_microp) then
         tmplel(i) = jlcl(i)+1
      else
+#endif
         tmplel(i) = jb(i)
+#if 0
      end if
+#endif
    end do
 
 ! compute condensation in updraft
    do k = pver,msg + 2,-1
       do i = 1,il2g
         if (k >= jt(i) .and. k < tmplel(i) .and. eps0(i) > 0._r8) then
+#if 0
           if (zm_microp) then
              cu(i,k) = ((mu(i,k)*su(i,k)-mu(i,k+1)*su(i,k+1))/ &
                      dz(i,k)- eu(i,k)*s(i,k)+du(i,k)*su(i,k))/(rl/cp)  &
                        - latice*frz(i,k)/rl
           else
-
+#endif
             cu(i,k) = ((mu(i,k)*su(i,k)-mu(i,k+1)*su(i,k+1))/ &
                       dz(i,k)- (eu(i,k)-du(i,k))*s(i,k))/(rl/cp)
+#if 0
           end if
+#endif
             if (k == jt(i)) cu(i,k) = 0._r8
             cu(i,k) = max(0._r8,cu(i,k))
          end if
       end do
    end do
-
+#if 0
    if (zm_microp) then
 
       tug(:il2g,:) = t(:il2g,:)
@@ -3458,7 +3508,7 @@ subroutine cldprp(lchnk   , &
       end do
 
    else  ! no microphysics
-
+#endif
 ! compute condensed liquid, rain production rate
 ! accumulate total precipitation (condensation - detrainment of liquid)
 ! Note ql1 = ql(k) + rprd(k)*dz(k)/mu(k)
@@ -3491,8 +3541,9 @@ subroutine cldprp(lchnk   , &
          end if
        end do
      end do
+#if 0
    end if  ! zm_microp
-
+#endif
  end do   !iter
 
 ! specify downdraft properties (no downdrafts if jd.ge.jb).
@@ -3564,7 +3615,9 @@ subroutine cldprp(lchnk   , &
             evp(i,k) = -ed(i,k)*q(i,k) + (md(i,k)*qd(i,k)-md(i,k+1)*qd(i,k+1))/dz(i,k)
             evp(i,k) = max(evp(i,k),0._r8)
             mdt = min(md(i,k+1),-small)
+#if 0
             if (zm_microp)   evp(i,k) = min(evp(i,k),rprd(i,k))
+#endif
             sd(i,k+1) = ((rl/cp*evp(i,k)-ed(i,k)*s(i,k))*dz(i,k) + md(i,k)*sd(i,k))/mdt
             totevp(i) = totevp(i) - dz(i,k)*ed(i,k)*q(i,k)
          end if
@@ -3605,26 +3658,33 @@ subroutine cldprp(lchnk   , &
 ! cmeg is the cloud water condensed - rain water evaporated
 ! rprd is the cloud water converted to rain - (rain evaporated)
          cmeg(i,k) = cu(i,k) - evp(i,k)
+#if 0
          if (zm_microp) then
            if (rprd(i,k)> 0._r8)  then
               frz1(i,k) = frz1(i,k)- evp(i,k)*min(1._r8,sprd(i,k)/rprd(i,k))
               sprd(i,k) = sprd(i,k)- evp(i,k)*min(1._r8,sprd(i,k)/rprd(i,k))
            end if
          end if
+#endif
          rprd(i,k) = rprd(i,k)-evp(i,k)
       end do
    end do
 
 ! compute the net precipitation flux across interfaces
    pflx(:il2g,1) = 0._r8
+#if 0
    if (zm_microp)   pflxs(:,:) = 0._r8
+#endif
    do k = 2,pverp
       do i = 1,il2g
          pflx(i,k) = pflx(i,k-1) + rprd(i,k-1)*dz(i,k-1)
+#if 0
          if (zm_microp) pflxs(i,k) = pflxs(i,k-1) + sprd(i,k-1)*dz(i,k-1)
+#endif
       end do
    end do
 ! protect against rounding error
+#if 0
    if (zm_microp) then
      do i = 1,il2g
        if(pflxs(i,pverp).gt.pflx(i,pverp)) then
@@ -3640,13 +3700,14 @@ subroutine cldprp(lchnk   , &
        end if
      end do   
    end if
-
+#endif
    do k = msg + 1,pver
       do i = 1,il2g
          mc(i,k) = mu(i,k) + md(i,k)
       end do
    end do
 !
+#if 0
    do i = 1,il2g
      if ( zm_microp .and. jt(i)>=jlcl(i)) then
        do k = msg + 1,pver  
@@ -3687,6 +3748,7 @@ subroutine cldprp(lchnk   , &
        end do
      end if
    end do       
+#endif
    return
 end subroutine cldprp
 
@@ -3900,7 +3962,9 @@ subroutine closure(lchnk   , &
    do i = il1g,il2g
       dltaa = -1._r8* (cape(i)-capelmt)
       if (dadt(i) /= 0._r8) mb(i) = max(dltaa/tau/dadt(i),0._r8)
+#if 0
       if (zm_microp .and. mx(i)-jt(i) < 2._r8) mb(i) =0.0_r8
+#endif
    end do
 !
    return
@@ -4022,9 +4086,9 @@ subroutine q1q2_pjr(lchnk   , &
                         +md(i,k+1)* (sd(i,k+1)-shat(i,k+1)) &
                         -md(i,k)*   (sd(i,k)-shat(i,k)) &
                        )/dp(i,k)
-
+#if 0
          if (zm_microp) dsdt(i,k) = dsdt(i,k) + latice/cp*frz(i,k)
-
+#endif
          dqdt(i,k) = emc + &
                     (+mu(i,k+1)* (qu(i,k+1)-qhat(i,k+1)) &
                      -mu(i,k)*   (qu(i,k)-qhat(i,k)) &
@@ -4033,6 +4097,7 @@ subroutine q1q2_pjr(lchnk   , &
                     )/dp(i,k)
 
          dl(i,k) = du(i,k)*ql(i,k+1)
+#if 0
          if (zm_microp) then
            dice(i,k) = du(i,k)*qice(i,k+1)
            dnl(i,k)  = du(i,k)*qnl(i,k+1)
@@ -4040,7 +4105,7 @@ subroutine q1q2_pjr(lchnk   , &
            dsnow(i,k) = du(i,k)*qsde(i,k+1)
            dns(i,k)  = du(i,k)*nsde(i,k+1)
          end if
-
+#endif
       end do
    end do
 
@@ -4553,7 +4618,9 @@ new_s = 0._r8
 ! it. In this situation, the temporary varaible tpertg is reset to zero.  
 do i=1,ncol
   tpertg(i)=tpert(i)
+#if 0 
   if ( tpert_fix .and. klaunch(i)<pblt(i)) tpertg(i)=0._r8
+#endif
 end do
 
 
