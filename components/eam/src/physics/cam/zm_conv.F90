@@ -1,36 +1,40 @@
+! uninteresting
 #define amb_s01 0
-#define amb_s02 0
-#define amb_s03 0
-#define amb_s04 0
-#define amb_s05 0
+! focus
+#define amb_s20 0
+#define amb_s21 0
+#define amb_s22 0
+#define amb_s23 0
+#define amb_s24 0
+! to study: old_snow
 #define amb_s06 0
 #define amb_s07 0
 #define amb_s08 0
 #define amb_s09 0
 #define amb_s10 0
 #define amb_s11 0
-#define amb_s12 0
-#define amb_s13 0
-#define amb_s14 0
-#define amb_s15 0
-#define amb_s16 0
-#define amb_s17 0
-#define amb_s18 0
-#define amb_s19 0
-#define amb_s20 0
-#define amb_s21 0
-#define amb_s22 0
-#define amb_s23 0
-#define amb_s24 0
-#define amb_s25 0
-#define amb_s26 0
-#define amb_s27 0
-#define amb_s28 0
-#define amb_s29 0
-#define amb_s30 0
-#define amb_s31 0
-#define amb_s32 0
-#define amb_s33 0
+! all good
+#define amb_s02 1
+#define amb_s03 1
+#define amb_s05 1
+#define amb_s04 1
+#define amb_s12 1
+#define amb_s13 1
+#define amb_s14 1
+#define amb_s15 1
+#define amb_s16 1
+#define amb_s17 1
+#define amb_s18 1
+#define amb_s19 1
+#define amb_s25 1
+#define amb_s26 1
+#define amb_s27 1
+#define amb_s28 1
+#define amb_s29 1
+#define amb_s30 1
+#define amb_s31 1
+#define amb_s32 1
+#define amb_s33 1
 
 module zm_conv
 
