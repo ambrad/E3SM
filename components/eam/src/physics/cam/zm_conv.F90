@@ -7,7 +7,8 @@
 #define amb_s11 1
 #define amb_s08 1
 #define amb_s10 1
-#define amb_s06 0
+#define amb_s06 1
+! diffs
 #define amb_s09 0
 ! fixed
 #define amb_s20 1
