@@ -3,12 +3,12 @@
 ! - then old_snow, possibly same
 
 ! to study: old_snow
+#define amb_s07 1
+#define amb_s11 1
+#define amb_s08 1
+#define amb_s10 1
 #define amb_s06 0
-#define amb_s07 0
-#define amb_s08 0
 #define amb_s09 0
-#define amb_s10 0
-#define amb_s11 0
 ! fixed
 #define amb_s20 1
 ! all good
