@@ -1505,10 +1505,10 @@ subroutine zm_conv_evap(ncol,lchnk, &
     omsm=0.99999_r8          ! to prevent problems due to round off error
 
     do k = 1, pver
-       do i = 1, ncol
 
 ! Melt snow falling into layer, if necessary. 
         if( old_snow ) then
+          do i = 1, ncol
           if (t(i,k) > tmelt) then
              flxsntm(i) = 0._r8
              snowmlt(i) = flxsnow(i,k) * gravit/ pdel(i,k)
@@ -1516,7 +1516,9 @@ subroutine zm_conv_evap(ncol,lchnk, &
              flxsntm(i) = flxsnow(i,k)
              snowmlt(i) = 0._r8
           end if
+          end do
         else
+          do i = 1, ncol
         ! make sure melting snow doesn't reduce temperature below threshold
           if (t(i,k) > tmelt) then
               dum = -latice/cpres*flxsnow(i,k)*gravit/pdel(i,k)*deltat
@@ -1535,9 +1537,10 @@ subroutine zm_conv_evap(ncol,lchnk, &
              flxsntm(i) = flxsnow(i,k)
              snowmlt(i) = 0._r8
            end if
+         end do
          end if
 
-
+         do i = 1, ncol
 ! relative humidity depression must be > 0 for evaporation
           evplimit = max(1._r8 - q(i,k)/qs(i,k), 0._r8)
 
@@ -1584,6 +1587,7 @@ subroutine zm_conv_evap(ncol,lchnk, &
 
 ! net precip production is production - evaporation
           ntprprd(i,k) = prdprec(i,k) - evpprec(i)
+         end do
 ! net snow production is precip production * ice fraction - evaporation - melting
 !pjrworks ntsnprd(i,k) = prdprec(i,k)*fice(i,k) - evpsnow(i) - snowmlt(i)
 !pjrwrks2 ntsnprd(i,k) = prdprec(i,k)*fsnow_conv(i,k) - evpsnow(i) - snowmlt(i)
@@ -1592,6 +1596,7 @@ subroutine zm_conv_evap(ncol,lchnk, &
 ! scheme to be used for small flxprec amounts.  This is to address error growth problems.
 
       if( old_snow ) then
+        do i = 1, ncol
 #ifdef PERGRO
           work1 = min(max(0._r8,flxsnow(i,k)/(flxprec(i,k)+8.64e-11_r8)),1._r8)
 #else
@@ -1607,12 +1612,16 @@ subroutine zm_conv_evap(ncol,lchnk, &
           ntsnprd(i,k) = prdprec(i,k)*work2 - evpsnow(i) - snowmlt(i)
           tend_s_snwprd  (i,k) = prdprec(i,k)*work2*latice
           tend_s_snwevmlt(i,k) = - ( evpsnow(i) + snowmlt(i) )*latice
+        end do
        else
+        do i = 1, ncol
           ntsnprd(i,k) = prdsnow(i,k) - min(flxsnow(i,k)*gravit/pdel(i,k), evpsnow(i)+snowmlt(i))
           tend_s_snwprd  (i,k) = prdsnow(i,k)*latice
           tend_s_snwevmlt(i,k) = -min(flxsnow(i,k)*gravit/pdel(i,k), evpsnow(i)+snowmlt(i) )*latice
+        end do
        end if
 
+       do i = 1, ncol
 ! precipitation fluxes
           flxprec(i,k+1) = flxprec(i,k) + ntprprd(i,k) * pdel(i,k)/gravit
           flxsnow(i,k+1) = flxsnow(i,k) + ntsnprd(i,k) * pdel(i,k)/gravit
@@ -3331,26 +3340,39 @@ subroutine cldprp(lchnk   , &
       klowest = max(klowest,jb(i))
    end do
 
-   do k = klowest-1,khighest,-1
-      do i = 1,il2g
-         if (k <= jb(i)-1 .and. k >= lel(i) .and. eps0(i) > 0._r8) then
-            if (mu(i,k) < 0.02_r8) then
-               hu(i,k) = hmn(i,k)
-               mu(i,k) = 0._r8
-               eu(i,k) = 0._r8
-               du(i,k) = mu(i,k+1)/dz(i,k)
-            else
-              if (zm_microp) then
-                hu(i,k) = (mu(i,k+1)*hu(i,k+1) + dz(i,k)*(eu(i,k)*hmn(i,k) +   &
-                            latice*frz(i,k)))/(mu(i,k)+ dz(i,k)*du(i,k))
-              else
-                hu(i,k) = mu(i,k+1)/mu(i,k)*hu(i,k+1) + &
-                         dz(i,k)/mu(i,k)* (eu(i,k)*hmn(i,k)- du(i,k)*hsat(i,k))
-              end if
+   if (zm_microp) then
+      do k = klowest-1,khighest,-1
+         do i = 1,il2g
+            if (k <= jb(i)-1 .and. k >= lel(i) .and. eps0(i) > 0._r8) then
+               if (mu(i,k) < 0.02_r8) then
+                  hu(i,k) = hmn(i,k)
+                  mu(i,k) = 0._r8
+                  eu(i,k) = 0._r8
+                  du(i,k) = mu(i,k+1)/dz(i,k)
+               else
+                  hu(i,k) = (mu(i,k+1)*hu(i,k+1) + dz(i,k)*(eu(i,k)*hmn(i,k) +   &
+                       latice*frz(i,k)))/(mu(i,k)+ dz(i,k)*du(i,k))
+               end if
             end if
-         end if
+         end do
       end do
-   end do
+   else
+      do k = klowest-1,khighest,-1
+         do i = 1,il2g
+            if (k <= jb(i)-1 .and. k >= lel(i) .and. eps0(i) > 0._r8) then
+               if (mu(i,k) < 0.02_r8) then
+                  hu(i,k) = hmn(i,k)
+                  mu(i,k) = 0._r8
+                  eu(i,k) = 0._r8
+                  du(i,k) = mu(i,k+1)/dz(i,k)
+               else
+                  hu(i,k) = mu(i,k+1)/mu(i,k)*hu(i,k+1) + &
+                       dz(i,k)/mu(i,k)* (eu(i,k)*hmn(i,k)- du(i,k)*hsat(i,k))
+               end if
+            end if
+         end do
+      end do
+   end if
 !
 !
 ! reset cloud top index beginning from two layers above the
