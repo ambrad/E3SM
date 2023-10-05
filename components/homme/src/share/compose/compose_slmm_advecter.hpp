@@ -288,19 +288,6 @@ void Advecter<MT>
   }
 }
 
-template <typename MT>
-void Advecter<MT>::fill_nearest_points_if_needed () {
-  if (geometry_ == Geometry::Type::plane) {
-    // Shift local coords again after halo expansion. make_continuous is
-    // idempotent, so there is no harm in calling it twice even when not needed.
-    for (Int ie = 0; ie < local_mesh_h_.extent_int(0); ++ie)
-      make_continuous(plane, local_mesh_h_(ie));
-  }
-  if (nearest_point_permitted_lev_bdy_ >= 0)
-    for (Int ie = 0; ie < local_mesh_h_.extent_int(0); ++ie)
-      nearest_point::fill_perim(local_mesh_h_(ie));
-}
-
 } // namespace slmm
 
 #endif
