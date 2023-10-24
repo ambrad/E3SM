@@ -18,12 +18,11 @@ using Ints = Kokkos::View<Int*, ES>;
 // in addition, cubed_sphere_map=0.
 template <typename ES>
 struct SphereToRef {
-  void init (const Geometry::Type geometry, const Int cubed_sphere_map, const Real length_scale,
+  void init (const Geometry::Type geometry, const Int cubed_sphere_map,
              const Int nelem_global, const typename Ints<ES>::const_type& lid2facenum,
              const Plane& plane) {
     geometry_ = geometry;
     cubed_sphere_map_ = cubed_sphere_map;
-    length_scale_ = length_scale;
     lid2facenum_ = lid2facenum;
     nelem_global_ = nelem_global;
     ne_ = static_cast<Int>(std::round(std::sqrt((nelem_global / 6))));
@@ -31,9 +30,13 @@ struct SphereToRef {
                   "If cubed_sphere_map = 0, then the mesh must be a "
                   "regular cubed-sphere.");
     plane_ = plane;
+    calc_length_scale();
   }
 
-  void set_plane (const Plane& plane) { plane_ = plane; }
+  void set_plane (const Plane& plane) {
+    plane_ = plane;
+    calc_length_scale();
+  }
 
   Int nelem_global () const { return nelem_global_; }
 
@@ -57,7 +60,7 @@ struct SphereToRef {
                                       info, max_its, tol*length_scale_);
       else {
         Real q_per[] = {q[0], q[1], q[2]};
-        continuous2periodic(plane_, m, q_per);
+        //continuous2periodic(plane_, m, q_per);
         siqk::sqr::calc_plane_to_ref(m.p, slice(m.e, m.tgt_elem), q_per, a, b,
                                      info, max_its, tol*length_scale_);
       }
@@ -84,10 +87,16 @@ struct SphereToRef {
 
 private:
   Geometry::Type geometry_;
-  Real length_scale_;
   Int ne_, nelem_global_, cubed_sphere_map_;
   typename Ints<ES>::const_type lid2facenum_;
   Plane plane_;
+  Real length_scale_;
+
+  void calc_length_scale () {
+    length_scale_ = (geometry_ == Geometry::Type::sphere ?
+                     1 :
+                     std::max(plane_.Lx, plane_.Ly));
+  }
 
   // Follow the description given in
   //     coordinate_systems_mod::unit_face_based_cube_to_unit_sphere.
