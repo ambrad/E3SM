@@ -18,7 +18,7 @@
   tstep_type        = 9
   ne_x              = 32
   ne_y              = 5
-  nmax              = 1800
+  nmax              = 300 ! 1800 is good for an actual simulation
   tstep             = 0.8
   hypervis_order    = 2
   hypervis_scaling  = 3.2
@@ -58,7 +58,7 @@
 &analysis_nl
   output_dir        = "./movies/"               ! destination dir for netcdf file
   output_timeunits  = 0,                        ! 1=days, 2=hours, 0=timesteps
-  output_frequency  = 1800,
+  output_frequency  = 300,
   output_varnames1  ='T','Th','ps','geo','Q','u','v' !,'Q2','Q3'
   interp_type       = 0                         ! 0=native grid, 1=bilinear
   output_type       ='netcdf'                   ! netcdf or pnetcdf
