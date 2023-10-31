@@ -634,6 +634,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   type(TimeLevel_t),  intent(in)            :: tl                       ! time level structure
 
   integer, parameter :: iqv = 1
+  integer, parameter :: test = 1
   real(rl), parameter :: one = 1.0_rl
 
   integer :: i,j,k,ie,qi
@@ -652,14 +653,21 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   real(rl), dimension(np,np) :: zs_fv, ps_fv, delta_ps
   real(rl) :: precl_fv(np,np,1), rcd(6)
   real(rl), allocatable :: qmin(:,:,:), qmax(:,:,:)
-
   integer :: pbl_type, prec_type
-  integer, parameter :: test = 1
+  logical :: toy_chemistry_on
 
   nf = pg_data%nphys
   ncol = nf*nf
 
-  prec_type = dcmip16_prec_type
+  if (case_planar_bubble) then
+     toy_chemistry_on = .false.
+     prec_type = bubble_prec_type
+     if (qsize .ne. 3) call abortmp('ERROR: moist bubble test requires qsize=3')
+  else
+     toy_chemistry_on = .true.
+     prec_type = dcmip16_prec_type
+  endif
+
   pbl_type  = dcmip16_pbl_type
 
   max_w     = -huge(rl)
@@ -748,18 +756,24 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
            Q_fv(i,j,:,3) = qr_c(nlev:1:-1)
            theta_kess_fv(i,j,:) = th_c(nlev:1:-1)
 
-           do k=1,nlev
-              call tendency_terminator(lat*rad2dg, lon*rad2dg, Q_fv(i,j,k,4), Q_fv(i,j,k,5), &
-                   dt, ddt_cl(i,j,k), ddt_cl2(i,j,k))
-           enddo
+           if (toy_chemistry_on) then
+              qi = 4
+              do k=1,nlev
+                 call tendency_terminator(lat*rad2dg, lon*rad2dg, Q_fv(i,j,k,qi), Q_fv(i,j,k,qi+1), &
+                      dt, ddt_cl(i,j,k), ddt_cl2(i,j,k))
+              end do
+           end if
         enddo
      enddo
 
      do i = 1,3
         Q_fv(:nf,:nf,:,i) = (rho_dry_fv(:nf,:nf,:)/rho_fv(:nf,:nf,:))*Q_fv(:nf,:nf,:,i)
      end do
-     Q_fv(:nf,:nf,:,4) = Q_fv(:nf,:nf,:,4) + dt*ddt_cl(:nf,:nf,:)
-     Q_fv(:nf,:nf,:,5) = Q_fv(:nf,:nf,:,5) + dt*ddt_cl2(:nf,:nf,:)
+     if (toy_chemistry_on) then
+        qi = 4
+        Q_fv(:nf,:nf,:,qi  ) = Q_fv(:nf,:nf,:,qi  ) + dt*ddt_cl (:nf,:nf,:)
+        Q_fv(:nf,:nf,:,qi+1) = Q_fv(:nf,:nf,:,qi+1) + dt*ddt_cl2(:nf,:nf,:)
+     end if
 
      ! Convert from theta to T w.r.t. new model state.
      ! Assume hydrostatic pressure pi changed by qv forcing.
@@ -803,14 +817,16 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
   call gfr_f2g_dss(hybrid, elem, nets, nete)
   call gfr_pg1_reconstruct(hybrid, nt, hvcoord, elem, nets, nete)
 
-  call toy_init(rcd)
-  do ie = nets,nete
-     do i = 1,2
-        wrk4(:,:,:,i) = elem(ie)%state%Q(:,:,:,i+3)
+  if (toy_chemistry_on) then
+     call toy_init(rcd)
+     do ie = nets,nete
+        do i = 1,2
+           wrk4(:,:,:,i) = elem(ie)%state%Q(:,:,:,i+3)
+        end do
+        call toy_rcd(wrk4, rcd)
      end do
-     call toy_rcd(wrk4, rcd)
-  end do
-  call toy_print(hybrid, tl%nstep, rcd)
+     call toy_print(hybrid, tl%nstep, rcd)
+  end if
 
   if (ftype == 0) then
      ! Convert FQ from state to Qdp tendency.
