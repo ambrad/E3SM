@@ -743,9 +743,12 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
            zi_c = zi_fv(i,j,nlevp:1:-1)
            th_c = theta_kess_fv(i,j,nlev:1:-1)
 
-           call gfr_f_get_latlon(ie, i, j, lat, lon)
-
            ! Get forced versions of u,v,p,qv,qc,qr. rho is constant.
+           if (case_planar_bubble) then
+              lat = 0
+           else
+              call gfr_f_get_latlon(ie, i, j, lat, lon)
+           end if
            call DCMIP2016_PHYSICS(test, u_c, v_c, p_c, th_c, qv_c, qc_c, qr_c, rho_c, dt, &
                 z_c, zi_c, lat, nlev, precl_fv(i,j,1), pbl_type, prec_type)
 
@@ -757,6 +760,7 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
            theta_kess_fv(i,j,:) = th_c(nlev:1:-1)
 
            if (toy_chemistry_on) then
+              call gfr_f_get_latlon(ie, i, j, lat, lon)
               qi = 4
               do k=1,nlev
                  call tendency_terminator(lat*rad2dg, lon*rad2dg, Q_fv(i,j,k,qi), Q_fv(i,j,k,qi+1), &
