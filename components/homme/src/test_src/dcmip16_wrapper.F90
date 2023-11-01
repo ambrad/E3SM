@@ -647,15 +647,12 @@ subroutine dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl
 
   integer, parameter :: iqv = 1
   integer, parameter :: test = 1
-  real(rl), parameter :: one = 1.0_rl
 
   integer :: i,j,k,ie,qi
-  real(rl), dimension(np,np,nlev) :: u,v,w,T,p,dp,rho,rho_dry,z,exner_kess,theta_kess
-  real(rl), dimension(np,np,nlev) :: rho_new,p_pk
-  real(rl), dimension(nlev)       :: u_c,v_c,p_c,qv_c,qc_c,qr_c,rho_c,z_c, th_c
+  real(rl), dimension(np,np,nlev) :: w,dp
+  real(rl), dimension(nlev)       :: u_c,v_c,p_c,qv_c,qc_c,qr_c,rho_c,z_c,th_c
   real(rl) :: max_w, max_precl, min_ps
-  real(rl) :: lat, lon, dz_top(np,np),zi(np,np,nlevp),zi_c(nlevp), ps(np,np), &
-       wrk(np,np), rd, wrk3(np,np,nlev), wrk4(np,np,nlev,2), wf(np*np,1)
+  real(rl) :: lat, lon, zi_c(nlevp), wrk3(np,np,nlev), wrk4(np,np,nlev,2), wf(np*np,1)
 
   integer :: nf, ncol
   real(rl), dimension(np,np,nlev) :: dp_fv, p_fv, u_fv, v_fv, T_fv, exner_kess_fv, &
