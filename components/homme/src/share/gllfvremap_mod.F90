@@ -195,7 +195,7 @@ contains
     real(real_kind) :: R(npsq,nphys_max*nphys_max), tau(npsq)
     integer :: nphys2
 
-    gfr%check = 1
+    gfr%check = 0
     if (present(check)) gfr%check = check
     gfr%check_ok = .true.
 
@@ -1279,6 +1279,7 @@ contains
   subroutine gfr_init_Dmap(elem, gfr)
     use control_mod, only: cubed_sphere_map
     use cube_mod, only: Dmap, ref2sphere
+    use planar_mod, only: plane_Dmap
     use coordinate_systems_mod, only: cartesian3D_t, change_coordinates
 
     type (element_t), intent(in) :: elem(:)
@@ -1295,16 +1296,21 @@ contains
     do ie = 1,nelemd
        do j = 1,nf
           do i = 1,nf
-             if (cubed_sphere_map == 2) then
+             if (gfr%is_planar .or. cubed_sphere_map == 0) then
+                call gfr_f_ref_center(nf, i, a)
+                call gfr_f_ref_center(nf, j, b)                
+             else
                 call gfr_f_get_cartesian3d(ie, i, j, sphere)
                 call sphere2ref(elem(ie)%corners3D, sphere, a, b)
-             else
-                call gfr_f_ref_center(nf, i, a)
-                call gfr_f_ref_center(nf, j, b)
              end if
 
-             call Dmap(wrk, a, b, elem(ie)%corners3D, cubed_sphere_map, elem(ie)%cartp, &
-                  elem(ie)%facenum)
+             if (gfr%is_planar) then
+                call plane_Dmap(wrk, a, b, elem(ie)%corners3D, cubed_sphere_map, &
+                     elem(ie)%cartp, elem(ie)%facenum)
+             else
+                call       Dmap(wrk, a, b, elem(ie)%corners3D, cubed_sphere_map, &
+                     elem(ie)%cartp, elem(ie)%facenum)
+             end if
 
              det = wrk(1,1)*wrk(2,2) - wrk(1,2)*wrk(2,1)
 
