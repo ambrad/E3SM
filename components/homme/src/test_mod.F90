@@ -254,6 +254,8 @@ subroutine compute_test_forcing(elem,hybrid,hvcoord,nt,ntQ,dt,nets,nete,tl)
 
     case('planar_rising_bubble');  
             if (bubble_moist) call dcmip2016_test1_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl)
+    case('planar_rising_bubble_pg2');  
+            if (bubble_moist) call dcmip2016_test1_pg_forcing(elem,hybrid,hvcoord,nets,nete,nt,ntQ,dt,tl)
 
     case('held_suarez0');
        do ie=nets,nete
