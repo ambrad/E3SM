@@ -153,7 +153,7 @@ subroutine dcmip2016_test1(elem,hybrid,hvcoord,nets,nete)
 
 end subroutine
 
-subroutine dcmip2016_test1_pg(elem,hybrid,hvcoord,nets,nete,nphys)
+subroutine dcmip2016_pg_init(elem,hybrid,hvcoord,nets,nete,nphys)
   use gllfvremap_mod, only: gfr_init
 
   type(element_t),    intent(inout), target :: elem(:)                  ! element array
@@ -173,6 +173,18 @@ subroutine dcmip2016_test1_pg(elem,hybrid,hvcoord,nets,nete,nphys)
           pg_data%q(ncol,nlev,qsize,nelemd))
   end if
   !$omp barrier
+end subroutine dcmip2016_pg_init
+
+subroutine dcmip2016_test1_pg(elem,hybrid,hvcoord,nets,nete,nphys)
+  use gllfvremap_mod, only: gfr_init
+
+  type(element_t),    intent(inout), target :: elem(:)                  ! element array
+  type(hybrid_t),     intent(in)            :: hybrid                   ! hybrid parallel structure
+  type(hvcoord_t),    intent(inout)         :: hvcoord                  ! hybrid vertical coordinates
+  integer,            intent(in)            :: nets,nete                ! start, end element index
+  integer,            intent(in)            :: nphys                    ! pgN, N parameter, for physgrid
+
+  call dcmip2016_pg_init(elem,hybrid,hvcoord,nets,nete,nphys)
   call dcmip2016_test1(elem,hybrid,hvcoord,nets,nete)
   sample_period = 3600*24
 end subroutine dcmip2016_test1_pg
