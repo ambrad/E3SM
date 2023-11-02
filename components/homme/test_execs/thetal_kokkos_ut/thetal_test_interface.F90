@@ -64,12 +64,12 @@ contains
     call init_common(hyai, hybi, hyam, hybm, dvv, mp, ps0)   
   end subroutine init_f90
 
-  subroutine init_planar_f90 (ne_x, ne_y, hyai, hybi, hyam, hybm, dvv, mp, ps0) bind(c)
+  subroutine init_planar_f90 (ne_x_in, ne_y_in, hyai, hybi, hyam, hybm, dvv, mp, ps0) bind(c)
     ! Alternative to init_f90 to create a planar model.
     use control_mod,            only: cubed_sphere_map, geometry, topology
     use planar_mod,             only: plane_init_atomic, plane_set_corner_coordinates
     use derivative_mod,         only: derivinit
-    use dimensions_mod,         only: nelemd, nlev, nlevp, np
+    use dimensions_mod,         only: nelemd, nlev, nlevp, np, ne_x, ne_y
     use geometry_interface_mod, only: initmp_f90, init_cube_geometry_f90, init_connectivity_f90, &
                                       par, elem
     use quadrature_mod,         only: gausslobatto, quadrature_t
@@ -78,7 +78,7 @@ contains
     !
     ! Inputs
     !
-    integer (kind=c_int), intent(in) :: ne_x, ne_y
+    integer (kind=c_int), intent(in) :: ne_x_in, ne_y_in
     real (kind=real_kind), intent(in) :: hyai(nlevp), hybi(nlevp), hyam(nlev), hybm(nlev)
     real (kind=real_kind), intent(in) :: ps0
     real (kind=real_kind), intent(out) :: dvv(np,np), mp(np,np)
@@ -87,6 +87,9 @@ contains
     !
     integer :: ie
     type (quadrature_t) :: gp
+
+    ne_x = ne_x_in
+    ne_y = ne_y_in
 
     scale_factor = 1
     scale_factor_inv = 1
@@ -107,7 +110,7 @@ contains
     call derivinit(deriv)
 
     call initmp_f90()
-    call init_cube_geometry_f90(ne_x)
+    call init_cube_geometry_f90(ne_x) ! ne_x is unused
     call init_connectivity_f90()
 
     cubed_sphere_map = 2
@@ -117,9 +120,9 @@ contains
     end do
     do ie=1,nelemd
       call plane_init_atomic(elem(ie),gp%points)
-   enddo
+    enddo
 
-   call init_common(hyai, hybi, hyam, hybm, dvv, mp, ps0)
+    call init_common(hyai, hybi, hyam, hybm, dvv, mp, ps0)
   end subroutine init_planar_f90
 
   subroutine init_common(hyai, hybi, hyam, hybm, dvv, mp, ps0)
