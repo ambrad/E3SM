@@ -171,7 +171,6 @@ struct Session {
     printf("seed %u\n", seed);
 
     parse_command_line();
-    assert(is_sphere); // planar isn't available in Hxx yet
 
     auto& c = Context::singleton();
 
