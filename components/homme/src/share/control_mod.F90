@@ -26,6 +26,8 @@ module control_mod
   !     3  CAAS
   !    20  QLT  with superlevels
   !    30  CAAS with superlevels
+  !    4*  reserved for debugging
+  !     5  CAAS-point
   integer, public  :: semi_lagrange_cdr_alg = 3
   ! If true, check mass conservation and shape preservation. The second
   ! implicitly checks tracer consistency.

@@ -25,10 +25,10 @@ module compose_mod
      end subroutine cedr_unittest
 
      subroutine cedr_init_impl(comm, cdr_alg, use_sgi, gid_data, rank_data, &
-          ncell, nlclcell, nlev, qsize, independent_time_steps, hard_zero, &
+          ncell, nlclcell, nlev, np, qsize, independent_time_steps, hard_zero, &
           gid_data_sz, rank_data_sz) bind(c)
        use iso_c_binding, only: c_int, c_bool
-       integer(kind=c_int), value, intent(in) :: comm, cdr_alg, ncell, nlclcell, nlev, &
+       integer(kind=c_int), value, intent(in) :: comm, cdr_alg, ncell, nlclcell, nlev, np, &
             qsize, gid_data_sz, rank_data_sz
        logical(kind=c_bool), value, intent(in) :: use_sgi, independent_time_steps, hard_zero
        integer(kind=c_int), intent(in) :: gid_data(gid_data_sz), rank_data(rank_data_sz)
@@ -316,12 +316,12 @@ contains
     if (use_sgi) then
        if (.not. allocated(owned_ids)) allocate(owned_ids(1))
        call cedr_init_impl(par%comm, semi_lagrange_cdr_alg, &
-            use_sgi, owned_ids, rank2sfc, nelem, nelemd, nlev, qsize, &
+            use_sgi, owned_ids, rank2sfc, nelem, nelemd, nlev, np, qsize, &
             independent_time_steps, hard_zero, size(owned_ids), size(rank2sfc))
     else
        if (.not. allocated(sc2gci)) allocate(sc2gci(1), sc2rank(1))
        call cedr_init_impl(par%comm, semi_lagrange_cdr_alg, &
-            use_sgi, sc2gci, sc2rank, nelem, nelemd, nlev, qsize, &
+            use_sgi, sc2gci, sc2rank, nelem, nelemd, nlev, np, qsize, &
             independent_time_steps, hard_zero, size(sc2gci), size(sc2rank))
     end if
     if (allocated(sc2gci)) deallocate(sc2gci, sc2rank)
