@@ -186,6 +186,8 @@ void run_local (CDR<MT>& cdr, CDRT* cedr_cdr_p,
   const Int nsuplev = cdr.nsuplev;
   const auto cdr_over_super_levels = cdr.cdr_over_super_levels;
   const auto caas_in_suplev = cdr.caas_in_suplev;
+  const auto is_point = Alg::is_point(cdr.alg);
+  const Int n_in_elem = is_point ? np2 : 1;
   const typename CDRT::DeviceOp
 #ifndef COMPOSE_PORT
     &
@@ -209,9 +211,23 @@ void run_local (CDR<MT>& cdr, CDRT* cedr_cdr_p,
     for (Int q = 0; q < qsize; ++q)
     for (Int spli = 0; spli < nsuplev; ++spli) {
 #endif
-    const Int k0 = nsublev*spli;
-    const Int ti = cdr_over_super_levels ? q : spli*qsize + q;
-    if (caas_in_suplev) {
+      const Int k0 = nsublev*spli;
+      const Int ti = cdr_over_super_levels ? q : spli*qsize + q;
+      if (is_point) {
+        //todo-isl2 Support relaxed local solves and *before* global. For testing
+        // CAAS-point right now, don't do anything.
+        for (Int g = 0; g < np2; ++g)
+          for (Int sbli = 0; sbli < nsublev; ++sbli) {
+            const Int k = k0 + sbli;
+            if (k >= nlev) break;
+            const auto ie_idx = (cdr_over_super_levels ?
+                                 nlevwrem*(n_in_elem*ie + g) + k :
+                                 nsublev*(n_in_elem*ie + g) + sbli);
+            const auto lci = ie2lci[ie_idx];
+            const Real Qm = cedr_cdr.get_Qm(lci, ti);
+            qdp_c1(n1_qdp,q,g,k) = q_c1(q,g,k) * dp3d_c1(np1,g,k);
+          }
+    } else if (caas_in_suplev) {
       const auto ie_idx = (cdr_over_super_levels ?
                            nsuplev*ie + spli :
                            ie);

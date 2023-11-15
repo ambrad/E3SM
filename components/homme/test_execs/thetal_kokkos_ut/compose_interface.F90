@@ -35,7 +35,7 @@ contains
     if (.not. is_sphere) print *, "NOT IMPL'ED YET"
 
     transport_alg = 12
-    semi_lagrange_cdr_alg = 30
+    semi_lagrange_cdr_alg = 5 !30
     semi_lagrange_cdr_check = cdr_check
     qsize = qsize_in
     limiter_option = lim
