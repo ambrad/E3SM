@@ -18,6 +18,11 @@ SET (NUM_POINTS 4)
 SET (NUM_PLEV 12)
 SET (QSIZE_D 4)
 SET (PIO_INTERP TRUE)
+if (TRUE)
+  message("amb> resetting sizes DO NOT MERGE DO NOT MERGE DO NOT MERGE DO NOT MERGE")
+  SET (NUM_PLEV 3)
+  SET (QSIZE_D 5)
+endif ()
 HommeConfigFile (${THIS_CONFIG_IN} ${THIS_CONFIG_HC} ${THIS_CONFIG_H} )
 
 ADD_LIBRARY(thetal_kokkos_ut_lib
