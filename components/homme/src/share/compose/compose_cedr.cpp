@@ -444,8 +444,8 @@ CDR<MT>::CDR (Int cdr_alg_, Int ngblcell_, Int nlclcell_, Int nlev_, Int np_,
     cdr = std::make_shared<QLTT>(p, nleaf, tree, options, threed ? nsuplev : 0);
     tree = nullptr;
   } else if (Alg::is_caas(alg)) {
-    const Int n_in_elem = Alg::is_point(alg) ? np*np : 1;
-    const Int n_accum_in_place = (n_id_in_suplev * n_in_elem *
+    const Int n_accum_in_place = (n_id_in_suplev*
+                                  (Alg::is_point(alg) ? np*np : 1)*
                                   (cdr_over_super_levels ? nsuplev : 1));
     typename CAAST::UserAllReducer::Ptr reducer;
     //todo Measure perf on CPU and GPU of TreeReducer vs
@@ -459,8 +459,8 @@ CDR<MT>::CDR (Int cdr_alg_, Int ngblcell_, Int nlclcell_, Int nlev_, Int np_,
     } else {
       reducer = std::make_shared<ReproSumReducer<MT> >(fcomm, n_accum_in_place);
     }
-    const int cedr_nlclcell = nlclcell*n_in_elem*n_accum_in_place;
-    const auto caas = std::make_shared<CAAST>(p, cedr_nlclcell, reducer);
+    const auto caas = std::make_shared<CAAST>(p, nlclcell*n_accum_in_place,
+                                              reducer);
     cdr = caas;
   } else {
     cedr_throw_if(true, "Invalid semi_lagrange_cdr_alg " << alg);
@@ -504,11 +504,13 @@ void set_ie2gci (CDR<MT>& q, const Int ie, const Int gci) { q.ie2gci_h[ie] = gci
 
 template <typename MT>
 void init_ie2lci (CDR<MT>& q) {
+  const Int n_in_elem = Alg::is_point(q.alg) ? q.np*q.np : 1;
   const Int n_id_in_suplev = q.caas_in_suplev ? 1 : q.nsublev;
   const Int nleaf =
     n_id_in_suplev*
     q.ie2gci.size()*
-    (q.cdr_over_super_levels ? q.nsuplev : 1);
+    (q.cdr_over_super_levels ? q.nsuplev : 1)*
+    n_in_elem;
   q.ie2lci = typename CDR<MT>::Idxs("ie2lci", nleaf);
   q.ie2lci_h = Kokkos::create_mirror_view(q.ie2lci);
   if (Alg::is_qlt(q.alg)) {
@@ -533,16 +535,22 @@ void init_ie2lci (CDR<MT>& q) {
       const auto nlevwrem = q.nsuplev*n_id_in_suplev;
       for (size_t ie = 0; ie < q.ie2gci_h.size(); ++ie)
         for (Int spli = 0; spli < q.nsuplev; ++spli)
-          for (Int sbli = 0; sbli < n_id_in_suplev; ++sbli) {
-            const Int id = nlevwrem*ie + n_id_in_suplev*spli + sbli;
-            q.ie2lci_h[id] = id;
-          }
+          for (Int sbli = 0; sbli < n_id_in_suplev; ++sbli)
+            for (Int k = 0; k < n_in_elem; ++k) {
+              const Int id = (nlevwrem*n_in_elem*ie +
+                              n_in_elem*(n_id_in_suplev*spli + sbli) +
+                              k);
+              q.ie2lci_h[id] = id;
+            }
     } else {
       for (size_t ie = 0; ie < q.ie2gci_h.size(); ++ie)
-        for (Int sbli = 0; sbli < n_id_in_suplev; ++sbli) {
-          const Int id = n_id_in_suplev*ie + sbli;
-          q.ie2lci_h[id] = id;
-        }
+        for (Int sbli = 0; sbli < n_id_in_suplev; ++sbli)
+          for (Int k = 0; k < n_in_elem; ++k) {
+            const Int id = (n_id_in_suplev*n_in_elem*ie +
+                            n_in_elem*sbli +
+                            k);
+            q.ie2lci_h[id] = id;
+          }
     }
   }
   Kokkos::deep_copy(q.ie2lci, q.ie2lci_h);
