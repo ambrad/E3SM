@@ -537,18 +537,14 @@ void init_ie2lci (CDR<MT>& q) {
         for (Int spli = 0; spli < q.nsuplev; ++spli)
           for (Int sbli = 0; sbli < n_id_in_suplev; ++sbli)
             for (Int k = 0; k < n_in_elem; ++k) {
-              const Int id = (nlevwrem*n_in_elem*ie +
-                              nlevwrem*k +
-                              n_id_in_suplev*spli + sbli);
+              const Int id = nlevwrem*(n_in_elem*ie + k) + n_id_in_suplev*spli + sbli;
               q.ie2lci_h[id] = id;
             }
     } else {
       for (size_t ie = 0; ie < q.ie2gci_h.size(); ++ie)
         for (Int sbli = 0; sbli < n_id_in_suplev; ++sbli)
           for (Int k = 0; k < n_in_elem; ++k) {
-            const Int id = (n_id_in_suplev*n_in_elem*ie +
-                            n_id_in_suplev*k +
-                            sbli);
+            const Int id = n_id_in_suplev*(n_in_elem*ie + k) + sbli;
             q.ie2lci_h[id] = id;
           }
     }

@@ -78,7 +78,8 @@ void run_global (CDR<MT>& cdr, CDRT* cedr_cdr_p,
 
   const Int nsublev = cdr.nsublev;
   const Int nsuplev = cdr.nsuplev;
-  const Int g_outer_lim = Alg::is_point(cdr.alg) ? np2 : 1;
+  const Int n_in_elem = Alg::is_point(cdr.alg) ? np2 : 1;
+  const Int g_outer_lim = n_in_elem;
   const Int g_inner_lim = Alg::is_point(cdr.alg) ? 1 : np2;
   const auto rank = cdr.p->rank();
   const auto cdr_over_super_levels = cdr.cdr_over_super_levels;
@@ -113,67 +114,66 @@ void run_global (CDR<MT>& cdr, CDRT* cedr_cdr_p,
     const auto q_c1 = subview_ie(ie, q_c);
 #ifndef COMPOSE_PORT
     for (Int q = 0; q < qsize; ++q)
-      for (Int spli = 0; spli < cdr.nsuplev; ++spli) {
+    for (Int spli = 0; spli < cdr.nsuplev; ++spli) {
 #endif
-        const Int k0 = nsublev*spli;
-        const Int ti = cdr_over_super_levels ? q : spli*qsize + q;
-        const bool nonneg = nonnegs[q];
-        for (Int g_out = 0; g_out < g_outer_lim; ++g_out) {
-          Real Qm = 0, Qm_min = 0, Qm_max = 0, Qm_prev = 0, rhom = 0, volume = 0;
-#pragma message "PICK UP ie_idx needs to incorporate n_in_elem"
-          Int ie_idx;
-          if (caas_in_suplev)
-            ie_idx = (cdr_over_super_levels ?
-                      nsuplev*ie + spli :
-                      ie);
-          for (Int sbli = 0; sbli < nsublev; ++sbli) {
-            const auto k = k0 + sbli;
-            if ( ! caas_in_suplev)
-              ie_idx = (cdr_over_super_levels ?
-                        nlevwrem*ie + k :
-                        nsublev*ie + sbli);
-            const auto lci = ie2lci[ie_idx];
-            if ( ! caas_in_suplev) {
-              Qm = 0; Qm_min = 0; Qm_max = 0; Qm_prev = 0;
-              rhom = 0;
-              volume = 0;
-            }
-            if (k < nlev) {
-              for (Int g_in = 0; g_in < g_inner_lim; ++g_in) {
-                const Int g = g_out + g_in;
-                const auto smp = spheremp1(g);
-                volume += smp;
-                const Real rhomij = dp3d_c1(np1,g,k) * smp;
-                rhom += rhomij;
-                Qm += q_c1(q,g,k) * rhomij;
-                auto& q_min_val = idx_qext(q_min,ie,q,g,k);
-                if ( ! cedr::impl::OnGpu<typename MT::DES>::value && nonneg)
-                  q_min_val = ko::max<Real>(q_min_val, 0);
-                Qm_min += q_min_val * rhomij;
-                Qm_max += idx_qext(q_max,ie,q,g,k) * rhomij;
-                Qm_prev += qdp_p1(n0_qdp,q,g,k) * smp;
-              }
-            }
-            const bool write = ! caas_in_suplev || sbli == nsublev-1;
-            if (write) {
-              // For now, handle just one rhom. For feasible global problems,
-              // it's used only as a weight vector in QLT, so it's fine. In
-              // fact, use just the cell geometry, rather than total density,
-              // since in QLT this field is used as a weight vector.
-              //todo Generalize to one rhom field per level. Until then, we're
-              // not getting QLT's safety benefit.
-              if (ti == 0) cedr_cdr.set_rhom(lci, 0, volume);
-              cedr_cdr.set_Qm(lci, ti, Qm, Qm_min, Qm_max, Qm_prev);
-              if (Qm_prev < -0.5)
-                warn_on_Qm_prev_negative<MT>(Qm_prev, rank, ie, ie2gci, np2, spli, k0, q,
-                                             ti, sbli, lci, k, n0_qdp, np1, qdp_p, dp3d_c);
-            }
+    const Int k0 = nsublev*spli;
+    const Int ti = cdr_over_super_levels ? q : spli*qsize + q;
+    const bool nonneg = nonnegs[q];
+    for (Int g_out = 0; g_out < g_outer_lim; ++g_out) {
+      Real Qm = 0, Qm_min = 0, Qm_max = 0, Qm_prev = 0, rhom = 0, volume = 0;
+      Int ie_idx;
+      if (caas_in_suplev)
+        ie_idx = (cdr_over_super_levels ?
+                  nsuplev*(n_in_elem*ie + g_out) + spli :
+                  n_in_elem*ie + g_out);
+      for (Int sbli = 0; sbli < nsublev; ++sbli) {
+        const auto k = k0 + sbli;
+        if ( ! caas_in_suplev)
+          ie_idx = (cdr_over_super_levels ?
+                    nlevwrem*(n_in_elem*ie + g_out) + k :
+                    nsublev*(n_in_elem*ie + g_out) + sbli);
+        const auto lci = ie2lci[ie_idx];
+        if ( ! caas_in_suplev) {
+          Qm = 0; Qm_min = 0; Qm_max = 0; Qm_prev = 0;
+          rhom = 0;
+          volume = 0;
+        }
+        if (k < nlev) {
+          for (Int g_in = 0; g_in < g_inner_lim; ++g_in) {
+            const Int g = g_out + g_in;
+            const auto smp = spheremp1(g);
+            volume += smp;
+            const Real rhomij = dp3d_c1(np1,g,k) * smp;
+            rhom += rhomij;
+            Qm += q_c1(q,g,k) * rhomij;
+            auto& q_min_val = idx_qext(q_min,ie,q,g,k);
+            if ( ! cedr::impl::OnGpu<typename MT::DES>::value && nonneg)
+              q_min_val = ko::max<Real>(q_min_val, 0);
+            Qm_min += q_min_val * rhomij;
+            Qm_max += idx_qext(q_max,ie,q,g,k) * rhomij;
+            Qm_prev += qdp_p1(n0_qdp,q,g,k) * smp;
           }
+        }
+        const bool write = ! caas_in_suplev || sbli == nsublev-1;
+        if (write) {
+          // For now, handle just one rhom. For feasible global problems, it's
+          // used only as a weight vector in QLT, so it's fine. In fact, use
+          // just the cell geometry, rather than total density, since in QLT
+          // this field is used as a weight vector.
+          //todo Generalize to one rhom field per level. Until then, we're not
+          // getting QLT's safety benefit.
+          if (ti == 0) cedr_cdr.set_rhom(lci, 0, volume);
+          cedr_cdr.set_Qm(lci, ti, Qm, Qm_min, Qm_max, Qm_prev);
+          if (Qm_prev < -0.5)
+            warn_on_Qm_prev_negative<MT>(Qm_prev, rank, ie, ie2gci, np2, spli, k0, q,
+                                         ti, sbli, lci, k, n0_qdp, np1, qdp_p, dp3d_c);
+        }
+      }
     }
 #ifdef COMPOSE_PORT
-  };
-  ko::fence();
-  ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, (nete - nets + 1)*nsuplev*qsize), f);
+    };
+    ko::fence();
+    ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, (nete - nets + 1)*nsuplev*qsize), f);
 #else
   }}
 #endif
