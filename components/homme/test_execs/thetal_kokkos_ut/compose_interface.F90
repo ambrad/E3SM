@@ -36,6 +36,7 @@ contains
 
     transport_alg = 12
     semi_lagrange_cdr_alg = 5 !30
+    print *,'amb> HARDCODING cdr_alg to 5'
     semi_lagrange_cdr_check = cdr_check
     qsize = qsize_in
     limiter_option = lim
