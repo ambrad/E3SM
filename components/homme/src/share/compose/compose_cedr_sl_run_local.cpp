@@ -214,8 +214,6 @@ void run_local (CDR<MT>& cdr, CDRT* cedr_cdr_p,
     const Int k0 = nsublev*spli;
     const Int ti = cdr_over_super_levels ? q : spli*qsize + q;
     if (is_point) {
-      //todo-isl2 Support relaxed local solves and *before* global. For testing
-      // CAAS-point right now, don't do anything.
       for (Int g = 0; g < np2; ++g)
         for (Int sbli = 0; sbli < nsublev; ++sbli) {
           const Int k = k0 + sbli;

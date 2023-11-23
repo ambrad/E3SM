@@ -5,6 +5,79 @@
 namespace homme {
 namespace sl {
 
+template <int np_, typename MT>
+void run_relaxed_local (CDR<MT>& cdr, const Data& d, Real* q_min_r,
+                        const Real* q_max_r, const Int nets, const Int nete) {
+  const auto& ta = *d.ta;
+  cedr_assert(ta.np == np_);
+  static const Int np = np_, np2 = np_*np_;
+  const Int nlev = ta.nlev, qsize = ta.qsize, nlevwrem = cdr.nsuplev*cdr.nsublev;
+#ifdef COMPOSE_PORT
+  const auto& q_min = ta.q_min;
+  const auto& q_max = ta.q_max;
+#else
+  const QExtremaH<ko::MachineTraits>
+    q_min(q_min_r, ta.nelemd, ta.qsize, ta.nlev, np2);
+  const QExtremaHConst<ko::MachineTraits>
+    q_max(q_max_r, ta.nelemd, ta.qsize, ta.nlev, np2);
+#endif
+  const auto np1 = ta.np1;
+  const auto n1_qdp = ta.n1_qdp;
+  const auto& spheremp = ta.spheremp;
+  const auto& dp3d_c = ta.dp3d;
+  const auto& q_c = ta.q;
+  const Int nsublev = cdr.nsublev;
+  const Int nsuplev = cdr.nsuplev;
+  const auto caas_in_suplev = cdr.caas_in_suplev;
+  cedr_assert( ! caas_in_suplev);
+  const auto is_point = Alg::is_point(cdr.alg);
+  const Int n_in_elem = is_point ? np2 : 1;
+#ifdef COMPOSE_PORT
+  const auto f = COMPOSE_LAMBDA (const Int& idx) {
+    const Int ie = nets + idx/(nsuplev*qsize);
+    const Int q = (idx / nsuplev) % qsize;
+    const Int spli = idx % nsuplev;
+#else
+  for (Int ie = nets; ie <= nete; ++ie) {
+#endif
+    const auto spheremp1 = subview_ie(ie, spheremp);
+    const auto dp3d_c1 = subview_ie(ie, dp3d_c);
+    const auto q_c1 = subview_ie(ie, q_c);
+#ifndef COMPOSE_PORT
+    for (Int q = 0; q < qsize; ++q)
+    for (Int spli = 0; spli < nsuplev; ++spli) {
+#endif
+    const Int k0 = nsublev*spli;
+    for (Int sbli = 0; sbli < nsublev; ++sbli) {
+      const Int k = k0 + sbli;
+      if (k >= nlev) break;
+      static const Int np2 = np_*np_;
+      Real qlo[np2], qhi[np2], wa[np2], y[np2], x[np2], Qm = 0;
+      for (Int g = 0; g < np2; ++g) {
+        const auto del = 0.01*(qhi[g] - qlo[g]);
+        qlo[g] = idx_qext(q_min,ie,q,g,k) - del;
+        qhi[g] = idx_qext(q_max,ie,q,g,k) + del;
+      }
+      for (Int g = 0; g < np2; ++g) {
+        const Real rhomij = dp3d_c1(np1,g,k) * spheremp1(g);
+        wa[g] = rhomij;
+        y[g] = q_c1(q,g,k);
+        x[g] = y[g];
+        Qm += rhomij*y[g];
+      }
+      cedr::local::caas(np2, wa, Qm, qlo, qhi, y, x, false);
+      for (Int g = 0; g < np2; ++g)
+        q_c1(q,g,k) = x[g];
+    }
+#ifdef COMPOSE_PORT
+  };
+  ko::fence();
+  ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, (nete - nets + 1)*nsuplev*qsize), f);
+#else
+  }}
+#endif
+}
+
 template <typename MT, typename Ie2gci, typename Qdp, typename Dp3d>
 ko::EnableIfNotOnGpu<MT> warn_on_Qm_prev_negative (
   Real Qm_prev, Int rank, Int ie, const Ie2gci& ie2gci, Int np2, Int spli,
@@ -182,6 +255,9 @@ void run_global (CDR<MT>& cdr, CDRT* cedr_cdr_p,
 template <typename MT>
 void run_global (CDR<MT>& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
                  const Int nets, const Int nete) {
+  if (Alg::is_point(cdr.alg))
+    run_relaxed_local<4, MT>(cdr, d, q_min_r, q_max_r, nets, nete);
+  ko::fence();
   if (dynamic_cast<typename CDR<MT>::QLTT*>(cdr.cdr.get()))
     run_global<4, MT, typename CDR<MT>::QLTT>(
       cdr, dynamic_cast<typename CDR<MT>::QLTT*>(cdr.cdr.get()),
