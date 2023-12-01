@@ -172,9 +172,6 @@ contains
           end if
        end do
     end if
-    do i = 1, nlmaps_exclude_n_fields
-       print *,'amb>',i,trim(nlmaps_exclude_fields(i)(1:nlmaps_exclude_max_nchar))
-    end do
   end subroutine seq_nlmap_setopts
 
   subroutine seq_nlmap_check_matrices(m)
