@@ -485,7 +485,7 @@ contains
        do j = 1,lsize_o
           do k = 1,natt
              if (avp_o%rAttr(k,j) == 0) cycle ! 0-mask
-             nl_avp_o%rAttr(k,j) = max(gmins(k), min(gmaxs(k), avp_o%rAttr(k,j)))
+             nl_avp_o%rAttr(k,j) = max(gmins(k), min(gmaxs(k), nl_avp_o%rAttr(k,j)))
           end do
        end do
 
