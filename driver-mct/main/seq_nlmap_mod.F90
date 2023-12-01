@@ -305,7 +305,7 @@ contains
     real(r8), allocatable, dimension(:) :: lmins, gmins, lmaxs, gmaxs, glbl_masses, gwts
     real(r8), allocatable, dimension(:,:) :: dof_masses, caas_wgt, oglims, lcl_lo, lcl_hi
     type(mct_string) :: mstring
-    character(CL) :: itemc
+    character(CL) :: fldname
 
     ! BFB speedups to do:
     ! * Combine matvecs into one routine that shares the X->X' comm.
@@ -518,11 +518,12 @@ contains
        ! Set avp_o.
        do k = 1,natt
           call mct_aVect_getRList(mstring, k, avp_i)
-          itemc = mct_string_toChar(mstring)
+          fldname = mct_string_toChar(mstring)
           call mct_string_clean(mstring)
           found = .false.
           do j = 1, nlmaps_exclude_n_fields
-             if (trim(itemc) == trim(nlmaps_exclude_fields(j)(1:nlmaps_exclude_max_nchar))) then
+             if ( trim(fldname                 (1:nlmaps_exclude_max_nchar)) == &
+                  trim(nlmaps_exclude_fields(j)(1:nlmaps_exclude_max_nchar))) then
                 found = .true.
                 exit
              end if
