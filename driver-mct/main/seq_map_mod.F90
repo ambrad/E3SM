@@ -876,6 +876,12 @@ contains
     logical                :: lnorm, use_nonlinear_map
     character(*),parameter :: subName = '(seq_map_avNormArr) '
     character(len=*),parameter :: ffld = 'norm8wt'  ! want something unique
+    !amb
+    integer :: k, natt
+    logical :: amroot
+    type(mct_string) :: mstring
+    character(CL) :: itemc
+    !amb end
     !-----------------------------------------------------
 
     use_nonlinear_map = .false.
@@ -898,6 +904,20 @@ contains
        if (.not.lnorm) call shr_sys_abort(subname//' ERROR norm_i and norm = false')
        if (size(norm_i) /= lsize_i) call shr_sys_abort(subname//' ERROR size(norm_i) ne lsize_i')
     endif
+
+    !amb
+    amroot = seq_comm_iamroot(CPLID)
+    natt = size(av_i%rAttr, 1)
+    if (.false.) then
+       write(logunit, '(A,A,I5)') 'amb> ', trim(mapper%mapfile)
+       do k = 1, natt
+          call mct_aVect_getRList(mstring, k, av_i)
+          itemc = mct_string_toChar(mstring)
+          call mct_string_clean(mstring)
+          write(logunit, '(A,I5,A, A)') 'amb> ', k, ' ', trim(itemc)
+       end do
+    end if
+    !amb end
 
     !--- create temporary avs for mapping ---
 
