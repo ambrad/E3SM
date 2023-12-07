@@ -99,8 +99,8 @@ void fill (Random& r, const V& a,
 }
 
 struct Session {
-  int ne, hv_q;
-  bool cdr_check, is_sphere;
+  int ne, hv_q, nmax;
+  bool cdr_check, is_sphere, run_only_advection_test;
   HybridVCoord h;
   Random r;
   std::shared_ptr<Elements> e;
@@ -209,6 +209,8 @@ private:
     hv_q = 1;
     cdr_check = false;
     is_sphere = true;
+    run_only_advection_test = false;
+    nmax = -1;
     bool ok = true;
     int i;
     for (i = 0; i < hommexx_catch2_argc; ++i) {
@@ -226,6 +228,13 @@ private:
         cdr_check = true;
       } else if (tok == "-planar") {
         is_sphere = false;
+      } else if (tok == "-convergence") {
+        // When running this as a convergence-test driver, don't run any tests
+        // except the prescribed-flow one.
+        run_only_advection_test = true;
+      } else if (tok == "-nmax") {
+        if (i+1 == hommexx_catch2_argc) { ok = false; break; }
+        nmax = std::atoi(hommexx_catch2_argv[++i]);
       }
     }
     ne = std::max(2, std::min(128, ne));
@@ -337,6 +346,14 @@ TEST_CASE ("compose_transport_testing") {
   static constexpr Real tol = std::numeric_limits<Real>::epsilon();
 
   auto& s = Session::singleton(); try {
+  do { // breakable
+
+  if (s.run_only_advection_test) {
+    int nmax = s.nmax;
+    std::vector<Real> eval_f((s.nlev+1)*s.qsize);
+    run_compose_standalone_test_f90(&nmax, eval_f.data());
+    break;
+  }
 
   // unit tests
   REQUIRE(compose::test::slmm_unittest() == 0);
@@ -386,7 +403,7 @@ TEST_CASE ("compose_transport_testing") {
   }
 
   { // 2D SL BFB
-    int nmax;
+    int nmax = s.nmax;
     std::vector<Real> eval_f((s.nlev+1)*s.qsize), eval_c(eval_f.size());
     run_compose_standalone_test_f90(&nmax, eval_f.data());
     for (const bool bfb : {false, true}) {
@@ -409,6 +426,7 @@ TEST_CASE ("compose_transport_testing") {
     }
   }
 
+  } while (false); // do
   } catch (...) {}
   Session::delete_singleton();
 }

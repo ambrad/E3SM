@@ -149,7 +149,7 @@ contains
     use thread_mod, only: hthreads, vthreads
     use dimensions_mod, only: nlev, qsize
 
-    integer(c_int), intent(out) :: nmax_out
+    integer(c_int), intent(inout) :: nmax_out
     real(c_double), intent(out) :: eval((nlev+1)*qsize)
 
     type (domain1d_t), pointer :: dom_mt(:)
@@ -163,8 +163,12 @@ contains
     dom_mt(0)%start = 1
     dom_mt(0)%end = nelemd
     transport_alg = 19
-    nmax = 7*ne
-    nmax_out = nmax
+    if (nmax_out <= 1) then
+       nmax = 7*ne
+       nmax_out = nmax
+    else
+       nmax = nmax_out
+    end if
     statefreq = 2*ne
     call compose_test(par, hvcoord, dom_mt, elem, buf)
     do i = 1,size(buf)
