@@ -5154,7 +5154,9 @@ contains
     ! restart writing.
     ! ----------------------------------------------------------
     
-    use shr_file_mod, only shr_file_put
+    use shr_file_mod, only: shr_file_put
+
+    integer, intent(in) :: phase
 
     character(3), parameter :: suffixes(7) = &
          ['atm', 'drv', 'ice', 'lnd', 'ocn', 'rof', 'wav']
