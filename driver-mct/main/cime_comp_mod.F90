@@ -5135,8 +5135,24 @@ contains
     !----------------------------------------------------------
     ! Improve robustness of restart writing.
     !
-    ! 
-    !----------------------------------------------------------
+    ! It's possible for a crash that occurs during restart writing to lead to
+    ! inconsistent or incomplete rpointer files. This routine fixes this problem
+    ! by copying all rpointer.X files to rpointer.X.prev before components write
+    ! restart files, then moving rpointer.X.prev files to rpointer.X when all
+    ! components are done.
+    !
+    ! If a crash occurs midway through, on restart, the consistent
+    ! rpointer.X.prev files will be used.
+    !
+    ! In principle we could use the *_present variables to check whether to
+    ! attempt to copy/move, but not doing so makes the code more flexible, and
+    ! the cost is negligible.
+    !
+    ! If a new component is added, the 'suffixes' list should be updated. If
+    ! it's not, nothing bad will happen except that there will not be full
+    ! protection against inconsistent rpointer files if a crash occurs during
+    ! restart writing.
+    ! ----------------------------------------------------------
     
     use shr_file_mod, only shr_file_put
 
@@ -5145,19 +5161,23 @@ contains
     integer :: i, rcode
 
     if (phase == 1) then
-       do i = 1, size(suffixes,1)
-          call shr_file_put(rcode, &
-               './rpointer.'//suffixes(i), &
-               './rpointer.'//suffixes(i)//'.prev', &
-               remove=.false., async=.false.)
-       end do
+       if (iamroot_CPLID) then
+          do i = 1, size(suffixes,1)
+             call shr_file_put(rcode, &
+                  'rpointer.'//suffixes(i), &
+                  'rpointer.'//suffixes(i)//'.prev', &
+                  remove=.false., async=.false.)
+          end do
+       end if
     elseif (phase == 2) then
-       do i = 1, size(suffixes,1)
-          call shr_file_put(rcode, &
-               './rpointer.'//suffixes(i)//'.prev', &
-               './rpointer.'//suffixes(i), &
-               remove=.true., async=.false.)
-       end do
+       if (iamroot_CPLID) then
+          do i = 1, size(suffixes,1)
+             call shr_file_put(rcode, &
+                  'rpointer.'//suffixes(i)//'.prev', &
+                  'rpointer.'//suffixes(i), &
+                  remove=.true., async=.false.)
+          end do
+       end if
     else
        write(logunit,*) 'ERROR: rpointer_manage phase must be 1 or 2; is', phase
        call shr_sys_abort('rpointer_manage: phase must be 1 or 2')
