@@ -5156,6 +5156,11 @@ contains
     ! protection against inconsistent rpointer files if a crash occurs during
     ! restart writing.
     ! ----------------------------------------------------------
+
+    ! to do
+    ! - complicated testing. note that ERS is not enough!
+    ! - on failure, cp msg is written to e3sm.log. bad.
+    ! - so i probably need to write some additional shr_file_mod routines for cleanliness
     
     use shr_file_mod, only: shr_file_put
 
@@ -5167,39 +5172,33 @@ contains
 
     if (phase == 1) then
        if (iamroot_CPLID) then
-          print *,'amb> phase 1'
           do i = 1, size(suffixes,1)
              call shr_file_put(rcode, &
                   'rpointer.'//suffixes(i), &
                   'rpointer.'//suffixes(i)//'.prev', &
                   remove=.false., async=.false.)
-             print *,'amb> ',suffixes(i),':',rcode
           end do
        end if
     elseif (phase == 2) then
        if (iamroot_CPLID) then
-          print *,'amb> phase 2'
           do i = 1, size(suffixes,1)
              call shr_file_put(rcode, &
                   'rpointer.'//suffixes(i)//'.prev', &
                   'unused', &
                   remove=.true., async=.false.)
-             print *,'amb> ',suffixes(i),':',rcode
           end do
        end if       
     elseif (phase == 3) then
        if (iamroot_CPLID) then
-          print *,'amb> phase 3'
           do i = 1, size(suffixes,1)
              call shr_file_put(rcode, &
                   'rpointer.'//suffixes(i)//'.prev', &
                   'rpointer.'//suffixes(i), &
                   remove=.true., async=.false.)
-             print *,'amb> ',suffixes(i),':',rcode
           end do
        end if
     else
-       write(logunit,*) 'ERROR: rpointer_manage phase must be 1, 2, or 3; is', phase
+       write(logunit,*) 'ERROR: rpointer_manage phase must be 1, 2, or 3 but is', phase
        call shr_sys_abort('rpointer_manage: phase must be 1, 2, or 3')
     end if
 
