@@ -1384,7 +1384,7 @@ contains
        write(logunit,'(2A,L4)') subname,'BFBFLAG is:',bfbflag       
     endif
 
-    if (read_restart) call rpointer_manage(2)
+    if (read_restart) call rpointer_manage(3)
     
     call t_stopf('CPL:cime_pre_init2')
 
@@ -5136,10 +5136,13 @@ contains
     ! Improve robustness of restart writing.
     !
     ! It's possible for a crash that occurs during restart writing to lead to
-    ! inconsistent or incomplete rpointer files. This routine fixes this problem
-    ! by copying all rpointer.X files to rpointer.X.prev before components write
-    ! restart files, then moving rpointer.X.prev files to rpointer.X when all
-    ! components are done.
+    ! inconsistent or incomplete rpointer files. While we can't salvage the
+    ! restart files in general, we can at least provide a consistent set of
+    ! rpointer files -- namely, the previous ones -- for the next restart.
+    !
+    ! This routine provides this capability by copying all rpointer.X files to
+    ! rpointer.X.prev before components write restart files, then removing
+    ! rpointer.X.prev files when all components are done.
     !
     ! If a crash occurs midway through, on restart, the consistent
     ! rpointer.X.prev files will be used.
@@ -5164,25 +5167,40 @@ contains
 
     if (phase == 1) then
        if (iamroot_CPLID) then
+          print *,'amb> phase 1'
           do i = 1, size(suffixes,1)
              call shr_file_put(rcode, &
                   'rpointer.'//suffixes(i), &
                   'rpointer.'//suffixes(i)//'.prev', &
                   remove=.false., async=.false.)
+             print *,'amb> ',suffixes(i),':',rcode
           end do
        end if
     elseif (phase == 2) then
        if (iamroot_CPLID) then
+          print *,'amb> phase 2'
+          do i = 1, size(suffixes,1)
+             call shr_file_put(rcode, &
+                  'rpointer.'//suffixes(i)//'.prev', &
+                  'unused', &
+                  remove=.true., async=.false.)
+             print *,'amb> ',suffixes(i),':',rcode
+          end do
+       end if       
+    elseif (phase == 3) then
+       if (iamroot_CPLID) then
+          print *,'amb> phase 3'
           do i = 1, size(suffixes,1)
              call shr_file_put(rcode, &
                   'rpointer.'//suffixes(i)//'.prev', &
                   'rpointer.'//suffixes(i), &
                   remove=.true., async=.false.)
+             print *,'amb> ',suffixes(i),':',rcode
           end do
        end if
     else
-       write(logunit,*) 'ERROR: rpointer_manage phase must be 1 or 2; is', phase
-       call shr_sys_abort('rpointer_manage: phase must be 1 or 2')
+       write(logunit,*) 'ERROR: rpointer_manage phase must be 1, 2, or 3; is', phase
+       call shr_sys_abort('rpointer_manage: phase must be 1, 2, or 3')
     end if
 
   end subroutine rpointer_manage
