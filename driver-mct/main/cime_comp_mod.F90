@@ -1384,6 +1384,7 @@ contains
        write(logunit,'(2A,L4)') subname,'BFBFLAG is:',bfbflag       
     endif
 
+    if (read_restart) call rpointer_manage(2)
     
     call t_stopf('CPL:cime_pre_init2')
 
@@ -2717,6 +2718,8 @@ contains
        ! Does the driver need to pause?
        drv_pause = pause_alarm .and. seq_timemgr_pause_component_active(drv_index)
 
+       if (restart_alarm) call rpointer_manage(1)
+
        if (glc_prognostic .or. do_hist_l2x1yrg) then
           ! Is it time to average fields to pass to glc?
           !
@@ -3490,6 +3493,8 @@ contains
 
        endif
        call t_stopf  ('CPL:TPROF_WRITE')
+
+       if (restart_alarm) call rpointer_manage(2)
 
        if (barrier_alarm) then
           call t_drvstartf  ('CPL:BARRIERALARM',cplrun=.true.)
@@ -5124,5 +5129,40 @@ contains
     call t_adj_detailf(-1)
 
   end subroutine cime_write_performance_checkpoint
+
+  subroutine rpointer_manage(phase)
+
+    !----------------------------------------------------------
+    ! Improve robustness of restart writing.
+    !
+    ! 
+    !----------------------------------------------------------
+    
+    use shr_file_mod, only shr_file_put
+
+    character(3), parameter :: suffixes(7) = &
+         ['atm', 'drv', 'ice', 'lnd', 'ocn', 'rof', 'wav']
+    integer :: i, rcode
+
+    if (phase == 1) then
+       do i = 1, size(suffixes,1)
+          call shr_file_put(rcode, &
+               './rpointer.'//suffixes(i), &
+               './rpointer.'//suffixes(i)//'.prev', &
+               remove=.false., async=.false.)
+       end do
+    elseif (phase == 2) then
+       do i = 1, size(suffixes,1)
+          call shr_file_put(rcode, &
+               './rpointer.'//suffixes(i)//'.prev', &
+               './rpointer.'//suffixes(i), &
+               remove=.true., async=.false.)
+       end do
+    else
+       write(logunit,*) 'ERROR: rpointer_manage phase must be 1 or 2; is', phase
+       call shr_sys_abort('rpointer_manage: phase must be 1 or 2')
+    end if
+
+  end subroutine rpointer_manage
 
 end module cime_comp_mod
