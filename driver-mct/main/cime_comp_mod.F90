@@ -630,6 +630,8 @@ module cime_comp_mod
   integer  :: atm_rootpe,lnd_rootpe,ice_rootpe,ocn_rootpe,&
               glc_rootpe,rof_rootpe,wav_rootpe,iac_rootpe
 
+  integer :: rpointer_state
+
   !----------------------------------------------------------------------------
   ! complist: list of comps on this pe
   !----------------------------------------------------------------------------
@@ -1384,7 +1386,8 @@ contains
        write(logunit,'(2A,L4)') subname,'BFBFLAG is:',bfbflag       
     endif
 
-    if (read_restart) call rpointer_manage(3)
+    rpointer_state = 1
+    if (read_restart) call rpointer_manage(4)
     
     call t_stopf('CPL:cime_pre_init2')
 
@@ -2718,6 +2721,7 @@ contains
        ! Does the driver need to pause?
        drv_pause = pause_alarm .and. seq_timemgr_pause_component_active(drv_index)
 
+       call rpointer_manage(3)
        if (restart_alarm) call rpointer_manage(1)
 
        if (glc_prognostic .or. do_hist_l2x1yrg) then
@@ -3548,6 +3552,8 @@ contains
     call component_final(EClock_r, rof, rof_final)
     call component_final(EClock_l, lnd, lnd_final)
     call component_final(EClock_a, atm, atm_final)
+
+    call rpointer_manage(3)
 
     !------------------------------------------------------------------------
     ! End the run cleanly
@@ -5160,7 +5166,7 @@ contains
     ! to do
     ! - complicated testing. note that ERS is not enough!
     ! - on failure, cp msg is written to e3sm.log. bad.
-    ! - so i probably need to write some additional shr_file_mod routines for cleanliness
+    !   - so i probably need to write some additional shr_file_mod routines for cleanliness
     
     use shr_file_mod, only: shr_file_put
 
@@ -5170,37 +5176,52 @@ contains
          ['atm', 'drv', 'ice', 'lnd', 'ocn', 'rof', 'wav']
     integer :: i, rcode
 
+    if (.not. iamroot_CPLID) return
+    if (phase == 3 .and. rpointer_state == 1) return
+
+    print *,'amb> entr rpointer_manage phase,state:',phase,rpointer_state
+
     if (phase == 1) then
-       if (iamroot_CPLID) then
-          do i = 1, size(suffixes,1)
-             call shr_file_put(rcode, &
-                  'rpointer.'//suffixes(i), &
-                  'rpointer.'//suffixes(i)//'.prev', &
-                  remove=.false., async=.false.)
-          end do
-       end if
+       ! Copy previous, valid rpointer files to .prev in case the restart write
+       ! that's about to occur fails.
+       do i = 1, size(suffixes,1)
+          call shr_file_put(rcode, &
+               'rpointer.'//suffixes(i), &
+               'rpointer.'//suffixes(i)//'.prev', &
+               remove=.false., async=.false.)
+       end do
     elseif (phase == 2) then
-       if (iamroot_CPLID) then
-          do i = 1, size(suffixes,1)
-             call shr_file_put(rcode, &
-                  'rpointer.'//suffixes(i)//'.prev', &
-                  'unused', &
-                  remove=.true., async=.false.)
-          end do
-       end if       
+       ! We're at the end of the driver run loop, but b/c of things like partial
+       ! steps in the atmosphere model, we can't yet be sure all restart-related
+       ! writes at the level of history tapes are complete. Set our state to
+       ! prepare for the eventual all-clear message.
+       rpointer_state = 3
     elseif (phase == 3) then
-       if (iamroot_CPLID) then
-          do i = 1, size(suffixes,1)
-             call shr_file_put(rcode, &
-                  'rpointer.'//suffixes(i)//'.prev', &
-                  'rpointer.'//suffixes(i), &
-                  remove=.true., async=.false.)
-          end do
-       end if
+       ! Now we've been told the restart writes really are all valid. Remove the
+       ! .prev files.
+       do i = 1, size(suffixes,1)
+          call shr_file_put(rcode, &
+               'rpointer.'//suffixes(i)//'.prev', &
+               'unused', &
+               remove=.true., async=.false.)
+       end do
+       rpointer_state = 1
+    elseif (phase == 4) then
+       ! Restart. If .prev file are present, something went wrong in the
+       ! previous run's final restart write. Use the .prev files instead of the
+       ! invalid regular ones.
+       do i = 1, size(suffixes,1)
+          call shr_file_put(rcode, &
+               'rpointer.'//suffixes(i)//'.prev', &
+               'rpointer.'//suffixes(i), &
+               remove=.true., async=.false.)
+       end do
     else
        write(logunit,*) 'ERROR: rpointer_manage phase must be 1, 2, or 3 but is', phase
        call shr_sys_abort('rpointer_manage: phase must be 1, 2, or 3')
     end if
+
+    print *,'amb> exit rpointer_manage phase,state:',phase,rpointer_state
 
   end subroutine rpointer_manage
 
