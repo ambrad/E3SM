@@ -630,8 +630,6 @@ module cime_comp_mod
   integer  :: atm_rootpe,lnd_rootpe,ice_rootpe,ocn_rootpe,&
               glc_rootpe,rof_rootpe,wav_rootpe,iac_rootpe
 
-  integer :: rpointer_state
-
   !----------------------------------------------------------------------------
   ! complist: list of comps on this pe
   !----------------------------------------------------------------------------
@@ -661,6 +659,16 @@ module cime_comp_mod
   integer, parameter :: ens1=1         ! use first instance of ensemble only
   integer, parameter :: fix1=1         ! temporary hard-coding to first ensemble, needs to be fixed
   integer :: eai, eli, eoi, eii, egi, eri, ewi, eei, exi, efi, ezi  ! component instance counters
+
+  type, private :: RpointerMgr_t
+     integer, parameter :: ncomp = 9
+     logical :: on, cpresent(ncomp), rang(ncomp)
+     type (ESMF_Clock), target :: clock(ncomp)
+     integer :: npresent
+     logical :: remove_prev_in_next_call
+     integer, parameter :: phase_monitor = 1, phase_restart = 4
+  end type RpointerMgr_t
+  type (RpointerMgr_t) :: rpointer_mgr
 
   !----------------------------------------------------------------------------
   ! formats
@@ -1386,8 +1394,8 @@ contains
        write(logunit,'(2A,L4)') subname,'BFBFLAG is:',bfbflag       
     endif
 
-    rpointer_state = 1
-    if (read_restart) call rpointer_manage(4)
+    call rpointer_init_manager()
+    if (read_restart) call rpointer_manage(rpointer_mgr%phase_restart)
     
     call t_stopf('CPL:cime_pre_init2')
 
@@ -2691,6 +2699,8 @@ contains
        call t_startf('CPL:RUN_LOOP', hashint(1))
        call t_startf('CPL:CLOCK_ADVANCE')
 
+       call rpointer_manage(rpointer_mgr%phase_monitor)
+
        !----------------------------------------------------------
        !| Advance Clock
        !  (this is time that models should have before they return
@@ -2720,9 +2730,6 @@ contains
 
        ! Does the driver need to pause?
        drv_pause = pause_alarm .and. seq_timemgr_pause_component_active(drv_index)
-
-       call rpointer_manage(3)
-       if (restart_alarm) call rpointer_manage(1)
 
        if (glc_prognostic .or. do_hist_l2x1yrg) then
           ! Is it time to average fields to pass to glc?
@@ -3498,8 +3505,6 @@ contains
        endif
        call t_stopf  ('CPL:TPROF_WRITE')
 
-       if (restart_alarm) call rpointer_manage(2)
-
        if (barrier_alarm) then
           call t_drvstartf  ('CPL:BARRIERALARM',cplrun=.true.)
           call mpi_barrier(mpicom_GLOID,ierr)
@@ -3553,7 +3558,7 @@ contains
     call component_final(EClock_l, lnd, lnd_final)
     call component_final(EClock_a, atm, atm_final)
 
-    call rpointer_manage(3)
+    call rpointer_manage(rpointer_mgr%phase_monitor)
 
     !------------------------------------------------------------------------
     ! End the run cleanly
@@ -5136,6 +5141,67 @@ contains
 
   end subroutine cime_write_performance_checkpoint
 
+  subroutine rpointer_init_manager()
+    integer :: n
+    
+    rpointer_mgr%on = .true.
+    rpointer_mgr%rang(:) = .false.
+    rpointer_mgr%state = rpointer_mgr%phase_monitor
+
+    n = 0
+    rpointer_mgr%cpresent(:) = .false.
+    rpointer_mgr%clock(:) => null()
+
+    if (atm_present) then
+       n = n + 1
+       rpointer_mgr%cpresent(comp_num_atm) = .true.
+       rpointer_mgr%clock(comp_num_atm) => EClock_a
+    end if
+    if (lnd_present) then
+       n = n + 1
+       rpointer_mgr%cpresent(comp_num_lnd) = .true.
+       rpointer_mgr%clock(comp_num_atm) => EClock_l
+    end if
+    if (ice_present) then
+       n = n + 1
+       rpointer_mgr%cpresent(comp_num_ice) = .true.
+       rpointer_mgr%clock(comp_num_atm) => EClock_i
+    end if
+    if (ocn_present) then
+       n = n + 1
+       rpointer_mgr%cpresent(comp_num_ocn) = .true.
+       rpointer_mgr%clock(comp_num_atm) => EClock_o
+    end if
+    if (glc_present) then
+       n = n + 1
+       rpointer_mgr%cpresent(comp_num_glc) = .true.
+       rpointer_mgr%clock(comp_num_atm) => EClock_g
+    end if
+    if (rof_present) then
+       n = n + 1
+       rpointer_mgr%cpresent(comp_num_rof) = .true.
+       rpointer_mgr%clock(comp_num_atm) => EClock_r
+    end if
+    if (wav_present) then
+       n = n + 1
+       rpointer_mgr%cpresent(comp_num_wav) = .true.
+       rpointer_mgr%clock(comp_num_atm) => EClock_w
+    end if
+    if (esp_present) then
+       n = n + 1
+       rpointer_mgr%cpresent(comp_num_esp) = .true.
+       rpointer_mgr%clock(comp_num_atm) => EClock_e
+    end if
+    if (iac_present) then
+       n = n + 1
+       rpointer_mgr%cpresent(comp_num_iac) = .true.
+       rpointer_mgr%clock(comp_num_atm) => EClock_z
+    end if
+
+    rpointer_mgr%npresent = n
+    rpointer_mgr%remove_prev_in_next_call = .false.
+  end subroutine rpointer_init_manager
+
   subroutine rpointer_manage(phase)
 
     !----------------------------------------------------------
@@ -5153,14 +5219,6 @@ contains
     ! If a crash occurs midway through, on restart, the consistent
     ! rpointer.X.prev files will be used.
     !
-    ! In principle we could use the *_present variables to check whether to
-    ! attempt to copy/move, but not doing so makes the code more flexible, and
-    ! the cost is negligible.
-    !
-    ! If a new component is added, the 'suffixes' list should be updated. If
-    ! it's not, nothing bad will happen except that there will not be full
-    ! protection against inconsistent rpointer files if a crash occurs during
-    ! restart writing.
     ! ----------------------------------------------------------
 
     ! to do
@@ -5172,41 +5230,17 @@ contains
 
     integer, intent(in) :: phase
 
-    character(3), parameter :: suffixes(7) = &
-         ['atm', 'drv', 'ice', 'lnd', 'ocn', 'rof', 'wav']
-    integer :: i, rcode
+    character(3), parameter :: suffixes(9) = &
+         ['atm', 'lnd', 'ice', 'ocn', 'glc', 'rof', 'wav', 'esp', 'iac']
+
+    integer :: i, n, rcode
+    logical :: no_previous_rings
+
+    if (.not. rpointer_mgr%on) return
 
     if (.not. iamroot_CPLID) return
-    if (phase == 3 .and. rpointer_state == 1) return
 
-    print *,'amb> entr rpointer_manage phase,state:',phase,rpointer_state
-
-    if (phase == 1) then
-       ! Copy previous, valid rpointer files to .prev in case the restart write
-       ! that's about to occur fails.
-       do i = 1, size(suffixes,1)
-          call shr_file_put(rcode, &
-               'rpointer.'//suffixes(i), &
-               'rpointer.'//suffixes(i)//'.prev', &
-               remove=.false., async=.false.)
-       end do
-    elseif (phase == 2) then
-       ! We're at the end of the driver run loop, but b/c of things like partial
-       ! steps in the atmosphere model, we can't yet be sure all restart-related
-       ! writes at the level of history tapes are complete. Set our state to
-       ! prepare for the eventual all-clear message.
-       rpointer_state = 3
-    elseif (phase == 3) then
-       ! Now we've been told the restart writes really are all valid. Remove the
-       ! .prev files.
-       do i = 1, size(suffixes,1)
-          call shr_file_put(rcode, &
-               'rpointer.'//suffixes(i)//'.prev', &
-               'unused', &
-               remove=.true., async=.false.)
-       end do
-       rpointer_state = 1
-    elseif (phase == 4) then
+    if (phase == rpointer_mgr%phase_restart) then
        ! Restart. If .prev file are present, something went wrong in the
        ! previous run's final restart write. Use the .prev files instead of the
        ! invalid regular ones.
@@ -5216,12 +5250,70 @@ contains
                'rpointer.'//suffixes(i), &
                remove=.true., async=.false.)
        end do
-    else
-       write(logunit,*) 'ERROR: rpointer_manage phase must be 1, 2, or 3 but is', phase
-       call shr_sys_abort('rpointer_manage: phase must be 1, 2, or 3')
+       return
     end if
 
-    print *,'amb> exit rpointer_manage phase,state:',phase,rpointer_state
+    if (rpointer_mgr%remove_prev_in_next_call) then
+       ! Now we've been told the restart writes really are all valid. Remove the
+       ! .prev files.
+       do i = 1, size(suffixes,1)
+          call shr_file_put(rcode, &
+               'rpointer.'//suffixes(i)//'.prev', &
+               'unused', &
+               remove=.true., async=.false.)
+       end do
+       rpointer_mgr%remove_prev_in_next_call = .false.
+       return
+    end if
+
+    no_previous_rings = .true.
+    do i = 1, rpointer_mgr%ncomp
+       if (rpointer_mgr%rang(i)) no_previous_rings = .false.
+    end do
+
+    n = 0
+    do i = 1, rpointer_mgr%ncomp
+       if (.not. rpointer_mgr%cpresent(i)) cycle
+       if (.not. rpointer_mgr%rang(i)) then
+          if (seq_timemgr_alarmIsOn(rpointer_mgr%clock(i), seq_timemgr_alarm_restart)) then
+             rpointer_mgr%rang(i) = .true.
+          end if
+       end if
+       if (rpointer_mgr%rang(i)) n = n + 1
+    end do
+
+    if (n == rpointer_mgr%npresent) then
+       ! All restart timers have rung. Get ready to remove the .prev files. We
+       ! don't want to do it in this phase_monitor call, however. Because of
+       ! things like partial steps in the atmosphere model (initiated from
+       ! cime_final rather than cime_run), we can't yet be sure all
+       ! restart-related writes at the level of history tapes are complete. Set
+       ! our state to tell us that in the next call, we can remove the files.
+       rpointer_mgr%remove_prev_in_next_call = .true.
+       return
+    else if (no_previous_rings) then
+       if (n == 0) then
+          ! Nothing happened.
+          return          
+       else
+          ! A new round of restart writes is starting. Copy previous, valid
+          ! rpointer files to .prev in case one or more of the restart writes that
+          ! are about to occur fail.
+          do i = 1, size(suffixes,1)
+             call shr_file_put(rcode, &
+                  'rpointer.'//suffixes(i), &
+                  'rpointer.'//suffixes(i)//'.prev', &
+                  remove=.false., async=.false.)
+             print *,'amb> copied:',suffixes(i)
+          end do
+          return
+       end if
+    else
+       ! We expect that if there were previous rings, we'll get the rest of the
+       ! them by the next call. Yet here are, with fewer rings than the number
+       ! of present components.
+       call shr_sys_abort('rpointer_manage: Unexpected state: 0 < n < npressent && prev rings.')
+    end if
 
   end subroutine rpointer_manage
 
