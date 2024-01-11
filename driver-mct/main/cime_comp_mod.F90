@@ -5245,10 +5245,12 @@ contains
        ! previous run's final restart write. Use the .prev files instead of the
        ! invalid regular ones.
        do i = 1, size(suffixes,1)
-          call shr_file_put(rcode, &
-               'rpointer.'//suffixes(i)//'.prev', &
-               'rpointer.'//suffixes(i), &
-               remove=.true., async=.false.)
+          if (rpointer_mgr%cpresent(i)) then
+             call shr_file_put(rcode, &
+                  'rpointer.'//suffixes(i)//'.prev', &
+                  'rpointer.'//suffixes(i), &
+                  remove=.true., async=.false.)
+          end if
        end do
        return
     end if
@@ -5257,10 +5259,12 @@ contains
        ! Now we've been told the restart writes really are all valid. Remove the
        ! .prev files.
        do i = 1, size(suffixes,1)
-          call shr_file_put(rcode, &
-               'rpointer.'//suffixes(i)//'.prev', &
-               'unused', &
-               remove=.true., async=.false.)
+          if (rpointer_mgr%cpresent(i)) then
+             call shr_file_put(rcode, &
+                  'rpointer.'//suffixes(i)//'.prev', &
+                  'unused', &
+                  remove=.true., async=.false.)
+          end if
        end do
        rpointer_mgr%remove_prev_in_next_call = .false.
        return
@@ -5300,11 +5304,13 @@ contains
           ! rpointer files to .prev in case one or more of the restart writes that
           ! are about to occur fail.
           do i = 1, size(suffixes,1)
-             call shr_file_put(rcode, &
-                  'rpointer.'//suffixes(i), &
-                  'rpointer.'//suffixes(i)//'.prev', &
-                  remove=.false., async=.false.)
-             print *,'amb> copied:',suffixes(i)
+             if (rpointer_mgr%cpresent(i)) then
+                call shr_file_put(rcode, &
+                     'rpointer.'//suffixes(i), &
+                     'rpointer.'//suffixes(i)//'.prev', &
+                     remove=.false., async=.false.)
+                print *,'amb> copied:',suffixes(i)
+             end if
           end do
           return
        end if
