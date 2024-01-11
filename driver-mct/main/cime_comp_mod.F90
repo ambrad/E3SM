@@ -660,13 +660,16 @@ module cime_comp_mod
   integer, parameter :: fix1=1         ! temporary hard-coding to first ensemble, needs to be fixed
   integer :: eai, eli, eoi, eii, egi, eri, ewi, eei, exi, efi, ezi  ! component instance counters
 
+  integer, parameter :: rpointer_ncomp = 9, &
+       rpointer_phase_monitor = 1, rpointer_phase_restart = 4
+  type, private :: EClockPointer_t
+     type (ESMF_Clock), pointer :: ptr
+  end type EClockPointer_t
   type, private :: RpointerMgr_t
-     integer, parameter :: ncomp = 9
-     logical :: on, cpresent(ncomp), rang(ncomp)
-     type (ESMF_Clock), target :: clock(ncomp)
+     logical :: on, remove_prev_in_next_call
+     logical :: cpresent(rpointer_ncomp), rang(rpointer_ncomp)
+     type (EClockPointer_t) :: clock(rpointer_ncomp)
      integer :: npresent
-     logical :: remove_prev_in_next_call
-     integer, parameter :: phase_monitor = 1, phase_restart = 4
   end type RpointerMgr_t
   type (RpointerMgr_t) :: rpointer_mgr
 
@@ -1395,7 +1398,7 @@ contains
     endif
 
     call rpointer_init_manager()
-    if (read_restart) call rpointer_manage(rpointer_mgr%phase_restart)
+    if (read_restart) call rpointer_manage(rpointer_phase_restart)
     
     call t_stopf('CPL:cime_pre_init2')
 
@@ -2699,7 +2702,7 @@ contains
        call t_startf('CPL:RUN_LOOP', hashint(1))
        call t_startf('CPL:CLOCK_ADVANCE')
 
-       call rpointer_manage(rpointer_mgr%phase_monitor)
+       call rpointer_manage(rpointer_phase_monitor)
 
        !----------------------------------------------------------
        !| Advance Clock
@@ -3558,7 +3561,7 @@ contains
     call component_final(EClock_l, lnd, lnd_final)
     call component_final(EClock_a, atm, atm_final)
 
-    call rpointer_manage(rpointer_mgr%phase_monitor)
+    call rpointer_manage(rpointer_phase_monitor)
 
     !------------------------------------------------------------------------
     ! End the run cleanly
@@ -5142,60 +5145,62 @@ contains
   end subroutine cime_write_performance_checkpoint
 
   subroutine rpointer_init_manager()
-    integer :: n
+    integer :: i, n
     
     rpointer_mgr%on = .true.
     rpointer_mgr%rang(:) = .false.
-    rpointer_mgr%state = rpointer_mgr%phase_monitor
 
-    n = 0
+    do i = 1, rpointer_ncomp
+       rpointer_mgr%clock(i)%ptr => null()
+    end do
+
     rpointer_mgr%cpresent(:) = .false.
-    rpointer_mgr%clock(:) => null()
+    n = 0
 
     if (atm_present) then
        n = n + 1
        rpointer_mgr%cpresent(comp_num_atm) = .true.
-       rpointer_mgr%clock(comp_num_atm) => EClock_a
+       rpointer_mgr%clock(comp_num_atm)%ptr => EClock_a
     end if
     if (lnd_present) then
        n = n + 1
        rpointer_mgr%cpresent(comp_num_lnd) = .true.
-       rpointer_mgr%clock(comp_num_atm) => EClock_l
+       rpointer_mgr%clock(comp_num_atm)%ptr => EClock_l
     end if
     if (ice_present) then
        n = n + 1
        rpointer_mgr%cpresent(comp_num_ice) = .true.
-       rpointer_mgr%clock(comp_num_atm) => EClock_i
+       rpointer_mgr%clock(comp_num_atm)%ptr => EClock_i
     end if
     if (ocn_present) then
        n = n + 1
        rpointer_mgr%cpresent(comp_num_ocn) = .true.
-       rpointer_mgr%clock(comp_num_atm) => EClock_o
+       rpointer_mgr%clock(comp_num_atm)%ptr => EClock_o
     end if
     if (glc_present) then
        n = n + 1
        rpointer_mgr%cpresent(comp_num_glc) = .true.
-       rpointer_mgr%clock(comp_num_atm) => EClock_g
+       rpointer_mgr%clock(comp_num_atm)%ptr => EClock_g
     end if
     if (rof_present) then
        n = n + 1
        rpointer_mgr%cpresent(comp_num_rof) = .true.
-       rpointer_mgr%clock(comp_num_atm) => EClock_r
+       rpointer_mgr%clock(comp_num_atm)%ptr => EClock_r
     end if
     if (wav_present) then
        n = n + 1
        rpointer_mgr%cpresent(comp_num_wav) = .true.
-       rpointer_mgr%clock(comp_num_atm) => EClock_w
+       rpointer_mgr%clock(comp_num_atm)%ptr => EClock_w
     end if
     if (esp_present) then
        n = n + 1
        rpointer_mgr%cpresent(comp_num_esp) = .true.
-       rpointer_mgr%clock(comp_num_atm) => EClock_e
+       rpointer_mgr%clock(comp_num_atm)%ptr => EClock_e
     end if
     if (iac_present) then
        n = n + 1
        rpointer_mgr%cpresent(comp_num_iac) = .true.
-       rpointer_mgr%clock(comp_num_atm) => EClock_z
+       rpointer_mgr%clock(comp_num_atm)%ptr => EClock_z
     end if
 
     rpointer_mgr%npresent = n
@@ -5240,7 +5245,7 @@ contains
 
     if (.not. iamroot_CPLID) return
 
-    if (phase == rpointer_mgr%phase_restart) then
+    if (phase == rpointer_phase_restart) then
        ! Restart. If .prev file are present, something went wrong in the
        ! previous run's final restart write. Use the .prev files instead of the
        ! invalid regular ones.
@@ -5271,15 +5276,15 @@ contains
     end if
 
     no_previous_rings = .true.
-    do i = 1, rpointer_mgr%ncomp
+    do i = 1, rpointer_ncomp
        if (rpointer_mgr%rang(i)) no_previous_rings = .false.
     end do
 
     n = 0
-    do i = 1, rpointer_mgr%ncomp
+    do i = 1, rpointer_ncomp
        if (.not. rpointer_mgr%cpresent(i)) cycle
        if (.not. rpointer_mgr%rang(i)) then
-          if (seq_timemgr_alarmIsOn(rpointer_mgr%clock(i), seq_timemgr_alarm_restart)) then
+          if (seq_timemgr_alarmIsOn(rpointer_mgr%clock(i)%ptr, seq_timemgr_alarm_restart)) then
              rpointer_mgr%rang(i) = .true.
           end if
        end if
