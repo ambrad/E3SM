@@ -2943,7 +2943,6 @@ contains
        !| RUN ROF MODEL
        !----------------------------------------------------------
        if (rof_present .and. rofrun_alarm) then
-          if (iamroot_CPLID .and. seq_timemgr_alarmIsOn((EClock_r), seq_timemgr_alarm_restart)) print *,'amb> cime_comp_mod.F90: ROF restart alarm is on'
           call component_run(Eclock_r, rof, rof_run, infodata, &
                seq_flds_x2c_fluxes=seq_flds_x2r_fluxes, &
                seq_flds_c2x_fluxes=seq_flds_r2x_fluxes, &
