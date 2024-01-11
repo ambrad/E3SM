@@ -5165,42 +5165,42 @@ contains
     if (lnd_present) then
        n = n + 1
        rpointer_mgr%cpresent(comp_num_lnd) = .true.
-       rpointer_mgr%clock(comp_num_atm)%ptr => EClock_l
+       rpointer_mgr%clock(comp_num_lnd)%ptr => EClock_l
     end if
     if (ice_present) then
        n = n + 1
        rpointer_mgr%cpresent(comp_num_ice) = .true.
-       rpointer_mgr%clock(comp_num_atm)%ptr => EClock_i
+       rpointer_mgr%clock(comp_num_ice)%ptr => EClock_i
     end if
     if (ocn_present) then
        n = n + 1
        rpointer_mgr%cpresent(comp_num_ocn) = .true.
-       rpointer_mgr%clock(comp_num_atm)%ptr => EClock_o
+       rpointer_mgr%clock(comp_num_ocn)%ptr => EClock_o
     end if
     if (glc_present) then
        n = n + 1
        rpointer_mgr%cpresent(comp_num_glc) = .true.
-       rpointer_mgr%clock(comp_num_atm)%ptr => EClock_g
+       rpointer_mgr%clock(comp_num_glc)%ptr => EClock_g
     end if
     if (rof_present) then
        n = n + 1
        rpointer_mgr%cpresent(comp_num_rof) = .true.
-       rpointer_mgr%clock(comp_num_atm)%ptr => EClock_r
+       rpointer_mgr%clock(comp_num_rof)%ptr => EClock_r
     end if
     if (wav_present) then
        n = n + 1
        rpointer_mgr%cpresent(comp_num_wav) = .true.
-       rpointer_mgr%clock(comp_num_atm)%ptr => EClock_w
+       rpointer_mgr%clock(comp_num_wav)%ptr => EClock_w
     end if
     if (esp_present) then
        n = n + 1
        rpointer_mgr%cpresent(comp_num_esp) = .true.
-       rpointer_mgr%clock(comp_num_atm)%ptr => EClock_e
+       rpointer_mgr%clock(comp_num_esp)%ptr => EClock_e
     end if
     if (iac_present) then
        n = n + 1
        rpointer_mgr%cpresent(comp_num_iac) = .true.
-       rpointer_mgr%clock(comp_num_atm)%ptr => EClock_z
+       rpointer_mgr%clock(comp_num_iac)%ptr => EClock_z
     end if
 
     rpointer_mgr%npresent = n
@@ -5271,6 +5271,7 @@ contains
                   remove=.true., async=.false.)
           end if
        end do
+       rpointer_mgr%rang(:) = .false.
        rpointer_mgr%remove_prev_in_next_call = .false.
        return
     end if
@@ -5290,6 +5291,16 @@ contains
        end if
        if (rpointer_mgr%rang(i)) n = n + 1
     end do
+
+    if (n > 0) then
+       print *,'amb> state'
+       do i = 1, rpointer_ncomp
+          if (rpointer_mgr%cpresent(i)) then
+             print ('(a,i2,i2,i2,a4,l2)'), &
+                  'amb>',i,n,rpointer_mgr%npresent,suffixes(i),rpointer_mgr%rang(i)
+          end if
+       end do
+    end if
 
     if (n == rpointer_mgr%npresent) then
        ! All restart timers have rung. Get ready to remove the .prev files. We
@@ -5319,12 +5330,13 @@ contains
           end do
           return
        end if
-    else
-       ! We expect that if there were previous rings, we'll get the rest of the
-       ! them by the next call. Yet here are, with fewer rings than the number
-       ! of present components.
-       call shr_sys_abort('rpointer_manage: Unexpected state: 0 < n < npressent && prev rings.')
     end if
+
+    ! If we reach this point, there were previous rings and n < npresent,
+    ! meaning > 2 iterations of the driver run loop can occur before all restart
+    ! alarms have rung, once one has rung. At the time of writing, ROF can cause
+    ! this situation, at least in some configurations. Continue to monitor the
+    ! restart writing, but don't do anything more yet.
 
   end subroutine rpointer_manage
 
