@@ -1396,9 +1396,6 @@ contains
        call seq_infodata_GetData(infodata, bfbflag=bfbflag)
        write(logunit,'(2A,L4)') subname,'BFBFLAG is:',bfbflag       
     endif
-
-    call rpointer_init_manager()
-    if (read_restart) call rpointer_manage(rpointer_phase_restart)
     
     call t_stopf('CPL:cime_pre_init2')
 
@@ -1663,6 +1660,11 @@ contains
          wav_nx=wav_nx, wav_ny=wav_ny,          &
          iac_nx=iac_nx, iac_ny=iac_ny,          &
          atm_aero=atm_aero )
+
+    ! Initialize the rpointer manager and, if restarting, recover from a crash
+    ! during restart writing in the previous run if necessary.
+    call rpointer_init_manager()
+    if (read_restart) call rpointer_manage(rpointer_phase_restart)
 
     ! derive samegrid flags
 
@@ -2702,8 +2704,6 @@ contains
        call t_startf('CPL:RUN_LOOP', hashint(1))
        call t_startf('CPL:CLOCK_ADVANCE')
 
-       call rpointer_manage(rpointer_phase_monitor)
-
        !----------------------------------------------------------
        !| Advance Clock
        !  (this is time that models should have before they return
@@ -2733,6 +2733,8 @@ contains
 
        ! Does the driver need to pause?
        drv_pause = pause_alarm .and. seq_timemgr_pause_component_active(drv_index)
+
+       call rpointer_manage(rpointer_phase_monitor)
 
        if (glc_prognostic .or. do_hist_l2x1yrg) then
           ! Is it time to average fields to pass to glc?
@@ -2941,6 +2943,7 @@ contains
        !| RUN ROF MODEL
        !----------------------------------------------------------
        if (rof_present .and. rofrun_alarm) then
+          if (iamroot_CPLID .and. seq_timemgr_alarmIsOn((EClock_r), seq_timemgr_alarm_restart)) print *,'amb> cime_comp_mod.F90: ROF restart alarm is on'
           call component_run(Eclock_r, rof, rof_run, infodata, &
                seq_flds_x2c_fluxes=seq_flds_x2r_fluxes, &
                seq_flds_c2x_fluxes=seq_flds_r2x_fluxes, &
@@ -5257,6 +5260,7 @@ contains
                   remove=.true., async=.false.)
           end if
        end do
+       print *,'amb> prev -> normal'
        return
     end if
 
@@ -5273,6 +5277,7 @@ contains
        end do
        rpointer_mgr%rang(:) = .false.
        rpointer_mgr%remove_prev_in_next_call = .false.
+       print *,'amb> rm .prev files'
        return
     end if
 
@@ -5310,6 +5315,7 @@ contains
        ! restart-related writes at the level of history tapes are complete. Set
        ! our state to tell us that in the next call, we can remove the files.
        rpointer_mgr%remove_prev_in_next_call = .true.
+       print *,'amb> set remove_prev_in_next_call=true'
        return
     else if (no_previous_rings) then
        if (n == 0) then
@@ -5333,10 +5339,9 @@ contains
     end if
 
     ! If we reach this point, there were previous rings and n < npresent,
-    ! meaning > 2 iterations of the driver run loop can occur before all restart
-    ! alarms have rung, once one has rung. At the time of writing, ROF can cause
-    ! this situation, at least in some configurations. Continue to monitor the
-    ! restart writing, but don't do anything more yet.
+    ! meaning > 2 iterations of the driver run loop will occur before all
+    ! restart alarms have rung, now that at least one has rung. Don't do
+    ! anything more yet.
 
   end subroutine rpointer_manage
 
