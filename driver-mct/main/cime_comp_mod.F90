@@ -5212,6 +5212,7 @@ contains
   end subroutine rpointer_init_manager
 
   function file_exists(fname) result(e)
+
     character(*), intent(in) :: fname
 
     integer :: unit, stat
@@ -5222,6 +5223,7 @@ contains
     e = stat == 0
     if (e) close(unit)
     call shr_file_freeUnit(unit)
+
   end function file_exists
 
   function are_files_same(afname, bfname) result(same)
@@ -5326,7 +5328,7 @@ contains
                 call shr_file_put(rcode, &
                      'rpointer.'//suffixes(i)//'.prev', &
                      'rpointer.'//suffixes(i), &
-                     remove=.true., async=.false.)
+                     remove=.false., async=.false.)
                 n = n + 1
                 idxlist(n) = i
              end if
@@ -5354,6 +5356,12 @@ contains
           if (.not. ok) then
              call shr_sys_abort('rpointer_manage: Could not copy rpointer.x.prev to rpointer.x')
           end if
+          do i = 1, n
+             call shr_file_put(rcode, &
+                  'rpointer.'//suffixes(idxlist(i))//'.prev', &
+                  'unused', &
+                  remove=.true., async=.false.)
+          end do
        end if
        print *,'amb> prev -> normal'
        return
