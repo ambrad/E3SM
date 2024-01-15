@@ -5147,6 +5147,7 @@ contains
   end subroutine cime_write_performance_checkpoint
 
   subroutine rpointer_init_manager()
+
     integer :: i, n
     
     rpointer_mgr%on = .true.
@@ -5207,7 +5208,74 @@ contains
 
     rpointer_mgr%npresent = n
     rpointer_mgr%remove_prev_in_next_call = .false.
+
   end subroutine rpointer_init_manager
+
+  function file_exists(fname) result(e)
+    character(*), intent(in) :: fname
+
+    integer :: unit, stat
+    logical :: e
+
+    unit = shr_file_getUnit()
+    open(unit, file=trim(fname), action='READ', iostat=stat)
+    e = stat == 0
+    if (e) close(unit)
+    call shr_file_freeUnit(unit)
+  end function file_exists
+
+  function are_files_same(afname, bfname) result(same)
+
+    character(*), intent(in) :: afname, bfname
+
+    integer :: aunit, bunit, astat, bstat, i, line
+    character(1024) :: abuf, bbuf
+    logical :: same
+
+    same = .true.
+
+    aunit = shr_file_getUnit()
+    bunit = shr_file_getUnit()
+
+    open(aunit, file=trim(afname), action='READ', iostat=astat)
+    open(bunit, file=trim(bfname), action='READ', iostat=bstat)
+
+    if ((astat == 0) .neqv. (bstat == 0)) same = .false.
+
+    if (same .and. astat /= 0) same = .false.
+
+    if (same) then
+       astat = 0
+       bstat = 0
+       abuf(:) = ' '
+       bbuf(:) = ' '
+       line = 1
+       do while (same .and. astat == 0 .and. bstat == 0)
+          read(aunit, '(a1024)', iostat=astat) abuf
+          read(bunit, '(a1024)', iostat=bstat) bbuf
+          if ((astat == 0) .neqv. (bstat == 0)) then
+             same = .false.
+             exit
+          end if
+          if (astat /= 0) exit
+          do i = 1, 1024
+             if (abuf(i:i) /= bbuf(i:i)) then
+                print '(i7,i5,8a)', line, i, ' ', trim(afname), ', ', &
+                     trim(bfname), ': ', abuf(i:i), ' ', bbuf(i:i)
+                same = .false.
+                exit
+             end if
+          end do
+          line = line + 1
+       end do
+    end if
+
+    close(aunit)
+    close(bunit)
+    call shr_file_freeUnit(aunit)
+    call shr_file_freeUnit(bunit)
+
+  end function are_files_same
 
   subroutine rpointer_manage(phase)
 
@@ -5237,11 +5305,11 @@ contains
 
     integer, intent(in) :: phase
 
-    character(3), parameter :: suffixes(9) = &
+    character(3), parameter :: suffixes(rpointer_ncomp) = &
          ['atm', 'lnd', 'ice', 'ocn', 'glc', 'rof', 'wav', 'esp', 'iac']
 
-    integer :: i, n, rcode
-    logical :: no_previous_rings
+    integer :: i, n, rcode, idxlist(rpointer_ncomp), sleep_len
+    logical :: ok, same, no_previous_rings
 
     if (.not. rpointer_mgr%on) return
 
@@ -5251,14 +5319,42 @@ contains
        ! Restart. If .prev file are present, something went wrong in the
        ! previous run's final restart write. Use the .prev files instead of the
        ! invalid regular ones.
+       n = 0
        do i = 1, size(suffixes,1)
           if (rpointer_mgr%cpresent(i)) then
-             call shr_file_put(rcode, &
-                  'rpointer.'//suffixes(i)//'.prev', &
-                  'rpointer.'//suffixes(i), &
-                  remove=.true., async=.false.)
+             if (file_exists('rpointer.'//suffixes(i)//'.prev')) then
+                call shr_file_put(rcode, &
+                     'rpointer.'//suffixes(i)//'.prev', &
+                     'rpointer.'//suffixes(i), &
+                     remove=.true., async=.false.)
+                n = n + 1
+                idxlist(n) = i
+             end if
           end if
        end do
+       if (n > 0) then
+          sleep_len = 1
+          do while (.true.)
+             ok = .true.
+             do i = 1, n
+                same = are_files_same( &
+                     'rpointer.'//suffixes(idxlist(i))//'.prev', &
+                     'rpointer.'//suffixes(idxlist(i)))
+                if (.not. same) then
+                   ok = .false.
+                   exit
+                end if
+             end do
+             if (ok) exit
+             call sleep(sleep_len)
+             sleep_len = 2*sleep_len
+             ! Wait for up to 8 + 4 + 2 + 1 = 15 seconds.
+             if (sleep_len > 8) exit
+          end do
+          if (.not. ok) then
+             call shr_sys_abort('rpointer_manage: Could not copy rpointer.x.prev to rpointer.x')
+          end if
+       end if
        print *,'amb> prev -> normal'
        return
     end if
