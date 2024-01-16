@@ -660,13 +660,14 @@ module cime_comp_mod
   integer, parameter :: fix1=1         ! temporary hard-coding to first ensemble, needs to be fixed
   integer :: eai, eli, eoi, eii, egi, eri, ewi, eei, exi, efi, ezi  ! component instance counters
 
-  integer, parameter :: rpointer_ncomp = 9, &
-       rpointer_phase_monitor = 1, rpointer_phase_restart = 4
+  integer, parameter :: rpointer_ncomp = 9
+  character(3), parameter :: rpointer_suffixes(rpointer_ncomp) = &
+         ['atm', 'lnd', 'ice', 'ocn', 'glc', 'rof', 'wav', 'esp', 'iac']
   type, private :: EClockPointer_t
      type (ESMF_Clock), pointer :: ptr
   end type EClockPointer_t
   type, private :: RpointerMgr_t
-     logical :: on, remove_prev_in_next_call
+     logical :: remove_prev_in_next_call
      logical :: cpresent(rpointer_ncomp), rang(rpointer_ncomp)
      type (EClockPointer_t) :: clock(rpointer_ncomp)
      integer :: npresent
@@ -1437,6 +1438,9 @@ contains
     call t_startf('CPL:cime_init')
     call t_adj_detailf(+1)
 
+    ! This call must be make before the x_init calls just below.
+    call rpointer_prepare_restart()
+
     call t_startf('CPL:init_comps')
     if (iamroot_CPLID )then
        write(logunit,*) ' '
@@ -1661,10 +1665,10 @@ contains
          iac_nx=iac_nx, iac_ny=iac_ny,          &
          atm_aero=atm_aero )
 
-    ! Initialize the rpointer manager and, if restarting, recover from a crash
-    ! during restart writing in the previous run if necessary.
+    ! Initialize the rpointer manager. This is called after the restart routine
+    ! because we need to be further along in initialization to fully initialize
+    ! the manager. The restart routine doesn't need the initialized manager.
     call rpointer_init_manager()
-    if (read_restart) call rpointer_manage(rpointer_phase_restart)
 
     ! derive samegrid flags
 
@@ -2734,7 +2738,7 @@ contains
        ! Does the driver need to pause?
        drv_pause = pause_alarm .and. seq_timemgr_pause_component_active(drv_index)
 
-       call rpointer_manage(rpointer_phase_monitor)
+       call rpointer_manage()
 
        if (glc_prognostic .or. do_hist_l2x1yrg) then
           ! Is it time to average fields to pass to glc?
@@ -3563,7 +3567,7 @@ contains
     call component_final(EClock_l, lnd, lnd_final)
     call component_final(EClock_a, atm, atm_final)
 
-    call rpointer_manage(rpointer_phase_monitor)
+    call rpointer_manage()
 
     !------------------------------------------------------------------------
     ! End the run cleanly
@@ -5146,71 +5150,28 @@ contains
 
   end subroutine cime_write_performance_checkpoint
 
-  subroutine rpointer_init_manager()
-
-    integer :: i, n
-    
-    rpointer_mgr%on = .true.
-    rpointer_mgr%rang(:) = .false.
-
-    do i = 1, rpointer_ncomp
-       rpointer_mgr%clock(i)%ptr => null()
-    end do
-
-    rpointer_mgr%cpresent(:) = .false.
-    n = 0
-
-    if (atm_present) then
-       n = n + 1
-       rpointer_mgr%cpresent(comp_num_atm) = .true.
-       rpointer_mgr%clock(comp_num_atm)%ptr => EClock_a
-    end if
-    if (lnd_present) then
-       n = n + 1
-       rpointer_mgr%cpresent(comp_num_lnd) = .true.
-       rpointer_mgr%clock(comp_num_lnd)%ptr => EClock_l
-    end if
-    if (ice_present) then
-       n = n + 1
-       rpointer_mgr%cpresent(comp_num_ice) = .true.
-       rpointer_mgr%clock(comp_num_ice)%ptr => EClock_i
-    end if
-    if (ocn_present) then
-       n = n + 1
-       rpointer_mgr%cpresent(comp_num_ocn) = .true.
-       rpointer_mgr%clock(comp_num_ocn)%ptr => EClock_o
-    end if
-    if (glc_present) then
-       n = n + 1
-       rpointer_mgr%cpresent(comp_num_glc) = .true.
-       rpointer_mgr%clock(comp_num_glc)%ptr => EClock_g
-    end if
-    if (rof_present) then
-       n = n + 1
-       rpointer_mgr%cpresent(comp_num_rof) = .true.
-       rpointer_mgr%clock(comp_num_rof)%ptr => EClock_r
-    end if
-    if (wav_present) then
-       n = n + 1
-       rpointer_mgr%cpresent(comp_num_wav) = .true.
-       rpointer_mgr%clock(comp_num_wav)%ptr => EClock_w
-    end if
-    if (esp_present) then
-       n = n + 1
-       rpointer_mgr%cpresent(comp_num_esp) = .true.
-       rpointer_mgr%clock(comp_num_esp)%ptr => EClock_e
-    end if
-    if (iac_present) then
-       n = n + 1
-       rpointer_mgr%cpresent(comp_num_iac) = .true.
-       rpointer_mgr%clock(comp_num_iac)%ptr => EClock_z
-    end if
-
-    rpointer_mgr%npresent = n
-    rpointer_mgr%remove_prev_in_next_call = .false.
-
-  end subroutine rpointer_init_manager
-
+  !----------------------------------------------------------
+  ! Improve robustness of restart writing.
+  !
+  ! It's possible for a crash that occurs during restart writing to lead to
+  ! inconsistent or incomplete rpointer files. While we can't salvage the
+  ! restart files in general, we can at least provide a consistent set of
+  ! rpointer files -- namely, the previous ones -- for the next restart.
+  !
+  ! This routine provides this capability by copying all rpointer.X files to
+  ! rpointer.X.prev before components write restart files, then removing
+  ! rpointer.X.prev files when all components are done.
+  !
+  ! If a crash occurs midway through, on restart, the consistent rpointer.X.prev
+  ! files will be used.
+  !
+  ! ----------------------------------------------------------
+  
+  ! to do
+  ! - complicated testing. note that ERS is not enough!
+  ! - on failure, cp msg is written to e3sm.log. bad.
+  !   - so i probably need to write some additional shr_file_mod routines for cleanliness
+  
   function file_exists(fname) result(e)
 
     character(*), intent(in) :: fname
@@ -5279,101 +5240,149 @@ contains
 
   end function are_files_same
 
-  subroutine rpointer_manage(phase)
+  subroutine rpointer_prepare_restart()
 
-    !----------------------------------------------------------
-    ! Improve robustness of restart writing.
-    !
-    ! It's possible for a crash that occurs during restart writing to lead to
-    ! inconsistent or incomplete rpointer files. While we can't salvage the
-    ! restart files in general, we can at least provide a consistent set of
-    ! rpointer files -- namely, the previous ones -- for the next restart.
-    !
-    ! This routine provides this capability by copying all rpointer.X files to
-    ! rpointer.X.prev before components write restart files, then removing
-    ! rpointer.X.prev files when all components are done.
-    !
-    ! If a crash occurs midway through, on restart, the consistent
-    ! rpointer.X.prev files will be used.
-    !
-    ! ----------------------------------------------------------
-
-    ! to do
-    ! - complicated testing. note that ERS is not enough!
-    ! - on failure, cp msg is written to e3sm.log. bad.
-    !   - so i probably need to write some additional shr_file_mod routines for cleanliness
-    
     use shr_file_mod, only: shr_file_put
 
-    integer, intent(in) :: phase
-
-    character(3), parameter :: suffixes(rpointer_ncomp) = &
-         ['atm', 'lnd', 'ice', 'ocn', 'glc', 'rof', 'wav', 'esp', 'iac']
-
-    integer :: i, n, rcode, idxlist(rpointer_ncomp), sleep_len
-    logical :: ok, same, no_previous_rings
-
-    if (.not. rpointer_mgr%on) return
+    integer :: i, n, idxlist(rpointer_ncomp), sleep_len, rcode
+    logical :: ok, same
 
     if (.not. iamroot_CPLID) return
 
-    if (phase == rpointer_phase_restart) then
-       ! Restart. If .prev file are present, something went wrong in the
-       ! previous run's final restart write. Use the .prev files instead of the
-       ! invalid regular ones.
-       n = 0
-       do i = 1, size(suffixes,1)
-          if (rpointer_mgr%cpresent(i)) then
-             if (file_exists('rpointer.'//suffixes(i)//'.prev')) then
-                call shr_file_put(rcode, &
-                     'rpointer.'//suffixes(i)//'.prev', &
-                     'rpointer.'//suffixes(i), &
-                     remove=.false., async=.false.)
-                n = n + 1
-                idxlist(n) = i
-             end if
-          end if
-       end do
-       if (n > 0) then
-          sleep_len = 1
-          do while (.true.)
-             ok = .true.
-             do i = 1, n
-                same = are_files_same( &
-                     'rpointer.'//suffixes(idxlist(i))//'.prev', &
-                     'rpointer.'//suffixes(idxlist(i)))
-                if (.not. same) then
-                   ok = .false.
-                   exit
-                end if
-             end do
-             if (ok) exit
-             call sleep(sleep_len)
-             sleep_len = 2*sleep_len
-             ! Wait for up to 8 + 4 + 2 + 1 = 15 seconds.
-             if (sleep_len > 8) exit
-          end do
-          if (.not. ok) then
-             call shr_sys_abort('rpointer_manage: Could not copy rpointer.x.prev to rpointer.x')
-          end if
-          do i = 1, n
-             call shr_file_put(rcode, &
-                  'rpointer.'//suffixes(idxlist(i))//'.prev', &
-                  'unused', &
-                  remove=.true., async=.false.)
-          end do
+    ! Restart. If .prev file are present, something went wrong in the
+    ! previous run's final restart write. Use the .prev files instead of the
+    ! invalid regular ones.
+    n = 0
+    do i = 1, rpointer_ncomp
+       if (file_exists('rpointer.'//rpointer_suffixes(i)//'.prev')) then
+          call shr_file_put(rcode, &
+               'rpointer.'//rpointer_suffixes(i)//'.prev', &
+               'rpointer.'//rpointer_suffixes(i), &
+               remove=.false., async=.false.)
+          n = n + 1
+          idxlist(n) = i
        end if
-       print *,'amb> prev -> normal'
-       return
+    end do
+    if (n > 0) then
+       ! Read-after-write consistency generally does not hold, so manually
+       ! check if it does. If it doesn't, sleep, then try again. The sleep
+       ! period doubles each try until 15 seconds have elapsed, at which
+       ! point, if consistency still doesn't hold, give up.
+       !   A weakness here is we're doing this only on the master proc. To
+       ! assure consistency, we would need to run this check on every process
+       ! and do a global reduction after each try to see if we're all seeing
+       ! a consistent file.
+       sleep_len = 1
+       do while (.true.)
+          ok = .true.
+          do i = 1, n
+             same = are_files_same( &
+                  'rpointer.'//rpointer_suffixes(idxlist(i))//'.prev', &
+                  'rpointer.'//rpointer_suffixes(idxlist(i)))
+             if (.not. same) then
+                ok = .false.
+                exit
+             end if
+          end do
+          if (ok) exit
+          call sleep(sleep_len)
+          sleep_len = 2*sleep_len
+          ! Wait for up to 8 + 4 + 2 + 1 = 15 seconds.
+          if (sleep_len > 8) exit
+       end do
+       if (.not. ok) then
+          call shr_sys_abort('rpointer_manage: Could not copy rpointer.x.prev to rpointer.x')
+       end if
+       do i = 1, n
+          call shr_file_put(rcode, &
+               'rpointer.'//rpointer_suffixes(idxlist(i))//'.prev', &
+               'unused', &
+               remove=.true., async=.false.)
+       end do
     end if
+    print *,'amb> prev -> normal'
+  end subroutine rpointer_prepare_restart
+
+  subroutine rpointer_init_manager()
+
+    integer :: i, n
+    
+    rpointer_mgr%rang(:) = .false.
+
+    do i = 1, rpointer_ncomp
+       rpointer_mgr%clock(i)%ptr => null()
+    end do
+
+    rpointer_mgr%cpresent(:) = .false.
+    n = 0
+
+    if (atm_present) then
+       n = n + 1
+       rpointer_mgr%cpresent(comp_num_atm) = .true.
+       rpointer_mgr%clock(comp_num_atm)%ptr => EClock_a
+    end if
+    if (lnd_present) then
+       n = n + 1
+       rpointer_mgr%cpresent(comp_num_lnd) = .true.
+       rpointer_mgr%clock(comp_num_lnd)%ptr => EClock_l
+    end if
+    if (ice_present) then
+       n = n + 1
+       rpointer_mgr%cpresent(comp_num_ice) = .true.
+       rpointer_mgr%clock(comp_num_ice)%ptr => EClock_i
+    end if
+    if (ocn_present) then
+       n = n + 1
+       rpointer_mgr%cpresent(comp_num_ocn) = .true.
+       rpointer_mgr%clock(comp_num_ocn)%ptr => EClock_o
+    end if
+    if (glc_present) then
+       n = n + 1
+       rpointer_mgr%cpresent(comp_num_glc) = .true.
+       rpointer_mgr%clock(comp_num_glc)%ptr => EClock_g
+    end if
+    if (rof_present) then
+       n = n + 1
+       rpointer_mgr%cpresent(comp_num_rof) = .true.
+       rpointer_mgr%clock(comp_num_rof)%ptr => EClock_r
+    end if
+    if (wav_present) then
+       n = n + 1
+       rpointer_mgr%cpresent(comp_num_wav) = .true.
+       rpointer_mgr%clock(comp_num_wav)%ptr => EClock_w
+    end if
+    if (esp_present) then
+       n = n + 1
+       rpointer_mgr%cpresent(comp_num_esp) = .true.
+       rpointer_mgr%clock(comp_num_esp)%ptr => EClock_e
+    end if
+    if (iac_present) then
+       n = n + 1
+       rpointer_mgr%cpresent(comp_num_iac) = .true.
+       rpointer_mgr%clock(comp_num_iac)%ptr => EClock_z
+    end if
+
+    rpointer_mgr%npresent = n
+    rpointer_mgr%remove_prev_in_next_call = .false.
+
+  end subroutine rpointer_init_manager
+
+  subroutine rpointer_manage()
+
+    use shr_file_mod, only: shr_file_put
+
+    integer :: i, n, rcode
+    logical :: no_previous_rings
+
+    if (.not. iamroot_CPLID) return
 
     if (rpointer_mgr%remove_prev_in_next_call) then
        ! Now we've been told the restart writes really are all valid. Remove the
        ! .prev files.
-       do i = 1, size(suffixes,1)
+       do i = 1, size(rpointer_suffixes,1)
           if (rpointer_mgr%cpresent(i)) then
              call shr_file_put(rcode, &
-                  'rpointer.'//suffixes(i)//'.prev', &
+                  'rpointer.'//rpointer_suffixes(i)//'.prev', &
                   'unused', &
                   remove=.true., async=.false.)
           end if
@@ -5405,7 +5414,7 @@ contains
        do i = 1, rpointer_ncomp
           if (rpointer_mgr%cpresent(i)) then
              print ('(a,i2,i2,i2,a4,l2)'), &
-                  'amb>',i,n,rpointer_mgr%npresent,suffixes(i),rpointer_mgr%rang(i)
+                  'amb>',i,n,rpointer_mgr%npresent,rpointer_suffixes(i),rpointer_mgr%rang(i)
           end if
        end do
     end if
@@ -5428,13 +5437,13 @@ contains
           ! A new round of restart writes is starting. Copy previous, valid
           ! rpointer files to .prev in case one or more of the restart writes that
           ! are about to occur fail.
-          do i = 1, size(suffixes,1)
+          do i = 1, size(rpointer_suffixes,1)
              if (rpointer_mgr%cpresent(i)) then
                 call shr_file_put(rcode, &
-                     'rpointer.'//suffixes(i), &
-                     'rpointer.'//suffixes(i)//'.prev', &
+                     'rpointer.'//rpointer_suffixes(i), &
+                     'rpointer.'//rpointer_suffixes(i)//'.prev', &
                      remove=.false., async=.false.)
-                print *,'amb> copied:',suffixes(i)
+                print *,'amb> copied:',rpointer_suffixes(i)
              end if
           end do
           return
