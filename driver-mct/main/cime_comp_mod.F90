@@ -660,9 +660,9 @@ module cime_comp_mod
   integer, parameter :: fix1=1         ! temporary hard-coding to first ensemble, needs to be fixed
   integer :: eai, eli, eoi, eii, egi, eri, ewi, eei, exi, efi, ezi  ! component instance counters
 
-  integer, parameter :: rpointer_ncomp = 9
+  integer, parameter :: rpointer_ncomp = 10
   character(3), parameter :: rpointer_suffixes(rpointer_ncomp) = &
-         ['atm', 'lnd', 'ice', 'ocn', 'glc', 'rof', 'wav', 'esp', 'iac']
+         ['atm', 'lnd', 'ice', 'ocn', 'glc', 'rof', 'wav', 'esp', 'iac', 'drv']
   type, private :: EClockPointer_t
      type (ESMF_Clock), pointer :: ptr
   end type EClockPointer_t
@@ -5361,6 +5361,9 @@ contains
        rpointer_mgr%cpresent(comp_num_iac) = .true.
        rpointer_mgr%clock(comp_num_iac)%ptr => EClock_z
     end if
+    n = n + 1
+    rpointer_mgr%cpresent(rpointer_ncomp) = .true.
+    rpointer_mgr%clock(rpointer_ncomp)%ptr => EClock_d
 
     rpointer_mgr%npresent = n
     rpointer_mgr%remove_prev_in_next_call = .false.
