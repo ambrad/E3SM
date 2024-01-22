@@ -5168,6 +5168,7 @@ contains
   ! ----------------------------------------------------------
   
   ! to do
+  ! - in rpointer_prepare_restart, check read-write consistency on all ranks
   ! - complicated testing. note that ERS is not enough!
   ! - on failure, cp msg is written to e3sm.log. bad.
   !   - so i probably need to write some additional shr_file_mod routines for cleanliness
@@ -5241,37 +5242,41 @@ contains
   end function are_files_same
 
   subroutine rpointer_prepare_restart()
+    ! Prepare to restart. If .prev file are present, something went wrong in the
+    ! previous run's final restart write. Use the .prev files instead of the
+    ! invalid regular ones. If there are no prev files, then this subroutine
+    ! doesn't do anything.
 
     use shr_file_mod, only: shr_file_put
 
     integer :: i, n, idxlist(rpointer_ncomp), sleep_len, rcode
     logical :: ok, same
 
-    if (.not. iamroot_CPLID) return
-
-    ! Restart. If .prev file are present, something went wrong in the
-    ! previous run's final restart write. Use the .prev files instead of the
-    ! invalid regular ones.
+    ! Each rank checks if .prev files exist.
     n = 0
     do i = 1, rpointer_ncomp
        if (file_exists('rpointer.'//rpointer_suffixes(i)//'.prev')) then
-          call shr_file_put(rcode, &
-               'rpointer.'//rpointer_suffixes(i)//'.prev', &
-               'rpointer.'//rpointer_suffixes(i), &
-               remove=.false., async=.false.)
           n = n + 1
           idxlist(n) = i
        end if
     end do
     if (n > 0) then
-       ! Read-after-write consistency generally does not hold, so manually
-       ! check if it does. If it doesn't, sleep, then try again. The sleep
-       ! period doubles each try until 15 seconds have elapsed, at which
-       ! point, if consistency still doesn't hold, give up.
-       !   A weakness here is we're doing this only on the master proc. To
-       ! assure consistency, we would need to run this check on every process
-       ! and do a global reduction after each try to see if we're all seeing
-       ! a consistent file.
+       ! .prev files exist.
+       if (iamroot_CPLID) then
+          ! The root rank copies the .prev files to regular files.
+          print *,'amb> prev -> normal n',n
+          do i = 1, n
+             call shr_file_put(rcode, &
+                  'rpointer.'//rpointer_suffixes(idxlist(i))//'.prev', &
+                  'rpointer.'//rpointer_suffixes(idxlist(i)), &
+                  remove=.false., async=.false.)
+          end do
+       end if
+       ! Read-after-write consistency generally does not hold, so each rank
+       ! waits until it does, as follows: Check if rpointer.x is the same as
+       ! rpointer.x.prev. If not, then sleep and loop to try again. The sleep
+       ! period doubles each try until 15 seconds have elapsed, at which point,
+       ! if consistency still doesn't hold, give up.
        sleep_len = 1
        do while (.true.)
           ok = .true.
@@ -5293,14 +5298,19 @@ contains
        if (.not. ok) then
           call shr_sys_abort('rpointer_manage: Could not copy rpointer.x.prev to rpointer.x')
        end if
-       do i = 1, n
-          call shr_file_put(rcode, &
-               'rpointer.'//rpointer_suffixes(idxlist(i))//'.prev', &
-               'unused', &
-               remove=.true., async=.false.)
-       end do
+       ! This rank is consistent. Wait for everyone else.
+       call mpi_barrier(mpicom_GLOID, rcode)
+       if (iamroot_CPLID) then
+          ! After the barrier exits, the root rank can delete the .prev files.
+          do i = 1, n
+             call shr_file_put(rcode, &
+                  'rpointer.'//rpointer_suffixes(idxlist(i))//'.prev', &
+                  'unused', &
+                  remove=.true., async=.false.)
+          end do
+       end if
     end if
-    print *,'amb> prev -> normal'
+    if (iamroot_CPLID) print *,'amb> prev -> normal done'
   end subroutine rpointer_prepare_restart
 
   subroutine rpointer_init_manager()
