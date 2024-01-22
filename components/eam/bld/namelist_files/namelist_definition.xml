@@ -440,6 +440,29 @@ Physics grid decomposition options.
 Default: 0 for unstructured grid dycores, 1 for lat/lon grid dycores
 </entry>
 
+<entry id="phys_nbrhd_degrees" type="real"  category="perf_dp_coup"
+       group="cam_inparm" valid_values="">
+Neighborhood radius in degrees. For physics column i, any physics column j such
+that angle(lat_i, lon_i, lat_j, lon_j) <= phys_nbrhd_degrees is included in the
+neighborhood of i. This relationship is symmetric: i is in the neighborhood of
+j.
+</entry>
+
+<entry id="phys_nbrhd_pcnst" type="integer"  category="perf_dp_coup"
+       group="cam_inparm" valid_values="">
+Communicate 1:phys_nbrhd_pcnst tracers, where phys_nbrhd_pcnst <= pcnst.
+</entry>
+
+<entry id="phys_nbrhd_verbose" type="integer"  category="perf_dp_coup"
+       group="cam_inparm" valid_values="">
+Output verbosity level. 0 for none, 1 for a little, 2 for more, 3 for a lot.
+</entry>
+
+<entry id="phys_nbrhd_test" type="integer"  category="perf_dp_coup"
+       group="cam_inparm" valid_values="">
+Testing level. 0 for none, 1 for a little, 2 for a lot.
+</entry>
+
 <!-- Diagnostics -->
 
 <entry id="diag_cnst_conv_tend" type="char*8"  category="diagnostics"
