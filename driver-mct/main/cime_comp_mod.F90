@@ -653,26 +653,41 @@ module cime_comp_mod
   integer, parameter :: comp_num_iac = 9
 
   !----------------------------------------------------------------------------
+  ! Data structures and parmeters for rpointer-consistency management.
+  !----------------------------------------------------------------------------
+  ! The number of components, including the driver. This should be 1 more than
+  ! the maximum comp_num_x integer.
+  integer, parameter :: rpointer_ncomp = 10
+  ! Suffixes x for rpointer.x files.
+  character(3), parameter :: rpointer_suffixes(rpointer_ncomp) = &
+       ['atm', 'lnd', 'ice', 'ocn', 'glc', 'rof', 'wav', 'esp', 'iac', 'drv']
+  ! Wrapper to a clock pointer.
+  type, private :: EClockPointer_t
+     type (ESMF_Clock), pointer :: ptr
+  end type EClockPointer_t
+  ! Manager data structure.
+  type, private :: RpointerMgr_t
+     ! Number of components active.
+     integer :: npresent
+     ! Program state variable.
+     logical :: remove_prev_in_next_call
+     ! Component i is present.
+     logical :: cpresent(rpointer_ncomp)
+     ! Component i's restart alarm rang.
+     logical :: rang(rpointer_ncomp)
+     ! Component i's clock.
+     type (EClockPointer_t) :: clock(rpointer_ncomp)
+  end type RpointerMgr_t
+  ! Manager object.
+  type (RpointerMgr_t) :: rpointer_mgr
+
+  !----------------------------------------------------------------------------
   ! misc
   !----------------------------------------------------------------------------
 
   integer, parameter :: ens1=1         ! use first instance of ensemble only
   integer, parameter :: fix1=1         ! temporary hard-coding to first ensemble, needs to be fixed
   integer :: eai, eli, eoi, eii, egi, eri, ewi, eei, exi, efi, ezi  ! component instance counters
-
-  integer, parameter :: rpointer_ncomp = 10
-  character(3), parameter :: rpointer_suffixes(rpointer_ncomp) = &
-         ['atm', 'lnd', 'ice', 'ocn', 'glc', 'rof', 'wav', 'esp', 'iac', 'drv']
-  type, private :: EClockPointer_t
-     type (ESMF_Clock), pointer :: ptr
-  end type EClockPointer_t
-  type, private :: RpointerMgr_t
-     logical :: remove_prev_in_next_call
-     logical :: cpresent(rpointer_ncomp), rang(rpointer_ncomp)
-     type (EClockPointer_t) :: clock(rpointer_ncomp)
-     integer :: npresent
-  end type RpointerMgr_t
-  type (RpointerMgr_t) :: rpointer_mgr
 
   !----------------------------------------------------------------------------
   ! formats
@@ -5150,112 +5165,43 @@ contains
 
   end subroutine cime_write_performance_checkpoint
 
-  !----------------------------------------------------------
-  ! Improve robustness of restart writing.
-  !
-  ! It's possible for a crash that occurs during restart writing to lead to
-  ! inconsistent or incomplete rpointer files. While we can't salvage the
-  ! restart files in general, we can at least provide a consistent set of
-  ! rpointer files -- namely, the previous ones -- for the next restart.
-  !
-  ! This routine provides this capability by copying all rpointer.X files to
-  ! rpointer.X.prev before components write restart files, then removing
-  ! rpointer.X.prev files when all components are done.
-  !
-  ! If a crash occurs midway through, on restart, the consistent rpointer.X.prev
-  ! files will be used.
-  !
-  ! ----------------------------------------------------------
+!----------------------------------------------------------------------------------
+!
+! The following subroutines improve robustness of restart writing and reading.
+!
+! It's possible for a crash that occurs during restart writing to lead to
+! inconsistent or incomplete rpointer files. While we can't salvage the restart
+! files in general, we can at least provide a consistent set of rpointer files
+! -- namely, the previous ones -- for the next restart.
+!
+! These routines provide this capability by copying all rpointer.X files to
+! rpointer.X.prev before components write restart files, then removing
+! rpointer.X.prev files when all components are done.
+!
+! If a crash occurs midway through, on restart, the consistent rpointer.X.prev
+! files will be used.
+!
+!----------------------------------------------------------------------------------
   
-  ! to do
-  ! - in rpointer_prepare_restart, check read-write consistency on all ranks
-  ! - complicated testing. note that ERS is not enough!
-  ! - on failure, cp msg is written to e3sm.log. bad.
-  !   - so i probably need to write some additional shr_file_mod routines for cleanliness
-  
-  function file_exists(fname) result(e)
-
-    character(*), intent(in) :: fname
-
-    integer :: unit, stat
-    logical :: e
-
-    unit = shr_file_getUnit()
-    open(unit, file=trim(fname), action='READ', iostat=stat)
-    e = stat == 0
-    if (e) close(unit)
-    call shr_file_freeUnit(unit)
-
-  end function file_exists
-
-  function are_files_same(afname, bfname) result(same)
-
-    character(*), intent(in) :: afname, bfname
-
-    integer :: aunit, bunit, astat, bstat, i, line
-    character(1024) :: abuf, bbuf
-    logical :: same
-
-    same = .true.
-
-    aunit = shr_file_getUnit()
-    bunit = shr_file_getUnit()
-
-    open(aunit, file=trim(afname), action='READ', iostat=astat)
-    open(bunit, file=trim(bfname), action='READ', iostat=bstat)
-
-    if ((astat == 0) .neqv. (bstat == 0)) same = .false.
-
-    if (same .and. astat /= 0) same = .false.
-
-    if (same) then
-       astat = 0
-       bstat = 0
-       abuf(:) = ' '
-       bbuf(:) = ' '
-       line = 1
-       do while (same .and. astat == 0 .and. bstat == 0)
-          read(aunit, '(a1024)', iostat=astat) abuf
-          read(bunit, '(a1024)', iostat=bstat) bbuf
-          if ((astat == 0) .neqv. (bstat == 0)) then
-             same = .false.
-             exit
-          end if
-          if (astat /= 0) exit
-          do i = 1, 1024
-             if (abuf(i:i) /= bbuf(i:i)) then
-                print '(i7,i5,8a)', line, i, ' ', trim(afname), ', ', &
-                     trim(bfname), ': ', abuf(i:i), ' ', bbuf(i:i)
-                same = .false.
-                exit
-             end if
-          end do
-          line = line + 1
-       end do
-    end if
-
-    close(aunit)
-    close(bunit)
-    call shr_file_freeUnit(aunit)
-    call shr_file_freeUnit(bunit)
-
-  end function are_files_same
-
   subroutine rpointer_prepare_restart()
     ! Prepare to restart. If .prev file are present, something went wrong in the
     ! previous run's final restart write. Use the .prev files instead of the
     ! invalid regular ones. If there are no prev files, then this subroutine
     ! doesn't do anything.
+    !
+    ! This routine is called independently of the ones after it; in particular,
+    ! it does not require the manager to be initialized.
 
     use shr_file_mod, only: shr_file_put
 
     integer :: i, n, idxlist(rpointer_ncomp), sleep_len, rcode
-    logical :: ok, same
+    logical :: file_exists, ok, same
 
     ! Each rank checks if .prev files exist.
     n = 0
     do i = 1, rpointer_ncomp
-       if (file_exists('rpointer.'//rpointer_suffixes(i)//'.prev')) then
+       inquire(file='rpointer.'//rpointer_suffixes(i)//'.prev', exist=file_exists)
+       if (file_exists) then
           n = n + 1
           idxlist(n) = i
        end if
@@ -5311,9 +5257,67 @@ contains
        end if
     end if
     if (iamroot_CPLID) print *,'amb> prev -> normal done'
+
+  contains
+
+    function are_files_same(afname, bfname) result(same)
+      ! Do files afname and bfname contain the same contents?
+
+      character(*), intent(in) :: afname, bfname
+
+      integer :: aunit, bunit, astat, bstat, i, line
+      character(1024) :: abuf, bbuf
+      logical :: same
+
+      same = .true.
+
+      aunit = shr_file_getUnit()
+      bunit = shr_file_getUnit()
+
+      open(aunit, file=trim(afname), action='READ', iostat=astat)
+      open(bunit, file=trim(bfname), action='READ', iostat=bstat)
+
+      if ((astat == 0) .neqv. (bstat == 0)) same = .false.
+
+      if (same .and. astat /= 0) same = .false.
+
+      if (same) then
+         astat = 0
+         bstat = 0
+         abuf(:) = ' '
+         bbuf(:) = ' '
+         line = 1
+         do while (same .and. astat == 0 .and. bstat == 0)
+            read(aunit, '(a1024)', iostat=astat) abuf
+            read(bunit, '(a1024)', iostat=bstat) bbuf
+            if ((astat == 0) .neqv. (bstat == 0)) then
+               same = .false.
+               exit
+            end if
+            if (astat /= 0) exit
+            do i = 1, 1024
+               if (abuf(i:i) /= bbuf(i:i)) then
+                  print '(i7,i5,8a)', line, i, ' ', trim(afname), ', ', &
+                       trim(bfname), ': ', abuf(i:i), ' ', bbuf(i:i)
+                  same = .false.
+                  exit
+               end if
+            end do
+            line = line + 1
+         end do
+      end if
+
+      close(aunit)
+      close(bunit)
+      call shr_file_freeUnit(aunit)
+      call shr_file_freeUnit(bunit)
+
+    end function are_files_same
+
   end subroutine rpointer_prepare_restart
 
   subroutine rpointer_init_manager()
+    ! Initialize a manager that is accessed through calls to rpointer_manage.
 
     integer :: i, n
     
@@ -5381,6 +5385,9 @@ contains
   end subroutine rpointer_init_manager
 
   subroutine rpointer_manage()
+    ! Call this routine at certain places in the driver loop. This subroutine
+    ! monitors the restart alarms of all the active components and carries out
+    ! the steps required for rpointer file consistency based on state.
 
     use shr_file_mod, only: shr_file_put
 
