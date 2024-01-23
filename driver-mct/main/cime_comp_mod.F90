@@ -5464,7 +5464,7 @@ contains
     else if (no_previous_rings) then
        if (n == 0) then
           ! Nothing happened.
-          return          
+          return
        else
           ! A new round of restart writes is starting. Copy previous, valid
           ! rpointer files to .prev in case one or more of the restart writes that
@@ -5479,7 +5479,7 @@ contains
                         'rpointer.'//rpointer_suffixes(i)//'.prev', &
                         remove=.false., async=.false.)
                    if (rpointer_mgr%verbose) &
-                        write(logunit,*) 'amb> copied:',rpointer_suffixes(i)
+                        write(logunit,*) 'rpointer> copied:',rpointer_suffixes(i)
                 end if
              end if
           end do
