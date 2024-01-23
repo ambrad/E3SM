@@ -5206,7 +5206,8 @@ contains
     ! Each rank checks if .prev files exist.
     n = 0
     do i = 1, rpointer_ncomp
-       inquire(file='rpointer.'//rpointer_suffixes(i)//'.prev', exist=file_exists)
+       inquire(file='rpointer.'//rpointer_suffixes(i)//'.prev', &
+            exist=file_exists)
        if (file_exists) then
           n = n + 1
           idxlist(n) = i
@@ -5405,10 +5406,14 @@ contains
        ! .prev files.
        do i = 1, size(rpointer_suffixes,1)
           if (rpointer_mgr%cpresent(i)) then
-             call shr_file_put(rcode, &
-                  'rpointer.'//rpointer_suffixes(i)//'.prev', &
-                  'unused', &
-                  remove=.true., async=.false.)
+             inquire(file='rpointer.'//rpointer_suffixes(i)//'.prev', &
+                  exist=file_exists)
+             if (file_exists) then
+                call shr_file_put(rcode, &
+                     'rpointer.'//rpointer_suffixes(i)//'.prev', &
+                     'unused', &
+                     remove=.true., async=.false.)
+             end if
           end if
        end do
        rpointer_mgr%rang(:) = .false.
@@ -5466,7 +5471,8 @@ contains
           ! are about to occur fail.
           do i = 1, size(rpointer_suffixes,1)
              if (rpointer_mgr%cpresent(i)) then
-                inquire(file='rpointer.'//rpointer_suffixes(i), exist=file_exists)
+                inquire(file='rpointer.'//rpointer_suffixes(i), &
+                     exist=file_exists)
                 if (file_exists) then
                    call shr_file_put(rcode, &
                         'rpointer.'//rpointer_suffixes(i), &
