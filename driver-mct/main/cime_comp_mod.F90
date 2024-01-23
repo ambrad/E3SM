@@ -677,6 +677,8 @@ module cime_comp_mod
      logical :: rang(rpointer_ncomp)
      ! Component i's clock.
      type (EClockPointer_t) :: clock(rpointer_ncomp)
+     ! Verbosity flag
+     logical :: verbose
   end type RpointerMgr_t
   ! Manager object.
   type (RpointerMgr_t) :: rpointer_mgr
@@ -5214,7 +5216,6 @@ contains
        ! .prev files exist.
        if (iamroot_CPLID) then
           ! The root rank copies the .prev files to regular files.
-          print *,'amb> prev -> normal n',n
           do i = 1, n
              call shr_file_put(rcode, &
                   'rpointer.'//rpointer_suffixes(idxlist(i))//'.prev', &
@@ -5260,7 +5261,6 @@ contains
           end do
        end if
     end if
-    if (iamroot_CPLID) print *,'amb> prev -> normal done'
 
   contains
 
@@ -5301,8 +5301,6 @@ contains
             if (astat /= 0) exit
             do i = 1, 1024
                if (abuf(i:i) /= bbuf(i:i)) then
-                  print '(i7,i5,8a)', line, i, ' ', trim(afname), ', ', &
-                       trim(bfname), ': ', abuf(i:i), ' ', bbuf(i:i)
                   same = .false.
                   exit
                end if
@@ -5324,7 +5322,8 @@ contains
     ! Initialize a manager that is accessed through calls to rpointer_manage.
 
     integer :: i, n
-    
+
+    rpointer_mgr%verbose = .true.
     rpointer_mgr%rang(:) = .false.
 
     do i = 1, rpointer_ncomp
@@ -5413,7 +5412,7 @@ contains
        end do
        rpointer_mgr%rang(:) = .false.
        rpointer_mgr%remove_prev_in_next_call = .false.
-       print *,'amb> rm .prev files'
+       if (rpointer_mgr%verbose) write(logunit,*) 'rpointer> rm .prev files'
        return
     end if
 
@@ -5426,19 +5425,21 @@ contains
     do i = 1, rpointer_ncomp
        if (.not. rpointer_mgr%cpresent(i)) cycle
        if (.not. rpointer_mgr%rang(i)) then
-          if (seq_timemgr_alarmIsOn(rpointer_mgr%clock(i)%ptr, seq_timemgr_alarm_restart)) then
+          if (seq_timemgr_alarmIsOn(rpointer_mgr%clock(i)%ptr, &
+               seq_timemgr_alarm_restart)) then
              rpointer_mgr%rang(i) = .true.
           end if
        end if
        if (rpointer_mgr%rang(i)) n = n + 1
     end do
 
-    if (n > 0) then
-       print *,'amb> state'
+    if (n > 0 .and. rpointer_mgr%verbose) then
+       write (logunit,*) 'rpointer> state'
        do i = 1, rpointer_ncomp
           if (rpointer_mgr%cpresent(i)) then
-             print ('(a,i2,i2,i2,a4,l2)'), &
-                  'amb>',i,n,rpointer_mgr%npresent,rpointer_suffixes(i),rpointer_mgr%rang(i)
+             write (logunit, '(a,i2,i2,i2,a4,l2)') &
+                  'rpointer>',i,n,rpointer_mgr%npresent,rpointer_suffixes(i), &
+                  rpointer_mgr%rang(i)
           end if
        end do
     end if
@@ -5451,7 +5452,8 @@ contains
        ! restart-related writes at the level of history tapes are complete. Set
        ! our state to tell us that in the next call, we can remove the files.
        rpointer_mgr%remove_prev_in_next_call = .true.
-       print *,'amb> set remove_prev_in_next_call=true'
+       if (rpointer_mgr%verbose) &
+            write(logunit,*) 'rpointer> set remove_prev_in_next_call=true'
        return
     else if (no_previous_rings) then
        if (n == 0) then
@@ -5467,7 +5469,8 @@ contains
                      'rpointer.'//rpointer_suffixes(i), &
                      'rpointer.'//rpointer_suffixes(i)//'.prev', &
                      remove=.false., async=.false.)
-                print *,'amb> copied:',rpointer_suffixes(i)
+                if (rpointer_mgr%verbose) &
+                     write(logunit,*) 'amb> copied:',rpointer_suffixes(i)
              end if
           end do
           return
