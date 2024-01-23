@@ -1099,6 +1099,13 @@ contains
     call shr_mem_init(prt=iamroot_CPLID)
 
     !----------------------------------------------------------
+    !| Prepare consistent rpointer.x files
+    !----------------------------------------------------------
+    ! This call must be made before the seq_infodata_init call below to make
+    ! rpointer.drv consistent.
+    call rpointer_prepare_restart()
+
+    !----------------------------------------------------------
     !| Initialize infodata
     !----------------------------------------------------------
 
@@ -1452,9 +1459,6 @@ contains
 
     call t_startf('CPL:cime_init')
     call t_adj_detailf(+1)
-
-    ! This call must be make before the x_init calls just below.
-    call rpointer_prepare_restart()
 
     call t_startf('CPL:init_comps')
     if (iamroot_CPLID )then
