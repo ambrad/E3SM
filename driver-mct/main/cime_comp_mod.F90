@@ -5212,54 +5212,55 @@ contains
           idxlist(n) = i
        end if
     end do
-    if (n > 0) then
-       ! .prev files exist.
-       if (iamroot_CPLID) then
-          ! The root rank copies the .prev files to regular files.
-          do i = 1, n
-             call shr_file_put(rcode, &
-                  'rpointer.'//rpointer_suffixes(idxlist(i))//'.prev', &
-                  'rpointer.'//rpointer_suffixes(idxlist(i)), &
-                  remove=.false., async=.false.)
-          end do
-       end if
-       ! Read-after-write consistency generally does not hold, so each rank
-       ! waits until it does, as follows: Check if rpointer.x is the same as
-       ! rpointer.x.prev. If not, then sleep and loop to try again. The sleep
-       ! period doubles each try until 15 seconds have elapsed, at which point,
-       ! if consistency still doesn't hold, give up.
-       sleep_len = 1
-       do while (.true.)
-          ok = .true.
-          do i = 1, n
-             same = are_files_same( &
-                  'rpointer.'//rpointer_suffixes(idxlist(i))//'.prev', &
-                  'rpointer.'//rpointer_suffixes(idxlist(i)))
-             if (.not. same) then
-                ok = .false.
-                exit
-             end if
-          end do
-          if (ok) exit
-          call sleep(sleep_len)
-          sleep_len = 2*sleep_len
-          ! Wait for up to 8 + 4 + 2 + 1 = 15 seconds.
-          if (sleep_len > 8) exit
+
+    if (n == 0) return
+
+    ! .prev files exist.
+    if (iamroot_CPLID) then
+       ! The root rank copies the .prev files to regular files.
+       do i = 1, n
+          call shr_file_put(rcode, &
+               'rpointer.'//rpointer_suffixes(idxlist(i))//'.prev', &
+               'rpointer.'//rpointer_suffixes(idxlist(i)), &
+               remove=.false., async=.false.)
        end do
-       if (.not. ok) then
-          call shr_sys_abort('rpointer_manage: Could not copy rpointer.x.prev to rpointer.x')
-       end if
-       ! This rank is consistent. Wait for everyone else.
-       call mpi_barrier(mpicom_GLOID, rcode)
-       if (iamroot_CPLID) then
-          ! After the barrier exits, the root rank can delete the .prev files.
-          do i = 1, n
-             call shr_file_put(rcode, &
-                  'rpointer.'//rpointer_suffixes(idxlist(i))//'.prev', &
-                  'unused', &
-                  remove=.true., async=.false.)
-          end do
-       end if
+    end if
+    ! Read-after-write consistency generally does not hold, so each rank
+    ! waits until it does, as follows: Check if rpointer.x is the same as
+    ! rpointer.x.prev. If not, then sleep and loop to try again. The sleep
+    ! period doubles each try until 15 seconds have elapsed, at which point,
+    ! if consistency still doesn't hold, give up.
+    sleep_len = 1
+    do while (.true.)
+       ok = .true.
+       do i = 1, n
+          same = are_files_same( &
+               'rpointer.'//rpointer_suffixes(idxlist(i))//'.prev', &
+               'rpointer.'//rpointer_suffixes(idxlist(i)))
+          if (.not. same) then
+             ok = .false.
+             exit
+          end if
+       end do
+       if (ok) exit
+       call sleep(sleep_len)
+       sleep_len = 2*sleep_len
+       ! Wait for up to 8 + 4 + 2 + 1 = 15 seconds.
+       if (sleep_len > 8) exit
+    end do
+    if (.not. ok) then
+       call shr_sys_abort('rpointer_manage: Could not copy rpointer.x.prev to rpointer.x')
+    end if
+    ! This rank is consistent. Wait for everyone else.
+    call mpi_barrier(mpicom_GLOID, rcode)
+    if (iamroot_CPLID) then
+       ! After the barrier exits, the root rank can delete the .prev files.
+       do i = 1, n
+          call shr_file_put(rcode, &
+               'rpointer.'//rpointer_suffixes(idxlist(i))//'.prev', &
+               'unused', &
+               remove=.true., async=.false.)
+       end do
     end if
 
   contains
@@ -5323,7 +5324,7 @@ contains
 
     integer :: i, n
 
-    rpointer_mgr%verbose = .true.
+    rpointer_mgr%verbose = .false.
     rpointer_mgr%rang(:) = .false.
 
     do i = 1, rpointer_ncomp
@@ -5395,7 +5396,7 @@ contains
     use shr_file_mod, only: shr_file_put
 
     integer :: i, n, rcode
-    logical :: no_previous_rings
+    logical :: no_previous_rings, file_exists
 
     if (.not. iamroot_CPLID) return
 
@@ -5465,12 +5466,15 @@ contains
           ! are about to occur fail.
           do i = 1, size(rpointer_suffixes,1)
              if (rpointer_mgr%cpresent(i)) then
-                call shr_file_put(rcode, &
-                     'rpointer.'//rpointer_suffixes(i), &
-                     'rpointer.'//rpointer_suffixes(i)//'.prev', &
-                     remove=.false., async=.false.)
-                if (rpointer_mgr%verbose) &
-                     write(logunit,*) 'amb> copied:',rpointer_suffixes(i)
+                inquire(file='rpointer.'//rpointer_suffixes(i), exist=file_exists)
+                if (file_exists) then
+                   call shr_file_put(rcode, &
+                        'rpointer.'//rpointer_suffixes(i), &
+                        'rpointer.'//rpointer_suffixes(i)//'.prev', &
+                        remove=.false., async=.false.)
+                   if (rpointer_mgr%verbose) &
+                        write(logunit,*) 'amb> copied:',rpointer_suffixes(i)
+                end if
              end if
           end do
           return
