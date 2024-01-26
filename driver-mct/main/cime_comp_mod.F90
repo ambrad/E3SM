@@ -5188,7 +5188,43 @@ contains
 ! files will be used.
 !
 !----------------------------------------------------------------------------------
-  
+
+#define MANUAL_COPY
+  function manual_copy(src, dst) result(out)
+    character(*), intent(in) :: src, dst
+    character(1024) :: buf
+    character(16) :: status
+    integer :: soi, doi, stat, out
+    logical :: file_exists
+    out = 0
+    open(newunit=soi, file=trim(src), status='old', action='read', iostat=stat)
+    if (stat /= 0) then
+       out = -3
+       return
+    end if
+    inquire(file=trim(dst), exist=file_exists)
+    ! Probably not needed; always using 'replace' I think should work.
+    if (file_exists) then
+       status = 'replace'
+    else
+       status = 'new'
+    end if
+    open(newunit=doi, file=trim(dst), status=trim(status), action='write', iostat=stat)
+    if (stat /= 0) then
+       close(soi)
+       out = -2
+       return
+    end if
+    do while (.true.)
+       read(soi, '(a1024)', iostat=stat) buf
+       if (stat /= 0) exit
+       write(doi, '(a)', iostat=stat) trim(buf)
+       if (stat /= 0) out = -1
+    end do
+    close(soi)
+    close(doi)
+  end function manual_copy
+
   subroutine rpointer_prepare_restart()
     ! Prepare to restart. If .prev file are present, something went wrong in the
     ! previous run's final restart write. Use the .prev files instead of the
@@ -5220,10 +5256,17 @@ contains
     if (iamroot_CPLID) then
        ! The root rank copies the .prev files to regular files.
        do i = 1, n
+#ifdef MANUAL_COPY
+          rcode = manual_copy( &
+               'rpointer.'//rpointer_suffixes(idxlist(i))//'.prev', &
+               'rpointer.'//rpointer_suffixes(idxlist(i)))
+          if (rcode /= 0) write(logunit,*) 'rpointer> manual_copy x.prev->x',rcode
+#else
           call shr_file_put(rcode, &
                'rpointer.'//rpointer_suffixes(idxlist(i))//'.prev', &
                'rpointer.'//rpointer_suffixes(idxlist(i)), &
                remove=.false., async=.false.)
+#endif
        end do
     end if
     ! Read-after-write consistency generally does not hold, so each rank
@@ -5474,9 +5517,15 @@ contains
                 buf = 'rpointer.'//rpointer_suffixes(i)
                 inquire(file=trim(buf), exist=file_exists)
                 if (file_exists) then
+#ifdef MANUAL_COPY
+                   rcode = manual_copy(trim(buf), &
+                        'rpointer.'//rpointer_suffixes(i)//'.prev')
+                   if (rcode /= 0 .and. rpointer_mgr%verbose) write(logunit,*) 'rpointer> manual_copy x->x.prev',rcode
+#else
                    call shr_file_put(rcode, trim(buf), &
                         'rpointer.'//rpointer_suffixes(i)//'.prev', &
                         remove=.false., async=.false.)
+#endif
                    if (rpointer_mgr%verbose) then
                       if (rcode == 0) then
                          write(logunit,*) 'rpointer> copied: ', rpointer_suffixes(i)
