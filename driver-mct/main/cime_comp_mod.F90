@@ -5200,7 +5200,7 @@ contains
 
     use shr_file_mod, only: shr_file_put
 
-    integer :: i, n, idxlist(rpointer_ncomp), sleep_len, rcode
+    integer :: i, n, idxlist(rpointer_ncomp), sleep_len, rcode, unit
     logical :: file_exists, ok, same
 
     ! Each rank checks if .prev files exist.
@@ -5256,11 +5256,11 @@ contains
     call mpi_barrier(mpicom_GLOID, rcode)
     if (iamroot_CPLID) then
        ! After the barrier exits, the root rank can delete the .prev files.
+       unit = shr_file_getUnit()
        do i = 1, n
-          call shr_file_put(rcode, &
-               'rpointer.'//rpointer_suffixes(idxlist(i))//'.prev', &
-               'unused', &
-               remove=.true., async=.false.)
+          open(file='rpointer.'//rpointer_suffixes(i)//'.prev', &
+               unit=unit, iostat=rcode)
+          if (rcode == 0) close(unit=unit, status='delete', iostat=rcode)
        end do
     end if
 
@@ -5325,7 +5325,7 @@ contains
 
     integer :: i, n
 
-    rpointer_mgr%verbose = .false.
+    rpointer_mgr%verbose = .true.
     rpointer_mgr%rang(:) = .false.
 
     do i = 1, rpointer_ncomp
@@ -5396,23 +5396,23 @@ contains
 
     use shr_file_mod, only: shr_file_put
 
-    integer :: i, n, rcode
+    integer :: i, n, rcode, unit
     logical :: no_previous_rings, file_exists
+    character(32) :: buf
 
     if (.not. iamroot_CPLID) return
 
     if (rpointer_mgr%remove_prev_in_next_call) then
        ! Now we've been told the restart writes really are all valid. Remove the
        ! .prev files.
+       unit = shr_file_getUnit()
        do i = 1, size(rpointer_suffixes,1)
           if (rpointer_mgr%cpresent(i)) then
-             inquire(file='rpointer.'//rpointer_suffixes(i)//'.prev', &
-                  exist=file_exists)
+             buf = 'rpointer.'//rpointer_suffixes(i)//'.prev'
+             inquire(file=trim(buf), exist=file_exists)
              if (file_exists) then
-                call shr_file_put(rcode, &
-                     'rpointer.'//rpointer_suffixes(i)//'.prev', &
-                     'unused', &
-                     remove=.true., async=.false.)
+                open(file=trim(buf), unit=unit, iostat=rcode)
+                if (rcode == 0) close(unit, status='delete', iostat=rcode)
              end if
           end if
        end do
@@ -5471,15 +5471,19 @@ contains
           ! are about to occur fail.
           do i = 1, size(rpointer_suffixes,1)
              if (rpointer_mgr%cpresent(i)) then
-                inquire(file='rpointer.'//rpointer_suffixes(i), &
-                     exist=file_exists)
+                buf = 'rpointer.'//rpointer_suffixes(i)
+                inquire(file=trim(buf), exist=file_exists)
                 if (file_exists) then
-                   call shr_file_put(rcode, &
-                        'rpointer.'//rpointer_suffixes(i), &
+                   call shr_file_put(rcode, trim(buf), &
                         'rpointer.'//rpointer_suffixes(i)//'.prev', &
                         remove=.false., async=.false.)
-                   if (rpointer_mgr%verbose) &
-                        write(logunit,*) 'rpointer> copied:',rpointer_suffixes(i)
+                   if (rpointer_mgr%verbose) then
+                      if (rcode == 0) then
+                         write(logunit,*) 'rpointer> copied: ', rpointer_suffixes(i)
+                      else
+                         write(logunit,*) 'rpointer> failed to copy: ', rpointer_suffixes(i)
+                      end if
+                   end if
                 end if
              end if
           end do
