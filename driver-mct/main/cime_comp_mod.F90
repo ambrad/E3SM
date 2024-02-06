@@ -657,6 +657,7 @@ module cime_comp_mod
   !----------------------------------------------------------------------------
   ! The number of components, including the driver. This should be 1 more than
   ! the maximum comp_num_x integer.
+#define RPOINTER_TEST
   integer, parameter :: rpointer_ncomp = 10
   ! Suffixes x for rpointer.x files.
   character(3), parameter :: rpointer_suffixes(rpointer_ncomp) = &
@@ -679,6 +680,8 @@ module cime_comp_mod
      type (EClockPointer_t) :: clock(rpointer_ncomp)
      ! Verbosity flag
      logical :: verbose
+     ! For testing
+     integer :: crash_ymd, crash_tod
   end type RpointerMgr_t
   ! Manager object.
   type (RpointerMgr_t) :: rpointer_mgr
@@ -3157,6 +3160,17 @@ contains
        !| RUN ATM MODEL
        !----------------------------------------------------------
        if (atm_present .and. atmrun_alarm) then
+#ifdef RPOINTER_TEST
+          if (rpointer_mgr%crash_ymd >= 0) then
+             if (ymd >= rpointer_mgr%crash_ymd .and. tod >= rpointer_mgr%crash_tod &
+                  .and. seq_timemgr_alarmIsOn(rpointer_mgr%clock(comp_num_atm)%ptr, &
+                  &                           seq_timemgr_alarm_restart)) then
+                if (iamroot_CPLID) print *,'rpointer> crashing',ymd,tod
+                call sleep(4)
+                call shr_sys_abort('Crashing to test rpointer_mgr.')
+             end if
+          end if
+#endif
           call component_run(Eclock_a, atm, atm_run, infodata, &
                seq_flds_x2c_fluxes=seq_flds_x2a_fluxes, &
                seq_flds_c2x_fluxes=seq_flds_a2x_fluxes, &
@@ -5366,6 +5380,10 @@ contains
   subroutine rpointer_init_manager()
     ! Initialize a manager that is accessed through calls to rpointer_manage.
 
+#ifdef RPOINTER_TEST
+    character(16) :: strvalue
+    integer :: ierr
+#endif
     integer :: i, n
 
     rpointer_mgr%verbose = .true.
@@ -5430,6 +5448,16 @@ contains
     rpointer_mgr%npresent = n
     rpointer_mgr%remove_prev_in_next_call = .false.
 
+#ifdef RPOINTER_TEST
+    call getenv('amb_restart_crash_ymd', strvalue)
+    read(strvalue, '(i16)', iostat=ierr) rpointer_mgr%crash_ymd
+    if (rpointer_mgr%crash_ymd == 0) then
+       rpointer_mgr%crash_ymd = -1
+    else
+       call getenv('amb_restart_crash_tod', strvalue)
+       read(strvalue, '(i16)', iostat=ierr) rpointer_mgr%crash_tod
+    end if
+#endif
   end subroutine rpointer_init_manager
 
   subroutine rpointer_manage()
