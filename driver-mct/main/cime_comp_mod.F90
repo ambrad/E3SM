@@ -5468,7 +5468,7 @@ contains
     use shr_file_mod, only: shr_file_put
 
     integer :: i, n, rcode, unit
-    logical :: no_previous_rings, file_exists
+    logical :: previous_rings, file_exists
     character(32) :: buf
 
     if (.not. iamroot_CPLID) return
@@ -5493,9 +5493,9 @@ contains
        return
     end if
 
-    no_previous_rings = .true.
+    previous_rings = .false.
     do i = 1, rpointer_ncomp
-       if (rpointer_mgr%rang(i)) no_previous_rings = .false.
+       if (rpointer_mgr%rang(i)) previous_rings = .true.
     end do
 
     n = 0
@@ -5521,7 +5521,7 @@ contains
        end do
     end if
 
-    if (n == rpointer_mgr%npresent) then
+    if (previous_rings .and. n == rpointer_mgr%npresent) then
        ! All restart timers have rung. Get ready to remove the .prev files. We
        ! don't want to do it in this phase_monitor call, however. Because of
        ! things like partial steps in the atmosphere model (initiated from
@@ -5532,7 +5532,7 @@ contains
        if (rpointer_mgr%verbose) &
             write(logunit,*) 'rpointer> set remove_prev_in_next_call=true'
        return
-    else if (no_previous_rings) then
+    else if (.not. previous_rings) then
        if (n == 0) then
           ! Nothing happened.
           return
@@ -5548,7 +5548,8 @@ contains
 #ifdef MANUAL_COPY
                    rcode = manual_copy(trim(buf), &
                         'rpointer.'//rpointer_suffixes(i)//'.prev')
-                   if (rcode /= 0 .and. rpointer_mgr%verbose) write(logunit,*) 'rpointer> manual_copy x->x.prev',rcode
+                   if (rcode /= 0 .and. rpointer_mgr%verbose) &
+                        write(logunit,*) 'rpointer> manual_copy x->x.prev',rcode
 #else
                    call shr_file_put(rcode, trim(buf), &
                         'rpointer.'//rpointer_suffixes(i)//'.prev', &
