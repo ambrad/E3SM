@@ -5213,7 +5213,7 @@ contains
     ! it does not require the manager to be initialized.
 
     integer :: i, n, idxlist(rpointer_ncomp), sleep_len, rcode, unit
-    logical :: file_exists, ok, same
+    logical :: file_exists, ok, same, complete
 
     ! Each rank checks if .prev files exist.
     n = 0
@@ -5229,15 +5229,43 @@ contains
     if (n == 0) return
 
     ! .prev files exist.
+
+    ! Check that there is not an rpointer.x file with no corresponding
+    ! rpointer.x.prev file. If there is, then we assume the .prev files are
+    ! incomplete and error out. Note the presence of at least one
+    ! rpointer.x.prev file means something went wrong in the previous run, so
+    ! it's best to let the user sort things out.
     if (iamroot_CPLID) then
-       ! The root rank copies the .prev files to regular files.
+       complete = .true.
+       do i = 1, rpointer_ncomp
+          inquire(file='rpointer.'//rpointer_suffixes(i), &
+               exist=file_exists)
+          if (file_exists) then
+             inquire(file='rpointer.'//rpointer_suffixes(i)//'.prev', &
+                  exist=file_exists)
+             if (.not. file_exists) then
+                complete = .false.
+                write(logunit,'(3a)') 'rpointer> ERROR: ', rpointer_suffixes(i), &
+                     ' has an rpointer.x file with no corresponding rpointer.x.prev file'
+             end if
+          end if
+       end do
+       if (.not. complete) then
+          call shr_sys_abort('rpointer_manage: rpointer.x.prev files exist but rpointer.y &
+               &has no corresponding rpointer.y.prev file.')
+       end if
+    end if
+
+    ! The root rank copies the .prev files to regular files.
+    if (iamroot_CPLID) then
        do i = 1, n
           rcode = copy_and_trim_rpointer_file( &
                'rpointer.'//rpointer_suffixes(idxlist(i))//'.prev', &
                'rpointer.'//rpointer_suffixes(idxlist(i)))
-          if (rcode /= 0) write(logunit,*) 'rpointer> copy x.prev->x',rcode
+          if (rcode /= 0) write(logunit,*) 'rpointer> copy x.prev->x', rcode
        end do
     end if
+
     ! Read-after-write consistency generally does not hold, so each rank
     ! waits until it does, as follows: Check if rpointer.x is the same as
     ! rpointer.x.prev. If not, then sleep and loop to try again. The sleep
@@ -5266,8 +5294,9 @@ contains
     end if
     ! This rank is consistent. Wait for everyone else.
     call mpi_barrier(mpicom_GLOID, rcode)
+
+    ! After the barrier exits, the root rank can delete the .prev files.
     if (iamroot_CPLID) then
-       ! After the barrier exits, the root rank can delete the .prev files.
        unit = shr_file_getUnit()
        do i = 1, n
           open(file='rpointer.'//rpointer_suffixes(i)//'.prev', &
