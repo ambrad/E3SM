@@ -2762,7 +2762,7 @@ contains
        ! Does the driver need to pause?
        drv_pause = pause_alarm .and. seq_timemgr_pause_component_active(drv_index)
 
-       call rpointer_manage()
+       call rpointer_manage(.false.)
 
        if (glc_prognostic .or. do_hist_l2x1yrg) then
           ! Is it time to average fields to pass to glc?
@@ -3602,7 +3602,7 @@ contains
     call component_final(EClock_l, lnd, lnd_final)
     call component_final(EClock_a, atm, atm_final)
 
-    call rpointer_manage()
+    call rpointer_manage(.true.)
 
     !------------------------------------------------------------------------
     ! End the run cleanly
@@ -5415,18 +5415,20 @@ contains
 #endif
   end subroutine rpointer_init_manager
 
-  subroutine rpointer_manage()
+  subroutine rpointer_manage(force_remove)
     ! Call this routine at certain places in the driver loop. This subroutine
     ! monitors the restart alarms of all the active components and carries out
     ! the steps required for rpointer file consistency based on state.
 
+    logical, intent(in) :: force_remove ! force removal of .prev files in this call
+    
     integer :: i, n, rcode, unit
     logical :: previous_rings, file_exists
     character(32) :: buf
 
     if (.not. iamroot_CPLID) return
 
-    if (rpointer_mgr%remove_prev_in_next_call) then
+    if (rpointer_mgr%remove_prev_in_next_call .or. force_remove) then
        ! Now we've been told the restart writes really are all valid. Remove the
        ! .prev files.
        unit = shr_file_getUnit()
@@ -5476,7 +5478,7 @@ contains
 
     if (previous_rings .and. n == rpointer_mgr%npresent) then
        ! All restart timers have rung. Get ready to remove the .prev files. We
-       ! don't want to do it in this phase_monitor call, however. Because of
+       ! don't want to do it in this rpointer_manage call, however. Because of
        ! things like partial steps in the atmosphere model (initiated from
        ! cime_final rather than cime_run), we can't yet be sure all
        ! restart-related writes at the level of history tapes are complete. Set
