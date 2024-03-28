@@ -52,11 +52,12 @@ struct ComposeTransportImpl {
   using Buf1 = ExecViewUnmanaged<Scalar*[NP][NP][NUM_LEV_P]>;
   using Buf2 = ExecViewUnmanaged<Scalar*[2][NP][NP][NUM_LEV_P]>;
 
-  using DeparturePoints = ExecViewManaged<Real*[NUM_PHYSICAL_LEV][NP][NP][3]>;
+  using DeparturePoints = ExecViewManaged<Real*****>;
 
   struct Data {
     int nelemd, qsize, limiter_option, cdr_check, hv_q, hv_subcycle_q;
     int geometry_type; // 0: sphere, 1: plane
+    int trajectory_alg; // 0: original, 1: enhanced
     Real nu_q, hv_scaling, dp_tol;
     bool independent_time_steps;
 
