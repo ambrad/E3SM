@@ -30,7 +30,8 @@ typedef Kokkos::Experimental::SYCL ComposeGpuSpace;
 // Options
 
 #ifdef NDEBUG
-//# undef NDEBUG
+# pragma message "UNDEFINING NDEBUG DUDE"
+# undef NDEBUG
 #endif
 
 #ifndef NDEBUG

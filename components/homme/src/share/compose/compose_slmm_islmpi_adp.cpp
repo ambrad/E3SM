@@ -44,6 +44,7 @@ ko::EnableIfNotOnGpu<MT> throw_on_sci_error (
   std::stringstream ss;
   ss.precision(17);
   const auto* v = &dep_points(tci,lev,k,0);
+#if 0
   ss << "Departure point is outside of halo:\n"
      << "  nearest point permitted: "
      << nearest_point_permitted
@@ -53,6 +54,10 @@ ko::EnableIfNotOnGpu<MT> throw_on_sci_error (
      << " v " << v[0] << " " << v[1] << " " << v[2]
      << "\n  tgt_idx " << tgt_idx
      << " local mesh:\n  " << slmm::to_string(mesh) << "\n";
+#else
+# pragma message "KEEP IT BRIEF"
+  ss << "Departure point is outside of halo: etc\n";
+#endif
   slmm_throw_if(true, ss.str());
 }
 

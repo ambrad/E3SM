@@ -656,17 +656,7 @@ extern "C" void cedr_set_bufs (homme::Real* sendbuf, homme::Real* recvbuf,
 extern "C" void cedr_set_null_bufs () { cedr_set_bufs(nullptr, nullptr, 0, 0); }
 
 extern "C" void cedr_unittest (const homme::Int fcomm, homme::Int* nerrp) {
-#if 0
-  auto p = cedr::mpi::make_parallel(MPI_Comm_f2c(fcomm));
-  cedr_assert(g_cdr);
-  cedr_assert(g_cdr->tree);
-  if (homme::CDR::Alg::is_qlt(g_cdr->alg))
-    *nerrp = cedr::qlt::test::test_qlt(p, g_cdr->tree, g_cdr->nsublev*g_cdr->ncell,
-                                       1, false, false, true, false);
-  else
-    *nerrp = cedr::caas::test::unittest(p);
-#endif
-  *nerrp += compose::test::cedr_unittest();
+  *nerrp = compose::test::cedr_unittest();
 }
 
 extern "C" void cedr_set_ie2gci (const homme::Int ie, const homme::Int gci) {

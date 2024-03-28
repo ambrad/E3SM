@@ -11,7 +11,9 @@
 #include <memory>
 
 // AMB 2017/06-2020/05 Initial for E3SMv2
-// AMB 2020/05-?       Performance-portable impl
+// AMB 2020/05-2021/01 Performance-portable impl
+// AMB 2021/04         Support doubly-periodic planar mode
+// AMB 2024/04-?       Enhanced trajectory method
 
 namespace homme {
 namespace mpi { //todo Share with cedr.
@@ -85,6 +87,12 @@ int irecv (const Parallel& p, T* buf, int count, int src, int tag, Request* ireq
 int waitany(int count, Request* reqs, int* index, MPI_Status* stats = nullptr);
 int waitall(int count, Request* reqs, MPI_Status* stats = nullptr);
 int wait(Request* req, MPI_Status* stat = nullptr);
+
+template <typename T>
+int all_reduce (const Parallel& p, const T* sendbuf, T* rcvbuf, int count, MPI_Op op) {
+  MPI_Datatype dt = get_type<T>();
+  return MPI_Allreduce(const_cast<T*>(sendbuf), rcvbuf, count, dt, op, p.comm());
+}
 } // namespace mpi
 
 namespace islmpi {
@@ -512,6 +520,9 @@ struct IslMpi {
   const mpi::Parallel::Ptr p;
   const typename Advecter::ConstPtr advecter;
   const Int np, np2, nlev, qsize, qsized, nelemd, halo;
+  const bool traj_3d;
+  const Int traj_nsubstep, dep_points_ndim;
+  ArrayD<Real*> etam;
 
   ElemDataListH ed_h; // this rank's owned cells, indexed by LID
   ElemDataListD ed_d;
@@ -559,11 +570,14 @@ struct IslMpi {
   Int own_dep_list_len;
 
   IslMpi (const mpi::Parallel::Ptr& ip, const typename Advecter::ConstPtr& advecter,
-          const typename TracerArrays<MT>::Ptr& tracer_arrays_,
-          Int inp, Int inlev, Int iqsize, Int iqsized, Int inelemd, Int ihalo)
+          const typename TracerArrays<MT>::Ptr& itracer_arrays,
+          Int inp, Int inlev, Int iqsize, Int iqsized, Int inelemd, Int ihalo,
+          Int itraj_3d, Int itraj_nsubstep)
     : p(ip), advecter(advecter),
       np(inp), np2(np*np), nlev(inlev), qsize(iqsize), qsized(iqsized), nelemd(inelemd),
-      halo(ihalo), tracer_arrays(tracer_arrays_)
+      halo(ihalo), traj_3d(itraj_3d), traj_nsubstep(itraj_nsubstep),
+      dep_points_ndim(traj_3d && traj_nsubstep > 0 ? 4 : 3),
+      tracer_arrays(itracer_arrays)
   {}
 
   IslMpi(const IslMpi&) = delete;
@@ -635,16 +649,17 @@ void wait_on_send (IslMpi<MT>& cm, const bool skip_if_empty = false);
 template <typename MT>
 void recv(IslMpi<MT>& cm, const bool skip_if_empty = false);
 
-const int nreal_per_2int = (2*sizeof(Int) + sizeof(Real) - 1) / sizeof(Real);
-
 template <typename MT>
-void pack_dep_points_sendbuf_pass1(IslMpi<MT>& cm);
+void pack_dep_points_sendbuf_pass1(IslMpi<MT>& cm, const bool trajectory = false);
 template <typename MT>
-void pack_dep_points_sendbuf_pass2(IslMpi<MT>& cm, const DepPoints<MT>& dep_points);
+void pack_dep_points_sendbuf_pass2(IslMpi<MT>& cm, const DepPoints<MT>& dep_points,
+                                   const bool trajectory = false);
 
 template <typename MT>
 void calc_q_extrema(IslMpi<MT>& cm, const Int& nets, const Int& nete);
 
+template <typename MT>
+void calc_rmt_q_pass1(IslMpi<MT>& cm, const bool trajectory = false);
 template <typename MT>
 void calc_rmt_q(IslMpi<MT>& cm);
 template <typename MT>
@@ -681,8 +696,13 @@ void copy_q(IslMpi<MT>& cm, const Int& nets,
 template <typename MT = ko::MachineTraits>
 void step(
   IslMpi<MT>& cm, const Int nets, const Int nete,
-  Real* dep_points_r,            // dep_points(1:3, 1:np, 1:np)
-  Real* q_min_r, Real* q_max_r); // q_{min,max}(1:np, 1:np, lev, 1:qsize, ie-nets+1)
+  Real* dep_points_r,
+  Real* q_min_r, Real* q_max_r);
+
+template <typename MT = ko::MachineTraits>
+void calc_trajectory(
+  IslMpi<MT>& cm, const Int nets, const Int nete, const Int step, const Real dtsub,
+  Real* dep_points_r, const Real* vnode, Real* vdep);
 
 } // namespace islmpi
 } // namespace homme
