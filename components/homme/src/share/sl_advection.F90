@@ -218,9 +218,9 @@ contains
             h2d, d2h)
     end do
     ! edge_g buffers are shared by SLMM, CEDR, other places in HOMME, and
-    ! dp_coupling in EAM. Thus, we must take care to protected threaded
-    ! access. In the following, "No barrier needed" comments justify why a
-    ! barrier isn't needed.
+    ! dp_coupling in EAM. Thus, we must take care to protect threaded access. In
+    ! the following, "No barrier needed" comments justify why a barrier isn't
+    ! needed.    
     ! No barrier needed: ale_rkdss has a horiz thread barrier at the end.
     call slmm_csl(nets, nete, dep_points_all, minq, maxq, info)
     ! No barrier needed: slmm_csl has a horiz thread barrier at the end.
@@ -801,7 +801,8 @@ contains
     !     x1 - x0 = dt u(p0,t0) + O(dt^2)
     !     z1 - z0 = dt w(p0,t0) + O(dt^2)
     !     z1 = z0 + dt/2 (w(p0,t0) + w(p0,t1) +
-    !                     dt (w_x(p0,t1) u(p0,t0) + w_z(p0,t1) w(p0,t0))) + O(dt^3)  (*)
+    !                     dt (w_x(p0,t1) u(p0,t0) + w_z(p0,t1) w(p0,t0)))
+    !          + O(dt^3).                                                   (*)
     ! Now we compute z(x0,t1). First, we need
     !     x0 - x1 = -dt u(p0,t0) + O(dt^2)
     ! and
@@ -826,7 +827,7 @@ contains
     !                - dt^2 w_x(p0,t1) u(p0,t0) + O(dt^3)
     !              = z0 + dt/2 (w(p0,t0) + w(p0,t1) +
     !                           dt (-w_x(p0,t1) u(p0,t0) + w_z(p0,t1) w(p0,t0)))
-    !                + O(dt^3)
+    !                + O(dt^3).
     ! This is locally accurate to O(dt^3) and so globally 2nd-order
     ! accurate. Notably, compared with (*), this formula differs only in a
     ! sign. Note also that a straightforward first-order accurate formula is
@@ -884,8 +885,7 @@ contains
     end do
 
     ! Use p0 as the reference coordinate system. p0 differs from p1 by B(eta)
-    ! (ps1 - ps0); dp3d already accounts for this term
-    ! w.r.t. derived%dp. Recall
+    ! (ps1 - ps0); dp3d already accounts for this term w.r.t. derived%dp. Recall
     !     eta_dot_dpdn = p_eta eta_dot = (A_eta p0 + B_eta ps) deta/dt,
     ! except that in the code eta_dot_dpdn is actually dp deta/dt rather than
     ! dp/deta deta/dt. eta_dot_dpdn is the motion of a pressure level excluding

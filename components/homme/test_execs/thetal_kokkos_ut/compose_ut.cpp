@@ -345,7 +345,7 @@ void run_sl_vertical_remap_bfb_cpp (const Session& s, ComposeTransport& ct,
 TEST_CASE ("compose_transport_testing") {
   static constexpr Real tol = std::numeric_limits<Real>::epsilon();
 
-  auto& s = Session::singleton(); try {
+  auto& s = Session::singleton(); //try {
   do { // breakable
 
   if (s.run_only_advection_test) {
@@ -427,6 +427,6 @@ TEST_CASE ("compose_transport_testing") {
   }
 
   } while (false); // do
-  } catch (...) {}
+  //} catch (...) {}
   Session::delete_singleton();
 }
