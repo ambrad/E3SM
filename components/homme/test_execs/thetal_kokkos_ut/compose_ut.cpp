@@ -237,7 +237,7 @@ private:
         nmax = std::atoi(hommexx_catch2_argv[++i]);
       }
     }
-    ne = std::max(2, std::min(128, ne));
+    ne = std::max(2, ne);
     qsize = std::max(1, std::min(QSIZE_D, qsize));
     hv_q = std::max(0, std::min(qsize, hv_q));
     if ( ! ok && am_root)
