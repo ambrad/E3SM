@@ -16,7 +16,7 @@ contains
     use control_mod, only: transport_alg, semi_lagrange_cdr_alg, semi_lagrange_cdr_check, &
          semi_lagrange_hv_q, limiter_option, nu_q, hypervis_subcycle_q, hypervis_order, &
          vert_remap_q_alg, qsplit, rsplit, dt_remap_factor, dt_tracer_factor, &
-         theta_hydrostatic_mode, semi_lagrange_nearest_point_lev
+         theta_hydrostatic_mode, semi_lagrange_nearest_point_lev, semi_lagrange_halo
     use geometry_interface_mod, only: GridVertex
     use bndry_mod, only: sort_neighbor_buffer_mapping
     use reduction_mod, only: initreductionbuffer, red_sum, red_min, red_max
@@ -47,6 +47,7 @@ contains
     dt_remap_factor = -1
     theta_hydrostatic_mode = .true.
     semi_lagrange_nearest_point_lev = -1 !amb for conv testing. todo: make an option.
+    semi_lagrange_halo = 3 !amb todo: make an option
 
     hypervis_order = 2
     semi_lagrange_hv_q = hv_q

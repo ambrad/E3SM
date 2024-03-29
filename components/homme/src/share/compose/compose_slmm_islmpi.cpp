@@ -166,14 +166,22 @@ void fill_gid2nbrs (const mpi::Parallel& p, const typename IslMpi<MT>::ElemDataL
     }
   }
 
+  // Determine max halo size.
+  int l_max_halo_size = 0;
+  for (const auto& item : gid2nbrs) {
+    const auto& nbrs = item.second;
+    l_max_halo_size = std::max(l_max_halo_size, int(nbrs.size()));
+  }
+  int max_halo_size;
+  mpi::all_reduce(p, &l_max_halo_size, &max_halo_size, 1, MPI_MIN);
+
   // Fullfill queries and receive answers to our queries.
   std::vector<IntBuf> nbr_sends(nrank), nbr_recvs(nrank);
   std::vector<mpi::Request> nbr_send_reqs(nrank), nbr_recv_reqs(nrank);
   for (Int i = 0; i < nrank; ++i) {
     auto& r = nbr_recvs[i];
-    // 20 is from dimensions_mod::set_mesh_dimensions; factor of 2 is to get
-    // (gid,rank); 1 is for size datum.
-    r.resize((20*2 + 1)*(req_sends[i].size() - 1));
+    // Factor of 2 is to get (gid,rank); 1 is for size datum.
+    r.resize((max_halo_size*2 + 1)*(req_sends[i].size() - 1));
     mpi::irecv(p, r.data(), r.size(), ranks[i], tag, &nbr_recv_reqs[i]);
   }
   for (Int k = 0; k < nrank; ++k) {

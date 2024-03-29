@@ -85,6 +85,12 @@ int irecv (const Parallel& p, T* buf, int count, int src, int tag, Request* ireq
 int waitany(int count, Request* reqs, int* index, MPI_Status* stats = nullptr);
 int waitall(int count, Request* reqs, MPI_Status* stats = nullptr);
 int wait(Request* req, MPI_Status* stat = nullptr);
+
+template <typename T>
+int all_reduce (const Parallel& p, const T* sendbuf, T* rcvbuf, int count, MPI_Op op) {
+  MPI_Datatype dt = get_type<T>();
+  return MPI_Allreduce(const_cast<T*>(sendbuf), rcvbuf, count, dt, op, p.comm());
+}
 } // namespace mpi
 
 namespace islmpi {
