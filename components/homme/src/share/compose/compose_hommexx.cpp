@@ -21,10 +21,12 @@ template <typename DataType>
 using View = typename TracerArrays<ko::MachineTraits>::View<DataType>;
 #endif
 
-void set_views (const SetView<double***>& spheremp,
-                const SetView<double****>& dp, const SetView<double*****>& dp3d,
-                const SetView<double******>& qdp, const SetView<double*****>& q,
-                const SetView<double*****>& dep_points) {
+void set_views (const SetView<HommexxReal***>& spheremp,
+                const SetView<HommexxReal****>& dp, const SetView<HommexxReal*****>& dp3d,
+                const SetView<HommexxReal******>& qdp, const SetView<HommexxReal*****>& q,
+                const SetView<HommexxReal*****>& dep_points) {
+  static_assert(std::is_same<Real, HommexxReal>::value,
+                "Hommexx and Compose real types must be the same.");
 #ifdef COMPOSE_PORT
   auto& ta = *get_tracer_arrays();
   const auto nel = spheremp.extent_int(0);
