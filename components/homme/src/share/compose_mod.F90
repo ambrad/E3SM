@@ -36,10 +36,10 @@ module compose_mod
 
      subroutine slmm_init_impl(comm, transport_alg, np, nlev, qsize, qsize_d, &
           nelem, nelemd, cubed_sphere_map, geometry, lid2gid, lid2facenum, nbr_id_rank, nirptr, &
-          sl_nearest_point_lev, lid2gid_sz, lid2facenum_sz, nbr_id_rank_sz, nirptr_sz) bind(c)
+          sl_halo, sl_nearest_point_lev, lid2gid_sz, lid2facenum_sz, nbr_id_rank_sz, nirptr_sz) bind(c)
        use iso_c_binding, only: c_int
        integer(kind=c_int), value, intent(in) :: comm, transport_alg, np, nlev, qsize, qsize_d, &
-            nelem, nelemd, cubed_sphere_map, geometry, sl_nearest_point_lev, lid2gid_sz, &
+            nelem, nelemd, cubed_sphere_map, geometry, sl_halo, sl_nearest_point_lev, lid2gid_sz, &
             lid2facenum_sz, nbr_id_rank_sz, nirptr_sz
        integer(kind=c_int), intent(in) :: lid2gid(lid2gid_sz), lid2facenum(lid2facenum_sz), &
             nbr_id_rank(nbr_id_rank_sz), nirptr(nirptr_sz)
@@ -238,7 +238,8 @@ contains
     use element_mod, only: element_t
     use gridgraph_mod, only: GridVertex_t
     use control_mod, only: semi_lagrange_cdr_alg, transport_alg, cubed_sphere_map, &
-         semi_lagrange_nearest_point_lev, dt_remap_factor, dt_tracer_factor, geometry
+         semi_lagrange_halo, semi_lagrange_nearest_point_lev, dt_remap_factor, &
+         dt_tracer_factor, geometry
     use physical_constants, only: Sx, Sy, Lx, Ly
     use scalable_grid_init_mod, only: sgi_is_initialized, sgi_get_rank2sfc, &
          sgi_gid2igv
@@ -362,7 +363,7 @@ contains
        nirptr(nelemd+1) = k - 1
        call slmm_init_impl(par%comm, transport_alg, np, nlev, qsize, qsize_d, &
             nelem, nelemd, cubed_sphere_map, geometry_type, lid2gid, lid2facenum, &
-            nbr_id_rank, nirptr, semi_lagrange_nearest_point_lev, &
+            nbr_id_rank, nirptr, semi_lagrange_halo, semi_lagrange_nearest_point_lev, &
             size(lid2gid), size(lid2facenum), size(nbr_id_rank), size(nirptr))
        if (geometry_type == 1) call slmm_init_plane(Sx, Sy, Lx, Ly)
        deallocate(nbr_id_rank, nirptr)

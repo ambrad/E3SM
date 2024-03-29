@@ -99,7 +99,7 @@ init (const typename IslMpi<MT>::Advecter::ConstPtr& advecter,
       Int np, Int nlev, Int qsize, Int qsized, Int nelemd,
       const Int* nbr_id_rank, const Int* nirptr,
       Int halo) {
-  slmm_throw_if(halo < 1 || halo > 2, "halo must be 1 (default) or 2.");
+  slmm_throw_if(halo < 1, "halo must be 1 (default) or larger.");
   auto tracer_arrays = homme::init_tracer_arrays(nelemd, nlev, np, qsize, qsized);
   auto cm = std::make_shared<IslMpi<MT> >(p, advecter, tracer_arrays, np, nlev,
                                           qsize, qsized, nelemd, halo);
@@ -111,7 +111,7 @@ init (const typename IslMpi<MT>::Advecter::ConstPtr& advecter,
 // already has a ref to the const'ed one.
 template <typename MT>
 void finalize_init_phase (IslMpi<MT>& cm, typename IslMpi<MT>::Advecter& advecter) {
-  if (cm.halo == 2)
+  if (cm.halo > 1)
     extend_halo::extend_local_meshes<MT>(*cm.p, cm.ed_h, advecter);
   advecter.fill_nearest_points_if_needed();
   advecter.sync_to_device();
@@ -299,8 +299,8 @@ void slmm_init_impl (
   homme::Int nelemd, homme::Int cubed_sphere_map, homme::Int geometry,
   const homme::Int* lid2gid, const homme::Int* lid2facenum,
   const homme::Int* nbr_id_rank, const homme::Int* nirptr,
-  homme::Int sl_nearest_point_lev, homme::Int, homme::Int, homme::Int,
-  homme::Int)
+  homme::Int sl_halo, homme::Int sl_nearest_point_lev,
+  homme::Int, homme::Int, homme::Int, homme::Int)
 {
   amb::dev_init_threads();
   homme::slmm_init(np, nelem, nelemd, transport_alg, cubed_sphere_map,
@@ -310,7 +310,7 @@ void slmm_init_impl (
   const auto p = homme::mpi::make_parallel(MPI_Comm_f2c(fcomm));
   homme::g_csl_mpi = homme::islmpi::init<homme::HommeMachineTraits>(
     homme::g_advecter, p, np, nlev, qsize, qsized, nelemd,
-    nbr_id_rank, nirptr, 2 /* halo */);
+    nbr_id_rank, nirptr, sl_halo);
   amb::dev_fin_threads();
 }
 
