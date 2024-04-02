@@ -47,7 +47,7 @@ contains
     dt_remap_factor = -1
     theta_hydrostatic_mode = .true.
     semi_lagrange_nearest_point_lev = -1 !amb for conv testing. todo: make an option.
-    semi_lagrange_halo = 5 !amb todo: make an option
+    semi_lagrange_halo = 8 !amb todo: make an option
 
     hypervis_order = 2
     semi_lagrange_hv_q = hv_q

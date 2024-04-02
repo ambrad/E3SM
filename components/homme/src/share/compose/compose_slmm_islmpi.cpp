@@ -92,6 +92,7 @@ typedef std::vector<GidRankPair> GidRankPairs;
 typedef std::map<Gid, GidRankPairs> Gid2Nbrs;
 typedef std::vector<Int> IntBuf;
 typedef std::vector<Real> RealBuf;
+typedef std::map<Gid, int> Gid2Count;
 
 template <typename MT>
 GidRankPairs all_1halo_nbrs_but_me (const typename IslMpi<MT>::ElemDataH& ed) {
@@ -105,10 +106,10 @@ GidRankPairs all_1halo_nbrs_but_me (const typename IslMpi<MT>::ElemDataH& ed) {
   return gs;
 }
 
-#pragma message "needgid2rank only for outer shell"
+#pragma message "todo test overlap case"
 template <typename MT>
 void fill_gid2nbrs (const mpi::Parallel& p, const typename IslMpi<MT>::ElemDataListH& eds,
-                    Gid2Nbrs& gid2nbrs) {
+                    Gid2Nbrs& gid2nbrs, Gid2Count& gid2ninprevhalo) {
   static const Int tag = 6;
   const Rank my_rank = p.rank();
   const Int n_owned = eds.size();
@@ -130,7 +131,10 @@ void fill_gid2nbrs (const mpi::Parallel& p, const typename IslMpi<MT>::ElemDataL
     {
       std::set<Rank> unique_ranks;
       for (const auto& ed : eds) {
-        for (Int i = 0; i < ed.nbrs.size(); ++i) {
+        // We only need information for GIDs in the current outermost halo.
+        const auto& it = gid2ninprevhalo.find(ed.me->gid);
+        const Int i0 = it == gid2ninprevhalo.end() ? 0 : it->second;
+        for (Int i = i0; i < ed.nbrs.size(); ++i) {
           const auto& n = ed.nbrs(i);
           if (n.rank == my_rank) continue;
           slmm_assert(gid2nbrs.find(n.gid) == gid2nbrs.end());
@@ -221,19 +225,23 @@ void fill_gid2nbrs (const mpi::Parallel& p, const typename IslMpi<MT>::ElemDataL
 }
 
 template <typename MT>
-void extend_nbrs (const Gid2Nbrs& gid2nbrs, typename IslMpi<MT>::ElemDataListH& eds) {
+void extend_nbrs (const Gid2Nbrs& gid2nbrs, typename IslMpi<MT>::ElemDataListH& eds,
+                  Gid2Count& gid2ninprevhalo) {
   for (auto& ed : eds) {
     // Get all <=(n+1)-halo neighbors, where we already have <=n-halo neighbors.
-    std::set<GidRankPair> new_nbrs;
-    for (const auto& n : ed.nbrs) {
-      if (&n == ed.me) continue;
-      const auto& it = gid2nbrs.find(n.gid);
-      slmm_assert(it != gid2nbrs.end());
-      const auto& gid_nbrs = it->second;
-      for (const auto& gn : gid_nbrs)
-        new_nbrs.insert(gn);
+    std::set<GidRankPair> new_nbrs; {
+      const auto& it = gid2ninprevhalo.find(ed.me->gid);
+      const Int i0 = it == gid2ninprevhalo.end() ? 0 : it->second;
+      for (Int i = i0; i < ed.nbrs.size(); ++i) {
+        const auto& n = ed.nbrs(i);
+        if (&n == ed.me) continue;
+        const auto& it = gid2nbrs.find(n.gid);
+        slmm_assert(it != gid2nbrs.end());
+        const auto& gid_nbrs = it->second;
+        for (const auto& gn : gid_nbrs)
+          new_nbrs.insert(gn);
+      }
     }
-    const int amb_size = ed.nbrs.size();
     // Remove the already known ones.
     for (const auto& n : ed.nbrs)
       new_nbrs.erase(GidRankPair(n.gid, n.rank));
@@ -247,6 +255,7 @@ void extend_nbrs (const Gid2Nbrs& gid2nbrs, typename IslMpi<MT>::ElemDataListH& 
     slmm_assert(me >= 0);
     // Append the, now only new, (n+1)-halo ones.
     Int i = ed.nbrs.size();
+    gid2ninprevhalo[ed.me->gid] = i;
     ed.nbrs.reset_capacity(i + new_nbrs.size(), true);
     ed.me = &ed.nbrs(me);
     for (const auto& n : new_nbrs) {
@@ -268,10 +277,11 @@ void extend_nbrs (const Gid2Nbrs& gid2nbrs, typename IslMpi<MT>::ElemDataListH& 
 }
 
 template <typename MT>
-void collect_gid_rank (const mpi::Parallel& p, typename IslMpi<MT>::ElemDataListH& eds) {
+void collect_gid_rank (const mpi::Parallel& p, typename IslMpi<MT>::ElemDataListH& eds,
+                       Gid2Count& gid2ninprevhalo) {
   Gid2Nbrs gid2nbrs;
-  fill_gid2nbrs<MT>(p, eds, gid2nbrs);
-  extend_nbrs<MT>(gid2nbrs, eds);
+  fill_gid2nbrs<MT>(p, eds, gid2nbrs, gid2ninprevhalo);
+  extend_nbrs<MT>(gid2nbrs, eds, gid2ninprevhalo);
 }
 
 template <typename MT>
@@ -493,8 +503,9 @@ void collect_gid_rank (IslMpi<MT>& cm, const Int* nbr_id_rank, const Int* nirptr
     slmm_assert(ed.me);
   }
   if (cm.halo > 1) {
-    for (int i = 2; i <= cm.halo; ++i)
-      extend_halo::collect_gid_rank<MT>(*cm.p, cm.ed_h);
+    extend_halo::Gid2Count gid2ninprevhalo;
+    for (int halo = 2; halo <= cm.halo; ++halo)
+      extend_halo::collect_gid_rank<MT>(*cm.p, cm.ed_h, gid2ninprevhalo);
   }
 #ifdef COMPOSE_PORT
   cm.own_dep_mask = typename IslMpi<MT>::DepMask("own_dep_mask",
