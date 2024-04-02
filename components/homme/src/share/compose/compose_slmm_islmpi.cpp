@@ -94,15 +94,18 @@ typedef std::vector<Int> IntBuf;
 typedef std::vector<Real> RealBuf;
 
 template <typename MT>
-GidRankPairs all_nbrs_but_me (const typename IslMpi<MT>::ElemDataH& ed) {
+GidRankPairs all_1halo_nbrs_but_me (const typename IslMpi<MT>::ElemDataH& ed) {
   GidRankPairs gs;
-  gs.reserve(ed.nbrs.size() - 1);
-  for (const auto& n : ed.nbrs)
+  gs.reserve(ed.nin1halo - 1);
+  for (Int i = 0; i < ed.nin1halo; ++i) {
+    const auto& n = ed.nbrs(i);
     if (&n != ed.me)
       gs.push_back(GidRankPair(n.gid, n.rank));
+  }
   return gs;
 }
 
+#pragma message "needgid2rank only for outer shell"
 template <typename MT>
 void fill_gid2nbrs (const mpi::Parallel& p, const typename IslMpi<MT>::ElemDataListH& eds,
                     Gid2Nbrs& gid2nbrs) {
@@ -113,7 +116,7 @@ void fill_gid2nbrs (const mpi::Parallel& p, const typename IslMpi<MT>::ElemDataL
   // Fill in the ones we know.
   for (const auto& ed : eds) {
     slmm_assert(ed.me->rank == my_rank);
-    gid2nbrs[ed.me->gid] = all_nbrs_but_me<MT>(ed);
+    gid2nbrs[ed.me->gid] = all_1halo_nbrs_but_me<MT>(ed);
   }
 
   std::vector<Rank> ranks;
@@ -126,13 +129,15 @@ void fill_gid2nbrs (const mpi::Parallel& p, const typename IslMpi<MT>::ElemDataL
     std::map<Gid,Rank> needgid2rank;
     {
       std::set<Rank> unique_ranks;
-      for (const auto& item : gid2nbrs)
-        for (const auto& n : item.second)
-          if (n.rank != my_rank) {
-            slmm_assert(gid2nbrs.find(n.gid) == gid2nbrs.end());
-            needgid2rank.insert(std::make_pair(n.gid, n.rank));
-            unique_ranks.insert(n.rank);
-          }
+      for (const auto& ed : eds) {
+        for (Int i = 0; i < ed.nbrs.size(); ++i) {
+          const auto& n = ed.nbrs(i);
+          if (n.rank == my_rank) continue;
+          slmm_assert(gid2nbrs.find(n.gid) == gid2nbrs.end());
+          needgid2rank.insert(std::make_pair(n.gid, n.rank));
+          unique_ranks.insert(n.rank);
+        }
+      }
       nrank = unique_ranks.size();
       ranks.insert(ranks.begin(), unique_ranks.begin(), unique_ranks.end());
       Int i = 0;
@@ -166,22 +171,15 @@ void fill_gid2nbrs (const mpi::Parallel& p, const typename IslMpi<MT>::ElemDataL
     }
   }
 
-  // Determine max halo size.
-  int l_max_halo_size = 0;
-  for (const auto& item : gid2nbrs) {
-    const auto& nbrs = item.second;
-    l_max_halo_size = std::max(l_max_halo_size, int(nbrs.size()));
-  }
-  int max_halo_size;
-  mpi::all_reduce(p, &l_max_halo_size, &max_halo_size, 1, MPI_MIN);
-
   // Fullfill queries and receive answers to our queries.
   std::vector<IntBuf> nbr_sends(nrank), nbr_recvs(nrank);
   std::vector<mpi::Request> nbr_send_reqs(nrank), nbr_recv_reqs(nrank);
   for (Int i = 0; i < nrank; ++i) {
     auto& r = nbr_recvs[i];
-    // Factor of 2 is to get (gid,rank); 1 is for size datum.
-    r.resize((max_halo_size*2 + 1)*(req_sends[i].size() - 1));
+    // 20 is from dimensions_mod::set_mesh_dimensions, the maximum size of the
+    // 1-halo minus the 0-halo; factor of 2 is to get (gid,rank); 1 is for the
+    // size datum.
+    r.resize((20*2 + 1)*(req_sends[i].size() - 1));
     mpi::irecv(p, r.data(), r.size(), ranks[i], tag, &nbr_recv_reqs[i]);
   }
   for (Int k = 0; k < nrank; ++k) {
@@ -225,7 +223,7 @@ void fill_gid2nbrs (const mpi::Parallel& p, const typename IslMpi<MT>::ElemDataL
 template <typename MT>
 void extend_nbrs (const Gid2Nbrs& gid2nbrs, typename IslMpi<MT>::ElemDataListH& eds) {
   for (auto& ed : eds) {
-    // Get all <=2-halo neighbors.
+    // Get all <=(n+1)-halo neighbors, where we already have <=n-halo neighbors.
     std::set<GidRankPair> new_nbrs;
     for (const auto& n : ed.nbrs) {
       if (&n == ed.me) continue;
@@ -235,6 +233,7 @@ void extend_nbrs (const Gid2Nbrs& gid2nbrs, typename IslMpi<MT>::ElemDataListH& 
       for (const auto& gn : gid_nbrs)
         new_nbrs.insert(gn);
     }
+    const int amb_size = ed.nbrs.size();
     // Remove the already known ones.
     for (const auto& n : ed.nbrs)
       new_nbrs.erase(GidRankPair(n.gid, n.rank));
@@ -246,7 +245,7 @@ void extend_nbrs (const Gid2Nbrs& gid2nbrs, typename IslMpi<MT>::ElemDataListH& 
         break;
       }
     slmm_assert(me >= 0);
-    // Append the, now only new, 2-halo ones.
+    // Append the, now only new, (n+1)-halo ones.
     Int i = ed.nbrs.size();
     ed.nbrs.reset_capacity(i + new_nbrs.size(), true);
     ed.me = &ed.nbrs(me);
@@ -258,6 +257,13 @@ void extend_nbrs (const Gid2Nbrs& gid2nbrs, typename IslMpi<MT>::ElemDataListH& 
       en.lid_on_rank = -1;
       en.lid_on_rank_idx = -1;
     }
+#ifndef NDEBUG
+    {
+      std::set<Gid> ugid;
+      for (Int i = 0; i < ed.nbrs.size(); ++i) ugid.insert(ed.nbrs(i).gid);
+      slmm_assert(ugid.size() == size_t(ed.nbrs.size()));
+    }
+#endif
   }
 }
 
