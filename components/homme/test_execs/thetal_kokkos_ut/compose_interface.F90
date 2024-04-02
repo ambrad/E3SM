@@ -8,7 +8,7 @@ module compose_interface
 contains
 
   subroutine init_compose_f90(ne, hyai, hybi, hyam, hybm, ps0, dvv, mp, qsize_in, hv_q, &
-       lim, cdr_check, is_sphere) bind(c)
+       lim, cdr_check, is_sphere, nearest_point, halo) bind(c)
     use hybvcoord_mod, only: set_layer_locations
     use thetal_test_interface, only: init_f90
     use theta_f2c_mod, only: init_elements_c
@@ -25,18 +25,17 @@ contains
     use sl_advection, only: sl_init1
 
     real (real_kind), intent(in) :: hyai(nlevp), hybi(nlevp), hyam(nlev), hybm(nlev)
-    integer (c_int), value, intent(in) :: ne, qsize_in, hv_q, lim
+    integer (c_int), value, intent(in) :: ne, qsize_in, hv_q, lim, halo
     real (real_kind), value, intent(in) :: ps0
     real (real_kind), intent(out) :: dvv(np,np), mp(np,np)
-    logical (c_bool), value, intent(in) :: cdr_check, is_sphere
+    logical (c_bool), value, intent(in) :: cdr_check, is_sphere, nearest_point
 
     integer :: ie, edgesz
 
     if (.not. is_sphere) print *, "NOT IMPL'ED YET"
 
     transport_alg = 12
-    semi_lagrange_cdr_alg = 3 !5
-    !print *,'amb> HARDCODING cdr_alg to 5'
+    semi_lagrange_cdr_alg = 3
     semi_lagrange_cdr_check = cdr_check
     qsize = qsize_in
     limiter_option = lim
@@ -46,8 +45,9 @@ contains
     dt_tracer_factor = -1
     dt_remap_factor = -1
     theta_hydrostatic_mode = .true.
-    semi_lagrange_nearest_point_lev = -1 !amb for conv testing. todo: make an option.
-    semi_lagrange_halo = 8 !amb todo: make an option
+    semi_lagrange_nearest_point_lev = -1
+    if (nearest_point) semi_lagrange_nearest_point_lev = 100000
+    semi_lagrange_halo = halo
 
     hypervis_order = 2
     semi_lagrange_hv_q = hv_q
