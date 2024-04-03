@@ -39,8 +39,8 @@ Int setbuf (Buffer& buf, const Int& os, const Int& i1, const short& i2, const sh
 #ifdef COMPOSE_PORT
 /* GPU metadata are arranged differently than described below. The scheme is the
    following:
-        (#x-in-rank         int
-         x-bulk-data-offset i 
+        (x-bulk-data-offset int
+         #x-in-rank         i
          (lid-on-rank       i     only packed if #x in lid > 0
           lev               short
           #x)               s
@@ -121,8 +121,8 @@ void pack_dep_points_sendbuf_pass1_scan (IslMpi<MT>& cm) {
 /* Pack the departure points (x). We use two passes. We also set up the q
    metadata. Two passes let us do some efficient tricks that are not available
    with one pass. Departure point and q messages are formatted as follows:
-    xs: (#x-in-rank         int                                     <-
-         x-bulk-data-offset i                                        |
+    xs: (x-bulk-data-offset int                                     <-
+         #x-in-rank         i                                        |
          (lid-on-rank       i     only packed if #x in lid > 0       |
           #x-in-lid         i     > 0                                |- meta data
           (lev              i     only packed if #x in (lid,lev) > 0 |
