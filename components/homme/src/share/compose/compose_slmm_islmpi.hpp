@@ -517,7 +517,7 @@ struct IslMpi {
 
   const mpi::Parallel::Ptr p;
   const typename Advecter::ConstPtr advecter;
-  const Int np, np2, nlev, qsize, qsized, nelemd, halo;
+  const Int np, np2, nlev, qsize, qsized, nelemd, halo, traj_nsubstep;
 
   ElemDataListH ed_h; // this rank's owned cells, indexed by LID
   ElemDataListD ed_d;
@@ -566,10 +566,11 @@ struct IslMpi {
 
   IslMpi (const mpi::Parallel::Ptr& ip, const typename Advecter::ConstPtr& advecter,
           const typename TracerArrays<MT>::Ptr& tracer_arrays_,
-          Int inp, Int inlev, Int iqsize, Int iqsized, Int inelemd, Int ihalo)
+          Int inp, Int inlev, Int iqsize, Int iqsized, Int inelemd, Int ihalo,
+          Int itraj_nsubstep)
     : p(ip), advecter(advecter),
       np(inp), np2(np*np), nlev(inlev), qsize(iqsize), qsized(iqsized), nelemd(inelemd),
-      halo(ihalo), tracer_arrays(tracer_arrays_)
+      halo(ihalo), traj_nsubstep(itraj_nsubstep), tracer_arrays(tracer_arrays_)
   {}
 
   IslMpi(const IslMpi&) = delete;

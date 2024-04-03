@@ -38,7 +38,7 @@ extern "C" {
   void init_compose_f90(int ne, const Real* hyai, const Real* hybi, const Real* hyam,
                         const Real* hybm, Real ps0, Real* dvv, Real* mp, int qsize,
                         int hv_q, int limiter_option, bool cdr_check, bool is_sphere,
-                        bool nearest_point, int halo);
+                        bool nearest_point, int halo, int traj_nsubstep);
   void init_geometry_f90();
   void cleanup_compose_f90();
   void run_compose_standalone_test_f90(int* nmax, Real* eval);
@@ -100,7 +100,7 @@ void fill (Random& r, const V& a,
 }
 
 struct Session {
-  int ne, hv_q, nmax, halo;
+  int ne, hv_q, nmax, halo, traj_nsubstep;
   bool cdr_check, is_sphere, run_only_advection_test, nearest_point;
   HybridVCoord h;
   Random r;
@@ -146,7 +146,7 @@ struct Session {
     std::vector<Real> dvv(NP*NP), mp(NP*NP);
     init_compose_f90(ne, hyai.data(), hybi.data(), &hyam(0)[0], &hybm(0)[0], h.ps0,
                      dvv.data(), mp.data(), qsize, hv_q, p.limiter_option, cdr_check,
-                     is_sphere, nearest_point, halo);
+                     is_sphere, nearest_point, halo, traj_nsubstep);
     ref_FE.init_mass(mp.data());
     ref_FE.init_deriv(dvv.data());
 
@@ -213,6 +213,7 @@ private:
     run_only_advection_test = false;
     nmax = -1;
     halo = 2;
+    traj_nsubstep = 1;
     nearest_point = true;
     bool ok = true;
     int i;
@@ -257,6 +258,13 @@ private:
           printf("halo must be >= 1");
           ok = false;
         }
+      } else if (tok == "-trajnsubstep") {
+        if (i+1 == hommexx_catch2_argc) ok = false;
+        traj_nsubstep = std::atoi(hommexx_catch2_argv[++i]);
+        if (traj_nsubstep < 1) {
+          printf("traj_nsubstep must be >= 1");
+          ok = false;
+        }
       } else if (tok == "-nonearest") {
         nearest_point = false;
       } else {
@@ -281,9 +289,9 @@ private:
         0;
 #endif
       printf("compose_ut> sphere %d bfb %d ne %d qsize %d hv_q %d cdr_check %d "
-             "halo %d nearest %d\n",
+             "halo %d traj_nsubstep %d nearest %d\n",
              int(is_sphere), bfb, ne, qsize, hv_q, cdr_check ? 1 : 0, halo,
-             int(nearest_point));
+             traj_nsubstep, int(nearest_point));
     }
   }
 };

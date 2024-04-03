@@ -163,7 +163,7 @@ contains
     use dimensions_mod,         only : max_neigh_edges
     use interpolate_mod,        only : interpolate_tracers, minmax_tracers
     use control_mod,            only : dt_tracer_factor, nu_q, transport_alg, semi_lagrange_hv_q, &
-         semi_lagrange_cdr_alg, semi_lagrange_cdr_check
+         semi_lagrange_cdr_alg, semi_lagrange_cdr_check, semi_lagrange_trajectory_nsubstep
     ! For DCMIP16 supercell test case.
     use control_mod,            only : dcmip16_mu_q
     use prim_advection_base,    only : advance_physical_vis
@@ -205,8 +205,12 @@ contains
 #endif
     call TimeLevel_Qdp(tl, dt_tracer_factor, n0_qdp, np1_qdp)
 
-    call calc_trajectory(elem, deriv, hvcoord, hybrid, dt, tl, &
-         independent_time_steps, nets, nete)
+    if (semi_lagrange_trajectory_nsubstep > 1) then
+       call cthoriz(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete)
+    else
+       call calc_trajectory(elem, deriv, hvcoord, hybrid, dt, tl, &
+            independent_time_steps, nets, nete)
+    end if
 
     call t_startf('SLMM_csl')
     !todo Here and in the set-pointer loop for CEDR, do just in the first call.
@@ -1171,5 +1175,18 @@ contains
 
     if (nerr > 0 .and. par%masterproc) write(iulog,'(a,i3)') 'sl_unittest FAIL', nerr
   end subroutine sl_unittest
+  
+  subroutine cthoriz(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete)
+    type (element_t), intent(inout) :: elem(:)
+    type (derivative_t), intent(in) :: deriv
+    type (hvcoord_t), intent(in) :: hvcoord
+    type (hybrid_t), intent(in) :: hybrid
+    real(kind=real_kind), intent(in) :: dt
+    type (TimeLevel_t), intent(in) :: tl
+    integer, intent(in) :: nets, nete
+
+    
+
+  end subroutine cthoriz
 
 end module sl_advection

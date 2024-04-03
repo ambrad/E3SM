@@ -98,11 +98,11 @@ init (const typename IslMpi<MT>::Advecter::ConstPtr& advecter,
       const mpi::Parallel::Ptr& p,
       Int np, Int nlev, Int qsize, Int qsized, Int nelemd,
       const Int* nbr_id_rank, const Int* nirptr,
-      Int halo) {
+      Int halo, Int traj_nsubstep) {
   slmm_throw_if(halo < 1, "halo must be 1 (default) or larger.");
   auto tracer_arrays = homme::init_tracer_arrays(nelemd, nlev, np, qsize, qsized);
   auto cm = std::make_shared<IslMpi<MT> >(p, advecter, tracer_arrays, np, nlev,
-                                          qsize, qsized, nelemd, halo);
+                                          qsize, qsized, nelemd, halo, traj_nsubstep);
   setup_comm_pattern(*cm, nbr_id_rank, nirptr);
   return cm;
 }
@@ -299,7 +299,7 @@ void slmm_init_impl (
   homme::Int nelemd, homme::Int cubed_sphere_map, homme::Int geometry,
   const homme::Int* lid2gid, const homme::Int* lid2facenum,
   const homme::Int* nbr_id_rank, const homme::Int* nirptr,
-  homme::Int sl_halo, homme::Int sl_nearest_point_lev,
+  homme::Int sl_halo, homme::Int sl_traj_nsubstep, homme::Int sl_nearest_point_lev,
   homme::Int, homme::Int, homme::Int, homme::Int)
 {
   amb::dev_init_threads();
@@ -310,7 +310,7 @@ void slmm_init_impl (
   const auto p = homme::mpi::make_parallel(MPI_Comm_f2c(fcomm));
   homme::g_csl_mpi = homme::islmpi::init<homme::HommeMachineTraits>(
     homme::g_advecter, p, np, nlev, qsize, qsized, nelemd,
-    nbr_id_rank, nirptr, sl_halo);
+    nbr_id_rank, nirptr, sl_halo, sl_traj_nsubstep);
   amb::dev_fin_threads();
 }
 
