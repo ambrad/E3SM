@@ -3,12 +3,9 @@
 namespace homme {
 namespace islmpi {
 
-// dep_points is const in principle, but if lev <=
-// semi_lagrange_nearest_point_lev, a departure point may be altered if the
-// winds take it outside of the comm halo.
 template <typename MT>
 void calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
-                      const Real* v01_r, const Real* v1gradv0_r,
+                      const Int step, const Real* v01_r, const Real* v1gradv0_r,
                       Real* dep_points_r)
 {
   using slmm::Timer;
@@ -19,15 +16,15 @@ void calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
 #endif
 
 #ifdef COMPOSE_PORT
-  const auto& dep_points = cm.tracer_arrays->dep_points;
+  auto& dep_points = cm.tracer_arrays->dep_points;
 #else
-  const DepPointsH<MT> dep_points(dep_points_r, cm.nelemd, cm.nlev, cm.np2);
+  DepPointsH<MT> dep_points(dep_points_r, cm.nelemd, cm.nlev, cm.np2);
 #endif
 
 }
 
 template void calc_trajectory(IslMpi<ko::MachineTraits>&, const Int, const Int,
-                              const Real*, const Real*, Real*);
+                              const Int, const Real*, const Real*, Real*);
 
 } // namespace islmpi
 } // namespace homme

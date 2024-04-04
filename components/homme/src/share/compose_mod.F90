@@ -187,11 +187,11 @@ module compose_mod
        type(cartesian3D_t), intent(in) :: sphere_cart_coord
      end subroutine slmm_check_ref2sphere
 
-     subroutine slmm_calc_trajectory(nets, nete, v01, v1gradv0, dep_points, info) bind(c)
+     subroutine slmm_calc_trajectory(nets, nete, step, v01, v1gradv0, dep_points, info) bind(c)
        use iso_c_binding, only: c_int, c_double
        use dimensions_mod, only : np, nlev, nelemd, qsize
        use coordinate_systems_mod, only : cartesian3D_t
-       integer(kind=c_int), value, intent(in) :: nets, nete
+       integer(kind=c_int), value, intent(in) :: nets, nete, step
        type(cartesian3D_t), intent(inout) :: dep_points(np,np,nlev,nelemd)
        real(kind=c_double), intent(in) :: &
             v01(nlev,np,np,2,2,nelemd), v1gradv0(nlev,np,np,2,nelemd)

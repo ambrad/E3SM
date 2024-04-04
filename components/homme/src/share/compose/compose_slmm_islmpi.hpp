@@ -693,9 +693,8 @@ void step(
 
 template <typename MT = ko::MachineTraits>
 void calc_trajectory(
-  IslMpi<MT>& cm, const Int nets, const Int nete,
-  const Real* v01_r, const Real* v1gradv0_r,
-  Real* dep_points_r);
+  IslMpi<MT>& cm, const Int nets, const Int nete, const Int step,
+  const Real* v01_r, const Real* v1gradv0_r, Real* dep_points_r);
 
 } // namespace islmpi
 } // namespace homme

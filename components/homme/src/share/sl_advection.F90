@@ -1210,7 +1210,7 @@ contains
                   ugradv_sphere(v01(k,:,:,:,2,ie), v01(k,:,:,:,1,ie), deriv, elem(ie))
           end do
        end do
-       call slmm_calc_trajectory(nets, nete, v01, v1gradv0, dep_points_all, info)
+       call slmm_calc_trajectory(nets, nete, step, v01, v1gradv0, dep_points_all, info)
     end do
     if (hybrid%par%masterproc) print *, 'cthoriz done', info
   end subroutine cthoriz
