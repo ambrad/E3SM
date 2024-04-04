@@ -36,6 +36,7 @@ add_library (${COMPOSE_LIBRARY}
   compose_cedr_sl_run_check.cpp
   compose_cedr_qlt.cpp
   compose_cedr_caas.cpp
+  compose_slmm_islmpi_calc_trajectory.cpp
   cedr_util.cpp
   cedr_mpi.cpp
   cedr_local.cpp

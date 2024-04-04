@@ -32,6 +32,8 @@ module sl_advection
 
   type (cartesian3D_t), allocatable :: dep_points_all(:,:,:,:) ! (np,np,nlev,nelemd)
   real(kind=real_kind), dimension(:,:,:,:,:), allocatable :: minq, maxq ! (np,np,nlev,qsize,nelemd)
+  real(kind=real_kind), dimension(:,:,:,:,:,:), allocatable :: v01 ! (nlev,np,np,2,2,nelemd)
+  real(kind=real_kind), dimension(:,:,:,:,:), allocatable :: v1gradv0 ! (nlev,np,np,2,nelemd)
   logical :: is_sphere
 
   ! For use in make_positive.
@@ -206,7 +208,8 @@ contains
     call TimeLevel_Qdp(tl, dt_tracer_factor, n0_qdp, np1_qdp)
 
     if (semi_lagrange_trajectory_nsubstep > 1) then
-       call cthoriz(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete)
+       call cthoriz(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete, &
+            semi_lagrange_trajectory_nsubstep)
     else
        call calc_trajectory(elem, deriv, hvcoord, hybrid, dt, tl, &
             independent_time_steps, nets, nete)
@@ -1176,17 +1179,34 @@ contains
     if (nerr > 0 .and. par%masterproc) write(iulog,'(a,i3)') 'sl_unittest FAIL', nerr
   end subroutine sl_unittest
   
-  subroutine cthoriz(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete)
+  subroutine cthoriz(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete, nsubstep)
     type (element_t), intent(inout) :: elem(:)
     type (derivative_t), intent(in) :: deriv
     type (hvcoord_t), intent(in) :: hvcoord
     type (hybrid_t), intent(in) :: hybrid
-    real(kind=real_kind), intent(in) :: dt
+    real(real_kind), intent(in) :: dt
     type (TimeLevel_t), intent(in) :: tl
-    integer, intent(in) :: nets, nete
+    integer, intent(in) :: nets, nete, nsubstep
 
-    
+    integer :: step, ie, i, k
+    real(real_kind) :: alpha(2)
 
+    real(real_kind) :: v(2,np,np,2,nlev), vtmp(np,np,2)
+
+    if (.not. allocated(v01)) then
+       allocate(v01(nlev,np,np,2,2,size(elem)), v1gradv0(nlev,np,np,2,size(elem)))
+    end if
+
+    do step = 1, nsubstep
+       alpha(1) = real(step-1, real_kind)/nsubstep
+       alpha(2) = real(step  , real_kind)/nsubstep
+       do ie = nets, nete
+          do i = 1, 2
+             ! fill v01, v1gradv0
+          end do
+       end do
+       ! call slmm_calc_trajectory(nets, nete, v01, v1gradv0, dep_points_all)
+    end do
   end subroutine cthoriz
 
 end module sl_advection

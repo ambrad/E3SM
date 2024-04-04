@@ -376,6 +376,11 @@ void slmm_check_ref2sphere (homme::Int ie, homme::Cartesian3D* p) {
   amb::dev_fin_threads();
 }
 
+void slmm_calc_trajectory (
+  homme::Int nets, homme::Int nete, homme::Real* v01, homme::Real* v1gradv0,
+  homme::Cartesian3D* dep_points, homme::Int* info)
+{}
+
 static bool s_h2d, s_d2h;
 
 void slmm_csl_set_elem_data (

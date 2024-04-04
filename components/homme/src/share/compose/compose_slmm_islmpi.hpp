@@ -688,8 +688,14 @@ void copy_q(IslMpi<MT>& cm, const Int& nets,
 template <typename MT = ko::MachineTraits>
 void step(
   IslMpi<MT>& cm, const Int nets, const Int nete,
-  Real* dep_points_r,            // dep_points(1:3, 1:np, 1:np)
-  Real* q_min_r, Real* q_max_r); // q_{min,max}(1:np, 1:np, lev, 1:qsize, ie-nets+1)
+  Real* dep_points_r,
+  Real* q_min_r, Real* q_max_r);
+
+template <typename MT = ko::MachineTraits>
+void calc_trajectory(
+  IslMpi<MT>& cm, const Int nets, const Int nete,
+  const Real* v01_r, const Real* v1gradv0_r,
+  Real* dep_points_r);
 
 } // namespace islmpi
 } // namespace homme

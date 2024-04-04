@@ -106,7 +106,6 @@ GidRankPairs all_1halo_nbrs_but_me (const typename IslMpi<MT>::ElemDataH& ed) {
   return gs;
 }
 
-#pragma message "todo test overlap case"
 template <typename MT>
 void fill_gid2nbrs (const mpi::Parallel& p, const typename IslMpi<MT>::ElemDataListH& eds,
                     Gid2Nbrs& gid2nbrs, Gid2Count& gid2ninprevhalo) {
