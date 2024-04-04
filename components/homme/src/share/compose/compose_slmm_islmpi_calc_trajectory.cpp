@@ -7,9 +7,9 @@ namespace islmpi {
 // semi_lagrange_nearest_point_lev, a departure point may be altered if the
 // winds take it outside of the comm halo.
 template <typename MT>
-void calc_trajectory (
-  IslMpi<MT>& cm, const Int nets, const Int nete,
-  Real* dep_points_r)
+void calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
+                      const Real* v01_r, const Real* v1gradv0_r,
+                      Real* dep_points_r)
 {
   using slmm::Timer;
 
@@ -26,7 +26,8 @@ void calc_trajectory (
 
 }
 
-template void calc_trajectory(IslMpi<ko::MachineTraits>&, const Int, const Int, Real*);
+template void calc_trajectory(IslMpi<ko::MachineTraits>&, const Int, const Int,
+                              const Real*, const Real*, Real*);
 
 } // namespace islmpi
 } // namespace homme

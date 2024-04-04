@@ -380,7 +380,12 @@ void slmm_calc_trajectory (
   homme::Int nets, homme::Int nete, homme::Real* v01, homme::Real* v1gradv0,
   homme::Cartesian3D* dep_points, homme::Int* info)
 {
+  amb::dev_init_threads();
+  auto depr = reinterpret_cast<homme::Real*>(dep_points);
+  homme::islmpi::calc_trajectory(*homme::g_csl_mpi, nets - 1, nete - 1, v01,
+                                 v1gradv0, depr);
   *info = 0;
+  amb::dev_fin_threads();
 }
 
 static bool s_h2d, s_d2h;
