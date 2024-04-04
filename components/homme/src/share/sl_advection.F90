@@ -232,7 +232,7 @@ contains
     call slmm_csl(nets, nete, dep_points_all, minq, maxq, info)
     ! No barrier needed: slmm_csl has a horiz thread barrier at the end.
     if (info /= 0) then
-       call write_velocity_data(elem, nets, nete, hybrid, deriv, dt, tl)
+       call write_velocity_data(elem, nets, nete, hybrid, dt, tl)
        call abortmp('slmm_csl returned -1; see output above for more information.')
     end if
     if (barrier) call perf_barrier(hybrid)
@@ -404,22 +404,20 @@ contains
 
     ! RK-SSP 2 stage 2nd order:
     !     x*(t+1) = x(t) + U(x(t),t) dt
-    !     x(t+1) = x(t) +  1/2 ( U(x*(t+1),t+1) + U(x(t),t) ) dt
+    !     x(t+1) = x(t) + 1/2 ( U(x*(t+1),t+1) + U(x(t),t) ) dt
     ! apply taylor series:
-    !  U(x*(t+1),t+1) = U(x(t),t+1) + (x*(t+1)-x(t)) gradU(x(t),t+1)
+    !     U(x*(t+1),t+1) = U(x(t),t+1) + (x*(t+1)-x(t)) gradU(x(t),t+1)
     !
-    ! x(t+1) = x(t) +  1/2 ( U(x(t),t+1) + (x*(t+1)-x(t)) gradU(x(t),t+1) + U(x(t),t) ) dt
-    ! (x(t+1) - x(t)) / dt =  1/2 ( U(x(t),t+1) + (x*(t+1)-x(t)) gradU(x(t),t+1) + U(x(t),t) )
-    ! (x(t+1) - x(t)) / dt =  1/2 ( U(x(t),t+1) + U(x(t),t) + (x*(t+1)-x(t)) gradU(x(t),t+1) )
-    ! (x(t+1) - x(t)) / dt =  1/2 ( U(x(t),t+1) + U(x(t),t) + U(x(t),t) dt  gradU(x(t),t+1) )
+    ! x(t+1) = x(t) + 1/2 ( U(x(t),t+1) + (x*(t+1)-x(t)) gradU(x(t),t+1) + U(x(t),t) ) dt
+    ! (x(t+1) - x(t)) / dt = 1/2 ( U(x(t),t+1) + (x*(t+1)-x(t)) gradU(x(t),t+1) + U(x(t),t) )
+    !                      = 1/2 ( U(x(t),t+1) + U(x(t),t) + (x*(t+1)-x(t)) gradU(x(t),t+1) )
+    !                      = 1/2 ( U(x(t),t+1) + U(x(t),t) + U(x(t),t) dt gradU(x(t),t+1) )
     !
-    !
-    !  (x(t+1)-x(t))/dt =  1/2(U(x(t),t+1) + U(x(t),t) + dt U(x(t),t) gradU(x(t),t+1))
+    ! => (x(t+1)-x(t))/dt = 1/2 (U(x(t),t+1) + U(x(t),t) + dt U(x(t),t) gradU(x(t),t+1))
     !
     ! suppose dt = -ts (we go backward)
-    !  (x(t-ts)-x(t))/-ts =  1/2( U(x(t),t-ts)+U(x(t),t)) - ts 1/2 U(x(t),t) gradU(x(t),t-ts)
-    !
-    !  x(t-ts) = x(t)) -ts * [ 1/2( U(x(t),t-ts)+U(x(t),t)) - ts 1/2 U(x(t),t) gradU(x(t),t-ts) ]
+    !     (x(t-ts)-x(t))/-ts =  1/2 (U(x(t),t-ts)+U(x(t),t)) - ts 1/2 U(x(t),t) gradU(x(t),t-ts)
+    !     x(t-ts) = x(t)) - ts * [1/2 (U(x(t),t-ts)+U(x(t),t)) - ts 1/2 U(x(t),t) gradU(x(t),t-ts)]
 
     nlyr = 2*nlev
     if (independent_time_steps) nlyr = nlyr + nlev
@@ -467,8 +465,7 @@ contains
 #endif
   end subroutine ALE_RKdss
 
-  subroutine write_velocity_data(elem, nets, nete, hy, deriv, dt, tl)
-    use derivative_mod,  only : derivative_t, ugradv_sphere
+  subroutine write_velocity_data(elem, nets, nete, hy, dt, tl)
     use edgetype_mod,    only : EdgeBuffer_t
     use bndry_mod,       only : bndry_exchangev
     use kinds,           only : real_kind
@@ -481,7 +478,6 @@ contains
     integer              , intent(in)    :: nets
     integer              , intent(in)    :: nete
     type (hybrid_t)      , intent(in)    :: hy
-    type (derivative_t)  , intent(in)    :: deriv
     real (kind=real_kind), intent(in)    :: dt
     type (TimeLevel_t)   , intent(in)    :: tl
 

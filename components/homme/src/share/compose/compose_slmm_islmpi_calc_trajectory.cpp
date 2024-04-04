@@ -21,6 +21,11 @@ void calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
   DepPointsH<MT> dep_points(dep_points_r, cm.nelemd, cm.nlev, cm.np2);
 #endif
 
+  if (step == 0) {
+    
+    return;
+  }
+
 }
 
 template void calc_trajectory(IslMpi<ko::MachineTraits>&, const Int, const Int,
