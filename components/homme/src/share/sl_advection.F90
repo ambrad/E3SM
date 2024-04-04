@@ -1180,6 +1180,8 @@ contains
   end subroutine sl_unittest
   
   subroutine cthoriz(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete, nsubstep)
+    use derivative_mod,  only : ugradv_sphere
+
     type (element_t), intent(inout) :: elem(:)
     type (derivative_t), intent(in) :: deriv
     type (hvcoord_t), intent(in) :: hvcoord
@@ -1188,10 +1190,8 @@ contains
     type (TimeLevel_t), intent(in) :: tl
     integer, intent(in) :: nets, nete, nsubstep
 
-    integer :: step, ie, i, k
+    integer :: step, ie, i, k, info
     real(real_kind) :: alpha(2)
-
-    real(real_kind) :: v(2,np,np,2,nlev), vtmp(np,np,2)
 
     if (.not. allocated(v01)) then
        allocate(v01(nlev,np,np,2,2,size(elem)), v1gradv0(nlev,np,np,2,size(elem)))
@@ -1201,12 +1201,18 @@ contains
        alpha(1) = real(step-1, real_kind)/nsubstep
        alpha(2) = real(step  , real_kind)/nsubstep
        do ie = nets, nete
-          do i = 1, 2
-             ! fill v01, v1gradv0
+          do k = 1, nlev
+             do i = 1, 2
+                v01(k,:,:,:,i,ie) = (1 - alpha(i))*elem(ie)%derived%vstar(:,:,:,k) + &
+                     &                   alpha(i) *elem(ie)%derived%vn0  (:,:,:,k)
+             end do
+             v1gradv0(k,:,:,:,ie) = &
+                  ugradv_sphere(v01(k,:,:,:,2,ie), v01(k,:,:,:,1,ie), deriv, elem(ie))
           end do
        end do
-       ! call slmm_calc_trajectory(nets, nete, v01, v1gradv0, dep_points_all)
+       call slmm_calc_trajectory(nets, nete, v01, v1gradv0, dep_points_all, info)
     end do
+    if (hybrid%par%masterproc) print *, 'cthoriz done', info
   end subroutine cthoriz
 
 end module sl_advection
