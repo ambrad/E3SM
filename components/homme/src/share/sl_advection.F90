@@ -184,8 +184,6 @@ contains
     integer              , intent(in   ) :: nets
     integer              , intent(in   ) :: nete
 
-    type(cartesian3D_t)   :: dep_points  (np,np)
-
     integer :: i,j,k,l,n,q,ie,n0_qdp,np1_qdp
     integer :: scalar_q_bounds, info
     logical :: slmm, cisl, qos, sl_test, independent_time_steps
@@ -368,7 +366,7 @@ contains
   !SUBROUTINE ALE_RKDSS
   ! AUTHOR: CHRISTOPH ERATH, MARK TAYLOR, 06. December 2012
   !
-  ! DESCRIPTION: ! create a runge kutta taylor serios mixture to calculate the departure grid
+  ! DESCRIPTION: ! create a runge kutta taylor series mixture to calculate the departure grid
   !
   ! CALLS:
   ! INPUT:
@@ -1176,7 +1174,8 @@ contains
   end subroutine sl_unittest
   
   subroutine cthoriz(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete, nsubstep)
-    use derivative_mod,  only : ugradv_sphere
+    use physical_constants, only: scale_factor
+    use derivative_mod, only: ugradv_sphere
 
     type (element_t), intent(inout) :: elem(:)
     type (derivative_t), intent(in) :: deriv
@@ -1186,16 +1185,30 @@ contains
     type (TimeLevel_t), intent(in) :: tl
     integer, intent(in) :: nets, nete, nsubstep
 
-    integer :: step, ie, i, k, info
-    real(real_kind) :: alpha(2)
+    integer :: step, ie, d, i, j, k, info
+    real(real_kind) :: alpha(2), dtsub, uxyz(np,np,3), norm, p(3)
+    integer :: nsubstep1
 
     if (.not. allocated(v01)) then
+       ! Follow C++ convention. I might go back later and switch these to F90
+       ! convention and use a portability layer as for many other arrays.
        allocate(v01(nlev,np,np,2,2,size(elem)), v1gradv0(nlev,np,np,2,size(elem)))
     end if
 
-    do step = 1, nsubstep
-       alpha(1) = real(step-1, real_kind)/nsubstep
-       alpha(2) = real(step  , real_kind)/nsubstep
+    do ie = nets, nete
+       do j = 1, np
+          do i = 1, np
+             call sphere2cart(elem(ie)%spherep(i,j), dep_points_all(i,j,1,ie))
+             dep_points_all(i,j,2:nlev,ie) = dep_points_all(i,j,1,ie)
+          end do
+       end do
+    end do
+
+    nsubstep1 = 1
+    dtsub = dt / nsubstep1
+    do step = 1, nsubstep1
+       alpha(1) = real(step-1, real_kind)/nsubstep1
+       alpha(2) = real(step  , real_kind)/nsubstep1
        do ie = nets, nete
           do k = 1, nlev
              do i = 1, 2
@@ -1206,7 +1219,37 @@ contains
                   ugradv_sphere(v01(k,:,:,:,2,ie), v01(k,:,:,:,1,ie), deriv, elem(ie))
           end do
        end do
+
        call slmm_calc_trajectory(nets, nete, step, v01, v1gradv0, dep_points_all, info)
+
+       ! On output, v01(:,:,:,:,1,:) contains the velocity for the update.
+       do ie = nets, nete
+          do k = 1, nlev
+             ! (u,v) -> (x,y,z) velocity
+             do d = 1, 3
+                uxyz(:,:,d) = sum(elem(ie)%vec_sphere2cart(:,:,d,:)*v01(k,:,:,:,1,ie), 3)
+             end do
+             do j = 1, np
+                do i = 1, np
+                   p = (/ dep_points_all(i,j,k,ie)%x, &
+                        & dep_points_all(i,j,k,ie)%y, &
+                        & dep_points_all(i,j,k,ie)%z /)
+                   do d = 1, 3
+                      p(d) = p(d) - dtsub*uxyz(i,j,d)/scale_factor
+                   end do
+                   if (is_sphere) then
+                      norm = sqrt(p(1)*p(1) + p(2)*p(2) + p(3)*p(3))
+                      do d = 1, 3
+                         p(d) = p(d) / norm
+                      end do
+                      dep_points_all(i,j,k,ie)%x = p(1)
+                      dep_points_all(i,j,k,ie)%y = p(2)
+                      dep_points_all(i,j,k,ie)%z = p(3)
+                   end if
+                end do
+             end do
+          end do
+       end do
     end do
     if (hybrid%par%masterproc) print *, 'cthoriz done', info
   end subroutine cthoriz
