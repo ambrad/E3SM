@@ -89,7 +89,8 @@ contains
   subroutine sl_init1(par, elem)
     use interpolate_mod,        only : interpolate_tracers_init
     use control_mod,            only : transport_alg, semi_lagrange_cdr_alg, cubed_sphere_map, &
-         nu_q, semi_lagrange_hv_q, semi_lagrange_cdr_check, geometry
+         nu_q, semi_lagrange_hv_q, semi_lagrange_cdr_check, semi_lagrange_trajectory_nsubstep, &
+         geometry
     use element_state,          only : timelevels
     use coordinate_systems_mod, only : cartesian3D_t
     use perf_mod, only: t_startf, t_stopf
@@ -133,6 +134,11 @@ contains
           call cedr_sl_init(np, nlev, qsize, qsize_d, timelevels, need_conservation)
        end if
        allocate(minq(np,np,nlev,qsize,size(elem)), maxq(np,np,nlev,qsize,size(elem)))
+       if (semi_lagrange_trajectory_nsubstep > 1) then
+          ! Follow C++ convention. I might go back later and switch these to F90
+          ! convention and use a portability layer as for many other arrays.
+          allocate(v01(nlev,np,np,2,2,size(elem)), v1gradv0(nlev,np,np,2,size(elem)))
+       end if
        dp_tol = -one
     endif
     call t_stopf('sl_init1')
@@ -1189,12 +1195,6 @@ contains
     real(real_kind) :: alpha(2), dtsub, uxyz(np,np,3), norm, p(3)
     integer :: nsubstep1
 
-    if (.not. allocated(v01)) then
-       ! Follow C++ convention. I might go back later and switch these to F90
-       ! convention and use a portability layer as for many other arrays.
-       allocate(v01(nlev,np,np,2,2,size(elem)), v1gradv0(nlev,np,np,2,size(elem)))
-    end if
-
     do ie = nets, nete
        do j = 1, np
           do i = 1, np
@@ -1204,7 +1204,7 @@ contains
        end do
     end do
 
-    nsubstep1 = 1
+    nsubstep1 = 1 ! <-------------------------------------- for dev
     dtsub = dt / nsubstep1
     do step = 1, nsubstep1
        alpha(1) = real(step-1, real_kind)/nsubstep1
@@ -1220,7 +1220,7 @@ contains
           end do
        end do
 
-       call slmm_calc_trajectory(nets, nete, step, v01, v1gradv0, dep_points_all, info)
+       call slmm_calc_trajectory(nets, nete, step, dtsub, v01, v1gradv0, dep_points_all, info)
 
        ! On output, v01(:,:,:,:,1,:) contains the velocity for the update.
        do ie = nets, nete
