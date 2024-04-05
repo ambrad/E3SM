@@ -1191,9 +1191,11 @@ contains
     type (TimeLevel_t), intent(in) :: tl
     integer, intent(in) :: nets, nete, nsubstep1
 
-    integer :: step, ie, d, i, j, k, info
+    integer :: step, ie, d, i, j, k, info, nlyr
     real(real_kind) :: alpha(2), dtsub, uxyz(np,np,3), norm, p(3)
     integer :: nsubstep
+
+    call t_startf('SLMM_trajectory')
 
     do ie = nets,nete
        elem(ie)%derived%vn0 = elem(ie)%state%v(:,:,:,:,tl%np1)
@@ -1208,6 +1210,7 @@ contains
        end do
     end do
 
+    nlyr = 2*nlev
     nsubstep = 1 ! <-------------------------------------- for dev
     dtsub = dt / nsubstep
     do step = 1, nsubstep
@@ -1226,7 +1229,26 @@ contains
 
        call slmm_calc_trajectory(nets, nete, step, dtsub, v01, v1gradv0, dep_points_all, info)
 
-       !todo bdy exch
+       if (step == 1) then
+          do ie = nets, nete
+             do k = 1, nlev
+                do d = 1, 2
+                   elem(ie)%derived%vstar(:,:,d,k) = (v01(k,:,:,d,1,ie) * &
+                        &                             elem(ie)%spheremp*elem(ie)%rspheremp)
+                end do
+             end do
+             call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%vstar, 2*nlev, 0, nlyr)
+          end do
+          call t_startf('ALE_RKdss_bexchV')
+          call bndry_exchangeV(hybrid, edge_g)
+          call t_stopf('ALE_RKdss_bexchV')
+          do ie = nets, nete
+             call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%vstar, 2*nlev, 0, nlyr)             
+             do k = 1, nlev
+                v01(k,:,:,:,1,ie) = elem(ie)%derived%vstar(:,:,:,k)
+             end do
+          end do
+       end if
 
        ! On output, v01(:,:,:,:,1,:) contains the velocity for the update.
        do ie = nets, nete
@@ -1257,6 +1279,8 @@ contains
           end do
        end do
     end do
+
+    call t_stopf('SLMM_trajectory')
   end subroutine cthoriz
 
 end module sl_advection
