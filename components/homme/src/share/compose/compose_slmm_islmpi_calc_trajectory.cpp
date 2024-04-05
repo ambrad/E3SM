@@ -32,8 +32,8 @@ void calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
       for (int d = 0; d < 2; ++d)
         for (int k = 0; k < cm.np2; ++k)
           for (int lev = 0; lev < cm.nlev; ++lev)
-            v01(ie,0,d,k,lev) = ((v01(ie,0,d,k,lev) + v01(ie,1,d,k,lev))/2 +
-                                 dtsub*v1gradv0(ie,d,k,lev));
+            v01(ie,0,d,k,lev) = ((v01(ie,0,d,k,lev) + v01(ie,1,d,k,lev))/2 -
+                                 (dtsub/2)*v1gradv0(ie,d,k,lev));
     return;
   }
 

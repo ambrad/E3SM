@@ -1179,7 +1179,7 @@ contains
     if (nerr > 0 .and. par%masterproc) write(iulog,'(a,i3)') 'sl_unittest FAIL', nerr
   end subroutine sl_unittest
   
-  subroutine cthoriz(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete, nsubstep)
+  subroutine cthoriz(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete, nsubstep1)
     use physical_constants, only: scale_factor
     use derivative_mod, only: ugradv_sphere
 
@@ -1189,11 +1189,15 @@ contains
     type (hybrid_t), intent(in) :: hybrid
     real(real_kind), intent(in) :: dt
     type (TimeLevel_t), intent(in) :: tl
-    integer, intent(in) :: nets, nete, nsubstep
+    integer, intent(in) :: nets, nete, nsubstep1
 
     integer :: step, ie, d, i, j, k, info
     real(real_kind) :: alpha(2), dtsub, uxyz(np,np,3), norm, p(3)
-    integer :: nsubstep1
+    integer :: nsubstep
+
+    do ie = nets,nete
+       elem(ie)%derived%vn0 = elem(ie)%state%v(:,:,:,:,tl%np1)
+    end do
 
     do ie = nets, nete
        do j = 1, np
@@ -1204,11 +1208,11 @@ contains
        end do
     end do
 
-    nsubstep1 = 1 ! <-------------------------------------- for dev
-    dtsub = dt / nsubstep1
-    do step = 1, nsubstep1
-       alpha(1) = real(step-1, real_kind)/nsubstep1
-       alpha(2) = real(step  , real_kind)/nsubstep1
+    nsubstep = 1 ! <-------------------------------------- for dev
+    dtsub = dt / nsubstep
+    do step = 1, nsubstep
+       alpha(1) = real(nsubstep - step    , real_kind)/nsubstep
+       alpha(2) = real(nsubstep - step + 1, real_kind)/nsubstep
        do ie = nets, nete
           do k = 1, nlev
              do i = 1, 2
@@ -1221,6 +1225,8 @@ contains
        end do
 
        call slmm_calc_trajectory(nets, nete, step, dtsub, v01, v1gradv0, dep_points_all, info)
+
+       !todo bdy exch
 
        ! On output, v01(:,:,:,:,1,:) contains the velocity for the update.
        do ie = nets, nete
@@ -1251,7 +1257,6 @@ contains
           end do
        end do
     end do
-    if (hybrid%par%masterproc) print *, 'cthoriz done', info
   end subroutine cthoriz
 
 end module sl_advection
