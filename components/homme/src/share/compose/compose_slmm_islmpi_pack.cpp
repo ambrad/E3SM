@@ -56,7 +56,7 @@ struct Accum {
 };
 
 template <typename MT>
-void pack_dep_points_sendbuf_pass1_scan (IslMpi<MT>& cm) {
+void pack_dep_points_sendbuf_pass1_scan (IslMpi<MT>& cm, const bool trajectory) {
   ko::fence();
   deep_copy(cm.nx_in_rank_h, cm.nx_in_rank);
   const auto& sendbufs = cm.sendbuf;
@@ -100,7 +100,7 @@ void pack_dep_points_sendbuf_pass1_scan (IslMpi<MT>& cm) {
         a.sendcount += dos + 3*nx;
         if (fin) t.xptr = a.xos;
         a.xos += 3*nx;
-        a.qos += 2 + nx;
+        a.qos += trajectory ? nx : 2 + nx;
       }
     };
     Accum a;
@@ -135,7 +135,7 @@ void pack_dep_points_sendbuf_pass1_scan (IslMpi<MT>& cm) {
           *#x) *#lev *#lid *#rank
  */
 template <typename MT>
-void pack_dep_points_sendbuf_pass1_noscan (IslMpi<MT>& cm) {
+void pack_dep_points_sendbuf_pass1_noscan (IslMpi<MT>& cm, const bool trajectory) {
 #ifdef COMPOSE_PORT
   ko::fence();
   deep_copy(cm.nx_in_rank_h, cm.nx_in_rank);
@@ -182,7 +182,7 @@ void pack_dep_points_sendbuf_pass1_noscan (IslMpi<MT>& cm) {
         sendcount += dos + 3*nx;
         t.xptr = xos;
         xos += 3*nx;
-        qos += 2 + nx;
+        qos += trajectory ? nx : 2 + nx;
         nx_in_lid -= nx;
       }
       slmm_assert(nx_in_lid == 0);
@@ -210,17 +210,18 @@ void pack_dep_points_sendbuf_pass1_noscan (IslMpi<MT>& cm) {
 }
 
 template <typename MT>
-void pack_dep_points_sendbuf_pass1 (IslMpi<MT>& cm) {
+void pack_dep_points_sendbuf_pass1 (IslMpi<MT>& cm, const bool trajectory) {
 #if defined COMPOSE_PORT && ! defined COMPOSE_PACK_NOSCAN
   if (ko::OnGpu<typename MT::DES>::value)
-    pack_dep_points_sendbuf_pass1_scan(cm);
+    pack_dep_points_sendbuf_pass1_scan(cm, trajectory);
   else
 #endif
-    pack_dep_points_sendbuf_pass1_noscan(cm);
+    pack_dep_points_sendbuf_pass1_noscan(cm, trajectory);
 }
 
 template <typename MT>
-void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const DepPoints<MT>& dep_points) {
+void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const DepPoints<MT>& dep_points,
+                                    const bool trajectory) {
   const auto myrank = cm.p->rank();
 #ifdef COMPOSE_PORT
   const Int start = 0, end = cm.mylid_with_comm_h.n();
@@ -288,8 +289,12 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const DepPoints<MT>& dep_poi
       for (Int i = 0; i < 3; ++i)
         sb(xptr + i) = dep_points(tci,lev,k,i);
       auto& item = ed.rmt.atomic_inc_and_return_next();
-      item.q_extrema_ptr = qsize * qptr;
-      item.q_ptr = item.q_extrema_ptr + qsize*(2 + cnt);
+      if (trajectory) {
+        item.q_extrema_ptr = item.q_ptr = 3*qptr;
+      } else {
+        item.q_extrema_ptr = qsize * qptr;
+        item.q_ptr = item.q_extrema_ptr + qsize*(2 + cnt);
+      }
       item.lev = lev;
       item.k = k;
     };
@@ -300,9 +305,11 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const DepPoints<MT>& dep_poi
   }
 }
 
-template void pack_dep_points_sendbuf_pass1(IslMpi<ko::MachineTraits>& cm);
-template void pack_dep_points_sendbuf_pass2(IslMpi<ko::MachineTraits>& cm,
-                                            const DepPoints<ko::MachineTraits>& dep_points);
+template void pack_dep_points_sendbuf_pass1(
+  IslMpi<ko::MachineTraits>& cm, const bool trajectory);
+template void pack_dep_points_sendbuf_pass2(
+  IslMpi<ko::MachineTraits>& cm, const DepPoints<ko::MachineTraits>& dep_points,
+  const bool trajectory);
 
 } // namespace islmpi
 } // namespace homme

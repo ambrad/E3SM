@@ -645,9 +645,10 @@ void recv(IslMpi<MT>& cm, const bool skip_if_empty = false);
 const int nreal_per_2int = (2*sizeof(Int) + sizeof(Real) - 1) / sizeof(Real);
 
 template <typename MT>
-void pack_dep_points_sendbuf_pass1(IslMpi<MT>& cm);
+void pack_dep_points_sendbuf_pass1(IslMpi<MT>& cm, const bool trajectory = false);
 template <typename MT>
-void pack_dep_points_sendbuf_pass2(IslMpi<MT>& cm, const DepPoints<MT>& dep_points);
+void pack_dep_points_sendbuf_pass2(IslMpi<MT>& cm, const DepPoints<MT>& dep_points,
+                                   const bool trajectory = false);
 
 template <typename MT>
 void calc_q_extrema(IslMpi<MT>& cm, const Int& nets, const Int& nete);
