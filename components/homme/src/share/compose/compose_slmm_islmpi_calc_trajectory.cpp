@@ -6,6 +6,17 @@ namespace islmpi {
 template <typename T> using CA4 = ko::View<T****,  ko::LayoutRight, ko::HostSpace>;
 template <typename T> using CA5 = ko::View<T*****, ko::LayoutRight, ko::HostSpace>;
 
+struct Trajectory {
+  Real dtsub;
+  CA5<Real> v01;
+  const CA4<const Real> v1gradv0;
+};
+
+template <typename MT>
+void traj_calc_rmt_next_step (IslMpi<MT>& cm, Trajectory& t) {
+  calc_rmt_q_pass1(cm, true);
+}
+
 template <typename MT>
 void calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
                       const Int step, const Real dtsub, Real* v01_r,
@@ -37,6 +48,24 @@ void calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
     return;
   }
 
+  // See comments in homme::islmpi::step for details. Each substep follows
+  // essentially the same pattern.
+  Trajectory t{dtsub, v01, v1gradv0};
+  if (cm.mylid_with_comm_tid_ptr_h.capacity() == 0)
+    init_mylid_with_comm_threaded(cm, nets, nete);
+  setup_irecv(cm);
+  analyze_dep_points(cm, nets, nete, dep_points);
+  pack_dep_points_sendbuf_pass1(cm, true /* trajectory */);
+  pack_dep_points_sendbuf_pass2(cm, dep_points, true /* trajectory */);
+  isend(cm);
+  recv_and_wait_on_send(cm);
+  traj_calc_rmt_next_step(cm, t);
+  isend(cm, true /* want_req */, true /* skip_if_empty */);
+  setup_irecv(cm, true /* skip_if_empty */);
+  //traj_calc_own_next_step(cm, nets, nete, t);
+  recv(cm, true /* skip_if_empty */);
+  //traj_copy_dep_points(cm, dep_points);
+  wait_on_send(cm, true /* skip_if_empty */);
 }
 
 template void calc_trajectory(IslMpi<ko::MachineTraits>&, const Int, const Int,

@@ -267,7 +267,7 @@ void calc_own_q (IslMpi<MT>& cm, const Int& nets, const Int& nete,
     auto& ed = cm.ed_d(tci);
     const FA3<Real> q_tgt(ed.q, cm.np2, cm.nlev, cm.qsize);
     const Int ned = ed.own.n();
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 #   pragma omp for
 #endif
     for (Int idx = 0; idx < ned; ++idx) {
@@ -317,7 +317,7 @@ template <Int np, typename MT>
 void calc_rmt_q_pass2 (IslMpi<MT>& cm) {
   const Int qsize = cm.qsize;
 
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp for
 #endif
   for (Int it = 0; it < cm.nrmt_qs_extrema; ++it) {
@@ -331,7 +331,7 @@ void calc_rmt_q_pass2 (IslMpi<MT>& cm) {
         qs(qos + 2*iq + i) = ed.q_extrema(iq, lev, i);
   }
 
-#ifdef HORIZ_OPENMP
+#ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp for
 #endif
   for (Int it = 0; it < cm.nrmt_xs; ++it) {
@@ -466,8 +466,8 @@ struct Accum {
   }
 };
 
-template <Int np, typename MT>
-void calc_rmt_q_pass1_scan (IslMpi<MT>& cm) {
+template <typename MT>
+void calc_rmt_q_pass1_scan (IslMpi<MT>& cm, const bool trajectory) {
   const auto& recvbuf = cm.recvbuf;
   const auto& rmt_xs = cm.rmt_xs;
   const auto& rmt_qs_extrema = cm.rmt_qs_extrema;
@@ -492,7 +492,7 @@ void calc_rmt_q_pass1_scan (IslMpi<MT>& cm) {
       short lev, nx;
       getbuf(xs, (idx + 1)*nreal_per_2int, lid, lev, nx);
       slmm_kernel_assert(nx > 0);
-      if (fin) {
+      if (fin && ! trajectory) {
         const auto qcnt_tot = qcnt + a.qcnt;
         rmt_qs_extrema(4*qcnt_tot + 0) = ri;
         rmt_qs_extrema(4*qcnt_tot + 1) = lid;
@@ -500,7 +500,8 @@ void calc_rmt_q_pass1_scan (IslMpi<MT>& cm) {
         rmt_qs_extrema(4*qcnt_tot + 3) = a.qos;
       }
       a.qcnt += 1;
-      a.qos += 2;
+      if ( ! trajectory)
+        a.qos += 2;
       if (fin) {
         for (Int xi = 0; xi < nx; ++xi) {
           const auto cnt_tot = cnt + a.cnt;
@@ -516,17 +517,17 @@ void calc_rmt_q_pass1_scan (IslMpi<MT>& cm) {
       } else {
         a.cnt += nx;
         a.xos += 3*nx;
-        a.qos += nx;        
+        a.qos += nx;
       }
     };
     Accum a;
     ko::parallel_scan(ko::RangePolicy<typename MT::DES>(0, xos/nreal_per_2int - 1), f, a);
-    cm.sendcount_h(ri) = cm.qsize*a.qos;
+    cm.sendcount_h(ri) = (trajectory ? 3 : cm.qsize)*a.qos;
     cnt += a.cnt;
     qcnt += a.qcnt;
   }
   cm.nrmt_xs = cnt;
-  cm.nrmt_qs_extrema = qcnt;
+  cm.nrmt_qs_extrema = trajectory ? 0 : qcnt;
 }
 
 template <Int np, typename MT>
@@ -593,13 +594,19 @@ void calc_rmt_q_pass2 (IslMpi<MT>& cm) {
 
 #endif // COMPOSE_PORT
 
-template <Int np, typename MT>
-void calc_rmt_q_pass1_noscan (IslMpi<MT>& cm) {
+template <typename MT>
+void calc_rmt_q_pass1_noscan (IslMpi<MT>& cm, const bool trajectory) {
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
 #ifdef COMPOSE_PORT_SEPARATE_VIEWS
+#ifdef COMPOSE_HORIZ_OPENMP
+# pragma omp for
+#endif
   for (Int ri = 0; ri < nrmtrank; ++ri)
     ko::deep_copy(ko::View<Real*, typename MT::HES>(cm.recvbuf_meta_h(ri).data(), 1),
                   ko::View<Real*, typename MT::DES>(cm.recvbuf.get_h(ri).data(), 1));
+#ifdef COMPOSE_HORIZ_OPENMP
+# pragma omp for
+#endif
   for (Int ri = 0; ri < nrmtrank; ++ri) {
     const auto&& xs = cm.recvbuf_meta_h(ri);
     Int n, unused;
@@ -610,71 +617,79 @@ void calc_rmt_q_pass1_noscan (IslMpi<MT>& cm) {
                   ko::View<Real*, typename MT::DES>(cm.recvbuf.get_h(ri).data(), n));
   }
 #endif
-  Int cnt = 0, qcnt = 0;
-  for (Int ri = 0; ri < nrmtrank; ++ri) {
-    const auto&& xs = cm.recvbuf_meta_h(ri);
-    Int mos = 0, qos = 0, nx_in_rank, xos;
-    mos += getbuf(xs, mos, xos, nx_in_rank);
-    if (nx_in_rank == 0) {
-      cm.sendcount_h(ri) = 0;
-      continue; 
-    }
-    // The upper bound is to prevent an inf loop if the msg is corrupted.
-    for (Int lidi = 0; lidi < cm.nelemd; ++lidi) {
-      Int lid, nx_in_lid;
-      mos += getbuf(xs, mos, lid, nx_in_lid);
-      for (Int levi = 0; levi < cm.nlev; ++levi) { // same re: inf loop
-        Int lev, nx;
-        mos += getbuf(xs, mos, lev, nx);
-        slmm_assert(nx > 0);
-        {
-          cm.rmt_qs_extrema_h(4*qcnt + 0) = ri;
-          cm.rmt_qs_extrema_h(4*qcnt + 1) = lid;
-          cm.rmt_qs_extrema_h(4*qcnt + 2) = lev;
-          cm.rmt_qs_extrema_h(4*qcnt + 3) = qos;
-          ++qcnt;
-          qos += 2;
-        }
-        for (Int xi = 0; xi < nx; ++xi) {
-          cm.rmt_xs_h(5*cnt + 0) = ri;
-          cm.rmt_xs_h(5*cnt + 1) = lid;
-          cm.rmt_xs_h(5*cnt + 2) = lev;
-          cm.rmt_xs_h(5*cnt + 3) = xos;
-          cm.rmt_xs_h(5*cnt + 4) = qos;
-          ++cnt;
-          xos += 3;
-          ++qos;
-        }
-        nx_in_lid -= nx;
-        nx_in_rank -= nx;
-        if (nx_in_lid == 0) break;
+#ifdef COMPOSE_HORIZ_OPENMP
+# pragma omp master
+#endif
+  {
+    Int cnt = 0, qcnt = 0;
+    for (Int ri = 0; ri < nrmtrank; ++ri) {
+      const auto&& xs = cm.recvbuf_meta_h(ri);
+      Int mos = 0, qos = 0, nx_in_rank, xos;
+      mos += getbuf(xs, mos, xos, nx_in_rank);
+      if (nx_in_rank == 0) {
+        cm.sendcount_h(ri) = 0;
+        continue; 
       }
-      slmm_assert(nx_in_lid == 0);
-      if (nx_in_rank == 0) break;
+      // The upper bound is to prevent an inf loop if the msg is corrupted.
+      for (Int lidi = 0; lidi < cm.nelemd; ++lidi) {
+        Int lid, nx_in_lid;
+        mos += getbuf(xs, mos, lid, nx_in_lid);
+        for (Int levi = 0; levi < cm.nlev; ++levi) { // same re: inf loop
+          Int lev, nx;
+          mos += getbuf(xs, mos, lev, nx);
+          slmm_assert(nx > 0);
+          if ( ! trajectory) {
+            cm.rmt_qs_extrema_h(4*qcnt + 0) = ri;
+            cm.rmt_qs_extrema_h(4*qcnt + 1) = lid;
+            cm.rmt_qs_extrema_h(4*qcnt + 2) = lev;
+            cm.rmt_qs_extrema_h(4*qcnt + 3) = qos;
+            ++qcnt;
+            qos += 2;
+          }
+          for (Int xi = 0; xi < nx; ++xi) {
+            cm.rmt_xs_h(5*cnt + 0) = ri;
+            cm.rmt_xs_h(5*cnt + 1) = lid;
+            cm.rmt_xs_h(5*cnt + 2) = lev;
+            cm.rmt_xs_h(5*cnt + 3) = xos;
+            cm.rmt_xs_h(5*cnt + 4) = qos;
+            ++cnt;
+            xos += 3;
+            ++qos;
+          }
+          nx_in_lid -= nx;
+          nx_in_rank -= nx;
+          if (nx_in_lid == 0) break;
+        }
+        slmm_assert(nx_in_lid == 0);
+        if (nx_in_rank == 0) break;
+      }
+      slmm_assert(nx_in_rank == 0);
+      cm.sendcount_h(ri) = (trajectory ? 3 : cm.qsize)*qos;
     }
-    slmm_assert(nx_in_rank == 0);
-    cm.sendcount_h(ri) = cm.qsize*qos;
+    cm.nrmt_xs = cnt;
+    cm.nrmt_qs_extrema = trajectory ? 0 : qcnt;
+    deep_copy(cm.rmt_xs, cm.rmt_xs_h);
+    deep_copy(cm.rmt_qs_extrema, cm.rmt_qs_extrema_h);
   }
-  cm.nrmt_xs = cnt;
-  cm.nrmt_qs_extrema = qcnt;
-  deep_copy(cm.rmt_xs, cm.rmt_xs_h);
-  deep_copy(cm.rmt_qs_extrema, cm.rmt_qs_extrema_h);
+#ifdef COMPOSE_HORIZ_OPENMP
+# pragma omp barrier
+#endif
 }
 
-template <Int np, typename MT>
-void calc_rmt_q_pass1 (IslMpi<MT>& cm) {
+template <typename MT>
+void calc_rmt_q_pass1 (IslMpi<MT>& cm, const bool trajectory) {
 #if defined COMPOSE_PORT && ! defined COMPOSE_PACK_NOSCAN
   if (ko::OnGpu<typename MT::DES>::value)
-    calc_rmt_q_pass1_scan<np>(cm);
+    calc_rmt_q_pass1_scan(cm, trajectory);
   else
 #endif
-    calc_rmt_q_pass1_noscan<np>(cm);
+    calc_rmt_q_pass1_noscan(cm, trajectory);
 }
 
 template <Int np, typename MT>
 void calc_rmt_q (IslMpi<MT>& cm) {
   { slmm::Timer t("09_rmt_q_pass1");
-    calc_rmt_q_pass1<np>(cm); }
+    calc_rmt_q_pass1(cm); }
   { slmm::Timer t("09_rmt_q_pass2");
     calc_rmt_q_pass2<np>(cm); }
 }
@@ -697,6 +712,8 @@ void calc_rmt_q (IslMpi<MT>& cm) {
   }
 }
 
+template void calc_rmt_q_pass1(IslMpi<ko::MachineTraits>& cm,
+                               const bool trajectory);
 template void calc_rmt_q(IslMpi<ko::MachineTraits>& cm);
 template void calc_own_q(IslMpi<ko::MachineTraits>& cm,
                          const Int& nets, const Int& nete,

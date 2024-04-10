@@ -654,6 +654,8 @@ template <typename MT>
 void calc_q_extrema(IslMpi<MT>& cm, const Int& nets, const Int& nete);
 
 template <typename MT>
+void calc_rmt_q_pass1(IslMpi<MT>& cm, const bool trajectory = false);
+template <typename MT>
 void calc_rmt_q(IslMpi<MT>& cm);
 template <typename MT>
 void calc_own_q(IslMpi<MT>& cm, const Int& nets, const Int& nete,
