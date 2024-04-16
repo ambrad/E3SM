@@ -56,8 +56,8 @@ void calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
           for (int lev = 0; lev < cm.nlev; ++lev)
             v01(ie,0,d,k,lev) = ((v01(ie,0,d,k,lev) + v01(ie,1,d,k,lev))/2 -
                                  (dtsub/2)*v1gradv0(ie,d,k,lev));
-    //#pragma message "NO RETURNS"
-    return;
+#pragma message "NO RETURNS"
+    //return;
   }
 
   // See comments in homme::islmpi::step for details. Each substep follows
@@ -71,7 +71,7 @@ void calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
   pack_dep_points_sendbuf_pass2(cm, dep_points, true /* trajectory */);
   isend(cm);
   recv_and_wait_on_send(cm);
-  //traj_calc_rmt_next_step(cm, t);
+  traj_calc_rmt_next_step(cm, t);
   isend(cm, true /* want_req */, true /* skip_if_empty */);
   setup_irecv(cm, true /* skip_if_empty */);
   //traj_calc_own_next_step(cm, nets, nete, t);
