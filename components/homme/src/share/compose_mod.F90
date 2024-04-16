@@ -193,9 +193,9 @@ module compose_mod
        use coordinate_systems_mod, only : cartesian3D_t
        integer(kind=c_int), value, intent(in) :: nets, nete, step
        type(cartesian3D_t), intent(inout) :: dep_points(np,np,nlev,nelemd)
-       real(kind=c_double), intent(inout) :: v01(nlev,np,np,2,2,nelemd)
+       real(kind=c_double), intent(inout) :: v01(nlev,np,np,3,2,nelemd)
        real(kind=c_double), value, intent(in) :: dtsub
-       real(kind=c_double), intent(in) :: v1gradv0(nlev,np,np,2,nelemd)
+       real(kind=c_double), intent(in) :: v1gradv0(nlev,np,np,3,nelemd)
        integer(kind=c_int), intent(out) :: info
      end subroutine slmm_calc_trajectory
 

@@ -32,8 +32,8 @@ module sl_advection
 
   type (cartesian3D_t), allocatable :: dep_points_all(:,:,:,:) ! (np,np,nlev,nelemd)
   real(kind=real_kind), dimension(:,:,:,:,:), allocatable :: minq, maxq ! (np,np,nlev,qsize,nelemd)
-  real(kind=real_kind), dimension(:,:,:,:,:,:), allocatable :: v01 ! (nlev,np,np,2,2,nelemd)
-  real(kind=real_kind), dimension(:,:,:,:,:), allocatable :: v1gradv0 ! (nlev,np,np,2,nelemd)
+  real(kind=real_kind), dimension(:,:,:,:,:,:), allocatable :: v01 ! (nlev,np,np,3,2,nelemd)
+  real(kind=real_kind), dimension(:,:,:,:,:), allocatable :: v1gradv0 ! (nlev,np,np,3,nelemd)
   logical :: is_sphere
 
   ! For use in make_positive.
@@ -137,7 +137,7 @@ contains
        if (semi_lagrange_trajectory_nsubstep > 1) then
           ! Follow C++ convention. I might go back later and switch these to F90
           ! convention and use a portability layer as for many other arrays.
-          allocate(v01(nlev,np,np,2,2,size(elem)), v1gradv0(nlev,np,np,2,size(elem)))
+          allocate(v01(nlev,np,np,3,2,size(elem)), v1gradv0(nlev,np,np,3,size(elem)))
        end if
        dp_tol = -one
     endif
@@ -1192,7 +1192,7 @@ contains
     integer, intent(in) :: nets, nete, nsubstep1
 
     integer :: step, ie, d, i, j, k, info, nlyr
-    real(real_kind) :: alpha(2), dtsub, uxyz(np,np,3), norm, p(3)
+    real(real_kind) :: alpha(2), dtsub, uxyz(np,np,3), norm, p(3), vsph(np,np,2,3)
     integer :: nsubstep
 
     call t_startf('SLMM_trajectory')
@@ -1210,7 +1210,6 @@ contains
        end do
     end do
 
-    nlyr = 2*nlev
     nsubstep = 1 ! <-------------------------------------- for dev
     dtsub = dt / nsubstep
     do step = 1, nsubstep
@@ -1219,17 +1218,23 @@ contains
        do ie = nets, nete
           do k = 1, nlev
              do i = 1, 2
-                v01(k,:,:,:,i,ie) = (1 - alpha(i))*elem(ie)%derived%vstar(:,:,:,k) + &
-                     &                   alpha(i) *elem(ie)%derived%vn0  (:,:,:,k)
+                vsph(:,:,:,i) = (1 - alpha(i))*elem(ie)%derived%vstar(:,:,:,k) + &
+                     &               alpha(i) *elem(ie)%derived%vn0  (:,:,:,k)
              end do
-             v1gradv0(k,:,:,:,ie) = &
-                  ugradv_sphere(v01(k,:,:,:,2,ie), v01(k,:,:,:,1,ie), deriv, elem(ie))
+             vsph(:,:,:,3) = ugradv_sphere(vsph(:,:,:,2), vsph(:,:,:,1), deriv, elem(ie))
+             do d = 1, 3
+                do i = 1, 2
+                   v01(k,:,:,d,i,ie) = sum(elem(ie)%vec_sphere2cart(:,:,d,:)*vsph(:,:,:,i), 3)
+                end do
+                v1gradv0(k,:,:,d,ie) = sum(elem(ie)%vec_sphere2cart(:,:,d,:)*vsph(:,:,:,3), 3)
+             end do
           end do
        end do
 
        call slmm_calc_trajectory(nets, nete, step, dtsub, v01, v1gradv0, dep_points_all, info)
 
-       if (step == 1) then
+       if (.false.) then !(step == 1) then !todo deal with cartesian
+          nlyr = 2*nlev
           do ie = nets, nete
              do k = 1, nlev
                 do d = 1, 2
@@ -1243,27 +1248,24 @@ contains
           call bndry_exchangeV(hybrid, edge_g)
           call t_stopf('ALE_RKdss_bexchV')
           do ie = nets, nete
-             call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%vstar, 2*nlev, 0, nlyr)             
+             call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%vstar, 2*nlev, 0, nlyr)
              do k = 1, nlev
                 v01(k,:,:,:,1,ie) = elem(ie)%derived%vstar(:,:,:,k)
              end do
           end do
        end if
 
-       ! On output, v01(:,:,:,:,1,:) contains the velocity for the update.
+       ! On output, v01(:,:,:,:,1,:) contains the velocity for the
+       ! update. Currently, it's the Cartesian-coord velocity.
        do ie = nets, nete
           do k = 1, nlev
-             ! (u,v) -> (x,y,z) velocity
-             do d = 1, 3
-                uxyz(:,:,d) = sum(elem(ie)%vec_sphere2cart(:,:,d,:)*v01(k,:,:,:,1,ie), 3)
-             end do
              do j = 1, np
                 do i = 1, np
                    p = (/ dep_points_all(i,j,k,ie)%x, &
                         & dep_points_all(i,j,k,ie)%y, &
                         & dep_points_all(i,j,k,ie)%z /)
                    do d = 1, 3
-                      p(d) = p(d) - dtsub*uxyz(i,j,d)/scale_factor
+                      p(d) = p(d) - dtsub*v01(k,i,j,d,1,ie)/scale_factor
                    end do
                    if (is_sphere) then
                       norm = sqrt(p(1)*p(1) + p(2)*p(2) + p(3)*p(3))
