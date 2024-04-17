@@ -1210,7 +1210,6 @@ contains
        end do
     end do
 
-    nsubstep = 1 ! <-------------------------------------- for dev
     dtsub = dt / nsubstep
     do step = 1, nsubstep
        alpha(1) = real(nsubstep - step    , real_kind)/nsubstep
