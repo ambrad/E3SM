@@ -1,40 +1,8 @@
 #include "compose_slmm_islmpi.hpp"
+#include "compose_slmm_islmpi_buf.hpp"
 
 namespace homme {
 namespace islmpi {
-
-template <typename Buffer> SLMM_KIF
-Int setbuf (Buffer& buf, const Int& os, const Int& i1, const Int& i2) {
-  Int* const b = reinterpret_cast<Int*>(&buf(os));
-  b[0] = i1;
-  b[1] = i2;
-  return nreal_per_2int;
-}
-
-template <typename Buffer> SLMM_KIF
-Int setbuf (Buffer& buf, const Int& os, const Int& i1, const short& i2, const short& i3) {
-  static_assert(sizeof(Int) >= 2*sizeof(short), "Need >= 2 shorts per Int");
-  Int* const b = reinterpret_cast<Int*>(&buf(os));
-  b[0] = i1;
-  short* const b2 = reinterpret_cast<short*>(b+1);
-  b2[0] = i2;
-  b2[1] = i3;
-  return nreal_per_2int;
-}
-
-template <typename Buffer> SLMM_KIF
-Int setbuf (Buffer& buf, const Int& os, const Int& i1, const Int& i2,
-            const bool final) {
-  if (final) setbuf(buf, os, i1, i2);
-  return nreal_per_2int;
-}
-
-template <typename Buffer> SLMM_KIF
-Int setbuf (Buffer& buf, const Int& os, const Int& i1, const short& i2, const short& i3,
-            const bool final) {
-  if (final) setbuf(buf, os, i1, i2, i3);
-  return nreal_per_2int;
-}
 
 #ifdef COMPOSE_PORT
 /* GPU metadata are arranged differently than described below. The scheme is the

@@ -192,7 +192,7 @@ module compose_mod
        use dimensions_mod, only : np, nlev, nelemd, qsize
        use coordinate_systems_mod, only : cartesian3D_t
        integer(kind=c_int), value, intent(in) :: nets, nete, step
-       type(cartesian3D_t), intent(inout) :: dep_points(np,np,nlev,nelemd)
+       type(cartesian3D_t), intent(in) :: dep_points(np,np,nlev,nelemd)
        real(kind=c_double), intent(inout) :: v01(nlev,np,np,3,2,nelemd)
        real(kind=c_double), value, intent(in) :: dtsub
        real(kind=c_double), intent(in) :: v1gradv0(nlev,np,np,3,nelemd)

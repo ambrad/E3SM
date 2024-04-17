@@ -21,17 +21,26 @@ void traj_calc_rmt_next_step (IslMpi<MT>& cm, Trajectory& t) {
   for (Int it = 0; it < cm.nrmt_xs; ++it) {
     const Int
       ri = cm.rmt_xs_h(5*it), lid = cm.rmt_xs_h(5*it + 1), lev = cm.rmt_xs_h(5*it + 2),
-      xos = cm.rmt_xs_h(5*it + 3), qos = 3*cm.rmt_xs_h(5*it + 4);
+      xos = cm.rmt_xs_h(5*it + 3), vos = 3*cm.rmt_xs_h(5*it + 4);
     const auto&& xs = cm.recvbuf(ri);
-    auto&& qs = cm.sendbuf(ri);
-    //calc_q<np>(cm, lid, lev, &xs(xos), &qs(qos), true);
+    auto&& v = cm.sendbuf(ri);
+    //calc_velocity<np>(cm, lid, lev, &xs(xos), &v(vos));
   }
+}
+
+template <typename MT>
+void traj_calc_own_next_step (IslMpi<MT>& cm, const Int nets, const Int nete,
+                              const DepPoints<MT>& dep_points, Trajectory& t) {
+}
+
+template <typename MT>
+void traj_copy_next_step (IslMpi<MT>& cm, Trajectory& t) {
 }
 
 template <typename MT>
 void calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
                       const Int step, const Real dtsub, Real* v01_r,
-                      const Real* v1gradv0_r, Real* dep_points_r)
+                      const Real* v1gradv0_r, const Real* dep_points_r)
 {
   using slmm::Timer;
 
@@ -56,8 +65,7 @@ void calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
           for (int lev = 0; lev < cm.nlev; ++lev)
             v01(ie,0,d,k,lev) = ((v01(ie,0,d,k,lev) + v01(ie,1,d,k,lev))/2 -
                                  (dtsub/2)*v1gradv0(ie,d,k,lev));
-#pragma message "NO RETURNS"
-    //return;
+    return;
   }
 
   // See comments in homme::islmpi::step for details. Each substep follows
@@ -74,14 +82,14 @@ void calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
   traj_calc_rmt_next_step(cm, t);
   isend(cm, true /* want_req */, true /* skip_if_empty */);
   setup_irecv(cm, true /* skip_if_empty */);
-  //traj_calc_own_next_step(cm, nets, nete, t);
+  traj_calc_own_next_step(cm, nets, nete, dep_points, t);
   recv(cm, true /* skip_if_empty */);
-  //traj_copy_dep_points(cm, dep_points);
+  traj_copy_next_step(cm, t);
   wait_on_send(cm, true /* skip_if_empty */);
 }
 
 template void calc_trajectory(IslMpi<ko::MachineTraits>&, const Int, const Int,
-                              const Int, const Real, Real*, const Real*, Real*);
+                              const Int, const Real, Real*, const Real*, const Real*);
 
 } // namespace islmpi
 } // namespace homme

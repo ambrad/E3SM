@@ -11,7 +11,9 @@
 #include <memory>
 
 // AMB 2017/06-2020/05 Initial for E3SMv2
-// AMB 2020/05-?       Performance-portable impl
+// AMB 2020/05-2021/01 Performance-portable impl
+// AMB 2021/04         Support doubly-periodic planar mode
+// AMB 2024/04-?       Enhanced trajectory method
 
 namespace homme {
 namespace mpi { //todo Share with cedr.
@@ -642,8 +644,6 @@ void wait_on_send (IslMpi<MT>& cm, const bool skip_if_empty = false);
 template <typename MT>
 void recv(IslMpi<MT>& cm, const bool skip_if_empty = false);
 
-const int nreal_per_2int = (2*sizeof(Int) + sizeof(Real) - 1) / sizeof(Real);
-
 template <typename MT>
 void pack_dep_points_sendbuf_pass1(IslMpi<MT>& cm, const bool trajectory = false);
 template <typename MT>
@@ -697,7 +697,7 @@ void step(
 template <typename MT = ko::MachineTraits>
 void calc_trajectory(
   IslMpi<MT>& cm, const Int nets, const Int nete, const Int step,
-  const Real dtsub, Real* v01_r, const Real* v1gradv0_r, Real* dep_points_r);
+  const Real dtsub, Real* v01_r, const Real* v1gradv0_r, const Real* dep_points_r);
 
 } // namespace islmpi
 } // namespace homme

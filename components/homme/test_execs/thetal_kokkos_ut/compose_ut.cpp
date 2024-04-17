@@ -204,7 +204,6 @@ private:
 
   // compose_ut hommexx -ne NE -qsize QSIZE -hvq HV_Q -cdrcheck
   void parse_command_line () {
-    const bool am_root = get_comm().root();
     ne = 2;
     qsize = QSIZE_D;
     hv_q = 1;
@@ -215,6 +214,8 @@ private:
     halo = 2;
     traj_nsubstep = 1;
     nearest_point = true;
+
+    const bool am_root = get_comm().root();
     bool ok = true;
     int i;
     for (i = 0; i < hommexx_catch2_argc; ++i) {
@@ -273,14 +274,17 @@ private:
       }
       if ( ! ok) break;
     }
+
     ne = std::max(2, ne);
     qsize = std::max(1, std::min(QSIZE_D, qsize));
     hv_q = std::max(0, std::min(qsize, hv_q));
+
     if ( ! ok && am_root) {
       printf("compose_ut> Failed to parse command line, starting with: %s\n",
              hommexx_catch2_argv[i]);
       Homme::Errors::runtime_abort("compose_ut invalid command line");
     }
+
     if (am_root) {
       const int bfb =
 #ifdef HOMMEXX_BFB_TESTING
@@ -398,6 +402,7 @@ TEST_CASE ("compose_transport_testing") {
   // unit tests
   REQUIRE(compose::test::slmm_unittest() == 0);
   REQUIRE(compose::test::cedr_unittest() == 0);
+  REQUIRE(compose::test::interpolate_unittest() == 0);
   REQUIRE(compose::test::cedr_unittest(s.get_comm().mpi_comm()) == 0);
 
   auto& ct = Context::singleton().get<ComposeTransport>();
