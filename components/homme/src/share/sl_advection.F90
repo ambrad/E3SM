@@ -134,7 +134,7 @@ contains
           call cedr_sl_init(np, nlev, qsize, qsize_d, timelevels, need_conservation)
        end if
        allocate(minq(np,np,nlev,qsize,size(elem)), maxq(np,np,nlev,qsize,size(elem)))
-       enhanced_trajectory = .true. !semi_lagrange_trajectory_nsubstep > 1
+       enhanced_trajectory = semi_lagrange_trajectory_nsubstep > 1
        if (enhanced_trajectory) then
           if (semi_lagrange_trajectory_nsubstep == 1 .and. par%masterproc) &
                print *, 'COMPOSE> Running cthoriz even though nsubstep = 1.'
