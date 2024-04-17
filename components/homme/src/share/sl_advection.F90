@@ -1179,7 +1179,7 @@ contains
     if (nerr > 0 .and. par%masterproc) write(iulog,'(a,i3)') 'sl_unittest FAIL', nerr
   end subroutine sl_unittest
   
-  subroutine cthoriz(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete, nsubstep1)
+  subroutine cthoriz(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete, nsubstep)
     use physical_constants, only: scale_factor
     use derivative_mod, only: ugradv_sphere
 
@@ -1189,11 +1189,10 @@ contains
     type (hybrid_t), intent(in) :: hybrid
     real(real_kind), intent(in) :: dt
     type (TimeLevel_t), intent(in) :: tl
-    integer, intent(in) :: nets, nete, nsubstep1
+    integer, intent(in) :: nets, nete, nsubstep
 
     integer :: step, ie, d, i, j, k, info, nlyr
     real(real_kind) :: alpha(2), dtsub, uxyz(np,np,3), norm, p(3), vsph(np,np,2,3)
-    integer :: nsubstep
 
     call t_startf('SLMM_trajectory')
 

@@ -287,6 +287,12 @@ subview_ie (const Int ie, const TracerView<T*****>& s)
 { return TracerView<T****>(&s(ie,0,0,0,0), s.extent(1), s.extent(2), s.extent(3), s.extent(4)); }
 
 template <typename MT>
+void sl_traj_h2d(TracerArrays<MT>& ta, Cartesian3D* dep_points);
+
+template <typename MT>
+void sl_traj_d2h(const TracerArrays<MT>& ta, Cartesian3D* dep_points);
+
+template <typename MT>
 void sl_h2d(TracerArrays<MT>& ta, bool transfer, Cartesian3D* dep_points);
 
 template <typename MT>

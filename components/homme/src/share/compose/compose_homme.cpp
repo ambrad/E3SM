@@ -31,38 +31,79 @@ void TracerArrays<MT>::alloc_if_not () {
 #endif
 
 template <typename MT>
-void sl_h2d (TracerArrays<MT>& ta, bool transfer, Cartesian3D* dep_points) {
+void sl_traj_h2d (TracerArrays<MT>& ta, Cartesian3D* dep_points) {
 #if defined COMPOSE_PORT
+# if defined COMPOSE_HORIZ_OPENMP
+# pragma omp master
+  {
+# endif
   ko::fence();
   ta.alloc_if_not();
   const Int nelemd = ta.nelemd, qsize = ta.qsize, np2 = ta.np2, nlev = ta.nlev;
   const DepPointsH<MT> cart_h(reinterpret_cast<Real*>(dep_points), nelemd, nlev, np2);
-  const auto dep_points_h = ko::create_mirror_view(ta.dep_points);
-  for (Int ie = 0; ie < nelemd; ++ie)
-    for (Int lev = 0; lev < nlev; ++lev)
-      for (Int k = 0; k < np2; ++k)
-        for (Int d = 0; d < 3; ++d)
-          dep_points_h(ie,lev,k,d) = cart_h(ie,lev,k,d);
-  ko::deep_copy(ta.dep_points, dep_points_h);
-  if ( ! transfer) return;
-  const auto qdp_m = ko::create_mirror_view(ta.qdp);
-  const auto dp_m = ko::create_mirror_view(ta.dp);
+  ko::deep_copy(ta.dep_points, cart_h);
+# ifdef COMPOSE_HORIZ_OPENMP
+  }
+# pragma omp barrier
+# endif
+#endif
+}
+
+template <typename MT>
+void sl_traj_d2h (const TracerArrays<MT>& ta, Cartesian3D* dep_points) {
+#if defined COMPOSE_PORT
+# if defined COMPOSE_HORIZ_OPENMP
+# pragma omp master
+  {
+# endif
+  ko::fence();
   const auto q_m = ko::create_mirror_view(ta.q);
-  for (Int ie = 0; ie < nelemd; ++ie)
-    for (Int iq = 0; iq < qsize; ++iq)
+  const Int nelemd = ta.nelemd, np2 = ta.np2, nlev = ta.nlev;
+  const DepPointsH<MT> dep_points_h(reinterpret_cast<Real*>(dep_points), nelemd, nlev, np2);
+  ko::deep_copy(dep_points_h, ta.dep_points);
+# ifdef COMPOSE_HORIZ_OPENMP
+  }
+# pragma omp barrier
+# endif
+#endif  
+}
+
+template <typename MT>
+void sl_h2d (TracerArrays<MT>& ta, bool transfer, Cartesian3D* dep_points) {
+#if defined COMPOSE_PORT
+# if defined COMPOSE_HORIZ_OPENMP
+# pragma omp master
+  {
+# endif
+  ko::fence();
+  ta.alloc_if_not();
+  const Int nelemd = ta.nelemd, qsize = ta.qsize, np2 = ta.np2, nlev = ta.nlev;
+  const DepPointsH<MT> cart_h(reinterpret_cast<Real*>(dep_points), nelemd, nlev, np2);
+  ko::deep_copy(ta.dep_points, cart_h);
+  if (transfer) {
+    const auto qdp_m = ko::create_mirror_view(ta.qdp);
+    const auto dp_m = ko::create_mirror_view(ta.dp);
+    const auto q_m = ko::create_mirror_view(ta.q);
+    for (Int ie = 0; ie < nelemd; ++ie)
+      for (Int iq = 0; iq < qsize; ++iq)
+        for (Int k = 0; k < np2; ++k)
+          for (Int lev = 0; lev < nlev; ++lev) {
+            for (Int qtl = 0; qtl < 2; ++qtl)
+              qdp_m(ie,qtl,iq,k,lev) = ta.pqdp(ie,qtl,iq,k,lev);
+            q_m(ie,iq,k,lev) = ta.pq(ie,iq,k,lev);
+          }
+    for (Int ie = 0; ie < nelemd; ++ie)
       for (Int k = 0; k < np2; ++k)
-        for (Int lev = 0; lev < nlev; ++lev) {
-          for (Int qtl = 0; qtl < 2; ++qtl)
-            qdp_m(ie,qtl,iq,k,lev) = ta.pqdp(ie,qtl,iq,k,lev);
-          q_m(ie,iq,k,lev) = ta.pq(ie,iq,k,lev);
-        }
-  for (Int ie = 0; ie < nelemd; ++ie)
-    for (Int k = 0; k < np2; ++k)
-      for (Int lev = 0; lev < nlev; ++lev)
-        dp_m(ie,k,lev) = ta.pdp(ie,k,lev);
-  ko::deep_copy(ta.qdp, qdp_m);
-  ko::deep_copy(ta.dp, dp_m);
-  ko::deep_copy(ta.q, q_m);
+        for (Int lev = 0; lev < nlev; ++lev)
+          dp_m(ie,k,lev) = ta.pdp(ie,k,lev);
+    ko::deep_copy(ta.qdp, qdp_m);
+    ko::deep_copy(ta.dp, dp_m);
+    ko::deep_copy(ta.q, q_m);
+  }
+# ifdef COMPOSE_HORIZ_OPENMP
+  }
+# pragma omp barrier
+# endif
 #endif
 }
 
@@ -71,6 +112,10 @@ void sl_d2h (const TracerArrays<MT>& ta, bool transfer, Cartesian3D* dep_points,
              Real* minq, Real* maxq) {
 #if defined COMPOSE_PORT
   if ( ! transfer) return;
+# if defined COMPOSE_HORIZ_OPENMP
+# pragma omp master
+  {
+# endif
   ko::fence();
   const auto q_m = ko::create_mirror_view(ta.q);
   const Int nelemd = ta.nelemd, qsize = ta.qsize, np2 = ta.np2, nlev = ta.nlev;
@@ -87,6 +132,10 @@ void sl_d2h (const TracerArrays<MT>& ta, bool transfer, Cartesian3D* dep_points,
   ko::deep_copy(dep_points_h, ta.dep_points);
   ko::deep_copy(q_min_h, ta.q_min);
   ko::deep_copy(q_max_h, ta.q_max);
+# ifdef COMPOSE_HORIZ_OPENMP
+  }
+# pragma omp barrier
+# endif
 #endif  
 }
 
@@ -94,6 +143,10 @@ template <typename MT>
 void cedr_h2d (const TracerArrays<MT>& ta, bool transfer) {
 #if defined COMPOSE_PORT
   if ( ! transfer) return;
+# if defined COMPOSE_HORIZ_OPENMP
+# pragma omp master
+  {
+# endif
   ko::fence();
   const auto dp3d_m = ko::create_mirror_view(ta.dp3d);
   const auto q_m = ko::create_mirror_view(ta.q);
@@ -114,6 +167,10 @@ void cedr_h2d (const TracerArrays<MT>& ta, bool transfer) {
   ko::deep_copy(ta.dp3d, dp3d_m);
   ko::deep_copy(ta.q, q_m);
   ko::deep_copy(ta.spheremp, spheremp_m);
+# ifdef COMPOSE_HORIZ_OPENMP
+  }
+# pragma omp barrier
+# endif
 #endif  
 }
 
@@ -121,6 +178,10 @@ template <typename MT>
 void cedr_d2h (const TracerArrays<MT>& ta, bool transfer) {
 #if defined COMPOSE_PORT
   if ( ! transfer) return;
+# if defined COMPOSE_HORIZ_OPENMP
+# pragma omp master
+  {
+# endif
   ko::fence();
   const auto q_m = ko::create_mirror_view(ta.q);
   const auto qdp_m = ko::create_mirror_view(ta.qdp);
@@ -135,6 +196,10 @@ void cedr_d2h (const TracerArrays<MT>& ta, bool transfer) {
           ta.pqdp(ie,n1_qdp,iq,k,lev) = qdp_m(ie,n1_qdp,iq,k,lev);
           ta.pq(ie,iq,k,lev) = q_m(ie,iq,k,lev);
         }
+# ifdef COMPOSE_HORIZ_OPENMP
+  }
+# pragma omp barrier
+# endif
 #endif
 }
 
@@ -161,6 +226,10 @@ void delete_tracer_arrays () {
 }
 
 template struct TracerArrays<ko::MachineTraits>;
+template void sl_traj_h2d(TracerArrays<ko::MachineTraits>& ta,
+                          Cartesian3D* dep_points);
+template void sl_traj_d2h(const TracerArrays<ko::MachineTraits>& ta,
+                          Cartesian3D* dep_points);
 template void sl_h2d(TracerArrays<ko::MachineTraits>& ta, bool transfer,
                      Cartesian3D* dep_points);
 template void sl_d2h(const TracerArrays<ko::MachineTraits>& ta, bool transfer,

@@ -382,13 +382,21 @@ void slmm_calc_trajectory (
   homme::Int* info)
 {
   amb::dev_init_threads();
+  check_threading();
+  slmm_assert(homme::g_csl_mpi);
+  slmm_assert(homme::g_csl_mpi->sendsz.empty()); // alloc_mpi_buffers was called
   auto depr = reinterpret_cast<homme::Real*>(dep_points);
+  { slmm::Timer timer("h2d");
+    homme::sl_traj_h2d(*homme::g_csl_mpi->tracer_arrays, dep_points); }
   homme::islmpi::calc_trajectory(*homme::g_csl_mpi, nets - 1, nete - 1, step - 1,
                                  dtsub, v01, v1gradv0, depr);
   *info = 0;
+  { slmm::Timer timer("d2h");
+    homme::sl_traj_d2h(*homme::g_csl_mpi->tracer_arrays, dep_points); }
   amb::dev_fin_threads();
 }
 
+// Request extra data to be transferred for analysis.
 static bool s_h2d, s_d2h;
 
 void slmm_csl_set_elem_data (
@@ -413,11 +421,9 @@ void slmm_csl (
   slmm_assert(homme::g_csl_mpi);
   slmm_assert(homme::g_csl_mpi->sendsz.empty()); // alloc_mpi_buffers was called
   { slmm::Timer timer("h2d");
-    //if (homme::g_csl_mpi->p->amroot() && s_h2d) printf("sl_h2d\n");
     homme::sl_h2d(*homme::g_csl_mpi->tracer_arrays, s_h2d, dep_points); }
   *info = 0;
-#if 0
-#pragma message "RM TRY-CATCH WHILE DEV'ING"
+#if 1
   try {
     homme::islmpi::step(*homme::g_csl_mpi, nets - 1, nete - 1,
                         reinterpret_cast<homme::Real*>(dep_points), minq, maxq);
@@ -430,7 +436,6 @@ void slmm_csl (
                       reinterpret_cast<homme::Real*>(dep_points), minq, maxq);
 #endif
   { slmm::Timer timer("d2h");
-    //if (homme::g_csl_mpi->p->amroot() && s_d2h) printf("sl_d2h\n");
     homme::sl_d2h(*homme::g_csl_mpi->tracer_arrays, s_d2h, dep_points, minq, maxq); }
   amb::dev_fin_threads();
 }

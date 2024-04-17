@@ -19,7 +19,7 @@ struct Trajectory {
 
 template <Int np, typename MT>
 void calc_v (const IslMpi<MT>& cm, const Trajectory& t,
-             const Int& src_lid, const Int& lev,
+             const Int src_lid, const Int lev,
              const Real* const dep_point, Real* const v_tgt) {
   Real ref_coord[2]; {
     const auto& m = cm.advecter->local_mesh(src_lid);
@@ -57,6 +57,24 @@ void traj_calc_rmt_next_step (IslMpi<MT>& cm, Trajectory& t) {
 template <int np, typename MT>
 void traj_calc_own_next_step (IslMpi<MT>& cm, const DepPoints<MT>& dep_points,
                               Trajectory& t) {
+#ifdef COMPOSE_PORT
+  const auto& ed_d = cm.ed_d;
+  const auto& own_dep_list = cm.own_dep_list;
+  const auto f = COMPOSE_LAMBDA (const Int& it) {
+    const Int tci = own_dep_list(it,0);
+    const Int tgt_lev = own_dep_list(it,1);
+    const Int tgt_k = own_dep_list(it,2);
+    const auto& ed = ed_d(tci);
+    const Int slid = ed.nbrs(ed.src(tgt_lev, tgt_k)).lid_on_rank;
+    Real v_tgt[3];
+    calc_v<np>(cm, t, slid, tgt_lev, &dep_points(tci,tgt_lev,tgt_k,0), v_tgt);
+    for (int d = 0; d < 3; ++d)
+      t.v01(tci,0,d,tgt_k,tgt_lev) = v_tgt[d];
+  };
+  ko::parallel_for(
+    ko::RangePolicy<typename MT::DES>(0, cm.own_dep_list_len), f);
+#else
+  //todo test
   const int tid = get_tid();
   for (Int tci = 0; tci < cm.nelemd; ++tci) {
     auto& ed = cm.ed_d(tci);
@@ -73,6 +91,7 @@ void traj_calc_own_next_step (IslMpi<MT>& cm, const DepPoints<MT>& dep_points,
         t.v01(tci,0,d,e.k,e.lev) = v_tgt[d];
     }
   }
+#endif
 }
 
 template <typename MT>
