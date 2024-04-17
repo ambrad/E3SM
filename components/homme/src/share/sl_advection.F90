@@ -34,7 +34,7 @@ module sl_advection
   real(kind=real_kind), dimension(:,:,:,:,:), allocatable :: minq, maxq ! (np,np,nlev,qsize,nelemd)
   real(kind=real_kind), dimension(:,:,:,:,:,:), allocatable :: v01 ! (nlev,np,np,3,2,nelemd)
   real(kind=real_kind), dimension(:,:,:,:,:), allocatable :: v1gradv0 ! (nlev,np,np,3,nelemd)
-  logical :: is_sphere
+  logical :: is_sphere, enhanced_trajectory
 
   ! For use in make_positive.
   real(kind=real_kind) :: dp_tol
@@ -134,7 +134,10 @@ contains
           call cedr_sl_init(np, nlev, qsize, qsize_d, timelevels, need_conservation)
        end if
        allocate(minq(np,np,nlev,qsize,size(elem)), maxq(np,np,nlev,qsize,size(elem)))
-       if (semi_lagrange_trajectory_nsubstep > 1) then
+       enhanced_trajectory = .true. !semi_lagrange_trajectory_nsubstep > 1
+       if (enhanced_trajectory) then
+          if (semi_lagrange_trajectory_nsubstep == 1 .and. par%masterproc) &
+               print *, 'COMPOSE> Running cthoriz even though nsubstep = 1.'
           ! Follow C++ convention. I might go back later and switch these to F90
           ! convention and use a portability layer as for many other arrays.
           allocate(v01(nlev,np,np,3,2,size(elem)), v1gradv0(nlev,np,np,3,size(elem)))
@@ -211,7 +214,7 @@ contains
 #endif
     call TimeLevel_Qdp(tl, dt_tracer_factor, n0_qdp, np1_qdp)
 
-    if (semi_lagrange_trajectory_nsubstep > 1) then
+    if (enhanced_trajectory) then
        call cthoriz(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete, &
             semi_lagrange_trajectory_nsubstep)
     else

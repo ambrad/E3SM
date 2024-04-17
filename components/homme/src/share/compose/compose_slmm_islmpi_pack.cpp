@@ -258,7 +258,7 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const DepPoints<MT>& dep_poi
         sb(xptr + i) = dep_points(tci,lev,k,i);
       auto& item = ed.rmt.atomic_inc_and_return_next();
       if (trajectory) {
-        item.q_extrema_ptr = item.q_ptr = 3*qptr;
+        item.q_extrema_ptr = item.q_ptr = 3*(qptr + cnt);
       } else {
         item.q_extrema_ptr = qsize * qptr;
         item.q_ptr = item.q_extrema_ptr + qsize*(2 + cnt);
