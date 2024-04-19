@@ -32,8 +32,7 @@ module sl_advection
 
   type (cartesian3D_t), allocatable :: dep_points_all(:,:,:,:) ! (np,np,nlev,nelemd)
   real(kind=real_kind), dimension(:,:,:,:,:), allocatable :: minq, maxq ! (np,np,nlev,qsize,nelemd)
-  real(kind=real_kind), dimension(:,:,:,:,:,:), allocatable :: v01 ! (nlev,np,np,3,2,nelemd)
-  real(kind=real_kind), dimension(:,:,:,:,:), allocatable :: v1gradv0 ! (nlev,np,np,3,nelemd)
+  real(kind=real_kind), dimension(:,:,:,:,:), allocatable :: vnode, vdep ! (3,np,np,nlev,nelemd)
   logical :: is_sphere, enhanced_trajectory
 
   ! For use in make_positive.
@@ -138,9 +137,7 @@ contains
        if (enhanced_trajectory) then
           if (semi_lagrange_trajectory_nsubstep == 1 .and. par%masterproc) &
                print *, 'COMPOSE> Running cthoriz even though nsubstep = 1.'
-          ! Follow C++ convention. I might go back later and switch these to F90
-          ! convention and use a portability layer as for many other arrays.
-          allocate(v01(nlev,np,np,3,2,size(elem)), v1gradv0(nlev,np,np,3,size(elem)))
+          allocate(vnode(3,np,np,nlev,size(elem)), vdep(3,np,np,nlev,size(elem)))
        end if
        dp_tol = -one
     endif
@@ -1223,23 +1220,21 @@ contains
                      &               alpha(i) *elem(ie)%derived%vn0  (:,:,:,k)
              end do
              vsph(:,:,:,3) = ugradv_sphere(vsph(:,:,:,2), vsph(:,:,:,1), deriv, elem(ie))
+             vsph(:,:,:,3) = (vsph(:,:,:,1) + vsph(:,:,:,2))/2 - (dtsub/2)*vsph(:,:,:,3)
              do d = 1, 3
-                do i = 1, 2
-                   v01(k,:,:,d,i,ie) = sum(elem(ie)%vec_sphere2cart(:,:,d,:)*vsph(:,:,:,i), 3)
-                end do
-                v1gradv0(k,:,:,d,ie) = sum(elem(ie)%vec_sphere2cart(:,:,d,:)*vsph(:,:,:,3), 3)
+                vnode(d,:,:,k,ie) = sum(elem(ie)%vec_sphere2cart(:,:,d,:)*vsph(:,:,:,3), 3)
              end do
           end do
        end do
 
-       call slmm_calc_trajectory(nets, nete, step, dtsub, v01, v1gradv0, dep_points_all, info)
+       call slmm_calc_trajectory(nets, nete, step, dtsub, dep_points_all, vnode, vdep, info)
 
        if (.false.) then !(step == 1) then !todo deal with cartesian
           nlyr = 2*nlev
           do ie = nets, nete
              do k = 1, nlev
                 do d = 1, 2
-                   elem(ie)%derived%vstar(:,:,d,k) = (v01(k,:,:,d,1,ie) * &
+                   elem(ie)%derived%vstar(:,:,d,k) = (vdep(d,:,:,k,ie) * &
                         &                             elem(ie)%spheremp*elem(ie)%rspheremp)
                 end do
              end do
@@ -1251,7 +1246,9 @@ contains
           do ie = nets, nete
              call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%vstar, 2*nlev, 0, nlyr)
              do k = 1, nlev
-                v01(k,:,:,:,1,ie) = elem(ie)%derived%vstar(:,:,:,k)
+                do d = 1, 2
+                   vdep(d,:,:,k,ie) = elem(ie)%derived%vstar(:,:,d,k)
+                end do
              end do
           end do
        end if
@@ -1266,7 +1263,7 @@ contains
                         & dep_points_all(i,j,k,ie)%y, &
                         & dep_points_all(i,j,k,ie)%z /)
                    do d = 1, 3
-                      p(d) = p(d) - dtsub*v01(k,i,j,d,1,ie)/scale_factor
+                      p(d) = p(d) - dtsub*vdep(d,i,j,k,ie)/scale_factor
                    end do
                    if (is_sphere) then
                       norm = sqrt(p(1)*p(1) + p(2)*p(2) + p(3)*p(3))

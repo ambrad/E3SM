@@ -6,15 +6,13 @@ namespace homme {
 namespace islmpi {
 
 template <typename T> using CA4 = ko::View<T****,  ko::LayoutRight, ko::HostSpace>;
-template <typename T> using CA5 = ko::View<T*****, ko::LayoutRight, ko::HostSpace>;
 
-// v01 is indexed as (ie,slot,dim,k,lev), for slot = 0,1. On entry, it contains
-// nodal velocity data at the two time steps. Slot 1 is then overwritten with
-// the nodal velocity update formula. These data are used to provide updates at
-// departure points for both own and remote departure points. Finally, slot 0 is
-// overwritten with the Lagrangian update velocity for own departure points.
+// vnode and vdep are indexed as (ie,lev,k,dim), On entry, vnode contains nodal
+// velocity data. These data are used to provide updates at departure points for
+// both own and remote departure points, writing to vdep.
 struct Trajectory {
-  CA5<Real> v01;
+  CA4<const Real> vnode;
+  CA4<Real> vdep;
 };
 
 template <Int np, typename MT>
@@ -33,7 +31,7 @@ void calc_v (const IslMpi<MT>& cm, const Trajectory& t,
   for (int d = 0; d < 3; ++d) {
     Real vel_nodes[np*np];
     for (int k = 0; k < np*np; ++k)
-      vel_nodes[k] = t.v01(src_lid,1,d,k,lev);
+      vel_nodes[k] = t.vnode(src_lid,lev,k,d);
     v_tgt[d] = calc_q_tgt(rx, ry, vel_nodes);
   }
 }
@@ -69,7 +67,7 @@ void traj_calc_own_next_step (IslMpi<MT>& cm, const DepPoints<MT>& dep_points,
     Real v_tgt[3];
     calc_v<np>(cm, t, slid, tgt_lev, &dep_points(tci,tgt_lev,tgt_k,0), v_tgt);
     for (int d = 0; d < 3; ++d)
-      t.v01(tci,0,d,tgt_k,tgt_lev) = v_tgt[d];
+      t.vdep(tci,tgt_lev,tgt_k,d) = v_tgt[d];
   };
   ko::parallel_for(
     ko::RangePolicy<typename MT::DES>(0, cm.own_dep_list_len), f);
@@ -88,7 +86,7 @@ void traj_calc_own_next_step (IslMpi<MT>& cm, const DepPoints<MT>& dep_points,
       Real v_tgt[3];
       calc_v<np>(cm, t, slid, e.lev, &dep_points(tci,e.lev,e.k,0), v_tgt);
       for (int d = 0; d < 3; ++d)
-        t.v01(tci,0,d,e.k,e.lev) = v_tgt[d];
+        t.vdep(tci,e.lev,e.k,d) = v_tgt[d];
     }
   }
 #endif
@@ -108,15 +106,15 @@ void traj_copy_next_step (IslMpi<MT>& cm, Trajectory& t) {
       const Int ri = ed.nbrs(ed.src(e.lev, e.k)).rank_idx;
       const auto&& recvbuf = cm.recvbuf(ri);
       for (int d = 0; d < 3; ++d)
-        t.v01(tci,0,d,e.k,e.lev) = recvbuf(e.q_ptr + d);
+        t.vdep(tci,e.lev,e.k,d) = recvbuf(e.q_ptr + d);
     }
   }
 }
 
 template <typename MT>
 void calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
-                      const Int step, const Real dtsub, Real* v01_r,
-                      const Real* v1gradv0_r, const Real* dep_points_r)
+                      const Int step, const Real dtsub, const Real* dep_points_r,
+                      const Real* vnode_r, Real* vdep_r)
 {
   const int np = 4;
 
@@ -131,29 +129,18 @@ void calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
   DepPointsH<MT> dep_points(dep_points_r, cm.nelemd, cm.nlev, cm.np2);
 #endif
 
-  CA5<Real> v01(v01_r, cm.nelemd, 2, 3, cm.np2, cm.nlev);
-  CA4<const Real> v1gradv0(v1gradv0_r, cm.nelemd, 3, cm.np2, cm.nlev);
+  CA4<const Real> vnode(vnode_r, cm.nelemd, cm.nlev, cm.np2, 3);
+  CA4<      Real> vdep (vdep_r , cm.nelemd, cm.nlev, cm.np2, 3);
 
   if (step == 0) {
-    for (int ie = nets; ie <= nete; ++ie)
-      for (int d = 0; d < 3; ++d)
-        for (int k = 0; k < cm.np2; ++k)
-          for (int lev = 0; lev < cm.nlev; ++lev)
-            v01(ie,0,d,k,lev) = ((v01(ie,0,d,k,lev) + v01(ie,1,d,k,lev))/2 -
-                                 (dtsub/2)*v1gradv0(ie,d,k,lev));
+    // The departure points are at the nodes. No interpolation is needed.
+    ko::deep_copy(vdep, vnode);
     return;
   }
 
-  for (int ie = nets; ie <= nete; ++ie)
-    for (int d = 0; d < 3; ++d)
-      for (int k = 0; k < cm.np2; ++k)
-        for (int lev = 0; lev < cm.nlev; ++lev)
-          v01(ie,1,d,k,lev) = ((v01(ie,0,d,k,lev) + v01(ie,1,d,k,lev))/2 -
-                               (dtsub/2)*v1gradv0(ie,d,k,lev));
-
   // See comments in homme::islmpi::step for details. Each substep follows
   // essentially the same pattern.
-  Trajectory t{v01};
+  Trajectory t{vnode, vdep};
   if (cm.mylid_with_comm_tid_ptr_h.capacity() == 0)
     init_mylid_with_comm_threaded(cm, nets, nete);
   setup_irecv(cm);
@@ -172,7 +159,7 @@ void calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
 }
 
 template void calc_trajectory(IslMpi<ko::MachineTraits>&, const Int, const Int,
-                              const Int, const Real, Real*, const Real*, const Real*);
+                              const Int, const Real, const Real*, const Real*, Real*);
 
 } // namespace islmpi
 } // namespace homme

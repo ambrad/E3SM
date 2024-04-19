@@ -378,7 +378,7 @@ void slmm_check_ref2sphere (homme::Int ie, homme::Cartesian3D* p) {
 
 void slmm_calc_trajectory (
   homme::Int nets, homme::Int nete, homme::Int step, homme::Real dtsub,
-  homme::Real* v01, homme::Real* v1gradv0, homme::Cartesian3D* dep_points,
+  homme::Cartesian3D* dep_points, const homme::Real* vnode, homme::Real* vdep,
   homme::Int* info)
 {
   amb::dev_init_threads();
@@ -389,7 +389,7 @@ void slmm_calc_trajectory (
   { slmm::Timer timer("h2d");
     homme::sl_traj_h2d(*homme::g_csl_mpi->tracer_arrays, dep_points); }
   homme::islmpi::calc_trajectory(*homme::g_csl_mpi, nets - 1, nete - 1, step - 1,
-                                 dtsub, v01, v1gradv0, depr);
+                                 dtsub, depr, vnode, vdep);
   *info = 0;
   { slmm::Timer timer("d2h");
     homme::sl_traj_d2h(*homme::g_csl_mpi->tracer_arrays, dep_points); }
