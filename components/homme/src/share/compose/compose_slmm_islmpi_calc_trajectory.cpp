@@ -113,7 +113,7 @@ void traj_copy_next_step (IslMpi<MT>& cm, Trajectory& t) {
 
 template <typename MT>
 void calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
-                      const Int step, const Real dtsub, const Real* dep_points_r,
+                      const Int step, const Real dtsub, Real* dep_points_r,
                       const Real* vnode_r, Real* vdep_r)
 {
   const int np = 4;
@@ -159,7 +159,7 @@ void calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
 }
 
 template void calc_trajectory(IslMpi<ko::MachineTraits>&, const Int, const Int,
-                              const Int, const Real, const Real*, const Real*, Real*);
+                              const Int, const Real, Real*, const Real*, Real*);
 
 } // namespace islmpi
 } // namespace homme
