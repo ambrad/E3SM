@@ -262,8 +262,8 @@ private:
       } else if (tok == "-trajnsubstep") {
         if (i+1 == hommexx_catch2_argc) ok = false;
         traj_nsubstep = std::atoi(hommexx_catch2_argv[++i]);
-        if (traj_nsubstep < 1) {
-          printf("traj_nsubstep must be >= 1");
+        if (traj_nsubstep < 0) {
+          printf("traj_nsubstep must be >= 0\n");
           ok = false;
         }
       } else if (tok == "-nonearest") {
