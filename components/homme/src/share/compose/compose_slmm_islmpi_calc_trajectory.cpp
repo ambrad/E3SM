@@ -72,7 +72,6 @@ void traj_calc_own_next_step (IslMpi<MT>& cm, const DepPoints<MT>& dep_points,
   ko::parallel_for(
     ko::RangePolicy<typename MT::DES>(0, cm.own_dep_list_len), f);
 #else
-  //todo test
   const int tid = get_tid();
   for (Int tci = 0; tci < cm.nelemd; ++tci) {
     auto& ed = cm.ed_d(tci);

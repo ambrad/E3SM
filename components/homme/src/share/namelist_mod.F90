@@ -274,6 +274,8 @@ use physical_constants, only : Sx, Sy, Lx, Ly, dx, dy, dx_ref, dy_ref
       semi_lagrange_cdr_check, &
       semi_lagrange_hv_q, &
       semi_lagrange_nearest_point_lev, &
+      semi_lagrange_halo, &
+      semi_lagrange_trajectory_nsubstep, &
       semi_lagrange_hv_q, &
       tstep_type,    &
       cubed_sphere_map, &
@@ -450,7 +452,7 @@ use physical_constants, only : Sx, Sy, Lx, Ly, dx, dy, dx_ref, dy_ref
     semi_lagrange_hv_q = 1
     semi_lagrange_nearest_point_lev = 256
     semi_lagrange_halo = 2
-    semi_lagrange_trajectory_nsubstep = 1
+    semi_lagrange_trajectory_nsubstep = 0
     disable_diagnostics = .false.
     se_fv_phys_remap_alg = 1
     internal_diagnostics_level = 0
