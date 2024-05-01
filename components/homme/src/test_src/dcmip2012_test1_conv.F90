@@ -129,12 +129,12 @@ SUBROUTINE test1_conv_advection_deformation (time,lon,lat,p,z,zcoords,u,v,w,t,ph
   !-----------------------------------------------------------------------
   !     initialize tracers
   !-----------------------------------------------------------------------
-	! tracer 1 - a C^inf tracer field for order of accuracy analysis
 
   x = cos(lat)*cos(lon)
   y = cos(lat)*sin(lon)
   zeta = sin(lat)
-  q1 = 0.3d0*(1.1 + sin(0.25d0*pi*x)*sin(0.3d0*pi*y)*sin(0.25d0*pi*zeta)*sin(pi*(p-ptop)/(p0-ptop)))
+  !	tracer 1 - a C^inf tracer field for order of accuracy analysis
+  q1 = 0.5d0*(1 + sin(pi*x)*sin(pi*y)*sin(pi*zeta)*sin(pi*(p-ptop)/(p0-ptop)))
 
 	! tracer 2 - correlated with 1
 	q2 = 0.9d0 - 0.8d0*q1**2
