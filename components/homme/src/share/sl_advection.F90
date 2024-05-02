@@ -109,8 +109,6 @@ contains
             write(iulog,*) 'COMPOSE> use HV; nu_q, all:', nu_q, semi_lagrange_hv_q
        is_sphere = trim(geometry) /= 'plane'
        nslots = nlev*qsize
-       ! Technically a memory leak, but the array persists for the entire
-       ! run, so not a big deal for now.
        allocate(dep_points_all(np,np,nlev,size(elem)))
        do ie = 1, size(elem)
           ! Provide a point inside the target element.
@@ -136,7 +134,7 @@ contains
        enhanced_trajectory = semi_lagrange_trajectory_nsubstep > 0
        if (enhanced_trajectory) then
           if (semi_lagrange_trajectory_nsubstep == 1 .and. par%masterproc) &
-               print *, 'COMPOSE> Running cthoriz even though nsubstep = 1.'
+               print *, 'COMPOSE> Running new alg even though nsubstep = 1.'
           allocate(vnode(3,np,np,nlev,size(elem)), vdep(3,np,np,nlev,size(elem)))
        end if
        dp_tol = -one
@@ -212,7 +210,7 @@ contains
     call TimeLevel_Qdp(tl, dt_tracer_factor, n0_qdp, np1_qdp)
 
     if (enhanced_trajectory) then
-       call cthoriz(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete, &
+       call ctfull(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete, &
             semi_lagrange_trajectory_nsubstep)
     else
        call calc_trajectory(elem, deriv, hvcoord, hybrid, dt, tl, &
@@ -1282,5 +1280,113 @@ contains
 
     call t_stopf('SLMM_trajectory')
   end subroutine cthoriz
+
+  subroutine ctfull(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete, nsubstep)
+    use physical_constants, only: scale_factor
+    use derivative_mod, only: ugradv_sphere
+
+    type (element_t), intent(inout) :: elem(:)
+    type (derivative_t), intent(in) :: deriv
+    type (hvcoord_t), intent(in) :: hvcoord
+    type (hybrid_t), intent(in) :: hybrid
+    real(real_kind), intent(in) :: dt
+    type (TimeLevel_t), intent(in) :: tl
+    integer, intent(in) :: nets, nete, nsubstep
+
+    integer :: step, ie, d, i, j, k, info, nlyr
+    real(real_kind) :: alpha(2), dtsub, uxyz(np,np,3), norm, p(3), vsph(np,np,2,3)
+
+    call t_startf('SLMM_trajectory')
+
+    do ie = nets,nete
+       elem(ie)%derived%vn0 = elem(ie)%state%v(:,:,:,:,tl%np1)
+    end do
+
+    do ie = nets, nete
+       do j = 1, np
+          do i = 1, np
+             call sphere2cart(elem(ie)%spherep(i,j), dep_points_all(i,j,1,ie))
+             dep_points_all(i,j,2:nlev,ie) = dep_points_all(i,j,1,ie)
+          end do
+       end do
+    end do
+
+    dtsub = dt / nsubstep
+    do step = 1, nsubstep
+       !todo make (etanode, etadep) and dep_eta_all arrays
+       !todo compute eta_dot (*not* eta_dot_dpdn)
+       !todo don't forget vertical coupling terms in horizontal
+       alpha(1) = real(nsubstep - step    , real_kind)/nsubstep
+       alpha(2) = real(nsubstep - step + 1, real_kind)/nsubstep
+       do ie = nets, nete
+          do k = 1, nlev
+             do i = 1, 2
+                vsph(:,:,:,i) = (1 - alpha(i))*elem(ie)%derived%vstar(:,:,:,k) + &
+                     &               alpha(i) *elem(ie)%derived%vn0  (:,:,:,k)
+             end do
+             vsph(:,:,:,3) = ugradv_sphere(vsph(:,:,:,2), vsph(:,:,:,1), deriv, elem(ie))
+             vsph(:,:,:,3) = (vsph(:,:,:,1) + vsph(:,:,:,2))/2 - (dtsub/2)*vsph(:,:,:,3)
+             do d = 1, 3
+                vnode(d,:,:,k,ie) = sum(elem(ie)%vec_sphere2cart(:,:,d,:)*vsph(:,:,:,3), 3)
+             end do
+          end do
+       end do
+
+       !todo pass etanode, etadep, dep_eta_all arrays
+       !todo pass eta_ref array, just a small 1D array with eta coords for interp
+       !todo interp in vertical
+       call slmm_calc_trajectory(nets, nete, step, dtsub, dep_points_all, vnode, vdep, info)
+
+       !todo if step == 1, DSS
+
+       do ie = nets, nete
+          do k = 1, nlev
+             do j = 1, np
+                do i = 1, np
+                   p = (/ dep_points_all(i,j,k,ie)%x, &
+                        & dep_points_all(i,j,k,ie)%y, &
+                        & dep_points_all(i,j,k,ie)%z /)
+                   do d = 1, 3
+                      p(d) = p(d) - dtsub*vdep(d,i,j,k,ie)/scale_factor
+                   end do
+                   if (is_sphere) then
+                      norm = sqrt(p(1)*p(1) + p(2)*p(2) + p(3)*p(3))
+                      do d = 1, 3
+                         p(d) = p(d) / norm
+                      end do
+                      dep_points_all(i,j,k,ie)%x = p(1)
+                      dep_points_all(i,j,k,ie)%y = p(2)
+                      dep_points_all(i,j,k,ie)%z = p(3)
+                   end if
+                end do
+             end do
+          end do
+       end do
+       !todo update dep_eta_all
+    end do
+
+    do ie = nets, nete
+       do j = 1, np
+          do i = 1, np
+             ! Reconstruct Lagrangian levels at t1 on arrival column:
+             !     eta_arr_int = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_int)
+             !todo
+
+             ! Compute Lagrangian level midpoints at t1 on arrival column.
+             !     eta_arr_mid = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_mid)
+             ! or
+             !     cc(eta_arr_int)
+             !todo
+
+             ! Compute departure horizontal points corresponding to arrival
+             ! Lagrangian level midpoints:
+             !     p_dep_mid(eta_arr_mid) = I[p_dep_mid(eta_ref_mid)](eta_arr_mid)
+             !todo final dep_points_all
+          end do
+       end do
+    end do
+
+    call t_stopf('SLMM_trajectory')
+  end subroutine ctfull
 
 end module sl_advection
