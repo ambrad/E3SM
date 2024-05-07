@@ -26,16 +26,15 @@ module sl_advection
 
   private
 
+  ! Constants
   real(real_kind), parameter :: zero = 0.0_real_kind, fourth = 0.25_real_kind, &
        half = 0.5_real_kind, one = 1.0_real_kind, two = 2.0_real_kind, &
        eps = epsilon(1.0_real_kind)
 
-  type (cartesian3D_t), allocatable :: dep_points_all(:,:,:,:) ! (np,np,nlev,nelemd)
-  real(kind=real_kind), dimension(:,:,:,:,:), allocatable :: minq, maxq ! (np,np,nlev,qsize,nelemd)
-  real(kind=real_kind), dimension(:,:,:,:,:), allocatable :: vnode, vdep ! (3,np,np,nlev,nelemd)
+  ! Configuration.
   logical :: is_sphere, enhanced_trajectory
 
-  ! For use in make_positive.
+  ! For use in make_positive. Set at initialization to a function of hvcoord%dp0.
   real(kind=real_kind) :: dp_tol
 
   public :: prim_advec_tracers_remap_ALE, sl_init1, sl_vertically_remap_tracers, sl_unittest
@@ -46,7 +45,18 @@ module sl_advection
   ! For C++
   public :: sl_get_params
 
+  ! Barrier for performance analysis. Should be false in production runs.
   logical, parameter :: barrier = .false.
+
+  ! Bounds for shape preservation.
+  real(kind=real_kind), dimension(:,:,:,:,:), allocatable :: minq, maxq  ! (np,np,nlev,qsize,nelemd)
+
+  ! Trajectory velocity data.
+  real(kind=real_kind), dimension(:,:,:,:,:), allocatable :: vnode, vdep ! (3,np,np,nlev,nelemd)
+  type (cartesian3D_t), allocatable :: dep_points_all(:,:,:,:)           ! (  np,np,nlev,nelemd)
+  real(kind=real_kind), dimension(:,:,:,:), allocatable :: &
+       eta_dot_node,             & ! (np,np,nlevp,nelemd)
+       eta_dot_dep, dep_eta_all    ! (np,np,nlev ,nelemd)
 
 contains
 
@@ -1313,7 +1323,7 @@ contains
 
     dtsub = dt / nsubstep
     do step = 1, nsubstep
-       !todo make (etanode, etadep) and dep_eta_all arrays
+       !todo make (eta_dot_node, eta_dot_dep) and dep_eta_all arrays
        !todo compute eta_dot (*not* eta_dot_dpdn)
        !todo don't forget vertical coupling terms in horizontal
        alpha(1) = real(nsubstep - step    , real_kind)/nsubstep
@@ -1332,7 +1342,7 @@ contains
           end do
        end do
 
-       !todo pass etanode, etadep, dep_eta_all arrays
+       !todo pass eta_dot_node, eta_dot_dep, dep_eta_all arrays
        !todo pass eta_ref array, just a small 1D array with eta coords for interp
        !todo interp in vertical
        call slmm_calc_trajectory(nets, nete, step, dtsub, dep_points_all, vnode, vdep, info)
