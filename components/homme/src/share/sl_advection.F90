@@ -1305,8 +1305,9 @@ contains
     integer, intent(in) :: nets, nete, nsubstep
 
     integer :: step, ie, d, i, j, k, t, info, nlyr
-    real(real_kind) :: alpha(2), dtsub, uxyz(np,np,3), norm, p(3), vsph(np,np,2,3), &
-         eta_dot(np,np,nlevp,2), vdp(np,np,2), divdp(np,np), dps(np,np), ps(np,np)
+    real(real_kind) :: alpha(2), dtsub, uxyz(np,np,3), norm, p(3), &
+         vsph(np,np,2,nlev,2), vfsph(np,np,2), eta_dot(np,np,nlevp,2), vdp(np,np,2), &
+         divdp(np,np), w1(np,np), w2(np,np), w3(np,np,3)
 
     call t_startf('SLMM_trajectory')
 
@@ -1347,33 +1348,58 @@ contains
                 divdp = divergence_sphere(vdp, deriv, elem(ie))
                 eta_dot(:,:,k+1,t) = eta_dot(:,:,k,t) + divdp
              end do
-             dps = eta_dot(:,:,nlevp,t)
+             w1 = eta_dot(:,:,nlevp,t)
              eta_dot(:,:,nlevp,t) = zero
              do k = 2,nlev
-                eta_dot(:,:,k,t) = hvcoord%hybi(k)*dps - eta_dot(:,:,k,t)
+                eta_dot(:,:,k,t) = hvcoord%hybi(k)*w1 - eta_dot(:,:,k,t)
              end do
              ! eta_dot_dpdn interface -> eta_dot midpoint using the formula
-             !     eta_dot = eta_dot_dpdn/(A_eta p0 + B_eta ps)
-             ps = hvcoord%hyai(1)*hvcoord%ps0 + &
+             !     eta_dot = eta_dot_dpdn/(A_eta p0 + B_eta ps).
+             ! Compute ps.
+             w1 = hvcoord%hyai(1)*hvcoord%ps0 + &
                   &    (1 - alpha(t))*sum(elem(ie)%derived%dp(:,:,1:nlev)) + &
                   &         alpha(t) *sum(elem(ie)%state%dp3d(:,:,k,tl%np1))
              do k = 1,nlev
                 eta_dot(:,:,k,t) = half*(eta_dot(:,:,k,t) + eta_dot(:,:,k+1,t)) * &
                      &             ((hvcoord%hyai(k+1) - hvcoord%hyai(k))*hvcoord%ps0 + &
-                     &              (hvcoord%hybi(k+1) - hvcoord%hybi(k))*ps) / &
+                     &              (hvcoord%hybi(k+1) - hvcoord%hybi(k))*w1) / &
                      &             (hvcoord%etai(k+1) - hvcoord%etai(k))
              end do
           end do
+          do t = 1, 2
+             vsph(:,:,:,:,t) = (1 - alpha(t))*elem(ie)%derived%vstar + &
+                  &                 alpha(t) *elem(ie)%derived%vn0
+          end do
           do k = 1, nlev
-             do t = 1, 2
-                vsph(:,:,:,t) = (1 - alpha(t))*elem(ie)%derived%vstar(:,:,:,k) + &
-                     &               alpha(t) *elem(ie)%derived%vn0  (:,:,:,k)
-             end do
              ! Final horizontal velocity at midpoint nodes.
-             vsph(:,:,:,3) = ugradv_sphere(vsph(:,:,:,2), vsph(:,:,:,1), deriv, elem(ie))
-             vsph(:,:,:,3) = half*(vsph(:,:,:,1) + vsph(:,:,:,2) - dtsub*vsph(:,:,:,3))
+             !   Horizontal terms.
+             vfsph = ugradv_sphere(vsph(:,:,:,k,2), vsph(:,:,:,k,1), deriv, elem(ie))
+             vfsph = vsph(:,:,:,k,1) + vsph(:,:,:,k,2) - dtsub*vfsph
+             !   Vertical term.
+             do d = 1, 2 ! horiz vel dims
+                if (k == 1) then
+                   w1 = (vsph(:,:,d,2,1) - vsph(:,:,d,1,1)) / &
+                        (hvcoord%etam(2) - hvcoord%etam(1))
+                else if (k == nlev) then
+                   w1 = (vsph(:,:,d,nlev,1) - vsph(:,:,d,nlev-1,1)) / &
+                        (hvcoord%etam(nlev) - hvcoord%etam(nlev-1))
+                else
+                   do i = 1, 3
+                      w3(:,:,i) = hvcoord%etam(k-2+i) ! interp support
+                   end do
+                   w2 = hvcoord%etam(k) ! derivative at this eta value
+                   call eval_lagrange_poly_derivative(3, w3, vsph(:,:,d,k-1:k+1,1), w2, w1)
+                end if
+                !amb PICK UP. This line leads to diffs in pure horiz
+                !    tests. Expected b/c of numerical divergence. However, I'm
+                !    seeing nondeterminism, too. Investigate.
+                !vfsph(:,:,d) = vfsph(:,:,d) - dtsub*eta_dot(:,:,k,2)*w1
+             end do
+             !   Finish the formula.
+             vfsph = half*vfsph
+             !   Transform to Cartesian.
              do d = 1, 3
-                vnode(d,:,:,k,ie) = sum(elem(ie)%vec_sphere2cart(:,:,d,:)*vsph(:,:,:,3), 3)
+                vnode(d,:,:,k,ie) = sum(elem(ie)%vec_sphere2cart(:,:,d,:)*vfsph, 3)
              end do
              ! Final vertical velocity at midpoint nodes.
              
