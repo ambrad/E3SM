@@ -1371,7 +1371,7 @@ contains
              end do
              ! Final horizontal velocity at midpoint nodes.
              vsph(:,:,:,3) = ugradv_sphere(vsph(:,:,:,2), vsph(:,:,:,1), deriv, elem(ie))
-             vsph(:,:,:,3) = (vsph(:,:,:,1) + vsph(:,:,:,2))/2 - (dtsub/2)*vsph(:,:,:,3)
+             vsph(:,:,:,3) = half*(vsph(:,:,:,1) + vsph(:,:,:,2) - dtsub*vsph(:,:,:,3))
              do d = 1, 3
                 vnode(d,:,:,k,ie) = sum(elem(ie)%vec_sphere2cart(:,:,d,:)*vsph(:,:,:,3), 3)
              end do
