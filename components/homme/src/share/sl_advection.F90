@@ -1332,6 +1332,14 @@ contains
        alpha(1) = real(nsubstep - step    , real_kind)/nsubstep
        alpha(2) = real(nsubstep - step + 1, real_kind)/nsubstep
        do ie = nets, nete
+          ! This section of code evaluates a formula to provide an estimate of
+          ! nodal velocities that are use to create a 2nd-order update to the
+          ! trajectory. The fundamental formula for the update in position p
+          ! from arrival point p1 to departure point p0 is
+          !     p0 = p1 - dt/2 (v(p1,t0) + v(p1,t1) + dt v(p1,t1) grad v(p1,t0)).
+          ! Here we compute the velocity estimate at the nodes:
+          !     1/2 v(p1,t0) + v(p1,t1) + dt v(p1,t1) grad v(p1,t0).
+          
           ! Compute eta_dot at midpoint nodes at the start and end of the
           ! substep.
           do t = 1,2
@@ -1366,10 +1374,15 @@ contains
                      &             (hvcoord%etai(k+1) - hvcoord%etai(k))
              end do
           end do
+
+          ! Collect the horizontal nodal velocities.
           do t = 1, 2
              vsph(:,:,:,:,t) = (1 - alpha(t))*elem(ie)%derived%vstar + &
                   &                 alpha(t) *elem(ie)%derived%vn0
           end do
+
+          ! Given the vertical and horizontal nodal velocities at time
+          ! endpoints, evaluate the velocity estimate formula.
           do k = 1, nlev
              ! Final horizontal velocity at midpoint nodes.
              !   Horizontal terms.
