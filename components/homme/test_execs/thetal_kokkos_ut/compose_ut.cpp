@@ -114,6 +114,11 @@ struct Session {
     const auto seed = r.gen_seed();
     printf("seed %u\n", seed);
 
+    nlev = NUM_PHYSICAL_LEV;
+    assert(nlev > 0);
+    np = NP;
+    assert(np == 4);
+
     assert(QSIZE_D >= 4);
     parse_command_line();
     assert(is_sphere); // planar isn't available in Hxx yet
@@ -138,10 +143,17 @@ struct Session {
     p.scale_factor = is_sphere ? PhysicalConstants::rearth0 : 1;
     p.laplacian_rigid_factor = is_sphere ? 1/p.scale_factor : 0;
 
+    { // Set hybrid coordinate values to deterministic ones.
+      std::vector<Real> hyam(nlev, 0), hyai(nlev+1, 0), hybm(nlev), hybi(nlev+1);
+      for (int i = 0; i < nlev+1; ++i) hybi[i] = Real(i)/nlev;
+      for (int i = 0; i < nlev; ++i) hybm[i] = (hybi[i] + hybi[i+1])/2;
+      h.init(1e5, hyam.data(), hyai.data(), hybm.data(), hybi.data());
+    }
     const auto hyai = cmvdc(h.hybrid_ai);
     const auto hybi = cmvdc(h.hybrid_bi);
     const auto hyam = cmvdc(h.hybrid_am);
     const auto hybm = cmvdc(h.hybrid_bm);
+    
     auto& ref_FE = c.create<ReferenceElement>();
     std::vector<Real> dvv(NP*NP), mp(NP*NP);
     init_compose_f90(ne, hyai.data(), hybi.data(), &hyam(0)[0], &hybm(0)[0], h.ps0,
@@ -168,11 +180,6 @@ struct Session {
     fbm.allocate();
     ct.init_buffers(fbm);
     ct.init_boundary_exchanges();
-
-    nlev = NUM_PHYSICAL_LEV;
-    assert(nlev > 0);
-    np = NP;
-    assert(np == 4);
 
     c.create<VerticalRemapManager>();
   }
