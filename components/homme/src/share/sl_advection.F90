@@ -55,8 +55,7 @@ module sl_advection
   real(kind=real_kind), dimension(:,:,:,:,:), allocatable :: vnode, vdep ! (3,np,np,nlev,nelemd)
   type (cartesian3D_t), allocatable :: dep_points_all(:,:,:,:)           ! (  np,np,nlev,nelemd)
   real(kind=real_kind), dimension(:,:,:,:), allocatable :: &
-       eta_dot_node,             & ! (np,np,nlevp,nelemd)
-       eta_dot_dep, dep_eta_all    ! (np,np,nlev ,nelemd)
+       eta_dot_node, eta_dot_dep, dep_eta_all ! (np,np,nlev,nelemd)
 
 contains
 
@@ -145,7 +144,9 @@ contains
        if (enhanced_trajectory) then
           if (semi_lagrange_trajectory_nsubstep == 1 .and. par%masterproc) &
                print *, 'COMPOSE> Running new alg even though nsubstep = 1.'
-          allocate(vnode(3,np,np,nlev,size(elem)), vdep(3,np,np,nlev,size(elem)))
+          allocate(vnode(3,np,np,nlev,size(elem)), vdep(3,np,np,nlev,size(elem)), &
+               eta_dot_node(np,np,nlev,size(elem)), eta_dot_dep(np,np,nlev,size(elem)), &
+               dep_eta_all(np,np,nlev,size(elem)))
        end if
        dp_tol = -one
     endif
@@ -1303,8 +1304,9 @@ contains
     type (TimeLevel_t), intent(in) :: tl
     integer, intent(in) :: nets, nete, nsubstep
 
-    integer :: step, ie, d, i, j, k, info, nlyr
-    real(real_kind) :: alpha(2), dtsub, uxyz(np,np,3), norm, p(3), vsph(np,np,2,3)
+    integer :: step, ie, d, i, j, k, t, info, nlyr
+    real(real_kind) :: alpha(2), dtsub, uxyz(np,np,3), norm, p(3), vsph(np,np,2,3), &
+         eta_dot(np,np,nlevp,2), vdp(np,np,2), divdp(np,np), dps(np,np), ps(np,np)
 
     call t_startf('SLMM_trajectory')
 
@@ -1323,22 +1325,58 @@ contains
 
     dtsub = dt / nsubstep
     do step = 1, nsubstep
-       !todo make (eta_dot_node, eta_dot_dep) and dep_eta_all arrays
+       !done make (eta_dot_node, eta_dot_dep) and dep_eta_all arrays
        !todo compute eta_dot (*not* eta_dot_dpdn)
        !todo don't forget vertical coupling terms in horizontal
        alpha(1) = real(nsubstep - step    , real_kind)/nsubstep
        alpha(2) = real(nsubstep - step + 1, real_kind)/nsubstep
        do ie = nets, nete
-          do k = 1, nlev
-             do i = 1, 2
-                vsph(:,:,:,i) = (1 - alpha(i))*elem(ie)%derived%vstar(:,:,:,k) + &
-                     &               alpha(i) *elem(ie)%derived%vn0  (:,:,:,k)
+          ! Compute eta_dot at midpoint nodes at the start and end of the
+          ! substep.
+          eta_dot(:,:,1,:) = zero
+          do t = 1,2
+             ! eta_dot_dpdn at interface nodes.
+             eta_dot(:,:,1,t) = zero
+             do k = 1,nlev
+                do d = 1,2
+                   vdp(:,:,d) = (1 - alpha(t))*elem(ie)%derived%vstar(:,:,d,k)* &
+                        &                      elem(ie)%derived%dp(:,:,k) + &
+                        &            alpha(t) *elem(ie)%derived%vn0(:,:,d,k)* &
+                        &                      elem(ie)%state%dp3d(:,:,k,tl%np1)
+                end do
+                divdp = divergence_sphere(vdp, deriv, elem(ie))
+                eta_dot(:,:,k+1,t) = eta_dot(:,:,k,t) + divdp
              end do
+             dps = eta_dot(:,:,nlevp,t)
+             eta_dot(:,:,nlevp,t) = zero
+             do k = 2,nlev
+                eta_dot(:,:,k,t) = hvcoord%hybi(k)*dps - eta_dot(:,:,k,t)
+             end do
+             ! eta_dot_dpdn interface -> eta_dot midpoint using the formula
+             !     eta_dot = eta_dot_dpdn/(A_eta p0 + B_eta ps)
+             ps = hvcoord%hyai(1)*hvcoord%ps0 + &
+                  &    (1 - alpha(t))*sum(elem(ie)%derived%dp(:,:,1:nlev)) + &
+                  &         alpha(t) *sum(elem(ie)%state%dp3d(:,:,k,tl%np1))
+             do k = 1,nlev
+                eta_dot(:,:,k,t) = half*(eta_dot(:,:,k,t) + eta_dot(:,:,k+1,t)) * &
+                     &             ((hvcoord%hyai(k+1) - hvcoord%hyai(k))*hvcoord%ps0 + &
+                     &              (hvcoord%hybi(k+1) - hvcoord%hybi(k))*ps) / &
+                     &             (hvcoord%etai(k+1) - hvcoord%etai(k))
+             end do
+          end do
+          do k = 1, nlev
+             do t = 1, 2
+                vsph(:,:,:,t) = (1 - alpha(t))*elem(ie)%derived%vstar(:,:,:,k) + &
+                     &               alpha(t) *elem(ie)%derived%vn0  (:,:,:,k)
+             end do
+             ! Final horizontal velocity at midpoint nodes.
              vsph(:,:,:,3) = ugradv_sphere(vsph(:,:,:,2), vsph(:,:,:,1), deriv, elem(ie))
              vsph(:,:,:,3) = (vsph(:,:,:,1) + vsph(:,:,:,2))/2 - (dtsub/2)*vsph(:,:,:,3)
              do d = 1, 3
                 vnode(d,:,:,k,ie) = sum(elem(ie)%vec_sphere2cart(:,:,d,:)*vsph(:,:,:,3), 3)
              end do
+             ! Final vertical velocity at midpoint nodes.
+             
           end do
        end do
 
