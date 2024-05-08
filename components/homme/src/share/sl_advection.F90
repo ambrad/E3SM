@@ -1327,14 +1327,13 @@ contains
     dtsub = dt / nsubstep
     do step = 1, nsubstep
        !done make (eta_dot_node, eta_dot_dep) and dep_eta_all arrays
-       !todo compute eta_dot (*not* eta_dot_dpdn)
+       !done compute eta_dot (*not* eta_dot_dpdn)
        !todo don't forget vertical coupling terms in horizontal
        alpha(1) = real(nsubstep - step    , real_kind)/nsubstep
        alpha(2) = real(nsubstep - step + 1, real_kind)/nsubstep
        do ie = nets, nete
           ! Compute eta_dot at midpoint nodes at the start and end of the
           ! substep.
-          eta_dot(:,:,1,:) = zero
           do t = 1,2
              ! eta_dot_dpdn at interface nodes.
              eta_dot(:,:,1,t) = zero
@@ -1353,12 +1352,13 @@ contains
              do k = 2,nlev
                 eta_dot(:,:,k,t) = hvcoord%hybi(k)*w1 - eta_dot(:,:,k,t)
              end do
-             ! eta_dot_dpdn interface -> eta_dot midpoint using the formula
+             ! Transform eta_dot_dpdn at interfaces to eta_dot at midpoints
+             ! using the formula
              !     eta_dot = eta_dot_dpdn/(A_eta p0 + B_eta ps).
-             ! Compute ps.
+             !   Compute ps.
              w1 = hvcoord%hyai(1)*hvcoord%ps0 + &
-                  &    (1 - alpha(t))*sum(elem(ie)%derived%dp(:,:,1:nlev)) + &
-                  &         alpha(t) *sum(elem(ie)%state%dp3d(:,:,k,tl%np1))
+                  &    (1 - alpha(t))*sum(elem(ie)%derived%dp(:,:,:), 3) + &
+                  &         alpha(t) *sum(elem(ie)%state%dp3d(:,:,:,tl%np1), 3)
              do k = 1,nlev
                 eta_dot(:,:,k,t) = half*(eta_dot(:,:,k,t) + eta_dot(:,:,k+1,t)) * &
                      &             ((hvcoord%hyai(k+1) - hvcoord%hyai(k))*hvcoord%ps0 + &
@@ -1390,10 +1390,7 @@ contains
                    w2 = hvcoord%etam(k) ! derivative at this eta value
                    call eval_lagrange_poly_derivative(3, w3, vsph(:,:,d,k-1:k+1,1), w2, w1)
                 end if
-                !amb PICK UP. This line leads to diffs in pure horiz
-                !    tests. Expected b/c of numerical divergence. However, I'm
-                !    seeing nondeterminism, too. Investigate.
-                !vfsph(:,:,d) = vfsph(:,:,d) - dtsub*eta_dot(:,:,k,2)*w1
+                vfsph(:,:,d) = vfsph(:,:,d) - dtsub*eta_dot(:,:,k,2)*w1
              end do
              !   Finish the formula.
              vfsph = half*vfsph
