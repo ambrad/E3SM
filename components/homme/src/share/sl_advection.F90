@@ -1304,10 +1304,10 @@ contains
     type (TimeLevel_t), intent(in) :: tl
     integer, intent(in) :: nets, nete, nsubstep
 
-    integer :: step, ie, d, i, j, k, t, info, nlyr
+    integer :: step, ie, d, i, j, k, t, info, nlyr, k1, k2
     real(real_kind) :: alpha(2), dtsub, uxyz(np,np,3), norm, p(3), &
          vsph(np,np,2,nlev,2), vfsph(np,np,2), eta_dot(np,np,nlevp,2), vdp(np,np,2), &
-         divdp(np,np), w1(np,np), w2(np,np), w3(np,np,3)
+         divdp(np,np), w1(np,np), w2(np,np), w3(np,np,3), w4(np,np,3)
 
     call t_startf('SLMM_trajectory')
 
@@ -1328,7 +1328,7 @@ contains
     do step = 1, nsubstep
        !done make (eta_dot_node, eta_dot_dep) and dep_eta_all arrays
        !done compute eta_dot (*not* eta_dot_dpdn)
-       !todo don't forget vertical coupling terms in horizontal
+       !done don't forget vertical coupling terms in horizontal
        alpha(1) = real(nsubstep - step    , real_kind)/nsubstep
        alpha(2) = real(nsubstep - step + 1, real_kind)/nsubstep
        do ie = nets, nete
@@ -1382,20 +1382,23 @@ contains
           end do
 
           ! Given the vertical and horizontal nodal velocities at time
-          ! endpoints, evaluate the velocity estimate formula.
+          ! endpoints, evaluate the velocity estimate formula, providing the
+          ! final horizontal and vertical velocity estimates at midpoint nodes.
           do k = 1, nlev
-             ! Final horizontal velocity at midpoint nodes.
+             ! Horizontal velocity.
              !   Horizontal terms.
              vfsph = ugradv_sphere(vsph(:,:,:,k,2), vsph(:,:,:,k,1), deriv, elem(ie))
              vfsph = vsph(:,:,:,k,1) + vsph(:,:,:,k,2) - dtsub*vfsph
              !   Vertical term.
              do d = 1, 2 ! horiz vel dims
-                if (k == 1) then
-                   w1 = (vsph(:,:,d,2,1) - vsph(:,:,d,1,1)) / &
-                        (hvcoord%etam(2) - hvcoord%etam(1))
-                else if (k == nlev) then
-                   w1 = (vsph(:,:,d,nlev,1) - vsph(:,:,d,nlev-1,1)) / &
-                        (hvcoord%etam(nlev) - hvcoord%etam(nlev-1))
+                if (k == 1 .or. k == nlev) then
+                   if (k == 1) then
+                      k1 = 1; k2 = 2
+                   else
+                      k1 = nlev-1; k2 = nlev
+                   end if
+                   w1 = (vsph(:,:,d,k2,1) - vsph(:,:,d,k1,1)) / &
+                        (hvcoord%etam(k2) - hvcoord%etam(k1))
                 else
                    do i = 1, 3
                       w3(:,:,i) = hvcoord%etam(k-2+i) ! interp support
@@ -1411,8 +1414,41 @@ contains
              do d = 1, 3
                 vnode(d,:,:,k,ie) = sum(elem(ie)%vec_sphere2cart(:,:,d,:)*vfsph, 3)
              end do
-             ! Final vertical velocity at midpoint nodes.
-             
+
+             ! Vertical velocity.
+             w2 = hvcoord%etam(k)
+             if (k == 1 .or. k == nlev) then
+                if (k == 1) then
+                   k1 = 1; k2 = 2
+                   w3(:,:,1) = hvcoord%etai(1)
+                   w4(:,:,1) = zero
+                   do i = 1, 2
+                      w3(:,:,i+1) = hvcoord%etam(i)
+                      w4(:,:,i+1) = eta_dot(:,:,i,2)
+                   end do
+                else
+                   k1 = nlev-1; k2 = nlev
+                   do i = 1, 2
+                      w3(:,:,i) = hvcoord%etam(k1-i+i)
+                      w4(:,:,i) = eta_dot(:,:,k1-i+i,2)
+                   end do
+                   w3(:,:,3) = hvcoord%etai(nlevp)
+                   w4(:,:,3) = zero
+                end if
+                call eval_lagrange_poly_derivative(k2-k1+1, w3, w4, w2, w1)
+             else
+                k1 = k-1
+                k2 = k+1
+                do i = 1, 3
+                   w3(:,:,i) = hvcoord%etam(k1-1+i)
+                end do                
+                call eval_lagrange_poly_derivative(k2-k1+1, w3, eta_dot(:,:,k1:k2,2), w2, w1)
+             end if
+             w3(:,:,1:2) = gradient_sphere(eta_dot(:,:,k,2), deriv, elem(ie)%Dinv)
+             eta_dot_node(:,:,k,ie) = &
+                  half*(eta_dot(:,:,k,1) + eta_dot(:,:,k,2) &
+                  &     - dtsub*(vsph(:,:,1,k,1)*w3(:,:,1) + vsph(:,:,2,k,1)*w3(:,:,2) + &
+                  &              eta_dot(:,:,k,1)*w1))
           end do
        end do
 
