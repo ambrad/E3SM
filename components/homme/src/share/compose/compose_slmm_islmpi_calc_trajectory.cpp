@@ -110,10 +110,11 @@ void traj_copy_next_step (IslMpi<MT>& cm, Trajectory& t) {
   }
 }
 
-template <typename MT>
-void calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
-                      const Int step, const Real dtsub, Real* dep_points_r,
-                      const Real* vnode_r, Real* vdep_r)
+template <typename MT> void
+calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
+                 const Int step, const Real dtsub,
+                 Real* dep_points_r, const Real* vnode_r, Real* vdep_r,
+                 const Real* dep_eta_r, const Real* eta_dot_node, Real* eta_dot_dep)
 {
   const int np = 4;
 
@@ -157,8 +158,9 @@ void calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
   wait_on_send(cm, true /* skip_if_empty */);
 }
 
-template void calc_trajectory(IslMpi<ko::MachineTraits>&, const Int, const Int,
-                              const Int, const Real, Real*, const Real*, Real*);
+template void calc_trajectory(
+  IslMpi<ko::MachineTraits>&, const Int, const Int, const Int, const Real, Real*,
+  const Real*, Real*, const Real*, const Real*, Real*);
 
 } // namespace islmpi
 } // namespace homme
