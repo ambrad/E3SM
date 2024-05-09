@@ -1338,7 +1338,7 @@ contains
           ! from arrival point p1 to departure point p0 is
           !     p0 = p1 - dt/2 (v(p1,t0) + v(p1,t1) + dt v(p1,t1) grad v(p1,t0)).
           ! Here we compute the velocity estimate at the nodes:
-          !     1/2 v(p1,t0) + v(p1,t1) + dt v(p1,t1) grad v(p1,t0).
+          !     1/2 (v(p1,t0) + v(p1,t1) + dt v(p1,t1) grad v(p1,t0)).
           
           ! Compute eta_dot at midpoint nodes at the start and end of the
           ! substep.
@@ -1419,7 +1419,6 @@ contains
              w2 = hvcoord%etam(k)
              if (k == 1 .or. k == nlev) then
                 if (k == 1) then
-                   k1 = 1; k2 = 2
                    w3(:,:,1) = hvcoord%etai(1)
                    w4(:,:,1) = zero
                    do i = 1, 2
@@ -1427,15 +1426,14 @@ contains
                       w4(:,:,i+1) = eta_dot(:,:,i,2)
                    end do
                 else
-                   k1 = nlev-1; k2 = nlev
                    do i = 1, 2
-                      w3(:,:,i) = hvcoord%etam(k1-i+i)
-                      w4(:,:,i) = eta_dot(:,:,k1-i+i,2)
+                      w3(:,:,i) = hvcoord%etam(nlev-2+i)
+                      w4(:,:,i) = eta_dot(:,:,nlev-2+i,2)
                    end do
                    w3(:,:,3) = hvcoord%etai(nlevp)
                    w4(:,:,3) = zero
                 end if
-                call eval_lagrange_poly_derivative(k2-k1+1, w3, w4, w2, w1)
+                call eval_lagrange_poly_derivative(3, w3, w4, w2, w1)
              else
                 k1 = k-1
                 k2 = k+1
