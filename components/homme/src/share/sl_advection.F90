@@ -1207,6 +1207,8 @@ contains
 
     call t_startf('SLMM_trajectory')
 
+    call slmm_set_hvcoord(hvcoord%etam)
+
     do ie = nets,nete
        elem(ie)%derived%vn0 = elem(ie)%state%v(:,:,:,:,tl%np1)
     end do
@@ -1233,9 +1235,9 @@ contains
           ! nodal velocities that are use to create a 2nd-order update to the
           ! trajectory. The fundamental formula for the update in position p
           ! from arrival point p1 to departure point p0 is
-          !     p0 = p1 - dt/2 (v(p1,t0) + v(p1,t1) + dt v(p1,t1) grad v(p1,t0)).
+          !     p0 = p1 - dt/2 (v(p1,t0) + v(p1,t1) - dt v(p1,t1) grad v(p1,t0)).
           ! Here we compute the velocity estimate at the nodes:
-          !     1/2 (v(p1,t0) + v(p1,t1) + dt v(p1,t1) grad v(p1,t0)).
+          !     1/2 (v(p1,t0) + v(p1,t1) - dt v(p1,t1) grad v(p1,t0)).
           
           ! Compute eta_dot at midpoint nodes at the start and end of the
           ! substep.
@@ -1347,8 +1349,8 @@ contains
           end do
        end do
 
-       !todo pass eta_dot_node, eta_dot_dep, dep_eta_all arrays
-       !todo pass eta_ref array, just a small 1D array with eta coords for interp
+       !done pass eta_dot_node, eta_dot_dep, dep_eta_all arrays
+       !done pass eta_ref array, just a small 1D array with eta coords for interp
        !todo interp in vertical
        call slmm_calc_trajectory(nets, nete, step, dtsub, &
             dep_points_all, vnode, vdep, &

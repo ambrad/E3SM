@@ -187,6 +187,12 @@ module compose_mod
        type(cartesian3D_t), intent(in) :: sphere_cart_coord
      end subroutine slmm_check_ref2sphere
 
+     subroutine slmm_set_hvcoord(etam) bind(c)
+       use iso_c_binding, only: c_double
+       use dimensions_mod, only : nlev
+       real(kind=c_double), intent(in) :: etam(nlev)
+     end subroutine slmm_set_hvcoord
+
      subroutine slmm_calc_trajectory(nets, nete, step, dtsub, &
           dep_points, vnode, vdep, dep_eta_all, eta_dot_node, eta_dot_dep, &
           info) bind(c)

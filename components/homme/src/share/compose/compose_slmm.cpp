@@ -118,6 +118,24 @@ void finalize_init_phase (IslMpi<MT>& cm, typename IslMpi<MT>::Advecter& advecte
   sync_to_device(cm);
 }
 
+template <typename MT>
+void set_hvcoord (IslMpi<MT>& cm, const Real* etam) {
+  if (cm.etam.size() > 0) return;
+#if defined COMPOSE_HORIZ_OPENMP
+# pragma omp master
+#endif
+  {
+    slmm_assert(cm.nlev > 0);
+    cm.etam = typename IslMpi<MT>::template ArrayD<Real*>("etam", cm.nlev);
+    const auto h = ko::create_mirror_view(cm.etam);
+    for (int k = 0; k < cm.nlev; ++k) h(k) = etam[k];
+    ko::deep_copy(h, cm.etam);
+  }
+#if defined COMPOSE_HORIZ_OPENMP
+# pragma omp barrier
+#endif
+}
+
 // Set pointers to HOMME data arrays.
 template <typename MT>
 void set_elem_data (IslMpi<MT>& cm, const Int ie, Real* qdp, const Int n0_qdp,
@@ -376,6 +394,13 @@ void slmm_check_ref2sphere (homme::Int ie, homme::Cartesian3D* p) {
   amb::dev_fin_threads();
 }
 
+void slmm_set_hvcoord (const homme::Real* etam) {
+  amb::dev_init_threads();
+  slmm_assert(homme::g_csl_mpi);
+  homme::islmpi::set_hvcoord(*homme::g_csl_mpi, etam);
+  amb::dev_fin_threads();
+}
+
 void slmm_calc_trajectory (
   homme::Int nets, homme::Int nete, homme::Int step, homme::Real dtsub,
   homme::Cartesian3D* dep_points, const homme::Real* vnode, homme::Real* vdep,
@@ -389,10 +414,9 @@ void slmm_calc_trajectory (
   auto depr = reinterpret_cast<homme::Real*>(dep_points);
   { slmm::Timer timer("h2d");
     homme::sl_traj_h2d(*homme::g_csl_mpi->tracer_arrays, dep_points); }
-#pragma message "todo"
   homme::islmpi::calc_trajectory(*homme::g_csl_mpi, nets - 1, nete - 1, step - 1,
                                  dtsub, depr, vnode, vdep,
-                                 nullptr, nullptr, nullptr);
+                                 dep_eta, eta_dot_node, eta_dot_dep);
   *info = 0;
   { slmm::Timer timer("d2h");
     homme::sl_traj_d2h(*homme::g_csl_mpi->tracer_arrays, dep_points); }

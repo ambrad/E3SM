@@ -520,6 +520,7 @@ struct IslMpi {
   const mpi::Parallel::Ptr p;
   const typename Advecter::ConstPtr advecter;
   const Int np, np2, nlev, qsize, qsized, nelemd, halo, traj_nsubstep;
+  ArrayD<Real*> etam;
 
   ElemDataListH ed_h; // this rank's owned cells, indexed by LID
   ElemDataListD ed_d;
