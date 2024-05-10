@@ -132,7 +132,7 @@ calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
 #ifdef COMPOSE_PORT
   auto& dep_points = cm.tracer_arrays->dep_points;
 #else
-  DepPointsH<MT> dep_points(dep_points_r, cm.nelemd, cm.nlev, cm.np2);
+  DepPointsH<MT> dep_points(dep_points_r, cm.nelemd, cm.nlev, cm.np2, 3);
 #endif
 
   CA4<const Real> vnode (vnode_r , cm.nelemd, cm.nlev, cm.np2, 3);

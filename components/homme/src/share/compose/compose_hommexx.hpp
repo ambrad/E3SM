@@ -14,7 +14,7 @@ using SetView = Kokkos::View<DataType, Kokkos::LayoutRight, Kokkos::DefaultExecu
 void set_views(const SetView<HommexxReal***>& spheremp,
                const SetView<HommexxReal****>& dp, const SetView<HommexxReal*****>& dp3d,
                const SetView<HommexxReal******>& qdp, const SetView<HommexxReal*****>& q,
-               const SetView<HommexxReal*****>& dep_points);
+               const SetView<HommexxReal*****>& dep_points, const int dep_points_ndim);
 
 void advect(const int np1, const int n0_qdp, const int np1_qdp);
 

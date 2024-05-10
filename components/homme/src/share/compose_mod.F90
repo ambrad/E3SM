@@ -201,7 +201,7 @@ module compose_mod
        use coordinate_systems_mod, only : cartesian3D_t
        integer(kind=c_int), value, intent(in) :: nets, nete, step
        real(kind=c_double), value, intent(in) :: dtsub
-       type(cartesian3D_t), intent(inout) :: dep_points(np,np,nlev,nelemd)
+       real(kind=c_double), intent(inout) :: dep_points(3,np,np,nlev,nelemd) !todo 4
        real(kind=c_double), intent(in) :: vnode(3,np,np,nlev,nelemd)
        real(kind=c_double), intent(out) :: vdep(3,np,np,nlev,nelemd)
        real(kind=c_double), dimension(np,np,nlev,nelemd), intent(in) :: dep_eta_all, eta_dot_node
@@ -219,15 +219,15 @@ module compose_mod
        logical(kind=c_bool), value, intent(in) :: h2d, d2h
      end subroutine slmm_csl_set_elem_data
 
-     subroutine slmm_csl(nets, nete, dep_points, minq, maxq, info) bind(c)
+     subroutine slmm_csl(nets, nete, dep_points, dep_points_ndim, minq, maxq, info) bind(c)
        use iso_c_binding, only: c_int, c_double
        use dimensions_mod, only : np, nlev, nelemd, qsize
        use coordinate_systems_mod, only : cartesian3D_t
-       integer(kind=c_int), value, intent(in) :: nets, nete
+       integer(kind=c_int), value, intent(in) :: nets, nete, dep_points_ndim
        ! dep_points is const in principle, but if lev <=
        ! semi_lagrange_nearest_point_lev, a departure point may be altered if
        ! the winds take it outside of the comm halo.
-       type(cartesian3D_t), intent(inout) :: dep_points(np,np,nlev,nelemd)
+       real(kind=c_double), intent(inout) :: dep_points(dep_points_ndim,np,np,nlev,nelemd)
        real(kind=c_double), intent(in) :: &
             minq(np,np,nlev,qsize,nelemd), maxq(np,np,nlev,qsize,nelemd)
        integer(kind=c_int), intent(out) :: info

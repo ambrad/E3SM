@@ -519,7 +519,8 @@ struct IslMpi {
 
   const mpi::Parallel::Ptr p;
   const typename Advecter::ConstPtr advecter;
-  const Int np, np2, nlev, qsize, qsized, nelemd, halo, traj_nsubstep;
+  const Int np, np2, nlev, qsize, qsized, nelemd, halo, traj_nsubstep,
+    dep_points_ndim;
   ArrayD<Real*> etam;
 
   ElemDataListH ed_h; // this rank's owned cells, indexed by LID
@@ -573,7 +574,8 @@ struct IslMpi {
           Int itraj_nsubstep)
     : p(ip), advecter(advecter),
       np(inp), np2(np*np), nlev(inlev), qsize(iqsize), qsized(iqsized), nelemd(inelemd),
-      halo(ihalo), traj_nsubstep(itraj_nsubstep), tracer_arrays(tracer_arrays_)
+      halo(ihalo), traj_nsubstep(itraj_nsubstep), dep_points_ndim(3), //todo (traj_nsubstep > 0 ? 4 : 3),
+      tracer_arrays(tracer_arrays_)
   {}
 
   IslMpi(const IslMpi&) = delete;

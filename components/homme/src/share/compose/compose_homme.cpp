@@ -9,7 +9,7 @@ TracerArrays<MT>::TracerArrays (Int nelemd_, Int nlev_, Int np_, Int qsize_, Int
     pdp(nelemd, np2, nlev), pdp3d(nelemd, np2, nlev, -1, 3),
     pqdp(nelemd, np2, nlev, qsized, 2), pq(nelemd, np2, nlev, qsized),
 #if defined COMPOSE_PORT
-    dep_points("dep_points", nelemd, nlev, np2),
+    dep_points("dep_points", nelemd, nlev, np2, 3), //todo
     q_min("q_min", nelemd, qsize, np2, nlev),
     q_max("q_max", nelemd, qsize, np2, nlev)
 #else
@@ -31,7 +31,7 @@ void TracerArrays<MT>::alloc_if_not () {
 #endif
 
 template <typename MT>
-void sl_traj_h2d (TracerArrays<MT>& ta, Cartesian3D* dep_points) {
+void sl_traj_h2d (TracerArrays<MT>& ta, Real* dep_points) {
 #if defined COMPOSE_PORT
 # if defined COMPOSE_HORIZ_OPENMP
 # pragma omp master
@@ -40,7 +40,7 @@ void sl_traj_h2d (TracerArrays<MT>& ta, Cartesian3D* dep_points) {
   ko::fence();
   ta.alloc_if_not();
   const Int nelemd = ta.nelemd, qsize = ta.qsize, np2 = ta.np2, nlev = ta.nlev;
-  const DepPointsH<MT> cart_h(reinterpret_cast<Real*>(dep_points), nelemd, nlev, np2);
+  const DepPointsH<MT> cart_h(dep_points, nelemd, nlev, np2, 3); //todo
   ko::deep_copy(ta.dep_points, cart_h);
 # ifdef COMPOSE_HORIZ_OPENMP
   }
@@ -50,7 +50,7 @@ void sl_traj_h2d (TracerArrays<MT>& ta, Cartesian3D* dep_points) {
 }
 
 template <typename MT>
-void sl_traj_d2h (const TracerArrays<MT>& ta, Cartesian3D* dep_points) {
+void sl_traj_d2h (const TracerArrays<MT>& ta, Real* dep_points) {
 #if defined COMPOSE_PORT
 # if defined COMPOSE_HORIZ_OPENMP
 # pragma omp master
@@ -59,7 +59,7 @@ void sl_traj_d2h (const TracerArrays<MT>& ta, Cartesian3D* dep_points) {
   ko::fence();
   const auto q_m = ko::create_mirror_view(ta.q);
   const Int nelemd = ta.nelemd, np2 = ta.np2, nlev = ta.nlev;
-  const DepPointsH<MT> dep_points_h(reinterpret_cast<Real*>(dep_points), nelemd, nlev, np2);
+  const DepPointsH<MT> dep_points_h(dep_points, nelemd, nlev, np2, 3); //todo
   ko::deep_copy(dep_points_h, ta.dep_points);
 # ifdef COMPOSE_HORIZ_OPENMP
   }
@@ -69,7 +69,7 @@ void sl_traj_d2h (const TracerArrays<MT>& ta, Cartesian3D* dep_points) {
 }
 
 template <typename MT>
-void sl_h2d (TracerArrays<MT>& ta, bool transfer, Cartesian3D* dep_points) {
+void sl_h2d (TracerArrays<MT>& ta, bool transfer, Real* dep_points, Int ndim) {
 #if defined COMPOSE_PORT
 # if defined COMPOSE_HORIZ_OPENMP
 # pragma omp master
@@ -78,7 +78,7 @@ void sl_h2d (TracerArrays<MT>& ta, bool transfer, Cartesian3D* dep_points) {
   ko::fence();
   ta.alloc_if_not();
   const Int nelemd = ta.nelemd, qsize = ta.qsize, np2 = ta.np2, nlev = ta.nlev;
-  const DepPointsH<MT> cart_h(reinterpret_cast<Real*>(dep_points), nelemd, nlev, np2);
+  const DepPointsH<MT> cart_h(dep_points, nelemd, nlev, np2, ndim);
   ko::deep_copy(ta.dep_points, cart_h);
   if (transfer) {
     const auto qdp_m = ko::create_mirror_view(ta.qdp);
@@ -108,7 +108,7 @@ void sl_h2d (TracerArrays<MT>& ta, bool transfer, Cartesian3D* dep_points) {
 }
 
 template <typename MT>
-void sl_d2h (const TracerArrays<MT>& ta, bool transfer, Cartesian3D* dep_points,
+void sl_d2h (const TracerArrays<MT>& ta, bool transfer, Real* dep_points, Int ndim,
              Real* minq, Real* maxq) {
 #if defined COMPOSE_PORT
   if ( ! transfer) return;
@@ -125,7 +125,7 @@ void sl_d2h (const TracerArrays<MT>& ta, bool transfer, Cartesian3D* dep_points,
       for (Int k = 0; k < np2; ++k)
         for (Int lev = 0; lev < nlev; ++lev)
           ta.pq(ie,iq,k,lev) = q_m(ie,iq,k,lev);
-  const DepPointsH<MT> dep_points_h(reinterpret_cast<Real*>(dep_points), nelemd, nlev, np2);
+  const DepPointsH<MT> dep_points_h(dep_points, nelemd, nlev, np2, ndim);
   const QExtremaH<MT>
     q_min_h(minq, nelemd, qsize, np2, nlev),
     q_max_h(maxq, nelemd, qsize, np2, nlev);
@@ -227,13 +227,13 @@ void delete_tracer_arrays () {
 
 template struct TracerArrays<ko::MachineTraits>;
 template void sl_traj_h2d(TracerArrays<ko::MachineTraits>& ta,
-                          Cartesian3D* dep_points);
+                          Real* dep_points);
 template void sl_traj_d2h(const TracerArrays<ko::MachineTraits>& ta,
-                          Cartesian3D* dep_points);
+                          Real* dep_points);
 template void sl_h2d(TracerArrays<ko::MachineTraits>& ta, bool transfer,
-                     Cartesian3D* dep_points);
+                     Real* dep_points, Int ndim);
 template void sl_d2h(const TracerArrays<ko::MachineTraits>& ta, bool transfer,
-                     Cartesian3D* dep_points, Real* minq, Real* maxq);
+                     Real* dep_points, Int ndim, Real* minq, Real* maxq);
 template void cedr_h2d(const TracerArrays<ko::MachineTraits>& ta, bool transfer);
 template void cedr_d2h(const TracerArrays<ko::MachineTraits>& ta, bool transfer);
 

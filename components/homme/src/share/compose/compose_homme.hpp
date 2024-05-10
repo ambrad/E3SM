@@ -22,7 +22,7 @@ template <typename T> using FA4 = ko::View<T****,  ko::LayoutLeft, ko::HostSpace
 template <typename T> using FA5 = ko::View<T*****, ko::LayoutLeft, ko::HostSpace>;
 
 template <typename MT> using DepPoints =
-  ko::View<Real***[3], ko::LayoutRight, typename MT::DDT>;
+  ko::View<Real****, ko::LayoutRight, typename MT::DDT>;
 template <typename MT> using QExtrema =
   ko::View<Real****, ko::LayoutRight, typename MT::DDT>;
   
@@ -287,16 +287,16 @@ subview_ie (const Int ie, const TracerView<T*****>& s)
 { return TracerView<T****>(&s(ie,0,0,0,0), s.extent(1), s.extent(2), s.extent(3), s.extent(4)); }
 
 template <typename MT>
-void sl_traj_h2d(TracerArrays<MT>& ta, Cartesian3D* dep_points);
+void sl_traj_h2d(TracerArrays<MT>& ta, Real* dep_points);
 
 template <typename MT>
-void sl_traj_d2h(const TracerArrays<MT>& ta, Cartesian3D* dep_points);
+void sl_traj_d2h(const TracerArrays<MT>& ta, Real* dep_points);
 
 template <typename MT>
-void sl_h2d(TracerArrays<MT>& ta, bool transfer, Cartesian3D* dep_points);
+void sl_h2d(TracerArrays<MT>& ta, bool transfer, Real* dep_points, Int ndim);
 
 template <typename MT>
-void sl_d2h(const TracerArrays<MT>& ta, bool transfer, Cartesian3D* dep_points,
+void sl_d2h(const TracerArrays<MT>& ta, bool transfer, Real* dep_points, Int ndim,
             Real* minq, Real* maxq);
 
 template <typename MT>

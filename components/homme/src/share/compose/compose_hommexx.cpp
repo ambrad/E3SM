@@ -24,7 +24,7 @@ using View = typename TracerArrays<ko::MachineTraits>::View<DataType>;
 void set_views (const SetView<HommexxReal***>& spheremp,
                 const SetView<HommexxReal****>& dp, const SetView<HommexxReal*****>& dp3d,
                 const SetView<HommexxReal******>& qdp, const SetView<HommexxReal*****>& q,
-                const SetView<HommexxReal*****>& dep_points) {
+                const SetView<HommexxReal*****>& dep_points, const Int ndim) {
   static_assert(std::is_same<Real, HommexxReal>::value,
                 "Hommexx and Compose real types must be the same.");
 #ifdef COMPOSE_PORT
@@ -37,7 +37,7 @@ void set_views (const SetView<HommexxReal***>& spheremp,
   ta.dp3d = View<Real****>(dp3d.data(), nel, dp3d.extent_int(1), np2, nlev);
   ta.qdp = View<Real*****>(qdp.data(), nel, qdp.extent_int(1), qdp.extent_int(2), np2, nlev);
   ta.q = View<Real****>(q.data(), nel, q.extent_int(1), np2, nlev);
-  ta.dep_points = View<Real***[3]>(dep_points.data(), nel, dep_points.extent_int(1), np2);
+  ta.dep_points = View<Real****>(dep_points.data(), nel, dep_points.extent_int(1), np2, ndim);
 #else
   slmm_throw_if(true, "Running a Hommexx code path with the non-Hommexx build"
                 " is not supported.\n");

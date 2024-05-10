@@ -33,6 +33,7 @@ module sl_advection
 
   ! Configuration.
   logical :: is_sphere, enhanced_trajectory
+  integer :: dep_points_ndim
 
   ! For use in make_positive. Set at initialization to a function of hvcoord%dp0.
   real(kind=real_kind) :: dp_tol
@@ -52,8 +53,9 @@ module sl_advection
   real(kind=real_kind), dimension(:,:,:,:,:), allocatable :: minq, maxq  ! (np,np,nlev,qsize,nelemd)
 
   ! Trajectory velocity data.
-  real(kind=real_kind), dimension(:,:,:,:,:), allocatable :: vnode, vdep ! (3,np,np,nlev,nelemd)
-  type (cartesian3D_t), allocatable :: dep_points_all(:,:,:,:)           ! (  np,np,nlev,nelemd)
+  real(kind=real_kind), dimension(:,:,:,:,:), allocatable :: vnode, vdep ! (ndim,np,np,nlev,nelemd)
+  real(kind=real_kind), allocatable :: dep_points_all(:,:,:,:,:)         ! (ndim,np,np,nlev,nelemd)
+  !todo consolidate into above
   real(kind=real_kind), dimension(:,:,:,:), allocatable :: &
        eta_dot_node, eta_dot_dep, dep_eta_all ! (np,np,nlev,nelemd)
 
@@ -117,8 +119,9 @@ contains
        if (par%masterproc .and. nu_q > 0 .and. semi_lagrange_hv_q > 0) &
             write(iulog,*) 'COMPOSE> use HV; nu_q, all:', nu_q, semi_lagrange_hv_q
        is_sphere = trim(geometry) /= 'plane'
+       enhanced_trajectory = semi_lagrange_trajectory_nsubstep > 0
+       dep_points_ndim = 3
        nslots = nlev*qsize
-       allocate(dep_points_all(np,np,nlev,size(elem)))
        do ie = 1, size(elem)
           ! Provide a point inside the target element.
           call sphere2cart(elem(ie)%spherep(2,2), pinside)
@@ -139,8 +142,8 @@ contains
           need_conservation = 1
           call cedr_sl_init(np, nlev, qsize, qsize_d, timelevels, need_conservation)
        end if
-       allocate(minq(np,np,nlev,qsize,size(elem)), maxq(np,np,nlev,qsize,size(elem)))
-       enhanced_trajectory = semi_lagrange_trajectory_nsubstep > 0
+       allocate(minq(np,np,nlev,qsize,size(elem)), maxq(np,np,nlev,qsize,size(elem)), &
+            dep_points_all(dep_points_ndim,np,np,nlev,size(elem)))
        if (enhanced_trajectory) then
           if (semi_lagrange_trajectory_nsubstep == 1 .and. par%masterproc) &
                print *, 'COMPOSE> Running new alg even though nsubstep = 1.'
@@ -236,7 +239,7 @@ contains
     ! the following, "No barrier needed" comments justify why a barrier isn't
     ! needed.    
     ! No barrier needed: ale_rkdss has a horiz thread barrier at the end.
-    call slmm_csl(nets, nete, dep_points_all, minq, maxq, info)
+    call slmm_csl(nets, nete, dep_points_all, dep_points_ndim, minq, maxq, info)
     ! No barrier needed: slmm_csl has a horiz thread barrier at the end.
     if (info /= 0) then
        call write_velocity_data(elem, nets, nete, hybrid, dt, tl)
@@ -364,7 +367,7 @@ contains
        !$omp parallel do private(k)
 #endif
        do k = 1, nlev
-          call ALE_departure_from_gll(dep_points_all(:,:,k,ie), &
+          call ALE_departure_from_gll(dep_points_all(:,:,:,k,ie), dep_points_ndim, &
                elem(ie)%derived%vstar(:,:,:,k), elem(ie), dt, normalize=is_sphere)
        end do
     end do
@@ -517,7 +520,7 @@ contains
   !
   ! OUTPUT:
   !-----------------------------------------------------------------------------------!
-  subroutine ALE_departure_from_gll(acart, vstar, elem, dt, normalize)
+  subroutine ALE_departure_from_gll(acart, ndim, vstar, elem, dt, normalize)
     use physical_constants,     only : scale_factor
     use coordinate_systems_mod, only : spherical_polar_t, cartesian3D_t
     use time_mod,               only : timelevel_t
@@ -527,14 +530,15 @@ contains
 
     implicit none
 
-    type (cartesian3D_t)    ,intent(out)  :: acart(np,np)
+    integer                 ,intent(in)   :: ndim
+    real (kind=real_kind)   ,intent(out)  :: acart(ndim,np,np)
     real (kind=real_kind)   ,intent(in)   :: vstar(np,np,2)
     type (element_t)        ,intent(in)   :: elem
     real (kind=real_kind)   ,intent(in)   :: dt
-    logical, intent(in) :: normalize
+    logical                 ,intent(in)   :: normalize
 
-    integer                               :: i,j
-
+    integer                               :: i,j, d
+    type (cartesian3D_t)                  :: c3d
     real (kind=real_kind)                 :: uxyz (np,np,3), norm
 
     ! convert velocity from lat/lon to cartesian 3D
@@ -549,16 +553,14 @@ contains
     ! crude, 1st order accurate approximation.  to be improved
     do i=1,np
        do j=1,np
-          call sphere2cart(elem%spherep(i,j), acart(i,j))
-          acart(i,j)%x = acart(i,j)%x - dt*uxyz(i,j,1)/scale_factor
-          acart(i,j)%y = acart(i,j)%y - dt*uxyz(i,j,2)/scale_factor
-          acart(i,j)%z = acart(i,j)%z - dt*uxyz(i,j,3)/scale_factor
+          call sphere2cart(elem%spherep(i,j), c3d)
+          acart(1,i,j) = c3d%x - dt*uxyz(i,j,1)/scale_factor
+          acart(2,i,j) = c3d%y - dt*uxyz(i,j,2)/scale_factor
+          acart(3,i,j) = c3d%z - dt*uxyz(i,j,3)/scale_factor
           if (normalize) then
-             norm = sqrt(acart(i,j)%x*acart(i,j)%x + acart(i,j)%y*acart(i,j)%y + &
-                  acart(i,j)%z*acart(i,j)%z)
-             acart(i,j)%x = acart(i,j)%x / norm
-             acart(i,j)%y = acart(i,j)%y / norm
-             acart(i,j)%z = acart(i,j)%z / norm
+             norm = sqrt(acart(1,i,j)*acart(1,i,j) + acart(2,i,j)*acart(2,i,j) + &
+                  acart(3,i,j)*acart(3,i,j))
+             acart(1:3,i,j) = acart(1:3,i,j)/norm
           end if
        enddo
     enddo
@@ -1194,6 +1196,7 @@ contains
     type (TimeLevel_t), intent(in) :: tl
     integer, intent(in) :: nets, nete, nsubstep
 
+    type (cartesian3D_t) :: c3d
     integer :: step, ie, d, i, j, k, t, info, nlyr, k1, k2
     real(real_kind) :: alpha(2), dtsub, uxyz(np,np,3), norm, p(3), &
          vsph(np,np,2,nlev,2), vfsph(np,np,2), eta_dot(np,np,nlevp,2), vdp(np,np,2), &
@@ -1210,8 +1213,13 @@ contains
     do ie = nets, nete
        do j = 1, np
           do i = 1, np
-             call sphere2cart(elem(ie)%spherep(i,j), dep_points_all(i,j,1,ie))
-             dep_points_all(i,j,2:nlev,ie) = dep_points_all(i,j,1,ie)
+             call sphere2cart(elem(ie)%spherep(i,j), c3d)
+             dep_points_all(1,i,j,1,ie) = c3d%x
+             dep_points_all(2,i,j,1,ie) = c3d%y
+             dep_points_all(3,i,j,1,ie) = c3d%z
+             do k = 2, nlev
+                dep_points_all(1:3,i,j,k,ie) = dep_points_all(1:3,i,j,1,ie)
+             end do
              dep_eta_all(i,j,:,ie) = hvcoord%etam
           end do
        end do
@@ -1357,9 +1365,7 @@ contains
           do k = 1, nlev
              do j = 1, np
                 do i = 1, np
-                   p = (/ dep_points_all(i,j,k,ie)%x, &
-                        & dep_points_all(i,j,k,ie)%y, &
-                        & dep_points_all(i,j,k,ie)%z /)
+                   p = dep_points_all(1:3,i,j,k,ie)
                    do d = 1, 3
                       p(d) = p(d) - dtsub*vdep(d,i,j,k,ie)/scale_factor
                    end do
@@ -1368,10 +1374,8 @@ contains
                       do d = 1, 3
                          p(d) = p(d) / norm
                       end do
-                      dep_points_all(i,j,k,ie)%x = p(1)
-                      dep_points_all(i,j,k,ie)%y = p(2)
-                      dep_points_all(i,j,k,ie)%z = p(3)
                    end if
+                   dep_points_all(1:3,i,j,k,ie) = p
                    !todo update dep_eta_all
                 end do
              end do

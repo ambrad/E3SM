@@ -405,7 +405,7 @@ void slmm_set_hvcoord (const homme::Real* etam) {
 
 void slmm_calc_trajectory (
   homme::Int nets, homme::Int nete, homme::Int step, homme::Real dtsub,
-  homme::Cartesian3D* dep_points, const homme::Real* vnode, homme::Real* vdep,
+  homme::Real* dep_points, const homme::Real* vnode, homme::Real* vdep,
   const homme::Real* dep_eta, const homme::Real* eta_dot_node, homme::Real* eta_dot_dep,
   homme::Int* info)
 {
@@ -413,11 +413,10 @@ void slmm_calc_trajectory (
   check_threading();
   slmm_assert(homme::g_csl_mpi);
   slmm_assert(homme::g_csl_mpi->sendsz.empty()); // alloc_mpi_buffers was called
-  auto depr = reinterpret_cast<homme::Real*>(dep_points);
   { slmm::Timer timer("h2d");
     homme::sl_traj_h2d(*homme::g_csl_mpi->tracer_arrays, dep_points); }
   homme::islmpi::calc_trajectory(*homme::g_csl_mpi, nets - 1, nete - 1, step - 1,
-                                 dtsub, depr, vnode, vdep,
+                                 dtsub, dep_points, vnode, vdep,
                                  dep_eta, eta_dot_node, eta_dot_dep);
   *info = 0;
   { slmm::Timer timer("d2h");
@@ -441,31 +440,37 @@ void slmm_csl_set_elem_data (
   amb::dev_fin_threads();
 }
 
-void slmm_csl (
-  homme::Int nets, homme::Int nete, homme::Cartesian3D* dep_points,
-  homme::Real* minq, homme::Real* maxq, homme::Int* info)
-{
+void slmm_csl (homme::Int nets, homme::Int nete,
+               homme::Real* dep_points, homme::Int dep_points_ndim,
+               homme::Real* minq, homme::Real* maxq, homme::Int* info) {
   amb::dev_init_threads();
   check_threading();
   slmm_assert(homme::g_csl_mpi);
   slmm_assert(homme::g_csl_mpi->sendsz.empty()); // alloc_mpi_buffers was called
-  { slmm::Timer timer("h2d");
-    homme::sl_h2d(*homme::g_csl_mpi->tracer_arrays, s_h2d, dep_points); }
+  {
+    slmm::Timer timer("h2d");
+    homme::sl_h2d(*homme::g_csl_mpi->tracer_arrays, s_h2d,
+                  dep_points, dep_points_ndim);
+  }
   *info = 0;
 #if 1
   try {
-    homme::islmpi::step(*homme::g_csl_mpi, nets - 1, nete - 1,
-                        reinterpret_cast<homme::Real*>(dep_points), minq, maxq);
+    homme::islmpi::step(*homme::g_csl_mpi, nets - 1, nete - 1, dep_points,
+                        minq, maxq);
   } catch (const std::exception& e) {
     std::cerr << e.what();
     *info = -1;
   }
 #else
   homme::islmpi::step(*homme::g_csl_mpi, nets - 1, nete - 1,
-                      reinterpret_cast<homme::Real*>(dep_points), minq, maxq);
+                      dep_points, dep_points_ndim, minq, maxq);
 #endif
-  { slmm::Timer timer("d2h");
-    homme::sl_d2h(*homme::g_csl_mpi->tracer_arrays, s_d2h, dep_points, minq, maxq); }
+  {
+    slmm::Timer timer("d2h");
+    homme::sl_d2h(*homme::g_csl_mpi->tracer_arrays, s_d2h,
+                  dep_points, dep_points_ndim,
+                  minq, maxq);
+  }
   amb::dev_fin_threads();
 }
 

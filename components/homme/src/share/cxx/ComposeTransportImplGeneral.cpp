@@ -76,7 +76,8 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
         nel, t.qdp.extent_int(1), t.qdp.extent_int(2), np, np, nlev),
       homme::compose::SetView<Real*****> (reinterpret_cast<Real*>(t.Q.data()),
                                           nel, t.Q.extent_int(1), np, np, nlev),
-      m_data.dep_pts);
+      //todo Generalize for enhanced trajectory.
+      m_data.dep_pts, 3);
   }
   m_data.independent_time_steps = independent_time_steps;
   if (m_data.nelemd == num_elems && m_data.qsize == params.qsize) return;

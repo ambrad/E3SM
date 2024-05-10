@@ -199,7 +199,7 @@ contains
     type (timelevel_t) :: tl
     type (hybrid_t) :: hybrid
     real(real_kind) :: dt
-    integer :: ie, i, j, k, testno, geometry_type
+    integer :: ie, i, j, k, d, testno, geometry_type
     logical :: its
 
     call timelevel_init_default(tl)
@@ -225,9 +225,9 @@ contains
        do k = 1,nlev
           do j = 1,np
              do i = 1,np
-                dep(1,i,j,k,ie) = dep_points_all(i,j,k,ie)%x
-                dep(2,i,j,k,ie) = dep_points_all(i,j,k,ie)%y
-                dep(3,i,j,k,ie) = dep_points_all(i,j,k,ie)%z
+                do d = 1, 3
+                   dep(d,i,j,k,ie) = dep_points_all(d,i,j,k,ie)
+                end do
                 dprecon(i,j,k,ie) = elem(ie)%derived%divdp(i,j,k)
              end do
           end do
