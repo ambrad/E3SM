@@ -209,15 +209,9 @@ contains
     call t_startf('Prim_Advec_Tracers_remap_ALE')
 
     call sl_parse_transport_alg(transport_alg, slmm, cisl, qos, sl_test, independent_time_steps)
-    ! Until I get the DSS onto GPU, always need to h<->d.
-    !h2d = hybrid%par%nprocs > 1 .or. semi_lagrange_cdr_check .or. & (semi_lagrange_hv_q > 0 .and. nu_q > 0)
     h2d = .true.
-#ifdef HOMME_ENABLE_COMPOSE    
     d2h = compose_d2h .or. h2d
     h2d = compose_h2d .or. h2d
-#else
-    d2h = h2d
-#endif
     call TimeLevel_Qdp(tl, dt_tracer_factor, n0_qdp, np1_qdp)
 
     if (enhanced_trajectory) then
@@ -1378,11 +1372,11 @@ contains
                       dep_points_all(i,j,k,ie)%y = p(2)
                       dep_points_all(i,j,k,ie)%z = p(3)
                    end if
+                   !todo update dep_eta_all
                 end do
              end do
           end do
        end do
-       !todo update dep_eta_all
     end do
 
     do ie = nets, nete
