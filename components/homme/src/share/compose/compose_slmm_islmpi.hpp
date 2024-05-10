@@ -619,7 +619,8 @@ template <typename MT>
 void alloc_mpi_buffers (IslMpi<MT>& cm, Real* sendbuf = nullptr, Real* recvbuf = nullptr);
 
 template <typename MT>
-void setup_comm_pattern(IslMpi<MT>& cm, const Int* nbr_id_rank, const Int* nirptr);
+void setup_comm_pattern(IslMpi<MT>& cm, const Int* nbr_id_rank, const Int* nirptr,
+                        const bool enhanced_trajectory);
 
 namespace extend_halo {
 template <typename MT>

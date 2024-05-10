@@ -284,6 +284,7 @@ void calc_rmt_q_pass1_scan (IslMpi<MT>& cm, const bool trajectory) {
   const auto& rmt_xs = cm.rmt_xs;
   const auto& rmt_qs_extrema = cm.rmt_qs_extrema;
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
+  const Int ndim = trajectory ? 4 : 3;
   Int cnt = 0, qcnt = 0;
   for (Int ri = 0; ri < nrmtrank; ++ri) {
     const auto get_xos = COMPOSE_LAMBDA (const Int, Int& xos) {
@@ -323,18 +324,18 @@ void calc_rmt_q_pass1_scan (IslMpi<MT>& cm, const bool trajectory) {
           rmt_xs(5*cnt_tot + 3) = xos + a.xos;
           rmt_xs(5*cnt_tot + 4) = a.qos;
           a.cnt += 1;
-          a.xos += 3;
+          a.xos += ndim;
           a.qos += 1;
         }
       } else {
         a.cnt += nx;
-        a.xos += 3*nx;
+        a.xos += ndim*nx;
         a.qos += nx;
       }
     };
     Accum a;
     ko::parallel_scan(ko::RangePolicy<typename MT::DES>(0, xos/nreal_per_2int - 1), f, a);
-    cm.sendcount_h(ri) = (trajectory ? 3 : cm.qsize)*a.qos;
+    cm.sendcount_h(ri) = (trajectory ? ndim : cm.qsize)*a.qos;
     cnt += a.cnt;
     qcnt += a.qcnt;
   }
@@ -409,6 +410,7 @@ void calc_rmt_q_pass2 (IslMpi<MT>& cm) {
 template <typename MT>
 void calc_rmt_q_pass1_noscan (IslMpi<MT>& cm, const bool trajectory) {
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
+  const Int ndim = trajectory ? 4 : 3;
 #ifdef COMPOSE_PORT_SEPARATE_VIEWS
 #ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp for
@@ -465,7 +467,7 @@ void calc_rmt_q_pass1_noscan (IslMpi<MT>& cm, const bool trajectory) {
             cm.rmt_xs_h(5*cnt + 3) = xos;
             cm.rmt_xs_h(5*cnt + 4) = qos;
             ++cnt;
-            xos += 3;
+            xos += ndim;
             ++qos;
           }
           nx_in_lid -= nx;
@@ -476,7 +478,7 @@ void calc_rmt_q_pass1_noscan (IslMpi<MT>& cm, const bool trajectory) {
         if (nx_in_rank == 0) break;
       }
       slmm_assert(nx_in_rank == 0);
-      cm.sendcount_h(ri) = (trajectory ? 3 : cm.qsize)*qos;
+      cm.sendcount_h(ri) = (trajectory ? ndim : cm.qsize)*qos;
     }
     cm.nrmt_xs = cnt;
     cm.nrmt_qs_extrema = trajectory ? 0 : qcnt;

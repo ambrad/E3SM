@@ -103,7 +103,8 @@ init (const typename IslMpi<MT>::Advecter::ConstPtr& advecter,
   auto tracer_arrays = homme::init_tracer_arrays(nelemd, nlev, np, qsize, qsized);
   auto cm = std::make_shared<IslMpi<MT> >(p, advecter, tracer_arrays, np, nlev,
                                           qsize, qsized, nelemd, halo, traj_nsubstep);
-  setup_comm_pattern(*cm, nbr_id_rank, nirptr);
+  const bool enhanced_trajectory = traj_nsubstep > 0;
+  setup_comm_pattern(*cm, nbr_id_rank, nirptr, enhanced_trajectory);
   return cm;
 }
 

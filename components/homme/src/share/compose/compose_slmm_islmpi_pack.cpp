@@ -36,6 +36,7 @@ void pack_dep_points_sendbuf_pass1_scan (IslMpi<MT>& cm, const bool trajectory) 
   const auto& blas = cm.bla;
   const auto nlev = cm.nlev;
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
+  const Int ndim = trajectory ? 4 : 3;
   for (Int ri = 0; ri < nrmtrank; ++ri) {
     const Int lid_on_rank_n = cm.lid_on_rank_h(ri).n();
     const auto f = COMPOSE_LAMBDA (const int idx, Accum& a, const bool fin) {
@@ -65,9 +66,9 @@ void pack_dep_points_sendbuf_pass1_scan (IslMpi<MT>& cm, const bool trajectory) 
       if (nx > 0) {
         const auto dos = setbuf(sendbuf, a.mos, lid_on_rank(lidi), lev, nx, fin);
         a.mos += dos;
-        a.sendcount += dos + 3*nx;
+        a.sendcount += dos + ndim*nx;
         if (fin) t.xptr = a.xos;
-        a.xos += 3*nx;
+        a.xos += ndim*nx;
         a.qos += trajectory ? nx : 2 + nx;
       }
     };
@@ -111,6 +112,7 @@ void pack_dep_points_sendbuf_pass1_noscan (IslMpi<MT>& cm, const bool trajectory
   deep_copy(cm.bla_h, cm.bla);
 #endif
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
+  const Int ndim = trajectory ? 4 : 3;
 #ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp for
 #endif
@@ -147,9 +149,9 @@ void pack_dep_points_sendbuf_pass1_noscan (IslMpi<MT>& cm, const bool trajectory
         slmm_assert_high(nx > 0);
         const auto dos = setbuf(sendbuf, mos, lev, nx);
         mos += dos;
-        sendcount += dos + 3*nx;
+        sendcount += dos + ndim*nx;
         t.xptr = xos;
-        xos += 3*nx;
+        xos += ndim*nx;
         qos += trajectory ? nx : 2 + nx;
         nx_in_lid -= nx;
       }
@@ -211,6 +213,7 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const DepPoints<MT>& dep_poi
   }
   {
     ConstExceptGnu Int np2 = cm.np2, nlev = cm.nlev, qsize = cm.qsize;
+    ConstExceptGnu Int ndim = trajectory ? 4 : 3;
     const auto& ed_d = cm.ed_d;
     const auto& mylid_with_comm_d = cm.mylid_with_comm_d;
     const auto& sendbuf = cm.sendbuf;
@@ -248,7 +251,7 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const DepPoints<MT>& dep_poi
         ++t.cnt;
 #endif
         qptr = t.qptr;
-        xptr = x_bulkdata_offset(ri) + t.xptr + 3*cnt;
+        xptr = x_bulkdata_offset(ri) + t.xptr + ndim*cnt;
       }
 #ifdef COMPOSE_HORIZ_OPENMP
       if (horiz_openmp) omp_unset_lock(lock);
@@ -258,7 +261,7 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const DepPoints<MT>& dep_poi
         sb(xptr + i) = dep_points(tci,lev,k,i);
       auto& item = ed.rmt.atomic_inc_and_return_next();
       if (trajectory) {
-        item.q_extrema_ptr = item.q_ptr = 3*(qptr + cnt);
+        item.q_extrema_ptr = item.q_ptr = ndim*(qptr + cnt);
       } else {
         item.q_extrema_ptr = qsize * qptr;
         item.q_ptr = item.q_extrema_ptr + qsize*(2 + cnt);

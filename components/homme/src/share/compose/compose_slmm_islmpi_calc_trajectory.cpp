@@ -15,7 +15,7 @@ struct Trajectory {
   CA4<Real> vdep;
 };
 
-template <Int np, typename MT>
+template <Int np, typename MT> SLMM_KIF
 void calc_v (const IslMpi<MT>& cm, const Trajectory& t,
              const Int src_lid, const Int lev,
              const Real* const dep_point, Real* const v_tgt) {
@@ -45,7 +45,7 @@ void traj_calc_rmt_next_step (IslMpi<MT>& cm, Trajectory& t) {
   for (Int it = 0; it < cm.nrmt_xs; ++it) {
     const Int
       ri = cm.rmt_xs_h(5*it), lid = cm.rmt_xs_h(5*it + 1), lev = cm.rmt_xs_h(5*it + 2),
-      xos = cm.rmt_xs_h(5*it + 3), vos = 3*cm.rmt_xs_h(5*it + 4);
+      xos = cm.rmt_xs_h(5*it + 3), vos = 4*cm.rmt_xs_h(5*it + 4);
     const auto&& xs = cm.recvbuf(ri);
     auto&& v = cm.sendbuf(ri);
     calc_v<np>(cm, t, lid, lev, &xs(xos), &v(vos));
