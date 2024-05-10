@@ -138,8 +138,6 @@ calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
     return;
   }
 
-#pragma message "PICK UP commit c80c3afe4d broke stt with nthr > 1"
-
   // See comments in homme::islmpi::step for details. Each substep follows
   // essentially the same pattern.
   Trajectory t{vnode, vdep};

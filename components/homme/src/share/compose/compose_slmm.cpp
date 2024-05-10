@@ -123,6 +123,7 @@ template <typename MT>
 void set_hvcoord (IslMpi<MT>& cm, const Real* etam) {
   if (cm.etam.size() > 0) return;
 #if defined COMPOSE_HORIZ_OPENMP
+# pragma omp barrier
 # pragma omp master
 #endif
   {
