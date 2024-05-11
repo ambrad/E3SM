@@ -193,19 +193,16 @@ module compose_mod
        real(kind=c_double), intent(in) :: etam(nlev)
      end subroutine slmm_set_hvcoord
 
-     subroutine slmm_calc_trajectory(nets, nete, step, dtsub, &
-          dep_points, vnode, vdep, dep_eta_all, eta_dot_node, eta_dot_dep, &
+     subroutine slmm_calc_trajectory(nets, nete, step, dtsub, dep_points, vnode, vdep, &
           info) bind(c)
        use iso_c_binding, only: c_int, c_double
        use dimensions_mod, only : np, nlev, nelemd, qsize
        use coordinate_systems_mod, only : cartesian3D_t
        integer(kind=c_int), value, intent(in) :: nets, nete, step
        real(kind=c_double), value, intent(in) :: dtsub
-       real(kind=c_double), intent(inout) :: dep_points(3,np,np,nlev,nelemd) !todo 4
-       real(kind=c_double), intent(in) :: vnode(3,np,np,nlev,nelemd)
-       real(kind=c_double), intent(out) :: vdep(3,np,np,nlev,nelemd)
-       real(kind=c_double), dimension(np,np,nlev,nelemd), intent(in) :: dep_eta_all, eta_dot_node
-       real(kind=c_double), dimension(np,np,nlev,nelemd), intent(out) :: eta_dot_dep
+       real(kind=c_double), intent(inout) :: dep_points(4,np,np,nlev,nelemd)
+       real(kind=c_double), intent(in) :: vnode(4,np,np,nlev,nelemd)
+       real(kind=c_double), intent(out) :: vdep(4,np,np,nlev,nelemd)
        integer(kind=c_int), intent(out) :: info
      end subroutine slmm_calc_trajectory
 

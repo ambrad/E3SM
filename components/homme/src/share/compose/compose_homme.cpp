@@ -9,7 +9,6 @@ TracerArrays<MT>::TracerArrays (Int nelemd_, Int nlev_, Int np_, Int qsize_, Int
     pdp(nelemd, np2, nlev), pdp3d(nelemd, np2, nlev, -1, 3),
     pqdp(nelemd, np2, nlev, qsized, 2), pq(nelemd, np2, nlev, qsized),
 #if defined COMPOSE_PORT
-    dep_points("dep_points", nelemd, nlev, np2, 3), //todo
     q_min("q_min", nelemd, qsize, np2, nlev),
     q_max("q_max", nelemd, qsize, np2, nlev)
 #else
@@ -40,7 +39,7 @@ void sl_traj_h2d (TracerArrays<MT>& ta, Real* dep_points) {
   ko::fence();
   ta.alloc_if_not();
   const Int nelemd = ta.nelemd, qsize = ta.qsize, np2 = ta.np2, nlev = ta.nlev;
-  const DepPointsH<MT> cart_h(dep_points, nelemd, nlev, np2, 3); //todo
+  const DepPointsH<MT> cart_h(dep_points, nelemd, nlev, np2, 4);
   ko::deep_copy(ta.dep_points, cart_h);
 # ifdef COMPOSE_HORIZ_OPENMP
   }
@@ -59,7 +58,7 @@ void sl_traj_d2h (const TracerArrays<MT>& ta, Real* dep_points) {
   ko::fence();
   const auto q_m = ko::create_mirror_view(ta.q);
   const Int nelemd = ta.nelemd, np2 = ta.np2, nlev = ta.nlev;
-  const DepPointsH<MT> dep_points_h(dep_points, nelemd, nlev, np2, 3); //todo
+  const DepPointsH<MT> dep_points_h(dep_points, nelemd, nlev, np2, 4);
   ko::deep_copy(dep_points_h, ta.dep_points);
 # ifdef COMPOSE_HORIZ_OPENMP
   }

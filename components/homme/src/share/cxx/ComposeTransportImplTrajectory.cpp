@@ -457,7 +457,7 @@ void ComposeTransportImpl::calc_trajectory (const int np1, const Real dt) {
       const auto vstar = Homme::subview(m_vstar, ie);
       const auto vec_sphere2cart = Homme::subview(m_vec_sph2cart, ie);
       const auto sphere_cart = Homme::subview(m_sphere_cart, ie);
-      const auto dep_pts = Homme::subview(m_dep_pts, ie);
+      const auto dep_pts = m_dep_pts;
       const auto f = [&] (const int i, const int j, const int k) {
         // dp = p1 - dt v/scale_factor
         Scalar dp[3];
@@ -476,7 +476,7 @@ void ComposeTransportImpl::calc_trajectory (const int np1, const Real dt) {
           // No vec call for sqrt.
           const auto r = is_sphere ? std::sqrt(r2[s]) : 1;
           for (int d = 0; d < 3; ++d)
-            dep_pts(oss,i,j,d) = dp[d][s]/r;
+            dep_pts(ie,oss,i,j,d) = dp[d][s]/r;
         }
       };
       cti::loop_ijk<num_lev_pack>(kv, f);

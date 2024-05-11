@@ -30,6 +30,7 @@ void step (
     q_min(q_min_r, cm.nelemd, cm.qsize, cm.nlev, cm.np2),
     q_max(q_max_r, cm.nelemd, cm.qsize, cm.nlev, cm.np2);
 #endif
+  slmm_assert(dep_points.extent_int(3) == cm.dep_points_ndim);
 
   // Partition my elements that communicate with remotes among threads, if I
   // haven't done that yet.

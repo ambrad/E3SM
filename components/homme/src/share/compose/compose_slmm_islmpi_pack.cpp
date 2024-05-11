@@ -257,7 +257,7 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const DepPoints<MT>& dep_poi
       if (horiz_openmp) omp_unset_lock(lock);
 #endif
       slmm_kernel_assert_high(xptr > 0);
-      for (Int i = 0; i < 3; ++i)
+      for (Int i = 0; i < ndim; ++i)
         sb(xptr + i) = dep_points(tci,lev,k,i);
       auto& item = ed.rmt.atomic_inc_and_return_next();
       if (trajectory) {

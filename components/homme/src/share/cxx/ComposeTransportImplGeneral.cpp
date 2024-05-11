@@ -12,7 +12,8 @@
 
 extern "C" void
 sl_get_params(double* nu_q, double* hv_scaling, int* hv_q, int* hv_subcycle_q,
-              int* limiter_option, int* cdr_check, int* geometry_type);
+              int* limiter_option, int* cdr_check, int* geometry_type,
+              int* trajectory_alg);
 
 namespace Homme {
 
@@ -53,6 +54,11 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
   const auto num_elems = Context::singleton().get<Connectivity>().get_num_local_elements();
 
   const bool independent_time_steps = params.dt_tracer_factor > params.dt_remap_factor;
+
+  sl_get_params(&m_data.nu_q, &m_data.hv_scaling, &m_data.hv_q, &m_data.hv_subcycle_q,
+                &m_data.limiter_option, &m_data.cdr_check, &m_data.geometry_type,
+                &m_data.trajectory_alg);
+
   if (independent_time_steps != m_data.independent_time_steps ||
       m_data.nelemd != num_elems || m_data.qsize != params.qsize) {
     const auto& g = m_geometry;
@@ -61,7 +67,8 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
     const auto& d = m_derived;
     const auto nel = num_elems;
     const auto nlev = NUM_LEV*packn;
-    m_data.dep_pts = DeparturePoints("dep_pts", nel);
+    const int ndim = m_data.trajectory_alg == 0 ? 3 : 4;
+    m_data.dep_pts = DeparturePoints("dep_pts", nel, num_phys_lev, np, np, ndim);
     homme::compose::set_views(
       g.m_spheremp,
       homme::compose::SetView<Real****>  (reinterpret_cast<Real*>(d.m_dp.data()),
@@ -77,7 +84,7 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
       homme::compose::SetView<Real*****> (reinterpret_cast<Real*>(t.Q.data()),
                                           nel, t.Q.extent_int(1), np, np, nlev),
       //todo Generalize for enhanced trajectory.
-      m_data.dep_pts, 3);
+      m_data.dep_pts, ndim);
   }
   m_data.independent_time_steps = independent_time_steps;
   if (m_data.nelemd == num_elems && m_data.qsize == params.qsize) return;
@@ -87,8 +94,6 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
                         "SL transport requires qsize > 0; if qsize == 0, use Eulerian.");
   m_data.nelemd = num_elems;
 
-  sl_get_params(&m_data.nu_q, &m_data.hv_scaling, &m_data.hv_q, &m_data.hv_subcycle_q,
-                &m_data.limiter_option, &m_data.cdr_check, &m_data.geometry_type);
   Errors::runtime_check(m_data.hv_q >= 0 && m_data.hv_q <= m_data.qsize,
                         "semi_lagrange_hv_q should be in [0, qsize].");
   Errors::runtime_check(m_data.hv_subcycle_q >= 0,

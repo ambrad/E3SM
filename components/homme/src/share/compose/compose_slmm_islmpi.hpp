@@ -574,7 +574,7 @@ struct IslMpi {
           Int itraj_nsubstep)
     : p(ip), advecter(advecter),
       np(inp), np2(np*np), nlev(inlev), qsize(iqsize), qsized(iqsized), nelemd(inelemd),
-      halo(ihalo), traj_nsubstep(itraj_nsubstep), dep_points_ndim(3), //todo (traj_nsubstep > 0 ? 4 : 3),
+      halo(ihalo), traj_nsubstep(itraj_nsubstep), dep_points_ndim(traj_nsubstep > 0 ? 4 : 3),
       tracer_arrays(tracer_arrays_)
   {}
 
@@ -701,8 +701,7 @@ void step(
 template <typename MT = ko::MachineTraits>
 void calc_trajectory(
   IslMpi<MT>& cm, const Int nets, const Int nete, const Int step, const Real dtsub,
-  Real* dep_points_r, const Real* vnode, Real* vdep,
-  const Real* dep_eta_r, const Real* eta_dot_node, Real* eta_dot_dep);
+  Real* dep_points_r, const Real* vnode, Real* vdep);
 
 } // namespace islmpi
 } // namespace homme

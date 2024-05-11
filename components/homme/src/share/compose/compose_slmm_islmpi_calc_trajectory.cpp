@@ -5,20 +5,16 @@
 namespace homme {
 namespace islmpi {
 
-template <typename T> using CA3 = ko::View<T*** ,  ko::LayoutRight, ko::HostSpace>;
 template <typename T> using CA4 = ko::View<T****,  ko::LayoutRight, ko::HostSpace>;
 
 // vnode and vdep are indexed as (ie,lev,k,dim), On entry, vnode contains nodal
 // velocity data. These data are used to provide updates at departure points for
-// both own and remote departure points, writing to vdep. ednode and eddep are
-// similar but don't have the dim index: (ie,lev,k).
+// both own and remote departure points, writing to vdep. dim = 0:2 is for the
+// 3D Cartesian representation of the horizontal velocity; dim = 3 is for
+// eta_dot.
 struct Trajectory {
-  // Horizontal velocity in Cartesian coordinates.
   CA4<const Real> vnode;
   CA4<Real> vdep;
-  // Vertical velocity, deta/dt = eta_dot = ed.
-  CA3<const Real> ednode;
-  CA3<Real> eddep;
 };
 
 template <Int np, typename MT> SLMM_KIF
@@ -119,8 +115,7 @@ void traj_copy_next_step (IslMpi<MT>& cm, Trajectory& t) {
 template <typename MT> void
 calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
                  const Int step, const Real dtsub,
-                 Real* dep_points_r, const Real* vnode_r, Real* vdep_r,
-                 const Real* dep_eta_r, const Real* ednode_r, Real* eddep_r)
+                 Real* dep_points_r, const Real* vnode_r, Real* vdep_r)
 {
   const int np = 4;
 
@@ -132,13 +127,13 @@ calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
 #ifdef COMPOSE_PORT
   auto& dep_points = cm.tracer_arrays->dep_points;
 #else
-  DepPointsH<MT> dep_points(dep_points_r, cm.nelemd, cm.nlev, cm.np2, 3);
+  DepPointsH<MT> dep_points(dep_points_r, cm.nelemd, cm.nlev, cm.np2, 4);
 #endif
+  slmm_assert(dep_points.extent_int(3) == 4);
+  slmm_assert(cm.dep_points_ndim == 4);
 
-  CA4<const Real> vnode (vnode_r , cm.nelemd, cm.nlev, cm.np2, 3);
-  CA4<      Real> vdep  (vdep_r  , cm.nelemd, cm.nlev, cm.np2, 3);
-  CA3<const Real> ednode(ednode_r, cm.nelemd, cm.nlev, cm.np2   );
-  CA3<      Real> eddep (eddep_r , cm.nelemd, cm.nlev, cm.np2   );
+  CA4<const Real> vnode(vnode_r, cm.nelemd, cm.nlev, cm.np2, 4);
+  CA4<      Real> vdep (vdep_r , cm.nelemd, cm.nlev, cm.np2, 4);
 
   if (step == 0) {
     // The departure points are at the nodes. No interpolation is needed.
@@ -148,7 +143,7 @@ calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
 
   // See comments in homme::islmpi::step for details. Each substep follows
   // essentially the same pattern.
-  Trajectory t{vnode, vdep, ednode, eddep};
+  Trajectory t{vnode, vdep};
   if (cm.mylid_with_comm_tid_ptr_h.capacity() == 0)
     init_mylid_with_comm_threaded(cm, nets, nete);
   setup_irecv(cm);
@@ -167,8 +162,8 @@ calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
 }
 
 template void calc_trajectory(
-  IslMpi<ko::MachineTraits>&, const Int, const Int, const Int, const Real, Real*,
-  const Real*, Real*, const Real*, const Real*, Real*);
+  IslMpi<ko::MachineTraits>&, const Int, const Int, const Int, const Real,
+  Real*, const Real*, Real*);
 
 } // namespace islmpi
 } // namespace homme

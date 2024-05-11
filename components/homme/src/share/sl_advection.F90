@@ -55,9 +55,6 @@ module sl_advection
   ! Trajectory velocity data.
   real(kind=real_kind), dimension(:,:,:,:,:), allocatable :: vnode, vdep ! (ndim,np,np,nlev,nelemd)
   real(kind=real_kind), allocatable :: dep_points_all(:,:,:,:,:)         ! (ndim,np,np,nlev,nelemd)
-  !todo consolidate into above
-  real(kind=real_kind), dimension(:,:,:,:), allocatable :: &
-       eta_dot_node, eta_dot_dep, dep_eta_all ! (np,np,nlev,nelemd)
 
 contains
 
@@ -115,12 +112,14 @@ contains
 #ifdef HOMME_ENABLE_COMPOSE
     call t_startf('sl_init1')
     if (transport_alg > 0) then
-       call sl_parse_transport_alg(transport_alg, slmm, cisl, qos, sl_test, independent_time_steps)
+       call sl_parse_transport_alg(transport_alg, slmm, cisl, qos, sl_test, &
+            independent_time_steps)
        if (par%masterproc .and. nu_q > 0 .and. semi_lagrange_hv_q > 0) &
             write(iulog,*) 'COMPOSE> use HV; nu_q, all:', nu_q, semi_lagrange_hv_q
        is_sphere = trim(geometry) /= 'plane'
        enhanced_trajectory = semi_lagrange_trajectory_nsubstep > 0
        dep_points_ndim = 3
+       if (enhanced_trajectory) dep_points_ndim = 4
        nslots = nlev*qsize
        do ie = 1, size(elem)
           ! Provide a point inside the target element.
@@ -147,9 +146,8 @@ contains
        if (enhanced_trajectory) then
           if (semi_lagrange_trajectory_nsubstep == 1 .and. par%masterproc) &
                print *, 'COMPOSE> Running new alg even though nsubstep = 1.'
-          allocate(vnode(3,np,np,nlev,size(elem)), vdep(3,np,np,nlev,size(elem)), &
-               eta_dot_node(np,np,nlev,size(elem)), eta_dot_dep(np,np,nlev,size(elem)), &
-               dep_eta_all(np,np,nlev,size(elem)))
+          allocate(vnode(dep_points_ndim,np,np,nlev,size(elem)), &
+               &   vdep (dep_points_ndim,np,np,nlev,size(elem)))
        end if
        dp_tol = -one
     endif
@@ -158,13 +156,14 @@ contains
   end subroutine sl_init1
 
   subroutine sl_get_params(nu_q_out, hv_scaling, hv_q, hv_subcycle_q, limiter_option_out, &
-       cdr_check, geometry_type) bind(c)
+       cdr_check, geometry_type, trajectory_alg) bind(c)
     use control_mod, only: semi_lagrange_hv_q, hypervis_subcycle_q, semi_lagrange_cdr_check, &
-         nu_q, hypervis_scaling, limiter_option, geometry
+         nu_q, hypervis_scaling, limiter_option, geometry, semi_lagrange_trajectory_nsubstep
     use iso_c_binding, only: c_int, c_double
 
     real(c_double), intent(out) :: nu_q_out, hv_scaling
-    integer(c_int), intent(out) :: hv_q, hv_subcycle_q, limiter_option_out, cdr_check, geometry_type
+    integer(c_int), intent(out) :: hv_q, hv_subcycle_q, limiter_option_out, cdr_check, &
+         geometry_type, trajectory_alg
 
     nu_q_out = nu_q
     hv_scaling = hypervis_scaling
@@ -175,7 +174,8 @@ contains
     if (semi_lagrange_cdr_check) cdr_check = 1
     geometry_type = 0 ! sphere
     if (trim(geometry) == "plane") geometry_type = 1
-
+    trajectory_alg = 0
+    if (semi_lagrange_trajectory_nsubstep > 0) trajectory_alg = 1
   end subroutine sl_get_params
 
   subroutine prim_advec_tracers_remap_ALE(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete)
@@ -1217,19 +1217,17 @@ contains
              dep_points_all(1,i,j,1,ie) = c3d%x
              dep_points_all(2,i,j,1,ie) = c3d%y
              dep_points_all(3,i,j,1,ie) = c3d%z
+             dep_points_all(4,i,j,1,ie) = hvcoord%etam(1)
              do k = 2, nlev
                 dep_points_all(1:3,i,j,k,ie) = dep_points_all(1:3,i,j,1,ie)
+                dep_points_all(4,i,j,k,ie) = hvcoord%etam(k)
              end do
-             dep_eta_all(i,j,:,ie) = hvcoord%etam
           end do
        end do
     end do
 
     dtsub = dt / nsubstep
     do step = 1, nsubstep
-       !done make (eta_dot_node, eta_dot_dep) and dep_eta_all arrays
-       !done compute eta_dot (*not* eta_dot_dpdn)
-       !done don't forget vertical coupling terms in horizontal
        alpha(1) = real(nsubstep - step    , real_kind)/nsubstep
        alpha(2) = real(nsubstep - step + 1, real_kind)/nsubstep
        do ie = nets, nete
@@ -1344,20 +1342,15 @@ contains
                 call eval_lagrange_poly_derivative(k2-k1+1, w3, eta_dot(:,:,k1:k2,2), w2, w1)
              end if
              w3(:,:,1:2) = gradient_sphere(eta_dot(:,:,k,2), deriv, elem(ie)%Dinv)
-             eta_dot_node(:,:,k,ie) = &
+             vnode(4,:,:,k,ie) = &
                   half*(eta_dot(:,:,k,1) + eta_dot(:,:,k,2) &
                   &     - dtsub*(vsph(:,:,1,k,1)*w3(:,:,1) + vsph(:,:,2,k,1)*w3(:,:,2) + &
                   &              eta_dot(:,:,k,1)*w1))
           end do
        end do
 
-       !done pass eta_dot_node, eta_dot_dep, dep_eta_all arrays
-       !done pass eta_ref array, just a small 1D array with eta coords for interp
        !todo interp in vertical
-       call slmm_calc_trajectory(nets, nete, step, dtsub, &
-            dep_points_all, vnode, vdep, &
-            dep_eta_all, eta_dot_node, eta_dot_dep, &
-            info)
+       call slmm_calc_trajectory(nets, nete, step, dtsub, dep_points_all, vnode, vdep, info)
 
        !todo if step == 1, DSS
 
@@ -1366,14 +1359,10 @@ contains
              do j = 1, np
                 do i = 1, np
                    p = dep_points_all(1:3,i,j,k,ie)
-                   do d = 1, 3
-                      p(d) = p(d) - dtsub*vdep(d,i,j,k,ie)/scale_factor
-                   end do
+                   p = p - dtsub*vdep(1:3,i,j,k,ie)/scale_factor
                    if (is_sphere) then
                       norm = sqrt(p(1)*p(1) + p(2)*p(2) + p(3)*p(3))
-                      do d = 1, 3
-                         p(d) = p(d) / norm
-                      end do
+                      p = p / norm
                    end if
                    dep_points_all(1:3,i,j,k,ie) = p
                    !todo update dep_eta_all
