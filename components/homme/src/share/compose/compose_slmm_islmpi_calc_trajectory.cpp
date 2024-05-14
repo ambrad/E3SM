@@ -113,9 +113,9 @@ void traj_calc_own_next_step (IslMpi<MT>& cm, const DepPoints<MT>& dep_points,
     const Int tgt_k = own_dep_list(it,2);
     const auto& ed = ed_d(tci);
     const Int slid = ed.nbrs(ed.src(tgt_lev, tgt_k)).lid_on_rank;
-    Real v_tgt[3];
+    Real v_tgt[4];
     calc_v<np>(cm, t, slid, tgt_lev, &dep_points(tci,tgt_lev,tgt_k,0), v_tgt);
-    for (int d = 0; d < 3; ++d)
+    for (int d = 0; d < 4; ++d)
       t.vdep(tci,tgt_lev,tgt_k,d) = v_tgt[d];
   };
   ko::parallel_for(
@@ -131,9 +131,9 @@ void traj_calc_own_next_step (IslMpi<MT>& cm, const DepPoints<MT>& dep_points,
     for (Int idx = 0; idx < ned; ++idx) {
       const auto& e = ed.own(idx);
       const Int slid = ed.nbrs(ed.src(e.lev, e.k)).lid_on_rank;
-      Real v_tgt[3];
+      Real v_tgt[4];
       calc_v<np>(cm, t, slid, e.lev, &dep_points(tci,e.lev,e.k,0), v_tgt);
-      for (int d = 0; d < 3; ++d)
+      for (int d = 0; d < 4; ++d)
         t.vdep(tci,e.lev,e.k,d) = v_tgt[d];
     }
   }
@@ -153,7 +153,7 @@ void traj_copy_next_step (IslMpi<MT>& cm, Trajectory& t) {
       slmm_assert(ed.nbrs(ed.src(e.lev, e.k)).rank != myrank);
       const Int ri = ed.nbrs(ed.src(e.lev, e.k)).rank_idx;
       const auto&& recvbuf = cm.recvbuf(ri);
-      for (int d = 0; d < 3; ++d)
+      for (int d = 0; d < 4; ++d)
         t.vdep(tci,e.lev,e.k,d) = recvbuf(e.q_ptr + d);
     }
   }
