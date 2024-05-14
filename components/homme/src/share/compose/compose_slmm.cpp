@@ -130,7 +130,11 @@ void set_hvcoord (IslMpi<MT>& cm, const Real* etam) {
     slmm_assert(cm.nlev > 0);
     cm.etam = typename IslMpi<MT>::template ArrayD<Real*>("etam", cm.nlev);
     const auto h = ko::create_mirror_view(cm.etam);
-    for (int k = 0; k < cm.nlev; ++k) h(k) = etam[k];
+    for (int k = 0; k < cm.nlev; ++k) {
+      h(k) = etam[k];
+      slmm_assert(k == 0 || h(k) > h(k-1));
+      slmm_assert(h(k) > 0 && h(k) < 1);
+    }
     ko::deep_copy(h, cm.etam);
   }
 #if defined COMPOSE_HORIZ_OPENMP

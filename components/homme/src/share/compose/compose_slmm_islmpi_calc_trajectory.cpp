@@ -38,24 +38,24 @@ void calc_v (const IslMpi<MT>& cm, const Trajectory& t,
   Int lev_dep = lev;
   if (eta_dep != cm.etam(lev)) {
     if (eta_dep < cm.etam(lev)) {
-      for (lev_dep = lev; lev_dep >= 0; --lev_dep)
+      for (lev_dep = lev-1; lev_dep >= 0; --lev_dep)
         if (eta_dep >= cm.etam(lev_dep))
           break;
     } else {
-      for (lev_dep = lev+1; lev_dep < cm.nlev; ++lev_dep)
-        if (eta_dep < cm.etam(lev_dep))
+      for (lev_dep = lev; lev_dep < cm.nlev-1; ++lev_dep)
+        if (eta_dep < cm.etam(lev_dep+1))
           break;
     }
   }
-  slmm_assert(lev_dep >= -1 && lev_dep <= cm.nlev);
+  slmm_assert(lev_dep >= -1 && lev_dep < cm.nlev);
+  slmm_assert(lev_dep == -1 || eta_dep >= cm.etam(lev_dep));
   Real a;
   bool bdy = false;
   if (lev_dep == -1) {
     lev_dep = 0;
     a = 0;
     bdy = true;
-  } else if (lev_dep == cm.nlev) {
-    lev_dep = cm.nlev-1;
+  } else if (lev_dep == cm.nlev-1) {
     a = 0;
     bdy = true;
   } else {
