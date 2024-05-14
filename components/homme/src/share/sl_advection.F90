@@ -1365,7 +1365,8 @@ contains
                       p = p / norm
                    end if
                    dep_points_all(1:3,i,j,k,ie) = p
-                   !todo update dep_eta_all
+                   dep_points_all(4,i,j,k,ie) = dep_points_all(4,i,j,k,ie) - &
+                        &                       dtsub*vdep(4,i,j,k,ie)
                 end do
              end do
           end do
