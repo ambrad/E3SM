@@ -1199,8 +1199,10 @@ contains
     type (cartesian3D_t) :: c3d
     integer :: step, ie, d, i, j, k, t, info, nlyr, k1, k2
     real(real_kind) :: alpha(2), dtsub, uxyz(np,np,3), norm, p(3), &
-         vsph(np,np,2,nlev,2), vfsph(np,np,2), eta_dot(np,np,nlevp,2), vdp(np,np,2), &
-         divdp(np,np), w1(np,np), w2(np,np), w3(np,np,3), w4(np,np,3)
+         vsph(np,np,2,nlev,2), vfsph(np,np,2), eta_dot(np,np,nlevp,2), &
+         vdp(np,np,2), divdp(np,np), &
+         w1(np,np), w2(np,np), w3(np,np,3), w4(np,np,3), &
+         v1(np,np,nlev), v2(np,np,nlevp)
 
     call t_startf('SLMM_trajectory')
 
@@ -1358,13 +1360,15 @@ contains
           do k = 1, nlev
              do j = 1, np
                 do i = 1, np
+                   ! Update horizontal position.
                    p = dep_points_all(1:3,i,j,k,ie)
                    p = p - dtsub*vdep(1:3,i,j,k,ie)/scale_factor
                    if (is_sphere) then
                       norm = sqrt(p(1)*p(1) + p(2)*p(2) + p(3)*p(3))
-                      p = p / norm
+                      p = p/norm
                    end if
                    dep_points_all(1:3,i,j,k,ie) = p
+                   ! Update vertical position.
                    dep_points_all(4,i,j,k,ie) = dep_points_all(4,i,j,k,ie) - &
                         &                       dtsub*vdep(4,i,j,k,ie)
                 end do
@@ -1374,27 +1378,60 @@ contains
     end do
 
     do ie = nets, nete
-       do j = 1, np
-          do i = 1, np
-             ! Reconstruct Lagrangian levels at t1 on arrival column:
-             !     eta_arr_int = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_int)
-             !todo
+       w1 = hvcoord%hyai(1)*hvcoord%ps0 + sum(elem(ie)%state%dp3d(:,:,:,tl%np1), 3)
+       ! Reconstruct Lagrangian levels at t1 on arrival column:
+       !     eta_arr_int = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_int)
+       call eta_limit(dep_points_all(4,:,:,:,ie), v1)
+       v2(:,:,1) = zero
+       v2(:,:,nlevp) = one
+       call eta_interp_eta(v1, hvcoord%etam, nlevp-2, hvcoord%etai(2:nlev), &
+            v2(:,:,2:nlev))
+       call eta_to_dp(hvcoord, w1, v2, elem(ie)%derived%divdp)
 
-             ! Compute Lagrangian level midpoints at t1 on arrival column.
-             !     eta_arr_mid = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_mid)
-             ! or
-             !     cc(eta_arr_int)
-             !todo
+       ! Compute Lagrangian level midpoints at t1 on arrival column.
+       !     eta_arr_mid = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_mid)
+       ! or
+       !     cc(eta_arr_int)
+       call eta_interp_eta(v1, hvcoord%etam, nlev, hvcoord%etam, &
+            v2(:,:,1:nlev))
+       dep_points_all(4,:,:,:,ie) = v2(:,:,1:nlev)
 
-             ! Compute departure horizontal points corresponding to arrival
-             ! Lagrangian level midpoints:
-             !     p_dep_mid(eta_arr_mid) = I[p_dep_mid(eta_ref_mid)](eta_arr_mid)
-             !todo final dep_points_all
-          end do
+       ! Compute departure horizontal points corresponding to arrival
+       ! Lagrangian level midpoints:
+       !     p_dep_mid(eta_arr_mid) = I[p_dep_mid(eta_ref_mid)](eta_arr_mid)
+       do d = 1, 3
+          v1 = dep_points_all(d,:,:,:,ie)
+          call eta_interp_horiz(hvcoord%etam, v1, nlev, v2(:,:,1:nlev), &
+               dep_points_all(d,:,:,:,ie))
        end do
     end do
 
     call t_stopf('SLMM_trajectory')
   end subroutine ctfull
+
+  subroutine eta_limit(eta, eta_lim)
+    real(real_kind), intent(in) :: eta(np,np,nlev)
+    real(real_kind), intent(out) :: eta_lim(np,np,nlev)
+  end subroutine eta_limit
+
+  subroutine eta_interp_eta(x, y, ni, xi, yi)
+    real(real_kind), intent(in) :: x(np,np,nlev), y(nlev)
+    integer, intent(in) :: ni
+    real(real_kind), intent(in) :: xi(ni)
+    real(real_kind), intent(out) :: yi(np,np,ni)
+  end subroutine eta_interp_eta
+
+  subroutine eta_interp_horiz(x, y, ni, xi, yi)
+    real(real_kind), intent(in) :: x(nlev), y(np,np,nlev)
+    integer, intent(in) :: ni
+    real(real_kind), intent(in) :: xi(np,np,ni)
+    real(real_kind), intent(out) :: yi(np,np,ni)
+  end subroutine eta_interp_horiz
+
+  subroutine eta_to_dp(hvcoord, ps, etai, dp)
+    type (hvcoord_t), intent(in) :: hvcoord
+    real(real_kind), intent(in) :: ps(np,np), etai(np,np,nlevp)
+    real(real_kind), intent(out) :: dp(np,np,nlev)
+  end subroutine eta_to_dp
 
 end module sl_advection
