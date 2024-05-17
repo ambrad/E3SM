@@ -36,7 +36,7 @@ module sl_advection
   integer :: dep_points_ndim
 
   ! For use in make_positive. Set at initialization to a function of hvcoord%dp0.
-  real(kind=real_kind) :: dp_tol
+  real(kind=real_kind) :: dp_tol, deta_tol
 
   public :: prim_advec_tracers_remap_ALE, sl_init1, sl_vertically_remap_tracers, sl_unittest
 
@@ -150,6 +150,7 @@ contains
                &   vdep (dep_points_ndim,np,np,nlev,size(elem)))
        end if
        dp_tol = -one
+       deta_tol = -one
     endif
     call t_stopf('sl_init1')
 #endif
@@ -1202,11 +1203,17 @@ contains
          vsph(np,np,2,nlev,2), vfsph(np,np,2), eta_dot(np,np,nlevp,2), &
          vdp(np,np,2), divdp(np,np), &
          w1(np,np), w2(np,np), w3(np,np,3), w4(np,np,3), &
-         v1(np,np,nlev), v2(np,np,nlevp)
+         v1(np,np,nlev), v2(np,np,nlevp), deta_ref(nlevp)
 
     call t_startf('SLMM_trajectory')
 
     call slmm_set_hvcoord(hvcoord%etam)
+
+    deta_ref(1) = hvcoord%etam(k)
+    do k = 2, nlev
+       deta_ref(k) = hvcoord%etam(k) - hvcoord%etam(k-1)
+    end do
+    deta_ref(nlevp) = one - hvcoord%etam(nlev)
 
     do ie = nets,nete
        elem(ie)%derived%vn0 = elem(ie)%state%v(:,:,:,:,tl%np1)
@@ -1377,11 +1384,13 @@ contains
        end do
     end do
 
+    call set_deta_tol(hvcoord)
+
     do ie = nets, nete
        w1 = hvcoord%hyai(1)*hvcoord%ps0 + sum(elem(ie)%state%dp3d(:,:,:,tl%np1), 3)
        ! Reconstruct Lagrangian levels at t1 on arrival column:
        !     eta_arr_int = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_int)
-       call eta_limit(dep_points_all(4,:,:,:,ie), v1)
+       call eta_limit(deta_ref, dep_points_all(4,:,:,:,ie), v1)
        v2(:,:,1) = zero
        v2(:,:,nlevp) = one
        call eta_interp_eta(v1, hvcoord%etam, nlevp-2, hvcoord%etai(2:nlev), &
@@ -1409,10 +1418,112 @@ contains
     call t_stopf('SLMM_trajectory')
   end subroutine ctfull
 
-  subroutine eta_limit(eta, eta_lim)
-    real(real_kind), intent(in) :: eta(np,np,nlev)
+  subroutine set_deta_tol(hvcoord)
+    type (hvcoord_t), intent(in) :: hvcoord
+
+    real(real_kind) :: deta_ave
+    integer :: k
+
+    if (deta_tol >= 0) return
+
+    ! Benign write race condition. A thread might see eta_tol < 0 and set it
+    ! here even as another thread does the same. But because there is no read
+    ! and only one value to write, the redundant writes don't matter.
+
+    deta_ave = zero
+    do k = 1, nlev
+       deta_ave = deta_ave + (hvcoord%etai(k+1) - hvcoord%etai(k))
+    end do
+    deta_ave = deta_ave / nlev
+
+    deta_tol = 1.e3_real_kind*eps*deta_ave
+  end subroutine set_deta_tol
+
+  subroutine eta_limit(deta_ref, eta, eta_lim)
+    real(real_kind), intent(in) :: deta_ref(nlevp), eta(np,np,nlev)
     real(real_kind), intent(out) :: eta_lim(np,np,nlev)
+
+    real(real_kind) :: deta(nlevp)
+    integer :: i, j, k
+    logical :: ok
+
+    do j = 1, np
+       do i = 1, np
+          ! Check nonmonotonicity in eta.
+          ok = eta(i,j,1) >= deta_tol
+          if (ok) then
+             do k = 2, nlev
+                if (eta(i,j,k) - eta(i,j,k-1) < deta_tol) then
+                   ok = .false.
+                   exit
+                end if
+             end do
+             if (ok) then
+                ok = one - eta(i,j,nlev) >= deta_tol
+             end if
+          end if
+          ! eta is monotonically increasing, so don't need to do anything
+          ! further.
+          if (ok) then
+             eta_lim(i,j,:) = eta(i,j,:)
+             cycle
+          end if
+          
+          deta(1) = eta(i,j,1)
+          do k = 2, nlev
+             deta(k) = eta(i,j,k) - eta(i,j,k-1)
+          end do
+          deta(nlevp) = one - eta(i,j,nlev)
+          ! [0, etam(1)] and [etam(nlev),1] are half levels, but deta_tol is so
+          ! small there's no reason not to use it as a lower bound for these.
+          call deta_caas(deta_ref, deta_tol, deta)
+          eta_lim(i,j,1) = deta(1)
+          do k = 2, nlev
+             eta_lim(i,j,k) = eta_lim(i,j,k-1) + deta(k)
+          end do
+       end do
+    end do
   end subroutine eta_limit
+
+  subroutine deta_caas(deta_ref, lo, deta)
+    real(real_kind), intent(in) :: deta_ref(nlevp), lo
+    real(real_kind), intent(inout) :: deta(nlevp)
+
+    real(real_kind) :: nerr, w(nlevp)
+    integer :: k
+
+    nerr = zero
+    do k = 1, nlevp
+       if (deta(k) < lo) then
+          nerr = nerr + (deta(k) - lo)
+          deta(k) = lo
+          w(k) = zero
+       else
+          if (deta(k) + deta_tol > deta_ref(k)) then
+             ! Only pull mass from intervals that are larger than their
+             ! reference value. This concentrates changes to intervals that, by
+             ! having a lot more mass than usual, drive other levels negative.
+             !   This works because sum(deta) = 1 on entry as well as exit, so
+             ! any interval < 0 can be associated with added mass of the same
+             ! amount above the reference elsewhere:
+             !     1 = sum_{deta(i) >= 0} deta(i) + sum_{deta(i) < 0} deta(i)
+             !       = dpos                       + dneg,
+             ! where dpos >= 1 and dneg <= 0. Thus,
+             !       = (dpos-1) + 1               + dneg
+             !     0 = (dpos-1)                   + dneg
+             !     => dpos - 1 = -dneg
+             !        dpos - (sum_i) deta_ref(i) = -dneg.
+             ! The final line shows the mass available above the reference is
+             ! exactly what is needed to fill the negative mass.
+             !   In practice, we make negative masses slightly positive ...
+             w(k) = (deta(k) - deta_ref(k)) + deta_tol
+          else
+             w(k) = zero
+          end if
+       end if
+    end do
+    if (nerr /= zero) deta = deta + nerr*(w/sum(w))
+  end subroutine deta_caas
 
   subroutine eta_interp_eta(x, y, ni, xi, yi)
     real(real_kind), intent(in) :: x(np,np,nlev), y(nlev)
