@@ -1181,6 +1181,7 @@ contains
     nerr = 0
     nerr = nerr + test_lagrange()
     nerr = nerr + test_reconstruct_and_limit_dp()
+    nerr = nerr + test_deta_caas()
 
     if (nerr > 0 .and. par%masterproc) write(iulog,'(a,i3)') 'sl_unittest FAIL', nerr
   end subroutine sl_unittest
@@ -1533,24 +1534,39 @@ contains
     real(real_kind), intent(out) :: dp(np,np,nlev)
   end subroutine eta_to_dp
 
-  subroutine test_deta_caas()
+  function assert(b, msg) result(nerr)
+    logical, intent(in) :: b
+    character(*), optional, intent(in) :: msg
+    integer :: nerr
+
+    nerr = 0
+    if (b) return
+
+    print *, 'ERROR'
+    if (present(msg)) print *, msg
+    nerr = 1
+  end function assert
+
+  function test_deta_caas() result(nerr)
     integer, parameter :: nl = 128, nlp = nl+1
     
     real(real_kind) :: deta_ref(nlp), etam_ref(nl), deta_tol, etam(nl), &
          &             deta(nlp)
-    integer :: i, k
+    integer :: i, k, nerr
+
+    nerr = 0
 
     call random_number(deta_ref)
     deta_ref = deta_ref + 0.1
     deta_ref = deta_ref/sum(deta_ref)
 
     deta_tol = 10_real_kind*eps*sum(deta_ref)/size(deta_ref)
-    call assert(deta_tol < minval(deta_ref))
+    nerr = nerr + assert(deta_tol < minval(deta_ref))
 
     ! Test: Input not touched.
     deta = deta_ref
     call deta_caas(nlp, deta_ref, deta_tol, deta)
-    call assert(maxval(abs(deta-deta_ref)) == zero)    
+    nerr = nerr + assert(maxval(abs(deta-deta_ref)) == zero)    
     
     etam_ref(1) = deta_ref(1)
     do k = 2, nl
@@ -1570,13 +1586,13 @@ contains
           deta(k) = etam(k) - etam(k-1)
        end do
        deta(nlp) = one - etam(nl)
-       call assert(minval(deta) < deta_tol)
+       nerr = nerr + assert(minval(deta) < deta_tol)
        call deta_caas(nlp, deta_ref, deta_tol, deta)
-       call assert(minval(deta) == deta_tol)
-       call assert(abs(sum(deta) - one) < 100*eps)
+       nerr = nerr + assert(minval(deta) == deta_tol)
+       nerr = nerr + assert(abs(sum(deta) - one) < 100*eps)
        deta = abs(deta - deta_ref)
-       call assert(maxval(deta(:10)) < 100*eps)
-       call assert(maxval(deta(13:)) < 100*eps)
+       nerr = nerr + assert(maxval(deta(:10)) < 100*eps)
+       nerr = nerr + assert(maxval(deta(13:)) < 100*eps)
     end do
 
     ! Test: Completely messed up levels.
@@ -1584,8 +1600,8 @@ contains
     deta = deta - 0.5_real_kind
     deta = deta/sum(deta)
     call deta_caas(nlp, deta_ref, deta_tol, deta)
-    call assert(minval(deta) == deta_tol)
-    call assert(abs(sum(deta) - one) < 100*eps)
-  end subroutine test_deta_caas
+    nerr = nerr + assert(minval(deta) == deta_tol)
+    nerr = nerr + assert(abs(sum(deta) - one) < 100*eps)
+  end function test_deta_caas
 
 end module sl_advection
