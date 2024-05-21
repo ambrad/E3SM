@@ -1436,7 +1436,7 @@ contains
     end do
     deta_ave = deta_ave / nlev
 
-    deta_tol = 1.e3_real_kind*eps*deta_ave
+    deta_tol = 10_real_kind*eps*deta_ave
   end subroutine set_deta_tol
 
   subroutine eta_limit(deta_ref, eta, eta_lim)
@@ -1476,7 +1476,7 @@ contains
           deta(nlevp) = one - eta(i,j,nlev)
           ! [0, etam(1)] and [etam(nlev),1] are half levels, but deta_tol is so
           ! small there's no reason not to use it as a lower bound for these.
-          call deta_caas(deta_ref, deta_tol, deta)
+          call deta_caas(nlevp, deta_ref, deta_tol, deta)
           eta_lim(i,j,1) = deta(1)
           do k = 2, nlev
              eta_lim(i,j,k) = eta_lim(i,j,k-1) + deta(k)
@@ -1485,38 +1485,26 @@ contains
     end do
   end subroutine eta_limit
 
-  subroutine deta_caas(deta_ref, lo, deta)
-    real(real_kind), intent(in) :: deta_ref(nlevp), lo
-    real(real_kind), intent(inout) :: deta(nlevp)
+  subroutine deta_caas(nlp, deta_ref, lo, deta)
+    integer, intent(in) :: nlp
+    real(real_kind), intent(in) :: deta_ref(nlp), lo
+    real(real_kind), intent(inout) :: deta(nlp)
 
-    real(real_kind) :: nerr, w(nlevp)
+    real(real_kind) :: nerr, w(nlp)
     integer :: k
 
     nerr = zero
-    do k = 1, nlevp
+    do k = 1, nlp
        if (deta(k) < lo) then
           nerr = nerr + (deta(k) - lo)
           deta(k) = lo
           w(k) = zero
        else
-          if (deta(k) + deta_tol > deta_ref(k)) then
+          if (deta(k) > deta_ref(k)) then
              ! Only pull mass from intervals that are larger than their
              ! reference value. This concentrates changes to intervals that, by
              ! having a lot more mass than usual, drive other levels negative.
-             !   This works because sum(deta) = 1 on entry as well as exit, so
-             ! any interval < 0 can be associated with added mass of the same
-             ! amount above the reference elsewhere:
-             !     1 = sum_{deta(i) >= 0} deta(i) + sum_{deta(i) < 0} deta(i)
-             !       = dpos                       + dneg,
-             ! where dpos >= 1 and dneg <= 0. Thus,
-             !       = (dpos-1) + 1               + dneg
-             !     0 = (dpos-1)                   + dneg
-             !     => dpos - 1 = -dneg
-             !        dpos - (sum_i) deta_ref(i) = -dneg.
-             ! The final line shows the mass available above the reference is
-             ! exactly what is needed to fill the negative mass.
-             !   In practice, we make negative masses slightly positive ...
-             w(k) = (deta(k) - deta_ref(k)) + deta_tol
+             w(k) = deta(k) - deta_ref(k)
           else
              w(k) = zero
           end if
@@ -1544,5 +1532,60 @@ contains
     real(real_kind), intent(in) :: ps(np,np), etai(np,np,nlevp)
     real(real_kind), intent(out) :: dp(np,np,nlev)
   end subroutine eta_to_dp
+
+  subroutine test_deta_caas()
+    integer, parameter :: nl = 128, nlp = nl+1
+    
+    real(real_kind) :: deta_ref(nlp), etam_ref(nl), deta_tol, etam(nl), &
+         &             deta(nlp)
+    integer :: i, k
+
+    call random_number(deta_ref)
+    deta_ref = deta_ref + 0.1
+    deta_ref = deta_ref/sum(deta_ref)
+
+    deta_tol = 10_real_kind*eps*sum(deta_ref)/size(deta_ref)
+    call assert(deta_tol < minval(deta_ref))
+
+    ! Test: Input not touched.
+    deta = deta_ref
+    call deta_caas(nlp, deta_ref, deta_tol, deta)
+    call assert(maxval(abs(deta-deta_ref)) == zero)    
+    
+    etam_ref(1) = deta_ref(1)
+    do k = 2, nl
+       etam_ref(k) = etam_ref(k-1) + deta_ref(k)
+    end do
+
+    ! Test: Modify one etam and only adjacent intervals change beyond eps.
+    do i = 1, 2
+       etam = etam_ref
+       if (i == 1) then
+          etam(11) = etam(11) + 1.1
+       else
+          etam(11) = etam(11) - 13.1
+       end if
+       deta(1) = etam(1)
+       do k = 2, nl
+          deta(k) = etam(k) - etam(k-1)
+       end do
+       deta(nlp) = one - etam(nl)
+       call assert(minval(deta) < deta_tol)
+       call deta_caas(nlp, deta_ref, deta_tol, deta)
+       call assert(minval(deta) == deta_tol)
+       call assert(abs(sum(deta) - one) < 100*eps)
+       deta = abs(deta - deta_ref)
+       call assert(maxval(deta(:10)) < 100*eps)
+       call assert(maxval(deta(13:)) < 100*eps)
+    end do
+
+    ! Test: Completely messed up levels.
+    call random_number(deta)
+    deta = deta - 0.5_real_kind
+    deta = deta/sum(deta)
+    call deta_caas(nlp, deta_ref, deta_tol, deta)
+    call assert(minval(deta) == deta_tol)
+    call assert(abs(sum(deta) - one) < 100*eps)
+  end subroutine test_deta_caas
 
 end module sl_advection
