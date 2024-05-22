@@ -1208,6 +1208,8 @@ contains
 
     call t_startf('SLMM_trajectory')
 
+    !todo Support horizontal-only mode for not independent_time_steps.
+
     call slmm_set_hvcoord(hvcoord%etam)
 
     deta_ref(1) = hvcoord%etam(k)
@@ -1359,7 +1361,6 @@ contains
           end do
        end do
 
-       !todo interp in vertical
        call slmm_calc_trajectory(nets, nete, step, dtsub, dep_points_all, vnode, vdep, info)
 
        !todo if step == 1, DSS
@@ -1387,8 +1388,11 @@ contains
 
     call set_deta_tol(hvcoord)
 
+    !todo Fill in impl.
     do ie = nets, nete
+       ! Surface pressure.
        w1 = hvcoord%hyai(1)*hvcoord%ps0 + sum(elem(ie)%state%dp3d(:,:,:,tl%np1), 3)
+
        ! Reconstruct Lagrangian levels at t1 on arrival column:
        !     eta_arr_int = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_int)
        call eta_limit(deta_ref, dep_points_all(4,:,:,:,ie), v1)
@@ -1514,6 +1518,36 @@ contains
     if (nerr /= zero) deta = deta + nerr*(w/sum(w))
   end subroutine deta_caas
 
+  subroutine linterp(ny, n, x, y, ni, xi, yi)
+    ! Linear interpolant: yi = I[y(x)](xi).
+    ! x and xi must be in ascending order.
+    ! xi(1) must be >= x(1) and xi(ni) must be <= x(n).
+
+    use kinds, only: iulog
+
+    integer, intent(in) :: ny, n, ni
+    real(real_kind), intent(in) :: x(n), y(ny,n), xi(ni)
+    real(real_kind), intent(out) :: yi(ny,ni)
+
+    integer :: k, ki
+    real(real_kind) :: a
+
+    if (xi(1) < x(1) .or. xi(ni) > x(n)) then
+       write(iulog,*) 'x', x
+       write(iulog,*) 'xi', xi
+       call abortmp('sl_vertically_remap_tracers> linterp xi out of bounds.')
+    end if
+
+    k = 2
+    do ki = 1, ni
+       do while (x(k) < xi(ki))
+          k = k + 1
+       end do
+       a = (xi(ki) - x(k-1))/(x(k) - x(k-1))
+       yi(:,ki) = (1 - a)*y(:,k-1) + a*y(:,k)
+    end do
+  end subroutine linterp
+
   subroutine eta_interp_eta(x, y, ni, xi, yi)
     real(real_kind), intent(in) :: x(np,np,nlev), y(nlev)
     integer, intent(in) :: ni
@@ -1529,9 +1563,29 @@ contains
   end subroutine eta_interp_horiz
 
   subroutine eta_to_dp(hvcoord, ps, etai, dp)
+    !    e = A(e) + B(e)
+    ! p(e) = A(e) p0 + B(e) ps
+    !      = e p0 + B(e) (ps - p0)
+    !     a= e p0 + I[Bi(eref)](e) (ps - p0)
+
     type (hvcoord_t), intent(in) :: hvcoord
     real(real_kind), intent(in) :: ps(np,np), etai(np,np,nlevp)
     real(real_kind), intent(out) :: dp(np,np,nlev)
+
+    real(real_kind) :: Bi(np,np,nlevp), B(np,np,nlevp), dps(np,np)
+    integer :: k
+
+    do k = 1, nlevp
+       Bi(:,:,k) = hvcoord%hybi(k)
+    end do
+    
+    call linterp(np*np, nlevp, hvcoord%etai, Bi, nlevp, etai, B)
+
+    dps = ps - hvcoord%ps0
+    do k = 1, nlev
+       dp(:,:,k) = (etai(:,:,k+1) - etai(:,:,k))*hvcoord%ps0 + &
+            &      (B(:,:,k+1) - B(:,:,k))*dps
+    end do
   end subroutine eta_to_dp
 
   function assert(b, msg) result(nerr)
