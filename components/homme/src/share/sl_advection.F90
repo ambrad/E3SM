@@ -1171,21 +1171,6 @@ contains
     end do
   end function test_reconstruct_and_limit_dp
 
-  subroutine sl_unittest(par)
-    use kinds, only: iulog
-
-    type (parallel_t), intent(in) :: par
-
-    integer :: nerr
-
-    nerr = 0
-    nerr = nerr + test_lagrange()
-    nerr = nerr + test_reconstruct_and_limit_dp()
-    nerr = nerr + test_deta_caas()
-
-    if (nerr > 0 .and. par%masterproc) write(iulog,'(a,i3)') 'sl_unittest FAIL', nerr
-  end subroutine sl_unittest
-  
   subroutine ctfull(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete, nsubstep)
     use physical_constants, only: scale_factor
     use derivative_mod, only: ugradv_sphere
@@ -1601,6 +1586,30 @@ contains
     nerr = 1
   end function assert
 
+  function test_linterp() result (nerr)
+    integer, parameter :: n = 128, ni = 111
+
+    real(real_kind) :: x(n), y(n), xi(ni), yi(ni), yin(n), a
+    integer :: k, nerr
+
+    call random_number(x)
+    do k = 2, n
+       x(k) = x(k) + x(k-1)
+    end do
+    y = 3*x
+
+    do k = 1, ni
+       a = real(k, real_kind)/(ni+1)
+       xi(k) = (1 - a)*x(1) + a*x(n)
+    end do
+
+    call linterp(1, n, x, y, ni, xi, yi)
+    nerr = assert(maxval(abs( yi - 3*xi)) < 100*eps*x(n))
+    
+    call linterp(1, n, x, y, n, x, yin)
+    nerr = nerr + assert(maxval(abs(yin - y)) < 10*eps)
+  end function test_linterp
+
   function test_deta_caas() result(nerr)
     integer, parameter :: nl = 128, nlp = nl+1
     
@@ -1657,5 +1666,23 @@ contains
     nerr = nerr + assert(minval(deta) == deta_tol)
     nerr = nerr + assert(abs(sum(deta) - one) < 100*eps)
   end function test_deta_caas
+
+  subroutine sl_unittest(par)
+    use kinds, only: iulog
+
+    type (parallel_t), intent(in) :: par
+
+    integer :: nerr
+
+    nerr = 0
+    nerr = nerr + test_lagrange()
+    nerr = nerr + test_reconstruct_and_limit_dp()
+    nerr = nerr + test_deta_caas()
+    nerr = nerr + test_linterp()
+
+    if (nerr > 0 .and. par%masterproc) then
+       write(iulog,'(a,i3)') 'COMPOSE> sl_unittest FAIL ', nerr
+    end if
+  end subroutine sl_unittest
 
 end module sl_advection
