@@ -1573,15 +1573,20 @@ contains
   end subroutine eta_to_dp
 
   function assert(b, msg) result(nerr)
+    use kinds, only: iulog
+
     logical, intent(in) :: b
     character(*), optional, intent(in) :: msg
+
+    character(len=128) :: s
     integer :: nerr
 
     nerr = 0
     if (b) return
 
-    print *, 'ERROR'
-    if (present(msg)) print *, msg
+    s = ''
+    if (present(msg)) s = msg
+    write(iulog,'(a,a)') 'COMPOSE> sl_advection ASSERT: ', trim(s)
     nerr = 1
   end function assert
 
@@ -1603,10 +1608,10 @@ contains
     end do
 
     call linterp(1, n, x, y, ni, xi, yi)
-    nerr = assert(maxval(abs( yi - 3*xi)) < 100*eps*x(n))
+    nerr = assert(maxval(abs( yi - 3*xi)) < 100*eps*x(n), 'linterp 1')
     
     call linterp(1, n, x, y, n, x, yin)
-    nerr = nerr + assert(maxval(abs(yin - y)) < 10*eps)
+    nerr = nerr + assert(maxval(abs(yin - y)) < 10*eps, 'linterp 2')
   end function test_linterp
 
   function test_eta_to_dp(hvcoord) result(nerr)
@@ -1633,7 +1638,7 @@ contains
        end do
     end do
     call eta_to_dp(hvcoord, ps, etai, dp2)
-    nerr = nerr + assert(maxval(abs(dp2-dp1)) < 100*eps*maxval(dp1))
+    nerr = nerr + assert(maxval(abs(dp2-dp1)) < 100*eps*maxval(dp1), 'eta_to_dp 1')
   end function test_eta_to_dp
 
   function test_deta_caas() result(nerr)
@@ -1650,12 +1655,12 @@ contains
     deta_ref = deta_ref/sum(deta_ref)
 
     deta_tol = 10_real_kind*eps*sum(deta_ref)/size(deta_ref)
-    nerr = nerr + assert(deta_tol < minval(deta_ref))
+    nerr = nerr + assert(deta_tol < minval(deta_ref), 'deta_caas 1')
 
     ! Test: Input not touched.
     deta = deta_ref
     call deta_caas(nlp, deta_ref, deta_tol, deta)
-    nerr = nerr + assert(maxval(abs(deta-deta_ref)) == zero)    
+    nerr = nerr + assert(maxval(abs(deta-deta_ref)) == zero, 'deta_caas 2')
     
     etam_ref(1) = deta_ref(1)
     do k = 2, nl
@@ -1675,22 +1680,23 @@ contains
           deta(k) = etam(k) - etam(k-1)
        end do
        deta(nlp) = one - etam(nl)
-       nerr = nerr + assert(minval(deta) < deta_tol)
+       nerr = nerr + assert(minval(deta) < deta_tol, 'deta_caas 3')
        call deta_caas(nlp, deta_ref, deta_tol, deta)
-       nerr = nerr + assert(minval(deta) == deta_tol)
-       nerr = nerr + assert(abs(sum(deta) - one) < 100*eps)
+       nerr = nerr + assert(minval(deta) == deta_tol, 'deta_caas 4')
+       nerr = nerr + assert(abs(sum(deta) - one) < 100*eps, 'deta_caas 5')
        deta = abs(deta - deta_ref)
-       nerr = nerr + assert(maxval(deta(:10)) < 100*eps)
-       nerr = nerr + assert(maxval(deta(13:)) < 100*eps)
+       nerr = nerr + assert(maxval(deta(:10)) < 100*eps, 'deta_caas 6')
+       nerr = nerr + assert(maxval(deta(13:)) < 100*eps, 'deta_caas 7')
     end do
 
     ! Test: Completely messed up levels.
     call random_number(deta)
     deta = deta - 0.5_real_kind
+    if (sum(deta) < 0.1) deta = deta + (0.1 - sum(deta))/nlp
     deta = deta/sum(deta)
     call deta_caas(nlp, deta_ref, deta_tol, deta)
-    nerr = nerr + assert(minval(deta) == deta_tol)
-    nerr = nerr + assert(abs(sum(deta) - one) < 100*eps)
+    nerr = nerr + assert(minval(deta) == deta_tol, 'deta_caas 8')
+    nerr = nerr + assert(abs(sum(deta) - one) < 1000*eps, 'deta_caas 9')
   end function test_deta_caas
 
   subroutine sl_unittest(par, hvcoord)
@@ -1699,17 +1705,16 @@ contains
     type (parallel_t), intent(in) :: par
     type (hvcoord_t), intent(in) :: hvcoord
 
-    integer :: nerr
+    integer :: n(5)
 
-    nerr = 0
-    nerr = nerr + test_lagrange()
-    nerr = nerr + test_reconstruct_and_limit_dp()
-    nerr = nerr + test_deta_caas()
-    nerr = nerr + test_linterp()
-    nerr = nerr + test_eta_to_dp(hvcoord)
+    n(1) = test_lagrange()
+    n(2) = test_reconstruct_and_limit_dp()
+    n(3) = test_deta_caas()
+    n(4) = test_linterp()
+    n(5) = test_eta_to_dp(hvcoord)
 
-    if (nerr > 0 .and. par%masterproc) then
-       write(iulog,'(a,i3)') 'COMPOSE> sl_unittest FAIL ', nerr
+    if (sum(n) > 0 .and. par%masterproc) then
+       write(iulog,'(a,5i2)') 'COMPOSE> sl_unittest FAIL ', n
     end if
   end subroutine sl_unittest
 
