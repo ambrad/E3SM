@@ -117,7 +117,7 @@ contains
 
     ! 1. Unit tests.
     call compose_unittest()
-    call sl_unittest(par)
+    call sl_unittest(par, hvcoord)
     nerr = 0
     call cedr_unittest(par%comm, nerr)
     if (nerr /= 0) print *, 'cedr_unittest returned', nerr

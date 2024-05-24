@@ -1557,19 +1557,18 @@ contains
     real(real_kind), intent(in) :: ps(np,np), etai(np,np,nlevp)
     real(real_kind), intent(out) :: dp(np,np,nlev)
 
-    real(real_kind) :: Bi(np,np,nlevp), B(np,np,nlevp), dps(np,np)
-    integer :: k
+    real(real_kind) :: Bi(nlevp), dps
+    integer :: i, j, k
 
-    do k = 1, nlevp
-       Bi(:,:,k) = hvcoord%hybi(k)
-    end do
-    
-    call linterp(np*np, nlevp, hvcoord%etai, Bi, nlevp, etai, B)
-
-    dps = ps - hvcoord%ps0
-    do k = 1, nlev
-       dp(:,:,k) = (etai(:,:,k+1) - etai(:,:,k))*hvcoord%ps0 + &
-            &      (B(:,:,k+1) - B(:,:,k))*dps
+    do j = 1, np
+       do i = 1, np
+          call linterp(1, nlevp, hvcoord%etai, hvcoord%hybi, nlevp, etai(i,j,:), Bi)
+          dps = ps(i,j) - hvcoord%ps0
+          do k = 1, nlev
+             dp(i,j,k) = (etai(i,j,k+1) - etai(i,j,k))*hvcoord%ps0 + &
+                  &      (Bi(k+1) - Bi(k))*dps
+          end do
+       end do
     end do
   end subroutine eta_to_dp
 
@@ -1609,6 +1608,33 @@ contains
     call linterp(1, n, x, y, n, x, yin)
     nerr = nerr + assert(maxval(abs(yin - y)) < 10*eps)
   end function test_linterp
+
+  function test_eta_to_dp(hvcoord) result(nerr)
+    type (hvcoord_t), intent(in) :: hvcoord
+
+    real(real_kind) :: ps(np,np), etai(np,np,nlevp), dp1(np,np,nlev), &
+         &             dp2(np,np,nlev)
+    integer :: nerr, i, j, k
+
+    nerr = 0
+
+    call random_number(ps)
+    ps = (one + 0.2*(ps - 0.5))*hvcoord%ps0
+
+    do k = 1, nlev
+       dp1(:,:,k) = (hvcoord%hyai(k+1) - hvcoord%hyai(k))*hvcoord%ps0 + &
+            &       (hvcoord%hybi(k+1) - hvcoord%hybi(k))*ps
+    end do
+
+    ! First test that for etai_ref we get the same as the usual formula.
+    do j = 1, np
+       do i = 1, np
+          etai(i,j,:) = hvcoord%etai
+       end do
+    end do
+    call eta_to_dp(hvcoord, ps, etai, dp2)
+    nerr = nerr + assert(maxval(abs(dp2-dp1)) < 100*eps*maxval(dp1))
+  end function test_eta_to_dp
 
   function test_deta_caas() result(nerr)
     integer, parameter :: nl = 128, nlp = nl+1
@@ -1667,10 +1693,11 @@ contains
     nerr = nerr + assert(abs(sum(deta) - one) < 100*eps)
   end function test_deta_caas
 
-  subroutine sl_unittest(par)
+  subroutine sl_unittest(par, hvcoord)
     use kinds, only: iulog
 
     type (parallel_t), intent(in) :: par
+    type (hvcoord_t), intent(in) :: hvcoord
 
     integer :: nerr
 
@@ -1679,6 +1706,7 @@ contains
     nerr = nerr + test_reconstruct_and_limit_dp()
     nerr = nerr + test_deta_caas()
     nerr = nerr + test_linterp()
+    nerr = nerr + test_eta_to_dp(hvcoord)
 
     if (nerr > 0 .and. par%masterproc) then
        write(iulog,'(a,i3)') 'COMPOSE> sl_unittest FAIL ', nerr
