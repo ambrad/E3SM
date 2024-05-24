@@ -1341,8 +1341,8 @@ contains
              w3(:,:,1:2) = gradient_sphere(eta_dot(:,:,k,2), deriv, elem(ie)%Dinv)
              vnode(4,:,:,k,ie) = &
                   half*(eta_dot(:,:,k,1) + eta_dot(:,:,k,2) &
-                  &     - dtsub*(vsph(:,:,1,k,1)*w3(:,:,1) + vsph(:,:,2,k,1)*w3(:,:,2) + &
-                  &              eta_dot(:,:,k,1)*w1))
+                  &     - dtsub*(vsph(:,:,1,k,1)*w3(:,:,1) + vsph(:,:,2,k,1)*w3(:,:,2) &
+                  &              + eta_dot(:,:,k,1)*w1))
           end do
        end do
 
@@ -1400,7 +1400,7 @@ contains
        !     p_dep_mid(eta_arr_mid) = I[p_dep_mid(eta_ref_mid)](eta_arr_mid)
        do d = 1, 3
           v1 = dep_points_all(d,:,:,:,ie)
-          call eta_interp_horiz(hvcoord%etam, v1, nlev, v2(:,:,1:nlev), &
+          call eta_interp_horiz(hvcoord%etam, v1, v2(:,:,1:nlev), &
                dep_points_all(d,:,:,:,ie))
        end do
     end do
@@ -1538,13 +1538,42 @@ contains
     integer, intent(in) :: ni
     real(real_kind), intent(in) :: xi(ni)
     real(real_kind), intent(out) :: yi(np,np,ni)
+
+    real(real_kind) :: x01(nlev+2), y01(nlev+2)
+    integer :: i, j
+
+    x01(1) = zero
+    x01(nlev+2) = one
+    y01(1) = zero
+    y01(2:nlev+1) = y
+    y01(nlev+2) = one
+    do j = 1, np
+       do i = 1, np
+          x01(2:nlev+1) = x(i,j,:)
+          call linterp(1, nlev+2, x01, y01, ni, xi, yi(i,j,:))
+       end do
+    end do
   end subroutine eta_interp_eta
 
-  subroutine eta_interp_horiz(x, y, ni, xi, yi)
-    real(real_kind), intent(in) :: x(nlev), y(np,np,nlev)
-    integer, intent(in) :: ni
-    real(real_kind), intent(in) :: xi(np,np,ni)
-    real(real_kind), intent(out) :: yi(np,np,ni)
+  subroutine eta_interp_horiz(x, y, xi, yi)
+    real(real_kind), intent(in) :: x(nlev), y(np,np,nlev), xi(np,np,nlev)
+    real(real_kind), intent(out) :: yi(np,np,nlev)
+
+    real(real_kind) :: xbdy(nlev+2), ybdy(nlev+2)
+    integer :: i, j
+
+    xbdy(1) = zero
+    xbdy(2:nlev+1) = x
+    xbdy(nlev+2) = one
+    do j = 1, np
+       do i = 1, np
+          ! Do constant interp outside of the etam support.
+          ybdy(1) = y(i,j,1)
+          ybdy(2:nlev+1) = y(i,j,:)
+          ybdy(nlev+2) = y(i,j,nlev)
+          call linterp(1, nlev+2, xbdy, ybdy, nlev, xi, yi(i,j,:))
+       end do
+    end do
   end subroutine eta_interp_horiz
 
   subroutine eta_to_dp(hvcoord, ps, etai, dp)
@@ -1631,7 +1660,7 @@ contains
             &       (hvcoord%hybi(k+1) - hvcoord%hybi(k))*ps
     end do
 
-    ! First test that for etai_ref we get the same as the usual formula.
+    ! Test that for etai_ref we get the same as the usual formula.
     do j = 1, np
        do i = 1, np
           etai(i,j,:) = hvcoord%etai
