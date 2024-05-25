@@ -1575,7 +1575,7 @@ contains
           ybdy(1) = y(i,j,1)
           ybdy(2:nlev+1) = y(i,j,:)
           ybdy(nlev+2) = y(i,j,nlev)
-          call linterp(1, nlev+2, xbdy, ybdy, nlev, xi, yi(i,j,:), &
+          call linterp(1, nlev+2, xbdy, ybdy, nlev, xi(i,j,:), yi(i,j,:), &
                'eta_interp_horiz')
        end do
     end do
