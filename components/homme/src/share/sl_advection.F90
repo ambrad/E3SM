@@ -1552,8 +1552,9 @@ contains
     do j = 1, np
        do i = 1, np
           x01(2:nlev+1) = x(i,j,:)
-          call linterp(1, nlev+2, x01, y01, ni, xi, yi(i,j,:), &
-               'eta_interp_eta')
+          call linterp(1, nlev+2, x01, y01, &
+               &          ni, xi, yi(i,j,:), &
+               &       'eta_interp_eta')
        end do
     end do
   end subroutine eta_interp_eta
@@ -1575,8 +1576,9 @@ contains
           ybdy(1) = y(i,j,1)
           ybdy(2:nlev+1) = y(i,j,:)
           ybdy(nlev+2) = y(i,j,nlev)
-          call linterp(1, nlev+2, xbdy, ybdy, nlev, xi(i,j,:), yi(i,j,:), &
-               'eta_interp_horiz')
+          call linterp(1, nlev+2, xbdy, ybdy, &
+               &          nlev, xi(i,j,:), yi(i,j,:), &
+               &       'eta_interp_horiz')
        end do
     end do
   end subroutine eta_interp_horiz
@@ -1596,8 +1598,9 @@ contains
 
     do j = 1, np
        do i = 1, np
-          call linterp(1, nlevp, hvcoord%etai, hvcoord%hybi, nlevp, etai(i,j,:), Bi, &
-               'eta_to_dp')
+          call linterp(1, nlevp, hvcoord%etai, hvcoord%hybi, &
+               &          nlevp, etai(i,j,:), Bi, &
+               &          'eta_to_dp')
           dps = ps(i,j) - hvcoord%ps0
           do k = 1, nlev
              dp(i,j,k) = (etai(i,j,k+1) - etai(i,j,k))*hvcoord%ps0 + &
