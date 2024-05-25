@@ -1386,10 +1386,8 @@ contains
             &              nlevp-2, hvcoord%etai(2:nlev), v2(:,:,2:nlev))
        call eta_to_dp(hvcoord, w1, v2, elem(ie)%derived%divdp)
 
-       ! Compute Lagrangian level midpoints at t1 on arrival column.
+       ! Compute Lagrangian level midpoints at t1 on arrival column:
        !     eta_arr_mid = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_mid)
-       ! or
-       !     cc(eta_arr_int)
        call eta_interp_eta(hvcoord, v1, hvcoord%etam, &
             &              nlev, hvcoord%etam, v2(:,:,1:nlev))
        dep_points_all(4,:,:,:,ie) = v2(:,:,1:nlev)
