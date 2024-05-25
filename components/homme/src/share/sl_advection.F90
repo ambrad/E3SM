@@ -1259,15 +1259,16 @@ contains
              ! Transform eta_dot_dpdn at interfaces to eta_dot at midpoints
              ! using the formula
              !     eta_dot = eta_dot_dpdn/(A_eta p0 + B_eta ps).
+             !            a= eta_dot_dpdn diff(eta)/(diff(A) p0 + diff(B) ps).
              !   Compute ps.
              w1 = hvcoord%hyai(1)*hvcoord%ps0 + &
                   &    (1 - alpha(t))*sum(elem(ie)%derived%dp(:,:,:), 3) + &
                   &         alpha(t) *sum(elem(ie)%state%dp3d(:,:,:,tl%np1), 3)
              do k = 1,nlev
-                eta_dot(:,:,k,t) = half*(eta_dot(:,:,k,t) + eta_dot(:,:,k+1,t)) * &
-                     &             ((hvcoord%hyai(k+1) - hvcoord%hyai(k))*hvcoord%ps0 + &
-                     &              (hvcoord%hybi(k+1) - hvcoord%hybi(k))*w1) / &
-                     &             (hvcoord%etai(k+1) - hvcoord%etai(k))
+                eta_dot(:,:,k,t) = half*(eta_dot(:,:,k,t) + eta_dot(:,:,k+1,t)) &
+                     &             * (hvcoord%etai(k+1) - hvcoord%etai(k)) &
+                     &             / (  (hvcoord%hyai(k+1) - hvcoord%hyai(k))*hvcoord%ps0 &
+                     &                + (hvcoord%hybi(k+1) - hvcoord%hybi(k))*w1)
              end do
           end do
 
