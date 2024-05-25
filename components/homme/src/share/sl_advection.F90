@@ -1373,7 +1373,6 @@ contains
 
     call set_deta_tol(hvcoord)
 
-    !todo Fill in impl.
     do ie = nets, nete
        ! Surface pressure.
        w1 = hvcoord%hyai(1)*hvcoord%ps0 + sum(elem(ie)%state%dp3d(:,:,:,tl%np1), 3)
@@ -1381,18 +1380,18 @@ contains
        ! Reconstruct Lagrangian levels at t1 on arrival column:
        !     eta_arr_int = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_int)
        call eta_limit(deta_ref, dep_points_all(4,:,:,:,ie), v1)
-       v2(:,:,1) = zero
-       v2(:,:,nlevp) = one
-       call eta_interp_eta(v1, hvcoord%etam, nlevp-2, hvcoord%etai(2:nlev), &
-            v2(:,:,2:nlev))
+       v2(:,:,1) = hvcoord%etai(1)
+       v2(:,:,nlevp) = hvcoord%etai(nlevp)
+       call eta_interp_eta(hvcoord, v1, hvcoord%etam, &
+            &              nlevp-2, hvcoord%etai(2:nlev), v2(:,:,2:nlev))
        call eta_to_dp(hvcoord, w1, v2, elem(ie)%derived%divdp)
 
        ! Compute Lagrangian level midpoints at t1 on arrival column.
        !     eta_arr_mid = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_mid)
        ! or
        !     cc(eta_arr_int)
-       call eta_interp_eta(v1, hvcoord%etam, nlev, hvcoord%etam, &
-            v2(:,:,1:nlev))
+       call eta_interp_eta(hvcoord, v1, hvcoord%etam, &
+            &              nlev, hvcoord%etam, v2(:,:,1:nlev))
        dep_points_all(4,:,:,:,ie) = v2(:,:,1:nlev)
 
        ! Compute departure horizontal points corresponding to arrival
@@ -1400,8 +1399,8 @@ contains
        !     p_dep_mid(eta_arr_mid) = I[p_dep_mid(eta_ref_mid)](eta_arr_mid)
        do d = 1, 3
           v1 = dep_points_all(d,:,:,:,ie)
-          call eta_interp_horiz(hvcoord%etam, v1, v2(:,:,1:nlev), &
-               dep_points_all(d,:,:,:,ie))
+          call eta_interp_horiz(hvcoord, hvcoord%etam, v1, &
+               &                v2(:,:,1:nlev), dep_points_all(d,:,:,:,ie))
        end do
     end do
 
@@ -1503,7 +1502,7 @@ contains
     if (nerr /= zero) deta = deta + nerr*(w/sum(w))
   end subroutine deta_caas
 
-  subroutine linterp(ny, n, x, y, ni, xi, yi)
+  subroutine linterp(ny, n, x, y, ni, xi, yi, caller)
     ! Linear interpolant: yi = I[y(x)](xi).
     ! x and xi must be in ascending order.
     ! xi(1) must be >= x(1) and xi(ni) must be <= x(n).
@@ -1513,6 +1512,7 @@ contains
     integer, intent(in) :: ny, n, ni
     real(real_kind), intent(in) :: x(n), y(ny,n), xi(ni)
     real(real_kind), intent(out) :: yi(ny,ni)
+    character(len=*), intent(in) :: caller
 
     integer :: k, ki
     real(real_kind) :: a
@@ -1520,7 +1520,8 @@ contains
     if (xi(1) < x(1) .or. xi(ni) > x(n)) then
        write(iulog,*) 'x', x
        write(iulog,*) 'xi', xi
-       call abortmp('sl_vertically_remap_tracers> linterp xi out of bounds.')
+       call abortmp('sl_vertically_remap_tracers> linterp xi out of bounds: ' &
+            // trim(caller))
     end if
 
     k = 2
@@ -1533,7 +1534,8 @@ contains
     end do
   end subroutine linterp
 
-  subroutine eta_interp_eta(x, y, ni, xi, yi)
+  subroutine eta_interp_eta(hvcoord, x, y, ni, xi, yi)
+    type (hvcoord_t), intent(in) :: hvcoord
     real(real_kind), intent(in) :: x(np,np,nlev), y(nlev)
     integer, intent(in) :: ni
     real(real_kind), intent(in) :: xi(ni)
@@ -1542,36 +1544,39 @@ contains
     real(real_kind) :: x01(nlev+2), y01(nlev+2)
     integer :: i, j
 
-    x01(1) = zero
-    x01(nlev+2) = one
-    y01(1) = zero
+    x01(1) = hvcoord%etai(1)
+    x01(nlev+2) = hvcoord%etai(nlevp)
+    y01(1) = hvcoord%etai(1)
     y01(2:nlev+1) = y
-    y01(nlev+2) = one
+    y01(nlev+2) = hvcoord%etai(nlevp)
     do j = 1, np
        do i = 1, np
           x01(2:nlev+1) = x(i,j,:)
-          call linterp(1, nlev+2, x01, y01, ni, xi, yi(i,j,:))
+          call linterp(1, nlev+2, x01, y01, ni, xi, yi(i,j,:), &
+               'eta_interp_eta')
        end do
     end do
   end subroutine eta_interp_eta
 
-  subroutine eta_interp_horiz(x, y, xi, yi)
+  subroutine eta_interp_horiz(hvcoord, x, y, xi, yi)
+    type (hvcoord_t), intent(in) :: hvcoord
     real(real_kind), intent(in) :: x(nlev), y(np,np,nlev), xi(np,np,nlev)
     real(real_kind), intent(out) :: yi(np,np,nlev)
 
     real(real_kind) :: xbdy(nlev+2), ybdy(nlev+2)
     integer :: i, j
 
-    xbdy(1) = zero
+    xbdy(1) = hvcoord%etai(1)
     xbdy(2:nlev+1) = x
-    xbdy(nlev+2) = one
+    xbdy(nlev+2) = hvcoord%etai(nlevp)
     do j = 1, np
        do i = 1, np
           ! Do constant interp outside of the etam support.
           ybdy(1) = y(i,j,1)
           ybdy(2:nlev+1) = y(i,j,:)
           ybdy(nlev+2) = y(i,j,nlev)
-          call linterp(1, nlev+2, xbdy, ybdy, nlev, xi, yi(i,j,:))
+          call linterp(1, nlev+2, xbdy, ybdy, nlev, xi, yi(i,j,:), &
+               'eta_interp_horiz')
        end do
     end do
   end subroutine eta_interp_horiz
@@ -1591,7 +1596,8 @@ contains
 
     do j = 1, np
        do i = 1, np
-          call linterp(1, nlevp, hvcoord%etai, hvcoord%hybi, nlevp, etai(i,j,:), Bi)
+          call linterp(1, nlevp, hvcoord%etai, hvcoord%hybi, nlevp, etai(i,j,:), Bi, &
+               'eta_to_dp')
           dps = ps(i,j) - hvcoord%ps0
           do k = 1, nlev
              dp(i,j,k) = (etai(i,j,k+1) - etai(i,j,k))*hvcoord%ps0 + &
@@ -1636,10 +1642,10 @@ contains
        xi(k) = (1 - a)*x(1) + a*x(n)
     end do
 
-    call linterp(1, n, x, y, ni, xi, yi)
+    call linterp(1, n, x, y, ni, xi, yi, 'test_linterp 1')
     nerr = assert(maxval(abs( yi - 3*xi)) < 100*eps*x(n), 'linterp 1')
     
-    call linterp(1, n, x, y, n, x, yin)
+    call linterp(1, n, x, y, n, x, yin, 'test_linterp 2')
     nerr = nerr + assert(maxval(abs(yin - y)) < 10*eps, 'linterp 2')
   end function test_linterp
 
