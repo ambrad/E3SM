@@ -1197,11 +1197,11 @@ contains
 
     call slmm_set_hvcoord(hvcoord%etam)
 
-    deta_ref(1) = hvcoord%etam(k)
+    deta_ref(1) = hvcoord%etam(1) - hvcoord%etai(1)
     do k = 2, nlev
        deta_ref(k) = hvcoord%etam(k) - hvcoord%etam(k-1)
     end do
-    deta_ref(nlevp) = one - hvcoord%etam(nlev)
+    deta_ref(nlevp) = hvcoord%etai(nlevp) - hvcoord%etam(nlev)
 
     do ie = nets,nete
        elem(ie)%derived%vn0 = elem(ie)%state%v(:,:,:,:,tl%np1)
@@ -1380,7 +1380,7 @@ contains
 
        ! Reconstruct Lagrangian levels at t1 on arrival column:
        !     eta_arr_int = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_int)
-       call eta_limit(deta_ref, dep_points_all(4,:,:,:,ie), v1)
+       call eta_limit(hvcoord, deta_ref, dep_points_all(4,:,:,:,ie), v1)
        v2(:,:,1) = hvcoord%etai(1)
        v2(:,:,nlevp) = hvcoord%etai(nlevp)
        call eta_interp_eta(hvcoord, v1, hvcoord%etam, &
@@ -1427,7 +1427,8 @@ contains
     deta_tol = 10_real_kind*eps*deta_ave
   end subroutine set_deta_tol
 
-  subroutine eta_limit(deta_ref, eta, eta_lim)
+  subroutine eta_limit(hvcoord, deta_ref, eta, eta_lim)
+    type (hvcoord_t), intent(in) :: hvcoord
     real(real_kind), intent(in) :: deta_ref(nlevp), eta(np,np,nlev)
     real(real_kind), intent(out) :: eta_lim(np,np,nlev)
 
@@ -1438,7 +1439,7 @@ contains
     do j = 1, np
        do i = 1, np
           ! Check nonmonotonicity in eta.
-          ok = eta(i,j,1) >= deta_tol
+          ok = eta(i,j,1) - hvcoord%etai(1) >= deta_tol
           if (ok) then
              do k = 2, nlev
                 if (eta(i,j,k) - eta(i,j,k-1) < deta_tol) then
@@ -1447,7 +1448,7 @@ contains
                 end if
              end do
              if (ok) then
-                ok = one - eta(i,j,nlev) >= deta_tol
+                ok = hvcoord%etai(nlevp) - eta(i,j,nlev) >= deta_tol
              end if
           end if
           ! eta is monotonically increasing, so don't need to do anything
@@ -1457,11 +1458,11 @@ contains
              cycle
           end if
           
-          deta(1) = eta(i,j,1)
+          deta(1) = eta(i,j,1) - hvcoord%etai(1)
           do k = 2, nlev
              deta(k) = eta(i,j,k) - eta(i,j,k-1)
           end do
-          deta(nlevp) = one - eta(i,j,nlev)
+          deta(nlevp) = hvcoord%etai(nlevp) - eta(i,j,nlev)
           ! [0, etam(1)] and [etam(nlev),1] are half levels, but deta_tol is so
           ! small there's no reason not to use it as a lower bound for these.
           call deta_caas(nlevp, deta_ref, deta_tol, deta)
