@@ -487,6 +487,7 @@ IMPLICIT NONE
     real(8) :: r                  ! Great circle distance (radians)
     real(8) :: rz                 ! height differences
     real(8) :: zs                 ! Surface elevation (m)
+    real(8) :: shape, bot, top, x, y, zeta
 
 !-----------------------------------------------------------------------
 !    PHIS (surface geopotential)
@@ -541,7 +542,20 @@ IMPLICIT NONE
 
 	! Meridional Velocity
 
-	v = -u0*(sin(lon)*sin(alpha))
+  v = -u0*(sin(lon)*sin(alpha))
+
+  shape = 0.15
+  bot = h0 !shape*(zp1 - dzp1/2) + (1 - shape)*h0
+  top = zp1 - dzp1/2 !(1 - shape)*(zp1 - dzp1/2) + shape*h0
+  if (z <= bot) then
+     shape = 0
+  elseif (z >= top) then
+     shape = 1
+  else
+     shape = (1 + cos(pi*(1 + (z - bot)/(top - bot))))/2
+  end if
+  u = u*shape
+  v = v*shape
 
 !-----------------------------------------------------------------------
 !    TEMPERATURE IS CONSTANT 300 K
@@ -598,7 +612,7 @@ IMPLICIT NONE
 !               vertical coordinate is used
 !
 	endif
-
+  w = w*shape
 
 
 !-----------------------------------------------------------------------
@@ -620,7 +634,14 @@ IMPLICIT NONE
 		q1 = 0.d0
 
 	endif
-
+ !amb
+ if (.false.) then
+    x = cos(lat)*cos(lon)
+    y = cos(lat)*sin(lon)
+    zeta = sin(lat)
+    q1 = 1.5d0*(1 + sin(pi*x)*sin(pi*y)*sin(pi*zeta)*sin(pi*z/ztop))
+ end if
+ 
 	rz = abs(height - zp2)
 
 	if (rz .lt. 0.5d0*dzp2 .and. r .lt. Rp) then
