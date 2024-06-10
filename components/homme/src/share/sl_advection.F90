@@ -1403,6 +1403,8 @@ contains
        end do
     end do
 
+    call ALE_RKdss(elem, nets, nete, hybrid, deriv, dt, tl, .true.) !todo clean up
+
     call t_stopf('SLMM_trajectory')
   end subroutine ctfull
 
