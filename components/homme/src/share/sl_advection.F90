@@ -1468,7 +1468,7 @@ contains
           ! [0, etam(1)] and [etam(nlev),1] are half levels, but deta_tol is so
           ! small there's no reason not to use it as a lower bound for these.
           call deta_caas(nlevp, deta_ref, deta_tol, deta)
-          eta_lim(i,j,1) = deta(1)
+          eta_lim(i,j,1) = hvcoord%etai(1) + deta(1)
           do k = 2, nlev
              eta_lim(i,j,k) = eta_lim(i,j,k-1) + deta(k)
           end do
