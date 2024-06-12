@@ -1184,20 +1184,13 @@ contains
     type (cartesian3D_t) :: c3d
     integer :: step, ie, d, i, j, k, t, info, nlyr, k1, k2
     real(real_kind) :: alpha(2), dtsub, uxyz(np,np,3), norm, p(3), &
-         vsph(np,np,2,nlev,2), eta_dot(np,np,nlevp,2), &
-         w1(np,np), v1(np,np,nlev), v2(np,np,nlevp), deta_ref(nlevp)
+         vsph(np,np,2,nlev,2), eta_dot(np,np,nlevp,2)
 
     call t_startf('SLMM_trajectory')
 
     !todo Support horizontal-only mode for not independent_time_steps.
 
     call slmm_set_hvcoord(hvcoord%etam)
-
-    deta_ref(1) = hvcoord%etam(1) - hvcoord%etai(1)
-    do k = 2, nlev
-       deta_ref(k) = hvcoord%etam(k) - hvcoord%etam(k-1)
-    end do
-    deta_ref(nlevp) = hvcoord%etai(nlevp) - hvcoord%etam(nlev)
 
     do ie = nets,nete
        elem(ie)%derived%vn0 = elem(ie)%state%v(:,:,:,:,tl%np1)
@@ -1259,6 +1252,8 @@ contains
           call dss_vdep(elem, nets, nete, hybrid, vdep)
        end if
 
+       ! Determine the departure points corresponding to the reference grid's
+       ! arrival midpoints.
        do ie = nets, nete
           do k = 1, nlev
              do j = 1, np
@@ -1280,37 +1275,13 @@ contains
        end do
     end do
 
-    call set_deta_tol(hvcoord)
-
-    do ie = nets, nete
-       ! Surface pressure.
-       w1 = hvcoord%hyai(1)*hvcoord%ps0 + sum(elem(ie)%state%dp3d(:,:,:,tl%np1), 3)
-
-       ! Reconstruct Lagrangian levels at t1 on arrival column:
-       !     eta_arr_int = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_int)
-       call limit_deta(hvcoord, deta_ref, dep_points_all(4,:,:,:,ie), v1)
-       v2(:,:,1) = hvcoord%etai(1)
-       v2(:,:,nlevp) = hvcoord%etai(nlevp)
-       call eta_interp_eta(hvcoord, v1, hvcoord%etam, &
-            &              nlevp-2, hvcoord%etai(2:nlev), v2(:,:,2:nlev))
-       call eta_to_dp(hvcoord, w1, v2, elem(ie)%derived%divdp)
-
-       ! Compute Lagrangian level midpoints at t1 on arrival column:
-       !     eta_arr_mid = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_mid)
-       call eta_interp_eta(hvcoord, v1, hvcoord%etam, &
-            &              nlev, hvcoord%etam, v2(:,:,1:nlev))
-       dep_points_all(4,:,:,:,ie) = v2(:,:,1:nlev)
-
-       ! Compute departure horizontal points corresponding to arrival
-       ! Lagrangian level midpoints:
-       !     p_dep_mid(eta_arr_mid) = I[p_dep_mid(eta_ref_mid)](eta_arr_mid)
-       do d = 1, 3
-          v1 = dep_points_all(d,:,:,:,ie)
-          call eta_interp_horiz(hvcoord, hvcoord%etam, v1, &
-               &                v2(:,:,1:nlev), dep_points_all(d,:,:,:,ie))
-       end do
-    end do
-
+    ! Determine the departure points corresponding to the vertically Lagragnian
+    ! grid's arrival midpoints, where the floating levels are those that evolve
+    ! over the course of the full tracer time step. Also compute
+    ! elem%derived%divdp, which holds the floating levels' dp values for later
+    ! use in vertical remap.
+    call interp_departure_points_to_floating_level_midpoints( &
+         elem, nets, nete, tl, hvcoord, dep_points_all)
     call dss_divdp(elem, nets, nete, hybrid)
 
     call t_stopf('SLMM_trajectory')
@@ -1454,6 +1425,55 @@ contains
             &              + eta_dot(:,:,k,1)*w1))
     end do
   end subroutine calc_eta_dot_formula_node_ref_mid
+
+  subroutine interp_departure_points_to_floating_level_midpoints( &
+       elem, nets, nete, tl, hvcoord, dep_points_all)
+    type (element_t), intent(inout) :: elem(:)
+    integer, intent(in) :: nets, nete
+    type (hvcoord_t), intent(in) :: hvcoord
+    type (TimeLevel_t), intent(in) :: tl
+    real(real_kind), intent(inout) :: dep_points_all(:,:,:,:,:)
+
+    real(real_kind) :: deta_ref(nlevp), w1(np,np), v1(np,np,nlev), v2(np,np,nlevp)
+    integer :: ie, k, d
+
+    call set_deta_tol(hvcoord)
+
+    deta_ref(1) = hvcoord%etam(1) - hvcoord%etai(1)
+    do k = 2, nlev
+       deta_ref(k) = hvcoord%etam(k) - hvcoord%etam(k-1)
+    end do
+    deta_ref(nlevp) = hvcoord%etai(nlevp) - hvcoord%etam(nlev)
+
+    do ie = nets, nete
+       ! Surface pressure.
+       w1 = hvcoord%hyai(1)*hvcoord%ps0 + sum(elem(ie)%state%dp3d(:,:,:,tl%np1), 3)
+
+       ! Reconstruct Lagrangian levels at t1 on arrival column:
+       !     eta_arr_int = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_int)
+       call limit_deta(hvcoord, deta_ref, dep_points_all(4,:,:,:,ie), v1)
+       v2(:,:,1) = hvcoord%etai(1)
+       v2(:,:,nlevp) = hvcoord%etai(nlevp)
+       call eta_interp_eta(hvcoord, v1, hvcoord%etam, &
+            &              nlevp-2, hvcoord%etai(2:nlev), v2(:,:,2:nlev))
+       call eta_to_dp(hvcoord, w1, v2, elem(ie)%derived%divdp)
+
+       ! Compute Lagrangian level midpoints at t1 on arrival column:
+       !     eta_arr_mid = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_mid)
+       call eta_interp_eta(hvcoord, v1, hvcoord%etam, &
+            &              nlev, hvcoord%etam, v2(:,:,1:nlev))
+       dep_points_all(4,:,:,:,ie) = v2(:,:,1:nlev)
+
+       ! Compute departure horizontal points corresponding to arrival
+       ! Lagrangian level midpoints:
+       !     p_dep_mid(eta_arr_mid) = I[p_dep_mid(eta_ref_mid)](eta_arr_mid)
+       do d = 1, 3
+          v1 = dep_points_all(d,:,:,:,ie)
+          call eta_interp_horiz(hvcoord, hvcoord%etam, v1, &
+               &                v2(:,:,1:nlev), dep_points_all(d,:,:,:,ie))
+       end do
+    end do
+  end subroutine interp_departure_points_to_floating_level_midpoints
 
   subroutine set_deta_tol(hvcoord)
     type (hvcoord_t), intent(in) :: hvcoord
