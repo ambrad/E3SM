@@ -1349,7 +1349,13 @@ contains
 
        call slmm_calc_trajectory(nets, nete, step, dtsub, dep_points_all, vnode, vdep, info)
 
-       !todo if step == 1, DSS
+       if (step == 1) then
+          ! In the first substep, vdep = nvode, and we need to DSS vdep to get
+          ! an element boundary node to have the same departure point. In
+          ! subsequent substeps, (redundant) calculations in each element lead
+          ! to the same departure point for such a node.
+          call dss_vdep(elem, nets, nete, hybrid, vdep)
+       end if
 
        do ie = nets, nete
           do k = 1, nlev
@@ -1637,6 +1643,41 @@ contains
             &                nlev, 0, nlev)
     end do
   end subroutine dss_divdp
+
+  subroutine dss_vdep(elem, nets, nete, hybrid, vdep)
+    type (element_t), intent(in) :: elem(:)
+    type (hybrid_t), intent(in) :: hybrid
+    integer, intent(in) :: nets, nete
+    real(real_kind) :: vdep(:,:,:,:,:)
+
+    integer :: nlyr, ie, k, d
+
+    nlyr = 4*nlev
+    
+    do ie = nets, nete
+       do k = 1, nlev
+          do d = 1, 4
+             vdep(d,:,:,k,ie) = vdep(d,:,:,k,ie)* &
+                  &             elem(ie)%spheremp*elem(ie)%rspheremp
+          end do
+       end do
+       do d = 1, 4
+          call edgeVpack_nlyr(edge_g, elem(ie)%desc, vdep(d,:,:,:,ie), &
+               &              nlev, nlev*(d-1), nlyr)
+       end do
+    end do
+
+    call t_startf('SLMM_bexchV')
+    call bndry_exchangeV(hybrid, edge_g)
+    call t_stopf('SLMM_bexchV')
+
+    do ie = nets, nete
+       do d = 1, 4
+          call edgeVunpack_nlyr(edge_g, elem(ie)%desc, vdep(d,:,:,:,ie), &
+               &                nlev, nlev*(d-1), nlyr)
+       end do
+    end do
+  end subroutine dss_vdep
 
   function assert(b, msg) result(nerr)
     use kinds, only: iulog
