@@ -1173,7 +1173,6 @@ contains
 
   subroutine ctfull(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete, nsubstep)
     use physical_constants, only: scale_factor
-    use derivative_mod, only: ugradv_sphere
 
     type (element_t), intent(inout) :: elem(:)
     type (derivative_t), intent(in) :: deriv
@@ -1186,7 +1185,7 @@ contains
     type (cartesian3D_t) :: c3d
     integer :: step, ie, d, i, j, k, t, info, nlyr, k1, k2
     real(real_kind) :: alpha(2), dtsub, uxyz(np,np,3), norm, p(3), &
-         vsph(np,np,2,nlev,2), vfsph(np,np,2), eta_dot(np,np,nlevp,2), &
+         vsph(np,np,2,nlev,2), eta_dot(np,np,nlevp,2), &
          w1(np,np), w2(np,np), w3(np,np,3), w4(np,np,3), &
          v1(np,np,nlev), v2(np,np,nlevp), deta_ref(nlevp)
 
@@ -1227,10 +1226,10 @@ contains
        alpha(1) = real(nsubstep - step    , real_kind)/nsubstep
        alpha(2) = real(nsubstep - step + 1, real_kind)/nsubstep
        do ie = nets, nete
-          ! This section of code evaluates a formula to provide an estimate of
-          ! nodal velocities that are use to create a 2nd-order update to the
-          ! trajectory. The fundamental formula for the update in position p
-          ! from arrival point p1 to departure point p0 is
+          ! Evaluate a formula to provide an estimate of nodal velocities that
+          ! are use to create a 2nd-order update to the trajectory. The
+          ! fundamental formula for the update in position p from arrival point
+          ! p1 to departure point p0 is
           !     p0 = p1 - dt/2 (v(p1,t0) + v(p1,t1) - dt v(p1,t1) grad v(p1,t0)).
           ! Here we compute the velocity estimate at the nodes:
           !     1/2 (v(p1,t0) + v(p1,t1) - dt v(p1,t1) grad v(p1,t0)).
@@ -1246,37 +1245,10 @@ contains
           ! Given the vertical and horizontal nodal velocities at time
           ! endpoints, evaluate the velocity estimate formula, providing the
           ! final horizontal and vertical velocity estimates at midpoint nodes.
-          do k = 1, nlev
-             ! Horizontal velocity.
-             !   Horizontal terms.
-             vfsph = ugradv_sphere(vsph(:,:,:,k,2), vsph(:,:,:,k,1), deriv, elem(ie))
-             vfsph = vsph(:,:,:,k,1) + vsph(:,:,:,k,2) - dtsub*vfsph
-             !   Vertical term.
-             do d = 1, 2 ! horiz vel dims
-                if (k == 1 .or. k == nlev) then
-                   if (k == 1) then
-                      k1 = 1; k2 = 2
-                   else
-                      k1 = nlev-1; k2 = nlev
-                   end if
-                   w1 = (vsph(:,:,d,k2,1) - vsph(:,:,d,k1,1)) / &
-                        (hvcoord%etam(k2) - hvcoord%etam(k1))
-                else
-                   do i = 1, 3
-                      w3(:,:,i) = hvcoord%etam(k-2+i) ! interp support
-                   end do
-                   w2 = hvcoord%etam(k) ! derivative at this eta value
-                   call eval_lagrange_poly_derivative(3, w3, vsph(:,:,d,k-1:k+1,1), w2, w1)
-                end if
-                vfsph(:,:,d) = vfsph(:,:,d) - dtsub*eta_dot(:,:,k,2)*w1
-             end do
-             !   Finish the formula.
-             vfsph = half*vfsph
-             !   Transform to Cartesian.
-             do d = 1, 3
-                vnode(d,:,:,k,ie) = sum(elem(ie)%vec_sphere2cart(:,:,d,:)*vfsph, 3)
-             end do
+          call calc_vel_horiz_node_mid(elem(ie), deriv, hvcoord, dtsub, &
+               &                       vsph, eta_dot, vnode(:,:,:,:,ie))
 
+          do k = 1, nlev
              ! Vertical velocity.
              w2 = hvcoord%etam(k)
              if (k == 1 .or. k == nlev) then
@@ -1426,6 +1398,50 @@ contains
        end do
     end do
   end subroutine calc_eta_dot_mid
+
+  subroutine calc_vel_horiz_node_mid(elem, deriv, hvcoord, dtsub, vsph, eta_dot, vnode)
+    use derivative_mod, only: ugradv_sphere
+
+    type (element_t), intent(in) :: elem
+    type (derivative_t), intent(in) :: deriv
+    type (hvcoord_t), intent(in) :: hvcoord
+    real(real_kind), intent(in) :: dtsub, vsph(np,np,2,nlev,2), eta_dot(np,np,nlevp,2)
+    real(real_kind), intent(inout) :: vnode(:,:,:,:)
+
+    real(real_kind) :: vfsph(np,np,2), w1(np,np), w2(np,np), w3(np,np,3)
+    integer :: k, d, i, k1, k2
+
+    do k = 1, nlev
+       ! Horizontal terms.
+       vfsph = ugradv_sphere(vsph(:,:,:,k,2), vsph(:,:,:,k,1), deriv, elem)
+       vfsph = vsph(:,:,:,k,1) + vsph(:,:,:,k,2) - dtsub*vfsph
+       ! Vertical term.
+       do d = 1, 2 ! horiz vel dims
+          if (k == 1 .or. k == nlev) then
+             if (k == 1) then
+                k1 = 1; k2 = 2
+             else
+                k1 = nlev-1; k2 = nlev
+             end if
+             w1 = (vsph(:,:,d,k2,1) - vsph(:,:,d,k1,1)) / &
+                  (hvcoord%etam(k2) - hvcoord%etam(k1))
+          else
+             do i = 1, 3
+                w3(:,:,i) = hvcoord%etam(k-2+i) ! interp support
+             end do
+             w2 = hvcoord%etam(k) ! derivative at this eta value
+             call eval_lagrange_poly_derivative(3, w3, vsph(:,:,d,k-1:k+1,1), w2, w1)
+          end if
+          vfsph(:,:,d) = vfsph(:,:,d) - dtsub*eta_dot(:,:,k,2)*w1
+       end do
+       ! Finish the formula.
+       vfsph = half*vfsph
+       ! Transform to Cartesian.
+       do d = 1, 3
+          vnode(d,:,:,k) = sum(elem%vec_sphere2cart(:,:,d,:)*vfsph, 3)
+       end do
+    end do
+  end subroutine calc_vel_horiz_node_mid
 
   subroutine set_deta_tol(hvcoord)
     type (hvcoord_t), intent(in) :: hvcoord
