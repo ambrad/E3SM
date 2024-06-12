@@ -1187,7 +1187,6 @@ contains
     integer :: step, ie, d, i, j, k, t, info, nlyr, k1, k2
     real(real_kind) :: alpha(2), dtsub, uxyz(np,np,3), norm, p(3), &
          vsph(np,np,2,nlev,2), vfsph(np,np,2), eta_dot(np,np,nlevp,2), &
-         vdp(np,np,2), divdp(np,np), &
          w1(np,np), w2(np,np), w3(np,np,3), w4(np,np,3), &
          v1(np,np,nlev), v2(np,np,nlevp), deta_ref(nlevp)
 
@@ -1235,42 +1234,8 @@ contains
           !     p0 = p1 - dt/2 (v(p1,t0) + v(p1,t1) - dt v(p1,t1) grad v(p1,t0)).
           ! Here we compute the velocity estimate at the nodes:
           !     1/2 (v(p1,t0) + v(p1,t1) - dt v(p1,t1) grad v(p1,t0)).
-          
-          ! Compute eta_dot at midpoint nodes at the start and end of the
-          ! substep.
-          do t = 1,2
-             ! eta_dot_dpdn at interface nodes.
-             eta_dot(:,:,1,t) = zero
-             do k = 1,nlev
-                do d = 1,2
-                   vdp(:,:,d) = (1 - alpha(t))*elem(ie)%derived%vstar(:,:,d,k)* &
-                        &                      elem(ie)%derived%dp(:,:,k) + &
-                        &            alpha(t) *elem(ie)%derived%vn0(:,:,d,k)* &
-                        &                      elem(ie)%state%dp3d(:,:,k,tl%np1)
-                end do
-                divdp = divergence_sphere(vdp, deriv, elem(ie))
-                eta_dot(:,:,k+1,t) = eta_dot(:,:,k,t) + divdp
-             end do
-             w1 = eta_dot(:,:,nlevp,t)
-             eta_dot(:,:,nlevp,t) = zero
-             do k = 2,nlev
-                eta_dot(:,:,k,t) = hvcoord%hybi(k)*w1 - eta_dot(:,:,k,t)
-             end do
-             ! Transform eta_dot_dpdn at interfaces to eta_dot at midpoints
-             ! using the formula
-             !     eta_dot = eta_dot_dpdn/(A_eta p0 + B_eta ps).
-             !            a= eta_dot_dpdn diff(eta)/(diff(A) p0 + diff(B) ps).
-             !   Compute ps.
-             w1 = hvcoord%hyai(1)*hvcoord%ps0 + &
-                  &    (1 - alpha(t))*sum(elem(ie)%derived%dp(:,:,:), 3) + &
-                  &         alpha(t) *sum(elem(ie)%state%dp3d(:,:,:,tl%np1), 3)
-             do k = 1,nlev
-                eta_dot(:,:,k,t) = half*(eta_dot(:,:,k,t) + eta_dot(:,:,k+1,t)) &
-                     &             * (hvcoord%etai(k+1) - hvcoord%etai(k)) &
-                     &             / (  (hvcoord%hyai(k+1) - hvcoord%hyai(k))*hvcoord%ps0 &
-                     &                + (hvcoord%hybi(k+1) - hvcoord%hybi(k))*w1)
-             end do
-          end do
+
+          call calc_eta_dot_mid(elem(ie), deriv, tl, hvcoord, alpha, eta_dot)
 
           ! Collect the horizontal nodal velocities.
           do t = 1, 2
@@ -1413,6 +1378,54 @@ contains
 
     call t_stopf('SLMM_trajectory')
   end subroutine ctfull
+
+  subroutine calc_eta_dot_mid(elem, deriv, tl, hvcoord, alpha, eta_dot)
+    ! Compute eta_dot at midpoint nodes at the start and end of the substep.
+
+    type (element_t), intent(in) :: elem
+    type (derivative_t), intent(in) :: deriv
+    type (TimeLevel_t), intent(in) :: tl
+    type (hvcoord_t), intent(in) :: hvcoord
+    real(real_kind), intent(in) :: alpha(2)
+    real(real_kind), intent(out) :: eta_dot(np,np,nlevp,2)
+
+    real(real_kind) :: vdp(np,np,2), w1(np,np)
+    integer :: t, k, d
+
+    do t = 1,2
+       ! eta_dot_dpdn at interface nodes.
+       eta_dot(:,:,1,t) = zero
+       do k = 1,nlev
+          do d = 1,2
+             vdp(:,:,d) = (1 - alpha(t))*elem%derived%vstar(:,:,d,k)* &
+                  &                      elem%derived%dp(:,:,k) + &
+                  &            alpha(t) *elem%derived%vn0(:,:,d,k)* &
+                  &                      elem%state%dp3d(:,:,k,tl%np1)
+          end do
+          w1 = divergence_sphere(vdp, deriv, elem)
+          eta_dot(:,:,k+1,t) = eta_dot(:,:,k,t) + w1
+       end do
+       w1 = eta_dot(:,:,nlevp,t)
+       eta_dot(:,:,nlevp,t) = zero
+       do k = 2,nlev
+          eta_dot(:,:,k,t) = hvcoord%hybi(k)*w1 - eta_dot(:,:,k,t)
+       end do
+       ! Transform eta_dot_dpdn at interfaces to eta_dot at midpoints using the
+       ! formula
+       !     eta_dot = eta_dot_dpdn/(A_eta p0 + B_eta ps).
+       !            a= eta_dot_dpdn diff(eta)/(diff(A) p0 + diff(B) ps).
+       !   Compute ps.
+       w1 = hvcoord%hyai(1)*hvcoord%ps0 + &
+            &    (1 - alpha(t))*sum(elem%derived%dp(:,:,:), 3) + &
+            &         alpha(t) *sum(elem%state%dp3d(:,:,:,tl%np1), 3)
+       do k = 1,nlev
+          eta_dot(:,:,k,t) = half*(eta_dot(:,:,k,t) + eta_dot(:,:,k+1,t)) &
+               &             * (hvcoord%etai(k+1) - hvcoord%etai(k)) &
+               &             / (  (hvcoord%hyai(k+1) - hvcoord%hyai(k))*hvcoord%ps0 &
+               &                + (hvcoord%hybi(k+1) - hvcoord%hybi(k))*w1)
+       end do
+    end do
+  end subroutine calc_eta_dot_mid
 
   subroutine set_deta_tol(hvcoord)
     type (hvcoord_t), intent(in) :: hvcoord
