@@ -5,7 +5,7 @@
 module sl_advection
   use kinds, only              : real_kind, int_kind
   use dimensions_mod, only     : nlev, nlevp, np, qsize, qsize_d
-  use derivative_mod, only     : derivative_t, gradient_sphere, divergence_sphere
+  use derivative_mod, only     : derivative_t, gradient_sphere, divergence_sphere, ugradv_sphere
   use element_mod, only        : element_t
   use hybvcoord_mod, only      : hvcoord_t
   use time_mod, only           : TimeLevel_t, TimeLevel_Qdp
@@ -390,7 +390,6 @@ contains
   ! this will calculate the velocity at time t+1/2  along the trajectory s(t) given the velocities
   ! at the GLL points at time t and t+1 using a second order time accurate formulation.
   subroutine ALE_RKdss(elem, nets, nete, hy, deriv, dt, tl, independent_time_steps)
-    use derivative_mod,  only : derivative_t, ugradv_sphere
     use edgetype_mod,    only : EdgeBuffer_t
     use bndry_mod,       only : bndry_exchangev
     use kinds,           only : real_kind
@@ -1186,8 +1185,7 @@ contains
     integer :: step, ie, d, i, j, k, t, info, nlyr, k1, k2
     real(real_kind) :: alpha(2), dtsub, uxyz(np,np,3), norm, p(3), &
          vsph(np,np,2,nlev,2), eta_dot(np,np,nlevp,2), &
-         w1(np,np), w2(np,np), w3(np,np,3), w4(np,np,3), &
-         v1(np,np,nlev), v2(np,np,nlevp), deta_ref(nlevp)
+         w1(np,np), v1(np,np,nlev), v2(np,np,nlevp), deta_ref(nlevp)
 
     call t_startf('SLMM_trajectory')
 
@@ -1234,7 +1232,7 @@ contains
           ! Here we compute the velocity estimate at the nodes:
           !     1/2 (v(p1,t0) + v(p1,t1) - dt v(p1,t1) grad v(p1,t0)).
 
-          call calc_eta_dot_mid(elem(ie), deriv, tl, hvcoord, alpha, eta_dot)
+          call calc_eta_dot_ref_mid(elem(ie), deriv, tl, hvcoord, alpha, eta_dot)
 
           ! Collect the horizontal nodal velocities.
           do t = 1, 2
@@ -1245,43 +1243,10 @@ contains
           ! Given the vertical and horizontal nodal velocities at time
           ! endpoints, evaluate the velocity estimate formula, providing the
           ! final horizontal and vertical velocity estimates at midpoint nodes.
-          call calc_vel_horiz_node_mid(elem(ie), deriv, hvcoord, dtsub, &
-               &                       vsph, eta_dot, vnode(:,:,:,:,ie))
-
-          do k = 1, nlev
-             ! Vertical velocity.
-             w2 = hvcoord%etam(k)
-             if (k == 1 .or. k == nlev) then
-                if (k == 1) then
-                   w3(:,:,1) = hvcoord%etai(1)
-                   w4(:,:,1) = zero
-                   do i = 1, 2
-                      w3(:,:,i+1) = hvcoord%etam(i)
-                      w4(:,:,i+1) = eta_dot(:,:,i,2)
-                   end do
-                else
-                   do i = 1, 2
-                      w3(:,:,i) = hvcoord%etam(nlev-2+i)
-                      w4(:,:,i) = eta_dot(:,:,nlev-2+i,2)
-                   end do
-                   w3(:,:,3) = hvcoord%etai(nlevp)
-                   w4(:,:,3) = zero
-                end if
-                call eval_lagrange_poly_derivative(3, w3, w4, w2, w1)
-             else
-                k1 = k-1
-                k2 = k+1
-                do i = 1, 3
-                   w3(:,:,i) = hvcoord%etam(k1-1+i)
-                end do                
-                call eval_lagrange_poly_derivative(k2-k1+1, w3, eta_dot(:,:,k1:k2,2), w2, w1)
-             end if
-             w3(:,:,1:2) = gradient_sphere(eta_dot(:,:,k,2), deriv, elem(ie)%Dinv)
-             vnode(4,:,:,k,ie) = &
-                  half*(eta_dot(:,:,k,1) + eta_dot(:,:,k,2) &
-                  &     - dtsub*(vsph(:,:,1,k,1)*w3(:,:,1) + vsph(:,:,2,k,1)*w3(:,:,2) &
-                  &              + eta_dot(:,:,k,1)*w1))
-          end do
+          call calc_vel_horiz_formula_node_ref_mid( &
+               elem(ie), deriv, hvcoord, dtsub, vsph, eta_dot, vnode(:,:,:,:,ie))
+          call calc_eta_dot_formula_node_ref_mid( &
+               elem(ie), deriv, hvcoord, dtsub, vsph, eta_dot, vnode(:,:,:,:,ie))
        end do
 
        call slmm_calc_trajectory(nets, nete, step, dtsub, dep_points_all, vnode, vdep, info)
@@ -1323,7 +1288,7 @@ contains
 
        ! Reconstruct Lagrangian levels at t1 on arrival column:
        !     eta_arr_int = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_int)
-       call eta_limit(hvcoord, deta_ref, dep_points_all(4,:,:,:,ie), v1)
+       call limit_deta(hvcoord, deta_ref, dep_points_all(4,:,:,:,ie), v1)
        v2(:,:,1) = hvcoord%etai(1)
        v2(:,:,nlevp) = hvcoord%etai(nlevp)
        call eta_interp_eta(hvcoord, v1, hvcoord%etam, &
@@ -1351,7 +1316,7 @@ contains
     call t_stopf('SLMM_trajectory')
   end subroutine ctfull
 
-  subroutine calc_eta_dot_mid(elem, deriv, tl, hvcoord, alpha, eta_dot)
+  subroutine calc_eta_dot_ref_mid(elem, deriv, tl, hvcoord, alpha, eta_dot)
     ! Compute eta_dot at midpoint nodes at the start and end of the substep.
 
     type (element_t), intent(in) :: elem
@@ -1397,10 +1362,10 @@ contains
                &                + (hvcoord%hybi(k+1) - hvcoord%hybi(k))*w1)
        end do
     end do
-  end subroutine calc_eta_dot_mid
+  end subroutine calc_eta_dot_ref_mid
 
-  subroutine calc_vel_horiz_node_mid(elem, deriv, hvcoord, dtsub, vsph, eta_dot, vnode)
-    use derivative_mod, only: ugradv_sphere
+  subroutine calc_vel_horiz_formula_node_ref_mid( &
+       elem, deriv, hvcoord, dtsub, vsph, eta_dot, vnode)
 
     type (element_t), intent(in) :: elem
     type (derivative_t), intent(in) :: deriv
@@ -1441,7 +1406,54 @@ contains
           vnode(d,:,:,k) = sum(elem%vec_sphere2cart(:,:,d,:)*vfsph, 3)
        end do
     end do
-  end subroutine calc_vel_horiz_node_mid
+  end subroutine calc_vel_horiz_formula_node_ref_mid
+
+  subroutine calc_eta_dot_formula_node_ref_mid( &
+       elem, deriv, hvcoord, dtsub, vsph, eta_dot, vnode)
+
+    type (element_t), intent(in) :: elem
+    type (derivative_t), intent(in) :: deriv
+    type (hvcoord_t), intent(in) :: hvcoord
+    real(real_kind), intent(in) :: dtsub, vsph(np,np,2,nlev,2), eta_dot(np,np,nlevp,2)
+    real(real_kind), intent(inout) :: vnode(:,:,:,:)
+
+    real(real_kind) :: vfsph(np,np,2), w1(np,np), w2(np,np), w3(np,np,3), w4(np,np,3)
+    integer :: k, d, i, k1, k2
+
+    do k = 1, nlev
+       w2 = hvcoord%etam(k)
+       if (k == 1 .or. k == nlev) then
+          if (k == 1) then
+             w3(:,:,1) = hvcoord%etai(1)
+             w4(:,:,1) = zero
+             do i = 1, 2
+                w3(:,:,i+1) = hvcoord%etam(i)
+                w4(:,:,i+1) = eta_dot(:,:,i,2)
+             end do
+          else
+             do i = 1, 2
+                w3(:,:,i) = hvcoord%etam(nlev-2+i)
+                w4(:,:,i) = eta_dot(:,:,nlev-2+i,2)
+             end do
+             w3(:,:,3) = hvcoord%etai(nlevp)
+             w4(:,:,3) = zero
+          end if
+          call eval_lagrange_poly_derivative(3, w3, w4, w2, w1)
+       else
+          k1 = k-1
+          k2 = k+1
+          do i = 1, 3
+             w3(:,:,i) = hvcoord%etam(k1-1+i)
+          end do
+          call eval_lagrange_poly_derivative(k2-k1+1, w3, eta_dot(:,:,k1:k2,2), w2, w1)
+       end if
+       w3(:,:,1:2) = gradient_sphere(eta_dot(:,:,k,2), deriv, elem%Dinv)
+       vnode(4,:,:,k) = &
+            half*(eta_dot(:,:,k,1) + eta_dot(:,:,k,2) &
+            &     - dtsub*(vsph(:,:,1,k,1)*w3(:,:,1) + vsph(:,:,2,k,1)*w3(:,:,2) &
+            &              + eta_dot(:,:,k,1)*w1))
+    end do
+  end subroutine calc_eta_dot_formula_node_ref_mid
 
   subroutine set_deta_tol(hvcoord)
     type (hvcoord_t), intent(in) :: hvcoord
@@ -1464,7 +1476,7 @@ contains
     deta_tol = 10_real_kind*eps*deta_ave
   end subroutine set_deta_tol
 
-  subroutine eta_limit(hvcoord, deta_ref, eta, eta_lim)
+  subroutine limit_deta(hvcoord, deta_ref, eta, eta_lim)
     type (hvcoord_t), intent(in) :: hvcoord
     real(real_kind), intent(in) :: deta_ref(nlevp), eta(np,np,nlev)
     real(real_kind), intent(out) :: eta_lim(np,np,nlev)
@@ -1509,7 +1521,7 @@ contains
           end do
        end do
     end do
-  end subroutine eta_limit
+  end subroutine limit_deta
 
   subroutine deta_caas(nlp, deta_ref, lo, deta)
     integer, intent(in) :: nlp
