@@ -220,7 +220,7 @@ contains
 
     if (enhanced_trajectory) then
        call ctfull(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete, &
-            semi_lagrange_trajectory_nsubstep)
+            semi_lagrange_trajectory_nsubstep, independent_time_steps)
     else
        call calc_trajectory(elem, deriv, hvcoord, hybrid, dt, tl, &
             independent_time_steps, nets, nete)
@@ -1170,7 +1170,8 @@ contains
     end do
   end function test_reconstruct_and_limit_dp
 
-  subroutine ctfull(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete, nsubstep)
+  subroutine ctfull(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete, nsubstep, &
+       independent_time_steps)
     use physical_constants, only: scale_factor
 
     type (element_t), intent(inout) :: elem(:)
@@ -1180,6 +1181,7 @@ contains
     real(real_kind), intent(in) :: dt
     type (TimeLevel_t), intent(in) :: tl
     integer, intent(in) :: nets, nete, nsubstep
+    logical, intent(in) :: independent_time_steps
 
     type (cartesian3D_t) :: c3d
     integer :: step, ie, d, i, j, k, t, info, nlyr, k1, k2
@@ -1187,8 +1189,6 @@ contains
          vsph(np,np,2,nlev,2), eta_dot(np,np,nlevp,2)
 
     call t_startf('SLMM_trajectory')
-
-    !todo Support horizontal-only mode for not independent_time_steps.
 
     call slmm_set_hvcoord(hvcoord%etam)
 
@@ -1225,7 +1225,11 @@ contains
           ! Here we compute the velocity estimate at the nodes:
           !     1/2 (v(p1,t0) + v(p1,t1) - dt v(p1,t1) grad v(p1,t0)).
 
-          call calc_eta_dot_ref_mid(elem(ie), deriv, tl, hvcoord, alpha, eta_dot)
+          if (independent_time_steps) then
+             call calc_eta_dot_ref_mid(elem(ie), deriv, tl, hvcoord, alpha, eta_dot)
+          else
+             eta_dot = zero
+          end if
 
           ! Collect the horizontal nodal velocities.
           do t = 1, 2
@@ -1237,19 +1241,24 @@ contains
           ! endpoints, evaluate the velocity estimate formula, providing the
           ! final horizontal and vertical velocity estimates at midpoint nodes.
           call calc_vel_horiz_formula_node_ref_mid( &
-               elem(ie), deriv, hvcoord, dtsub, vsph, eta_dot, vnode(:,:,:,:,ie))
-          call calc_eta_dot_formula_node_ref_mid( &
-               elem(ie), deriv, hvcoord, dtsub, vsph, eta_dot, vnode(:,:,:,:,ie))
+               &  elem(ie), deriv, hvcoord, dtsub, vsph, eta_dot, vnode(:,:,:,:,ie))
+          if (independent_time_steps) then
+             call calc_eta_dot_formula_node_ref_mid( &
+                  elem(ie), deriv, hvcoord, dtsub, vsph, eta_dot, vnode(:,:,:,:,ie))
+          else
+             vnode(4,:,:,:,ie) = zero
+          end if
        end do
 
-       call slmm_calc_trajectory(nets, nete, step, dtsub, dep_points_all, vnode, vdep, info)
+       call slmm_calc_trajectory(nets, nete, step, dtsub, dep_points_all, &
+            &                    vnode, vdep, info)
 
        if (step == 1) then
           ! In the first substep, vdep = nvode, and we need to DSS vdep to get
           ! an element boundary node to have the same departure point. In
           ! subsequent substeps, (redundant) calculations in each element lead
           ! to the same departure point for such a node.
-          call dss_vdep(elem, nets, nete, hybrid, vdep)
+          call dss_vdep(elem, nets, nete, hybrid, independent_time_steps, vdep)
        end if
 
        ! Determine the departure points corresponding to the reference grid's
@@ -1266,23 +1275,27 @@ contains
                       p = p/norm
                    end if
                    dep_points_all(1:3,i,j,k,ie) = p
-                   ! Update vertical position.
-                   dep_points_all(4,i,j,k,ie) = dep_points_all(4,i,j,k,ie) - &
-                        &                       dtsub*vdep(4,i,j,k,ie)
+                   if (independent_time_steps) then
+                      ! Update vertical position.
+                      dep_points_all(4,i,j,k,ie) = dep_points_all(4,i,j,k,ie) - &
+                           &                       dtsub*vdep(4,i,j,k,ie)
+                   end if
                 end do
              end do
           end do
        end do
     end do
 
-    ! Determine the departure points corresponding to the vertically Lagragnian
-    ! grid's arrival midpoints, where the floating levels are those that evolve
-    ! over the course of the full tracer time step. Also compute
-    ! elem%derived%divdp, which holds the floating levels' dp values for later
-    ! use in vertical remap.
-    call interp_departure_points_to_floating_level_midpoints( &
-         elem, nets, nete, tl, hvcoord, dep_points_all)
-    call dss_divdp(elem, nets, nete, hybrid)
+    if (independent_time_steps) then
+       ! Determine the departure points corresponding to the vertically
+       ! Lagragnian grid's arrival midpoints, where the floating levels are
+       ! those that evolve over the course of the full tracer time step. Also
+       ! compute elem%derived%divdp, which holds the floating levels' dp values
+       ! for later use in vertical remap.
+       call interp_departure_points_to_floating_level_midpoints( &
+            elem, nets, nete, tl, hvcoord, dep_points_all)
+       call dss_divdp(elem, nets, nete, hybrid)
+    end if
 
     call t_stopf('SLMM_trajectory')
   end subroutine ctfull
@@ -1705,24 +1718,27 @@ contains
     end do
   end subroutine dss_divdp
 
-  subroutine dss_vdep(elem, nets, nete, hybrid, vdep)
+  subroutine dss_vdep(elem, nets, nete, hybrid, independent_time_steps, vdep)
     type (element_t), intent(in) :: elem(:)
     type (hybrid_t), intent(in) :: hybrid
     integer, intent(in) :: nets, nete
+    logical, intent(in) :: independent_time_steps
     real(real_kind) :: vdep(:,:,:,:,:)
 
-    integer :: nlyr, ie, k, d
+    integer :: nd, nlyr, ie, k, d
 
-    nlyr = 4*nlev
+    nd = 3
+    if (independent_time_steps) nd = 4
+    nlyr = nd*nlev
     
     do ie = nets, nete
        do k = 1, nlev
-          do d = 1, 4
+          do d = 1, nd
              vdep(d,:,:,k,ie) = vdep(d,:,:,k,ie)* &
                   &             elem(ie)%spheremp*elem(ie)%rspheremp
           end do
        end do
-       do d = 1, 4
+       do d = 1, nd
           call edgeVpack_nlyr(edge_g, elem(ie)%desc, vdep(d,:,:,:,ie), &
                &              nlev, nlev*(d-1), nlyr)
        end do
@@ -1733,7 +1749,7 @@ contains
     call t_stopf('SLMM_bexchV')
 
     do ie = nets, nete
-       do d = 1, 4
+       do d = 1, nd
           call edgeVunpack_nlyr(edge_g, elem(ie)%desc, vdep(d,:,:,:,ie), &
                &                nlev, nlev*(d-1), nlyr)
        end do
