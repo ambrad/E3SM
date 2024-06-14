@@ -703,14 +703,15 @@ void set_idx2_maps (IslMpi<MT>& cm, const Rank2Gids& rank2rmtgids,
 // we were willing to realloc space at each SL time step.
 template <typename MT>
 void size_mpi_buffers (IslMpi<MT>& cm, const Rank2Gids& rank2rmtgids,
-                       const Rank2Gids& rank2owngids, const bool trajectory) {
+                       const Rank2Gids& rank2owngids) {
   const auto myrank = cm.p->rank();
   // sizeof real, int, single int (b/c of alignment)
   const Int sor = sizeof(Real), soi = sizeof(Int), sosi = sor;
   static_assert(sizeof(Real) >= sizeof(Int),
                 "For buffer packing, we require sizeof(Real) >= sizeof(Int)");
-  const Int ndim = trajectory ? 4 : 3;
-  const Int qsize = trajectory ? std::max(4, cm.qsize) : cm.qsize;
+  const bool calc_trajectory = cm.traj_nsubstep > 0;
+  const Int ndim = calc_trajectory ? cm.dep_points_ndim : 3;
+  const Int qsize = calc_trajectory ? std::max(cm.dep_points_ndim, cm.qsize) : cm.qsize;
   const auto xbufcnt = [&] (const std::set<Int>& rmtgids,
                             const std::set<Int>& owngids,
                             const bool include_bulk = true) -> Int {
@@ -795,8 +796,7 @@ void alloc_mpi_buffers (IslMpi<MT>& cm, Real* sendbuf, Real* recvbuf) {
 // At simulation initialization, set up a bunch of stuff to make the work at
 // each step as small as possible.
 template <typename MT>
-void setup_comm_pattern (IslMpi<MT>& cm, const Int* nbr_id_rank, const Int* nirptr,
-                         const bool enhanced_trajectory) {
+void setup_comm_pattern (IslMpi<MT>& cm, const Int* nbr_id_rank, const Int* nirptr) {
   collect_gid_rank(cm, nbr_id_rank, nirptr);
   Rank2Gids rank2rmtgids, rank2owngids;
   get_rank2gids(cm, rank2rmtgids, rank2owngids);
@@ -805,14 +805,14 @@ void setup_comm_pattern (IslMpi<MT>& cm, const Int* nbr_id_rank, const Int* nirp
     comm_lid_on_rank(cm, rank2rmtgids, rank2owngids, gid2rmt_owning_lid);
     set_idx2_maps(cm, rank2rmtgids, gid2rmt_owning_lid);
   }
-  size_mpi_buffers(cm, rank2rmtgids, rank2owngids, enhanced_trajectory);
+  size_mpi_buffers(cm, rank2rmtgids, rank2owngids);
 }
 
 template void
 alloc_mpi_buffers(IslMpi<ko::MachineTraits>& cm, Real* sendbuf, Real* recvbuf);
 template void
 setup_comm_pattern(IslMpi<ko::MachineTraits>& cm, const Int* nbr_id_rank,
-                   const Int* nirptr, const bool enhanced_trajectory);
+                   const Int* nirptr);
 
 } // namespace islmpi
 } // namespace homme

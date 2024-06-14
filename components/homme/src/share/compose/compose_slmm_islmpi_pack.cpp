@@ -36,7 +36,7 @@ void pack_dep_points_sendbuf_pass1_scan (IslMpi<MT>& cm, const bool trajectory) 
   const auto& blas = cm.bla;
   const auto nlev = cm.nlev;
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
-  const Int ndim = trajectory ? 4 : 3;
+  const Int ndim = trajectory ? cm.dep_points_ndim : 3;
   for (Int ri = 0; ri < nrmtrank; ++ri) {
     const Int lid_on_rank_n = cm.lid_on_rank_h(ri).n();
     const auto f = COMPOSE_LAMBDA (const int idx, Accum& a, const bool fin) {
@@ -112,7 +112,7 @@ void pack_dep_points_sendbuf_pass1_noscan (IslMpi<MT>& cm, const bool trajectory
   deep_copy(cm.bla_h, cm.bla);
 #endif
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
-  const Int ndim = trajectory ? 4 : 3;
+  const Int ndim = trajectory ? cm.dep_points_ndim : 3;
 #ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp for
 #endif
@@ -213,7 +213,7 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const DepPoints<MT>& dep_poi
   }
   {
     ConstExceptGnu Int np2 = cm.np2, nlev = cm.nlev, qsize = cm.qsize;
-    ConstExceptGnu Int ndim = trajectory ? 4 : 3;
+    ConstExceptGnu Int ndim = trajectory ? cm.dep_points_ndim : 3;
     const auto& ed_d = cm.ed_d;
     const auto& mylid_with_comm_d = cm.mylid_with_comm_d;
     const auto& sendbuf = cm.sendbuf;

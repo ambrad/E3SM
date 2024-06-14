@@ -5,7 +5,7 @@
 namespace homme {
 namespace islmpi {
 
-template <typename T> using CA4 = ko::View<T****,  ko::LayoutRight, ko::HostSpace>;
+template <typename T> using CA4 = ko::View<T****, ko::LayoutRight, ko::HostSpace>;
 
 // vnode and vdep are indexed as (ie,lev,k,dim), On entry, vnode contains nodal
 // velocity data. These data are used to provide updates at departure points for
@@ -21,8 +21,6 @@ template <Int np, typename MT> SLMM_KIF
 void calc_v (const IslMpi<MT>& cm, const Trajectory& t,
              const Int src_lid, const Int lev,
              const Real* const dep_point, Real* const v_tgt) {
-  slmm_assert(dep_point[3] > 0 && dep_point[3] < 1);
-
   Real ref_coord[2]; {
     const auto& m = cm.advecter->local_mesh(src_lid);
     cm.advecter->s2r().calc_sphere_to_ref(src_lid, m, dep_point,
@@ -31,6 +29,20 @@ void calc_v (const IslMpi<MT>& cm, const Trajectory& t,
 
   Real rx[np], ry[np];
   interpolate<MT>(cm.advecter->alg(), ref_coord, rx, ry);
+
+  if (not cm.traj_3d) {
+    slmm_assert(cm.dep_points_ndim == 3);
+    for (int d = 0; d < cm.dep_points_ndim; ++d) {
+      Real vel_nodes[np*np];
+      for (int k = 0; k < np*np; ++k)
+        vel_nodes[k] = t.vnode(src_lid,lev,k,d);
+      v_tgt[d] = calc_q_tgt(rx, ry, vel_nodes);
+    }
+    return;
+  }
+
+  slmm_assert(cm.dep_points_ndim == 4);
+  slmm_assert(dep_point[3] > 0 && dep_point[3] < 1);
 
   // Search for the eta midpoint values that support the departure point's eta
   // value.
@@ -88,13 +100,14 @@ void calc_v (const IslMpi<MT>& cm, const Trajectory& t,
 template <int np, typename MT>
 void traj_calc_rmt_next_step (IslMpi<MT>& cm, Trajectory& t) {
   calc_rmt_q_pass1(cm, true);
+  const auto ndim = cm.dep_points_ndim;
 #ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp for
 #endif
   for (Int it = 0; it < cm.nrmt_xs; ++it) {
     const Int
       ri = cm.rmt_xs_h(5*it), lid = cm.rmt_xs_h(5*it + 1), lev = cm.rmt_xs_h(5*it + 2),
-      xos = cm.rmt_xs_h(5*it + 3), vos = 4*cm.rmt_xs_h(5*it + 4);
+      xos = cm.rmt_xs_h(5*it + 3), vos = ndim*cm.rmt_xs_h(5*it + 4);
     const auto&& xs = cm.recvbuf(ri);
     auto&& v = cm.sendbuf(ri);
     calc_v<np>(cm, t, lid, lev, &xs(xos), &v(vos));
@@ -104,6 +117,7 @@ void traj_calc_rmt_next_step (IslMpi<MT>& cm, Trajectory& t) {
 template <int np, typename MT>
 void traj_calc_own_next_step (IslMpi<MT>& cm, const DepPoints<MT>& dep_points,
                               Trajectory& t) {
+  const auto ndim = cm.dep_points_ndim;
 #ifdef COMPOSE_PORT
   const auto& ed_d = cm.ed_d;
   const auto& own_dep_list = cm.own_dep_list;
@@ -115,7 +129,7 @@ void traj_calc_own_next_step (IslMpi<MT>& cm, const DepPoints<MT>& dep_points,
     const Int slid = ed.nbrs(ed.src(tgt_lev, tgt_k)).lid_on_rank;
     Real v_tgt[4];
     calc_v<np>(cm, t, slid, tgt_lev, &dep_points(tci,tgt_lev,tgt_k,0), v_tgt);
-    for (int d = 0; d < 4; ++d)
+    for (int d = 0; d < ndim; ++d)
       t.vdep(tci,tgt_lev,tgt_k,d) = v_tgt[d];
   };
   ko::parallel_for(
@@ -133,7 +147,7 @@ void traj_calc_own_next_step (IslMpi<MT>& cm, const DepPoints<MT>& dep_points,
       const Int slid = ed.nbrs(ed.src(e.lev, e.k)).lid_on_rank;
       Real v_tgt[4];
       calc_v<np>(cm, t, slid, e.lev, &dep_points(tci,e.lev,e.k,0), v_tgt);
-      for (int d = 0; d < 4; ++d)
+      for (int d = 0; d < ndim; ++d)
         t.vdep(tci,e.lev,e.k,d) = v_tgt[d];
     }
   }
@@ -143,6 +157,7 @@ void traj_calc_own_next_step (IslMpi<MT>& cm, const DepPoints<MT>& dep_points,
 template <typename MT>
 void traj_copy_next_step (IslMpi<MT>& cm, Trajectory& t) {
   const auto myrank = cm.p->rank();
+  const auto ndim = cm.dep_points_ndim;
   const int tid = get_tid();
   for (Int ptr = cm.mylid_with_comm_tid_ptr_h(tid),
            end = cm.mylid_with_comm_tid_ptr_h(tid+1);
@@ -153,7 +168,7 @@ void traj_copy_next_step (IslMpi<MT>& cm, Trajectory& t) {
       slmm_assert(ed.nbrs(ed.src(e.lev, e.k)).rank != myrank);
       const Int ri = ed.nbrs(ed.src(e.lev, e.k)).rank_idx;
       const auto&& recvbuf = cm.recvbuf(ri);
-      for (int d = 0; d < 4; ++d)
+      for (int d = 0; d < ndim; ++d)
         t.vdep(tci,e.lev,e.k,d) = recvbuf(e.q_ptr + d);
     }
   }
@@ -171,16 +186,17 @@ calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
   slmm_assert(nets == 0 && nete+1 == cm.nelemd);
 #endif
 
+  const auto ndim = cm.dep_points_ndim;
+  
 #ifdef COMPOSE_PORT
   auto& dep_points = cm.tracer_arrays->dep_points;
 #else
-  DepPointsH<MT> dep_points(dep_points_r, cm.nelemd, cm.nlev, cm.np2, 4);
+  DepPointsH<MT> dep_points(dep_points_r, cm.nelemd, cm.nlev, cm.np2, ndim);
 #endif
-  slmm_assert(dep_points.extent_int(3) == 4);
-  slmm_assert(cm.dep_points_ndim == 4);
+  slmm_assert(dep_points.extent_int(3) == ndim);
 
-  CA4<const Real> vnode(vnode_r, cm.nelemd, cm.nlev, cm.np2, 4);
-  CA4<      Real> vdep (vdep_r , cm.nelemd, cm.nlev, cm.np2, 4);
+  CA4<const Real> vnode(vnode_r, cm.nelemd, cm.nlev, cm.np2, ndim);
+  CA4<      Real> vdep (vdep_r , cm.nelemd, cm.nlev, cm.np2, ndim);
 
   if (step == 0) {
     // The departure points are at the nodes. No interpolation is needed.

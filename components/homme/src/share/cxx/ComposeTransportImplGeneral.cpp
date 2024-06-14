@@ -67,7 +67,9 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
     const auto& d = m_derived;
     const auto nel = num_elems;
     const auto nlev = NUM_LEV*packn;
-    const int ndim = m_data.trajectory_alg == 0 ? 3 : 4;
+    const int ndim = (m_data.trajectory_alg == 0 ?
+                      3 :
+                      (m_data.independent_time_steps ? 4 : 3));
     m_data.dep_pts = DeparturePoints("dep_pts", nel, num_phys_lev, np, np, ndim);
     homme::compose::set_views(
       g.m_spheremp,

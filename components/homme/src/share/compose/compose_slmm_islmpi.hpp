@@ -519,8 +519,9 @@ struct IslMpi {
 
   const mpi::Parallel::Ptr p;
   const typename Advecter::ConstPtr advecter;
-  const Int np, np2, nlev, qsize, qsized, nelemd, halo, traj_nsubstep,
-    dep_points_ndim;
+  const Int np, np2, nlev, qsize, qsized, nelemd, halo;
+  const bool traj_3d;
+  const Int traj_nsubstep, dep_points_ndim;
   ArrayD<Real*> etam;
 
   ElemDataListH ed_h; // this rank's owned cells, indexed by LID
@@ -569,13 +570,14 @@ struct IslMpi {
   Int own_dep_list_len;
 
   IslMpi (const mpi::Parallel::Ptr& ip, const typename Advecter::ConstPtr& advecter,
-          const typename TracerArrays<MT>::Ptr& tracer_arrays_,
+          const typename TracerArrays<MT>::Ptr& itracer_arrays,
           Int inp, Int inlev, Int iqsize, Int iqsized, Int inelemd, Int ihalo,
-          Int itraj_nsubstep)
+          Int itraj_3d, Int itraj_nsubstep)
     : p(ip), advecter(advecter),
       np(inp), np2(np*np), nlev(inlev), qsize(iqsize), qsized(iqsized), nelemd(inelemd),
-      halo(ihalo), traj_nsubstep(itraj_nsubstep), dep_points_ndim(traj_nsubstep > 0 ? 4 : 3),
-      tracer_arrays(tracer_arrays_)
+      halo(ihalo), traj_3d(itraj_3d), traj_nsubstep(itraj_nsubstep),
+      dep_points_ndim(traj_3d && traj_nsubstep > 0 ? 4 : 3),
+      tracer_arrays(itracer_arrays)
   {}
 
   IslMpi(const IslMpi&) = delete;
@@ -621,8 +623,7 @@ template <typename MT>
 void alloc_mpi_buffers (IslMpi<MT>& cm, Real* sendbuf = nullptr, Real* recvbuf = nullptr);
 
 template <typename MT>
-void setup_comm_pattern(IslMpi<MT>& cm, const Int* nbr_id_rank, const Int* nirptr,
-                        const bool enhanced_trajectory);
+void setup_comm_pattern(IslMpi<MT>& cm, const Int* nbr_id_rank, const Int* nirptr);
 
 namespace extend_halo {
 template <typename MT>

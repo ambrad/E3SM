@@ -284,7 +284,7 @@ void calc_rmt_q_pass1_scan (IslMpi<MT>& cm, const bool trajectory) {
   const auto& rmt_xs = cm.rmt_xs;
   const auto& rmt_qs_extrema = cm.rmt_qs_extrema;
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
-  const Int ndim = trajectory ? 4 : 3;
+  const Int ndim = trajectory ? cm.dep_points_ndim : 3;
   Int cnt = 0, qcnt = 0;
   for (Int ri = 0; ri < nrmtrank; ++ri) {
     const auto get_xos = COMPOSE_LAMBDA (const Int, Int& xos) {
@@ -410,7 +410,7 @@ void calc_rmt_q_pass2 (IslMpi<MT>& cm) {
 template <typename MT>
 void calc_rmt_q_pass1_noscan (IslMpi<MT>& cm, const bool trajectory) {
   const Int nrmtrank = static_cast<Int>(cm.ranks.size()) - 1;
-  const Int ndim = trajectory ? 4 : 3;
+  const Int ndim = trajectory ? cm.dep_points_ndim : 3;
 #ifdef COMPOSE_PORT_SEPARATE_VIEWS
 #ifdef COMPOSE_HORIZ_OPENMP
 # pragma omp for

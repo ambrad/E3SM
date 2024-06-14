@@ -119,7 +119,7 @@ contains
        is_sphere = trim(geometry) /= 'plane'
        enhanced_trajectory = semi_lagrange_trajectory_nsubstep > 0
        dep_points_ndim = 3
-       if (enhanced_trajectory) dep_points_ndim = 4
+       if (enhanced_trajectory .and. independent_time_steps) dep_points_ndim = 4
        nslots = nlev*qsize
        do ie = 1, size(elem)
           ! Provide a point inside the target element.
@@ -1203,11 +1203,15 @@ contains
              dep_points_all(1,i,j,1,ie) = c3d%x
              dep_points_all(2,i,j,1,ie) = c3d%y
              dep_points_all(3,i,j,1,ie) = c3d%z
-             dep_points_all(4,i,j,1,ie) = hvcoord%etam(1)
              do k = 2, nlev
                 dep_points_all(1:3,i,j,k,ie) = dep_points_all(1:3,i,j,1,ie)
-                dep_points_all(4,i,j,k,ie) = hvcoord%etam(k)
              end do
+             if (independent_time_steps) then
+                dep_points_all(4,i,j,1,ie) = hvcoord%etam(1)
+                do k = 2, nlev
+                   dep_points_all(4,i,j,k,ie) = hvcoord%etam(k)
+                end do
+             end if
           end do
        end do
     end do
@@ -1251,7 +1255,7 @@ contains
        end do
 
        call slmm_calc_trajectory(nets, nete, step, dtsub, dep_points_all, &
-            &                    vnode, vdep, info)
+            &                    dep_points_ndim, vnode, vdep, info)
 
        if (step == 1) then
           ! In the first substep, vdep = nvode, and we need to DSS vdep to get

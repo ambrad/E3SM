@@ -98,13 +98,13 @@ init (const typename IslMpi<MT>::Advecter::ConstPtr& advecter,
       const mpi::Parallel::Ptr& p,
       Int np, Int nlev, Int qsize, Int qsized, Int nelemd,
       const Int* nbr_id_rank, const Int* nirptr,
-      Int halo, Int traj_nsubstep) {
+      Int halo, Int traj_3d, Int traj_nsubstep) {
   slmm_throw_if(halo < 1, "halo must be 1 (default) or larger.");
   auto tracer_arrays = homme::init_tracer_arrays(nelemd, nlev, np, qsize, qsized);
   auto cm = std::make_shared<IslMpi<MT> >(p, advecter, tracer_arrays, np, nlev,
-                                          qsize, qsized, nelemd, halo, traj_nsubstep);
-  const bool enhanced_trajectory = traj_nsubstep > 0;
-  setup_comm_pattern(*cm, nbr_id_rank, nirptr, enhanced_trajectory);
+                                          qsize, qsized, nelemd, halo, traj_3d,
+                                          traj_nsubstep);
+  setup_comm_pattern(*cm, nbr_id_rank, nirptr);
   return cm;
 }
 
@@ -323,7 +323,8 @@ void slmm_init_impl (
   homme::Int nelemd, homme::Int cubed_sphere_map, homme::Int geometry,
   const homme::Int* lid2gid, const homme::Int* lid2facenum,
   const homme::Int* nbr_id_rank, const homme::Int* nirptr,
-  homme::Int sl_halo, homme::Int sl_traj_nsubstep, homme::Int sl_nearest_point_lev,
+  homme::Int sl_halo, homme::Int sl_traj_3d, homme::Int sl_traj_nsubstep,
+  homme::Int sl_nearest_point_lev,
   homme::Int, homme::Int, homme::Int, homme::Int)
 {
   amb::dev_init_threads();
@@ -334,7 +335,7 @@ void slmm_init_impl (
   const auto p = homme::mpi::make_parallel(MPI_Comm_f2c(fcomm));
   homme::g_csl_mpi = homme::islmpi::init<homme::HommeMachineTraits>(
     homme::g_advecter, p, np, nlev, qsize, qsized, nelemd,
-    nbr_id_rank, nirptr, sl_halo, sl_traj_nsubstep);
+    nbr_id_rank, nirptr, sl_halo, sl_traj_3d, sl_traj_nsubstep);
   amb::dev_fin_threads();
 }
 
@@ -409,20 +410,22 @@ void slmm_set_hvcoord (const homme::Real* etam) {
 
 void slmm_calc_trajectory (
   homme::Int nets, homme::Int nete, homme::Int step, homme::Real dtsub,
-  homme::Real* dep_points, const homme::Real* vnode, homme::Real* vdep,
-  homme::Int* info)
+  homme::Real* dep_points, homme::Int dep_points_ndim, const homme::Real* vnode,
+  homme::Real* vdep, homme::Int* info)
 {
   amb::dev_init_threads();
   check_threading();
   slmm_assert(homme::g_csl_mpi);
   slmm_assert(homme::g_csl_mpi->sendsz.empty()); // alloc_mpi_buffers was called
+  auto& cm = *homme::g_csl_mpi;
+  slmm_assert(cm.dep_points_ndim == dep_points_ndim);
   { slmm::Timer timer("h2d");
-    homme::sl_traj_h2d(*homme::g_csl_mpi->tracer_arrays, dep_points); }
-  homme::islmpi::calc_trajectory(*homme::g_csl_mpi, nets - 1, nete - 1, step - 1,
+    homme::sl_traj_h2d(*cm.tracer_arrays, dep_points); }
+  homme::islmpi::calc_trajectory(cm, nets - 1, nete - 1, step - 1,
                                  dtsub, dep_points, vnode, vdep);
   *info = 0;
   { slmm::Timer timer("d2h");
-    homme::sl_traj_d2h(*homme::g_csl_mpi->tracer_arrays, dep_points); }
+    homme::sl_traj_d2h(*cm.tracer_arrays, dep_points); }
   amb::dev_fin_threads();
 }
 
@@ -442,35 +445,33 @@ void slmm_csl_set_elem_data (
   amb::dev_fin_threads();
 }
 
-void slmm_csl (homme::Int nets, homme::Int nete,
-               homme::Real* dep_points, homme::Int dep_points_ndim,
-               homme::Real* minq, homme::Real* maxq, homme::Int* info) {
+void slmm_csl (homme::Int nets, homme::Int nete, homme::Real* dep_points,
+               homme::Int dep_points_ndim, homme::Real* minq, homme::Real* maxq,
+               homme::Int* info) {
   amb::dev_init_threads();
   check_threading();
   slmm_assert(homme::g_csl_mpi);
   slmm_assert(homme::g_csl_mpi->sendsz.empty()); // alloc_mpi_buffers was called
+  auto& cm = *homme::g_csl_mpi;
+  slmm_assert(cm.dep_points_ndim == dep_points_ndim);
   {
     slmm::Timer timer("h2d");
-    homme::sl_h2d(*homme::g_csl_mpi->tracer_arrays, s_h2d,
-                  dep_points, dep_points_ndim);
+    homme::sl_h2d(*cm.tracer_arrays, s_h2d, dep_points, cm.dep_points_ndim);
   }
   *info = 0;
 #if 1
   try {
-    homme::islmpi::step(*homme::g_csl_mpi, nets - 1, nete - 1, dep_points,
-                        minq, maxq);
+    homme::islmpi::step(cm, nets - 1, nete - 1, dep_points, minq, maxq);
   } catch (const std::exception& e) {
     std::cerr << e.what();
     *info = -1;
   }
 #else
-  homme::islmpi::step(*homme::g_csl_mpi, nets - 1, nete - 1,
-                      dep_points, dep_points_ndim, minq, maxq);
+  homme::islmpi::step(cm, nets - 1, nete - 1, dep_points, minq, maxq);
 #endif
   {
     slmm::Timer timer("d2h");
-    homme::sl_d2h(*homme::g_csl_mpi->tracer_arrays, s_d2h,
-                  dep_points, dep_points_ndim,
+    homme::sl_d2h(*cm.tracer_arrays, s_d2h, dep_points, cm.dep_points_ndim,
                   minq, maxq);
   }
   amb::dev_fin_threads();
