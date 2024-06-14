@@ -1586,16 +1586,16 @@ contains
     if (nerr /= zero) deta = deta + nerr*(w/sum(w))
   end subroutine deta_caas
 
-  subroutine linterp(ny, n, x, y, ni, xi, yi, caller)
+  subroutine linterp(n, x, y, ni, xi, yi, caller)
     ! Linear interpolant: yi = I[y(x)](xi).
     ! x and xi must be in ascending order.
     ! xi(1) must be >= x(1) and xi(ni) must be <= x(n).
 
     use kinds, only: iulog
 
-    integer, intent(in) :: ny, n, ni
-    real(real_kind), intent(in) :: x(n), y(ny,n), xi(ni)
-    real(real_kind), intent(out) :: yi(ny,ni)
+    integer, intent(in) :: n, ni
+    real(real_kind), intent(in) :: x(n), y(n), xi(ni)
+    real(real_kind), intent(out) :: yi(ni)
     character(len=*), intent(in) :: caller
 
     integer :: k, ki
@@ -1614,7 +1614,7 @@ contains
           k = k + 1
        end do
        a = (xi(ki) - x(k-1))/(x(k) - x(k-1))
-       yi(:,ki) = (1 - a)*y(:,k-1) + a*y(:,k)
+       yi(ki) = (1 - a)*y(k-1) + a*y(k)
     end do
   end subroutine linterp
 
@@ -1636,8 +1636,8 @@ contains
     do j = 1, np
        do i = 1, np
           x01(2:nlev+1) = x(i,j,:)
-          call linterp(1, nlev+2, x01, y01, &
-               &          ni, xi, yi(i,j,:), &
+          call linterp(nlev+2, x01, y01, &
+               &       ni, xi, yi(i,j,:), &
                &       'eta_interp_eta')
        end do
     end do
@@ -1660,8 +1660,8 @@ contains
           ybdy(1) = y(i,j,1)
           ybdy(2:nlev+1) = y(i,j,:)
           ybdy(nlev+2) = y(i,j,nlev)
-          call linterp(1, nlev+2, xbdy, ybdy, &
-               &          nlev, xi(i,j,:), yi(i,j,:), &
+          call linterp(nlev+2, xbdy, ybdy, &
+               &       nlev, xi(i,j,:), yi(i,j,:), &
                &       'eta_interp_horiz')
        end do
     end do
@@ -1682,9 +1682,9 @@ contains
 
     do j = 1, np
        do i = 1, np
-          call linterp(1, nlevp, hvcoord%etai, hvcoord%hybi, &
-               &          nlevp, etai(i,j,:), Bi, &
-               &          'eta_to_dp')
+          call linterp(nlevp, hvcoord%etai, hvcoord%hybi, &
+               &       nlevp, etai(i,j,:), Bi, &
+               &       'eta_to_dp')
           dps = ps(i,j) - hvcoord%ps0
           do k = 1, nlev
              dp(i,j,k) = (etai(i,j,k+1) - etai(i,j,k))*hvcoord%ps0 + &
@@ -1791,10 +1791,10 @@ contains
        xi(k) = (1 - a)*x(1) + a*x(n)
     end do
 
-    call linterp(1, n, x, y, ni, xi, yi, 'test_linterp 1')
+    call linterp(n, x, y, ni, xi, yi, 'test_linterp 1')
     nerr = assert(maxval(abs( yi - 3*xi)) < 100*eps*x(n), 'linterp 1')
     
-    call linterp(1, n, x, y, n, x, yin, 'test_linterp 2')
+    call linterp(n, x, y, n, x, yin, 'test_linterp 2')
     nerr = nerr + assert(maxval(abs(yin - y)) < 10*eps, 'linterp 2')
   end function test_linterp
 
