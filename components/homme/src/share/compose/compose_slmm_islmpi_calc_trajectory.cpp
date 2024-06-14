@@ -188,13 +188,6 @@ calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
 
   const auto ndim = cm.dep_points_ndim;
   
-#ifdef COMPOSE_PORT
-  auto& dep_points = cm.tracer_arrays->dep_points;
-#else
-  DepPointsH<MT> dep_points(dep_points_r, cm.nelemd, cm.nlev, cm.np2, ndim);
-#endif
-  slmm_assert(dep_points.extent_int(3) == ndim);
-
   CA4<const Real> vnode(vnode_r, cm.nelemd, cm.nlev, cm.np2, ndim);
   CA4<      Real> vdep (vdep_r , cm.nelemd, cm.nlev, cm.np2, ndim);
 
@@ -203,6 +196,13 @@ calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
     ko::deep_copy(vdep, vnode);
     return;
   }
+
+#ifdef COMPOSE_PORT
+  auto& dep_points = cm.tracer_arrays->dep_points;
+#else
+  DepPointsH<MT> dep_points(dep_points_r, cm.nelemd, cm.nlev, cm.np2, ndim);
+#endif
+  slmm_assert(dep_points.extent_int(3) == ndim);
 
   // See comments in homme::islmpi::step for details. Each substep follows
   // essentially the same pattern.

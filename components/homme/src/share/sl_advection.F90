@@ -1249,8 +1249,6 @@ contains
           if (independent_time_steps) then
              call calc_eta_dot_formula_node_ref_mid( &
                   elem(ie), deriv, hvcoord, dtsub, vsph, eta_dot, vnode(:,:,:,:,ie))
-          else
-             vnode(4,:,:,:,ie) = zero
           end if
        end do
 
@@ -1262,7 +1260,7 @@ contains
           ! an element boundary node to have the same departure point. In
           ! subsequent substeps, (redundant) calculations in each element lead
           ! to the same departure point for such a node.
-          call dss_vdep(elem, nets, nete, hybrid, independent_time_steps, vdep)
+          call dss_vdep(elem, nets, nete, hybrid, vdep)
        end if
 
        ! Determine the departure points corresponding to the reference grid's
@@ -1696,43 +1694,15 @@ contains
     end do
   end subroutine eta_to_dp
 
-  subroutine dss_divdp(elem, nets, nete, hybrid)
-    type (element_t), intent(inout) :: elem(:)
-    type (hybrid_t), intent(in) :: hybrid
-    integer, intent(in) :: nets, nete
-
-    integer :: ie, k
-
-    do ie = nets, nete
-       do k = 1, nlev
-          elem(ie)%derived%divdp(:,:,k) = elem(ie)%derived%divdp(:,:,k)* &
-               &                          elem(ie)%spheremp*elem(ie)%rspheremp
-       end do
-       call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%divdp, &
-            &              nlev, 0, nlev)
-    end do
-
-    call t_startf('SLMM_bexchV')
-    call bndry_exchangeV(hybrid, edge_g)
-    call t_stopf('SLMM_bexchV')
-
-    do ie = nets, nete
-       call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%divdp, &
-            &                nlev, 0, nlev)
-    end do
-  end subroutine dss_divdp
-
-  subroutine dss_vdep(elem, nets, nete, hybrid, independent_time_steps, vdep)
+  subroutine dss_vdep(elem, nets, nete, hybrid, vdep)
     type (element_t), intent(in) :: elem(:)
     type (hybrid_t), intent(in) :: hybrid
     integer, intent(in) :: nets, nete
-    logical, intent(in) :: independent_time_steps
     real(real_kind) :: vdep(:,:,:,:,:)
 
     integer :: nd, nlyr, ie, k, d
 
-    nd = 3
-    if (independent_time_steps) nd = 4
+    nd = size(vdep, 1)
     nlyr = nd*nlev
     
     do ie = nets, nete
@@ -1759,6 +1729,32 @@ contains
        end do
     end do
   end subroutine dss_vdep
+
+  subroutine dss_divdp(elem, nets, nete, hybrid)
+    type (element_t), intent(inout) :: elem(:)
+    type (hybrid_t), intent(in) :: hybrid
+    integer, intent(in) :: nets, nete
+
+    integer :: ie, k
+
+    do ie = nets, nete
+       do k = 1, nlev
+          elem(ie)%derived%divdp(:,:,k) = elem(ie)%derived%divdp(:,:,k)* &
+               &                          elem(ie)%spheremp*elem(ie)%rspheremp
+       end do
+       call edgeVpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%divdp, &
+            &              nlev, 0, nlev)
+    end do
+
+    call t_startf('SLMM_bexchV')
+    call bndry_exchangeV(hybrid, edge_g)
+    call t_stopf('SLMM_bexchV')
+
+    do ie = nets, nete
+       call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%divdp, &
+            &                nlev, 0, nlev)
+    end do
+  end subroutine dss_divdp
 
   function assert(b, msg) result(nerr)
     use kinds, only: iulog
