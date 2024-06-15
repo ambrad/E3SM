@@ -420,12 +420,12 @@ void slmm_calc_trajectory (
   auto& cm = *homme::g_csl_mpi;
   slmm_assert(cm.dep_points_ndim == dep_points_ndim);
   { slmm::Timer timer("h2d");
-    homme::sl_traj_h2d(*cm.tracer_arrays, dep_points); }
+    homme::sl_traj_h2d(*cm.tracer_arrays, dep_points, cm.dep_points_ndim); }
   homme::islmpi::calc_trajectory(cm, nets - 1, nete - 1, step - 1,
                                  dtsub, dep_points, vnode, vdep);
   *info = 0;
   { slmm::Timer timer("d2h");
-    homme::sl_traj_d2h(*cm.tracer_arrays, dep_points); }
+    homme::sl_traj_d2h(*cm.tracer_arrays, dep_points, cm.dep_points_ndim); }
   amb::dev_fin_threads();
 }
 
