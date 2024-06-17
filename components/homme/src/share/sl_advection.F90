@@ -1192,7 +1192,7 @@ contains
 
     call slmm_set_hvcoord(hvcoord%etam)
 
-    do ie = nets,nete
+    do ie = nets, nete
        elem(ie)%derived%vn0 = elem(ie)%state%v(:,:,:,:,tl%np1)
     end do
 
@@ -1728,6 +1728,10 @@ contains
                &                nlev, nlev*(d-1), nlyr)
        end do
     end do
+
+#if (defined HORIZ_OPENMP)
+    !$omp barrier
+#endif
   end subroutine dss_vdep
 
   subroutine dss_divdp(elem, nets, nete, hybrid)
@@ -1754,6 +1758,10 @@ contains
        call edgeVunpack_nlyr(edge_g, elem(ie)%desc, elem(ie)%derived%divdp, &
             &                nlev, 0, nlev)
     end do
+
+#if (defined HORIZ_OPENMP)
+    !$omp barrier
+#endif
   end subroutine dss_divdp
 
   function assert(b, msg) result(nerr)

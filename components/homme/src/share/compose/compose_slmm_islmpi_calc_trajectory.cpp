@@ -193,7 +193,11 @@ calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
 
   if (step == 0) {
     // The departure points are at the nodes. No interpolation is needed.
-    ko::deep_copy(vdep, vnode);
+    for (Int ie = nets; ie <= nete; ++ie)
+      for (Int lev = 0; lev < cm.nlev; ++lev)
+        for (Int k = 0; k < cm.np2; ++k)
+          for (Int d = 0; d < ndim; ++d)
+            vdep(ie,lev,k,d) = vnode(ie,lev,k,d);
     return;
   }
 
