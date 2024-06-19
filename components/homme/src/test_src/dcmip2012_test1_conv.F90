@@ -14,11 +14,12 @@ module dcmip2012_test1_conv
 
 contains
 
-  subroutine test1_conv_advection_deformation (time,lon,lat,p,z,zcoords,u,v,w,t,phis,ps,rho,q1,q2,q3,q4)
+  subroutine test1_conv_advection_deformation( &
+       time,lon,lat,p,z,zcoords,u,v,w,t,phis,ps,rho,q1,q2,q3,q4)
     !-----------------------------------------------------------------------
     !     input/output params parameters at given location
     !-----------------------------------------------------------------------
-
+    
     real(8), intent(in)     :: time       ! simulation time (s)
     real(8), intent(in)     :: lon        ! Longitude (radians)
     real(8), intent(in)     :: lat        ! Latitude (radians)
@@ -71,7 +72,7 @@ contains
     !---------------------------------------------------------------------
     !    HEIGHT AND PRESSURE
     !---------------------------------------------------------------------
-
+    
     ! height and pressure are aligned (p = p0 exp(-z/H))
     if (zcoords .eq. 1) then
        height = z
@@ -184,14 +185,302 @@ contains
 
   end subroutine test1_conv_advection_deformation
 
-  subroutine test1_conv_advection(test_case,time,lon,lat,p,z,zcoords,u,v,w,t,phis,ps,rho,q)
+  subroutine test1_conv_advection_orography( &
+       test_minor,time,lon,lat,p,z,zcoords,cfv,hybrid_eta,hyam,hybm,u,v,w,t,phis,ps,rho,q1,q2,q3,q4)
+
+    character(len=*), intent(in) :: test_minor ! a, b, or c
+    real(8), intent(in)  :: time            ! simulation time (s)
+    real(8), intent(in)  :: lon             ! Longitude (radians)
+    real(8), intent(in)  :: lat             ! Latitude (radians)
+    real(8), intent(in)  :: hyam            ! A coefficient for hybrid-eta coordinate, at model level midpoint
+    real(8), intent(in)  :: hybm            ! B coefficient for hybrid-eta coordinate, at model level midpoint
+
+    logical, intent(in)  :: hybrid_eta      ! flag to indicate whether the hybrid sigma-p (eta) coordinate is used
+    ! if set to .true., then the pressure will be computed via the
+    !    hybrid coefficients hyam and hybm, they need to be initialized
+    ! if set to .false. (for pressure-based models): the pressure is already pre-computed
+    !    and is an input value for this routine
+    ! for height-based models: pressure will always be computed based on the height and
+    !    hybrid_eta is not used
+    ! Note that we only use hyam and hybm for the hybrid-eta coordinates
+
+    real(8), intent(inout)  :: p            ! Pressure  (Pa)
+    real(8), intent(inout)  :: z            ! Height (m)
+
+    integer, intent(in)     :: zcoords      ! 0 or 1 see below
+    integer, intent(in)     :: cfv          ! 0, 1 or 2 see below
+    real(8), intent(out)    :: u            ! Zonal wind (m s^-1)
+    real(8), intent(out)    :: v            ! Meridional wind (m s^-1)
+    real(8), intent(out)    :: w            ! Vertical Velocity (m s^-1)
+    real(8), intent(out)    :: t            ! Temperature (K)
+    real(8), intent(out)    :: phis         ! Surface Geopotential (m^2 s^-2)
+    real(8), intent(out)    :: ps           ! Surface Pressure (Pa)
+    real(8), intent(out)    :: rho          ! density (kg m^-3)
+    real(8), intent(out)    :: q1           ! Tracer q1 (kg/kg)
+    real(8), intent(out)    :: q2           ! Tracer q2 (kg/kg)
+    real(8), intent(out)    :: q3           ! Tracer q3 (kg/kg)
+    real(8), intent(out)    :: q4           ! Tracer q4 (kg/kg)
+
+    ! if zcoords = 1, then we use z and output p
+    ! if zcoords = 0, then we use p
+
+    ! if cfv = 0 we assume that our horizontal velocities are not coordinate following
+    ! if cfv = 1 then our velocities follow hybrid eta coordinates and we need to specify w
+    ! if cfv = 2 then our velocities follow Gal-Chen coordinates and we need to specify w
+
+    ! In hybrid-eta coords: p = hyam p0 + hybm ps
+
+    ! if other orography-following coordinates are used, the w wind needs to be newly derived for them
+
+    !-----------------------------------------------------------------------
+    !     test case parameters
+    !----------------------------------------------------------------------- 
+    real(8), parameter :: &
+         tau     = 12.d0 * 86400.d0,	&	! period of motion 12 days (s)
+         u0      = 2.d0*pi*a/tau,    &	! Velocity Magnitude (m/s)
+         T0      = 300.d0,           &	! temperature (K)
+         H       = Rd * T0 / g,      &	! scale height (m)
+         alpha   = pi/6.d0,          &	! rotation angle (radians), 30 degrees
+         lambdam = 3.d0*pi/2.d0,     &	! mountain longitude center point (radians)
+         phim    = 0.d0,             &	! mountain latitude center point (radians)
+         h0      = 2000.d0,          &	! peak height of the mountain range (m)
+         Rm      = 3.d0*pi/4.d0,     &	! mountain radius (radians)
+         zetam   = pi/16.d0,         &	! mountain oscillation half-width (radians)
+         lambdap = pi/2.d0,          &	! cloud-like tracer longitude center point (radians)
+         phip    = 0.d0,             &	! cloud-like tracer latitude center point (radians)
+         Rp      = pi/4.d0,          &	! cloud-like tracer radius (radians)
+         zp1     = 3050.d0,          &	! midpoint of first (lowermost) tracer (m)
+         zp2     = 5050.d0,          &	! midpoint of second tracer (m)
+         zp3     = 8200.d0,          &	! midpoint of third (topmost) tracer (m)
+         dzp1    = 1000.d0,          &	! thickness of first (lowermost) tracer (m)
+         dzp2    = 1000.d0,          &	! thickness of second tracer (m)
+         dzp3    = 400.d0,           &	! thickness of third (topmost) tracer (m)
+         ztop    = 12000.d0             ! model top (m)
+
+    real(8) :: height							! Model level heights (m)
+    real(8) :: r                  ! Great circle distance (radians)
+    real(8) :: rz                 ! height differences
+    real(8) :: zs                 ! Surface elevation (m)
+    real(8) :: shape, bot, top, x, y, zeta
+
+    !-----------------------------------------------------------------------
+    !    PHIS (surface geopotential)
+    !-----------------------------------------------------------------------
+
+    r = acos( sin(phim)*sin(lat) + cos(phim)*cos(lat)*cos(lon - lambdam) )
+
+    if (r .lt. Rm) then
+       zs = (h0/2.d0)*(1.d0+cos(pi*r/Rm))*cos(pi*r/zetam)**2.d0
+    else
+       zs = 0.d0
+    endif
+
+    phis = g*zs
+
+    !-----------------------------------------------------------------------
+    !    PS (surface pressure)
+    !-----------------------------------------------------------------------
+
+    ps = p0 * exp(-zs/H)
+
+    !-----------------------------------------------------------------------
+    !    HEIGHT AND PRESSURE
+    !-----------------------------------------------------------------------
+
+    ! Height and pressure are aligned (p = p0 exp(-z/H))
+
+    if (zcoords .eq. 1) then
+       height = z
+       p = p0 * exp(-z/H)
+    else
+       if (hybrid_eta) p = hyam*p0 + hybm*ps   ! compute the pressure based on the surface pressure and hybrid coefficients
+       height = H * log(p0/p)
+       z = height
+    endif
+
+    !-----------------------------------------------------------------------
+    !    THE VELOCITIES ARE TIME INDEPENDENT 
+    !-----------------------------------------------------------------------
+
+    ! Zonal Velocity
+    u = u0*(cos(lat)*cos(alpha)+sin(lat)*cos(lon)*sin(alpha))
+
+    ! Meridional Velocity
+    v = -u0*(sin(lon)*sin(alpha))
+
+    ! Vertical profile to shape (u,v,w). Bringing these to 0 just above the
+    ! mountain makes the flow physically valid, and it remains
+    ! nondivergent. Then (u,v) has non-0 divergence within a layer, inducing
+    ! non-0 eta_dot.
+
+    shape = 0.15
+    bot = h0
+    top = zp1 - dzp1/2
+    if (z <= bot) then
+       shape = 0
+    elseif (z >= top) then
+       shape = 1
+    else
+       shape = (1 + cos(pi*(1 + (z - bot)/(top - bot))))/2
+    end if
+    u = u*shape
+    v = v*shape
+
+    !-----------------------------------------------------------------------
+    !    TEMPERATURE IS CONSTANT 300 K
+    !-----------------------------------------------------------------------
+
+    t = T0
+
+    !-----------------------------------------------------------------------
+    !    RHO (density)
+    !-----------------------------------------------------------------------
+
+    rho = p/(Rd*t)
+
+    !-----------------------------------------------------------------------
+    !     initialize Q, set to zero 
+    !-----------------------------------------------------------------------
+
+    !q = 0.d0
+
+    !-----------------------------------------------------------------------
+    !    VERTICAL VELOCITY IS TIME INDEPENDENT 
+    !-----------------------------------------------------------------------
+
+    ! Vertical Velocity - can be changed to vertical pressure velocity by 
+    ! omega = -(g*p)/(Rd*T0)*w
+
+    ! NOTE that if orography-following coordinates are used then the vertical 
+    ! velocity needs to be translated into the new coordinate system due to
+    ! the variation of the height along coordinate surfaces
+    ! See section 1.3 and the appendix of the test case document
+
+    if (cfv .eq. 0) then
+       ! if the horizontal velocities do not follow the vertical coordinate
+       w = 0.d0
+    elseif (cfv .eq. 1) then
+       ! if the horizontal velocities follow hybrid eta coordinates then
+       ! the perceived vertical velocity is
+       call test1_advection_orograph_hybrid_eta_velocity(w)
+    endif
+    w = w*shape
+
+    !-----------------------------------------------------------------------
+    !     initialize tracers
+    !-----------------------------------------------------------------------
+
+    ! Tracer 1 - Cloud Layer
+
+    r = acos( sin(phip)*sin(lat) + cos(phip)*cos(lat)*cos(lon - lambdap) )
+
+    rz = abs(height - zp1)
+
+    if (rz .lt. 0.5d0*dzp1 .and. r .lt. Rp) then
+       q1 = 0.25d0*(1.d0+cos(2.d0*pi*rz/dzp1))*(1.d0+cos(pi*r/Rp))
+    else
+       q1 = 0.d0
+    endif
+
+    if (.false.) then
+       x = cos(lat)*cos(lon)
+       y = cos(lat)*sin(lon)
+       zeta = sin(lat)
+       q1 = 1.5d0*(1 + sin(pi*x)*sin(pi*y)*sin(pi*zeta)*sin(pi*z/ztop))
+    end if
+
+    rz = abs(height - zp2)
+
+    if (rz .lt. 0.5d0*dzp2 .and. r .lt. Rp) then
+       q2 = 0.25d0*(1.d0+cos(2.d0*pi*rz/dzp2))*(1.d0+cos(pi*r/Rp))
+    else
+       q2 = 0.d0
+    endif
+
+    rz = abs(height - zp3)
+
+    if (rz .lt. 0.5d0*dzp3 .and. r .lt. Rp) then
+       q3 = 1.d0
+    else
+       q3 = 0.d0
+    endif
+
+    q4 = q1 + q2 + q3
+
+	contains
+
+   !-----------------------------------------------------------------------
+   !    SUBROUTINE TO CALCULATE THE PERCEIVED VERTICAL VELOCITY 
+   !    		UNDER HYBRID-ETA COORDINATES
+   !-----------------------------------------------------------------------
+
+    subroutine test1_advection_orograph_hybrid_eta_velocity(w)
+      real(8), intent(out) ::	w
+
+      real(8) :: 	press,  &		! hyam *p0 + hybm *ps
+           r,              &		! Great Circle Distance
+           dzsdx,          &		! Part of surface height derivative
+           dzsdlambda,     & 	! Derivative of zs w.r.t lambda
+           dzsdphi,        &   ! Derivative of zs w.r.t phi
+           dzdlambda,      &   ! Derivative of z w.r.t lambda
+           dzdphi,         &   ! Derivative of z w.r.t phi
+           dpsdlambda,     &   ! Derivative of ps w.r.t lambda
+           dpsdphi             ! Derivative of ps w.r.t phi
+
+      ! Calculate pressure and great circle distance to mountain center
+
+      press = hyam*p0 + hybm*ps
+
+      r = acos( sin(phim)*sin(lat) + cos(phim)*cos(lat)*cos(lon - lambdam) )
+
+      ! Derivatives of surface height
+
+      if (r .lt. Rm) then
+         dzsdx = -h0*pi/(2.d0*Rm)*sin(pi*r/Rm)*cos(pi*r/zetam)**2 - &
+              (h0*pi/zetam)*(1.d0+cos(pi*r/Rm))*cos(pi*r/zetam)*sin(pi*r/zetam)
+      else
+         dzsdx = 0.d0
+      endif
+
+      ! Prevent division by zero
+
+      if (1.d0-cos(r)**2 .gt. 0.d0) then
+         dzsdlambda = dzsdx * (cos(phim)*cos(lat)*sin(lon-lambdam)) &
+              /sqrt(1.d0-cos(r)**2)
+         dzsdphi    = dzsdx * (-sin(phim)*cos(lat) + cos(phim)*sin(lat)*cos(lon-lambdam)) & 
+              /sqrt(1.d0-cos(r)**2)
+      else
+         dzsdlambda = 0.d0
+         dzsdphi    = 0.d0
+      endif
+
+      ! Derivatives of surface pressure
+
+      dpsdlambda = -(g*p0/(Rd*T0))*exp(-g*zs/(Rd*T0))*dzsdlambda
+      dpsdphi    = -(g*p0/(Rd*T0))*exp(-g*zs/(Rd*T0))*dzsdphi
+
+      ! Derivatives of coordinate height
+
+      dzdlambda = -(Rd*T0/(g*press))*hybm*dpsdlambda
+      dzdphi    = -(Rd*T0/(g*press))*hybm*dpsdphi
+
+      ! Prevent division by zero
+
+      if (abs(lat) .lt. pi/2.d0) then
+         w = - (u/(a*cos(lat)))*dzdlambda - (v/a)*dzdphi
+      else
+         w = 0.d0
+      endif
+    end subroutine test1_advection_orograph_hybrid_eta_velocity
+  end subroutine test1_conv_advection_orography
+
+  subroutine test1_conv_advection(test_case,time,lon,lat,hya,hyb,p,z,u,v,w,t,phis,ps,rho,q)
     character(len=*), intent(in) :: test_case  ! dcmip2012_test1_{1,2,3a,3b,3c}_conv
     real(8), intent(in)     :: time       ! simulation time (s)
-    real(8), intent(in)     :: lon        ! Longitude (radians)
-    real(8), intent(in)     :: lat        ! Latitude (radians)
-    real(8), intent(in)     :: z          ! Height (m)
+    real(8), intent(in)     :: lon, lat   ! Longitude, latitude (radians)
+    real(8), intent(in)     :: hya, hyb   ! Hybrid a, b coefficients
+    real(8), intent(inout)  :: z          ! Height (m)
     real(8), intent(inout)  :: p          ! Pressure  (Pa)
-    integer, intent(in)     :: zcoords    ! 0 or 1 see below
     real(8), intent(out)    :: u          ! Zonal wind (m s^-1)
     real(8), intent(out)    :: v          ! Meridional wind (m s^-1)
     real(8), intent(out)    :: w          ! Vertical Velocity (m s^-1)
@@ -201,6 +490,9 @@ contains
     real(8), intent(out)    :: rho        ! density (kg m^-3)
     real(8), intent(out)    :: q(5)       ! Tracer q1 (kg/kg)
 
+    integer, parameter :: cfv = 0, zcoords = 0
+    logical, parameter :: use_eta = .true.
+
     character(len=1) :: test_major, test_minor
 
     test_major = test_case(17:17)
@@ -208,14 +500,13 @@ contains
 
     select case(test_major)
     case('1')
-       call test1_conv_advection_deformation(time,lon,lat,p,z,zcoords,u,v,w,t,phis,ps,rho,q(1),q(2),q(3),q(4))
+       call test1_conv_advection_deformation( &
+            time,lon,lat,p,z,zcoords,u,v,w,t,phis,ps,rho,q(1),q(2),q(3),q(4))
     case ('2')
     case('3')
-       select case(test_minor)
-       case('a')
-       case('b')
-       case('c')
-       end select
+       call test1_conv_advection_orography( &
+            test_minor,time,lon,lat,p,z,zcoords,cfv,use_eta,hya,hyb,u,v,w,t,phis,ps,rho, &
+            q(1),q(2),q(3),q(4))
     end select
   end subroutine test1_conv_advection
 

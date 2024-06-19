@@ -275,15 +275,13 @@ subroutine dcmip2012_test1_conv(test_case,elem,hybrid,hvcoord,nets,nete,time,n0,
 
   logical ::  initialized = .false.
 
-  integer,  parameter :: zcoords = 0                                    ! we are not using z coords
-  logical,  parameter :: use_eta = .true.                               ! we are using hybrid eta coords
   real(rl), parameter ::      &
       T0      = 300.d0,       &                                         ! temperature (K)
       ztop    = 12000.d0,     &                                         ! model top (m)
       H       = Rd * T0 / g                                             ! scale height
 
   integer :: i,j,k,ie                                                   ! loop indices
-  real(rl):: lon,lat                                                    ! pointwise coordiantes
+  real(rl):: lon,lat,hyai,hyam,hybi,hybm                                ! pointwise coordiantes
   real(rl):: p,z,phis,u,v,w,T,phis_ps,ps,rho,q(5),dp,eta_dot,dp_dn      ! pointwise field values
 
   ! set analytic vertical coordinates at t=0
@@ -302,10 +300,11 @@ subroutine dcmip2012_test1_conv(test_case,elem,hybrid,hvcoord,nets,nete,time,n0,
 
   ! set prescribed state at level midpoints
   do ie = nets,nete; do k=1,nlev; do j=1,np; do i=1,np
-     lon  = elem(ie)%spherep(i,j)%lon; lat  = elem(ie)%spherep(i,j)%lat
+     hyam = hvcoord%hyam(k); hybm = hvcoord%hybm(k)
+     lon = elem(ie)%spherep(i,j)%lon; lat = elem(ie)%spherep(i,j)%lat
      z = H * log(1.0d0/hvcoord%etam(k))
      p = p0 * hvcoord%etam(k)
-     call test1_conv_advection(test_case,time,lon,lat,p,z,zcoords,u,v,w,T,phis,ps,rho,q)
+     call test1_conv_advection(test_case,time,lon,lat,hyam,hybm,p,z,u,v,w,T,phis,ps,rho,q)
 
      dp = pressure_thickness(ps,k,hvcoord)
      call set_state(u,v,w,T,ps,phis,p,dp,zm(k),g, i,j,k,elem(ie),n0,n1)
@@ -314,10 +313,11 @@ subroutine dcmip2012_test1_conv(test_case,elem,hybrid,hvcoord,nets,nete,time,n0,
 
   ! set prescribed state at level interfaces
   do ie = nets,nete; do k=1,nlevp; do j=1,np; do i=1,np
+     hyai = hvcoord%hyai(k); hybi = hvcoord%hybi(k)
      lon = elem(ie)%spherep(i,j)%lon; lat = elem(ie)%spherep(i,j)%lat
      z = H  * log(1.0d0/hvcoord%etai(k))
      p = p0 * hvcoord%etai(k)
-     call test1_conv_advection(test_case,time,lon,lat,p,z,zcoords,u,v,w,T,phis,ps,rho,q)
+     call test1_conv_advection(test_case,time,lon,lat,hyai,hybi,p,z,u,v,w,T,phis,ps,rho,q)
      call set_state_i(u,v,w,T,ps,phis,p,zi(k),g,i,j,k,elem(ie),n0,n1)
 
      ! get vertical derivative of p at point i,j,k
@@ -828,14 +828,13 @@ subroutine dcmip2012_print_test1_conv_results(test_case, elem, tl, hvcoord, par,
   type(parallel_t), intent(in) :: par
   integer, intent(in) :: subnum
 
-  integer,  parameter :: zcoords = 0
   real(rl), parameter ::       &
        T0      = 300.d0,       &               ! temperature (K)
        ztop    = 12000.d0,     &               ! model top (m)
        H       = Rd * T0 / g                   ! scale height
 
   real(rl) :: q(np,np,5), lon, lat, z, p, phis, u, v, w, T, phis_ps, ps, rho, time, &
-       a, b, reldif
+       hya, hyb, a, b, reldif
   integer :: ie, k, iq, i, j
 
   ! Set time to 0 to get the initial conditions.
@@ -846,6 +845,8 @@ subroutine dcmip2012_print_test1_conv_results(test_case, elem, tl, hvcoord, par,
      do k = 1,nlev
         z = H * log(1.0d0/hvcoord%etam(k))
         p = p0 * hvcoord%etam(k)
+        hya = hvcoord%hyam(k)
+        hyb = hvcoord%hybm(k)
         do j = 1,np
            do i = 1,np
               lon = elem(ie)%spherep(i,j)%lon
@@ -853,7 +854,7 @@ subroutine dcmip2012_print_test1_conv_results(test_case, elem, tl, hvcoord, par,
               select case(subnum)
               case (1)
                  call test1_conv_advection( &
-                      test_case,time,lon,lat,p,z,zcoords,u,v,w,T,phis,ps,rho,q(i,j,:))
+                      test_case,time,lon,lat,hya,hyb,p,z,u,v,w,T,phis,ps,rho,q(i,j,:))
               end select
            end do
         end do
