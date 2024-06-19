@@ -1,5 +1,8 @@
 module dcmip2012_test1_conv
 
+  ! DCMIP 2012 tests 1-1,2,3, with modification for good convergence
+  ! testing. See dcmip2012_test1_2_3.F90 for the original code.
+
   ! Use physical constants consistent with HOMME
   use physical_constants, only: a=>rearth0, Rd => Rgas, g, cp, pi=>dd_pi, p0
 
@@ -93,6 +96,10 @@ contains
     ! translational longitude
     lonp = lon - 2.d0*pi*time/tau
 
+    ! The key difference in this test relative to the original is removing the
+    ! factor of 2 in ud and w cos-time factors. The 2 in the original code makes
+    ! trajectories not return to their initial points.
+
     ! zonal velocity
     ud = (omega0*a) * cos(lonp) * (cos(lat)**2.0) * cos(pi*time/tau) * s_p
 
@@ -177,7 +184,7 @@ contains
 
   end subroutine test1_conv_advection_deformation
 
-  subroutine test1_conv_advection (test_case,time,lon,lat,p,z,zcoords,u,v,w,t,phis,ps,rho,q)
+  subroutine test1_conv_advection(test_case,time,lon,lat,p,z,zcoords,u,v,w,t,phis,ps,rho,q)
     character(len=*), intent(in) :: test_case  ! dcmip2012_test1_{1,2,3a,3b,3c}_conv
     real(8), intent(in)     :: time       ! simulation time (s)
     real(8), intent(in)     :: lon        ! Longitude (radians)
@@ -194,8 +201,22 @@ contains
     real(8), intent(out)    :: rho        ! density (kg m^-3)
     real(8), intent(out)    :: q(5)       ! Tracer q1 (kg/kg)
 
-    call test1_conv_advection_deformation(time,lon,lat,p,z,zcoords,u,v,w,t,phis,ps,rho,q(1),q(2),q(3),q(4))
+    character(len=1) :: test_major, test_minor
 
+    test_major = test_case(17:17)
+    if (test_major == '3') test_minor = test_case(18:18)
+
+    select case(test_major)
+    case('1')
+       call test1_conv_advection_deformation(time,lon,lat,p,z,zcoords,u,v,w,t,phis,ps,rho,q(1),q(2),q(3),q(4))
+    case ('2')
+    case('3')
+       select case(test_minor)
+       case('a')
+       case('b')
+       case('c')
+       end select
+    end select
   end subroutine test1_conv_advection
 
 end module dcmip2012_test1_conv
