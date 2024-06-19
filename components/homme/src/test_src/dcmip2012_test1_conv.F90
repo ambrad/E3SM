@@ -4,15 +4,37 @@ module dcmip2012_test1_conv
   ! testing. See dcmip2012_test1_2_3.F90 for the original code.
 
   ! Use physical constants consistent with HOMME
-  use physical_constants, only: a=>rearth0, Rd => Rgas, g, cp, pi=>dd_pi, p0
+  use physical_constants, only: a => rearth0, Rd => Rgas, g, cp, pi => dd_pi, p0
 
   implicit none
-
   private
+  
+  real(8), parameter :: &
+       tau     = 12.d0 * 86400.d0     	! period of motion 12 days
 
   public :: test1_conv_advection
 
 contains
+
+  subroutine get_nondiv2d_uv(time, lon, lat, u, v)
+    ! Classic 2D nondivergent flow field.
+
+    real(8), intent(in ) :: time, lon, lat
+    real(8), intent(out) :: u, v
+
+    real(8), parameter :: &
+         u0      = (2.d0*pi*a)/tau,    &	! 2 pi a / 12 days
+         k0      = (10.d0*a)/tau        	! velocity magnitude
+
+    real(8) :: lonp
+
+    ! translational longitude
+    lonp = lon - 2.d0*pi*time/tau
+    ! zonal velocity
+    u = k0*sin(lonp)*sin(lonp)*sin(2.d0*lat)*cos(pi*time/tau) + u0*cos(lat)
+    ! meridional velocity
+    v = k0*sin(2.d0*lonp)*cos(lat)*cos(pi*time/tau)
+  end subroutine get_nondiv2d_uv
 
   subroutine test1_conv_advection_deformation( &
        time,lon,lat,p,z,zcoords,u,v,w,t,phis,ps,rho,q1,q2,q3,q4)
@@ -45,9 +67,6 @@ contains
     !     test case parameters
     !----------------------------------------------------------------------- 
     real(8), parameter ::           &
-         tau     = 12.d0 * 86400.d0,   &	! period of motion 12 days
-         u0      = (2.d0*pi*a)/tau,    &	! 2 pi a / 12 days
-         k0      = (10.d0*a)/tau,      &	! velocity magnitude
          omega0	= (2*23000.d0*pi)/tau,	&	! velocity magnitude
          T0      = 300.d0,             &	! temperature
          H       = Rd * T0 / g,        &	! scale height
@@ -101,17 +120,14 @@ contains
     ! factor of 2 in ud and w cos-time factors. The 2 in the original code makes
     ! trajectories not return to their initial points.
 
-    ! zonal velocity
+    call get_nondiv2d_uv(time, lon, lat, u, v)
+
+    ! divergent part of zonal velocity
     ud = (omega0*a) * cos(lonp) * (cos(lat)**2.0) * cos(pi*time/tau) * s_p
-
-    u = k0*sin(lonp)*sin(lonp)*sin(2.d0*lat)*cos(pi*time/tau) + u0*cos(lat) + ud
-
-    ! meridional velocity
-    v = k0*sin(2.d0*lonp)*cos(lat)*cos(pi*time/tau)
+    u = u + ud
 
     ! vertical velocity - can be changed to vertical pressure velocity by
     ! omega = -(g*p)/(Rd*T0)*w
-
     w = -((Rd*T0)/(g*p))*omega0*sin(lonp)*cos(lat)*cos(pi*time/tau)*s
 
     !-----------------------------------------------------------------------
@@ -188,7 +204,7 @@ contains
   subroutine test1_conv_advection_orography( &
        test_minor,time,lon,lat,p,z,zcoords,cfv,hybrid_eta,hyam,hybm,u,v,w,t,phis,ps,rho,q1,q2,q3,q4)
 
-    character(len=*), intent(in) :: test_minor ! a, b, or c
+    character(len=1), intent(in) :: test_minor ! a, b, or c
     real(8), intent(in)  :: time            ! simulation time (s)
     real(8), intent(in)  :: lon             ! Longitude (radians)
     real(8), intent(in)  :: lat             ! Latitude (radians)
@@ -236,7 +252,6 @@ contains
     !     test case parameters
     !----------------------------------------------------------------------- 
     real(8), parameter :: &
-         tau     = 12.d0 * 86400.d0,	&	! period of motion 12 days (s)
          u0      = 2.d0*pi*a/tau,    &	! Velocity Magnitude (m/s)
          T0      = 300.d0,           &	! temperature (K)
          H       = Rd * T0 / g,      &	! scale height (m)
@@ -267,7 +282,7 @@ contains
     !    PHIS (surface geopotential)
     !-----------------------------------------------------------------------
 
-    r = acos( sin(phim)*sin(lat) + cos(phim)*cos(lat)*cos(lon - lambdam) )
+    r = acos(sin(phim)*sin(lat) + cos(phim)*cos(lat)*cos(lon - lambdam))
 
     if (r .lt. Rm) then
        zs = (h0/2.d0)*(1.d0+cos(pi*r/Rm))*cos(pi*r/zetam)**2.d0
@@ -293,7 +308,10 @@ contains
        height = z
        p = p0 * exp(-z/H)
     else
-       if (hybrid_eta) p = hyam*p0 + hybm*ps   ! compute the pressure based on the surface pressure and hybrid coefficients
+       if (hybrid_eta) then
+          ! compute the pressure based on the surface pressure and hybrid coefficients
+          p = hyam*p0 + hybm*ps
+       end if
        height = H * log(p0/p)
        z = height
     endif
@@ -302,17 +320,20 @@ contains
     !    THE VELOCITIES ARE TIME INDEPENDENT 
     !-----------------------------------------------------------------------
 
-    ! Zonal Velocity
-    u = u0*(cos(lat)*cos(alpha)+sin(lat)*cos(lon)*sin(alpha))
-
-    ! Meridional Velocity
-    v = -u0*(sin(lon)*sin(alpha))
+    select case(test_minor)
+    case('a')
+       ! Zonal Velocity
+       u = u0*(cos(lat)*cos(alpha)+sin(lat)*cos(lon)*sin(alpha))
+       ! Meridional Velocity
+       v = -u0*(sin(lon)*sin(alpha))
+    case('b')
+       call get_nondiv2d_uv(time, lon, lat, u, v)
+    end select
 
     ! Vertical profile to shape (u,v,w). Bringing these to 0 just above the
-    ! mountain makes the flow physically valid, and it remains
-    ! nondivergent. Then (u,v) has non-0 divergence within a layer, inducing
-    ! non-0 eta_dot.
-
+    ! mountain makes the flow physically valid (it doesn't simply slam into a
+    ! mountain or emerge from one), and it remains nondivergent. Then (u,v) has
+    ! non-0 divergence within a layer, inducing non-0 eta_dot.
     shape = 0.15
     bot = h0
     top = zp1 - dzp1/2
@@ -382,13 +403,6 @@ contains
        q1 = 0.d0
     endif
 
-    if (.false.) then
-       x = cos(lat)*cos(lon)
-       y = cos(lat)*sin(lon)
-       zeta = sin(lat)
-       q1 = 1.5d0*(1 + sin(pi*x)*sin(pi*y)*sin(pi*zeta)*sin(pi*z/ztop))
-    end if
-
     rz = abs(height - zp2)
 
     if (rz .lt. 0.5d0*dzp2 .and. r .lt. Rp) then
@@ -406,6 +420,17 @@ contains
     endif
 
     q4 = q1 + q2 + q3
+
+    if (test_minor == 'b') then
+       x = cos(lat)*cos(lon)
+       y = cos(lat)*sin(lon)
+       zeta = sin(lat)
+       if (z <= bot) then
+          q1 = 0
+       else
+          q1 = 1.5d0*(1 + sin(pi*x)*sin(pi*y)*sin(pi*zeta))*sin(pi*(z - h0)/(ztop - h0))
+       end if
+    end if
 
 	contains
 
