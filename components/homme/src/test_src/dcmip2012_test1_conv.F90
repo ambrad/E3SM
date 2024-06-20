@@ -328,6 +328,10 @@ contains
        v = -u0*(sin(lon)*sin(alpha))
     case('b')
        call get_nondiv2d_uv(time, lon, lat, u, v)
+    case('c')
+       ! moving vortices
+    case('d')
+       ! 3D nondiv flow
     end select
 
     ! Vertical profile to shape (u,v,w). Bringing these to 0 just above the
@@ -376,6 +380,11 @@ contains
     ! velocity needs to be translated into the new coordinate system due to
     ! the variation of the height along coordinate surfaces
     ! See section 1.3 and the appendix of the test case document
+
+    ! If semi-Lagrangian tracer transport with dt_tracer_factor >
+    ! dt_remap_factor is running, then w is not used in the solution. Instead,
+    ! divergence in (u,v) within a layer induce non-0 eta_dot, leading the 3D
+    ! behavior.
 
     if (cfv .eq. 0) then
        ! if the horizontal velocities do not follow the vertical coordinate
@@ -433,7 +442,7 @@ contains
     end if
 
 	contains
-
+   
    !-----------------------------------------------------------------------
    !    SUBROUTINE TO CALCULATE THE PERCEIVED VERTICAL VELOCITY 
    !    		UNDER HYBRID-ETA COORDINATES
@@ -499,7 +508,7 @@ contains
     end subroutine test1_advection_orograph_hybrid_eta_velocity
   end subroutine test1_conv_advection_orography
 
-  subroutine test1_conv_advection(test_case,time,lon,lat,hya,hyb,p,z,u,v,w,t,phis,ps,rho,q)
+  subroutine test1_conv_advection(test_case,time,lon,lat,hya,hyb,p,z,u,v,w,use_w,t,phis,ps,rho,q)
     character(len=*), intent(in) :: test_case  ! dcmip2012_test1_{1,2,3a,3b,3c}_conv
     real(8), intent(in)     :: time       ! simulation time (s)
     real(8), intent(in)     :: lon, lat   ! Longitude, latitude (radians)
@@ -509,6 +518,7 @@ contains
     real(8), intent(out)    :: u          ! Zonal wind (m s^-1)
     real(8), intent(out)    :: v          ! Meridional wind (m s^-1)
     real(8), intent(out)    :: w          ! Vertical Velocity (m s^-1)
+    logical, intent(out)    :: use_w      ! Should caller use w or instead div(u,v)?
     real(8), intent(out)    :: T          ! Temperature (K)
     real(8), intent(out)    :: phis       ! Surface Geopotential (m^2 s^-2)
     real(8), intent(out)    :: ps         ! Surface Pressure (Pa)
@@ -523,12 +533,14 @@ contains
     test_major = test_case(17:17)
     if (test_major == '3') test_minor = test_case(18:18)
 
+    use_w = .true.
     select case(test_major)
     case('1')
        call test1_conv_advection_deformation( &
             time,lon,lat,p,z,zcoords,u,v,w,t,phis,ps,rho,q(1),q(2),q(3),q(4))
     case ('2')
     case('3')
+       use_w = .false.
        call test1_conv_advection_orography( &
             test_minor,time,lon,lat,p,z,zcoords,cfv,use_eta,hya,hyb,u,v,w,t,phis,ps,rho, &
             q(1),q(2),q(3),q(4))

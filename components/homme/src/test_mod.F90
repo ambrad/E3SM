@@ -122,7 +122,7 @@ subroutine set_test_initial_conditions(elem, deriv, hybrid, hvcoord, tl, nets, n
       case('dcmip2012_test1_1_conv', 'dcmip2012_test1_2_conv', 'dcmip2012_test1_3a_conv', &
            'dcmip2012_test1_3b_conv', 'dcmip2012_test1_3c_conv')
          midpoint_eta_dot_dpdn = .true.
-         call dcmip2012_test1_conv(test_case,elem,hybrid,hvcoord,nets,nete,0.0d0,1,timelevels)
+         call dcmip2012_test1_conv(test_case,elem,hybrid,hvcoord,deriv,nets,nete,0.0d0,1,timelevels)
       case('dcmip2012_test1_2');  call dcmip2012_test1_2(elem,hybrid,hvcoord,nets,nete,0.0d0,1,timelevels)
       case('dcmip2012_test1_3');  call dcmip2012_test1_3(elem,hybrid,hvcoord,nets,nete,0.0d0,1,timelevels,deriv)
       case('dcmip2012_test2_0');  call dcmip2012_test2_0(elem,hybrid,hvcoord,nets,nete)
@@ -201,7 +201,7 @@ subroutine set_test_prescribed_wind(elem, deriv, hybrid, hvcoord, dt, tl, nets, 
     case('dcmip2012_test1_1'); call dcmip2012_test1_1(elem,hybrid,hvcoord,nets,nete,time,np1,np1)
     case('dcmip2012_test1_1_conv', 'dcmip2012_test1_2_conv', 'dcmip2012_test1_3a_conv', &
          'dcmip2012_test1_3b_conv', 'dcmip2012_test1_3c_conv')
-       call dcmip2012_test1_conv(test_case,elem,hybrid,hvcoord,nets,nete,time,np1,np1)
+       call dcmip2012_test1_conv(test_case,elem,hybrid,hvcoord,deriv,nets,nete,time,np1,np1)
     case('dcmip2012_test1_2'); call dcmip2012_test1_2(elem,hybrid,hvcoord,nets,nete,time,np1,np1)
     case('dcmip2012_test1_3'); call dcmip2012_test1_3(elem,hybrid,hvcoord,nets,nete,time,np1,np1,deriv)
   endselect
