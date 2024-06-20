@@ -3,10 +3,11 @@ module dcmip2012_test1_conv
   ! DCMIP 2012 tests 1-1,2,3, with modification for good convergence
   ! testing. See dcmip2012_test1_2_3.F90 for the original code.
 
+  use parallel_mod,       only: abortmp
   ! Use physical constants consistent with HOMME
   use physical_constants, only: a => rearth0, Rd => Rgas, g, cp, pi => dd_pi, p0
 
-  implicit none
+implicit none
   private
   
   real(8), parameter :: &
@@ -16,10 +17,10 @@ module dcmip2012_test1_conv
 
 contains
 
-  subroutine get_nondiv2d_uv(time, lon, lat, u, v)
+  subroutine get_nondiv2d_uv(time, lon, lat, u, v, lon_offset)
     ! Classic 2D nondivergent flow field.
 
-    real(8), intent(in ) :: time, lon, lat
+    real(8), intent(in ) :: time, lon, lat, lon_offset
     real(8), intent(out) :: u, v
 
     real(8), parameter :: &
@@ -29,7 +30,7 @@ contains
     real(8) :: lonp
 
     ! translational longitude
-    lonp = lon - 2.d0*pi*time/tau
+    lonp = lon - 2.d0*pi*time/tau + lon_offset
     ! zonal velocity
     u = k0*sin(lonp)*sin(lonp)*sin(2.d0*lat)*cos(pi*time/tau) + u0*cos(lat)
     ! meridional velocity
@@ -120,7 +121,7 @@ contains
     ! factor of 2 in ud and w cos-time factors. The 2 in the original code makes
     ! trajectories not return to their initial points.
 
-    call get_nondiv2d_uv(time, lon, lat, u, v)
+    call get_nondiv2d_uv(time, lon, lat, u, v, 0.d0)
 
     ! divergent part of zonal velocity
     ud = (omega0*a) * cos(lonp) * (cos(lat)**2.0) * cos(pi*time/tau) * s_p
@@ -327,7 +328,7 @@ contains
        ! Meridional Velocity
        v = -u0*(sin(lon)*sin(alpha))
     case('b')
-       call get_nondiv2d_uv(time, lon, lat, u, v)
+       call get_nondiv2d_uv(time, lon, lat, u, v, 0.5d0*pi)
     case('c')
        ! moving vortices
     case('d')
@@ -385,16 +386,15 @@ contains
     ! dt_remap_factor is running, then w is not used in the solution. Instead,
     ! divergence in (u,v) within a layer induce non-0 eta_dot, leading the 3D
     ! behavior.
+    !   Similarly, if dt_tracer_factor < dt_remap_factor, the calling routine
+    ! computes vertical fluxes using div(u,v), the cfv=0 option.
 
-    if (cfv .eq. 0) then
-       ! if the horizontal velocities do not follow the vertical coordinate
-       w = 0.d0
-    elseif (cfv .eq. 1) then
-       ! if the horizontal velocities follow hybrid eta coordinates then
-       ! the perceived vertical velocity is
-       call test1_advection_orograph_hybrid_eta_velocity(w)
-    endif
-    w = w*shape
+    if (cfv /= 0) then
+       call abortmp('test1_conv_advection_orography does not support cfv != 0')
+    end if
+    w = 0.d0
+
+    if (time > 0) return
 
     !-----------------------------------------------------------------------
     !     initialize tracers
@@ -440,72 +440,6 @@ contains
           q1 = 1.5d0*(1 + sin(pi*x)*sin(pi*y)*sin(pi*zeta))*sin(pi*(z - h0)/(ztop - h0))
        end if
     end if
-
-	contains
-   
-   !-----------------------------------------------------------------------
-   !    SUBROUTINE TO CALCULATE THE PERCEIVED VERTICAL VELOCITY 
-   !    		UNDER HYBRID-ETA COORDINATES
-   !-----------------------------------------------------------------------
-
-    subroutine test1_advection_orograph_hybrid_eta_velocity(w)
-      real(8), intent(out) ::	w
-
-      real(8) :: 	press,  &		! hyam *p0 + hybm *ps
-           r,              &		! Great Circle Distance
-           dzsdx,          &		! Part of surface height derivative
-           dzsdlambda,     & 	! Derivative of zs w.r.t lambda
-           dzsdphi,        &   ! Derivative of zs w.r.t phi
-           dzdlambda,      &   ! Derivative of z w.r.t lambda
-           dzdphi,         &   ! Derivative of z w.r.t phi
-           dpsdlambda,     &   ! Derivative of ps w.r.t lambda
-           dpsdphi             ! Derivative of ps w.r.t phi
-
-      ! Calculate pressure and great circle distance to mountain center
-
-      press = hyam*p0 + hybm*ps
-
-      r = acos( sin(phim)*sin(lat) + cos(phim)*cos(lat)*cos(lon - lambdam) )
-
-      ! Derivatives of surface height
-
-      if (r .lt. Rm) then
-         dzsdx = -h0*pi/(2.d0*Rm)*sin(pi*r/Rm)*cos(pi*r/zetam)**2 - &
-              (h0*pi/zetam)*(1.d0+cos(pi*r/Rm))*cos(pi*r/zetam)*sin(pi*r/zetam)
-      else
-         dzsdx = 0.d0
-      endif
-
-      ! Prevent division by zero
-
-      if (1.d0-cos(r)**2 .gt. 0.d0) then
-         dzsdlambda = dzsdx * (cos(phim)*cos(lat)*sin(lon-lambdam)) &
-              /sqrt(1.d0-cos(r)**2)
-         dzsdphi    = dzsdx * (-sin(phim)*cos(lat) + cos(phim)*sin(lat)*cos(lon-lambdam)) & 
-              /sqrt(1.d0-cos(r)**2)
-      else
-         dzsdlambda = 0.d0
-         dzsdphi    = 0.d0
-      endif
-
-      ! Derivatives of surface pressure
-
-      dpsdlambda = -(g*p0/(Rd*T0))*exp(-g*zs/(Rd*T0))*dzsdlambda
-      dpsdphi    = -(g*p0/(Rd*T0))*exp(-g*zs/(Rd*T0))*dzsdphi
-
-      ! Derivatives of coordinate height
-
-      dzdlambda = -(Rd*T0/(g*press))*hybm*dpsdlambda
-      dzdphi    = -(Rd*T0/(g*press))*hybm*dpsdphi
-
-      ! Prevent division by zero
-
-      if (abs(lat) .lt. pi/2.d0) then
-         w = - (u/(a*cos(lat)))*dzdlambda - (v/a)*dzdphi
-      else
-         w = 0.d0
-      endif
-    end subroutine test1_advection_orograph_hybrid_eta_velocity
   end subroutine test1_conv_advection_orography
 
   subroutine test1_conv_advection(test_case,time,lon,lat,hya,hyb,p,z,u,v,w,use_w,t,phis,ps,rho,q)
