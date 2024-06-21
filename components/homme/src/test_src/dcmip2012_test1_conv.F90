@@ -336,6 +336,8 @@ contains
        ! moving vortices
     case('d')
        ! 3D nondiv flow
+    case('e')
+       ! Hadley-like flow
     end select
 
     ! Vertical profile to shape velocity. Bringing these to 0 just above the
@@ -345,7 +347,7 @@ contains
 
     bot = h0
     top = zp1 - dzp1/2
-    if (higher) top = 0.5d0*(zp1 + zp2)
+    !if (higher) top = 0.5d0*(zp1 + zp2)
     shape = 0 !0.1d0*(top - bot)
     bot = bot + shape
     top = top - shape
@@ -447,7 +449,7 @@ contains
           q1 = 0
        else
           q1 = 1.5d0*(1 + sin(pi*x)*sin(pi*y)*sin(pi*zeta)) &
-               *sin(pi*(z - top)/(ztop - top))
+               *sin(pi*(z - zp2)/(ztop - zp2))
        end if
     end if
   end subroutine test1_conv_advection_orography

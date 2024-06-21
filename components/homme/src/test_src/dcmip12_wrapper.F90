@@ -292,7 +292,7 @@ subroutine dcmip2012_test1_conv(test_case,elem,hybrid,hvcoord,deriv,nets,nete,ti
      !$omp barrier
      !$omp master
      if (hybrid%masterthread) then
-        write(iulog,*) 'initializing dcmip2012 test 1-1,2,3a,3b,3c,3d: &
+        write(iulog,*) 'initializing dcmip2012 test 1-1,2,3a,3b,3c,3d,3e: &
              &modified 3d deformational flows for convergence testing'
      end if
      call get_evenly_spaced_z(zi,zm,0.0_rl,ztop)                        ! get evenly spaced z levels
