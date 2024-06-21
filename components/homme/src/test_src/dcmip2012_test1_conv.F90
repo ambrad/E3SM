@@ -347,7 +347,7 @@ contains
 
     bot = h0
     top = zp1 - dzp1/2
-    !if (higher) top = 0.5d0*(zp1 + zp2)
+    if (higher) top = 0.5d0*(zp1 + zp2)
     shape = 0 !0.1d0*(top - bot)
     bot = bot + shape
     top = top - shape
@@ -442,14 +442,15 @@ contains
     q4 = q1 + q2 + q3
 
     if (.true.) then
+       bot = zp2
        x = cos(lat)*cos(lon)
        y = cos(lat)*sin(lon)
        zeta = sin(lat)
-       if (z <= top) then
+       if (z <= bot) then
           q1 = 0
        else
           q1 = 1.5d0*(1 + sin(pi*x)*sin(pi*y)*sin(pi*zeta)) &
-               *sin(pi*(z - zp2)/(ztop - zp2))
+               *sin(pi*(z - bot)/(ztop - bot))
        end if
     end if
   end subroutine test1_conv_advection_orography
