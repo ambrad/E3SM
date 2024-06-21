@@ -278,6 +278,9 @@ contains
     real(8) :: rz                 ! height differences
     real(8) :: zs                 ! Surface elevation (m)
     real(8) :: shape, bot, top, x, y, zeta
+    logical :: higher
+
+    higher = .true.
 
     !-----------------------------------------------------------------------
     !    PHIS (surface geopotential)
@@ -335,13 +338,17 @@ contains
        ! 3D nondiv flow
     end select
 
-    ! Vertical profile to shape (u,v,w). Bringing these to 0 just above the
+    ! Vertical profile to shape velocity. Bringing these to 0 just above the
     ! mountain makes the flow physically valid (it doesn't simply slam into a
     ! mountain or emerge from one), and it remains nondivergent. Then (u,v) has
     ! non-0 divergence within a layer, inducing non-0 eta_dot.
-    shape = 0.15
+
     bot = h0
     top = zp1 - dzp1/2
+    if (higher) top = 0.5d0*(zp1 + zp2)
+    shape = 0 !0.1d0*(top - bot)
+    bot = bot + shape
+    top = top - shape
     if (z <= bot) then
        shape = 0
     elseif (z >= top) then
@@ -412,6 +419,8 @@ contains
        q1 = 0.d0
     endif
 
+    if (higher) q1 = 0.d0
+
     rz = abs(height - zp2)
 
     if (rz .lt. 0.5d0*dzp2 .and. r .lt. Rp) then
@@ -430,14 +439,15 @@ contains
 
     q4 = q1 + q2 + q3
 
-    if (test_minor == 'b') then
+    if (.true.) then
        x = cos(lat)*cos(lon)
        y = cos(lat)*sin(lon)
        zeta = sin(lat)
-       if (z <= bot) then
+       if (z <= top) then
           q1 = 0
        else
-          q1 = 1.5d0*(1 + sin(pi*x)*sin(pi*y)*sin(pi*zeta))*sin(pi*(z - h0)/(ztop - h0))
+          q1 = 1.5d0*(1 + sin(pi*x)*sin(pi*y)*sin(pi*zeta)) &
+               *sin(pi*(z - top)/(ztop - top))
        end if
     end if
   end subroutine test1_conv_advection_orography
