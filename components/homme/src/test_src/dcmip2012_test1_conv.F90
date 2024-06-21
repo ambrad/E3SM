@@ -11,7 +11,7 @@ implicit none
   private
   
   real(8), parameter :: &
-       tau     = 12.d0 * 86400.d0     	! period of motion 12 days
+       tau     = 12.d0 * 86400.d0       ! period of motion 12 days
 
   public :: test1_conv_advection
 
@@ -24,8 +24,8 @@ contains
     real(8), intent(out) :: u, v
 
     real(8), parameter :: &
-         u0      = (2.d0*pi*a)/tau,    &	! 2 pi a / 12 days
-         k0      = (10.d0*a)/tau        	! velocity magnitude
+         u0      = (2.d0*pi*a)/tau,    &  ! 2 pi a / 12 days
+         k0      = (10.d0*a)/tau          ! velocity magnitude
 
     real(8) :: lonp
 
@@ -68,15 +68,15 @@ contains
     !     test case parameters
     !----------------------------------------------------------------------- 
     real(8), parameter ::           &
-         omega0	= (2*23000.d0*pi)/tau,	&	! velocity magnitude
-         T0      = 300.d0,             &	! temperature
-         H       = Rd * T0 / g,        &	! scale height
-         RR      = 1.d0/2.d0,          &	! horizontal half width divided by 'a'
-         ZZ      = 1000.d0,            &	! vertical half width
-         z0      = 5000.d0,            &	! center point in z
-         lambda0 = 5.d0*pi/6.d0,       &	! center point in longitudes
-         lambda1 = 7.d0*pi/6.d0,       &	! center point in longitudes
-         phi0    = 0.d0,               &	! center point in latitudes
+         omega0  = (2*23000.d0*pi)/tau,  &  ! velocity magnitude
+         T0      = 300.d0,             &  ! temperature
+         H       = Rd * T0 / g,        &  ! scale height
+         RR      = 1.d0/2.d0,          &  ! horizontal half width divided by 'a'
+         ZZ      = 1000.d0,            &  ! vertical half width
+         z0      = 5000.d0,            &  ! center point in z
+         lambda0 = 5.d0*pi/6.d0,       &  ! center point in longitudes
+         lambda1 = 7.d0*pi/6.d0,       &  ! center point in longitudes
+         phi0    = 0.d0,               &  ! center point in latitudes
          phi1    = 0.d0, &
          ztop    = 12000.d0
 
@@ -154,7 +154,7 @@ contains
     !-----------------------------------------------------------------------
     !     initialize Q, set to zero 
     !-----------------------------------------------------------------------
-    !	q = 0.d0
+    !  q = 0.d0
 
     !-----------------------------------------------------------------------
     !     initialize tracers
@@ -163,7 +163,7 @@ contains
     x = cos(lat)*cos(lon)
     y = cos(lat)*sin(lon)
     zeta = sin(lat)
-    !	tracer 1 - a C^inf tracer field for order of accuracy analysis
+    ! tracer 1 - a C^inf tracer field for order of accuracy analysis
     q1 = 0.5d0*(1 + sin(pi*x)*sin(pi*y)*sin(pi*zeta)*sin(pi*(p-ptop)/(p0-ptop)))
 
     ! tracer 2 - correlated with 1
@@ -253,31 +253,39 @@ contains
     !     test case parameters
     !----------------------------------------------------------------------- 
     real(8), parameter :: &
-         u0      = 2.d0*pi*a/tau,    &	! Velocity Magnitude (m/s)
-         T0      = 300.d0,           &	! temperature (K)
-         H       = Rd * T0 / g,      &	! scale height (m)
-         alpha   = pi/6.d0,          &	! rotation angle (radians), 30 degrees
-         lambdam = 3.d0*pi/2.d0,     &	! mountain longitude center point (radians)
-         phim    = 0.d0,             &	! mountain latitude center point (radians)
-         h0      = 2000.d0,          &	! peak height of the mountain range (m)
-         Rm      = 3.d0*pi/4.d0,     &	! mountain radius (radians)
-         zetam   = pi/16.d0,         &	! mountain oscillation half-width (radians)
-         lambdap = pi/2.d0,          &	! cloud-like tracer longitude center point (radians)
-         phip    = 0.d0,             &	! cloud-like tracer latitude center point (radians)
-         Rp      = pi/4.d0,          &	! cloud-like tracer radius (radians)
-         zp1     = 3050.d0,          &	! midpoint of first (lowermost) tracer (m)
-         zp2     = 5050.d0,          &	! midpoint of second tracer (m)
-         zp3     = 8200.d0,          &	! midpoint of third (topmost) tracer (m)
-         dzp1    = 1000.d0,          &	! thickness of first (lowermost) tracer (m)
-         dzp2    = 1000.d0,          &	! thickness of second tracer (m)
-         dzp3    = 400.d0,           &	! thickness of third (topmost) tracer (m)
-         ztop    = 12000.d0             ! model top (m)
+         u0      = 2.d0*pi*a/tau,    &  ! Velocity Magnitude (m/s)
+         T0      = 300.d0,           &  ! temperature (K)
+         H       = Rd * T0 / g,      &  ! scale height (m)
+         alpha   = pi/6.d0,          &  ! rotation angle (radians), 30 degrees
+         lambdam = 3.d0*pi/2.d0,     &  ! mountain longitude center point (radians)
+         phim    = 0.d0,             &  ! mountain latitude center point (radians)
+         h0      = 2000.d0,          &  ! peak height of the mountain range (m)
+         Rm      = 3.d0*pi/4.d0,     &  ! mountain radius (radians)
+         zetam   = pi/16.d0,         &  ! mountain oscillation half-width (radians)
+         lambdap = pi/2.d0,          &  ! cloud-like tracer longitude center point (radians)
+         phip    = 0.d0,             &  ! cloud-like tracer latitude center point (radians)
+         Rp      = pi/4.d0,          &  ! cloud-like tracer radius (radians)
+         zp1     = 3050.d0,          &  ! midpoint of first (lowermost) tracer (m)
+         zp2     = 5050.d0,          &  ! midpoint of second tracer (m)
+         zp3     = 8200.d0,          &  ! midpoint of third (topmost) tracer (m)
+         dzp1    = 1000.d0,          &  ! thickness of first (lowermost) tracer (m)
+         dzp2    = 1000.d0,          &  ! thickness of second tracer (m)
+         dzp3    = 400.d0,           &  ! thickness of third (topmost) tracer (m)
+         ztop    = 12000.d0,         &  ! model top (m)
+         top_p   = 0.5d0*(zp1 + zp2),&  ! top of vertical shape transition layer
+         ! For Hadley-like. Divide vel by 12 to make a 12-day test.
+         z1_h    = top_p + 2000.d0,  &  ! position of lower tracer bound (m)
+         z2_h    = top_p + 5000.d0,  &  ! position of upper tracer bound (m)
+         z0_h    = 0.5d0*(z1_h+z2_h),&  ! midpoint (m)
+         u0_h    = 40.d0/12.d0,      &
+         w0_h    = 0.15d0/12.0d0,    &  ! Vertical velocity magnitude (m/s)
+         K       = 5.d0                 ! number of Hadley-like cells
 
-    real(8) :: height							! Model level heights (m)
+    real(8) :: height             ! Model level heights (m)
     real(8) :: r                  ! Great circle distance (radians)
     real(8) :: rz                 ! height differences
     real(8) :: zs                 ! Surface elevation (m)
-    real(8) :: shape, bot, top, x, y, zeta
+    real(8) :: shape, bot, x, y, zeta, rho0
     logical :: higher
 
     higher = .true.
@@ -321,6 +329,33 @@ contains
     endif
 
     !-----------------------------------------------------------------------
+    !    TEMPERATURE IS CONSTANT 300 K
+    !-----------------------------------------------------------------------
+
+    T = T0
+
+    !-----------------------------------------------------------------------
+    !    RHO (density)
+    !-----------------------------------------------------------------------
+
+    rho = p/(Rd*T)
+    rho0 = p0/(Rd*T)
+
+    ! Vertical profile to shape velocity. Bringing these to 0 just above the
+    ! mountain makes the flow physically valid (it doesn't simply slam into a
+    ! mountain or emerge from one), and it remains nondivergent. Then (u,v) has
+    ! non-0 divergence within a layer, inducing non-0 eta_dot.
+
+    bot = h0
+    if (z <= bot) then
+       shape = 0
+    elseif (z >= top_p) then
+       shape = 1
+    else
+       shape = (1 + cos(pi*(1 + (z - bot)/(top_p - bot))))/2
+    end if
+
+    !-----------------------------------------------------------------------
     !    THE VELOCITIES ARE TIME INDEPENDENT 
     !-----------------------------------------------------------------------
 
@@ -338,46 +373,16 @@ contains
        ! 3D nondiv flow
     case('e')
        ! Hadley-like flow
+       u = u0_h*cos(lat)
+       if (z <= top_p) then
+          v = 0.d0
+       else
+          v = -(rho0/rho) * (a*w0_h*pi)/(K*ztop) * &
+               cos(lat)*sin(K*lat)*cos(pi*(z - top_p)/(ztop - top_p))*cos(pi*time/tau)
+       end if
     end select
-
-    ! Vertical profile to shape velocity. Bringing these to 0 just above the
-    ! mountain makes the flow physically valid (it doesn't simply slam into a
-    ! mountain or emerge from one), and it remains nondivergent. Then (u,v) has
-    ! non-0 divergence within a layer, inducing non-0 eta_dot.
-
-    bot = h0
-    top = zp1 - dzp1/2
-    if (higher) top = 0.5d0*(zp1 + zp2)
-    shape = 0 !0.1d0*(top - bot)
-    bot = bot + shape
-    top = top - shape
-    if (z <= bot) then
-       shape = 0
-    elseif (z >= top) then
-       shape = 1
-    else
-       shape = (1 + cos(pi*(1 + (z - bot)/(top - bot))))/2
-    end if
     u = u*shape
     v = v*shape
-
-    !-----------------------------------------------------------------------
-    !    TEMPERATURE IS CONSTANT 300 K
-    !-----------------------------------------------------------------------
-
-    t = T0
-
-    !-----------------------------------------------------------------------
-    !    RHO (density)
-    !-----------------------------------------------------------------------
-
-    rho = p/(Rd*t)
-
-    !-----------------------------------------------------------------------
-    !     initialize Q, set to zero 
-    !-----------------------------------------------------------------------
-
-    !q = 0.d0
 
     !-----------------------------------------------------------------------
     !    VERTICAL VELOCITY IS TIME INDEPENDENT 
@@ -430,6 +435,14 @@ contains
     else
        q2 = 0.d0
     endif
+
+    if (test_minor == 'e') then
+       if (height .lt. z2_h .and. height .gt. z1_h) then
+          q2 = 0.5d0 * (1.d0 + cos(2.d0*pi*(z-z0_h)/(z2_h-z1_h)))
+       else
+          q2 = 0.d0
+       end if
+    end if
 
     rz = abs(height - zp3)
 
