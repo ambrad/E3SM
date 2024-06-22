@@ -272,14 +272,17 @@ contains
          dzp2    = 1000.d0,          &  ! thickness of second tracer (m)
          dzp3    = 400.d0,           &  ! thickness of third (topmost) tracer (m)
          ztop    = 12000.d0,         &  ! model top (m)
-         top_p   = 0.5d0*(zp1 + zp2),&  ! top of vertical shape transition layer
-         ! For Hadley-like. Divide vel by 12 to make a 12-day test.
-         z1_h    = top_p + 2000.d0,  &  ! position of lower tracer bound (m)
-         z2_h    = top_p + 5000.d0,  &  ! position of upper tracer bound (m)
-         z0_h    = 0.5d0*(z1_h+z2_h),&  ! midpoint (m)
-         u0_h    = 40.d0/12.d0,      &
-         w0_h    = 0.15d0/12.0d0,    &  ! Vertical velocity magnitude (m/s)
-         K       = 5.d0                 ! number of Hadley-like cells
+         top_t   = 0.5d0*(zp1 + zp2),&  ! top of vertical shape transition layer
+         ! For Hadley-like. Multiply w and tracer vertical extent by (ztop -
+         ! top_t)/ztop to compensate for smaller domain.
+         tau_h   = 1.d0 * 86400.d0,     &  ! period of motion 1 day (in s)
+         f_h     = (ztop - top_t)/ztop, &
+         z1_h    = top_t + 2000.d0,     &  ! position of lower tracer bound (m)
+         z2_h    = z1_h + f_h*3000.d0,  &  ! position of upper tracer bound (m)
+         z0_h    = 0.5d0*(z1_h+z2_h),   &  ! midpoint (m)
+         u0_h    = 120.d0,              &  ! Zonal velocity magnitude (m/s)
+         w0_h    = f_h*0.15d0,          &  ! Vertical velocity magnitude (m/s)
+         K       = 5.d0                    ! number of Hadley-like cells
 
     real(8) :: height             ! Model level heights (m)
     real(8) :: r                  ! Great circle distance (radians)
@@ -349,10 +352,10 @@ contains
     bot = h0
     if (z <= bot) then
        shape = 0
-    elseif (z >= top_p) then
+    elseif (z >= top_t) then
        shape = 1
     else
-       shape = (1 + cos(pi*(1 + (z - bot)/(top_p - bot))))/2
+       shape = (1 + cos(pi*(1 + (z - bot)/(top_t - bot))))/2
     end if
 
     !-----------------------------------------------------------------------
@@ -372,13 +375,16 @@ contains
     case('d')
        ! 3D nondiv flow
     case('e')
-       ! Hadley-like flow
-       u = u0_h*cos(lat)
-       if (z <= top_p) then
+       ! Hadley-like flow. Unlike in the original, reverse the u flow so 3D
+       ! tracers return to their original distributions. u0_h is 3x higher than
+       ! in the original test to increase horizontal movement over the
+       ! mountains.
+       u = u0_h*cos(lat)*cos(pi*time/tau_h)
+       if (z <= top_t) then
           v = 0.d0
        else
           v = -(rho0/rho) * (a*w0_h*pi)/(K*ztop) * &
-               cos(lat)*sin(K*lat)*cos(pi*(z - top_p)/(ztop - top_p))*cos(pi*time/tau)
+               cos(lat)*sin(K*lat)*cos(pi*(z - top_t)/(ztop - top_t))*cos(pi*time/tau_h)
        end if
     end select
     u = u*shape
