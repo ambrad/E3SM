@@ -7,10 +7,12 @@ module dcmip2012_test1_conv
   ! Use physical constants consistent with HOMME
   use physical_constants, only: a => rearth0, Rd => Rgas, g, cp, pi => dd_pi, p0
 
-implicit none
+  implicit none
   private
-  
-  real(8), parameter :: &
+
+  integer, parameter :: rt = 8
+
+  real(rt), parameter :: &
        tau     = 12.d0 * 86400.d0       ! period of motion 12 days
 
   public :: test1_conv_advection
@@ -20,14 +22,14 @@ contains
   subroutine get_nondiv2d_uv(time, lon, lat, u, v, lon_offset)
     ! Classic 2D nondivergent flow field.
 
-    real(8), intent(in ) :: time, lon, lat, lon_offset
-    real(8), intent(out) :: u, v
+    real(rt), intent(in ) :: time, lon, lat, lon_offset
+    real(rt), intent(out) :: u, v
 
-    real(8), parameter :: &
+    real(rt), parameter :: &
          u0      = (2.d0*pi*a)/tau,    &  ! 2 pi a / 12 days
          k0      = (10.d0*a)/tau          ! velocity magnitude
 
-    real(8) :: lonp
+    real(rt) :: lonp
 
     ! translational longitude
     lonp = lon - 2.d0*pi*time/tau + lon_offset
@@ -37,29 +39,38 @@ contains
     v = k0*sin(2.d0*lonp)*cos(lat)*cos(pi*time/tau)
   end subroutine get_nondiv2d_uv
 
+  function get_2d_cinf_tracer(lon, lat) result(q)
+    real(rt), intent(in) :: lon, lat
+    real(rt) :: x, y, zeta, q
+    x = cos(lat)*cos(lon)
+    y = cos(lat)*sin(lon)
+    zeta = sin(lat)
+    q = 1.5d0*(1 + sin(pi*x)*sin(pi*y)*sin(pi*zeta))
+  end function get_2d_cinf_tracer
+
   subroutine test1_conv_advection_deformation( &
        time,lon,lat,p,z,zcoords,u,v,w,t,phis,ps,rho,q1,q2,q3,q4)
     !-----------------------------------------------------------------------
     !     input/output params parameters at given location
     !-----------------------------------------------------------------------
     
-    real(8), intent(in)     :: time       ! simulation time (s)
-    real(8), intent(in)     :: lon        ! Longitude (radians)
-    real(8), intent(in)     :: lat        ! Latitude (radians)
-    real(8), intent(in)     :: z          ! Height (m)
-    real(8), intent(inout)  :: p          ! Pressure  (Pa)
-    integer, intent(in)     :: zcoords    ! 0 or 1 see below
-    real(8), intent(out)    :: u          ! Zonal wind (m s^-1)
-    real(8), intent(out)    :: v          ! Meridional wind (m s^-1)
-    real(8), intent(out)    :: w          ! Vertical Velocity (m s^-1)
-    real(8), intent(out)    :: T          ! Temperature (K)
-    real(8), intent(out)    :: phis       ! Surface Geopotential (m^2 s^-2)
-    real(8), intent(out)    :: ps         ! Surface Pressure (Pa)
-    real(8), intent(out)    :: rho        ! density (kg m^-3)
-    real(8), intent(out)    :: q1         ! Tracer q1 (kg/kg)
-    real(8), intent(out)    :: q2         ! Tracer q2 (kg/kg)
-    real(8), intent(out)    :: q3         ! Tracer q3 (kg/kg)
-    real(8), intent(out)    :: q4         ! Tracer q4 (kg/kg)
+    real(rt), intent(in)     :: time       ! simulation time (s)
+    real(rt), intent(in)     :: lon        ! Longitude (radians)
+    real(rt), intent(in)     :: lat        ! Latitude (radians)
+    real(rt), intent(in)     :: z          ! Height (m)
+    real(rt), intent(inout)  :: p          ! Pressure  (Pa)
+    integer , intent(in)     :: zcoords    ! 0 or 1 see below
+    real(rt), intent(out)    :: u          ! Zonal wind (m s^-1)
+    real(rt), intent(out)    :: v          ! Meridional wind (m s^-1)
+    real(rt), intent(out)    :: w          ! Vertical Velocity (m s^-1)
+    real(rt), intent(out)    :: T          ! Temperature (K)
+    real(rt), intent(out)    :: phis       ! Surface Geopotential (m^2 s^-2)
+    real(rt), intent(out)    :: ps         ! Surface Pressure (Pa)
+    real(rt), intent(out)    :: rho        ! density (kg m^-3)
+    real(rt), intent(out)    :: q1         ! Tracer q1 (kg/kg)
+    real(rt), intent(out)    :: q2         ! Tracer q2 (kg/kg)
+    real(rt), intent(out)    :: q3         ! Tracer q3 (kg/kg)
+    real(rt), intent(out)    :: q4         ! Tracer q4 (kg/kg)
 
     ! if zcoords = 1, then we use z and output p
     ! if zcoords = 0, then we use p 
@@ -67,7 +78,7 @@ contains
     !-----------------------------------------------------------------------
     !     test case parameters
     !----------------------------------------------------------------------- 
-    real(8), parameter ::           &
+    real(rt), parameter ::           &
          omega0  = (2*23000.d0*pi)/tau,  &  ! velocity magnitude
          T0      = 300.d0,             &  ! temperature
          H       = Rd * T0 / g,        &  ! scale height
@@ -80,14 +91,14 @@ contains
          phi1    = 0.d0, &
          ztop    = 12000.d0
 
-    real(8) :: height                                                     ! The height of the model levels
-    real(8) :: ptop                                                       ! model top in p
-    real(8) :: sin_tmp, cos_tmp, sin_tmp2, cos_tmp2                       ! Calculate great circle distances
-    real(8) :: d1, d2, r, r2, d3, d4                                      ! For tracer calculations
-    real(8) :: s, bs, s_p                                                 ! Shape function, and parameter
-    real(8) :: lonp                                                       ! Translational longitude, depends on time
-    real(8) :: ud                                                         ! Divergent part of u
-    real(8) :: x,y,zeta,tmp
+    real(rt) :: height                                                     ! The height of the model levels
+    real(rt) :: ptop                                                       ! model top in p
+    real(rt) :: sin_tmp, cos_tmp, sin_tmp2, cos_tmp2                       ! Calculate great circle distances
+    real(rt) :: d1, d2, r, r2, d3, d4                                      ! For tracer calculations
+    real(rt) :: s, bs, s_p                                                 ! Shape function, and parameter
+    real(rt) :: lonp                                                       ! Translational longitude, depends on time
+    real(rt) :: ud                                                         ! Divergent part of u
+    real(rt) :: x,y,zeta,tmp
 
     !---------------------------------------------------------------------
     !    HEIGHT AND PRESSURE
@@ -206,11 +217,11 @@ contains
        test_minor,time,lon,lat,p,z,zcoords,cfv,hybrid_eta,hyam,hybm,u,v,w,t,phis,ps,rho,q1,q2,q3,q4)
 
     character(len=1), intent(in) :: test_minor ! a, b, or c
-    real(8), intent(in)  :: time            ! simulation time (s)
-    real(8), intent(in)  :: lon             ! Longitude (radians)
-    real(8), intent(in)  :: lat             ! Latitude (radians)
-    real(8), intent(in)  :: hyam            ! A coefficient for hybrid-eta coordinate, at model level midpoint
-    real(8), intent(in)  :: hybm            ! B coefficient for hybrid-eta coordinate, at model level midpoint
+    real(rt), intent(in)  :: time            ! simulation time (s)
+    real(rt), intent(in)  :: lon             ! Longitude (radians)
+    real(rt), intent(in)  :: lat             ! Latitude (radians)
+    real(rt), intent(in)  :: hyam            ! A coefficient for hybrid-eta coordinate, at model level midpoint
+    real(rt), intent(in)  :: hybm            ! B coefficient for hybrid-eta coordinate, at model level midpoint
 
     logical, intent(in)  :: hybrid_eta      ! flag to indicate whether the hybrid sigma-p (eta) coordinate is used
     ! if set to .true., then the pressure will be computed via the
@@ -221,22 +232,22 @@ contains
     !    hybrid_eta is not used
     ! Note that we only use hyam and hybm for the hybrid-eta coordinates
 
-    real(8), intent(inout)  :: p            ! Pressure  (Pa)
-    real(8), intent(inout)  :: z            ! Height (m)
+    real(rt), intent(inout)  :: p            ! Pressure  (Pa)
+    real(rt), intent(inout)  :: z            ! Height (m)
 
-    integer, intent(in)     :: zcoords      ! 0 or 1 see below
-    integer, intent(in)     :: cfv          ! 0, 1 or 2 see below
-    real(8), intent(out)    :: u            ! Zonal wind (m s^-1)
-    real(8), intent(out)    :: v            ! Meridional wind (m s^-1)
-    real(8), intent(out)    :: w            ! Vertical Velocity (m s^-1)
-    real(8), intent(out)    :: t            ! Temperature (K)
-    real(8), intent(out)    :: phis         ! Surface Geopotential (m^2 s^-2)
-    real(8), intent(out)    :: ps           ! Surface Pressure (Pa)
-    real(8), intent(out)    :: rho          ! density (kg m^-3)
-    real(8), intent(out)    :: q1           ! Tracer q1 (kg/kg)
-    real(8), intent(out)    :: q2           ! Tracer q2 (kg/kg)
-    real(8), intent(out)    :: q3           ! Tracer q3 (kg/kg)
-    real(8), intent(out)    :: q4           ! Tracer q4 (kg/kg)
+    integer , intent(in)     :: zcoords      ! 0 or 1 see below
+    integer , intent(in)     :: cfv          ! 0, 1 or 2 see below
+    real(rt), intent(out)    :: u            ! Zonal wind (m s^-1)
+    real(rt), intent(out)    :: v            ! Meridional wind (m s^-1)
+    real(rt), intent(out)    :: w            ! Vertical Velocity (m s^-1)
+    real(rt), intent(out)    :: t            ! Temperature (K)
+    real(rt), intent(out)    :: phis         ! Surface Geopotential (m^2 s^-2)
+    real(rt), intent(out)    :: ps           ! Surface Pressure (Pa)
+    real(rt), intent(out)    :: rho          ! density (kg m^-3)
+    real(rt), intent(out)    :: q1           ! Tracer q1 (kg/kg)
+    real(rt), intent(out)    :: q2           ! Tracer q2 (kg/kg)
+    real(rt), intent(out)    :: q3           ! Tracer q3 (kg/kg)
+    real(rt), intent(out)    :: q4           ! Tracer q4 (kg/kg)
 
     ! if zcoords = 1, then we use z and output p
     ! if zcoords = 0, then we use p
@@ -252,7 +263,7 @@ contains
     !-----------------------------------------------------------------------
     !     test case parameters
     !----------------------------------------------------------------------- 
-    real(8), parameter :: &
+    real(rt), parameter :: &
          u0      = 2.d0*pi*a/tau,    &  ! Velocity Magnitude (m/s)
          T0      = 300.d0,           &  ! temperature (K)
          H       = Rd * T0 / g,      &  ! scale height (m)
@@ -284,11 +295,11 @@ contains
          w0_h    = f_h*0.15d0,          &  ! Vertical velocity magnitude (m/s)
          K       = 5.d0                    ! number of Hadley-like cells
 
-    real(8) :: height             ! Model level heights (m)
-    real(8) :: r                  ! Great circle distance (radians)
-    real(8) :: rz                 ! height differences
-    real(8) :: zs                 ! Surface elevation (m)
-    real(8) :: shape, bot, x, y, zeta, rho0
+    real(rt) :: height             ! Model level heights (m)
+    real(rt) :: r                  ! Great circle distance (radians)
+    real(rt) :: rz                 ! height differences
+    real(rt) :: zs                 ! Surface elevation (m)
+    real(rt) :: ztaper, zbot, x, y, zeta, rho0, z_cinf_shape
     logical :: higher
 
     higher = .true.
@@ -349,13 +360,13 @@ contains
     ! mountain or emerge from one), and it remains nondivergent. Then (u,v) has
     ! non-0 divergence within a layer, inducing non-0 eta_dot.
 
-    bot = h0
-    if (z <= bot) then
-       shape = 0
+    zbot = h0
+    if (z <= zbot) then
+       ztaper = 0
     elseif (z >= top_t) then
-       shape = 1
+       ztaper = 1
     else
-       shape = (1 + cos(pi*(1 + (z - bot)/(top_t - bot))))/2
+       ztaper = (1 + cos(pi*(1 + (z - zbot)/(top_t - zbot))))/2
     end if
 
     !-----------------------------------------------------------------------
@@ -364,16 +375,18 @@ contains
 
     select case(test_minor)
     case('a')
+       ! Solid body rotation
        ! Zonal Velocity
        u = u0*(cos(lat)*cos(alpha)+sin(lat)*cos(lon)*sin(alpha))
        ! Meridional Velocity
        v = -u0*(sin(lon)*sin(alpha))
     case('b')
+       ! 2D nondiv flow in each layer.
        call get_nondiv2d_uv(time, lon, lat, u, v, 0.5d0*pi)
     case('c')
-       ! moving vortices
+       ! Moving vortices.
     case('d')
-       ! 3D nondiv flow
+       ! 3D nondiv flow.
     case('e')
        ! Hadley-like flow. Unlike in the original, reverse the u flow so 3D
        ! tracers return to their original distributions. u0_h is 3x higher than
@@ -387,8 +400,8 @@ contains
                cos(lat)*sin(K*lat)*cos(pi*(z - top_t)/(ztop - top_t))*cos(pi*time/tau_h)
        end if
     end select
-    u = u*shape
-    v = v*shape
+    u = u*ztaper
+    v = v*ztaper
 
     !-----------------------------------------------------------------------
     !    VERTICAL VELOCITY IS TIME INDEPENDENT 
@@ -420,76 +433,76 @@ contains
     !     initialize tracers
     !-----------------------------------------------------------------------
 
-    ! Tracer 1 - Cloud Layer
+    zbot = zp2
+    z_cinf_shape = sin(pi*(z - zbot)/(ztop - zbot))
+    if (z < zbot .or. z > ztop) z_cinf_shape = 0.d0
 
-    r = acos( sin(phip)*sin(lat) + cos(phip)*cos(lat)*cos(lon - lambdap) )
-
-    rz = abs(height - zp1)
-
-    if (rz .lt. 0.5d0*dzp1 .and. r .lt. Rp) then
-       q1 = 0.25d0*(1.d0+cos(2.d0*pi*rz/dzp1))*(1.d0+cos(pi*r/Rp))
-    else
-       q1 = 0.d0
-    endif
-
-    if (higher) q1 = 0.d0
-
-    rz = abs(height - zp2)
-
-    if (rz .lt. 0.5d0*dzp2 .and. r .lt. Rp) then
-       q2 = 0.25d0*(1.d0+cos(2.d0*pi*rz/dzp2))*(1.d0+cos(pi*r/Rp))
-    else
-       q2 = 0.d0
-    endif
-
-    if (test_minor == 'e') then
+    select case(test_minor)
+    case('e')
+       q1 = z_cinf_shape * get_2d_cinf_tracer(lon, lat)
        if (height .lt. z2_h .and. height .gt. z1_h) then
           q2 = 0.5d0 * (1.d0 + cos(2.d0*pi*(z-z0_h)/(z2_h-z1_h)))
        else
           q2 = 0.d0
        end if
-    end if
+       q3 = 1
+       q4 = 1
 
-    rz = abs(height - zp3)
+    case('b')
+       q1 = z_cinf_shape * get_2d_cinf_tracer(lon, lat)
+       q2 = 1
+       q3 = 1
+       q4 = 1
 
-    if (rz .lt. 0.5d0*dzp3 .and. r .lt. Rp) then
-       q3 = 1.d0
-    else
-       q3 = 0.d0
-    endif
+    case default
+       r = acos( sin(phip)*sin(lat) + cos(phip)*cos(lat)*cos(lon - lambdap) )
 
-    q4 = q1 + q2 + q3
+       rz = abs(height - zp1)
 
-    if (.true.) then
-       bot = zp2
-       x = cos(lat)*cos(lon)
-       y = cos(lat)*sin(lon)
-       zeta = sin(lat)
-       if (z <= bot) then
-          q1 = 0
+       if (rz .lt. 0.5d0*dzp1 .and. r .lt. Rp) then
+          q1 = 0.25d0*(1.d0+cos(2.d0*pi*rz/dzp1))*(1.d0+cos(pi*r/Rp))
        else
-          q1 = 1.5d0*(1 + sin(pi*x)*sin(pi*y)*sin(pi*zeta)) &
-               *sin(pi*(z - bot)/(ztop - bot))
-       end if
-    end if
+          q1 = 0.d0
+       endif
+
+       if (higher) q1 = 0.d0
+
+       rz = abs(height - zp2)
+
+       if (rz .lt. 0.5d0*dzp2 .and. r .lt. Rp) then
+          q2 = 0.25d0*(1.d0+cos(2.d0*pi*rz/dzp2))*(1.d0+cos(pi*r/Rp))
+       else
+          q2 = 0.d0
+       endif
+
+       rz = abs(height - zp3)
+
+       if (rz .lt. 0.5d0*dzp3 .and. r .lt. Rp) then
+          q3 = 1.d0
+       else
+          q3 = 0.d0
+       endif
+
+       q4 = q1 + q2 + q3
+    end select
   end subroutine test1_conv_advection_orography
 
   subroutine test1_conv_advection(test_case,time,lon,lat,hya,hyb,p,z,u,v,w,use_w,t,phis,ps,rho,q)
     character(len=*), intent(in) :: test_case  ! dcmip2012_test1_{1,2,3a,3b,3c}_conv
-    real(8), intent(in)     :: time       ! simulation time (s)
-    real(8), intent(in)     :: lon, lat   ! Longitude, latitude (radians)
-    real(8), intent(in)     :: hya, hyb   ! Hybrid a, b coefficients
-    real(8), intent(inout)  :: z          ! Height (m)
-    real(8), intent(inout)  :: p          ! Pressure  (Pa)
-    real(8), intent(out)    :: u          ! Zonal wind (m s^-1)
-    real(8), intent(out)    :: v          ! Meridional wind (m s^-1)
-    real(8), intent(out)    :: w          ! Vertical Velocity (m s^-1)
-    logical, intent(out)    :: use_w      ! Should caller use w or instead div(u,v)?
-    real(8), intent(out)    :: T          ! Temperature (K)
-    real(8), intent(out)    :: phis       ! Surface Geopotential (m^2 s^-2)
-    real(8), intent(out)    :: ps         ! Surface Pressure (Pa)
-    real(8), intent(out)    :: rho        ! density (kg m^-3)
-    real(8), intent(out)    :: q(5)       ! Tracer q1 (kg/kg)
+    real(rt), intent(in)     :: time       ! simulation time (s)
+    real(rt), intent(in)     :: lon, lat   ! Longitude, latitude (radians)
+    real(rt), intent(in)     :: hya, hyb   ! Hybrid a, b coefficients
+    real(rt), intent(inout)  :: z          ! Height (m)
+    real(rt), intent(inout)  :: p          ! Pressure  (Pa)
+    real(rt), intent(out)    :: u          ! Zonal wind (m s^-1)
+    real(rt), intent(out)    :: v          ! Meridional wind (m s^-1)
+    real(rt), intent(out)    :: w          ! Vertical Velocity (m s^-1)
+    logical , intent(out)    :: use_w      ! Should caller use w or instead div(u,v)?
+    real(rt), intent(out)    :: T          ! Temperature (K)
+    real(rt), intent(out)    :: phis       ! Surface Geopotential (m^2 s^-2)
+    real(rt), intent(out)    :: ps         ! Surface Pressure (Pa)
+    real(rt), intent(out)    :: rho        ! density (kg m^-3)
+    real(rt), intent(out)    :: q(5)       ! Tracer q1 (kg/kg)
 
     integer, parameter :: cfv = 0, zcoords = 0
     logical, parameter :: use_eta = .true.
