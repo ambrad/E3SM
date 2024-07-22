@@ -299,14 +299,10 @@ contains
     real(rt) :: r                  ! Great circle distance (radians)
     real(rt) :: rz                 ! height differences
     real(rt) :: zs                 ! Surface elevation (m)
-    real(rt) :: ztaper, zbot, x, y, zeta, rho0, z_cinf_shape
+    real(rt) :: ztaper, zbot, x, y, zeta, rho0, z_q_shape
     logical :: higher
 
     higher = .true.
-
-    !-----------------------------------------------------------------------
-    !    PHIS (surface geopotential)
-    !-----------------------------------------------------------------------
 
     r = acos(sin(phim)*sin(lat) + cos(phim)*cos(lat)*cos(lon - lambdam))
 
@@ -317,18 +313,7 @@ contains
     endif
 
     phis = g*zs
-
-    !-----------------------------------------------------------------------
-    !    PS (surface pressure)
-    !-----------------------------------------------------------------------
-
     ps = p0 * exp(-zs/H)
-
-    !-----------------------------------------------------------------------
-    !    HEIGHT AND PRESSURE
-    !-----------------------------------------------------------------------
-
-    ! Height and pressure are aligned (p = p0 exp(-z/H))
 
     if (zcoords .eq. 1) then
        height = z
@@ -342,15 +327,7 @@ contains
        z = height
     endif
 
-    !-----------------------------------------------------------------------
-    !    TEMPERATURE IS CONSTANT 300 K
-    !-----------------------------------------------------------------------
-
     T = T0
-
-    !-----------------------------------------------------------------------
-    !    RHO (density)
-    !-----------------------------------------------------------------------
 
     rho = p/(Rd*T)
     rho0 = p0/(Rd*T)
@@ -368,10 +345,6 @@ contains
     else
        ztaper = (1 + cos(pi*(1 + (z - zbot)/(top_t - zbot))))/2
     end if
-
-    !-----------------------------------------------------------------------
-    !    THE VELOCITIES ARE TIME INDEPENDENT 
-    !-----------------------------------------------------------------------
 
     select case(test_minor)
     case('a')
@@ -403,25 +376,6 @@ contains
     u = u*ztaper
     v = v*ztaper
 
-    !-----------------------------------------------------------------------
-    !    VERTICAL VELOCITY IS TIME INDEPENDENT 
-    !-----------------------------------------------------------------------
-
-    ! Vertical Velocity - can be changed to vertical pressure velocity by 
-    ! omega = -(g*p)/(Rd*T0)*w
-
-    ! NOTE that if orography-following coordinates are used then the vertical 
-    ! velocity needs to be translated into the new coordinate system due to
-    ! the variation of the height along coordinate surfaces
-    ! See section 1.3 and the appendix of the test case document
-
-    ! If semi-Lagrangian tracer transport with dt_tracer_factor >
-    ! dt_remap_factor is running, then w is not used in the solution. Instead,
-    ! divergence in (u,v) within a layer induce non-0 eta_dot, leading the 3D
-    ! behavior.
-    !   Similarly, if dt_tracer_factor < dt_remap_factor, the calling routine
-    ! computes vertical fluxes using div(u,v), the cfv=0 option.
-
     if (cfv /= 0) then
        call abortmp('test1_conv_advection_orography does not support cfv != 0')
     end if
@@ -434,12 +388,12 @@ contains
     !-----------------------------------------------------------------------
 
     zbot = zp2
-    z_cinf_shape = sin(pi*(z - zbot)/(ztop - zbot))
-    if (z < zbot .or. z > ztop) z_cinf_shape = 0.d0
+    z_q_shape = sin(pi*(z - zbot)/(ztop - zbot))
+    if (z < zbot .or. z > ztop) z_q_shape = 0.d0
 
     select case(test_minor)
     case('e')
-       q1 = z_cinf_shape * get_2d_cinf_tracer(lon, lat)
+       q1 = z_q_shape * get_2d_cinf_tracer(lon, lat)
        if (height .lt. z2_h .and. height .gt. z1_h) then
           q2 = 0.5d0 * (1.d0 + cos(2.d0*pi*(z-z0_h)/(z2_h-z1_h)))
        else
@@ -449,7 +403,7 @@ contains
        q4 = 1
 
     case('b')
-       q1 = z_cinf_shape * get_2d_cinf_tracer(lon, lat)
+       q1 = z_q_shape * get_2d_cinf_tracer(lon, lat)
        q2 = 1
        q3 = 1
        q4 = 1
@@ -484,6 +438,8 @@ contains
        endif
 
        q4 = q1 + q2 + q3
+
+       q1 = z_q_shape * get_2d_cinf_tracer(lon, lat)
     end select
   end subroutine test1_conv_advection_orography
 
