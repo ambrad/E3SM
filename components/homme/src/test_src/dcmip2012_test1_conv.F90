@@ -214,23 +214,23 @@ contains
   end subroutine test1_conv_advection_deformation
 
   subroutine test1_conv_advection_orography( &
-       test_minor,time,lon,lat,p,z,zcoords,cfv,hybrid_eta,hyam,hybm,u,v,w,t,phis,ps,rho,q1,q2,q3,q4)
+       test_minor,time,lon,lat,p,z,zcoords,cfv,hybrid_eta,hya,hyb,u,v,w,t,phis,ps,rho,q1,q2,q3,q4)
 
     character(len=1), intent(in) :: test_minor ! a, b, or c
     real(rt), intent(in)  :: time            ! simulation time (s)
     real(rt), intent(in)  :: lon             ! Longitude (radians)
     real(rt), intent(in)  :: lat             ! Latitude (radians)
-    real(rt), intent(in)  :: hyam            ! A coefficient for hybrid-eta coordinate, at model level midpoint
-    real(rt), intent(in)  :: hybm            ! B coefficient for hybrid-eta coordinate, at model level midpoint
+    real(rt), intent(in)  :: hya             ! A coefficient for hybrid-eta coordinate
+    real(rt), intent(in)  :: hyb             ! B coefficient for hybrid-eta coordinate
 
-    logical, intent(in)  :: hybrid_eta      ! flag to indicate whether the hybrid sigma-p (eta) coordinate is used
+    logical, intent(in)  :: hybrid_eta       ! flag to indicate whether the hybrid sigma-p (eta) coordinate is used
     ! if set to .true., then the pressure will be computed via the
-    !    hybrid coefficients hyam and hybm, they need to be initialized
+    !    hybrid coefficients hya and hyb, they need to be initialized
     ! if set to .false. (for pressure-based models): the pressure is already pre-computed
     !    and is an input value for this routine
     ! for height-based models: pressure will always be computed based on the height and
     !    hybrid_eta is not used
-    ! Note that we only use hyam and hybm for the hybrid-eta coordinates
+    ! Note that we only use hya and hyb for the hybrid-eta coordinates
 
     real(rt), intent(inout)  :: p            ! Pressure  (Pa)
     real(rt), intent(inout)  :: z            ! Height (m)
@@ -256,7 +256,7 @@ contains
     ! if cfv = 1 then our velocities follow hybrid eta coordinates and we need to specify w
     ! if cfv = 2 then our velocities follow Gal-Chen coordinates and we need to specify w
 
-    ! In hybrid-eta coords: p = hyam p0 + hybm ps
+    ! In hybrid-eta coords: p = hya p0 + hyb ps
 
     ! if other orography-following coordinates are used, the w wind needs to be newly derived for them
 
@@ -300,32 +300,24 @@ contains
     real(rt) :: rz                 ! height differences
     real(rt) :: zs                 ! Surface elevation (m)
     real(rt) :: ztaper, zbot, x, y, zeta, rho0, z_q_shape
-    logical :: higher
 
-    higher = .true.
+    if (cfv /= 0)         call abortmp('test1_conv_advection_orography does not support cfv != 0')
+    if (.not. hybrid_eta) call abortmp('test1_conv_advection_orography does not support !hybrid_eta')
+    if (zcoords /= 0)     call abortmp('test1_conv_advection_orography does not support zcoords != 0')
 
     r = acos(sin(phim)*sin(lat) + cos(phim)*cos(lat)*cos(lon - lambdam))
-
     if (r .lt. Rm) then
        zs = (h0/2.d0)*(1.d0+cos(pi*r/Rm))*cos(pi*r/zetam)**2.d0
     else
        zs = 0.d0
     endif
-
     phis = g*zs
     ps = p0 * exp(-zs/H)
 
-    if (zcoords .eq. 1) then
-       height = z
-       p = p0 * exp(-z/H)
-    else
-       if (hybrid_eta) then
-          ! compute the pressure based on the surface pressure and hybrid coefficients
-          p = hyam*p0 + hybm*ps
-       end if
-       height = H * log(p0/p)
-       z = height
-    endif
+    ! compute the pressure based on the surface pressure and hybrid coefficients
+    p = hya*p0 + hyb*ps
+    height = H * log(p0/p)
+    z = height
 
     T = T0
 
@@ -376,12 +368,12 @@ contains
     u = u*ztaper
     v = v*ztaper
 
-    if (cfv /= 0) then
-       call abortmp('test1_conv_advection_orography does not support cfv != 0')
-    end if
     w = 0.d0
 
-    if (time > 0) return
+    if (time > 0) then
+       q1 = 0; q2 = 0; q3 = 0; q4 = 0
+       return
+    end if
 
     !-----------------------------------------------------------------------
     !     initialize tracers
@@ -418,8 +410,6 @@ contains
        else
           q1 = 0.d0
        endif
-
-       if (higher) q1 = 0.d0
 
        rz = abs(height - zp2)
 
