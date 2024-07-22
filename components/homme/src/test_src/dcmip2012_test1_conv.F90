@@ -264,26 +264,26 @@ contains
     !     test case parameters
     !----------------------------------------------------------------------- 
     real(rt), parameter :: &
-         u0      = 2.d0*pi*a/tau,    &  ! Velocity Magnitude (m/s)
-         T0      = 300.d0,           &  ! temperature (K)
-         H       = Rd * T0 / g,      &  ! scale height (m)
-         alpha   = pi/6.d0,          &  ! rotation angle (radians), 30 degrees
-         lambdam = 3.d0*pi/2.d0,     &  ! mountain longitude center point (radians)
-         phim    = 0.d0,             &  ! mountain latitude center point (radians)
-         h0      = 2000.d0,          &  ! peak height of the mountain range (m)
-         Rm      = 3.d0*pi/4.d0,     &  ! mountain radius (radians)
-         zetam   = pi/16.d0,         &  ! mountain oscillation half-width (radians)
-         lambdap = pi/2.d0,          &  ! cloud-like tracer longitude center point (radians)
-         phip    = 0.d0,             &  ! cloud-like tracer latitude center point (radians)
-         Rp      = pi/4.d0,          &  ! cloud-like tracer radius (radians)
-         zp1     = 3050.d0,          &  ! midpoint of first (lowermost) tracer (m)
-         zp2     = 5050.d0,          &  ! midpoint of second tracer (m)
-         zp3     = 8200.d0,          &  ! midpoint of third (topmost) tracer (m)
-         dzp1    = 1000.d0,          &  ! thickness of first (lowermost) tracer (m)
-         dzp2    = 1000.d0,          &  ! thickness of second tracer (m)
-         dzp3    = 400.d0,           &  ! thickness of third (topmost) tracer (m)
-         ztop    = 12000.d0,         &  ! model top (m)
-         top_t   = 0.5d0*(zp1 + zp2),&  ! top of vertical shape transition layer
+         u0      = 2.d0*pi*a/tau,       &  ! Velocity Magnitude (m/s)
+         T0      = 300.d0,              &  ! temperature (K)
+         H       = Rd * T0 / g,         &  ! scale height (m)
+         alpha   = pi/6.d0,             &  ! rotation angle (radians), 30 degrees
+         lambdam = 3.d0*pi/2.d0,        &  ! mountain longitude center point (radians)
+         phim    = 0.d0,                &  ! mountain latitude center point (radians)
+         h0      = 2000.d0,             &  ! peak height of the mountain range (m)
+         Rm      = 3.d0*pi/4.d0,        &  ! mountain radius (radians)
+         zetam   = pi/16.d0,            &  ! mountain oscillation half-width (radians)
+         lambdap = pi/2.d0,             &  ! cloud-like tracer longitude center point (radians)
+         phip    = 0.d0,                &  ! cloud-like tracer latitude center point (radians)
+         Rp      = pi/4.d0,             &  ! cloud-like tracer radius (radians)
+         zp1     = 3050.d0,             &  ! midpoint of first (lowermost) tracer (m)
+         zp2     = 5050.d0,             &  ! midpoint of second tracer (m)
+         zp3     = 8200.d0,             &  ! midpoint of third (topmost) tracer (m)
+         dzp1    = 1000.d0,             &  ! thickness of first (lowermost) tracer (m)
+         dzp2    = 1000.d0,             &  ! thickness of second tracer (m)
+         dzp3    = 400.d0,              &  ! thickness of third (topmost) tracer (m)
+         ztop    = 12000.d0,            &  ! model top (m)
+         top_t   = 0.5d0*(zp1 + zp2),   &  ! top of vertical shape transition layer
          ! For Hadley-like. Multiply w and tracer vertical extent by (ztop -
          ! top_t)/ztop to compensate for smaller domain.
          tau_h   = 1.d0 * 86400.d0,     &  ! period of motion 1 day (in s)
