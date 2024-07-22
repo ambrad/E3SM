@@ -283,12 +283,13 @@ contains
          dzp2    = 1000.d0,             &  ! thickness of second tracer (m)
          dzp3    = 400.d0,              &  ! thickness of third (topmost) tracer (m)
          ztop    = 12000.d0,            &  ! model top (m)
-         top_t   = 0.5d0*(zp1 + zp2),   &  ! top of vertical shape transition layer
+         ztop_t  = 4000.d0,             &  ! top of vertical shape transition layer
+         zbot_q  = ztop_t,              &  ! bottom of tracers; below, all q = 0
          ! For Hadley-like. Multiply w and tracer vertical extent by (ztop -
-         ! top_t)/ztop to compensate for smaller domain.
+         ! ztop_t)/ztop to compensate for smaller domain.
          tau_h   = 1.d0 * 86400.d0,     &  ! period of motion 1 day (in s)
-         f_h     = (ztop - top_t)/ztop, &
-         z1_h    = top_t + 2000.d0,     &  ! position of lower tracer bound (m)
+         f_h     = (ztop - ztop_t)/ztop,&
+         z1_h    = ztop_t + 2000.d0,    &  ! position of lower tracer bound (m)
          z2_h    = z1_h + f_h*3000.d0,  &  ! position of upper tracer bound (m)
          z0_h    = 0.5d0*(z1_h+z2_h),   &  ! midpoint (m)
          u0_h    = 120.d0,              &  ! Zonal velocity magnitude (m/s)
@@ -332,10 +333,10 @@ contains
     zbot = h0
     if (z <= zbot) then
        ztaper = 0
-    elseif (z >= top_t) then
+    elseif (z >= ztop_t) then
        ztaper = 1
     else
-       ztaper = (1 + cos(pi*(1 + (z - zbot)/(top_t - zbot))))/2
+       ztaper = (1 + cos(pi*(1 + (z - zbot)/(ztop_t - zbot))))/2
     end if
 
     select case(test_minor)
@@ -358,11 +359,11 @@ contains
        ! in the original test to increase horizontal movement over the
        ! mountains.
        u = u0_h*cos(lat)*cos(pi*time/tau_h)
-       if (z <= top_t) then
+       if (z <= ztop_t) then
           v = 0.d0
        else
           v = -(rho0/rho) * (a*w0_h*pi)/(K*ztop) * &
-               cos(lat)*sin(K*lat)*cos(pi*(z - top_t)/(ztop - top_t))*cos(pi*time/tau_h)
+               cos(lat)*sin(K*lat)*cos(pi*(z - ztop_t)/(ztop - ztop_t))*cos(pi*time/tau_h)
        end if
     end select
     u = u*ztaper
@@ -379,9 +380,8 @@ contains
     !     initialize tracers
     !-----------------------------------------------------------------------
 
-    zbot = zp2
-    z_q_shape = 0.5d0*(1 - cos(2*pi*(z - zbot)/(ztop - zbot)))
-    if (z < zbot .or. z > ztop) z_q_shape = 0.d0
+    z_q_shape = 0.5d0*(1 - cos(2*pi*(z - zbot_q)/(ztop - zbot_q)))
+    if (z < zbot_q .or. z > ztop) z_q_shape = 0.d0
 
     select case(test_minor)
     case('e')
