@@ -388,7 +388,7 @@ contains
     !-----------------------------------------------------------------------
 
     zbot = zp2
-    z_q_shape = sin(pi*(z - zbot)/(ztop - zbot))
+    z_q_shape = 0.5d0*(1 - cos(2*pi*(z - zbot)/(ztop - zbot)))
     if (z < zbot .or. z > ztop) z_q_shape = 0.d0
 
     select case(test_minor)
