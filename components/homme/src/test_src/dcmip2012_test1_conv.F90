@@ -52,7 +52,9 @@ contains
     q = 1.5d0*(1 + sin(pi*x)*sin(pi*y)*sin(pi*zeta))
   end function get_2d_cinf_tracer
 
-  subroutine q_ll2xyz(lon, lat, x, y, z)
+  subroutine ll2xyz(lon, lat, x, y, z)
+    ! Unit sphere.
+
     real(rt), intent(in) :: lon, lat
     real(rt), intent(out) :: x, y, z
 
@@ -63,7 +65,25 @@ contains
     x = cos(lon)*cosl
     y = sin(lon)*cosl
     z = sinl
-  end subroutine q_ll2xyz
+  end subroutine ll2xyz
+
+  function great_circle_dist(lon1, lat1, lon2, lat2) result(d)
+    ! Unit sphere.
+    
+    real(rt), intent(in) :: lon1, lat1, lon2, lat2
+    real(rt) :: d
+    
+    real(rt) xA, yA, zA, xB, yB, zB, cp1, cp2, cp3, cpnorm, dotprod
+    
+    call ll2xyz(lon1, lat1, xA, yA, zA)
+    call ll2xyz(lon2, lat2, xB, yB, zB)
+    cp1 = yA*zB - yB*zA
+    cp2 = xB*zA - xA*zB
+    cp3 = xA*yB - xB*yA
+    cpnorm = sqrt(cp1*cp1 + cp2*cp2 + cp3*cp3)
+    dotprod = xA*xB + yA*yB + zA*zB
+    d = atan2(cpnorm, dotprod)
+  end function great_circle_dist
 
   function q_gh(x, y, z, xi, yi, zi) result(q)
     real(rt), intent(in) :: x, y, z, xi, yi, zi
@@ -76,6 +96,15 @@ contains
     q = exp(-b*r2)
   end function q_gh
 
+  function q_cb(r, ri) result(q)
+    real(rt), intent(in) :: r, ri
+    real(rt) :: q
+
+    real(rt), parameter :: h_max = 1.d0
+    
+    q = 0.5d0*h_max*(1 + cos(pi*ri/r))
+  end function q_cb
+
   function get_2d_gaussian_hills(lon, lat) result(q)
     real(rt), intent(in) :: lon, lat
     real(rt) :: q
@@ -83,11 +112,30 @@ contains
     real(rt), parameter :: lon1 = 5.d0*(pi/6.d0), lat1 = 0, lon2 = -lon1, lat2 = 0
     real(rt) :: x1, y1, z1, x2, y2, z2, x, y, z
 
-    call q_ll2xyz(lon1, lat1, x1, y1, z1)
-    call q_ll2xyz(lon2, lat2, x2, y2, z2)
-    call q_ll2xyz(lon, lat, x, y, z)
+    call ll2xyz(lon1, lat1, x1, y1, z1)
+    call ll2xyz(lon2, lat2, x2, y2, z2)
+    call ll2xyz(lon, lat, x, y, z)
     q = q_gh(x, y, z, x1, y1, z1) + q_gh(x, y, z, x2, y2, z2)
   end function get_2d_gaussian_hills
+
+    function get_2d_cosine_bells(lon, lat) result(q)
+    real(rt), intent(in) :: lon, lat
+    real(rt) :: q
+
+    real(rt), parameter :: lon1 = 5.d0*(pi/6.d0), lat1 = 0, lon2 = -lon1, lat2 = 0, &
+         &                 r = 0.5d0, b = 0.1d0, c = 0.9d0
+    real(rt) :: h, ri
+
+    h = 0
+    ri = great_circle_dist(lon, lat, lon1, lat1)
+    if (ri < r) then
+       h = q_cb(r, ri)
+    else
+       ri = great_circle_dist(lon, lat, lon2, lat2)
+       if (ri < r) h = q_cb(r, ri)
+    end if
+    q = b + c*h
+  end function get_2d_cosine_bells
 
   subroutine test1_conv_advection_deformation( &
        time,lon,lat,p,z,zcoords,u,v,w,t,phis,ps,rho,q1,q2,q3,q4)
@@ -439,7 +487,7 @@ contains
     case('b')
        q1 = z_q_shape * get_2d_cinf_tracer(lon, lat)
        q2 = z_q_shape * get_2d_gaussian_hills(lon + lon_offset, lat)
-       q3 = 1
+       q3 = z_q_shape * get_2d_cosine_bells(lon + lon_offset, lat)
        q4 = 1
 
     case default
