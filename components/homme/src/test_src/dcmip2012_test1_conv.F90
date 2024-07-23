@@ -39,6 +39,42 @@ contains
     v = k0*sin(2.d0*lonp)*cos(lat)*cos(pi*time/tau)
   end subroutine get_nondiv2d_uv
 
+  subroutine get_nondiv3d_uv(bs, pbot, ptop, zbot, ztop, ztaper, time, lon, lat, p, z, u, v, w)
+    real(rt), intent(in ) :: bs, pbot, ptop, zbot, ztop, ztaper, time, lon, lat, p, z
+    real(rt), intent(out) :: u, v, w
+
+    real(rt), parameter :: omega0  = (2*23000.d0*pi)/tau, T0 = 300.d0
+
+    real(rt) :: s, s_p, lonp, ud, c, arg
+    
+    ! This is essentially the test 1-1 flow. The key difference in this flow
+    ! removes the factor of 2 in ud and w cos-time factors. The 2 in the
+    ! original code makes trajectories not return to their initial points.
+
+    ! Shape function in p.
+    if (p >= pbot .or. p <= ptop) then
+       s = 0
+       s_p = 0
+    else
+       c = 0.3d0
+       arg = pi*(p - ptop)/(pbot - ptop)
+       s = c*sin(arg)**3
+       s_p = (3*c*pi/(pbot - ptop))*sin(arg)**2*cos(arg)
+    end if
+    ! Translational longitude.
+    lonp = lon - 2.d0*pi*time/tau
+    ! Nondivergent 2D flow.
+    call get_nondiv2d_uv(time, lon, lat, u, v)
+    ! Taper the 2D nondiv (u,v) flow in the z direction. This does not induce
+    ! any w, and the 2D field remains nondivergent at each z.
+    u = u*ztaper
+    v = v*ztaper
+    ! Divergent flow.
+    ud = (omega0*a)*cos(lonp)*(cos(lat)**2.0)*cos(pi*time/tau)*s_p
+    u = u + ud
+    w = -((Rd*T0)/(g*p))*omega0*sin(lonp)*cos(lat)*cos(pi*time/tau)*s
+  end subroutine get_nondiv3d_uv
+
   function get_2d_cinf_tracer(lon, lat) result(q)
     real(rt), intent(in) :: lon, lat
 
@@ -323,16 +359,9 @@ contains
     real(rt), intent(in)  :: hyb             ! B coefficient for hybrid-eta coordinate
 
     logical, intent(in)  :: hybrid_eta       ! flag to indicate whether the hybrid sigma-p (eta) coordinate is used
-    ! if set to .true., then the pressure will be computed via the
-    !    hybrid coefficients hya and hyb, they need to be initialized
-    ! if set to .false. (for pressure-based models): the pressure is already pre-computed
-    !    and is an input value for this routine
-    ! for height-based models: pressure will always be computed based on the height and
-    !    hybrid_eta is not used
-    ! Note that we only use hya and hyb for the hybrid-eta coordinates
 
-    real(rt), intent(inout)  :: p            ! Pressure  (Pa)
-    real(rt), intent(inout)  :: z            ! Height (m)
+    real(rt), intent(out)  :: p              ! Pressure  (Pa)
+    real(rt), intent(out)  :: z              ! Height (m)
 
     integer , intent(in)     :: zcoords      ! 0 or 1 see below
     integer , intent(in)     :: cfv          ! 0, 1 or 2 see below
@@ -348,20 +377,6 @@ contains
     real(rt), intent(out)    :: q3           ! Tracer q3 (kg/kg)
     real(rt), intent(out)    :: q4           ! Tracer q4 (kg/kg)
 
-    ! if zcoords = 1, then we use z and output p
-    ! if zcoords = 0, then we use p
-
-    ! if cfv = 0 we assume that our horizontal velocities are not coordinate following
-    ! if cfv = 1 then our velocities follow hybrid eta coordinates and we need to specify w
-    ! if cfv = 2 then our velocities follow Gal-Chen coordinates and we need to specify w
-
-    ! In hybrid-eta coords: p = hya p0 + hyb ps
-
-    ! if other orography-following coordinates are used, the w wind needs to be newly derived for them
-
-    !-----------------------------------------------------------------------
-    !     test case parameters
-    !----------------------------------------------------------------------- 
     real(rt), parameter :: &
          u0      = 2.d0*pi*a/tau,       &  ! Velocity Magnitude (m/s)
          T0      = 300.d0,              &  ! temperature (K)
@@ -371,51 +386,47 @@ contains
          phim    = 0.d0,                &  ! mountain latitude center point (radians)
          h0      = 2000.d0,             &  ! peak height of the mountain range (m)
          Rm      = 3.d0*pi/4.d0,        &  ! mountain radius (radians)
-         zetam   = pi/16.d0,            &  ! mountain oscillation half-width (radians)
-         lambdap = pi/2.d0,             &  ! cloud-like tracer longitude center point (radians)
-         phip    = 0.d0,                &  ! cloud-like tracer latitude center point (radians)
-         Rp      = pi/4.d0,             &  ! cloud-like tracer radius (radians)
-         zp1     = 3050.d0,             &  ! midpoint of first (lowermost) tracer (m)
-         zp2     = 5050.d0,             &  ! midpoint of second tracer (m)
-         zp3     = 8200.d0,             &  ! midpoint of third (topmost) tracer (m)
-         dzp1    = 1000.d0,             &  ! thickness of first (lowermost) tracer (m)
-         dzp2    = 1000.d0,             &  ! thickness of second tracer (m)
-         dzp3    = 400.d0,              &  ! thickness of third (topmost) tracer (m)
          ztop    = 12000.d0,            &  ! model top (m)
-         ztop_t  = 4000.d0,             &  ! top of vertical shape transition layer
-         zbot_q  = ztop_t,              &  ! bottom of tracers; below, all q = 0
+         ztop_t  = 2000.d0,             &  ! transition layer
+         zbot_q  = ztop_t + 500.d0,     &  ! bottom of tracers; below, all q = 0
          lon_offset = 0.5d0*pi,         &  ! longitudinal translation of std 2d test flow and qs
-         ! For Hadley-like. Multiply w and tracer vertical extent by (ztop -
-         ! ztop_t)/ztop to compensate for smaller domain.
+         ! For Hadley-like flow. Multiply w and tracer vertical extent by (ztop
+         ! - ztop_t)/ztop to compensate for smaller domain.
          tau_h   = 1.d0 * 86400.d0,     &  ! period of motion 1 day (in s)
-         f_h     = (ztop - ztop_t)/ztop,&
-         z1_h    = ztop_t + 2000.d0,    &  ! position of lower tracer bound (m)
-         z2_h    = z1_h + f_h*3000.d0,  &  ! position of upper tracer bound (m)
+         z1_h    = ztop_t + 1000.d0,    &  ! position of lower tracer bound (m)
+         z2_h    = z1_h + 6000.d0,      &  ! position of upper tracer bound (m)
          z0_h    = 0.5d0*(z1_h+z2_h),   &  ! midpoint (m)
-         u0_h    = 120.d0,              &  ! Zonal velocity magnitude (m/s)
-         w0_h    = f_h*0.15d0,          &  ! Vertical velocity magnitude (m/s)
-         K       = 5.d0                    ! number of Hadley-like cells
+         u0_h    = 250.d0,              &  ! Zonal velocity magnitude (m/s)
+         ! w0_h is the main parameter to modify to make the test easier (smaller
+         ! w0_h) or harder (larger).
+         w0_h    = 0.05d0,              &  ! Vertical velocity magnitude (m/s)
+         ! For 3D deformational flow.
+         bs_a    = 1.0d0                   ! shape function smoothness
 
     real(rt) :: height             ! Model level heights (m)
     real(rt) :: r                  ! Great circle distance (radians)
     real(rt) :: rz                 ! height differences
     real(rt) :: zs                 ! Surface elevation (m)
-    real(rt) :: ztaper, zbot, x, y, zeta, rho0, z_q_shape
+    real(rt) :: zetam, ztaper, rho0, z_q_shape, ptop, ptop_t, c0, fl, fl_lat, gz, gz_z, fz, fz_z
 
     if (cfv /= 0)         call abortmp('test1_conv_advection_orography does not support cfv != 0')
     if (.not. hybrid_eta) call abortmp('test1_conv_advection_orography does not support !hybrid_eta')
     if (zcoords /= 0)     call abortmp('test1_conv_advection_orography does not support zcoords != 0')
 
+    ! mountain oscillation half-width (radians)
+    zetam = pi/16.d0
+    if (test_minor == 'd') zetam = pi/8.d0
+    
     r = acos(sin(phim)*sin(lat) + cos(phim)*cos(lat)*cos(lon - lambdam))
     if (r .lt. Rm) then
        zs = (h0/2.d0)*(1.d0+cos(pi*r/Rm))*cos(pi*r/zetam)**2.d0
     else
        zs = 0.d0
     endif
+    zs = -zs ! holes instead of mountains
     phis = g*zs
     ps = p0 * exp(-zs/H)
 
-    ! compute the pressure based on the surface pressure and hybrid coefficients
     p = hya*p0 + hyb*ps
     height = H * log(p0/p)
     z = height
@@ -425,19 +436,15 @@ contains
     rho = p/(Rd*T)
     rho0 = p0/(Rd*T)
 
-    ! Vertical profile to shape velocity. Bringing these to 0 just above the
-    ! mountain makes the flow physically valid (it doesn't simply slam into a
-    ! mountain or emerge from one), and it remains nondivergent. Then (u,v) has
-    ! non-0 divergence within a layer, inducing non-0 eta_dot.
-
-    zbot = h0
-    if (z <= zbot) then
+    if (z <= 0) then
        ztaper = 0
     elseif (z >= ztop_t) then
        ztaper = 1
     else
-       ztaper = (1 + cos(pi*(1 + (z - zbot)/(ztop_t - zbot))))/2
+       ztaper = (1 + cos(pi*(1 + z/ztop_t)))/2
     end if
+
+    w = 0.d0
 
     select case(test_minor)
     case('a')
@@ -449,92 +456,63 @@ contains
     case('b')
        ! 2D nondiv flow in each layer.
        call get_nondiv2d_uv(time, lon + lon_offset, lat, u, v)
+       u = u*ztaper
+       v = v*ztaper
     case('c')
        ! Moving vortices.
     case('d')
        ! 3D nondiv flow.
+       ptop_t = p0*exp(-ztop_t/H)
+       ptop = p0*exp(-ztop/H)
+       call get_nondiv3d_uv(bs_a, ptop_t, ptop, ztop_t, ztop, ztaper, &
+            &               time, lon + lon_offset, lat, p, z, u, v, w)
     case('e')
-       ! Hadley-like flow. Unlike in the original, reverse the u flow so 3D
-       ! tracers return to their original distributions. u0_h is 3x higher than
-       ! in the original test to increase horizontal movement over the
-       ! mountains.
-       u = u0_h*cos(lat)*cos(pi*time/tau_h)
-       if (z <= ztop_t) then
-          v = 0.d0
+       u = u0_h*cos(lat)*cos(pi*time/tau_h)*ztaper
+       fl = cos(lat)**2
+       fl_lat = -2*cos(lat)*sin(lat)
+       if (z <= 0) then
+          fz = 0
+          fz_z = 0
        else
-          v = -(rho0/rho) * (a*w0_h*pi)/(K*ztop) * &
-               cos(lat)*sin(K*lat)*cos(pi*(z - ztop_t)/(ztop - ztop_t))*cos(pi*time/tau_h)
+          gz = pi*z/ztop
+          gz_z = pi/ztop
+          fz = -sin(gz)**3
+          fz_z = -3*sin(gz)**2*cos(gz)*gz_z
        end if
+       c0 = w0_h*(rho0/rho)*cos(pi*time/tau_h)
+       w =    c0*(cos(lat)*fl_lat - 2*sin(lat)*fl)*fz
+       v = -a*c0*(cos(lat)*fl                    )*fz_z
     end select
-    u = u*ztaper
-    v = v*ztaper
-
-    w = 0.d0
 
     if (time > 0) then
        q1 = 0; q2 = 0; q3 = 0; q4 = 0
        return
     end if
 
-    !-----------------------------------------------------------------------
-    !     initialize tracers
-    !-----------------------------------------------------------------------
-
     z_q_shape = 0.5d0*(1 - cos(2*pi*(z - zbot_q)/(ztop - zbot_q)))
     if (z < zbot_q .or. z > ztop) z_q_shape = 0.d0
 
     select case(test_minor)
     case('e')
-       q1 = z_q_shape * get_2d_cinf_tracer(lon, lat)
-       if (height .lt. z2_h .and. height .gt. z1_h) then
-          q2 = 0.5d0 * (1.d0 + cos(2.d0*pi*(z-z0_h)/(z2_h-z1_h)))
-       else
-          q2 = 0.d0
-       end if
-       q3 = 1
-       q4 = 1
-
-    case('b')
-       q1 = z_q_shape * get_2d_cinf_tracer(lon, lat)
-       q2 = z_q_shape * get_2d_gaussian_hills(lon + lon_offset, lat)
-       q3 = z_q_shape * get_2d_cosine_bells(lon + lon_offset, lat)
-       q4 = z_q_shape * get_2d_correlated_cosine_bells(lon + lon_offset, lat)
-
-    case default
-       r = acos( sin(phip)*sin(lat) + cos(phip)*cos(lat)*cos(lon - lambdap) )
-
-       rz = abs(height - zp1)
-
-       if (rz .lt. 0.5d0*dzp1 .and. r .lt. Rp) then
-          q1 = 0.25d0*(1.d0+cos(2.d0*pi*rz/dzp1))*(1.d0+cos(pi*r/Rp))
+       if (height < z2_h .and. height > z1_h) then
+          q1 = 0.5d0 * (1.d0 + cos(2.d0*pi*(z-z0_h)/(z2_h-z1_h)))
        else
           q1 = 0.d0
-       endif
+       end if
+       q2 = q1 * get_2d_cinf_tracer(lon, lat)
+       q3 = q1 * get_2d_gaussian_hills(lon - lon_offset, lat)
+       q4 = q1 * get_2d_cosine_bells(lon - lon_offset, lat)
 
-       rz = abs(height - zp2)
-
-       if (rz .lt. 0.5d0*dzp2 .and. r .lt. Rp) then
-          q2 = 0.25d0*(1.d0+cos(2.d0*pi*rz/dzp2))*(1.d0+cos(pi*r/Rp))
-       else
-          q2 = 0.d0
-       endif
-
-       rz = abs(height - zp3)
-
-       if (rz .lt. 0.5d0*dzp3 .and. r .lt. Rp) then
-          q3 = 1.d0
-       else
-          q3 = 0.d0
-       endif
-
-       q4 = q1 + q2 + q3
-
+    case default
        q1 = z_q_shape * get_2d_cinf_tracer(lon, lat)
+       q2 = z_q_shape * get_2d_gaussian_hills(lon - lon_offset, lat)
+       q3 = z_q_shape * get_2d_cosine_bells(lon - lon_offset, lat)
+       q4 = z_q_shape * get_2d_correlated_cosine_bells(lon - lon_offset, lat)
     end select
   end subroutine test1_conv_advection_orography
 
   subroutine test1_conv_advection(test_case,time,lon,lat,hya,hyb,p,z,u,v,w,use_w,t,phis,ps,rho,q)
-    character(len=*), intent(in) :: test_case  ! dcmip2012_test1_{1,2,3a,3b,3c}_conv
+    character(len=*), intent(in) :: test_case  ! dcmip2012_test1_{1,2,3a,3b,3c,3d,3e}_conv
     real(rt), intent(in)     :: time       ! simulation time (s)
     real(rt), intent(in)     :: lon, lat   ! Longitude, latitude (radians)
     real(rt), intent(in)     :: hya, hyb   ! Hybrid a, b coefficients
@@ -565,7 +543,7 @@ contains
             time,lon,lat,p,z,zcoords,u,v,w,t,phis,ps,rho,q(1),q(2),q(3),q(4))
     case ('2')
     case('3')
-       use_w = .false.
+       !use_w = .false.
        call test1_conv_advection_orography( &
             test_minor,time,lon,lat,p,z,zcoords,cfv,use_eta,hya,hyb,u,v,w,t,phis,ps,rho, &
             q(1),q(2),q(3),q(4))
