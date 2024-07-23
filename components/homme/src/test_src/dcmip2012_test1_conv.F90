@@ -19,10 +19,10 @@ module dcmip2012_test1_conv
 
 contains
 
-  subroutine get_nondiv2d_uv(time, lon, lat, u, v, lon_offset)
+  subroutine get_nondiv2d_uv(time, lon, lat, u, v)
     ! Classic 2D nondivergent flow field.
 
-    real(rt), intent(in ) :: time, lon, lat, lon_offset
+    real(rt), intent(in ) :: time, lon, lat
     real(rt), intent(out) :: u, v
 
     real(rt), parameter :: &
@@ -32,7 +32,7 @@ contains
     real(rt) :: lonp
 
     ! translational longitude
-    lonp = lon - 2.d0*pi*time/tau + lon_offset
+    lonp = lon - 2.d0*pi*time/tau
     ! zonal velocity
     u = k0*sin(lonp)*sin(lonp)*sin(2.d0*lat)*cos(pi*time/tau) + u0*cos(lat)
     ! meridional velocity
@@ -41,12 +41,53 @@ contains
 
   function get_2d_cinf_tracer(lon, lat) result(q)
     real(rt), intent(in) :: lon, lat
-    real(rt) :: x, y, zeta, q
+
+    real(rt) :: q
+
+    real(rt) :: x, y, zeta
+
     x = cos(lat)*cos(lon)
     y = cos(lat)*sin(lon)
     zeta = sin(lat)
     q = 1.5d0*(1 + sin(pi*x)*sin(pi*y)*sin(pi*zeta))
   end function get_2d_cinf_tracer
+
+  subroutine q_ll2xyz(lon, lat, x, y, z)
+    real(rt), intent(in) :: lon, lat
+    real(rt), intent(out) :: x, y, z
+
+    real(rt) :: sinl, cosl
+
+    sinl = sin(lat)
+    cosl = cos(lat)
+    x = cos(lon)*cosl
+    y = sin(lon)*cosl
+    z = sinl
+  end subroutine q_ll2xyz
+
+  function q_gh(x, y, z, xi, yi, zi) result(q)
+    real(rt), intent(in) :: x, y, z, xi, yi, zi
+    real(rt) :: q
+
+    real(rt), parameter :: h_max = 0.95d0, b = 5.d0
+    real(rt) :: r2
+    
+    r2 = (x - xi)**2 + (y - yi)**2 + (z - zi)**2
+    q = exp(-b*r2)
+  end function q_gh
+
+  function get_2d_gaussian_hills(lon, lat) result(q)
+    real(rt), intent(in) :: lon, lat
+    real(rt) :: q
+
+    real(rt), parameter :: lon1 = 5.d0*(pi/6.d0), lat1 = 0, lon2 = -lon1, lat2 = 0
+    real(rt) :: x1, y1, z1, x2, y2, z2, x, y, z
+
+    call q_ll2xyz(lon1, lat1, x1, y1, z1)
+    call q_ll2xyz(lon2, lat2, x2, y2, z2)
+    call q_ll2xyz(lon, lat, x, y, z)
+    q = q_gh(x, y, z, x1, y1, z1) + q_gh(x, y, z, x2, y2, z2)
+  end function get_2d_gaussian_hills
 
   subroutine test1_conv_advection_deformation( &
        time,lon,lat,p,z,zcoords,u,v,w,t,phis,ps,rho,q1,q2,q3,q4)
@@ -132,7 +173,7 @@ contains
     ! factor of 2 in ud and w cos-time factors. The 2 in the original code makes
     ! trajectories not return to their initial points.
 
-    call get_nondiv2d_uv(time, lon, lat, u, v, 0.d0)
+    call get_nondiv2d_uv(time, lon, lat, u, v)
 
     ! divergent part of zonal velocity
     ud = (omega0*a) * cos(lonp) * (cos(lat)**2.0) * cos(pi*time/tau) * s_p
@@ -285,6 +326,7 @@ contains
          ztop    = 12000.d0,            &  ! model top (m)
          ztop_t  = 4000.d0,             &  ! top of vertical shape transition layer
          zbot_q  = ztop_t,              &  ! bottom of tracers; below, all q = 0
+         lon_offset = 0.5d0*pi,         &  ! longitudinal translation of std 2d test flow and qs
          ! For Hadley-like. Multiply w and tracer vertical extent by (ztop -
          ! ztop_t)/ztop to compensate for smaller domain.
          tau_h   = 1.d0 * 86400.d0,     &  ! period of motion 1 day (in s)
@@ -348,7 +390,7 @@ contains
        v = -u0*(sin(lon)*sin(alpha))
     case('b')
        ! 2D nondiv flow in each layer.
-       call get_nondiv2d_uv(time, lon, lat, u, v, 0.5d0*pi)
+       call get_nondiv2d_uv(time, lon + lon_offset, lat, u, v)
     case('c')
        ! Moving vortices.
     case('d')
@@ -396,7 +438,7 @@ contains
 
     case('b')
        q1 = z_q_shape * get_2d_cinf_tracer(lon, lat)
-       q2 = 1
+       q2 = z_q_shape * get_2d_gaussian_hills(lon + lon_offset, lat)
        q3 = 1
        q4 = 1
 
