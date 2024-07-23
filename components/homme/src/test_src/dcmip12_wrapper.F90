@@ -260,7 +260,7 @@ end subroutine
 !_____________________________________________________________________
 subroutine dcmip2012_test1_conv(test_case,elem,hybrid,hvcoord,deriv,nets,nete,time,n0,n1)
 
-  ! 3D tracer transport tests, modified to permit good convgence testing.
+  ! 3D tracer transport tests, modified to permit good convergence testing.
 
   ! Use physical constants consistent with HOMME
   use physical_constants, only: Rd => Rgas, p0
