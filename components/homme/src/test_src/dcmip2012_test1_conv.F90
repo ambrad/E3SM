@@ -118,7 +118,7 @@ contains
     q = q_gh(x, y, z, x1, y1, z1) + q_gh(x, y, z, x2, y2, z2)
   end function get_2d_gaussian_hills
 
-    function get_2d_cosine_bells(lon, lat) result(q)
+  function get_2d_cosine_bells(lon, lat) result(q)
     real(rt), intent(in) :: lon, lat
     real(rt) :: q
 
@@ -136,6 +136,16 @@ contains
     end if
     q = b + c*h
   end function get_2d_cosine_bells
+
+  function get_2d_correlated_cosine_bells(lon, lat) result(q)
+    real(rt), intent(in) :: lon, lat
+    real(rt) :: q
+
+    real(rt), parameter :: a = -0.8d0, b = 0.9d0
+
+    q = get_2d_cosine_bells(lon, lat)
+    q = a*q + b
+  end function get_2d_correlated_cosine_bells
 
   subroutine test1_conv_advection_deformation( &
        time,lon,lat,p,z,zcoords,u,v,w,t,phis,ps,rho,q1,q2,q3,q4)
@@ -488,7 +498,7 @@ contains
        q1 = z_q_shape * get_2d_cinf_tracer(lon, lat)
        q2 = z_q_shape * get_2d_gaussian_hills(lon + lon_offset, lat)
        q3 = z_q_shape * get_2d_cosine_bells(lon + lon_offset, lat)
-       q4 = 1
+       q4 = z_q_shape * get_2d_correlated_cosine_bells(lon + lon_offset, lat)
 
     case default
        r = acos( sin(phip)*sin(lat) + cos(phip)*cos(lat)*cos(lon - lambdap) )
