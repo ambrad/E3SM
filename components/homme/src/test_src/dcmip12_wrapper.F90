@@ -12,7 +12,7 @@ module dcmip12_wrapper
 use control_mod,          only: test_case, dcmip4_moist, dcmip4_X, vanalytic
 use dcmip2012_test1_2_3,  only: test1_advection_deformation, test1_advection_hadley, test1_advection_orography, &
                                 test2_steady_state_mountain, test2_schaer_mountain,test3_gravity_wave
-use dcmip2012_test1_conv, only: test1_conv_advection
+use dcmip2012_test1_conv, only: test1_conv_advection, test1_conv_print_results
 use dcmip2012_test4,      only: test4_baroclinic_wave 
 use mtests,               only: mtest_state
 use derivative_mod,       only: derivative_t, gradient_sphere
@@ -840,10 +840,6 @@ end subroutine
 subroutine dcmip2012_print_test1_conv_results(test_case, elem, tl, hvcoord, par, subnum)
   use time_mod, only: timelevel_t
   use parallel_mod, only: parallel_t
-  use dimensions_mod, only: nelemd, nlev, qsize
-  use parallel_mod, only: global_shared_buf, global_shared_sum
-  use global_norms_mod, only: wrap_repro_sum
-  use physical_constants, only: Rd => Rgas, p0
 
   character(len=*), intent(in) :: test_case
   type(element_t), intent(in) :: elem(:)
@@ -852,54 +848,7 @@ subroutine dcmip2012_print_test1_conv_results(test_case, elem, tl, hvcoord, par,
   type(parallel_t), intent(in) :: par
   integer, intent(in) :: subnum
 
-  real(rl), parameter ::       &
-       T0      = 300.d0,       &               ! temperature (K)
-       ztop    = 12000.d0,     &               ! model top (m)
-       H       = Rd * T0 / g                   ! scale height
-
-  real(rl) :: q(np,np,5), lon, lat, z, p, phis, u, v, w, T, phis_ps, ps, rho, time, &
-       hya, hyb, a, b, reldif
-  integer :: ie, k, iq, i, j
-  logical :: use_w
-
-  ! Set time to 0 to get the initial conditions.
-  time = 0._rl
-
-  do ie = 1,nelemd
-     global_shared_buf(ie,:2*qsize) = 0._rl
-     do k = 1,nlev
-        z = H * log(1.0d0/hvcoord%etam(k))
-        p = p0 * hvcoord%etam(k)
-        hya = hvcoord%hyam(k)
-        hyb = hvcoord%hybm(k)
-        do j = 1,np
-           do i = 1,np
-              lon = elem(ie)%spherep(i,j)%lon
-              lat = elem(ie)%spherep(i,j)%lat
-              select case(subnum)
-              case (1)
-                 call test1_conv_advection( &
-                      test_case,time,lon,lat,hya,hyb,p,z,u,v,w,use_w,T,phis,ps,rho,q(i,j,:))
-              end select
-           end do
-        end do
-        do iq = 1,qsize
-           global_shared_buf(ie,2*iq-1) = global_shared_buf(ie,2*iq-1) + &
-                sum(elem(ie)%spheremp*(elem(ie)%state%Q(:,:,k,iq) - q(:,:,iq))**2)
-           global_shared_buf(ie,2*iq) = global_shared_buf(ie,2*iq) + &
-                sum(elem(ie)%spheremp*q(:,:,iq)**2)
-        end do
-     end do
-  end do
-  call wrap_repro_sum(nvars=2*qsize, comm=par%comm)
-  if (par%masterproc) then
-     do iq = 1,qsize
-        a = global_shared_sum(2*iq-1)
-        b = global_shared_sum(2*iq)
-        reldif = sqrt(a/b)
-        print '(a,i2,es24.16)', 'test1_conv> Q', iq, reldif
-     end do
-  end if
+  call test1_conv_print_results(test_case, elem, tl, hvcoord, par, subnum)
 end subroutine dcmip2012_print_test1_conv_results
 
 end module dcmip12_wrapper
