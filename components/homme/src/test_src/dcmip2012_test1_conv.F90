@@ -606,7 +606,7 @@ contains
              global_shared_buf(ie,2*iq) = global_shared_buf(ie,2*iq) + &
                   sum(elem(ie)%spheremp*q(:,:,iq)**2)
              linf_num(iq) = max(linf_num(iq), &
-                  maxval(abs(elem(ie)%spheremp*(elem(ie)%state%Q(:,:,k,iq) - q(:,:,iq)))))
+                  maxval(abs(elem(ie)%state%Q(:,:,k,iq) - q(:,:,iq))))
              linf_den(iq) = max(linf_den(iq), &
                   maxval(abs(q(:,:,iq))))
           end do
