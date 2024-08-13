@@ -1196,6 +1196,7 @@ contains
        elem(ie)%derived%vn0 = elem(ie)%state%v(:,:,:,:,tl%np1)
     end do
 
+    ! Initialize dep_points_all to the Eulerian coordinates.
     do ie = nets, nete
        do j = 1, np
           do i = 1, np
@@ -1235,7 +1236,9 @@ contains
              eta_dot = zero
           end if
 
-          ! Collect the horizontal nodal velocities.
+          ! Collect the horizontal nodal velocities. vstar is the velocity at
+          ! the start of the tracer time step; vn0, at the end. Both are on
+          ! Eulerian levels.
           do t = 1, 2
              vsph(:,:,:,:,t) = (1 - alpha(t))*elem(ie)%derived%vstar + &
                   &                 alpha(t) *elem(ie)%derived%vn0
