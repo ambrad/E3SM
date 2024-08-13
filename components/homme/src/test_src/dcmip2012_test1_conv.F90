@@ -551,7 +551,7 @@ contains
     use element_mod, only: element_t
     use time_mod, only: timelevel_t
     use hybvcoord_mod, only: hvcoord_t
-    use parallel_mod, only: parallel_t
+    use parallel_mod, only: parallel_t, pmax_1d
     use dimensions_mod, only: nelemd, nlev, qsize, np
     use parallel_mod, only: global_shared_buf, global_shared_sum
     use global_norms_mod, only: wrap_repro_sum
@@ -565,20 +565,29 @@ contains
     integer, intent(in) :: subnum
 
     real(rt) :: q(np,np,5), lon, lat, z, p, phis, u, v, w, T, phis_ps, ps, rho, time, &
-         hya, hyb, a, b, reldif
+         hya, hyb, a, b, reldif, linf_num(qsize), linf_den(qsize)
     integer :: ie, k, iq, i, j
     logical :: use_w
 
     ! Set time to 0 to get the initial conditions.
     time = 0._rt
 
+    linf_num = 0
+    linf_den = 0
     do ie = 1,nelemd
        global_shared_buf(ie,:2*qsize) = 0._rt
        do k = 1,nlev
-          z = H * log(1.0d0/hvcoord%etam(k))
-          p = p0 * hvcoord%etam(k)
+          ! test1_conv_advection_orography uses these:
           hya = hvcoord%hyam(k)
           hyb = hvcoord%hybm(k)
+          ! test1_conv_advection_deformation uses these, in which ps = p0:
+          p = p0 * hvcoord%etam(k)
+          z = H * log(1.0d0/hvcoord%etam(k))
+
+          ! Normwise relative errors. We weight the horizontal direction by
+          ! sphereme but do not weight the vertical direction; each vertical
+          ! level in a column has equal weight.
+          
           do j = 1,np
              do i = 1,np
                 lon = elem(ie)%spherep(i,j)%lon
@@ -590,21 +599,34 @@ contains
                 end select
              end do
           end do
+          
           do iq = 1,qsize
              global_shared_buf(ie,2*iq-1) = global_shared_buf(ie,2*iq-1) + &
                   sum(elem(ie)%spheremp*(elem(ie)%state%Q(:,:,k,iq) - q(:,:,iq))**2)
              global_shared_buf(ie,2*iq) = global_shared_buf(ie,2*iq) + &
                   sum(elem(ie)%spheremp*q(:,:,iq)**2)
+             linf_num(iq) = max(linf_num(iq), &
+                  maxval(abs(elem(ie)%spheremp*(elem(ie)%state%Q(:,:,k,iq) - q(:,:,iq)))))
+             linf_den(iq) = max(linf_den(iq), &
+                  maxval(abs(q(:,:,iq))))
           end do
        end do
     end do
+
     call wrap_repro_sum(nvars=2*qsize, comm=par%comm)
+    do iq = 1, qsize
+       linf_num(iq) = pmax_1d(linf_num(iq:iq), par)
+       linf_den(iq) = pmax_1d(linf_den(iq:iq), par)
+    end do
+    
     if (par%masterproc) then
+       print '(a)', 'test1_conv>                          l2                    linf'
        do iq = 1,qsize
           a = global_shared_sum(2*iq-1)
           b = global_shared_sum(2*iq)
           reldif = sqrt(a/b)
-          print '(a,i2,es24.16)', 'test1_conv> Q', iq, reldif
+          print '(a,i2,es24.16,es24.16)', 'test1_conv> Q', &
+               iq, reldif, linf_num(iq)/linf_den(iq)
        end do
     end if
   end subroutine test1_conv_print_results
