@@ -13,7 +13,10 @@ module dcmip2012_test1_conv
   integer, parameter :: rt = 8
 
   real(rt), parameter :: &
-       tau     = 12.d0 * 86400.d0       ! period of motion 12 days
+       tau     = 12.d0 * 86400.d0, & ! period of motion 12 days
+       T0      = 300.d0,           & ! temperature (K)
+       ztop    = 12000.d0,         & ! model top (m)
+       H       = Rd * T0 / g         ! scale height
 
   public :: test1_conv_advection, test1_conv_print_results
 
@@ -43,7 +46,7 @@ contains
     real(rt), intent(in ) :: bs, pbot, ptop, zbot, ztop, ztaper, time, lon, lat, p, z
     real(rt), intent(out) :: u, v, w
 
-    real(rt), parameter :: omega0  = (2*23000.d0*pi)/tau, T0 = 300.d0
+    real(rt), parameter :: omega0  = (2*23000.d0*pi)/tau
 
     real(rt) :: s, s_p, lonp, ud, c, arg
     
@@ -214,17 +217,14 @@ contains
     !     test case parameters
     !----------------------------------------------------------------------- 
     real(rt), parameter ::           &
-         omega0  = (2*23000.d0*pi)/tau,  &  ! velocity magnitude
-         T0      = 300.d0,             &  ! temperature
-         H       = Rd * T0 / g,        &  ! scale height
+         omega0  = (2*23000.d0*pi)/tau, & ! velocity magnitude
          RR      = 1.d0/2.d0,          &  ! horizontal half width divided by 'a'
          ZZ      = 1000.d0,            &  ! vertical half width
          z0      = 5000.d0,            &  ! center point in z
          lambda0 = 5.d0*pi/6.d0,       &  ! center point in longitudes
          lambda1 = 7.d0*pi/6.d0,       &  ! center point in longitudes
          phi0    = 0.d0,               &  ! center point in latitudes
-         phi1    = 0.d0, &
-         ztop    = 12000.d0
+         phi1    = 0.d0
 
     real(rt) :: height                                                     ! The height of the model levels
     real(rt) :: ptop                                                       ! model top in p
@@ -379,14 +379,11 @@ contains
 
     real(rt), parameter :: &
          u0      = 2.d0*pi*a/tau,       &  ! Velocity Magnitude (m/s)
-         T0      = 300.d0,              &  ! temperature (K)
-         H       = Rd * T0 / g,         &  ! scale height (m)
          alpha   = pi/6.d0,             &  ! rotation angle (radians), 30 degrees
          lambdam = 3.d0*pi/2.d0,        &  ! mountain longitude center point (radians)
          phim    = 0.d0,                &  ! mountain latitude center point (radians)
          h0      = 2000.d0,             &  ! peak height of the mountain range (m)
          Rm      = 3.d0*pi/4.d0,        &  ! mountain radius (radians)
-         ztop    = 12000.d0,            &  ! model top (m)
          ztop_t  = 2000.d0,             &  ! transition layer
          zbot_q  = ztop_t + 500.d0,     &  ! bottom of tracers; below, all q = 0
          lon_offset = 0.5d0*pi,         &  ! longitudinal translation of std 2d test flow and qs
@@ -566,11 +563,6 @@ contains
     type(hvcoord_t), intent(in) :: hvcoord
     type(parallel_t), intent(in) :: par
     integer, intent(in) :: subnum
-
-    real(rt), parameter ::       &
-         T0      = 300.d0,       &               ! temperature (K)
-         ztop    = 12000.d0,     &               ! model top (m)
-         H       = Rd * T0 / g                   ! scale height
 
     real(rt) :: q(np,np,5), lon, lat, z, p, phis, u, v, w, T, phis_ps, ps, rho, time, &
          hya, hyb, a, b, reldif
