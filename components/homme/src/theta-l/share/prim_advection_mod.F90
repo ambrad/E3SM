@@ -13,7 +13,7 @@ module prim_advection_mod
   use time_mod, only        : TimeLevel_t
   use hybrid_mod, only      : hybrid_t
   use control_mod, only     : transport_alg
-  use sl_advection, only    : prim_advec_tracers_store_velocity_ale, &
+  use sl_advection, only    : prim_advec_tracers_observe_velocity_ale, &
        prim_advec_tracers_remap_ALE, sl_init1
   use prim_advection_base, only: prim_advec_init2, prim_advec_init1_rk2, &
        prim_advec_tracers_remap_rk2
@@ -40,14 +40,16 @@ contains
     call sl_init1(par,elem)
 
   end subroutine Prim_Advec_Init1
-  subroutine Prim_Advec_Tracers_store_velocity(elem, n, nets, nete)
+
+  subroutine Prim_Advec_Tracers_observe_velocity(elem, tl, n, nets, nete)
     type (element_t)     , intent(inout) :: elem(:)
+    type (TimeLevel_t)   , intent(in   ) :: tl
     integer              , intent(in   ) :: n       ! step in 1:dt_tracer_factor
     integer              , intent(in   ) :: nets
     integer              , intent(in   ) :: nete
 
-    if (transport_alg /= 0) call Prim_Advec_Tracers_store_velocity_ALE(elem, n, nets, nete)
-  end subroutine Prim_Advec_Tracers_store_velocity
+    if (transport_alg /= 0) call Prim_Advec_Tracers_observe_velocity_ALE(elem, tl, n, nets, nete)
+  end subroutine Prim_Advec_Tracers_observe_velocity
 
   subroutine Prim_Advec_Tracers_remap( elem , deriv , hvcoord ,  hybrid , dt , tl , nets , nete )
     implicit none

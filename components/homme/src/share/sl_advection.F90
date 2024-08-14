@@ -38,7 +38,7 @@ module sl_advection
   ! For use in make_positive. Set at initialization to a function of hvcoord%dp0.
   real(kind=real_kind) :: dp_tol, deta_tol
 
-  public :: prim_advec_tracers_store_velocity_ALE, prim_advec_tracers_remap_ALE, &
+  public :: prim_advec_tracers_observe_velocity_ALE, prim_advec_tracers_remap_ALE, &
        &    sl_init1, sl_vertically_remap_tracers, sl_unittest
 
   ! For testing
@@ -57,6 +57,13 @@ module sl_advection
   real(kind=real_kind), dimension(:,:,:,:,:), allocatable :: vnode, vdep ! (ndim,np,np,nlev,nelemd)
   real(kind=real_kind), allocatable :: dep_points_all(:,:,:,:,:)         ! (ndim,np,np,nlev,nelemd)
 
+  type :: velocity_record_t
+     integer, allocatable :: steps_to_store(:)
+     real(kind=real_kind), allocatable :: vhoriz(:,:,:,:,:) ! (np,np,2,nlev,nelemd)
+  end type velocity_record_t
+
+  type(velocity_record_t) :: vrec
+  
 contains
 
   !=================================================================================================!
@@ -180,14 +187,28 @@ contains
     if (semi_lagrange_trajectory_nsubstep > 0) trajectory_alg = 1
   end subroutine sl_get_params
 
-  subroutine prim_advec_tracers_store_velocity_ALE(elem, n, nets, nete)
+  subroutine prim_advec_tracers_observe_velocity_ALE(elem, tl, n, nets, nete)
     type (element_t)     , intent(inout) :: elem(:)
+    type (TimeLevel_t)   , intent(in   ) :: tl
     integer              , intent(in   ) :: n       ! step in 1:dt_tracer_factor
     integer              , intent(in   ) :: nets
     integer              , intent(in   ) :: nete
 
+    integer :: nstore, i, slot
+
+    return !amb in progress
+
+    nstore = size(vrec%steps_to_store)
+    slot = -1
+    do i = 1, nstore
+       if (n == vrec%steps_to_store(i)) then
+          slot = i
+          exit
+       end if
+    end do
+    if (slot == -1) return
     
-  end subroutine prim_advec_tracers_store_velocity_ALE
+  end subroutine prim_advec_tracers_observe_velocity_ALE
 
   subroutine prim_advec_tracers_remap_ALE(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete)
     use coordinate_systems_mod, only : cartesian3D_t, cartesian2D_t

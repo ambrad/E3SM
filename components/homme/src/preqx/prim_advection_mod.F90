@@ -36,15 +36,16 @@ contains
     call prim_advec_init1_rk2(par, elem)
   end subroutine Prim_Advec_Init1
 
-  subroutine Prim_Advec_Tracers_store_velocity(elem, n, nets, nete)
+  subroutine Prim_Advec_Tracers_observe_velocity(elem, tl, n, nets, nete)
     type (element_t)     , intent(inout) :: elem(:)
+    type (TimeLevel_t)   , intent(in   ) :: tl
     integer              , intent(in   ) :: n
     integer              , intent(in   ) :: nets
     integer              , intent(in   ) :: nete
 
     ! Do nothing. Only SL transport uses this routine, and it's not supported in
     ! preqx.
-  end subroutine Prim_Advec_Tracers_store_velocity
+  end subroutine Prim_Advec_Tracers_observe_velocity
 
   subroutine Prim_Advec_Tracers_remap( elem , deriv , hvcoord ,  hybrid , dt , tl , nets , nete )
     implicit none
