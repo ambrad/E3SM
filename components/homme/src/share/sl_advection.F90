@@ -38,7 +38,8 @@ module sl_advection
   ! For use in make_positive. Set at initialization to a function of hvcoord%dp0.
   real(kind=real_kind) :: dp_tol, deta_tol
 
-  public :: prim_advec_tracers_remap_ALE, sl_init1, sl_vertically_remap_tracers, sl_unittest
+  public :: prim_advec_tracers_store_velocity_ALE, prim_advec_tracers_remap_ALE, &
+       &    sl_init1, sl_vertically_remap_tracers, sl_unittest
 
   ! For testing
   public :: calc_trajectory, dep_points_all, sphere2cart
@@ -178,6 +179,15 @@ contains
     trajectory_alg = 0
     if (semi_lagrange_trajectory_nsubstep > 0) trajectory_alg = 1
   end subroutine sl_get_params
+
+  subroutine prim_advec_tracers_store_velocity_ALE(elem, n, nets, nete)
+    type (element_t)     , intent(inout) :: elem(:)
+    integer              , intent(in   ) :: n       ! step in 1:dt_tracer_factor
+    integer              , intent(in   ) :: nets
+    integer              , intent(in   ) :: nete
+
+    
+  end subroutine prim_advec_tracers_store_velocity_ALE
 
   subroutine prim_advec_tracers_remap_ALE(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete)
     use coordinate_systems_mod, only : cartesian3D_t, cartesian2D_t

@@ -1316,7 +1316,7 @@ contains
     use hybvcoord_mod,      only: hvcoord_t
     use parallel_mod,       only: abortmp
     use prim_advance_mod,   only: prim_advance_exp, applycamforcing_dynamics
-    use prim_advection_mod, only: prim_advec_tracers_remap
+    use prim_advection_mod, only: prim_advec_tracers_store_velocity, prim_advec_tracers_remap
     use reduction_mod,      only: parallelmax
     use time_mod,           only: TimeLevel_t, timelevel_update, timelevel_qdp
     use prim_state_mod,     only: prim_printstate
@@ -1417,6 +1417,7 @@ contains
                 ! not tracers.
                 call vertical_remap(hybrid, elem, hvcoord, dt_remap, tl%np1, -1, nets, nete)
              end if
+             call Prim_Advec_Tracers_store_velocity(elem, n, nets, nete)
           end if
        end if
        ! defer final timelevel update until after Q update.

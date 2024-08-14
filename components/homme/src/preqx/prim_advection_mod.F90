@@ -34,11 +34,19 @@ contains
     type (element_t) :: elem(:)
 
     call prim_advec_init1_rk2(par, elem)
-
   end subroutine Prim_Advec_Init1
 
+  subroutine Prim_Advec_Tracers_store_velocity(elem, n, nets, nete)
+    type (element_t)     , intent(inout) :: elem(:)
+    integer              , intent(in   ) :: n
+    integer              , intent(in   ) :: nets
+    integer              , intent(in   ) :: nete
 
- subroutine Prim_Advec_Tracers_remap( elem , deriv , hvcoord ,  hybrid , dt , tl , nets , nete )
+    ! Do nothing. Only SL transport uses this routine, and it's not supported in
+    ! preqx.
+  end subroutine Prim_Advec_Tracers_store_velocity
+
+  subroutine Prim_Advec_Tracers_remap( elem , deriv , hvcoord ,  hybrid , dt , tl , nets , nete )
     implicit none
     type (element_t)     , intent(inout) :: elem(:)
     type (derivative_t)  , intent(in   ) :: deriv
