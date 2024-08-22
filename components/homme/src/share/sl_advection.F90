@@ -58,8 +58,19 @@ module sl_advection
   real(kind=real_kind), allocatable :: dep_points_all(:,:,:,:,:)         ! (ndim,np,np,nlev,nelemd)
 
   type :: velocity_record_t
-     integer, allocatable :: steps_to_store(:)
-     real(kind=real_kind), allocatable :: vhoriz(:,:,:,:,:) ! (np,np,2,nlev,nelemd)
+     integer :: nvel
+     ! Times to which velocity slots correspond, in reference time [0,dtf].
+     real(kind=real_kind), allocatable :: t_vel(:) ! 1:nvel
+     ! For n = 1:dtf, obs_slots(n,:) = [slot1, slot2], -1 if unused. These are
+     ! the slots to which velocity sample n contributes. obs_slots(dtf,:) is
+     ! always -1.
+     integer, allocatable :: obs_slots(:,:)
+     ! obs_wts(n,:) = [wt1, wt2], 0 if unused.
+     real(kind=real_kind), allocatable :: obs_wts(:,:)
+     ! Substep end point n in 0:nsub uses velocity slots run_step(n),
+     ! run_step(n)+1.
+     integer, allocatable :: run_step(:)
+     real(kind=real_kind), allocatable :: vhoriz(:,:,:,:,:,:) ! (np,np,2,nlev,nelemd,nss)
   end type velocity_record_t
 
   type(velocity_record_t) :: vrec
@@ -105,7 +116,7 @@ contains
     use interpolate_mod,        only : interpolate_tracers_init
     use control_mod,            only : transport_alg, semi_lagrange_cdr_alg, cubed_sphere_map, &
          nu_q, semi_lagrange_hv_q, semi_lagrange_cdr_check, semi_lagrange_trajectory_nsubstep, &
-         geometry
+         semi_lagrange_trajectory_nvelocity, geometry, dt_remap_factor, dt_tracer_factor
     use element_state,          only : timelevels
     use coordinate_systems_mod, only : cartesian3D_t
     use perf_mod, only: t_startf, t_stopf
@@ -156,6 +167,9 @@ contains
                print *, 'COMPOSE> Running new alg even though nsubstep = 1.'
           allocate(vnode(dep_points_ndim,np,np,nlev,size(elem)), &
                &   vdep (dep_points_ndim,np,np,nlev,size(elem)))
+          call init_velocity_record(size(elem), dt_tracer_factor, dt_remap_factor, &
+               semi_lagrange_trajectory_nsubstep, semi_lagrange_trajectory_nvelocity, &
+               vrec, i)
        end if
        dp_tol = -one
        deta_tol = -one
@@ -187,6 +201,93 @@ contains
     if (semi_lagrange_trajectory_nsubstep > 0) trajectory_alg = 1
   end subroutine sl_get_params
 
+  subroutine init_velocity_record(nelemd, dtf, drf_param, nsub, nvel_param, v, error)
+    integer, intent(in) :: nelemd, dtf, drf_param, nsub, nvel_param
+    type (velocity_record_t), intent(out) :: v
+    integer, intent(out) :: error
+
+    real(kind=real_kind) :: t_avail(0:dtf), time
+    integer :: nvel, drf, navail, n, i, iav
+
+    error = 0
+    drf = drf_param
+    if (drf == 0) drf = 1 ! drf = 0 if vertically Eulerian
+    nvel = nvel_param
+    if (nvel == -1) nvel = 2 + ((nsub-1) / 2)
+    nvel = min(nvel, nsub+1)
+    navail = dtf/drf + 1
+    nvel = min(nvel, navail)
+
+    ! nsub <= 1: No substepping.
+    ! nvel <= 2: Save velocity only at endpoints, as always occurs.
+    if (nsub <= 1 .or. nvel <= 2) then
+       v%nvel = 2
+       return
+    end if
+
+    v%nvel = nvel
+    allocate(v%t_vel(nvel), v%obs_slots(dtf,2), v%obs_wts(dtf,2), &
+         &   v%run_step(0:nsub), v%vhoriz(np,np,2,nlev,nelemd,nvel-2))
+
+    ! Times at which velocity data are available.
+    t_avail(0) = 0
+    i = 1
+    do n = 1, dtf
+       if (modulo(n, drf) == 0) then
+          t_avail(i) = n
+          i = i + 1
+       end if
+    end do
+    if (i /= navail) error = 1
+
+    ! Times to which we associate velocity data.
+    do n = 1, nvel
+       if (modulo((n-1)*dtf, nvel-1) == 0) then
+          ! Cast integer values at end of calculation.
+          v%t_vel(n) = ((n-1)*dtf)/(nvel-1)
+       else
+          v%t_vel(n) = real((n-1)*dtf, real_kind)/(nvel-1)
+       end if
+    end do
+
+    ! Build the tables mapping n in 1:dtf to velocity slots to accumulate into.
+    do n = 1, dtf-1
+       v%obs_slots(n,:) = -1
+       v%obs_wts(n,:) = 0
+       if (modulo(n, drf) /= 0) cycle
+       time = n
+       do i = 1, navail-1
+          if (time == t_avail(i)) exit
+       end do
+       iav = i
+       if (iav > navail-1) error = 2
+       do i = 2, nvel-1
+          if (t_avail(iav-1) < v%t_vel(i) .and. time > v%t_vel(i)) then
+             v%obs_slots(n,1) = i
+             v%obs_wts(n,1) = (v%t_vel(i) - t_avail(iav-1))/(t_avail(iav) - t_avail(iav-1))
+          end if
+          if (time <= v%t_vel(i) .and. t_avail(iav+1) > v%t_vel(i)) then
+             v%obs_slots(n,2) = i
+             v%obs_wts(n,2) = (t_avail(iav+1) - v%t_vel(i))/(t_avail(iav+1) - t_avail(iav))
+          end if
+       end do
+    end do
+    v%obs_slots(dtf,:) = -1
+    v%obs_wts(dtf,:) = 0
+
+    ! Build table mapping n to interval to use.
+    v%run_step(0) = 1
+    v%run_step(nsub) = nvel-1
+    do n = 1, nsub-1
+       time = real(n*dtf, real_kind)/nsub
+       do i = 1, nvel-1
+          if (v%t_vel(i) <= time .and. time <= v%t_vel(i+1)) exit
+       end do
+       if (i > nvel-1) error = 4
+       v%run_step(n) = i
+    end do
+  end subroutine init_velocity_record
+
   subroutine prim_advec_tracers_observe_velocity_ALE(elem, tl, n, nets, nete)
     type (element_t)     , intent(inout) :: elem(:)
     type (TimeLevel_t)   , intent(in   ) :: tl
@@ -196,18 +297,9 @@ contains
 
     integer :: nstore, i, slot
 
-    return !amb in progress
+    if (vrec%nvel == 2) return
 
-    nstore = size(vrec%steps_to_store)
-    slot = -1
-    do i = 1, nstore
-       if (n == vrec%steps_to_store(i)) then
-          slot = i
-          exit
-       end if
-    end do
-    if (slot == -1) return
-    
+    !todo
   end subroutine prim_advec_tracers_observe_velocity_ALE
 
   subroutine prim_advec_tracers_remap_ALE(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete)
@@ -1925,22 +2017,181 @@ contains
     nerr = nerr + assert(abs(sum(deta) - one) < 1000*eps, 'deta_caas 9')
   end function test_deta_caas
 
+  function test_init_velocity_record() result(error)
+    integer :: dtf, drf, nsub, nvel, e, error
+    type (velocity_record_t) :: v
+
+    error = 0
+    dtf = 6
+    drf = 2
+    nsub = 3
+    nvel = 4
+    call init_velocity_record(1, dtf, drf, nsub, nvel, v, e)
+    call test(dtf, drf, nsub, nvel, v, e)
+    if (e > 0) error = 1
+    call cleanup(v)
+    nvel = 3
+    call init_velocity_record(1, dtf, drf, nsub, nvel, v, e)
+    call test(dtf, drf, nsub, nvel, v, e)
+    if (e > 0) error = 1
+    call cleanup(v)
+    drf = 3
+    nvel = 6
+    call init_velocity_record(1, dtf, drf, nsub, nvel, v, e)
+    call test(dtf, drf, nsub, nvel, v, e)
+    if (e > 0) error = 1
+    call cleanup(v)
+    drf = 1
+    nsub = 5
+    call init_velocity_record(1, dtf, drf, nsub, nvel, v, e)
+    call test(dtf, drf, nsub, nvel, v, e)
+    if (e > 0) error = 1
+    call cleanup(v)
+    dtf = 12
+    drf = 2
+    nsub = 3
+    nvel = -1
+    call init_velocity_record(1, dtf, drf, nsub, nvel, v, e)
+    call test(dtf, drf, nsub, nvel, v, e)
+    if (e > 0) error = 1
+    call cleanup(v)
+    nsub = 5
+    nvel = 5
+    call init_velocity_record(1, dtf, drf, nsub, nvel, v, e)
+    call test(dtf, drf, nsub, nvel, v, e)
+    if (e > 0) error = 1
+    call cleanup(v)
+    dtf = 27
+    drf = 3
+    nsub = 51
+    nvel = 99
+    call init_velocity_record(1, dtf, drf, nsub, nvel, v, e)
+    call test(dtf, drf, nsub, nvel, v, e)
+    if (e > 0) error = 1
+    call cleanup(v)
+
+  contains
+    subroutine test(dtf, drf, nsub, nvel, v, error)
+      integer, intent(in) :: dtf, drf, nsub, nvel, error
+      type (velocity_record_t), intent(in) :: v
+
+      real(kind=real_kind) :: endslots(2), ys(dtf), a, x, y, y0, y1, &
+           &                  xsup(2), ysup(2)
+      integer :: n, e, i, k
+
+      e = 0
+
+      if (modulo(dtf, drf) /= 0) then
+         print *, 'TESTING ERROR: dtf % drf == 0 is required:', dtf, drf
+      end if
+
+      ! Check that t_vel is monotonically increasing.
+      do n = 2, v%nvel
+         if (v%t_vel(n) <= v%t_vel(n-1)) e = 1
+      end do
+
+      ! Check that obs_slots does not reference end points. This should not
+      ! happen b/c nvel <= navail and observations are uniformly spaced.
+      do n = 1, dtf
+         do i = 1, 2
+            if (v%obs_slots(n,i) == 0 .or. v%obs_slots(n,i) == dtf) e = 11
+         end do
+      end do
+
+      ! Check that weights sum to 1.
+      ys = 0
+      do n = 1, dtf
+         do i = 1, 2
+            if (v%obs_slots(n,i) > 0) then
+               ys(v%obs_slots(n,i)) = ys(v%obs_slots(n,i)) + v%obs_wts(n,i)
+            end if
+         end do
+      end do
+      do i = 2, v%nvel-1
+         if (abs(ys(i) - 1) > 1e3*eps) e = 12
+      end do
+
+      ! Test for exact interp of an affine function.
+      endslots(1) = tfn(0.d0)
+      endslots(2) = tfn(real(dtf, real_kind))
+      ys(:) = 0
+      do n = 1, dtf
+         if (modulo(n, drf) /= 0) cycle
+         y = tfn(real(n, real_kind))
+         do i = 1, 2
+            if (v%obs_slots(n,i) == -1) cycle
+            ys(v%obs_slots(n,i)) = ys(v%obs_slots(n,i)) + v%obs_wts(n,i)*y
+         end do
+      end do
+      do n = 1, nsub
+         do i = 1, 2
+            xsup(i) = real((n-2+i)*dtf, real_kind)/nsub
+            k = v%run_step(n-2+i)
+            if (k == 1) then
+               y0 = endslots(1)
+            else
+               y0 = ys(k)
+            end if
+            if (k == v%nvel-1) then
+               y1 = endslots(2)
+            else
+               y1 = ys(k+1)
+            end if
+            ysup(i) = ((v%t_vel(k+1) - xsup(i))*y0 + (xsup(i) - v%t_vel(k))*y1) / &
+                 &    (v%t_vel(k+1) - v%t_vel(k))
+         end do
+         do i = 0, 10
+            a = real(i, real_kind)/10
+            x = (1-a)*xsup(1) + a*xsup(2)
+            y = (1-a)*ysup(1) + a*ysup(2)
+            if (abs(y - tfn(x)) > 1e3*eps) e = 2
+         end do
+      end do
+
+      if (error > 0 .or. e > 0) then
+         print *, 'ERROR', error, e
+         print '(a,i3,a,i3,a,i3,a,i3,a,i3)', 'dtf',dtf,' drf',drf,' nsub',nsub, &
+              ' nvel',nvel,' v%nvel',v%nvel
+         print '(a,99es11.3)', '  t_vel', (v%t_vel(n),n=1,v%nvel)
+         do n = 1, dtf-1
+            print '(3i3,2f5.2)', n, v%obs_slots(n,:), v%obs_wts(n,:)
+         end do
+         do n = 0, nsub
+            print '(i3,i3)', n, v%run_step(n)
+         end do
+      end if
+    end subroutine test
+
+    function tfn(x) result(y)
+      real(kind=real_kind), intent(in) :: x
+      real(kind=real_kind) :: y
+
+      y = 7.1*x - 11.5
+    end function tfn
+
+    subroutine cleanup(v)
+      type (velocity_record_t), intent(inout) :: v
+      deallocate(v%t_vel, v%obs_slots, v%obs_wts, v%run_step, v%vhoriz)
+    end subroutine cleanup
+  end function test_init_velocity_record
+
   subroutine sl_unittest(par, hvcoord)
     use kinds, only: iulog
 
     type (parallel_t), intent(in) :: par
     type (hvcoord_t), intent(in) :: hvcoord
 
-    integer :: n(5)
+    integer :: n(6)
 
     n(1) = test_lagrange()
     n(2) = test_reconstruct_and_limit_dp()
     n(3) = test_deta_caas()
     n(4) = test_linterp()
     n(5) = test_eta_to_dp(hvcoord)
+    n(6) = test_init_velocity_record()
 
     if (sum(n) > 0 .and. par%masterproc) then
-       write(iulog,'(a,5i2)') 'COMPOSE> sl_unittest FAIL ', n
+       write(iulog,'(a,6i2)') 'COMPOSE> sl_unittest FAIL ', n
     end if
   end subroutine sl_unittest
 
