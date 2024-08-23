@@ -70,7 +70,9 @@ module sl_advection
      ! Substep end point n in 0:nsub uses velocity slots run_step(n),
      ! run_step(n)+1.
      integer, allocatable :: run_step(:)
-     real(kind=real_kind), allocatable :: vhoriz(:,:,:,:,:,:) ! (np,np,2,nlev,nelemd,nss)
+     ! Store state%v and state%dp3d at t_vel points.
+     real(kind=real_kind), allocatable :: vel(:,:,:,:,:,:) ! (np,np,2,nlev,nelemd,nss)
+     real(kind=real_kind), allocatable :: dp (:,:,:,:,:  ) ! (np,np,  nlev,nelemd,nss)
   end type velocity_record_t
 
   type(velocity_record_t) :: vrec
@@ -226,8 +228,8 @@ contains
     end if
 
     v%nvel = nvel
-    allocate(v%t_vel(nvel), v%obs_slots(dtf,2), v%obs_wts(dtf,2), &
-         &   v%run_step(0:nsub), v%vhoriz(np,np,2,nlev,nelemd,nvel-2))
+    allocate(v%t_vel(nvel), v%obs_slots(dtf,2), v%obs_wts(dtf,2), v%run_step(0:nsub), &
+         &   v%vel(np,np,2,nlev,nelemd,nvel-2), v%dp(np,np,nlev,nelemd,nvel-2))
 
     ! Times at which velocity data are available.
     t_avail(0) = 0
@@ -295,14 +297,15 @@ contains
     integer              , intent(in   ) :: nets
     integer              , intent(in   ) :: nete
 
-    integer :: nstore, islot, slot, ie
+    integer :: nstore, islot, slot, k, ie
 
     if (vrec%nvel == 2) return
 
     if (n == 1) then
        do ie = nets, nete
           do slot = 1, vrec%nvel-2
-             vrec%vhoriz(:,:,:,:,ie,slot) = 0
+             vrec%vel(:,:,:,:,ie,slot) = 0
+             vrec%dp (:,:,  :,ie,slot) = 0
           end do
        end do
     end if
@@ -311,8 +314,12 @@ contains
        slot = vrec%obs_slots(n,islot)
        if (slot == -1) cycle
        do ie = nets, nete
-          vrec%vhoriz(:,:,:,:,ie,slot) = vrec%vhoriz(:,:,:,:,ie,slot) + &
-               vrec%obs_wts(n,islot) * elem(ie)%state%v(:,:,:,:,tl%np1)
+          do k = 1, nlev
+             vrec%vel(:,:,:,k,ie,slot) = vrec%vel(:,:,:,k,ie,slot) + &
+                  vrec%obs_wts(n,islot) * elem(ie)%state%v(:,:,:,k,tl%np1)
+             vrec%dp (:,:,  k,ie,slot) = vrec%dp (:,:,  k,ie,slot) + &
+                  vrec%obs_wts(n,islot) * elem(ie)%state%dp3d(:,:,k,tl%np1)
+          end do
        end do
     end do
   end subroutine prim_advec_tracers_observe_velocity_ALE
@@ -1369,7 +1376,10 @@ contains
           !     1/2 (v(p1,t0) + v(p1,t1) - dt v(p1,t1) grad v(p1,t0)).
 
           if (independent_time_steps) then
-             call calc_eta_dot_ref_mid(elem(ie), deriv, tl, hvcoord, alpha, eta_dot)
+             call calc_eta_dot_ref_mid(elem(ie), deriv, tl, hvcoord, alpha, &
+                  elem(ie)%derived%vstar, elem(ie)%derived%dp, &
+                  elem(ie)%derived%vn0, elem(ie)%state%dp3d(:,:,:,tl%np1), &
+                  eta_dot)
           else
              eta_dot = zero
           end if
@@ -1443,7 +1453,7 @@ contains
     call t_stopf('SLMM_trajectory')
   end subroutine ctfull
 
-  subroutine calc_eta_dot_ref_mid(elem, deriv, tl, hvcoord, alpha, eta_dot)
+  subroutine calc_eta_dot_ref_mid(elem, deriv, tl, hvcoord, alpha, v1, dp1, v2, dp2, eta_dot)
     ! Compute eta_dot at midpoint nodes at the start and end of the substep.
 
     type (element_t), intent(in) :: elem
@@ -1451,6 +1461,8 @@ contains
     type (TimeLevel_t), intent(in) :: tl
     type (hvcoord_t), intent(in) :: hvcoord
     real(real_kind), intent(in) :: alpha(2)
+    real(real_kind), dimension(np,np,2,nlev), intent(in) :: v1, v2
+    real(real_kind), dimension(np,np,nlev), intent(in) :: dp1, dp2
     real(real_kind), intent(out) :: eta_dot(np,np,nlevp,2)
 
     real(real_kind) :: vdp(np,np,2), w1(np,np)
@@ -1461,10 +1473,8 @@ contains
        eta_dot(:,:,1,t) = zero
        do k = 1,nlev
           do d = 1,2
-             vdp(:,:,d) = (1 - alpha(t))*elem%derived%vstar(:,:,d,k)* &
-                  &                      elem%derived%dp(:,:,k) + &
-                  &            alpha(t) *elem%derived%vn0(:,:,d,k)* &
-                  &                      elem%state%dp3d(:,:,k,tl%np1)
+             vdp(:,:,d) = (1 - alpha(t))*v1(:,:,d,k)*dp1(:,:,k) + &
+                  &            alpha(t) *v2(:,:,d,k)*dp2(:,:,k)
           end do
           w1 = divergence_sphere(vdp, deriv, elem)
           eta_dot(:,:,k+1,t) = eta_dot(:,:,k,t) + w1
@@ -1480,8 +1490,8 @@ contains
        !            a= eta_dot_dpdn diff(eta)/(diff(A) p0 + diff(B) ps).
        !   Compute ps.
        w1 = hvcoord%hyai(1)*hvcoord%ps0 + &
-            &    (1 - alpha(t))*sum(elem%derived%dp(:,:,:), 3) + &
-            &         alpha(t) *sum(elem%state%dp3d(:,:,:,tl%np1), 3)
+            &    (1 - alpha(t))*sum(dp1, 3) + &
+            &         alpha(t) *sum(dp2, 3)
        do k = 1,nlev
           eta_dot(:,:,k,t) = half*(eta_dot(:,:,k,t) + eta_dot(:,:,k+1,t)) &
                &             * (hvcoord%etai(k+1) - hvcoord%etai(k)) &
@@ -2186,7 +2196,7 @@ contains
 
     subroutine cleanup(v)
       type (velocity_record_t), intent(inout) :: v
-      deallocate(v%t_vel, v%obs_slots, v%obs_wts, v%run_step, v%vhoriz)
+      deallocate(v%t_vel, v%obs_slots, v%obs_wts, v%run_step, v%vel, v%dp)
     end subroutine cleanup
   end function test_init_velocity_record
 
