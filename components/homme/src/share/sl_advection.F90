@@ -295,11 +295,26 @@ contains
     integer              , intent(in   ) :: nets
     integer              , intent(in   ) :: nete
 
-    integer :: nstore, i, slot
+    integer :: nstore, islot, slot, ie
 
     if (vrec%nvel == 2) return
 
-    !todo
+    if (n == 1) then
+       do ie = nets, nete
+          do slot = 1, vrec%nvel-2
+             vrec%vhoriz(:,:,:,:,ie,slot) = 0
+          end do
+       end do
+    end if
+
+    do islot = 1, 2
+       slot = vrec%obs_slots(n,islot)
+       if (slot == -1) cycle
+       do ie = nets, nete
+          vrec%vhoriz(:,:,:,:,ie,slot) = vrec%vhoriz(:,:,:,:,ie,slot) + &
+               vrec%obs_wts(n,islot) * elem(ie)%state%v(:,:,:,:,tl%np1)
+       end do
+    end do
   end subroutine prim_advec_tracers_observe_velocity_ALE
 
   subroutine prim_advec_tracers_remap_ALE(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete)
