@@ -1330,8 +1330,7 @@ contains
 
     type (cartesian3D_t) :: c3d
     integer :: step, ie, d, i, j, k, t, info, nlyr, k1, k2
-    real(real_kind) :: alpha(2), dtsub, uxyz(np,np,3), norm, p(3), &
-         vsph(np,np,2,nlev,2), eta_dot(np,np,nlevp,2)
+    real(real_kind) :: alpha(2), dtsub, uxyz(np,np,3), norm, p(3)
 
     call t_startf('SLMM_trajectory')
 
@@ -1364,43 +1363,15 @@ contains
 
     dtsub = dt / nsubstep
     do step = 1, nsubstep
+       ! Fill vnode.
        alpha(1) = real(nsubstep - step    , real_kind)/nsubstep
        alpha(2) = real(nsubstep - step + 1, real_kind)/nsubstep
        do ie = nets, nete
-          ! Evaluate a formula to provide an estimate of nodal velocities that
-          ! are use to create a 2nd-order update to the trajectory. The
-          ! fundamental formula for the update in position p from arrival point
-          ! p1 to departure point p0 is
-          !     p0 = p1 - dt/2 (v(p1,t0) + v(p1,t1) - dt v(p1,t1) grad v(p1,t0)).
-          ! Here we compute the velocity estimate at the nodes:
-          !     1/2 (v(p1,t0) + v(p1,t1) - dt v(p1,t1) grad v(p1,t0)).
-
-          if (independent_time_steps) then
-             call calc_eta_dot_ref_mid(elem(ie), deriv, tl, hvcoord, alpha, &
-                  elem(ie)%derived%vstar, elem(ie)%derived%dp, &
-                  elem(ie)%derived%vn0, elem(ie)%state%dp3d(:,:,:,tl%np1), &
-                  eta_dot)
-          else
-             eta_dot = zero
-          end if
-
-          ! Collect the horizontal nodal velocities. vstar is the velocity at
-          ! the start of the tracer time step; vn0, at the end. Both are on
-          ! Eulerian levels.
-          do t = 1, 2
-             vsph(:,:,:,:,t) = (1 - alpha(t))*elem(ie)%derived%vstar + &
-                  &                 alpha(t) *elem(ie)%derived%vn0
-          end do
-
-          ! Given the vertical and horizontal nodal velocities at time
-          ! endpoints, evaluate the velocity estimate formula, providing the
-          ! final horizontal and vertical velocity estimates at midpoint nodes.
-          call calc_vel_horiz_formula_node_ref_mid( &
-               &  elem(ie), deriv, hvcoord, dtsub, vsph, eta_dot, vnode(:,:,:,:,ie))
-          if (independent_time_steps) then
-             call calc_eta_dot_formula_node_ref_mid( &
-                  elem(ie), deriv, hvcoord, dtsub, vsph, eta_dot, vnode(:,:,:,:,ie))
-          end if
+          call calc_nodal_velocities(elem(ie), deriv, hvcoord, tl, &
+               independent_time_steps, dtsub, alpha, &
+               elem(ie)%derived%vstar, elem(ie)%derived%dp, &
+               elem(ie)%derived%vn0, elem(ie)%state%dp3d(:,:,:,tl%np1), &
+               vnode(:,:,:,:,ie))
        end do
 
        call slmm_calc_trajectory(nets, nete, step, dtsub, dep_points_all, &
@@ -1452,6 +1423,54 @@ contains
 
     call t_stopf('SLMM_trajectory')
   end subroutine ctfull
+
+  subroutine calc_nodal_velocities(elem, deriv, hvcoord, tl, &
+       independent_time_steps, dtsub, alpha, v1, dp1, v2, dp2, vnode)
+    ! Evaluate a formula to provide an estimate of nodal velocities that
+    ! are use to create a 2nd-order update to the trajectory. The
+    ! fundamental formula for the update in position p from arrival point
+    ! p1 to departure point p0 is
+    !     p0 = p1 - dt/2 (v(p1,t0) + v(p1,t1) - dt v(p1,t1) grad v(p1,t0)).
+    ! Here we compute the velocity estimate at the nodes:
+    !     1/2 (v(p1,t0) + v(p1,t1) - dt v(p1,t1) grad v(p1,t0)).
+
+    type (element_t), intent(in) :: elem
+    type (derivative_t), intent(in) :: deriv
+    type (hvcoord_t), intent(in) :: hvcoord
+    type (TimeLevel_t), intent(in) :: tl
+    logical, intent(in) :: independent_time_steps
+    real(real_kind), intent(in) :: dtsub, alpha(2)
+    real(real_kind), dimension(np,np,2,nlev), intent(in) :: v1, v2
+    real(real_kind), dimension(np,np,nlev), intent(in) :: dp1, dp2
+    real(real_kind), intent(out) :: vnode(:,:,:,:)
+
+    real(real_kind) :: vsph(np,np,2,nlev,2), eta_dot(np,np,nlevp,2)
+    integer :: t
+
+    if (independent_time_steps) then
+       call calc_eta_dot_ref_mid(elem, deriv, tl, hvcoord, alpha, &
+            &                    v1, dp1, v2, dp2, eta_dot)
+    else
+       eta_dot = zero
+    end if
+
+    ! Collect the horizontal nodal velocities. vstar is the velocity at
+    ! the start of the tracer time step; vn0, at the end. Both are on
+    ! Eulerian levels.
+    do t = 1, 2
+       vsph(:,:,:,:,t) = (1 - alpha(t))*v1 + alpha(t)*v2
+    end do
+
+    ! Given the vertical and horizontal nodal velocities at time
+    ! endpoints, evaluate the velocity estimate formula, providing the
+    ! final horizontal and vertical velocity estimates at midpoint nodes.
+    call calc_vel_horiz_formula_node_ref_mid( &
+         &  elem, deriv, hvcoord, dtsub, vsph, eta_dot, vnode)
+    if (independent_time_steps) then
+       call calc_eta_dot_formula_node_ref_mid( &
+            elem, deriv, hvcoord, dtsub, vsph, eta_dot, vnode)
+    end if
+  end subroutine calc_nodal_velocities
 
   subroutine calc_eta_dot_ref_mid(elem, deriv, tl, hvcoord, alpha, v1, dp1, v2, dp2, eta_dot)
     ! Compute eta_dot at midpoint nodes at the start and end of the substep.
