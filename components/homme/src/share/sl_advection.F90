@@ -71,8 +71,8 @@ module sl_advection
      ! run_step(n)+1.
      integer, allocatable :: run_step(:)
      ! Store state%v and state%dp3d at t_vel points.
-     real(kind=real_kind), allocatable :: vel(:,:,:,:,:,:) ! (np,np,2,nlev,nelemd,nss)
-     real(kind=real_kind), allocatable :: dp (:,:,:,:,:  ) ! (np,np,  nlev,nelemd,nss)
+     real(kind=real_kind), allocatable :: vel(:,:,:,:,:,:) ! (np,np,2,nlev,nss,nelemd)
+     real(kind=real_kind), allocatable :: dp (:,:,  :,:,:) ! (np,np,  nlev,nss,nelemd)
   end type velocity_record_t
 
   type(velocity_record_t) :: vrec
@@ -229,7 +229,7 @@ contains
 
     v%nvel = nvel
     allocate(v%t_vel(nvel), v%obs_slots(dtf,2), v%obs_wts(dtf,2), v%run_step(0:nsub), &
-         &   v%vel(np,np,2,nlev,nelemd,nvel-2), v%dp(np,np,nlev,nelemd,nvel-2))
+         &   v%vel(np,np,2,nlev,nvel-2,nelemd), v%dp(np,np,nlev,nvel-2,nelemd))
 
     ! Times at which velocity data are available.
     t_avail(0) = 0
@@ -304,8 +304,8 @@ contains
     if (n == 1) then
        do ie = nets, nete
           do slot = 1, vrec%nvel-2
-             vrec%vel(:,:,:,:,ie,slot) = 0
-             vrec%dp (:,:,  :,ie,slot) = 0
+             vrec%vel(:,:,:,:,slot,ie) = 0
+             vrec%dp (:,:,  :,slot,ie) = 0
           end do
        end do
     end if
@@ -315,9 +315,9 @@ contains
        if (slot == -1) cycle
        do ie = nets, nete
           do k = 1, nlev
-             vrec%vel(:,:,:,k,ie,slot) = vrec%vel(:,:,:,k,ie,slot) + &
+             vrec%vel(:,:,:,k,slot,ie) = vrec%vel(:,:,:,k,slot,ie) + &
                   vrec%obs_wts(n,islot) * elem(ie)%state%v(:,:,:,k,tl%np1)
-             vrec%dp (:,:,  k,ie,slot) = vrec%dp (:,:,  k,ie,slot) + &
+             vrec%dp (:,:,  k,slot,ie) = vrec%dp (:,:,  k,slot,ie) + &
                   vrec%obs_wts(n,islot) * elem(ie)%state%dp3d(:,:,k,tl%np1)
           end do
        end do
@@ -1330,6 +1330,9 @@ contains
     integer :: step, ie, info
     real(real_kind) :: alpha(2), dtsub
 
+    integer :: i, k, os
+    real(real_kind) :: time, vs(np,np,2,nlev,3), dps(np,np,nlev,3)
+
     call t_startf('SLMM_trajectory')
 
     call slmm_set_hvcoord(hvcoord%etam)
@@ -1344,16 +1347,49 @@ contains
     dtsub = dt / nsubstep
     do step = 1, nsubstep
        ! Fill vnode.
-#pragma message "PICK UP: two cases, nvel = 2 and nvel > 2"
-       alpha(1) = real(nsubstep - step    , real_kind)/nsubstep
-       alpha(2) = real(nsubstep - step + 1, real_kind)/nsubstep
-       do ie = nets, nete
-          call calc_nodal_velocities(elem(ie), deriv, hvcoord, tl, &
-               independent_time_steps, dtsub, alpha, &
-               elem(ie)%derived%vstar, elem(ie)%derived%dp, &
-               elem(ie)%derived%vn0, elem(ie)%state%dp3d(:,:,:,tl%np1), &
-               vnode(:,:,:,:,ie))
-       end do
+       if (vrec%nvel == 2) then
+          alpha(1) = real(nsubstep - step    , real_kind)/nsubstep
+          alpha(2) = real(nsubstep - step + 1, real_kind)/nsubstep
+          do ie = nets, nete
+             call calc_nodal_velocities(elem(ie), deriv, hvcoord, tl, &
+                  independent_time_steps, dtsub, alpha, &
+                  elem(ie)%derived%vstar, elem(ie)%derived%dp, &
+                  elem(ie)%derived%vn0, elem(ie)%state%dp3d(:,:,:,tl%np1), &
+                  vnode(:,:,:,:,ie))
+          end do
+       else
+          do ie = nets, nete
+             do i = 1, 2
+                os = i-1
+                time = ((step-2+i)*vrec%t_vel(vrec%nvel))/nsubstep
+                k = vrec%run_step(step-2+i)
+                if (k == 1) then
+                   vs(:,:,:,:,os+1) = elem(ie)%derived%vstar
+                   dps(:,:,:,os+1) = elem(ie)%derived%dp
+                else
+                   vs(:,:,:,:,os+1) = vrec%vel(:,:,:,:,k,ie)
+                   dps(:,:,:,os+1) = vrec%dp(:,:,:,k,ie)
+                end if
+                if (k == vrec%nvel-1) then
+                   vs(:,:,:,:,os+2) = elem(ie)%derived%vn0
+                   dps(:,:,:,os+2) = elem(ie)%state%dp3d(:,:,:,tl%np1)
+                else
+                   vs(:,:,:,:,os+2) = vrec%vel(:,:,:,:,k+1,ie)
+                   dps(:,:,:,os+2) = vrec%dp(:,:,:,k+1,ie)
+                end if
+                alpha(1) = (vrec%t_vel(k+1) - time)/(vrec%t_vel(k+1) - vrec%t_vel(k))
+                alpha(2) = 1 - alpha(1)
+                vs(:,:,:,:,os+1) = alpha(1)*vs(:,:,:,:,os+1) + alpha(2)*vs(:,:,:,:,os+2)
+                dps(:,:,:, os+1) = alpha(1)*dps(:,:,:, os+1) + alpha(2)*dps(:,:,:, os+2)
+             end do
+             alpha(1) = 0
+             alpha(2) = 1
+             call calc_nodal_velocities(elem(ie), deriv, hvcoord, tl, &
+                  independent_time_steps, dtsub, alpha, &
+                  vs(:,:,:,:,1), dps(:,:,:,1), vs(:,:,:,:,2), dps(:,:,:,2), &
+                  vnode(:,:,:,:,ie))
+          end do
+       end if
 
        call slmm_calc_trajectory(nets, nete, step, dtsub, dep_points_all, &
             &                    dep_points_ndim, vnode, vdep, info)
