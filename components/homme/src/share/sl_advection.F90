@@ -1317,7 +1317,6 @@ contains
 
   subroutine ctfull(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete, nsubstep, &
        independent_time_steps)
-    use physical_constants, only: scale_factor
 
     type (element_t), intent(inout) :: elem(:)
     type (derivative_t), intent(in) :: deriv
@@ -1328,9 +1327,8 @@ contains
     integer, intent(in) :: nets, nete, nsubstep
     logical, intent(in) :: independent_time_steps
 
-    type (cartesian3D_t) :: c3d
-    integer :: step, ie, d, i, j, k, t, info, nlyr, k1, k2
-    real(real_kind) :: alpha(2), dtsub, uxyz(np,np,3), norm, p(3)
+    integer :: step, ie, info
+    real(real_kind) :: alpha(2), dtsub
 
     call t_startf('SLMM_trajectory')
 
@@ -1340,30 +1338,13 @@ contains
        elem(ie)%derived%vn0 = elem(ie)%state%v(:,:,:,:,tl%np1)
     end do
 
-    ! Initialize dep_points_all to the Eulerian coordinates.
-    do ie = nets, nete
-       do j = 1, np
-          do i = 1, np
-             call sphere2cart(elem(ie)%spherep(i,j), c3d)
-             dep_points_all(1,i,j,1,ie) = c3d%x
-             dep_points_all(2,i,j,1,ie) = c3d%y
-             dep_points_all(3,i,j,1,ie) = c3d%z
-             do k = 2, nlev
-                dep_points_all(1:3,i,j,k,ie) = dep_points_all(1:3,i,j,1,ie)
-             end do
-             if (independent_time_steps) then
-                dep_points_all(4,i,j,1,ie) = hvcoord%etam(1)
-                do k = 2, nlev
-                   dep_points_all(4,i,j,k,ie) = hvcoord%etam(k)
-                end do
-             end if
-          end do
-       end do
-    end do
+    ! Set dep_points_all to level-midpoint arrival points.
+    call init_dep_points_all(elem, hvcoord, nets, nete, independent_time_steps)
 
     dtsub = dt / nsubstep
     do step = 1, nsubstep
        ! Fill vnode.
+#pragma message "PICK UP: two cases, nvel = 2 and nvel > 2"
        alpha(1) = real(nsubstep - step    , real_kind)/nsubstep
        alpha(2) = real(nsubstep - step + 1, real_kind)/nsubstep
        do ie = nets, nete
@@ -1385,29 +1366,8 @@ contains
           call dss_vdep(elem, nets, nete, hybrid, vdep)
        end if
 
-       ! Determine the departure points corresponding to the reference grid's
-       ! arrival midpoints.
-       do ie = nets, nete
-          do k = 1, nlev
-             do j = 1, np
-                do i = 1, np
-                   ! Update horizontal position.
-                   p = dep_points_all(1:3,i,j,k,ie)
-                   p = p - dtsub*vdep(1:3,i,j,k,ie)/scale_factor
-                   if (is_sphere) then
-                      norm = sqrt(p(1)*p(1) + p(2)*p(2) + p(3)*p(3))
-                      p = p/norm
-                   end if
-                   dep_points_all(1:3,i,j,k,ie) = p
-                   if (independent_time_steps) then
-                      ! Update vertical position.
-                      dep_points_all(4,i,j,k,ie) = dep_points_all(4,i,j,k,ie) - &
-                           &                       dtsub*vdep(4,i,j,k,ie)
-                   end if
-                end do
-             end do
-          end do
-       end do
+       ! Using vdep, update dep_points_all to departure points.
+       call update_dep_points_all(independent_time_steps, dtsub, nets, nete)
     end do
 
     if (independent_time_steps) then
@@ -1423,6 +1383,38 @@ contains
 
     call t_stopf('SLMM_trajectory')
   end subroutine ctfull
+
+  subroutine init_dep_points_all(elem, hvcoord, nets, nete, independent_time_steps)
+    ! Initialize dep_points_all to the Eulerian coordinates.
+
+    type (element_t), intent(inout) :: elem(:)
+    type (hvcoord_t), intent(in) :: hvcoord
+    integer, intent(in) :: nets, nete
+    logical, intent(in) :: independent_time_steps
+
+    type (cartesian3D_t) :: c3d
+    integer :: ie, i, j, k
+    
+    do ie = nets, nete
+       do j = 1, np
+          do i = 1, np
+             call sphere2cart(elem(ie)%spherep(i,j), c3d)
+             dep_points_all(1,i,j,1,ie) = c3d%x
+             dep_points_all(2,i,j,1,ie) = c3d%y
+             dep_points_all(3,i,j,1,ie) = c3d%z
+             do k = 2, nlev
+                dep_points_all(1:3,i,j,k,ie) = dep_points_all(1:3,i,j,1,ie)
+             end do
+             if (independent_time_steps) then
+                dep_points_all(4,i,j,1,ie) = hvcoord%etam(1)
+                do k = 2, nlev
+                   dep_points_all(4,i,j,k,ie) = hvcoord%etam(k)
+                end do
+             end if
+          end do
+       end do
+    end do
+  end subroutine init_dep_points_all
 
   subroutine calc_nodal_velocities(elem, deriv, hvcoord, tl, &
        independent_time_steps, dtsub, alpha, v1, dp1, v2, dp2, vnode)
@@ -1610,6 +1602,42 @@ contains
             &              + eta_dot(:,:,k,1)*w1))
     end do
   end subroutine calc_eta_dot_formula_node_ref_mid
+
+  subroutine update_dep_points_all(independent_time_steps, dtsub, nets, nete)
+    ! Determine the departure points corresponding to the reference grid's
+    ! arrival midpoints. Reads and writes dep_points_all. Reads vdep.
+    
+    use physical_constants, only: scale_factor
+
+    logical, intent(in) :: independent_time_steps
+    real(real_kind), intent(in) :: dtsub
+    integer, intent(in) :: nets, nete
+
+    real(real_kind) :: norm, p(3)
+    integer :: ie, k, j, i
+
+    do ie = nets, nete
+       do k = 1, nlev
+          do j = 1, np
+             do i = 1, np
+                ! Update horizontal position.
+                p = dep_points_all(1:3,i,j,k,ie)
+                p = p - dtsub*vdep(1:3,i,j,k,ie)/scale_factor
+                if (is_sphere) then
+                   norm = sqrt(p(1)*p(1) + p(2)*p(2) + p(3)*p(3))
+                   p = p/norm
+                end if
+                dep_points_all(1:3,i,j,k,ie) = p
+                if (independent_time_steps) then
+                   ! Update vertical position.
+                   dep_points_all(4,i,j,k,ie) = dep_points_all(4,i,j,k,ie) - &
+                        &                       dtsub*vdep(4,i,j,k,ie)
+                end if
+             end do
+          end do
+       end do
+    end do
+  end subroutine update_dep_points_all
 
   subroutine interp_departure_points_to_floating_level_midpoints( &
        elem, nets, nete, tl, hvcoord, dep_points_all)
