@@ -229,7 +229,7 @@ contains
 
     v%nvel = nvel
     allocate(v%t_vel(nvel), v%obs_slots(dtf,2), v%obs_wts(dtf,2), v%run_step(0:nsub), &
-         &   v%vel(np,np,2,nlev,nvel-2,nelemd), v%dp(np,np,nlev,nvel-2,nelemd))
+         &   v%vel(np,np,2,nlev,2:nvel-1,nelemd), v%dp(np,np,nlev,2:nvel-1,nelemd))
 
     ! Times at which velocity data are available.
     t_avail(0) = 0
@@ -304,7 +304,7 @@ contains
 
     if (n == 1) then
        do ie = nets, nete
-          do slot = 1, vrec%nvel-2
+          do slot = 2, vrec%nvel-1
              vrec%vel(:,:,:,:,slot,ie) = 0
              vrec%dp (:,:,  :,slot,ie) = 0
           end do
