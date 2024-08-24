@@ -68,7 +68,7 @@ module sl_advection
      ! obs_wts(n,:) = [wt1, wt2], 0 if unused.
      real(kind=real_kind), allocatable :: obs_wts(:,:)
      ! Substep end point n in 0:nsub uses velocity slots run_step(n),
-     ! run_step(n)+1.
+     ! run_step(n)-1.
      integer, allocatable :: run_step(:)
      ! Store state%v and state%dp3d at t_vel points.
      real(kind=real_kind), allocatable :: vel(:,:,:,:,:,:) ! (np,np,2,nlev,nss,nelemd)
@@ -277,16 +277,17 @@ contains
     v%obs_slots(dtf,:) = -1
     v%obs_wts(dtf,:) = 0
 
-    ! Build table mapping n to interval to use.
-    v%run_step(0) = 1
-    v%run_step(nsub) = nvel-1
+    ! Build table mapping n to interval to use. The trajectories go backward in
+    ! time, and this table reflects that.
+    v%run_step(0) = nvel
+    v%run_step(nsub) = 2
     do n = 1, nsub-1
-       time = real(n*dtf, real_kind)/nsub
+       time = real((nsub-n)*dtf, real_kind)/nsub
        do i = 1, nvel-1
           if (v%t_vel(i) <= time .and. time <= v%t_vel(i+1)) exit
        end do
        if (i > nvel-1) error = 4
-       v%run_step(n) = i
+       v%run_step(n) = i+1
     end do
   end subroutine init_velocity_record
 
@@ -1360,24 +1361,25 @@ contains
        else
           do ie = nets, nete
              do i = 1, 2
+                k = nsubstep - step + (i-1)
+                time = (k*vrec%t_vel(vrec%nvel))/nsubstep
                 os = i-1
-                time = ((step-2+i)*vrec%t_vel(vrec%nvel))/nsubstep
-                k = vrec%run_step(step-2+i)
-                if (k == 1) then
+                k = vrec%run_step(step+1-i)
+                if (k == 2) then
                    vs(:,:,:,:,os+1) = elem(ie)%derived%vstar
                    dps(:,:,:,os+1) = elem(ie)%derived%dp
                 else
-                   vs(:,:,:,:,os+1) = vrec%vel(:,:,:,:,k,ie)
-                   dps(:,:,:,os+1) = vrec%dp(:,:,:,k,ie)
+                   vs(:,:,:,:,os+1) = vrec%vel(:,:,:,:,k-1,ie)
+                   dps(:,:,:,os+1) = vrec%dp(:,:,:,k-1,ie)
                 end if
-                if (k == vrec%nvel-1) then
+                if (k == vrec%nvel) then
                    vs(:,:,:,:,os+2) = elem(ie)%derived%vn0
                    dps(:,:,:,os+2) = elem(ie)%state%dp3d(:,:,:,tl%np1)
                 else
-                   vs(:,:,:,:,os+2) = vrec%vel(:,:,:,:,k+1,ie)
-                   dps(:,:,:,os+2) = vrec%dp(:,:,:,k+1,ie)
+                   vs(:,:,:,:,os+2) = vrec%vel(:,:,:,:,k,ie)
+                   dps(:,:,:,os+2) = vrec%dp(:,:,:,k,ie)
                 end if
-                alpha(1) = (vrec%t_vel(k+1) - time)/(vrec%t_vel(k+1) - vrec%t_vel(k))
+                alpha(1) = (vrec%t_vel(k) - time)/(vrec%t_vel(k) - vrec%t_vel(k-1))
                 alpha(2) = 1 - alpha(1)
                 vs(:,:,:,:,os+1) = alpha(1)*vs(:,:,:,:,os+1) + alpha(2)*vs(:,:,:,:,os+2)
                 dps(:,:,:, os+1) = alpha(1)*dps(:,:,:, os+1) + alpha(2)*dps(:,:,:, os+2)
@@ -2220,6 +2222,7 @@ contains
       end do
 
       ! Test for exact interp of an affine function.
+      ! Observe data forward in time.
       endslots(1) = tfn(0.d0)
       endslots(2) = tfn(real(dtf, real_kind))
       ys(:) = 0
@@ -2231,22 +2234,26 @@ contains
             ys(v%obs_slots(n,i)) = ys(v%obs_slots(n,i)) + v%obs_wts(n,i)*y
          end do
       end do
+      ! Use the data backward in time.
       do n = 1, nsub
+         ! Each segment orders the data forward in time. Thus, data are always
+         ! ordered forward in time but used backward.
          do i = 1, 2
-            xsup(i) = real((n-2+i)*dtf, real_kind)/nsub
-            k = v%run_step(n-2+i)
-            if (k == 1) then
+            k = nsub - n + (i-1)
+            xsup(i) = (k*v%t_vel(v%nvel))/nsub
+            k = v%run_step(n+1-i)
+            if (k == 2) then
                y0 = endslots(1)
             else
-               y0 = ys(k)
+               y0 = ys(k-1)
             end if
-            if (k == v%nvel-1) then
+            if (k == v%nvel) then
                y1 = endslots(2)
             else
-               y1 = ys(k+1)
+               y1 = ys(k)
             end if
-            ysup(i) = ((v%t_vel(k+1) - xsup(i))*y0 + (xsup(i) - v%t_vel(k))*y1) / &
-                 &    (v%t_vel(k+1) - v%t_vel(k))
+            ysup(i) = ((v%t_vel(k) - xsup(i))*y0 + (xsup(i) - v%t_vel(k-1))*y1) / &
+                 &    (v%t_vel(k) - v%t_vel(k-1))
          end do
          do i = 0, 10
             a = real(i, real_kind)/10
