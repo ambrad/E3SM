@@ -1354,6 +1354,7 @@ contains
                independent_time_steps, dtsub, nsubstep, step, nets, nete)
        end if
 
+       ! Fill vdep.
        call slmm_calc_trajectory(nets, nete, step, dtsub, dep_points_all, &
             &                    dep_points_ndim, vnode, vdep, info)
 
@@ -1370,11 +1371,6 @@ contains
     end do
 
     if (independent_time_steps) then
-       ! Determine the departure points corresponding to the vertically
-       ! Lagragnian grid's arrival midpoints, where the floating levels are
-       ! those that evolve over the course of the full tracer time step. Also
-       ! compute elem%derived%divdp, which holds the floating levels' dp values
-       ! for later use in vertical remap.
        call interp_departure_points_to_floating_level_midpoints( &
             elem, nets, nete, tl, hvcoord, dep_points_all)
        call dss_divdp(elem, nets, nete, hybrid)
@@ -1690,6 +1686,12 @@ contains
 
   subroutine interp_departure_points_to_floating_level_midpoints( &
        elem, nets, nete, tl, hvcoord, dep_points_all)
+    ! Determine the departure points corresponding to the vertically Lagragnian
+    ! grid's arrival midpoints, where the floating levels are those that evolve
+    ! over the course of the full tracer time step. Also compute
+    ! elem%derived%divdp, which holds the floating levels' dp values for later
+    ! use in vertical remap.
+
     type (element_t), intent(inout) :: elem(:)
     integer, intent(in) :: nets, nete
     type (hvcoord_t), intent(in) :: hvcoord
