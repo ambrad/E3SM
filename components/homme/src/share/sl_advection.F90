@@ -165,8 +165,6 @@ contains
        allocate(minq(np,np,nlev,qsize,size(elem)), maxq(np,np,nlev,qsize,size(elem)), &
             dep_points_all(dep_points_ndim,np,np,nlev,size(elem)))
        if (enhanced_trajectory) then
-          if (semi_lagrange_trajectory_nsubstep == 1 .and. par%masterproc) &
-               print *, 'COMPOSE> Running new alg even though nsubstep = 1.'
           allocate(vnode(dep_points_ndim,np,np,nlev,size(elem)), &
                &   vdep (dep_points_ndim,np,np,nlev,size(elem)))
           call init_velocity_record(size(elem), dt_tracer_factor, dt_remap_factor, &
@@ -365,7 +363,7 @@ contains
     call TimeLevel_Qdp(tl, dt_tracer_factor, n0_qdp, np1_qdp)
 
     if (enhanced_trajectory) then
-       call ctfull(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete, &
+       call calc_enhanced_trajectory(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete, &
             semi_lagrange_trajectory_nsubstep, independent_time_steps)
     else
        call calc_trajectory(elem, deriv, hvcoord, hybrid, dt, tl, &
@@ -1316,8 +1314,8 @@ contains
     end do
   end function test_reconstruct_and_limit_dp
 
-  subroutine ctfull(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete, nsubstep, &
-       independent_time_steps)
+  subroutine calc_enhanced_trajectory(elem, deriv, hvcoord, hybrid, dt, tl, &
+       nets, nete, nsubstep, independent_time_steps)
 
     type (element_t), intent(inout) :: elem(:)
     type (derivative_t), intent(in) :: deriv
@@ -1331,16 +1329,9 @@ contains
     integer :: step, ie, info
     real(real_kind) :: alpha(2), dtsub
 
-    integer :: i, k, os
-    real(real_kind) :: time, vs(np,np,2,nlev,3), dps(np,np,nlev,3)
-
     call t_startf('SLMM_trajectory')
 
     call slmm_set_hvcoord(hvcoord%etam)
-
-    do ie = nets, nete
-       elem(ie)%derived%vn0 = elem(ie)%state%v(:,:,:,:,tl%np1)
-    end do
 
     ! Set dep_points_all to level-midpoint arrival points.
     call init_dep_points_all(elem, hvcoord, nets, nete, independent_time_steps)
@@ -1355,42 +1346,12 @@ contains
              call calc_nodal_velocities(elem(ie), deriv, hvcoord, tl, &
                   independent_time_steps, dtsub, alpha, &
                   elem(ie)%derived%vstar, elem(ie)%derived%dp, &
-                  elem(ie)%derived%vn0, elem(ie)%state%dp3d(:,:,:,tl%np1), &
+                  elem(ie)%state%v(:,:,:,:,tl%np1), elem(ie)%state%dp3d(:,:,:,tl%np1), &
                   vnode(:,:,:,:,ie))
           end do
        else
-          do ie = nets, nete
-             do i = 1, 2
-                k = nsubstep - step + (i-1)
-                time = (k*vrec%t_vel(vrec%nvel))/nsubstep
-                os = i-1
-                k = vrec%run_step(step+1-i)
-                if (k == 2) then
-                   vs(:,:,:,:,os+1) = elem(ie)%derived%vstar
-                   dps(:,:,:,os+1) = elem(ie)%derived%dp
-                else
-                   vs(:,:,:,:,os+1) = vrec%vel(:,:,:,:,k-1,ie)
-                   dps(:,:,:,os+1) = vrec%dp(:,:,:,k-1,ie)
-                end if
-                if (k == vrec%nvel) then
-                   vs(:,:,:,:,os+2) = elem(ie)%derived%vn0
-                   dps(:,:,:,os+2) = elem(ie)%state%dp3d(:,:,:,tl%np1)
-                else
-                   vs(:,:,:,:,os+2) = vrec%vel(:,:,:,:,k,ie)
-                   dps(:,:,:,os+2) = vrec%dp(:,:,:,k,ie)
-                end if
-                alpha(1) = (vrec%t_vel(k) - time)/(vrec%t_vel(k) - vrec%t_vel(k-1))
-                alpha(2) = 1 - alpha(1)
-                vs(:,:,:,:,os+1) = alpha(1)*vs(:,:,:,:,os+1) + alpha(2)*vs(:,:,:,:,os+2)
-                dps(:,:,:, os+1) = alpha(1)*dps(:,:,:, os+1) + alpha(2)*dps(:,:,:, os+2)
-             end do
-             alpha(1) = 0
-             alpha(2) = 1
-             call calc_nodal_velocities(elem(ie), deriv, hvcoord, tl, &
-                  independent_time_steps, dtsub, alpha, &
-                  vs(:,:,:,:,1), dps(:,:,:,1), vs(:,:,:,:,2), dps(:,:,:,2), &
-                  vnode(:,:,:,:,ie))
-          end do
+          call calc_nodal_velocities_using_vrec(elem, deriv, hvcoord, tl, &
+               independent_time_steps, dtsub, nsubstep, step, nets, nete)
        end if
 
        call slmm_calc_trajectory(nets, nete, step, dtsub, dep_points_all, &
@@ -1420,7 +1381,7 @@ contains
     end if
 
     call t_stopf('SLMM_trajectory')
-  end subroutine ctfull
+  end subroutine calc_enhanced_trajectory
 
   subroutine init_dep_points_all(elem, hvcoord, nets, nete, independent_time_steps)
     ! Initialize dep_points_all to the Eulerian coordinates.
@@ -1454,6 +1415,57 @@ contains
     end do
   end subroutine init_dep_points_all
 
+  subroutine calc_nodal_velocities_using_vrec(elem, deriv, hvcoord, tl, &
+       independent_time_steps, dtsub, nsubstep, step, nets, nete)
+
+    ! Wrapper to calc_nodal_velocities that orchestrates the use of the various
+    ! sources of velocity data.
+
+    type (element_t), intent(in) :: elem(:)
+    type (derivative_t), intent(in) :: deriv
+    type (hvcoord_t), intent(in) :: hvcoord
+    type (TimeLevel_t), intent(in) :: tl
+    logical, intent(in) :: independent_time_steps
+    real(real_kind), intent(in) :: dtsub
+    integer, intent(in) :: nsubstep, step, nets, nete
+    
+    integer :: ie, i, k, os
+    real(real_kind) :: time, alpha(2), vs(np,np,2,nlev,3), dps(np,np,nlev,3)
+
+    do ie = nets, nete
+       do i = 1, 2
+          k = nsubstep - step + (i-1)
+          time = (k*vrec%t_vel(vrec%nvel))/nsubstep
+          os = i-1
+          k = vrec%run_step(step+1-i)
+          if (k == 2) then
+             vs(:,:,:,:,os+1) = elem(ie)%derived%vstar
+             dps(:,:,:,os+1) = elem(ie)%derived%dp
+          else
+             vs(:,:,:,:,os+1) = vrec%vel(:,:,:,:,k-1,ie)
+             dps(:,:,:,os+1) = vrec%dp(:,:,:,k-1,ie)
+          end if
+          if (k == vrec%nvel) then
+             vs(:,:,:,:,os+2) = elem(ie)%state%v(:,:,:,:,tl%np1)
+             dps(:,:,:,os+2) = elem(ie)%state%dp3d(:,:,:,tl%np1)
+          else
+             vs(:,:,:,:,os+2) = vrec%vel(:,:,:,:,k,ie)
+             dps(:,:,:,os+2) = vrec%dp(:,:,:,k,ie)
+          end if
+          alpha(1) = (vrec%t_vel(k) - time)/(vrec%t_vel(k) - vrec%t_vel(k-1))
+          alpha(2) = 1 - alpha(1)
+          vs(:,:,:,:,os+1) = alpha(1)*vs(:,:,:,:,os+1) + alpha(2)*vs(:,:,:,:,os+2)
+          dps(:,:,:, os+1) = alpha(1)*dps(:,:,:, os+1) + alpha(2)*dps(:,:,:, os+2)
+       end do
+       alpha(1) = 0
+       alpha(2) = 1
+       call calc_nodal_velocities(elem(ie), deriv, hvcoord, tl, &
+            independent_time_steps, dtsub, alpha, &
+            vs(:,:,:,:,1), dps(:,:,:,1), vs(:,:,:,:,2), dps(:,:,:,2), &
+            vnode(:,:,:,:,ie))
+    end do    
+  end subroutine calc_nodal_velocities_using_vrec
+
   subroutine calc_nodal_velocities(elem, deriv, hvcoord, tl, &
        independent_time_steps, dtsub, alpha, v1, dp1, v2, dp2, vnode)
     ! Evaluate a formula to provide an estimate of nodal velocities that
@@ -1484,9 +1496,8 @@ contains
        eta_dot = zero
     end if
 
-    ! Collect the horizontal nodal velocities. vstar is the velocity at
-    ! the start of the tracer time step; vn0, at the end. Both are on
-    ! Eulerian levels.
+    ! Collect the horizontal nodal velocities. v1,2 are on Eulerian levels. v1
+    ! is from time t1 < t2.
     do t = 1, 2
        vsph(:,:,:,:,t) = (1 - alpha(t))*v1 + alpha(t)*v2
     end do
