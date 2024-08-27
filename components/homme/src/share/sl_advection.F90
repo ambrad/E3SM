@@ -1316,6 +1316,9 @@ contains
 
   subroutine calc_enhanced_trajectory(elem, deriv, hvcoord, hybrid, dt, tl, &
        nets, nete, nsubstep, independent_time_steps)
+    ! Top-level routine for new enhanced trajectory method. This new method
+    ! permits multiple substeps, optionally using more reference-grid velocity
+    ! snapshots.
 
     type (element_t), intent(inout) :: elem(:)
     type (derivative_t), intent(in) :: deriv
