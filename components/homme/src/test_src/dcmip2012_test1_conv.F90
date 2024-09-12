@@ -186,168 +186,6 @@ contains
     q = a*q + b
   end function get_2d_correlated_cosine_bells
 
-  subroutine test1_conv_advection_deformation( &
-       time,lon,lat,p,z,zcoords,u,v,w,t,phis,ps,rho,q1,q2,q3,q4)
-    !-----------------------------------------------------------------------
-    !     input/output params parameters at given location
-    !-----------------------------------------------------------------------
-    
-    real(rt), intent(in)     :: time       ! simulation time (s)
-    real(rt), intent(in)     :: lon        ! Longitude (radians)
-    real(rt), intent(in)     :: lat        ! Latitude (radians)
-    real(rt), intent(in)     :: z          ! Height (m)
-    real(rt), intent(inout)  :: p          ! Pressure  (Pa)
-    integer , intent(in)     :: zcoords    ! 0 or 1 see below
-    real(rt), intent(out)    :: u          ! Zonal wind (m s^-1)
-    real(rt), intent(out)    :: v          ! Meridional wind (m s^-1)
-    real(rt), intent(out)    :: w          ! Vertical Velocity (m s^-1)
-    real(rt), intent(out)    :: T          ! Temperature (K)
-    real(rt), intent(out)    :: phis       ! Surface Geopotential (m^2 s^-2)
-    real(rt), intent(out)    :: ps         ! Surface Pressure (Pa)
-    real(rt), intent(out)    :: rho        ! density (kg m^-3)
-    real(rt), intent(out)    :: q1         ! Tracer q1 (kg/kg)
-    real(rt), intent(out)    :: q2         ! Tracer q2 (kg/kg)
-    real(rt), intent(out)    :: q3         ! Tracer q3 (kg/kg)
-    real(rt), intent(out)    :: q4         ! Tracer q4 (kg/kg)
-
-    ! if zcoords = 1, then we use z and output p
-    ! if zcoords = 0, then we use p 
-
-    !-----------------------------------------------------------------------
-    !     test case parameters
-    !----------------------------------------------------------------------- 
-    real(rt), parameter ::           &
-         omega0  = (2*23000.d0*pi)/tau, & ! velocity magnitude
-         RR      = 1.d0/2.d0,          &  ! horizontal half width divided by 'a'
-         ZZ      = 1000.d0,            &  ! vertical half width
-         z0      = 5000.d0,            &  ! center point in z
-         lambda0 = 5.d0*pi/6.d0,       &  ! center point in longitudes
-         lambda1 = 7.d0*pi/6.d0,       &  ! center point in longitudes
-         phi0    = 0.d0,               &  ! center point in latitudes
-         phi1    = 0.d0
-
-    real(rt) :: height                                                     ! The height of the model levels
-    real(rt) :: ptop                                                       ! model top in p
-    real(rt) :: sin_tmp, cos_tmp, sin_tmp2, cos_tmp2                       ! Calculate great circle distances
-    real(rt) :: d1, d2, r, r2, d3, d4                                      ! For tracer calculations
-    real(rt) :: s, bs, s_p                                                 ! Shape function, and parameter
-    real(rt) :: lonp                                                       ! Translational longitude, depends on time
-    real(rt) :: ud                                                         ! Divergent part of u
-    real(rt) :: x,y,zeta,tmp
-
-    !---------------------------------------------------------------------
-    !    HEIGHT AND PRESSURE
-    !---------------------------------------------------------------------
-    
-    ! height and pressure are aligned (p = p0 exp(-z/H))
-    if (zcoords .eq. 1) then
-       height = z
-       p = p0 * exp(-z/H)
-    else
-       height = H * log(p0/p)
-    endif
-
-    ! model top in p
-    ptop = p0*exp(-ztop/H)
-
-    !---------------------------------------------------------------------
-    !    THE VELOCITIES ARE TIME DEPENDENT AND THEREFORE MUST BE UPDATED
-    !    IN THE DYNAMICAL CORE
-    !---------------------------------------------------------------------
-
-    ! shape function
-    bs = 1.0d0
-    s = 1.0 + exp((ptop-p0)/(bs*ptop)) - exp((p-p0)/(bs*ptop)) - exp((ptop-p)/(bs*ptop))
-    s_p = (-exp((p-p0)/(bs*ptop)) + exp((ptop-p)/(bs*ptop)))/(bs*ptop)
-
-    ! translational longitude
-    lonp = lon - 2.d0*pi*time/tau
-
-    ! The key difference in this test relative to the original is removing the
-    ! factor of 2 in ud and w cos-time factors. The 2 in the original code makes
-    ! trajectories not return to their initial points.
-
-    call get_nondiv2d_uv(time, lon, lat, u, v)
-
-    ! divergent part of zonal velocity
-    ud = (omega0*a) * cos(lonp) * (cos(lat)**2.0) * cos(pi*time/tau) * s_p
-    u = u + ud
-
-    ! vertical velocity - can be changed to vertical pressure velocity by
-    ! omega = -(g*p)/(Rd*T0)*w
-    w = -((Rd*T0)/(g*p))*omega0*sin(lonp)*cos(lat)*cos(pi*time/tau)*s
-
-    !-----------------------------------------------------------------------
-    !    TEMPERATURE IS CONSTANT 300 K
-    !-----------------------------------------------------------------------
-    t = T0
-
-    !-----------------------------------------------------------------------
-    !    PHIS (surface geopotential) 
-    !-----------------------------------------------------------------------
-    phis = 0.d0
-
-    !-----------------------------------------------------------------------
-    !    PS (surface pressure)
-    !-----------------------------------------------------------------------
-    ps = p0
-
-    !-----------------------------------------------------------------------
-    !    RHO (density)
-    !-----------------------------------------------------------------------
-    rho = p/(Rd*t)
-
-    !-----------------------------------------------------------------------
-    !     initialize Q, set to zero 
-    !-----------------------------------------------------------------------
-    !  q = 0.d0
-
-    !-----------------------------------------------------------------------
-    !     initialize tracers
-    !-----------------------------------------------------------------------
-
-    x = cos(lat)*cos(lon)
-    y = cos(lat)*sin(lon)
-    zeta = sin(lat)
-    ! tracer 1 - a C^inf tracer field for order of accuracy analysis
-    q1 = 0.5d0*(1 + sin(pi*x)*sin(pi*y)*sin(pi*zeta)*sin(pi*(p-ptop)/(p0-ptop)))
-
-    ! tracer 2 - correlated with 1
-    q2 = 0.9d0 - 0.8d0*q1**2
-
-    ! tracer 3 - slotted ellipse
-
-    sin_tmp = sin(lat) * sin(phi0)
-    cos_tmp = cos(lat) * cos(phi0)
-    sin_tmp2 = sin(lat) * sin(phi1)
-    cos_tmp2 = cos(lat) * cos(phi1)
-
-    ! great circle distance without 'a'
-    r  = ACOS (sin_tmp + cos_tmp*cos(lon-lambda0)) 
-    r2 = ACOS (sin_tmp2 + cos_tmp2*cos(lon-lambda1)) 
-    d1 = min( 1.d0, (r/RR)**2 + ((height-z0)/ZZ)**2 )
-    d2 = min( 1.d0, (r2/RR)**2 + ((height-z0)/ZZ)**2 )
-
-    ! make the ellipse
-    if (d1 .le. RR) then
-       q3 = 1.d0
-    elseif (d2 .le. RR) then
-       q3 = 1.d0
-    else
-       q3 = 0.1d0
-    endif
-
-    ! put in the slot
-    if (height .gt. z0 .and. abs(lat) .lt. 0.125d0) then
-       q3 = 0.1d0
-    endif
-
-    ! tracer 4: q4 is chosen so that, in combination with the other three tracer
-    !           fields with weight (3/10), the sum is equal to one
-    q4 = 1.d0 - 0.3d0*(q1+q2+q3)
-
-  end subroutine test1_conv_advection_deformation
-
   subroutine test1_conv_advection_orography( &
        test_minor,time,lon,lat,p,z,zcoords,cfv,hybrid_eta,hya,hyb,u,v,w,t,phis,ps,rho,q1,q2,q3,q4)
 
@@ -410,8 +248,11 @@ contains
     if (.not. hybrid_eta) call abortmp('test1_conv_advection_orography does not support !hybrid_eta')
     if (zcoords /= 0)     call abortmp('test1_conv_advection_orography does not support zcoords != 0')
 
-    ! mountain oscillation half-width (radians)
+    ! Mountain oscillation half-width (radians).
     zetam = pi/16.d0
+    ! Smooth mountains very less resource-intensive convergence testing.
+    if (test_minor == 'c') zetam = pi/2.d0
+    ! Smoother than default but still fairly rough.
     if (test_minor == 'd') zetam = pi/8.d0
     
     r = acos(sin(phim)*sin(lat) + cos(phim)*cos(lat)*cos(lon - lambdam))
@@ -455,15 +296,14 @@ contains
        call get_nondiv2d_uv(time, lon + lon_offset, lat, u, v)
        u = u*ztaper
        v = v*ztaper
-    case('c')
-       ! Moving vortices.
-    case('d')
+    case('c,d')
        ! 3D nondiv flow.
        ptop_t = p0*exp(-ztop_t/H)
        ptop = p0*exp(-ztop/H)
        call get_nondiv3d_uv(bs_a, ptop_t, ptop, ztop_t, ztop, ztaper, &
             &               time, lon + lon_offset, lat, p, z, u, v, w)
     case('e')
+       ! Similar to Hadley-like flow but with more smoothness in derivatives.
        u = u0_h*cos(lat)*cos(pi*time/tau_h)*ztaper
        fl = cos(lat)**2
        fl_lat = -2*cos(lat)*sin(lat)
@@ -535,10 +375,6 @@ contains
 
     use_w = .true.
     select case(test_major)
-    case('1')
-       call test1_conv_advection_deformation( &
-            time,lon,lat,p,z,zcoords,u,v,w,t,phis,ps,rho,q(1),q(2),q(3),q(4))
-    case ('2')
     case('3')
        !use_w = .false.
        call test1_conv_advection_orography( &
@@ -580,7 +416,7 @@ contains
           ! test1_conv_advection_orography uses these:
           hya = hvcoord%hyam(k)
           hyb = hvcoord%hybm(k)
-          ! test1_conv_advection_deformation uses these, in which ps = p0:
+          ! test1_advection_deformation uses these, in which ps = p0:
           p = p0 * hvcoord%etam(k)
           z = H * log(1.0d0/hvcoord%etam(k))
 
