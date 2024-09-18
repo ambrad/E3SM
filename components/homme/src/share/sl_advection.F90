@@ -163,14 +163,14 @@ contains
           call cedr_sl_init(np, nlev, qsize, qsize_d, timelevels, need_conservation)
        end if
        allocate(minq(np,np,nlev,qsize,size(elem)), maxq(np,np,nlev,qsize,size(elem)), &
-            dep_points_all(dep_points_ndim,np,np,nlev,size(elem)))
+            &   dep_points_all(dep_points_ndim,np,np,nlev,size(elem)))
        if (enhanced_trajectory) then
           allocate(vnode(dep_points_ndim,np,np,nlev,size(elem)), &
                &   vdep (dep_points_ndim,np,np,nlev,size(elem)))
-          call init_velocity_record(size(elem), dt_tracer_factor, dt_remap_factor, &
-               semi_lagrange_trajectory_nsubstep, semi_lagrange_trajectory_nvelocity, &
-               vrec, i)
        end if
+       call init_velocity_record(size(elem), dt_tracer_factor, dt_remap_factor, &
+            semi_lagrange_trajectory_nsubstep, semi_lagrange_trajectory_nvelocity, &
+            vrec, i)
        dp_tol = -one
        deta_tol = -one
     endif
@@ -179,14 +179,14 @@ contains
   end subroutine sl_init1
 
   subroutine sl_get_params(nu_q_out, hv_scaling, hv_q, hv_subcycle_q, limiter_option_out, &
-       cdr_check, geometry_type, trajectory_alg) bind(c)
+       cdr_check, geometry_type, trajectory_nsubstep) bind(c)
     use control_mod, only: semi_lagrange_hv_q, hypervis_subcycle_q, semi_lagrange_cdr_check, &
          nu_q, hypervis_scaling, limiter_option, geometry, semi_lagrange_trajectory_nsubstep
     use iso_c_binding, only: c_int, c_double
 
     real(c_double), intent(out) :: nu_q_out, hv_scaling
     integer(c_int), intent(out) :: hv_q, hv_subcycle_q, limiter_option_out, cdr_check, &
-         geometry_type, trajectory_alg
+         geometry_type, trajectory_nsubstep
 
     nu_q_out = nu_q
     hv_scaling = hypervis_scaling
@@ -197,8 +197,7 @@ contains
     if (semi_lagrange_cdr_check) cdr_check = 1
     geometry_type = 0 ! sphere
     if (trim(geometry) == "plane") geometry_type = 1
-    trajectory_alg = 0
-    if (semi_lagrange_trajectory_nsubstep > 0) trajectory_alg = 1
+    trajectory_nsubstep = semi_lagrange_trajectory_nsubstep
   end subroutine sl_get_params
 
   subroutine init_velocity_record(nelemd, dtf, drf_param, nsub, nvel_param, v, error)
@@ -332,9 +331,6 @@ contains
     ! For DCMIP16 supercell test case.
     use control_mod,            only : dcmip16_mu_q
     use prim_advection_base,    only : advance_physical_vis
-#ifdef HOMME_ENABLE_COMPOSE
-    use compose_mod,            only : compose_h2d, compose_d2h
-#endif
     use iso_c_binding,          only : c_bool
 
     implicit none
@@ -423,7 +419,7 @@ contains
        call t_stopf('CEDR')
        call t_startf('CEDR_local')
        call cedr_sl_run_local(minq, maxq, nets, nete, scalar_q_bounds, limiter_option)
-       ! Barrier needed to protect edge_g buffers use in CEDR.
+       ! Barrier needed to protect edge_g buffers used in CEDR.
 #if (defined HORIZ_OPENMP)
        !$omp barrier
 #endif
@@ -1357,26 +1353,25 @@ contains
                independent_time_steps, dtsub, nsubstep, step, nets, nete)
        end if
 
-       ! Fill vdep.
-       call slmm_calc_trajectory(nets, nete, step, dtsub, dep_points_all, &
-            &                    dep_points_ndim, vnode, vdep, info)
+       call dss_vnode(elem, nets, nete, hybrid, vnode)
 
        if (step == 1) then
-          ! In the first substep, vdep = nvode, and we need to DSS vdep to get
-          ! an element boundary node to have the same departure point. In
-          ! subsequent substeps, (redundant) calculations in each element lead
-          ! to the same departure point for such a node.
-          call dss_vdep(elem, nets, nete, hybrid, vdep)
-       end if
+          call update_dep_points_all(independent_time_steps, dtsub, nets, nete, vnode)
+       else
+          ! Fill vdep.
+          call slmm_calc_v_departure(nets, nete, step, dtsub, dep_points_all, &
+               &                    dep_points_ndim, vnode, vdep, info)
 
-       ! Using vdep, update dep_points_all to departure points.
-       call update_dep_points_all(independent_time_steps, dtsub, nets, nete)
+          ! Using vdep, update dep_points_all to departure points.
+          call update_dep_points_all(independent_time_steps, dtsub, nets, nete, vdep)
+       end if
     end do
 
     if (independent_time_steps) then
        call interp_departure_points_to_floating_level_midpoints( &
             elem, nets, nete, tl, hvcoord, dep_points_all)
-       call dss_divdp(elem, nets, nete, hybrid)
+       ! Not needed in practice. Corner cases will be cleaned up by dss_Qdp.
+       !call dss_divdp(elem, nets, nete, hybrid)
     end if
 
     call t_stopf('SLMM_trajectory')
@@ -1404,8 +1399,7 @@ contains
                 dep_points_all(1:3,i,j,k,ie) = dep_points_all(1:3,i,j,1,ie)
              end do
              if (independent_time_steps) then
-                dep_points_all(4,i,j,1,ie) = hvcoord%etam(1)
-                do k = 2, nlev
+                do k = 1, nlev
                    dep_points_all(4,i,j,k,ie) = hvcoord%etam(k)
                 end do
              end if
@@ -1569,13 +1563,15 @@ contains
     real(real_kind), intent(in) :: dtsub, vsph(np,np,2,nlev,2), eta_dot(np,np,nlevp,2)
     real(real_kind), intent(inout) :: vnode(:,:,:,:)
 
+    integer, parameter :: t0 = 1, t1 = 2
+
     real(real_kind) :: vfsph(np,np,2), w1(np,np), w2(np,np), w3(np,np,3)
     integer :: k, d, i, k1, k2
 
     do k = 1, nlev
        ! Horizontal terms.
-       vfsph = ugradv_sphere(vsph(:,:,:,k,2), vsph(:,:,:,k,1), deriv, elem)
-       vfsph = vsph(:,:,:,k,1) + vsph(:,:,:,k,2) - dtsub*vfsph
+       vfsph = ugradv_sphere(vsph(:,:,:,k,t1), vsph(:,:,:,k,t0), deriv, elem)
+       vfsph = vsph(:,:,:,k,t0) + vsph(:,:,:,k,t1) - dtsub*vfsph
        ! Vertical term.
        do d = 1, 2 ! horiz vel dims
           if (k == 1 .or. k == nlev) then
@@ -1584,16 +1580,16 @@ contains
              else
                 k1 = nlev-1; k2 = nlev
              end if
-             w1 = (vsph(:,:,d,k2,1) - vsph(:,:,d,k1,1)) / &
+             w1 = (vsph(:,:,d,k2,t0) - vsph(:,:,d,k1,t0)) / &
                   (hvcoord%etam(k2) - hvcoord%etam(k1))
           else
              do i = 1, 3
                 w3(:,:,i) = hvcoord%etam(k-2+i) ! interp support
              end do
              w2 = hvcoord%etam(k) ! derivative at this eta value
-             call eval_lagrange_poly_derivative(3, w3, vsph(:,:,d,k-1:k+1,1), w2, w1)
+             call eval_lagrange_poly_derivative(3, w3, vsph(:,:,d,k-1:k+1,t0), w2, w1)
           end if
-          vfsph(:,:,d) = vfsph(:,:,d) - dtsub*eta_dot(:,:,k,2)*w1
+          vfsph(:,:,d) = vfsph(:,:,d) - dtsub*eta_dot(:,:,k,t1)*w1
        end do
        ! Finish the formula.
        vfsph = half*vfsph
@@ -1613,6 +1609,8 @@ contains
     real(real_kind), intent(in) :: dtsub, vsph(np,np,2,nlev,2), eta_dot(np,np,nlevp,2)
     real(real_kind), intent(inout) :: vnode(:,:,:,:)
 
+    integer, parameter :: t0 = 1, t1 = 2
+    
     real(real_kind) :: vfsph(np,np,2), w1(np,np), w2(np,np), w3(np,np,3), w4(np,np,3)
     integer :: k, d, i, k1, k2
 
@@ -1624,12 +1622,12 @@ contains
              w4(:,:,1) = zero
              do i = 1, 2
                 w3(:,:,i+1) = hvcoord%etam(i)
-                w4(:,:,i+1) = eta_dot(:,:,i,2)
+                w4(:,:,i+1) = eta_dot(:,:,i,t0)
              end do
           else
              do i = 1, 2
                 w3(:,:,i) = hvcoord%etam(nlev-2+i)
-                w4(:,:,i) = eta_dot(:,:,nlev-2+i,2)
+                w4(:,:,i) = eta_dot(:,:,nlev-2+i,t0)
              end do
              w3(:,:,3) = hvcoord%etai(nlevp)
              w4(:,:,3) = zero
@@ -1641,17 +1639,17 @@ contains
           do i = 1, 3
              w3(:,:,i) = hvcoord%etam(k1-1+i)
           end do
-          call eval_lagrange_poly_derivative(k2-k1+1, w3, eta_dot(:,:,k1:k2,2), w2, w1)
+          call eval_lagrange_poly_derivative(k2-k1+1, w3, eta_dot(:,:,k1:k2,t0), w2, w1)
        end if
-       w3(:,:,1:2) = gradient_sphere(eta_dot(:,:,k,2), deriv, elem%Dinv)
+       w3(:,:,1:2) = gradient_sphere(eta_dot(:,:,k,t0), deriv, elem%Dinv)
        vnode(4,:,:,k) = &
-            half*(eta_dot(:,:,k,1) + eta_dot(:,:,k,2) &
-            &     - dtsub*(vsph(:,:,1,k,1)*w3(:,:,1) + vsph(:,:,2,k,1)*w3(:,:,2) &
-            &              + eta_dot(:,:,k,1)*w1))
+            half*(eta_dot(:,:,k,t0) + eta_dot(:,:,k,t1) &
+            &     - dtsub*(vsph(:,:,1,k,t1)*w3(:,:,1) + vsph(:,:,2,k,t1)*w3(:,:,2) &
+            &              + eta_dot(:,:,k,t1)*w1))
     end do
   end subroutine calc_eta_dot_formula_node_ref_mid
 
-  subroutine update_dep_points_all(independent_time_steps, dtsub, nets, nete)
+  subroutine update_dep_points_all(independent_time_steps, dtsub, nets, nete, vdep)
     ! Determine the departure points corresponding to the reference grid's
     ! arrival midpoints. Reads and writes dep_points_all. Reads vdep.
     
@@ -1660,6 +1658,7 @@ contains
     logical, intent(in) :: independent_time_steps
     real(real_kind), intent(in) :: dtsub
     integer, intent(in) :: nets, nete
+    real(real_kind), intent(in) :: vdep(:,:,:,:,:)
 
     real(real_kind) :: norm, p(3)
     integer :: ie, k, j, i
@@ -1718,7 +1717,7 @@ contains
 
        ! Reconstruct Lagrangian levels at t1 on arrival column:
        !     eta_arr_int = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_int)
-       call limit_deta(hvcoord, deta_ref, dep_points_all(4,:,:,:,ie), v1)
+       call limit_etam(hvcoord, deta_ref, dep_points_all(4,:,:,:,ie), v1)
        v2(:,:,1) = hvcoord%etai(1)
        v2(:,:,nlevp) = hvcoord%etai(nlevp)
        call eta_interp_eta(hvcoord, v1, hvcoord%etam, &
@@ -1754,16 +1753,11 @@ contains
     ! here even as another thread does the same. But because there is no read
     ! and only one value to write, the redundant writes don't matter.
 
-    deta_ave = zero
-    do k = 1, nlev
-       deta_ave = deta_ave + (hvcoord%etai(k+1) - hvcoord%etai(k))
-    end do
-    deta_ave = deta_ave / nlev
-
+    deta_ave = (hvcoord%etai(nlev+1) - hvcoord%etai(1)) / nlev
     deta_tol = 10_real_kind*eps*deta_ave
   end subroutine set_deta_tol
 
-  subroutine limit_deta(hvcoord, deta_ref, eta, eta_lim)
+  subroutine limit_etam(hvcoord, deta_ref, eta, eta_lim)
     type (hvcoord_t), intent(in) :: hvcoord
     real(real_kind), intent(in) :: deta_ref(nlevp), eta(np,np,nlev)
     real(real_kind), intent(out) :: eta_lim(np,np,nlev)
@@ -1808,7 +1802,7 @@ contains
           end do
        end do
     end do
-  end subroutine limit_deta
+  end subroutine limit_etam
 
   subroutine deta_caas(nlp, deta_ref, lo, deta)
     integer, intent(in) :: nlp
@@ -1946,26 +1940,26 @@ contains
     end do
   end subroutine eta_to_dp
 
-  subroutine dss_vdep(elem, nets, nete, hybrid, vdep)
+  subroutine dss_vnode(elem, nets, nete, hybrid, vnode)
     type (element_t), intent(in) :: elem(:)
     type (hybrid_t), intent(in) :: hybrid
     integer, intent(in) :: nets, nete
-    real(real_kind) :: vdep(:,:,:,:,:)
+    real(real_kind) :: vnode(:,:,:,:,:)
 
     integer :: nd, nlyr, ie, k, d
 
-    nd = size(vdep, 1)
+    nd = size(vnode, 1)
     nlyr = nd*nlev
     
     do ie = nets, nete
        do k = 1, nlev
           do d = 1, nd
-             vdep(d,:,:,k,ie) = vdep(d,:,:,k,ie)* &
-                  &             elem(ie)%spheremp*elem(ie)%rspheremp
+             vnode(d,:,:,k,ie) = vnode(d,:,:,k,ie)* &
+                  &              elem(ie)%spheremp*elem(ie)%rspheremp
           end do
        end do
        do d = 1, nd
-          call edgeVpack_nlyr(edge_g, elem(ie)%desc, vdep(d,:,:,:,ie), &
+          call edgeVpack_nlyr(edge_g, elem(ie)%desc, vnode(d,:,:,:,ie), &
                &              nlev, nlev*(d-1), nlyr)
        end do
     end do
@@ -1976,7 +1970,7 @@ contains
 
     do ie = nets, nete
        do d = 1, nd
-          call edgeVunpack_nlyr(edge_g, elem(ie)%desc, vdep(d,:,:,:,ie), &
+          call edgeVunpack_nlyr(edge_g, elem(ie)%desc, vnode(d,:,:,:,ie), &
                &                nlev, nlev*(d-1), nlyr)
        end do
     end do
@@ -1984,7 +1978,7 @@ contains
 #if (defined HORIZ_OPENMP)
     !$omp barrier
 #endif
-  end subroutine dss_vdep
+  end subroutine dss_vnode
 
   subroutine dss_divdp(elem, nets, nete, hybrid)
     type (element_t), intent(inout) :: elem(:)
