@@ -54,6 +54,19 @@ struct ComposeTransportImpl {
 
   using DeparturePoints = ExecViewManaged<Real*****>;
 
+  typedef typename ViewConst<ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV]> >::type CSNlev;
+  typedef typename ViewConst<ExecViewUnmanaged<Real[NP][NP][NUM_LEV*VECTOR_SIZE]> >::type CRNlev;
+  typedef typename ViewConst<ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV_P]> >::type CSNlevp;
+  typedef typename ViewConst<ExecViewUnmanaged<Real[NP][NP][NUM_LEV_P*VECTOR_SIZE]> >::type CRNlevp;
+  typedef typename ViewConst<ExecViewUnmanaged<Scalar[2][NP][NP][NUM_LEV]> >::type CS2Nlev;
+  typedef ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV]> SNlev;
+  typedef ExecViewUnmanaged<Real[NP][NP][NUM_LEV*VECTOR_SIZE]> RNlev;
+  typedef ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV_P]> SNlevp;
+  typedef ExecViewUnmanaged<Real[NP][NP][NUM_LEV_P*VECTOR_SIZE]> RNlevp;
+  typedef ExecViewUnmanaged<Scalar[2][NP][NP][NUM_LEV]> S2Nlev;
+  typedef ExecViewUnmanaged<Real[2][NP][NP][NUM_LEV*VECTOR_SIZE]> R2Nlev;
+  typedef ExecViewUnmanaged<Scalar[2][NP][NP][NUM_LEV_P]> S2Nlevp;
+
   struct Data {
     int nelemd, qsize, limiter_option, cdr_check, hv_q, hv_subcycle_q;
     int geometry_type; // 0: sphere, 1: plane
@@ -109,6 +122,7 @@ struct ComposeTransportImpl {
   void remap_q(const TimeLevel& tl);
 
   void calc_trajectory(const int np1, const Real dt);
+  void calc_enhanced_trajectory(const int np1, const Real dt);
   void remap_v(const ExecViewUnmanaged<const Scalar*[NUM_TIME_LEVELS][NP][NP][NUM_LEV]>& dp3d,
                const int np1, const ExecViewUnmanaged<const Scalar*[NP][NP][NUM_LEV]>& dp,
                const ExecViewUnmanaged<Scalar*[2][NP][NP][NUM_LEV]>& v);
@@ -116,6 +130,7 @@ struct ComposeTransportImpl {
   void advance_hypervis_scalar(const Real dt);
 
   int run_trajectory_unit_tests();
+  int run_enhanced_trajectory_unit_tests();
   ComposeTransport::TestDepView::HostMirror
   test_trajectory(Real t0, Real t1, const bool independent_time_steps);
 

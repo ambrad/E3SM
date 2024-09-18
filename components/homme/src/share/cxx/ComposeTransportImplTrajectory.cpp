@@ -14,6 +14,18 @@
 
 namespace Homme {
 using cti = ComposeTransportImpl;
+using CSNlev  = cti::CSNlev;
+using CRNlev  = cti::CRNlev;
+using CSNlevp = cti::CSNlevp;
+using CRNlevp = cti::CRNlevp;
+using CS2Nlev = cti::CS2Nlev;
+using SNlev   = cti::SNlev;
+using RNlev   = cti::RNlev;
+using SNlevp  = cti::SNlevp;
+using RNlevp  = cti::RNlevp;
+using S2Nlev  = cti::S2Nlev;
+using R2Nlev  = cti::R2Nlev;
+using S2Nlevp = cti::S2Nlevp;
 
 KOKKOS_FUNCTION
 static void ugradv_sphere (
@@ -47,19 +59,6 @@ static void ugradv_sphere (
     cti::loop_ijk<NUM_LEV>(kv, f2);
   }
 }
-
-typedef typename ViewConst<ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV]> >::type CSNlev;
-typedef typename ViewConst<ExecViewUnmanaged<Real[NP][NP][NUM_LEV*VECTOR_SIZE]> >::type CRNlev;
-typedef typename ViewConst<ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV_P]> >::type CSNlevp;
-typedef typename ViewConst<ExecViewUnmanaged<Real[NP][NP][NUM_LEV_P*VECTOR_SIZE]> >::type CRNlevp;
-typedef typename ViewConst<ExecViewUnmanaged<Scalar[2][NP][NP][NUM_LEV]> >::type CS2Nlev;
-typedef ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV]> SNlev;
-typedef ExecViewUnmanaged<Real[NP][NP][NUM_LEV*VECTOR_SIZE]> RNlev;
-typedef ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV_P]> SNlevp;
-typedef ExecViewUnmanaged<Real[NP][NP][NUM_LEV_P*VECTOR_SIZE]> RNlevp;
-typedef ExecViewUnmanaged<Scalar[2][NP][NP][NUM_LEV]> S2Nlev;
-typedef ExecViewUnmanaged<Real[2][NP][NP][NUM_LEV*VECTOR_SIZE]> R2Nlev;
-typedef ExecViewUnmanaged<Scalar[2][NP][NP][NUM_LEV_P]> S2Nlevp;
 
 /* Form a 3rd-degree Lagrange polynomial over (x(k-1:k+1), y(k-1:k+1)) and set
    yi(k) to its derivative at x(k). yps(:,:,0) is not written.
