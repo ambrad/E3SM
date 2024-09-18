@@ -14,6 +14,20 @@
 
 namespace Homme {
 using cti = ComposeTransportImpl;
+using CSNlev  = cti::CSNlev;
+using CRNlev  = cti::CRNlev;
+using CSNlevp = cti::CSNlevp;
+using CRNlevp = cti::CRNlevp;
+using CS2Nlev = cti::CS2Nlev;
+using SNlev   = cti::SNlev;
+using RNlev   = cti::RNlev;
+using SNlevp  = cti::SNlevp;
+using RNlevp  = cti::RNlevp;
+using S2Nlev  = cti::S2Nlev;
+using R2Nlev  = cti::R2Nlev;
+using S2Nlevp = cti::S2Nlevp;
+
+
 
 void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real dt) {
 }

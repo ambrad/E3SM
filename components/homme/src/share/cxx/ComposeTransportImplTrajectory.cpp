@@ -27,62 +27,6 @@ using S2Nlev  = cti::S2Nlev;
 using R2Nlev  = cti::R2Nlev;
 using S2Nlevp = cti::S2Nlevp;
 
-KOKKOS_FUNCTION
-static void ugradv_sphere (
-  const SphereOperators& sphere_ops, const KernelVariables& kv,
-  const typename ViewConst<ExecViewUnmanaged<Real[2][3][NP][NP]> >::type& vec_sphere2cart,
-  // velocity, latlon
-  const typename ViewConst<ExecViewUnmanaged<Scalar[2][NP][NP][NUM_LEV]> >::type& u,
-  const typename ViewConst<ExecViewUnmanaged<Scalar[2][NP][NP][NUM_LEV]> >::type& v,
-  const ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV]>& v_cart,
-  const ExecViewUnmanaged<Scalar[2][NP][NP][NUM_LEV]>& ugradv_cart,
-  // [u dot grad] v, latlon
-  const ExecViewUnmanaged<Scalar[2][NP][NP][NUM_LEV]>& ugradv)
-{
-  for (int d_cart = 0; d_cart < 3; ++d_cart) {
-    const auto f1 = [&] (const int i, const int j, const int k) {
-      v_cart(i,j,k) = (vec_sphere2cart(0,d_cart,i,j) * v(0,i,j,k) +
-                       vec_sphere2cart(1,d_cart,i,j) * v(1,i,j,k));      
-    };
-    cti::loop_ijk<NUM_LEV>(kv, f1);
-    kv.team_barrier();
-
-    sphere_ops.gradient_sphere<NUM_LEV>(kv, v_cart, ugradv_cart);
-
-    const auto f2 = [&] (const int i, const int j, const int k) {
-      if (d_cart == 0) ugradv(0,i,j,k) = ugradv(1,i,j,k) = 0;
-      for (int d_latlon = 0; d_latlon < 2; ++d_latlon)
-        ugradv(d_latlon,i,j,k) +=
-          vec_sphere2cart(d_latlon,d_cart,i,j)*
-          (u(0,i,j,k) * ugradv_cart(0,i,j,k) + u(1,i,j,k) * ugradv_cart(1,i,j,k));
-    };
-    cti::loop_ijk<NUM_LEV>(kv, f2);
-  }
-}
-
-/* Form a 3rd-degree Lagrange polynomial over (x(k-1:k+1), y(k-1:k+1)) and set
-   yi(k) to its derivative at x(k). yps(:,:,0) is not written.
- */
-KOKKOS_FUNCTION static void approx_derivative (
-  const KernelVariables& kv, const CSNlevp& xs, const CSNlevp& ys,
-  const SNlev& yps) // yps(:,:,0) is undefined
-{
-  CRNlevp x(cti::cpack2real(xs));
-  CRNlevp y(cti::cpack2real(ys));
-  RNlev yp(cti::pack2real(yps));
-  const auto f = [&] (const int i, const int j, const int k) {
-    if (k == 0) return;
-    const auto& xkm1 = x(i,j,k-1);
-    const auto& xk   = x(i,j,k  ); // also the interpolation point
-    const auto& xkp1 = x(i,j,k+1);
-    yp(i,j,k) = (y(i,j,k-1)*((         1 /(xkm1 - xk  ))*((xk - xkp1)/(xkm1 - xkp1))) +
-                 y(i,j,k  )*((         1 /(xk   - xkm1))*((xk - xkp1)/(xk   - xkp1)) +
-                             ((xk - xkm1)/(xk   - xkm1))*(         1 /(xk   - xkp1))) +
-                 y(i,j,k+1)*(((xk - xkm1)/(xkp1 - xkm1))*(         1 /(xkp1 - xk  ))));
-  };
-  cti::loop_ijk<cti::num_phys_lev>(kv, f);
-}
-
 // Pad by an amount ~ smallest level to keep the computed dp > 0.
 void ComposeTransportImpl::set_dp_tol () {
   const auto dp0h = cmvdc(m_hvcoord.dp0);
@@ -277,7 +221,7 @@ KOKKOS_FUNCTION static void calc_vertically_lagrangian_levels (
   // Gradient of eta_dot_dpdn = p_eta deta/dt at final time w.r.t. p at initial
   // time.
   const auto& ptp0 = dprecon;
-  approx_derivative(kv, pref, *eta_dot_dpdn[1], ptp0);
+  cti::approx_derivative(kv, pref, *eta_dot_dpdn[1], ptp0);
 
   {
     const auto& edd = *eta_dot_dpdn[0];
@@ -510,7 +454,7 @@ static int test_approx_derivative () {
   { // Run approx_derivative.
     const auto f = KOKKOS_LAMBDA (const cti::MT& team) {
       KernelVariables kv(team);
-      approx_derivative(kv, xp, yp, yip);
+      cti::approx_derivative(kv, xp, yp, yip);
     };
     Kokkos::fence();
     Kokkos::parallel_for(policy, f);

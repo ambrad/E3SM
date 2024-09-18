@@ -270,6 +270,62 @@ struct ComposeTransportImpl {
   Real* pack2real (const View& v) { return &(*v.data())[0]; }
   template <typename View> static KOKKOS_INLINE_FUNCTION
   const Real* cpack2real (const View& v) { return &(*v.data())[0]; }
+
+  KOKKOS_FUNCTION
+  static void ugradv_sphere (
+    const SphereOperators& sphere_ops, const KernelVariables& kv,
+    const typename ViewConst<ExecViewUnmanaged<Real[2][3][NP][NP]> >::type& vec_sphere2cart,
+    // velocity, latlon
+    const typename ViewConst<ExecViewUnmanaged<Scalar[2][NP][NP][NUM_LEV]> >::type& u,
+    const typename ViewConst<ExecViewUnmanaged<Scalar[2][NP][NP][NUM_LEV]> >::type& v,
+    const ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV]>& v_cart,
+    const ExecViewUnmanaged<Scalar[2][NP][NP][NUM_LEV]>& ugradv_cart,
+    // [u dot grad] v, latlon
+    const ExecViewUnmanaged<Scalar[2][NP][NP][NUM_LEV]>& ugradv)
+  {
+    for (int d_cart = 0; d_cart < 3; ++d_cart) {
+      const auto f1 = [&] (const int i, const int j, const int k) {
+        v_cart(i,j,k) = (vec_sphere2cart(0,d_cart,i,j) * v(0,i,j,k) +
+                         vec_sphere2cart(1,d_cart,i,j) * v(1,i,j,k));      
+      };
+      loop_ijk<NUM_LEV>(kv, f1);
+      kv.team_barrier();
+
+      sphere_ops.gradient_sphere<NUM_LEV>(kv, v_cart, ugradv_cart);
+
+      const auto f2 = [&] (const int i, const int j, const int k) {
+        if (d_cart == 0) ugradv(0,i,j,k) = ugradv(1,i,j,k) = 0;
+        for (int d_latlon = 0; d_latlon < 2; ++d_latlon)
+          ugradv(d_latlon,i,j,k) +=
+            vec_sphere2cart(d_latlon,d_cart,i,j)*
+            (u(0,i,j,k) * ugradv_cart(0,i,j,k) + u(1,i,j,k) * ugradv_cart(1,i,j,k));
+      };
+      loop_ijk<NUM_LEV>(kv, f2);
+    }
+  }
+
+  /* Form a 3rd-degree Lagrange polynomial over (x(k-1:k+1), y(k-1:k+1)) and set
+   yi(k) to its derivative at x(k). yps(:,:,0) is not written.
+  */
+  KOKKOS_FUNCTION static void approx_derivative (
+    const KernelVariables& kv, const CSNlevp& xs, const CSNlevp& ys,
+    const SNlev& yps) // yps(:,:,0) is undefined
+  {
+    CRNlevp x(cpack2real(xs));
+    CRNlevp y(cpack2real(ys));
+    RNlev yp(pack2real(yps));
+    const auto f = [&] (const int i, const int j, const int k) {
+      if (k == 0) return;
+      const auto& xkm1 = x(i,j,k-1);
+      const auto& xk   = x(i,j,k  ); // also the interpolation point
+      const auto& xkp1 = x(i,j,k+1);
+      yp(i,j,k) = (y(i,j,k-1)*((         1 /(xkm1 - xk  ))*((xk - xkp1)/(xkm1 - xkp1))) +
+                   y(i,j,k  )*((         1 /(xk   - xkm1))*((xk - xkp1)/(xk   - xkp1)) +
+                               ((xk - xkm1)/(xk   - xkm1))*(         1 /(xk   - xkp1))) +
+                   y(i,j,k+1)*(((xk - xkm1)/(xkp1 - xkm1))*(         1 /(xkp1 - xk  ))));
+    };
+    loop_ijk<num_phys_lev>(kv, f);
+  }
 };
 
 } // namespace Homme
