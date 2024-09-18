@@ -46,6 +46,8 @@ module prim_driver_base
 
   public :: applyCAMforcing_tracers
 
+  public :: set_tracer_transport_derived_values
+
   ! Service variables used to partition the mesh.
   ! Note: GridEdge and MeshVertex are public, cause kokkos targets need to access them
   type (GridVertex_t), pointer :: GridVertex(:)
