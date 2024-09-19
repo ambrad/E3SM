@@ -27,10 +27,17 @@ using S2Nlev  = cti::S2Nlev;
 using R2Nlev  = cti::R2Nlev;
 using S2Nlevp = cti::S2Nlevp;
 
+template <int N> using RNV = ExecViewUnmanaged<Real[NP][NP][N]>;
+template <int N> using CRNV = typename ViewConst<RNV<N>>::type;
+
 // For sorted ascending x[0:n] and x in [x[0], x[n-1]] with hint xi_idx, return
 // i such that x[i] <= xi <= x[i+1].
+//   This function is meant for the case that x_idx is very close to the
+// support. If that isn't true, then this method is inefficient; binary search
+// should be used instead.
+template <typename ConstRealArray>
 KOKKOS_FUNCTION static
-int find_support (const int n, const Real* const x, const int x_idx,
+int find_support (const int n, ConstRealArray x, const int x_idx,
                   const Real xi) {
   assert(xi >= x[0] and xi <= x[n-1]);
   // Handle the most common case.
@@ -48,8 +55,11 @@ int find_support (const int n, const Real* const x, const int x_idx,
   return -1;
 }
 
+template <int N>
 KOKKOS_FUNCTION static void
-linterp (const KernelVariables& kv) {
+linterp (const KernelVariables& kv, const int n, const CRNV<N>& x, const CRNV<N>& y,
+         const RNV<N>& xi, const RNV<N>& yi, const char* const caller = nullptr) {
+  assert(n <= N);
   
 }
 

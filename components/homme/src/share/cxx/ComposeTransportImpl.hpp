@@ -54,11 +54,6 @@ struct ComposeTransportImpl {
 
   using DeparturePoints = ExecViewManaged<Real*****>;
 
-  typedef typename ViewConst<ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV]> >::type CSNlev;
-  typedef typename ViewConst<ExecViewUnmanaged<Real[NP][NP][NUM_LEV*VECTOR_SIZE]> >::type CRNlev;
-  typedef typename ViewConst<ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV_P]> >::type CSNlevp;
-  typedef typename ViewConst<ExecViewUnmanaged<Real[NP][NP][NUM_LEV_P*VECTOR_SIZE]> >::type CRNlevp;
-  typedef typename ViewConst<ExecViewUnmanaged<Scalar[2][NP][NP][NUM_LEV]> >::type CS2Nlev;
   typedef ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV]> SNlev;
   typedef ExecViewUnmanaged<Real[NP][NP][NUM_LEV*VECTOR_SIZE]> RNlev;
   typedef ExecViewUnmanaged<Scalar[NP][NP][NUM_LEV_P]> SNlevp;
@@ -66,6 +61,11 @@ struct ComposeTransportImpl {
   typedef ExecViewUnmanaged<Scalar[2][NP][NP][NUM_LEV]> S2Nlev;
   typedef ExecViewUnmanaged<Real[2][NP][NP][NUM_LEV*VECTOR_SIZE]> R2Nlev;
   typedef ExecViewUnmanaged<Scalar[2][NP][NP][NUM_LEV_P]> S2Nlevp;
+  typedef typename ViewConst<SNlev >::type CSNlev;
+  typedef typename ViewConst<RNlev >::type CRNlev;
+  typedef typename ViewConst<SNlevp>::type CSNlevp;
+  typedef typename ViewConst<RNlevp>::type CRNlevp;
+  typedef typename ViewConst<S2Nlev>::type CS2Nlev;
 
   struct Data {
     int nelemd, qsize, limiter_option, cdr_check, hv_q, hv_subcycle_q;
