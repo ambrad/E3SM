@@ -470,9 +470,10 @@ TEST_CASE ("compose_transport_testing") {
       if (s.get_comm().root()) {
         const Real f = bfb ? 0 : 1;
         const int n = s.nlev*s.qsize;
-        // When not a BFB build, still expect l2 error to be the same to a few digits.
-        for (int i = 0; i < n; ++i) REQUIRE(almost_equal(eval_f[i], eval_c[i], f*1e-3));
-        // Mass conservation error should be within a factor of 10 of each other.
+        // When not a BFB build, still expect l2 error to be the same to several digits.
+        for (int i = 0; i < n; ++i) REQUIRE(almost_equal(eval_f[i], eval_c[i], f*1e5*tol));
+        // Mass conservation error should be within a factor of 10 of each
+        // other.
         for (int i = n; i < n + s.qsize; ++i) REQUIRE(almost_equal(eval_f[i], eval_c[i], f*10));
         // And mass conservation itself should be small.
         for (int i = n; i < n + s.qsize; ++i) REQUIRE(std::abs(eval_f[i]) <= 20*tol);
