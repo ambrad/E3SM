@@ -189,6 +189,19 @@ make_random_sorted (TestData& td, const int n, const Real xlo, const Real xhi,
 
 static int test_linterp (TestData& td) {
   int nerr = 0;
+  { // xi == x => yi == y.
+    int ne = 0;
+    const int n = 30;
+    std::vector<Real> x(n), y(n), xi(n), yi(n);
+    make_random_sorted(td, n, -0.1, 1.2, x);
+    make_random_sorted(td, n, -3, -1, y);
+    for (int i = 0; i < n; ++i) xi[i] = x[i];
+    run_linterp(x, y, xi, yi);
+    for (int i = 0; i < n; ++i)
+      if (yi[i] != y[i])
+        ++ne;
+    nerr += ne;
+  }
   { // Reconstruct a linear function exactly.
     int ne = 0;
     const int n = 56;
