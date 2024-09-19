@@ -27,12 +27,16 @@ using S2Nlev  = cti::S2Nlev;
 using R2Nlev  = cti::R2Nlev;
 using S2Nlevp = cti::S2Nlevp;
 
-
+KOKKOS_FUNCTION static void
+linterp () {
+  
+}
 
 void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real dt) {
 }
 
 int ComposeTransportImpl::run_enhanced_trajectory_unit_tests () {
+  printf("hi\n");
   return 0;
 }
 
