@@ -219,7 +219,7 @@ private:
     run_only_advection_test = false;
     nmax = -1;
     halo = 2;
-    traj_nsubstep = 1;
+    traj_nsubstep = 0;
     nearest_point = true;
 
     const bool am_root = get_comm().root();
