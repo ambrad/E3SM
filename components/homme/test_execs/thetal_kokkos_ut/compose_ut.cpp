@@ -143,7 +143,9 @@ struct Session {
     p.scale_factor = is_sphere ? PhysicalConstants::rearth0 : 1;
     p.laplacian_rigid_factor = is_sphere ? 1/p.scale_factor : 0;
 
-#pragma message "THIS CAUSES DIFFS"
+#pragma message "figure out why this causes diffs"
+    // It seems that if I call h.init with the already existing values, it still
+    // diffs.
     if (0)
     { // Set hybrid coordinate values to deterministic ones.
       std::vector<Real> hyam(nlev, 0), hyai(nlev+1, 0), hybm(nlev), hybi(nlev+1);
