@@ -218,6 +218,14 @@ IF(${BUILD_HOMME_THETA})
 #  ADD_SUBDIRECTORY(theta-l-nlev300-native)
   # Special test for -DHOMME_WITHOUT_PIOLIBRARY.
   ADD_SUBDIRECTORY(stt)
+add_subdirectory(theta-l-nlev160)
+add_subdirectory(theta-l-nlev96)
+add_subdirectory(theta-l-nlev80)
+add_subdirectory(theta-l-nlev48)
+add_subdirectory(theta-l-nlev64)
+add_subdirectory(theta-l-nlev32)
+add_subdirectory(theta-l-nlev16)
+add_subdirectory(theta-l-nlev8)
 ENDIF()
 
 IF (${BUILD_HOMME_THETA_KOKKOS})
@@ -231,6 +239,13 @@ IF (${BUILD_HOMME_THETA_KOKKOS})
 
     ADD_SUBDIRECTORY(theta-l-nlev30-kokkos)
     ADD_SUBDIRECTORY(theta-l-nlev72-kokkos)
+add_subdirectory(theta-l-nlev160-kokkos)
+add_subdirectory(theta-l-nlev96-kokkos)
+add_subdirectory(theta-l-nlev80-kokkos)
+add_subdirectory(theta-l-nlev64-kokkos)
+add_subdirectory(theta-l-nlev48-kokkos)
+add_subdirectory(theta-l-nlev32-kokkos)
+add_subdirectory(theta-l-nlev16-kokkos)
 
     ADD_SUBDIRECTORY(theta-nlev128-kokkos)
 
