@@ -143,6 +143,8 @@ struct Session {
     p.scale_factor = is_sphere ? PhysicalConstants::rearth0 : 1;
     p.laplacian_rigid_factor = is_sphere ? 1/p.scale_factor : 0;
 
+#pragma message "THIS CAUSES DIFFS"
+    if (0)
     { // Set hybrid coordinate values to deterministic ones.
       std::vector<Real> hyam(nlev, 0), hyai(nlev+1, 0), hybm(nlev), hybi(nlev+1);
       for (int i = 0; i < nlev+1; ++i) hybi[i] = Real(i)/nlev;
