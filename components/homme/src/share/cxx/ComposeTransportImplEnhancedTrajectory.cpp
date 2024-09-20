@@ -42,6 +42,12 @@ template <int N> using CRNV = typename ViewConst<RNV<N>>::type;
 using RNlevp = RNV<cti::num_phys_lev+1>;
 using CRNlevp = CRNV<cti::num_phys_lev+1>;
 
+using RnV = ExecViewUnmanaged<Real*>;
+using CRnV = ExecViewUnmanaged<const Real*>;
+
+KOKKOS_INLINE_FUNCTION int len (const  RnV& v) { return v.extent_int(0); }
+KOKKOS_INLINE_FUNCTION int len (const CRnV& v) { return v.extent_int(0); }
+
 // For sorted ascending x[0:n] and x in [x[0], x[n-1]] with hint xi_idx, return
 // i such that x[i] <= xi <= x[i+1].
 //   This function is meant for the case that x_idx is very close to the
@@ -70,50 +76,76 @@ int find_support (const int n, const ConstRealArray& x, const int x_idx,
 template <typename ConstRealArray>
 KOKKOS_FUNCTION static Real
 linterp (const int n, const ConstRealArray& x, const ConstRealArray& y,
-         const int xi_idx, const Real xi) {
-  const auto isup = find_support(n, x, xi_idx, xi);
+         const int x_idx, const Real xi) {
+  const auto isup = find_support(n, x, x_idx, xi);
   const Real a = (xi - x[isup])/(x[isup+1] - x[isup]);
   return (1-a)*y[isup] + a*y[isup+1];
 }
 
 template <typename Range, typename ConstRealArray, typename RealArray>
 KOKKOS_FUNCTION static void
-linterp (const Range& range, const int n,
-         const ConstRealArray& x, const ConstRealArray& y,
-         const ConstRealArray& xi, RealArray& yi,
-         const char* const caller) {
+linterp (const Range& range,
+         const int n , const ConstRealArray& x , const ConstRealArray& y,
+         const int ni, const ConstRealArray& xi, RealArray& yi,
+         const int x_idx_offset, const char* const caller) {
 #ifndef NDEBUG
-  if (xi[0] < x[0] or xi[n-1] > x[n-1]) {
+  if (xi[0] < x[0] or xi[ni-1] > x[n-1]) {
     if (caller)
       printf("linterp: xi out of bounds: %s\n", caller);
     assert(false);
   }
 #endif
-  Kokkos::parallel_for(
-    range, [&] (const int k) { yi[k] = linterp(n, x, y, k, xi[k]); });
+  const auto f = [&] (const int k) {
+    assert(k < ni);
+    yi[k] = linterp(n, x, y, k + x_idx_offset, xi[k]);
+  };
+  Kokkos::parallel_for(range, f);
 }
 
 template <int N>
 KOKKOS_FUNCTION static void
-linterp (const KernelVariables& kv, const int n, const CRelNV<N>& x, const CRelNV<N>& y,
-         const CRelNV<N>& xi, const RelNV<N>& yi, const char* const caller = nullptr) {
+linterp (const KernelVariables& kv,
+         const int n, const CRelNV<N>& x, const CRelNV<N>& y,
+         const int ni, const CRelNV<N>& xi, const RelNV<N>& yi,
+         const int x_idx_offset = 0,
+         const char* const caller = nullptr) {
   assert(n <= N);
   const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
-  const auto tvr = Kokkos::ThreadVectorRange(kv.team, n);
+  const auto tvr = Kokkos::ThreadVectorRange(kv.team, ni);
   const auto f = [&] (const int idx) {
     const int i = idx / NP, j = idx % NP;
-    linterp(tvr, n, Homme::subview(x,i,j), Homme::subview(y,i,j),
-            Homme::subview(xi,i,j), Homme::subview(yi,i,j), caller);
+    linterp(tvr,
+            n , Homme::subview(x ,i,j), Homme::subview(y ,i,j),
+            ni, Homme::subview(xi,i,j), Homme::subview(yi,i,j),
+            x_idx_offset, caller);
   };
   Kokkos::parallel_for(ttr, f);
 }
 
+/*
+  Compute level pressure thickness given eta at interfaces using the following
+  approximation:
+         e = A(e) + B(e)
+      p(e) = A(e) p0 + B(e) ps
+           = e p0 + B(e) (ps - p0)
+          a= e p0 + I[Bi(eref)](e) (ps - p0)
+*/
 KOKKOS_FUNCTION static void
 eta_to_dp (const KernelVariables& kv,
            const Real hy_ps0, const CRNlevp& hy_bi, const CRNlevp& hy_etai,
            const CRelV& ps, const CRelNlevp& etai, const RelNlevp& wrk,
            const RelNlev& dp) {
-  
+#if 0
+  const int n = cti::num_phys_lev + 1;  
+  const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
+  const auto tvr = Kokkos::ThreadVectorRange(kv.team, n);
+  const auto f = [&] (const int idx) {
+    const int i = idx / NP, j = idx % NP;
+    linterp(tvr, n, hy_etai, hy_bi,
+            Homme::subview(xi,i,j), Homme::subview(yi,i,j), caller);
+  };
+  Kokkos::parallel_for(ttr, f);
+#endif
 }
 
 // Public function.
@@ -159,28 +191,28 @@ static int test_find_support (TestData&) {
 static void
 run_linterp (const std::vector<Real>& x, const std::vector<Real>& y,
              std::vector<Real>& xi, std::vector<Real>& yi) {
-  const auto n = x.size();
-  assert(y.size() == n); assert(xi.size() == n); assert(yi.size() == n);
+  const auto n = x.size(), ni = xi.size();
+  assert(y.size() == n); assert(yi.size() == ni);
   // input -> device (test different sizes >= n)
-  ExecView<Real*> xv("xv", n), yv("yv", n+1), xiv("xiv", n+2), yiv("yiv", n+3);
+  ExecView<Real*> xv("xv", n), yv("yv", n+1), xiv("xiv", ni+2), yiv("yiv", ni+3);
   const auto xm = Kokkos::create_mirror_view(xv);
   const auto ym = Kokkos::create_mirror_view(yv);
   const auto xim = Kokkos::create_mirror_view(xiv);
   const auto yim = Kokkos::create_mirror_view(yiv);
   for (size_t i = 0; i < n; ++i) xm(i) = x[i];
   for (size_t i = 0; i < n; ++i) ym(i) = y[i];
-  for (size_t i = 0; i < n; ++i) xim(i) = xi[i];
+  for (size_t i = 0; i < ni; ++i) xim(i) = xi[i];
   Kokkos::deep_copy(xv, xm);
   Kokkos::deep_copy(yv, ym);
   Kokkos::deep_copy(xiv, xim);
   // call linterp
   const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
-    const auto range = Kokkos::TeamVectorRange(team, n);
-    linterp(range, n, xv, yv, xiv, yiv, "unittest");
+    const auto range = Kokkos::TeamVectorRange(team, ni);
+    linterp(range, n, xv, yv, ni, xiv, yiv, 0, "unittest");
   };
   Homme::ThreadPreferences tp;
   tp.max_threads_usable = 1;
-  tp.max_vectors_usable = n;
+  tp.max_vectors_usable = ni;
   tp.prefer_threads = false;
   tp.prefer_larger_team = true;
   const auto policy = Homme::get_default_team_policy<ExecSpace>(1, tp);
@@ -188,7 +220,7 @@ run_linterp (const std::vector<Real>& x, const std::vector<Real>& y,
   Kokkos::fence();
   // output -> host
   Kokkos::deep_copy(yim, yiv);
-  for (size_t i = 0; i < n; ++i) yi[i] = yim(i);
+  for (size_t i = 0; i < ni; ++i) yi[i] = yim(i);
 }
 
 static void
@@ -219,19 +251,19 @@ static int test_linterp (TestData& td) {
   }
   { // Reconstruct a linear function exactly.
     int ne = 0;
-    const int n = 56;
+    const int n = 56, ni = n-3;
     const Real xlo = -1.2, xhi = 3.1;
     const auto f = [&] (const Real x) { return -0.7 + 1.3*x; };
-    std::vector<Real> x(n), y(n), xi(n), yi(n);
+    std::vector<Real> x(n), y(n), xi(ni), yi(ni);
     for (int trial = 0; trial < 4; ++trial) {
       make_random_sorted(td, n, xlo, xhi, x);
-      make_random_sorted(td, n,
+      make_random_sorted(td, ni,
                          xlo + (trial == 1 or trial == 3 ?  0.1 : 0),
                          xhi + (trial == 2 or trial == 3 ? -0.5 : 0),
                          xi);
       for (int i = 0; i < n; ++i) y[i] = f(x[i]);
       run_linterp(x, y, xi, yi);
-      for (int i = 0; i < n; ++i)
+      for (int i = 0; i < ni; ++i)
         if (std::abs(yi[i] - f(xi[i])) > 100*td.eps)
           ++ne;
     }
