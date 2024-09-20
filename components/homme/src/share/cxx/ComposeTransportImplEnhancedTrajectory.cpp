@@ -19,21 +19,28 @@
 
 namespace Homme {
 using cti = ComposeTransportImpl;
-using CSNlev  = cti::CSNlev;
-using CRNlev  = cti::CRNlev;
-using CSNlevp = cti::CSNlevp;
-using CRNlevp = cti::CRNlevp;
-using CS2Nlev = cti::CS2Nlev;
-using SNlev   = cti::SNlev;
-using RNlev   = cti::RNlev;
-using SNlevp  = cti::SNlevp;
-using RNlevp  = cti::RNlevp;
-using S2Nlev  = cti::S2Nlev;
-using R2Nlev  = cti::R2Nlev;
-using S2Nlevp = cti::S2Nlevp;
+using CSelNlev  = cti::CSNlev;
+using CRelNlev  = cti::CRNlev;
+using CSelNlevp = cti::CSNlevp;
+using CRelNlevp = cti::CRNlevp;
+using CS2elNlev = cti::CS2Nlev;
+using SelNlev   = cti::SNlev;
+using RelNlev   = cti::RNlev;
+using SelNlevp  = cti::SNlevp;
+using RelNlevp  = cti::RNlevp;
+using S2elNlev  = cti::S2Nlev;
+using R2elNlev  = cti::R2Nlev;
+using S2elNlevp = cti::S2Nlevp;
 
-template <int N> using RNV = ExecViewUnmanaged<Real[NP][NP][N]>;
+using RelV = ExecViewUnmanaged<Real[NP][NP]>;
+using CRelV = typename ViewConst<RelV>::type;
+template <int N> using RelNV = ExecViewUnmanaged<Real[NP][NP][N]>;
+template <int N> using CRelNV = typename ViewConst<RelNV<N>>::type;
+
+template <int N> using RNV = ExecViewUnmanaged<Real[N]>;
 template <int N> using CRNV = typename ViewConst<RNV<N>>::type;
+using RNlevp = RNV<cti::num_phys_lev+1>;
+using CRNlevp = CRNV<cti::num_phys_lev+1>;
 
 // For sorted ascending x[0:n] and x in [x[0], x[n-1]] with hint xi_idx, return
 // i such that x[i] <= xi <= x[i+1].
@@ -88,8 +95,8 @@ linterp (const Range& range, const int n,
 
 template <int N>
 KOKKOS_FUNCTION static void
-linterp (const KernelVariables& kv, const int n, const CRNV<N>& x, const CRNV<N>& y,
-         const CRNV<N>& xi, const RNV<N>& yi, const char* const caller = nullptr) {
+linterp (const KernelVariables& kv, const int n, const CRelNV<N>& x, const CRelNV<N>& y,
+         const CRelNV<N>& xi, const RelNV<N>& yi, const char* const caller = nullptr) {
   assert(n <= N);
   const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
   const auto tvr = Kokkos::ThreadVectorRange(kv.team, n);
@@ -99,6 +106,14 @@ linterp (const KernelVariables& kv, const int n, const CRNV<N>& x, const CRNV<N>
             Homme::subview(xi,i,j), Homme::subview(yi,i,j), caller);
   };
   Kokkos::parallel_for(ttr, f);
+}
+
+KOKKOS_FUNCTION static void
+eta_to_dp (const KernelVariables& kv,
+           const Real hy_ps0, const CRNlevp& hy_bi, const CRNlevp& hy_etai,
+           const CRelV& ps, const CRelNlevp& etai, const RelNlevp& wrk,
+           const RelNlev& dp) {
+  
 }
 
 // Public function.
