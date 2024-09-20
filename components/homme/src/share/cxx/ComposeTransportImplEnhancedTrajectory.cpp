@@ -73,6 +73,7 @@ int find_support (const int n, const ConstRealArray& x, const int x_idx,
   return -1;
 }
 
+// Linear interpolation core computation.
 template <typename ConstRealArray>
 KOKKOS_FUNCTION static Real
 linterp (const int n, const ConstRealArray& x, const ConstRealArray& y,
@@ -82,12 +83,16 @@ linterp (const int n, const ConstRealArray& x, const ConstRealArray& y,
   return (1-a)*y[isup] + a*y[isup+1];
 }
 
+// Linear interpolation at the lowest team ||ism.
+//   Range provides this ||ism over index 0 <= k < ni.
+//   Interpolate y(x) to yi(xi).
+//   x_idx_offset is added to k in the call to find_support.
 template <typename Range, typename ConstRealArray, typename RealArray>
 KOKKOS_FUNCTION static void
 linterp (const Range& range,
          const int n , const ConstRealArray& x , const ConstRealArray& y,
-         const int ni, const ConstRealArray& xi, RealArray& yi,
-         const int x_idx_offset, const char* const caller) {
+         const int ni, const ConstRealArray& xi, const RealArray& yi,
+         const int x_idx_offset = 0, const char* const caller = nullptr) {
 #ifndef NDEBUG
   if (xi[0] < x[0] or xi[ni-1] > x[n-1]) {
     if (caller)
@@ -95,8 +100,9 @@ linterp (const Range& range,
     assert(false);
   }
 #endif
+  assert(range.start >= 0 );
+  assert(range.end   <= ni);
   const auto f = [&] (const int k) {
-    assert(k < ni);
     yi[k] = linterp(n, x, y, k + x_idx_offset, xi[k]);
   };
   Kokkos::parallel_for(range, f);
@@ -128,24 +134,38 @@ linterp (const KernelVariables& kv,
          e = A(e) + B(e)
       p(e) = A(e) p0 + B(e) ps
            = e p0 + B(e) (ps - p0)
-          a= e p0 + I[Bi(eref)](e) (ps - p0)
+          a= e p0 + I[Bi(eref)](e) (ps - p0).
+  Then dp = diff(p).
 */
 KOKKOS_FUNCTION static void
 eta_to_dp (const KernelVariables& kv,
            const Real hy_ps0, const CRNlevp& hy_bi, const CRNlevp& hy_etai,
            const CRelV& ps, const CRelNlevp& etai, const RelNlevp& wrk,
            const RelNlev& dp) {
-#if 0
-  const int n = cti::num_phys_lev + 1;  
+  const int nlev = cti::num_phys_lev, nlevp = nlev + 1;
+  const auto& bi = wrk;
   const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
-  const auto tvr = Kokkos::ThreadVectorRange(kv.team, n);
+  const auto tvr_linterp = Kokkos::ThreadVectorRange(kv.team, nlevp);
+  const auto f_linterp = [&] (const int idx) {
+    const int i = idx / NP, j = idx % NP;
+    linterp(tvr_linterp,
+            nlevp, hy_etai, hy_bi,
+            nlevp, Homme::subview(etai,i,j), Homme::subview(bi,i,j),
+            0, "eta_to_dp");
+  };
+  Kokkos::parallel_for(ttr, f_linterp);
+  kv.team_barrier();
+  const auto tvr = Kokkos::ThreadVectorRange(kv.team, nlev);
   const auto f = [&] (const int idx) {
     const int i = idx / NP, j = idx % NP;
-    linterp(tvr, n, hy_etai, hy_bi,
-            Homme::subview(xi,i,j), Homme::subview(yi,i,j), caller);
+    const auto dps = ps(i,j) - hy_ps0;
+    const auto g = [&] (const int k) {
+      dp(i,j,k) = ((etai(i,j,k+1) - etai(i,j,k))*hy_ps0 +
+                   (bi(i,j,k+1) - bi(i,j,k))*dps);
+    };
+    Kokkos::parallel_for(tvr, g);
   };
   Kokkos::parallel_for(ttr, f);
-#endif
 }
 
 // Public function.
