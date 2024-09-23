@@ -163,14 +163,14 @@ contains
           call cedr_sl_init(np, nlev, qsize, qsize_d, timelevels, need_conservation)
        end if
        allocate(minq(np,np,nlev,qsize,size(elem)), maxq(np,np,nlev,qsize,size(elem)), &
-            dep_points_all(dep_points_ndim,np,np,nlev,size(elem)))
+            &   dep_points_all(dep_points_ndim,np,np,nlev,size(elem)))
        if (enhanced_trajectory) then
           allocate(vnode(dep_points_ndim,np,np,nlev,size(elem)), &
                &   vdep (dep_points_ndim,np,np,nlev,size(elem)))
-          call init_velocity_record(size(elem), dt_tracer_factor, dt_remap_factor, &
-               semi_lagrange_trajectory_nsubstep, semi_lagrange_trajectory_nvelocity, &
-               vrec, i)
        end if
+       call init_velocity_record(size(elem), dt_tracer_factor, dt_remap_factor, &
+            semi_lagrange_trajectory_nsubstep, semi_lagrange_trajectory_nvelocity, &
+            vrec, i)
        dp_tol = -one
        deta_tol = -one
     endif
