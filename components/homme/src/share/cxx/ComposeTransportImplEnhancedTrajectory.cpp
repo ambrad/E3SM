@@ -209,6 +209,20 @@ static int test_find_support (TestData&) {
   return ne;
 }
 
+static void todev (const std::vector<Real>& h, const ExecView<Real*>& d) {
+  assert(h.size() <= d.size());
+  const auto m = Kokkos::create_mirror_view(d);
+  for (size_t i = 0; i < h.size(); ++i) m(i) = h[i];
+  Kokkos::deep_copy(d, m);
+}
+
+static void tohost (const ExecView<const Real*>& d, std::vector<Real>& h) {
+  assert(h.size() <= d.size());
+  const auto m = Kokkos::create_mirror_view(d);
+  Kokkos::deep_copy(m, d);
+  for (size_t i = 0; i < h.size(); ++i) h[i] = m(i);
+}
+
 static void
 run_linterp (const std::vector<Real>& x, const std::vector<Real>& y,
              std::vector<Real>& xi, std::vector<Real>& yi) {
@@ -216,16 +230,9 @@ run_linterp (const std::vector<Real>& x, const std::vector<Real>& y,
   assert(y.size() == n); assert(yi.size() == ni);
   // input -> device (test different sizes >= n)
   ExecView<Real*> xv("xv", n), yv("yv", n+1), xiv("xiv", ni+2), yiv("yiv", ni+3);
-  const auto xm = Kokkos::create_mirror_view(xv);
-  const auto ym = Kokkos::create_mirror_view(yv);
-  const auto xim = Kokkos::create_mirror_view(xiv);
-  const auto yim = Kokkos::create_mirror_view(yiv);
-  for (size_t i = 0; i < n; ++i) xm(i) = x[i];
-  for (size_t i = 0; i < n; ++i) ym(i) = y[i];
-  for (size_t i = 0; i < ni; ++i) xim(i) = xi[i];
-  Kokkos::deep_copy(xv, xm);
-  Kokkos::deep_copy(yv, ym);
-  Kokkos::deep_copy(xiv, xim);
+  todev(x, xv);
+  todev(y, yv);
+  todev(xi, xiv);
   // call linterp
   const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
     const auto range = Kokkos::TeamVectorRange(team, ni);
@@ -240,8 +247,7 @@ run_linterp (const std::vector<Real>& x, const std::vector<Real>& y,
   Kokkos::parallel_for(policy, f);
   Kokkos::fence();
   // output -> host
-  Kokkos::deep_copy(yim, yiv);
-  for (size_t i = 0; i < ni; ++i) yi[i] = yim(i);
+  tohost(yiv, yi);
 }
 
 static void
@@ -336,9 +342,24 @@ static void fill (HybridLevels& h, const int n) {
 
 static int test_eta_to_dp (TestData& td) {
   int nerr = 0;
-  const int nlev = 88;
+
+  static const int nlev = 88;
   HybridLevels h;
   fill(h, nlev);
+
+  /*
+          (const KernelVariables& kv,
+           const Real hy_ps0, const CRNV<Nlev+1>& hy_bi, const CRNV<Nlev+1>& hy_etai,
+           const CRelV& ps, const CRelNV<Nlev+1>& etai, const RelNV<Nlev+1>& wrk,
+           const RelNV<Nlev>& dp) {
+   */
+  ExecView<Real[nlev+1]> hy_bi("hy_bi"), hy_etai("hy_etai");
+  ExecView<Real[NP][NP][nlev+1]> etai("etai"), wrk("wrk");
+  ExecView<Real[NP][NP][nlev]> dp("dp");
+
+  todev(h.bi, hy_bi);
+  todev(h.etai, hy_etai);
+
   return nerr;
 }
 
