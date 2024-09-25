@@ -137,11 +137,12 @@ linterp (const KernelVariables& kv,
           a= e p0 + I[Bi(eref)](e) (ps - p0).
   Then dp = diff(p).
 */
+template <int Nlev>
 KOKKOS_FUNCTION static void
 eta_to_dp (const KernelVariables& kv,
-           const Real hy_ps0, const CRNlevp& hy_bi, const CRNlevp& hy_etai,
-           const CRelV& ps, const CRelNlevp& etai, const RelNlevp& wrk,
-           const RelNlev& dp) {
+           const Real hy_ps0, const CRNV<Nlev+1>& hy_bi, const CRNV<Nlev+1>& hy_etai,
+           const CRelV& ps, const CRelNV<Nlev+1>& etai, const RelNV<Nlev+1>& wrk,
+           const RelNV<Nlev>& dp) {
   const int nlev = cti::num_phys_lev, nlevp = nlev + 1;
   const auto& bi = wrk;
   const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
@@ -292,6 +293,55 @@ static int test_linterp (TestData& td) {
   return nerr;
 }
 
+struct HybridLevels {
+  std::vector<Real> ai, bi, am, bm, etai, etam;
+};
+
+// Follow DCMIP2012 3D tracer transport specification for a, b, eta.
+static void fill (HybridLevels& h, const int n) {
+  h.ai.resize(n+1); h.bi.resize(n+1);
+  h.am.resize(n  ); h.bm.resize(n  );
+  h.etai.resize(n+1); h.etam.resize(n);
+
+  const auto Rd = PhysicalConstants::Rgas;
+  const auto T0 = 300; // K
+  const auto p0 = PhysicalConstants::p0;
+  const auto g = PhysicalConstants::g;
+  const Real ztop = 12e3; // m
+
+  const auto calc_pressure = [&] (const Real z) {
+    return p0*std::exp(-g*z/(Rd*T0));
+  };
+
+  const Real eta_top = calc_pressure(ztop)/p0;
+  assert(eta_top > 0);
+  for (int i = 0; i <= n; ++i) {
+    const auto z = (Real(n - i)/n)*ztop;
+    h.etai[i] = calc_pressure(z)/p0;
+    h.bi[i] = i == 0 ? 0 : (h.etai[i] - eta_top)/(1 - eta_top);
+    h.ai[i] = h.etai[i] - h.bi[i];
+    assert(i == 0 || h.etai[i] > h.etai[i-1]);
+  }
+  assert(h.bi  [0] == 0); // Real(n - i)/n is exactly 1, so exact = holds
+  assert(h.bi  [n] == 1); // exp(0) is exactly 0, so exact = holds
+  assert(h.etai[n] == 1); // same
+
+  const auto tomid = [&] (const std::vector<Real>& in, std::vector<Real>& mi) {
+    for (int i = 0; i < n; ++i) mi[i] = (in[i] + in[i+1])/2;
+  };
+  tomid(h.ai, h.am);
+  tomid(h.bi, h.bm);
+  tomid(h.etai, h.etam);
+}
+
+static int test_eta_to_dp (TestData& td) {
+  int nerr = 0;
+  const int nlev = 88;
+  HybridLevels h;
+  fill(h, nlev);
+  return nerr;
+}
+
 #define comunittest(f) do {                     \
     ne = f(td);                                 \
     if (ne) printf(#f " ne %d\n", ne);          \
@@ -303,6 +353,7 @@ int ComposeTransportImpl::run_enhanced_trajectory_unit_tests () {
   TestData td(1);
   comunittest(test_find_support);
   comunittest(test_linterp);
+  comunittest(test_eta_to_dp);
   return nerr;
 }
 
