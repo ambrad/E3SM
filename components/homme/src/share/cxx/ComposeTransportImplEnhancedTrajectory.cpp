@@ -320,6 +320,11 @@ static int test_linterp (TestData& td) {
   return nerr;
 }
 
+static int test_deta_caas (TestData& td) {
+  int nerr = 0;
+  return nerr;
+}
+
 struct HybridLevels {
   Real ps0;
   std::vector<Real> ai, bi, am, bm, etai, etam;
@@ -362,6 +367,16 @@ static void fill (HybridLevels& h, const int n) {
   tomid(h.ai, h.am);
   tomid(h.bi, h.bm);
   tomid(h.etai, h.etam);
+}
+
+static int test_eta_interp_eta (TestData& td) {
+  int nerr = 0;
+  return nerr;
+}
+
+static int test_eta_interp_horiz (TestData& td) {
+  int nerr = 0;
+  return nerr;
 }
 
 static int test_eta_to_dp (TestData& td) {
@@ -449,6 +464,11 @@ static int test_eta_to_dp (TestData& td) {
   return nerr;
 }
 
+static int test_init_velocity_record (TestData& td) {
+  int nerr = 0;
+  return nerr;
+}
+
 #define comunittest(f) do {                     \
     ne = f(td);                                 \
     if (ne) printf(#f " ne %d\n", ne);          \
@@ -460,7 +480,11 @@ int ComposeTransportImpl::run_enhanced_trajectory_unit_tests () {
   TestData td(1);
   comunittest(test_find_support);
   comunittest(test_linterp);
+  comunittest(test_deta_caas);
+  comunittest(test_eta_interp_eta);
+  comunittest(test_eta_interp_horiz);
   comunittest(test_eta_to_dp);
+  comunittest(test_init_velocity_record);
   return nerr;
 }
 
