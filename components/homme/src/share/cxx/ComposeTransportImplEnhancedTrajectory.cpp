@@ -381,6 +381,14 @@ static int test_eta_to_dp (TestData& td) {
   todev(h.bi, hy_bi);
   todev(h.etai, hy_etai);
 
+  const auto psm = Kokkos::create_mirror_view(ps);
+  HostView<Real[NP][NP][nlev]> dp1("dp1");
+  Real dp1_max = 0;
+  for (int i = 0; i < NP; ++i)
+    for (int j = 0; j < NP; ++j)
+      psm(i,j) = (1 + 0.1*td.urand(-1, 1))*h.ps0;
+  Kokkos::deep_copy(ps, psm);
+
   const auto run = [&] () {
     const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
       KernelVariables kv(team);
@@ -395,16 +403,12 @@ static int test_eta_to_dp (TestData& td) {
     HostView<Real[NP][NP][nlev]> dp1("dp1");
     Real dp1_max = 0;
     for (int i = 0; i < NP; ++i)
-      for (int j = 0; j < NP; ++j) {
-        psm(i,j) = (1 + 0.1*td.urand(-1, 1))*h.ps0;
-        // The usual formula:
+      for (int j = 0; j < NP; ++j)
         for (int k = 0; k < nlev; ++k) {
           dp1(i,j,k) = ((h.ai[k+1] - h.ai[k])*h.ps0 +
                         (h.bi[k+1] - h.bi[k])*psm(i,j));
           dp1_max = std::max(dp1_max, std::abs(dp1(i,j,k)));
         }
-      }
-    Kokkos::deep_copy(ps, psm);
     run();
     const auto dph = cmvdc(dp);
     Real err_max = 0;
@@ -415,9 +419,31 @@ static int test_eta_to_dp (TestData& td) {
     if (err_max > 100*td.eps*dp1_max) ++nerr;
   }
 
-  if (0)
-  { // Test that sum(dp) = ps.
+  { // Test that sum(dp) = ps for random input etai.
+    std::vector<Real> etai_r;
+    make_random_sorted(td, nlev+1, h.etai[0], h.etai[nlev], etai_r);
+    todev(etai_r, etai);
     run();
+    const auto dph1 = cmvdc(dp);
+    for (int i = 0; i < NP; ++i)
+      for (int j = 0; j < NP; ++j) {
+        Real ps = h.ai[0]*h.ps0;
+        for (int k = 0; k < nlev; ++k)
+          ps += dph1(i,j,k);
+        if (std::abs(ps - psm(i,j)) > 100*td.eps*psm(i,j)) ++nerr;
+      }    
+    // Test that values on input don't affect solution.
+    Kokkos::deep_copy(wrk, 0);
+    Kokkos::deep_copy(dp, 0);
+    run();
+    const auto dph2 = cmvdc(dp);
+    bool alleq = true;
+    for (int i = 0; i < NP; ++i)
+      for (int j = 0; j < NP; ++j)
+        for (int k = 0; k < nlev; ++k)
+          if (dph2(i,j,k) != dph1(i,j,k))
+            alleq = false;
+    if (not alleq) ++nerr;
   }
 
   return nerr;
