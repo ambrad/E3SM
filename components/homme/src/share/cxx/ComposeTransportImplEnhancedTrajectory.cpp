@@ -388,8 +388,53 @@ static int test_linterp (TestData& td) {
   return nerr;
 }
 
+static int make_random_deta (TestData& td, const Real deta_tol,
+                             const RelnV& deta) {
+  int nerr = 0;
+  const int nlev = deta.extent_int(2);
+  const auto m = Kokkos::create_mirror_view(deta);
+  for (int i = 0; i < NP; ++i)
+    for (int j = 0; j < NP; ++j) {
+      Real sum = 0;
+      for (int k = 0; k < nlev; ++k) {
+        m(i,j,k) = td.urand(0, 1) + 0.1;
+        sum += m(i,j,k);
+      }
+      for (int k = 0; k < nlev; ++k) {
+        m(i,j,k) /= sum;
+        if (m(i,j,k) < deta_tol) ++nerr;
+      }
+    }
+  Kokkos::deep_copy(deta, m);
+  return nerr;
+}
+
 static int test_deta_caas (TestData& td) {
   int nerr = 0;
+
+  const int nlev = 77;
+  const Real deta_tol = 10*td.eps/nlev;
+
+  ExecView<Real[NP][NP][nlev]> deta_ref("deta_ref"), deta("deta"), wrk("wrk");
+  nerr += make_random_deta(td, deta_tol, deta_ref);
+
+  //const auto run = [&] () {};
+
+  { // Test that if all is OK, the input is not altered.
+    nerr += make_random_deta(td, deta_tol, deta);
+    ExecView<Real[NP][NP][nlev]>::HostMirror copy("copy");
+    Kokkos::deep_copy(copy, deta);
+    //run(nlev, deta_ref, deta_tol, wrk, deta);
+    const auto m = cmvdc(deta);
+    bool diff = false;
+    for (int i = 0; i < NP; ++i)
+      for (int j = 0; j < NP; ++j)
+        for (int k = 0; k < nlev; ++k)
+          if (m(i,j,k) != copy(i,j,k))
+            diff = true;
+    if (diff) ++nerr;
+  }
+  
   return nerr;
 }
 
