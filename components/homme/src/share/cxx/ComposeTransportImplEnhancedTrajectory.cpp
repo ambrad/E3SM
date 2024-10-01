@@ -176,9 +176,68 @@ eta_to_dp (const KernelVariables& kv, const int nlev,
   Kokkos::parallel_for(ttr, f);
 }
 
+/* This method pulls mass only from intervals that are larger than their
+   reference value, and only down to their reference value. This concentrates
+   changes to intervals that, by having a lot more mass than usual, drive other
+   levels negative, leaving all the other intervals unchanged.
+
+   Proof of correctness. Inputs:
+       m (deta): input mass
+       r (deta_ref): level mass reference.
+   Preconditions:
+       (1) 0 <= low <= min r(i)
+       (2) 1 = sum r(i) = sum(m(i)).
+   Rewrite (2) as
+       1 = sum_{m(i) >= r(i)} m(i) + sum_{m(i) < r(i)} m(i)
+   and, thus,
+       0 = sum_{m(i) >= r(i)} (m(i) - r(i)) + sum_{m(i) < r(i)} (m(i) - r(i)).
+   Then
+       sum_{m(i) >= r(i)} (m(i) - r(i))         (available mass to redistribute)
+           = -sum_{m(i) < r(i)} (m(i) - r(i))
+          >= -sum_{m(i) < lo  } (m(i) - r(i))
+          >= -sum_{m(i) < lo  } (m(i) - lo  )   (mass to fill in).
+   This shows that if the preconditions hold, then there's enough mass to
+   redistribute to holes.
+ */
 KOKKOS_FUNCTION static void
-deta_caas (const KernelVariables& kv) {
-  
+deta_caas (const KernelVariables& kv, const int nlev, const CRnV& deta_ref,
+           const Real low, const RelnV& wrk, const RelnV& deta) {
+  assert(deta_ref.extent_int(0) >= nlev);
+  assert_eln(wrk, nlev);
+  assert_eln(deta, nlev);
+  const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
+  const auto tvr = Kokkos::ThreadVectorRange(kv.team, nlev);
+  const auto f = [&] (const int idx) {
+    const int i = idx / NP, j = idx % NP;
+    const auto detaij = getcol(deta,i,j);
+    const auto wij = getcol(wrk,i,j);
+    const auto g1 = [&] (const int k, Kokkos::Real2& sums) {
+      Real wk;
+      if (detaij(k) < low) {
+        sums.v[0] += detaij(k) - low;
+        detaij(k) = low;
+        wk = 0;
+      } else {
+        wk = (detaij(k) > deta_ref(k) ?
+              detaij(k) - deta_ref(k) :
+              0);
+      }
+      sums.v[1] += wk;
+      wij(k) = wk;
+    };
+    Kokkos::Real2 sums;
+    Dispatch<>::parallel_reduce(kv.team, tvr, g1, sums);
+    kv.team_barrier();
+    const Real wneeded = sums.v[0];
+    if (wneeded == 0) return;
+    // Remove what is needed from the donors.
+    const Real wavail = sums.v[1];
+    const auto g2 = [&] (const int k) {
+      detaij(k) += wneeded*(wij(k)/wavail);
+    };
+    Kokkos::parallel_for(tvr, g2);
+  };
+  Kokkos::parallel_for(ttr, f);
 }
 
 // Public function.
