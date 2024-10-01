@@ -304,28 +304,18 @@ struct ComposeTransportImpl {
     }
   }
 
-  /* Form a 3rd-degree Lagrange polynomial over (x(k-1:k+1), y(k-1:k+1)) and set
-   yi(k) to its derivative at x(k). yps(:,:,0) is not written.
-  */
-  KOKKOS_FUNCTION static void approx_derivative (
-    const KernelVariables& kv, const CSNlevp& xs, const CSNlevp& ys,
-    const SNlev& yps) // yps(:,:,0) is undefined
+  // Form a 3rd-degree Lagrange polynomial over (x(k-1:k+1), y(k-1:k+1)) and set
+  // yi(k) to its derivative at x(k). yps(:,:,0) is not written.
+  template <typename Real>
+  KOKKOS_FUNCTION static Real approx_derivative (
+    const Real& xkm1, const Real& xk, const Real& xkp1,
+    const Real& ykm1, const Real& yk, const Real& ykp1)
   {
-    CRNlevp x(cpack2real(xs));
-    CRNlevp y(cpack2real(ys));
-    RNlev yp(pack2real(yps));
-    const auto f = [&] (const int i, const int j, const int k) {
-      if (k == 0) return;
-      const auto& xkm1 = x(i,j,k-1);
-      const auto& xk   = x(i,j,k  ); // also the interpolation point
-      const auto& xkp1 = x(i,j,k+1);
-      yp(i,j,k) = (y(i,j,k-1)*((         1 /(xkm1 - xk  ))*((xk - xkp1)/(xkm1 - xkp1))) +
-                   y(i,j,k  )*((         1 /(xk   - xkm1))*((xk - xkp1)/(xk   - xkp1)) +
-                               ((xk - xkm1)/(xk   - xkm1))*(         1 /(xk   - xkp1))) +
-                   y(i,j,k+1)*(((xk - xkm1)/(xkp1 - xkm1))*(         1 /(xkp1 - xk  ))));
-    };
-    loop_ijk<num_phys_lev>(kv, f);
-  }
+    return (ykm1*((         1 /(xkm1 - xk  ))*((xk - xkp1)/(xkm1 - xkp1))) +
+            yk  *((         1 /(xk   - xkm1))*((xk - xkp1)/(xk   - xkp1)) +
+                  ((xk - xkm1)/(xk   - xkm1))*(         1 /(xk   - xkp1))) +
+            ykp1*(((xk - xkm1)/(xkp1 - xkm1))*(         1 /(xkp1 - xk  ))));
+  }  
 };
 
 } // namespace Homme
