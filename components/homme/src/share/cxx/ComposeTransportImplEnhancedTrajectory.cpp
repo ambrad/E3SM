@@ -51,6 +51,26 @@ using CRnV = ExecViewUnmanaged<const Real*>;
 KOKKOS_INLINE_FUNCTION int len (const  RnV& v) { return v.extent_int(0); }
 KOKKOS_INLINE_FUNCTION int len (const CRnV& v) { return v.extent_int(0); }
 
+using RelnV = ExecViewUnmanaged<Real***>;
+using CRelnV = ExecViewUnmanaged<const Real***>;
+
+KOKKOS_INLINE_FUNCTION
+static RnV getcol (const RelnV& a, const int i, const int j) {
+  return Kokkos::subview(a,i,j,Kokkos::ALL);
+}
+
+KOKKOS_INLINE_FUNCTION
+static CRnV getcol (const CRelnV& a, const int i, const int j) {
+  return Kokkos::subview(a,i,j,Kokkos::ALL);
+}
+
+KOKKOS_INLINE_FUNCTION
+static void assert_eln (const CRelnV& a, const int nlev) {
+  assert(a.extent_int(0) >= NP);
+  assert(a.extent_int(1) >= NP);
+  assert(a.extent_int(2) >= nlev);
+}
+
 // For sorted ascending x[0:n] and x in [x[0], x[n-1]] with hint xi_idx, return
 // i such that x[i] <= xi <= x[i+1].
 //   This function is meant for the case that x_idx is very close to the
@@ -111,26 +131,6 @@ linterp (const Range& range,
   Kokkos::parallel_for(range, f);
 }
 
-template <int N>
-KOKKOS_FUNCTION static void
-linterp (const KernelVariables& kv,
-         const int n, const CRelNV<N>& x, const CRelNV<N>& y,
-         const int ni, const CRelNV<N>& xi, const RelNV<N>& yi,
-         const int x_idx_offset = 0,
-         const char* const caller = nullptr) {
-  assert(n <= N);
-  const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
-  const auto tvr = Kokkos::ThreadVectorRange(kv.team, ni);
-  const auto f = [&] (const int idx) {
-    const int i = idx / NP, j = idx % NP;
-    linterp(tvr,
-            n , Homme::subview(x ,i,j), Homme::subview(y ,i,j),
-            ni, Homme::subview(xi,i,j), Homme::subview(yi,i,j),
-            x_idx_offset, caller);
-  };
-  Kokkos::parallel_for(ttr, f);
-}
-
 /*
   Compute level pressure thickness given eta at interfaces using the following
   approximation:
@@ -140,13 +140,17 @@ linterp (const KernelVariables& kv,
           a= e p0 + I[Bi(eref)](e) (ps - p0).
   Then dp = diff(p).
 */
-template <int Nlev>
 KOKKOS_FUNCTION static void
-eta_to_dp (const KernelVariables& kv,
-           const Real hy_ps0, const CRNV<Nlev+1>& hy_bi, const CRNV<Nlev+1>& hy_etai,
-           const CRelV& ps, const CRelNV<Nlev+1>& etai, const RelNV<Nlev+1>& wrk,
-           const RelNV<Nlev>& dp) {
-  const int nlev = Nlev, nlevp = nlev + 1;
+eta_to_dp (const KernelVariables& kv, const int nlev,
+           const Real hy_ps0, const CRnV& hy_bi, const CRnV& hy_etai,
+           const CRelV& ps, const CRelnV& etai, const RelnV& wrk,
+           const RelnV& dp) {
+  const int nlevp = nlev + 1;
+  assert(hy_bi.extent_int(0) >= nlevp);
+  assert(hy_etai.extent_int(0) >= nlevp);
+  assert_eln(etai, nlevp);
+  assert_eln(wrk, nlevp);
+  assert_eln(dp, nlev);
   const auto& bi = wrk;
   const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
   const auto tvr_linterp = Kokkos::ThreadVectorRange(kv.team, nlevp);
@@ -154,7 +158,7 @@ eta_to_dp (const KernelVariables& kv,
     const int i = idx / NP, j = idx % NP;
     linterp(tvr_linterp,
             nlevp, hy_etai, hy_bi,
-            nlevp, Homme::subview(etai,i,j), Homme::subview(bi,i,j),
+            nlevp, getcol(etai,i,j), getcol(bi,i,j),
             0, "eta_to_dp");
   };
   Kokkos::parallel_for(ttr, f_linterp);
@@ -170,6 +174,11 @@ eta_to_dp (const KernelVariables& kv,
     Kokkos::parallel_for(tvr, g);
   };
   Kokkos::parallel_for(ttr, f);
+}
+
+KOKKOS_FUNCTION static void
+deta_caas (const KernelVariables& kv) {
+  
 }
 
 // Public function.
@@ -369,6 +378,11 @@ static void fill (HybridLevels& h, const int n) {
   tomid(h.etai, h.etam);
 }
 
+static int test_limit_deta (TestData& td) {
+  int nerr = 0;
+  return nerr;
+}
+
 static int test_eta_interp_eta (TestData& td) {
   int nerr = 0;
   return nerr;
@@ -407,7 +421,7 @@ static int test_eta_to_dp (TestData& td) {
   const auto run = [&] () {
     const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
       KernelVariables kv(team);
-      eta_to_dp<nlev>(kv, hy_ps0, hy_bi, hy_etai, ps, etai, wrk, dp);
+      eta_to_dp(kv, nlev, hy_ps0, hy_bi, hy_etai, ps, etai, wrk, dp);
     };
     Kokkos::parallel_for(policy, f);
   };
@@ -480,10 +494,11 @@ int ComposeTransportImpl::run_enhanced_trajectory_unit_tests () {
   TestData td(1);
   comunittest(test_find_support);
   comunittest(test_linterp);
-  comunittest(test_deta_caas);
   comunittest(test_eta_interp_eta);
   comunittest(test_eta_interp_horiz);
   comunittest(test_eta_to_dp);
+  comunittest(test_deta_caas);
+  comunittest(test_limit_deta);
   comunittest(test_init_velocity_record);
   return nerr;
 }
