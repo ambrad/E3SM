@@ -17,6 +17,8 @@
 
 #include <random>
 
+#include "/home/ac.ambradl/compy-goodies/util/dbg.hpp"
+
 namespace Homme {
 using cti = ComposeTransportImpl;
 using CSelNlev  = cti::CSNlev;
@@ -34,6 +36,7 @@ using S2elNlevp = cti::S2Nlevp;
 
 using RelV = ExecViewUnmanaged<Real[NP][NP]>;
 using CRelV = typename ViewConst<RelV>::type;
+
 template <int N> using RelNV = ExecViewUnmanaged<Real[NP][NP][N]>;
 template <int N> using CRelNV = typename ViewConst<RelNV<N>>::type;
 
@@ -143,7 +146,7 @@ eta_to_dp (const KernelVariables& kv,
            const Real hy_ps0, const CRNV<Nlev+1>& hy_bi, const CRNV<Nlev+1>& hy_etai,
            const CRelV& ps, const CRelNV<Nlev+1>& etai, const RelNV<Nlev+1>& wrk,
            const RelNV<Nlev>& dp) {
-  const int nlev = cti::num_phys_lev, nlevp = nlev + 1;
+  const int nlev = Nlev, nlevp = nlev + 1;
   const auto& bi = wrk;
   const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
   const auto tvr_linterp = Kokkos::ThreadVectorRange(kv.team, nlevp);
@@ -175,6 +178,13 @@ void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real d
 }
 
 // Testing.
+
+template <typename V>
+decltype(Kokkos::create_mirror_view(V())) cmvdc (const V& v) {
+  const auto h = Kokkos::create_mirror_view(v);
+  deep_copy(h, v);
+  return h;
+}
 
 namespace {
 struct TestData {
@@ -213,6 +223,17 @@ static void todev (const std::vector<Real>& h, const ExecView<Real*>& d) {
   assert(h.size() <= d.size());
   const auto m = Kokkos::create_mirror_view(d);
   for (size_t i = 0; i < h.size(); ++i) m(i) = h[i];
+  Kokkos::deep_copy(d, m);
+}
+
+static void todev (const std::vector<Real>& h, const ExecView<Real***>& d) {
+  assert(h.size() <= d.extent_int(2));
+  const int nlev = static_cast<int>(h.size());
+  const auto m = Kokkos::create_mirror_view(d);
+  for (int i = 0; i < m.extent_int(0); ++i)
+    for (int j = 0; j < m.extent_int(1); ++j)
+      for (size_t k = 0; k < nlev; ++k)
+        m(i,j,k) = h[k];
   Kokkos::deep_copy(d, m);
 }
 
@@ -300,6 +321,7 @@ static int test_linterp (TestData& td) {
 }
 
 struct HybridLevels {
+  Real ps0;
   std::vector<Real> ai, bi, am, bm, etai, etam;
 };
 
@@ -314,6 +336,8 @@ static void fill (HybridLevels& h, const int n) {
   const auto p0 = PhysicalConstants::p0;
   const auto g = PhysicalConstants::g;
   const Real ztop = 12e3; // m
+
+  h.ps0 = p0;
 
   const auto calc_pressure = [&] (const Real z) {
     return p0*std::exp(-g*z/(Rd*T0));
@@ -347,18 +371,54 @@ static int test_eta_to_dp (TestData& td) {
   HybridLevels h;
   fill(h, nlev);
 
-  /*
-          (const KernelVariables& kv,
-           const Real hy_ps0, const CRNV<Nlev+1>& hy_bi, const CRNV<Nlev+1>& hy_etai,
-           const CRelV& ps, const CRelNV<Nlev+1>& etai, const RelNV<Nlev+1>& wrk,
-           const RelNV<Nlev>& dp) {
-   */
   ExecView<Real[nlev+1]> hy_bi("hy_bi"), hy_etai("hy_etai");
   ExecView<Real[NP][NP][nlev+1]> etai("etai"), wrk("wrk");
   ExecView<Real[NP][NP][nlev]> dp("dp");
+  ExecView<Real[NP][NP]> ps("ps");
+  const Real hy_ps0 = h.ps0;
+  const auto policy = Homme::get_default_team_policy<ExecSpace>(1);
 
   todev(h.bi, hy_bi);
   todev(h.etai, hy_etai);
+
+  const auto run = [&] () {
+    const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
+      KernelVariables kv(team);
+      eta_to_dp<nlev>(kv, hy_ps0, hy_bi, hy_etai, ps, etai, wrk, dp);
+    };
+    Kokkos::parallel_for(policy, f);
+  };
+
+  { // Test that for etai_ref we get the same as the usual formula.
+    todev(h.etai, etai);
+    const auto psm = Kokkos::create_mirror_view(ps);
+    HostView<Real[NP][NP][nlev]> dp1("dp1");
+    Real dp1_max = 0;
+    for (int i = 0; i < NP; ++i)
+      for (int j = 0; j < NP; ++j) {
+        psm(i,j) = (1 + 0.1*td.urand(-1, 1))*h.ps0;
+        // The usual formula:
+        for (int k = 0; k < nlev; ++k) {
+          dp1(i,j,k) = ((h.ai[k+1] - h.ai[k])*h.ps0 +
+                        (h.bi[k+1] - h.bi[k])*psm(i,j));
+          dp1_max = std::max(dp1_max, std::abs(dp1(i,j,k)));
+        }
+      }
+    Kokkos::deep_copy(ps, psm);
+    run();
+    const auto dph = cmvdc(dp);
+    Real err_max = 0;
+    for (int i = 0; i < NP; ++i)
+      for (int j = 0; j < NP; ++j)
+        for (int k = 0; k < nlev; ++k)
+          err_max = std::max(err_max, std::abs(dph(i,j,k) - dp1(i,j,k)));
+    if (err_max > 100*td.eps*dp1_max) ++nerr;
+  }
+
+  if (0)
+  { // Test that sum(dp) = ps.
+    run();
+  }
 
   return nerr;
 }
