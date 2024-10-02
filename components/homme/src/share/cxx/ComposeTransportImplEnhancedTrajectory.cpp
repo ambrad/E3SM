@@ -287,22 +287,30 @@ static int test_find_support (TestData&) {
   return ne;
 }
 
-static void todev (const std::vector<Real>& h, const ExecView<Real*>& d) {
+static void todev (const std::vector<Real>& h, const RnV& d) {
   assert(h.size() <= d.size());
   const auto m = Kokkos::create_mirror_view(d);
   for (size_t i = 0; i < h.size(); ++i) m(i) = h[i];
   Kokkos::deep_copy(d, m);
 }
 
-static void todev (const std::vector<Real>& h, const ExecView<Real***>& d) {
-  assert(h.size() <= d.extent_int(2));
-  const int nlev = static_cast<int>(h.size());
+static void todev (const int n, const Real* const h, const RelnV& d) {
+  assert(n <= d.extent_int(2));
+  const int nlev = static_cast<int>(n);
   const auto m = Kokkos::create_mirror_view(d);
   for (int i = 0; i < m.extent_int(0); ++i)
     for (int j = 0; j < m.extent_int(1); ++j)
       for (size_t k = 0; k < nlev; ++k)
         m(i,j,k) = h[k];
   Kokkos::deep_copy(d, m);
+}
+
+static void todev (const std::vector<Real>& h, const RelnV& d) {
+  todev(h.size(), h.data(), d);
+}
+
+static void todev (const CRnV::HostMirror& h, const RelnV& d) {
+  todev(h.extent_int(0), h.data(), d);
 }
 
 static void tohost (const ExecView<const Real*>& d, std::vector<Real>& h) {
@@ -432,22 +440,23 @@ static int test_deta_caas (TestData& td) {
   const int nlev = 77;
   const Real deta_tol = 10*td.eps/nlev;
 
-  ExecView<Real[nlev]> deta_ref("deta_ref");
-  ExecView<Real[NP][NP][nlev]> deta("deta"), wrk("wrk");
+  // nlev+1 deltas: diff([0, etam, 1])
+  ExecView<Real[nlev+1]> deta_ref("deta_ref");
+  ExecView<Real[NP][NP][nlev+1]> deta("deta"), wrk("wrk");
   nerr += make_random_deta(td, deta_tol, deta_ref);
 
   const auto policy = Homme::get_default_team_policy<ExecSpace>(1);
   const auto run = [&] (const RelnV& deta) {
     const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
       KernelVariables kv(team);
-      deta_caas(kv, nlev, deta_ref, deta_tol, wrk, deta);
+      deta_caas(kv, nlev+1, deta_ref, deta_tol, wrk, deta);
     };
     Kokkos::parallel_for(policy, f);
   };
 
   { // Test that if all is OK, the input is not altered.
     nerr += make_random_deta(td, deta_tol, deta);
-    ExecView<Real[NP][NP][nlev]>::HostMirror copy("copy");
+    ExecView<Real[NP][NP][nlev+1]>::HostMirror copy("copy");
     Kokkos::deep_copy(copy, deta);
     run(deta);
     const auto m = cmvdc(deta);
@@ -458,6 +467,23 @@ static int test_deta_caas (TestData& td) {
           if (m(i,j,k) != copy(i,j,k))
             diff = true;
     if (diff) ++nerr;
+  }
+
+  { // Modify one etam and test that only adjacent intervals change beyond eps.
+    // nlev midpoints
+    ExecView<Real[nlev]> etam_ref("etam_ref");
+    ExecView<Real[NP][NP][nlev]> etam("etam");
+    const auto her = Kokkos::create_mirror_view(etam_ref);
+    {
+      const auto hder = cmvdc(deta_ref);
+      her(0) = hder(0);
+      for (int k = 1; k < nlev; ++k)
+        her(k) = her(k-1) + hder(k);
+      Kokkos::deep_copy(etam_ref, her);
+    }
+    for (int trial = 0; trial < 2; ++trial) {
+      todev(her, etam);
+    }
   }
   
   return nerr;
