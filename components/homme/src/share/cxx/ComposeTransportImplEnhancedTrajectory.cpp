@@ -388,23 +388,40 @@ static int test_linterp (TestData& td) {
   return nerr;
 }
 
-static int make_random_deta (TestData& td, const Real deta_tol,
-                             const RelnV& deta) {
+static int
+make_random_deta (TestData& td, const Real deta_tol, const int nlev,
+                  Real* const deta) {
+  int nerr = 0;
+  Real sum = 0;
+  for (int k = 0; k < nlev; ++k) {
+    deta[k] = td.urand(0, 1) + 0.1;
+    sum += deta[k];
+  }
+  for (int k = 0; k < nlev; ++k) {
+    deta[k] /= sum;
+    if (deta[k] < deta_tol) ++nerr;
+  }
+  return nerr;
+}
+
+static int
+make_random_deta (TestData& td, const Real deta_tol, const RnV& deta) {
+  int nerr = 0;
+  const int nlev = deta.extent_int(0);
+  const auto m = Kokkos::create_mirror_view(deta);
+  nerr = make_random_deta(td, deta_tol, nlev, &m(0));
+  Kokkos::deep_copy(deta, m);
+  return nerr;  
+}
+
+static int
+make_random_deta (TestData& td, const Real deta_tol, const RelnV& deta) {
   int nerr = 0;
   const int nlev = deta.extent_int(2);
   const auto m = Kokkos::create_mirror_view(deta);
   for (int i = 0; i < NP; ++i)
-    for (int j = 0; j < NP; ++j) {
-      Real sum = 0;
-      for (int k = 0; k < nlev; ++k) {
-        m(i,j,k) = td.urand(0, 1) + 0.1;
-        sum += m(i,j,k);
-      }
-      for (int k = 0; k < nlev; ++k) {
-        m(i,j,k) /= sum;
-        if (m(i,j,k) < deta_tol) ++nerr;
-      }
-    }
+    for (int j = 0; j < NP; ++j)
+      nerr += make_random_deta(td, deta_tol, nlev, &m(i,j,0));
   Kokkos::deep_copy(deta, m);
   return nerr;
 }
@@ -415,16 +432,24 @@ static int test_deta_caas (TestData& td) {
   const int nlev = 77;
   const Real deta_tol = 10*td.eps/nlev;
 
-  ExecView<Real[NP][NP][nlev]> deta_ref("deta_ref"), deta("deta"), wrk("wrk");
+  ExecView<Real[nlev]> deta_ref("deta_ref");
+  ExecView<Real[NP][NP][nlev]> deta("deta"), wrk("wrk");
   nerr += make_random_deta(td, deta_tol, deta_ref);
 
-  //const auto run = [&] () {};
+  const auto policy = Homme::get_default_team_policy<ExecSpace>(1);
+  const auto run = [&] (const RelnV& deta) {
+    const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
+      KernelVariables kv(team);
+      deta_caas(kv, nlev, deta_ref, deta_tol, wrk, deta);
+    };
+    Kokkos::parallel_for(policy, f);
+  };
 
   { // Test that if all is OK, the input is not altered.
     nerr += make_random_deta(td, deta_tol, deta);
     ExecView<Real[NP][NP][nlev]>::HostMirror copy("copy");
     Kokkos::deep_copy(copy, deta);
-    //run(nlev, deta_ref, deta_tol, wrk, deta);
+    run(deta);
     const auto m = cmvdc(deta);
     bool diff = false;
     for (int i = 0; i < NP; ++i)
@@ -509,7 +534,6 @@ static int test_eta_to_dp (TestData& td) {
   ExecView<Real[NP][NP][nlev]> dp("dp");
   ExecView<Real[NP][NP]> ps("ps");
   const Real hy_ps0 = h.ps0;
-  const auto policy = Homme::get_default_team_policy<ExecSpace>(1);
 
   todev(h.bi, hy_bi);
   todev(h.etai, hy_etai);
@@ -522,6 +546,7 @@ static int test_eta_to_dp (TestData& td) {
       psm(i,j) = (1 + 0.1*td.urand(-1, 1))*h.ps0;
   Kokkos::deep_copy(ps, psm);
 
+  const auto policy = Homme::get_default_team_policy<ExecSpace>(1);
   const auto run = [&] () {
     const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
       KernelVariables kv(team);
