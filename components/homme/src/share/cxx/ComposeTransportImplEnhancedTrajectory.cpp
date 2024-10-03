@@ -9,6 +9,7 @@
 
 #pragma message "CTET undef NDEBUG"
 #undef NDEBUG
+#include "/home/ac.ambradl/compy-goodies/util/dbg.hpp"
 
 #include "ComposeTransportImpl.hpp"
 #include "PhysicalConstants.hpp"
@@ -16,8 +17,6 @@
 #include "compose_test.hpp"
 
 #include <random>
-
-#include "/home/ac.ambradl/compy-goodies/util/dbg.hpp"
 
 namespace Homme {
 using cti = ComposeTransportImpl;
@@ -176,12 +175,16 @@ eta_to_dp (const KernelVariables& kv, const int nlev,
   Kokkos::parallel_for(ttr, f);
 }
 
-/* This method pulls mass only from intervals that are larger than their
-   reference value, and only down to their reference value. This concentrates
-   changes to intervals that, by having a lot more mass than usual, drive other
-   levels negative, leaving all the other intervals unchanged.
+/* Limit eta levels so their thicknesses, deta, are bounded below by 'low'.
 
-   Proof of correctness. Inputs:
+   This method pulls mass only from intervals k that are larger than their
+   reference value (deta(k) > deta_ref(k)), and only down to their reference
+   value. This concentrates changes to intervals that, by having a lot more mass
+   than usual, drive other levels negative, leaving all the other intervals
+   unchanged.
+
+   This selective use of mass provides enough to fulfill the needed mass.
+   Inputs:
        m (deta): input mass
        r (deta_ref): level mass reference.
    Preconditions:
@@ -196,8 +199,7 @@ eta_to_dp (const KernelVariables& kv, const int nlev,
            = -sum_{m(i) < r(i)} (m(i) - r(i))
           >= -sum_{m(i) < lo  } (m(i) - r(i))
           >= -sum_{m(i) < lo  } (m(i) - lo  )   (mass to fill in).
-   This shows that if the preconditions hold, then there's enough mass to
-   redistribute to holes.
+   Thus, if the preconditions hold, then there's enough mass to redistribute.
  */
 KOKKOS_FUNCTION static void
 deta_caas (const KernelVariables& kv, const int nlev, const CRnV& deta_ref,
@@ -528,6 +530,36 @@ static int test_deta_caas (TestData& td) {
           if (maxdiff > 100*td.eps) ++nerr;
         }
     }
+  }
+
+  { // Test generally (and highly) perturbed levels.
+    const auto hde = Kokkos::create_mirror_view(deta);
+    for (int i = 0; i < NP; ++i)
+      for (int j = 0; j < NP; ++j) {
+        Real sum = 0;
+        for (int k = 0; k <= nlev; ++k) {
+          hde(i,j,k) = td.urand(-0.5, 0.5);
+          sum += hde(i,j,k);
+        }
+        // Make the column sum to 0.2 for safety in the next step.
+        const Real colsum = 0.2;
+        for (int k = 0; k <= nlev; ++k) hde(i,j,k) += (colsum - sum)/(nlev+1);
+        for (int k = 0; k <= nlev; ++k) hde(i,j,k) /= colsum;
+        sum = 0;
+        for (int k = 0; k <= nlev; ++k) sum += hde(i,j,k);
+        if (std::abs(sum - 1) > 100*td.eps) ++nerr;
+      }
+    Kokkos::deep_copy(deta, hde);
+    run(deta);
+    Kokkos::deep_copy(hde, deta);
+    for (int i = 0; i < NP; ++i)
+      for (int j = 0; j < NP; ++j) {
+        Real sum = 0, minval = 1;
+        for (int k = 0; k <= nlev; ++k) sum += hde(i,j,k);
+        for (int k = 0; k <= nlev; ++k) minval = std::min(minval, hde(i,j,k));
+        if (std::abs(sum - 1) > 1e3*td.eps) ++nerr;
+        if (minval != deta_tol) ++nerr;
+      }
   }
   
   return nerr;
