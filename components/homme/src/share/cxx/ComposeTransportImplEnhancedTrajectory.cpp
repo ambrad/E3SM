@@ -19,6 +19,8 @@
 #include <random>
 
 namespace Homme {
+namespace { // anon
+
 using cti = ComposeTransportImpl;
 using CSelNlev  = cti::CSNlev;
 using CRelNlev  = cti::CRNlev;
@@ -54,17 +56,17 @@ using RelnV = ExecViewUnmanaged<Real***>;
 using CRelnV = ExecViewUnmanaged<const Real***>;
 
 KOKKOS_INLINE_FUNCTION
-static RnV getcol (const RelnV& a, const int i, const int j) {
+RnV getcol (const RelnV& a, const int i, const int j) {
   return Kokkos::subview(a,i,j,Kokkos::ALL);
 }
 
 KOKKOS_INLINE_FUNCTION
-static CRnV getcol (const CRelnV& a, const int i, const int j) {
+CRnV getcol (const CRelnV& a, const int i, const int j) {
   return Kokkos::subview(a,i,j,Kokkos::ALL);
 }
 
 KOKKOS_INLINE_FUNCTION
-static void assert_eln (const CRelnV& a, const int nlev) {
+void assert_eln (const CRelnV& a, const int nlev) {
   assert(a.extent_int(0) >= NP);
   assert(a.extent_int(1) >= NP);
   assert(a.extent_int(2) >= nlev);
@@ -97,7 +99,7 @@ int find_support (const int n, const ConstRealArray& x, const int x_idx,
 
 // Linear interpolation core computation.
 template <typename ConstRealArray>
-KOKKOS_FUNCTION static Real
+KOKKOS_FUNCTION Real
 linterp (const int n, const ConstRealArray& x, const ConstRealArray& y,
          const int x_idx, const Real xi) {
   const auto isup = find_support(n, x, x_idx, xi);
@@ -110,7 +112,7 @@ linterp (const int n, const ConstRealArray& x, const ConstRealArray& y,
 //   Interpolate y(x) to yi(xi).
 //   x_idx_offset is added to k in the call to find_support.
 template <typename Range, typename ConstRealArray, typename RealArray>
-KOKKOS_FUNCTION static void
+KOKKOS_FUNCTION void
 linterp (const Range& range,
          const int n , const ConstRealArray& x , const ConstRealArray& y,
          const int ni, const ConstRealArray& xi, const RealArray& yi,
@@ -139,7 +141,7 @@ linterp (const Range& range,
           a= e p0 + I[Bi(eref)](e) (ps - p0).
   Then dp = diff(p).
 */
-KOKKOS_FUNCTION static void
+KOKKOS_FUNCTION void
 eta_to_dp (const KernelVariables& kv, const int nlev,
            const Real hy_ps0, const CRnV& hy_bi, const CRnV& hy_etai,
            const CRelV& ps, const CRelnV& etai, const RelnV& wrk,
@@ -201,7 +203,40 @@ eta_to_dp (const KernelVariables& kv, const int nlev,
           >= -sum_{m(i) < lo  } (m(i) - lo  )   (mass to fill in).
    Thus, if the preconditions hold, then there's enough mass to redistribute.
  */
-KOKKOS_FUNCTION static void
+template <typename Range>
+KOKKOS_FUNCTION void
+deta_caas (const KernelVariables& kv, const Range& tvr, const int i, const int j,
+           const CRnV& deta_ref, const Real low, const RelnV& wrk,
+           const RelnV& deta) {
+  const auto detaij = getcol(deta,i,j);
+  const auto wij = getcol(wrk,i,j);
+  const auto g1 = [&] (const int k, Kokkos::Real2& sums) {
+    Real wk;
+    if (detaij(k) < low) {
+      sums.v[0] += detaij(k) - low;
+      detaij(k) = low;
+      wk = 0;
+    } else {
+      wk = (detaij(k) > deta_ref(k) ?
+            detaij(k) - deta_ref(k) :
+            0);
+    }
+    sums.v[1] += wk;
+    wij(k) = wk;
+  };
+  Kokkos::Real2 sums;
+  Dispatch<>::parallel_reduce(kv.team, tvr, g1, sums);
+  const Real wneeded = sums.v[0];
+  if (wneeded == 0) return;
+  // Remove what is needed from the donors.
+  const Real wavail = sums.v[1];
+  const auto g2 = [&] (const int k) {
+    detaij(k) += wneeded*(wij(k)/wavail);
+  };
+  Kokkos::parallel_for(tvr, g2);
+}
+
+KOKKOS_FUNCTION void
 deta_caas (const KernelVariables& kv, const int nlev, const CRnV& deta_ref,
            const Real low, const RelnV& wrk, const RelnV& deta) {
   assert(deta_ref.extent_int(0) >= nlev);
@@ -211,36 +246,12 @@ deta_caas (const KernelVariables& kv, const int nlev, const CRnV& deta_ref,
   const auto tvr = Kokkos::ThreadVectorRange(kv.team, nlev);
   const auto f = [&] (const int idx) {
     const int i = idx / NP, j = idx % NP;
-    const auto detaij = getcol(deta,i,j);
-    const auto wij = getcol(wrk,i,j);
-    const auto g1 = [&] (const int k, Kokkos::Real2& sums) {
-      Real wk;
-      if (detaij(k) < low) {
-        sums.v[0] += detaij(k) - low;
-        detaij(k) = low;
-        wk = 0;
-      } else {
-        wk = (detaij(k) > deta_ref(k) ?
-              detaij(k) - deta_ref(k) :
-              0);
-      }
-      sums.v[1] += wk;
-      wij(k) = wk;
-    };
-    Kokkos::Real2 sums;
-    Dispatch<>::parallel_reduce(kv.team, tvr, g1, sums);
-    kv.team_barrier();
-    const Real wneeded = sums.v[0];
-    if (wneeded == 0) return;
-    // Remove what is needed from the donors.
-    const Real wavail = sums.v[1];
-    const auto g2 = [&] (const int k) {
-      detaij(k) += wneeded*(wij(k)/wavail);
-    };
-    Kokkos::parallel_for(tvr, g2);
+    deta_caas(kv, tvr, i, j, deta_ref, low, wrk, deta);
   };
   Kokkos::parallel_for(ttr, f);
 }
+
+} // namespace anon
 
 // Public function.
 
