@@ -249,6 +249,8 @@ void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real d
 
 // Testing.
 
+namespace { // anon
+
 template <typename V>
 decltype(Kokkos::create_mirror_view(V())) cmvdc (const V& v) {
   const auto h = Kokkos::create_mirror_view(v);
@@ -256,7 +258,6 @@ decltype(Kokkos::create_mirror_view(V())) cmvdc (const V& v) {
   return h;
 }
 
-namespace {
 struct TestData {
   std::mt19937_64 engine;
   static const Real eps;
@@ -270,9 +271,8 @@ struct TestData {
 };
 
 const Real TestData::eps = std::numeric_limits<Real>::epsilon();
-} // namespace
 
-static int test_find_support (TestData&) {
+int test_find_support (TestData&) {
   int ne = 0;
   const int n = 97;
   std::vector<Real> x(n);
@@ -289,14 +289,14 @@ static int test_find_support (TestData&) {
   return ne;
 }
 
-static void todev (const std::vector<Real>& h, const RnV& d) {
+void todev (const std::vector<Real>& h, const RnV& d) {
   assert(h.size() <= d.size());
   const auto m = Kokkos::create_mirror_view(d);
   for (size_t i = 0; i < h.size(); ++i) m(i) = h[i];
   Kokkos::deep_copy(d, m);
 }
 
-static void todev (const int n, const Real* const h, const RelnV& d) {
+void todev (const int n, const Real* const h, const RelnV& d) {
   assert(n <= d.extent_int(2));
   const int nlev = static_cast<int>(n);
   const auto m = Kokkos::create_mirror_view(d);
@@ -307,24 +307,23 @@ static void todev (const int n, const Real* const h, const RelnV& d) {
   Kokkos::deep_copy(d, m);
 }
 
-static void todev (const std::vector<Real>& h, const RelnV& d) {
+void todev (const std::vector<Real>& h, const RelnV& d) {
   todev(h.size(), h.data(), d);
 }
 
-static void todev (const CRnV::HostMirror& h, const RelnV& d) {
+void todev (const CRnV::HostMirror& h, const RelnV& d) {
   todev(h.extent_int(0), h.data(), d);
 }
 
-static void tohost (const ExecView<const Real*>& d, std::vector<Real>& h) {
+void tohost (const ExecView<const Real*>& d, std::vector<Real>& h) {
   assert(h.size() <= d.size());
   const auto m = Kokkos::create_mirror_view(d);
   Kokkos::deep_copy(m, d);
   for (size_t i = 0; i < h.size(); ++i) h[i] = m(i);
 }
 
-static void
-run_linterp (const std::vector<Real>& x, const std::vector<Real>& y,
-             std::vector<Real>& xi, std::vector<Real>& yi) {
+void run_linterp (const std::vector<Real>& x, const std::vector<Real>& y,
+                  std::vector<Real>& xi, std::vector<Real>& yi) {
   const auto n = x.size(), ni = xi.size();
   assert(y.size() == n); assert(yi.size() == ni);
   // input -> device (test different sizes >= n)
@@ -349,9 +348,8 @@ run_linterp (const std::vector<Real>& x, const std::vector<Real>& y,
   tohost(yiv, yi);
 }
 
-static void
-make_random_sorted (TestData& td, const int n, const Real xlo, const Real xhi,
-                    std::vector<Real>& x) {
+void make_random_sorted (TestData& td, const int n, const Real xlo, const Real xhi,
+                         std::vector<Real>& x) {
   assert(n >= 2);
   x.resize(n);
   x[0] = xlo;
@@ -360,7 +358,7 @@ make_random_sorted (TestData& td, const int n, const Real xlo, const Real xhi,
   std::sort(x.begin(), x.end());
 }
 
-static int test_linterp (TestData& td) {
+int test_linterp (TestData& td) {
   int nerr = 0;
   { // xi == x => yi == y.
     int ne = 0;
@@ -398,9 +396,8 @@ static int test_linterp (TestData& td) {
   return nerr;
 }
 
-static int
-make_random_deta (TestData& td, const Real deta_tol, const int nlev,
-                  Real* const deta) {
+int make_random_deta (TestData& td, const Real deta_tol, const int nlev,
+                      Real* const deta) {
   int nerr = 0;
   Real sum = 0;
   for (int k = 0; k < nlev; ++k) {
@@ -414,8 +411,7 @@ make_random_deta (TestData& td, const Real deta_tol, const int nlev,
   return nerr;
 }
 
-static int
-make_random_deta (TestData& td, const Real deta_tol, const RnV& deta) {
+int make_random_deta (TestData& td, const Real deta_tol, const RnV& deta) {
   int nerr = 0;
   const int nlev = deta.extent_int(0);
   const auto m = Kokkos::create_mirror_view(deta);
@@ -424,7 +420,7 @@ make_random_deta (TestData& td, const Real deta_tol, const RnV& deta) {
   return nerr;  
 }
 
-static int
+int
 make_random_deta (TestData& td, const Real deta_tol, const RelnV& deta) {
   int nerr = 0;
   const int nlev = deta.extent_int(2);
@@ -436,7 +432,7 @@ make_random_deta (TestData& td, const Real deta_tol, const RelnV& deta) {
   return nerr;
 }
 
-static int test_deta_caas (TestData& td) {
+int test_deta_caas (TestData& td) {
   int nerr = 0;
 
   const int nlev = 77;
@@ -571,7 +567,7 @@ struct HybridLevels {
 };
 
 // Follow DCMIP2012 3D tracer transport specification for a, b, eta.
-static void fill (HybridLevels& h, const int n) {
+void fill (HybridLevels& h, const int n) {
   h.ai.resize(n+1); h.bi.resize(n+1);
   h.am.resize(n  ); h.bm.resize(n  );
   h.etai.resize(n+1); h.etam.resize(n);
@@ -609,25 +605,28 @@ static void fill (HybridLevels& h, const int n) {
   tomid(h.etai, h.etam);
 }
 
-static int test_limit_deta (TestData& td) {
+int test_limit_deta (TestData& td) {
   int nerr = 0;
+  pr("test_limit_deta");
   return nerr;
 }
 
-static int test_eta_interp_eta (TestData& td) {
+int test_eta_interp_eta (TestData& td) {
   int nerr = 0;
+  pr("test_eta_interp_eta");
   return nerr;
 }
 
-static int test_eta_interp_horiz (TestData& td) {
+int test_eta_interp_horiz (TestData& td) {
   int nerr = 0;
+  pr("test_eta_interp_horiz");
   return nerr;
 }
 
-static int test_eta_to_dp (TestData& td) {
+int test_eta_to_dp (TestData& td) {
   int nerr = 0;
 
-  static const int nlev = 88;
+  const int nlev = 88;
   HybridLevels h;
   fill(h, nlev);
 
@@ -709,10 +708,13 @@ static int test_eta_to_dp (TestData& td) {
   return nerr;
 }
 
-static int test_init_velocity_record (TestData& td) {
+int test_init_velocity_record (TestData& td) {
   int nerr = 0;
+  pr("test_init_velocity_record");
   return nerr;
 }
+
+} // namespace anon
 
 #define comunittest(f) do {                     \
     ne = f(td);                                 \
