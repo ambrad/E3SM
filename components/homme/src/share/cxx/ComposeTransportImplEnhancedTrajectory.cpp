@@ -205,24 +205,22 @@ eta_to_dp (const KernelVariables& kv, const int nlev,
  */
 template <typename Range>
 KOKKOS_FUNCTION void
-deta_caas (const KernelVariables& kv, const Range& tvr, const int i, const int j,
-           const CRnV& deta_ref, const Real low, const RelnV& wrk,
-           const RelnV& deta) {
-  const auto detaij = getcol(deta,i,j);
-  const auto wij = getcol(wrk,i,j);
+deta_caas (const KernelVariables& kv, const Range& tvr,
+           const CRnV& deta_ref, const Real low, const RnV& w,
+           const RnV& deta) {
   const auto g1 = [&] (const int k, Kokkos::Real2& sums) {
     Real wk;
-    if (detaij(k) < low) {
-      sums.v[0] += detaij(k) - low;
-      detaij(k) = low;
+    if (deta(k) < low) {
+      sums.v[0] += deta(k) - low;
+      deta(k) = low;
       wk = 0;
     } else {
-      wk = (detaij(k) > deta_ref(k) ?
-            detaij(k) - deta_ref(k) :
+      wk = (deta(k) > deta_ref(k) ?
+            deta(k) - deta_ref(k) :
             0);
     }
     sums.v[1] += wk;
-    wij(k) = wk;
+    w(k) = wk;
   };
   Kokkos::Real2 sums;
   Dispatch<>::parallel_reduce(kv.team, tvr, g1, sums);
@@ -231,7 +229,7 @@ deta_caas (const KernelVariables& kv, const Range& tvr, const int i, const int j
   // Remove what is needed from the donors.
   const Real wavail = sums.v[1];
   const auto g2 = [&] (const int k) {
-    detaij(k) += wneeded*(wij(k)/wavail);
+    deta(k) += wneeded*(w(k)/wavail);
   };
   Kokkos::parallel_for(tvr, g2);
 }
@@ -246,7 +244,32 @@ deta_caas (const KernelVariables& kv, const int nlev, const CRnV& deta_ref,
   const auto tvr = Kokkos::ThreadVectorRange(kv.team, nlev);
   const auto f = [&] (const int idx) {
     const int i = idx / NP, j = idx % NP;
-    deta_caas(kv, tvr, i, j, deta_ref, low, wrk, deta);
+    deta_caas(kv, tvr, deta_ref, low, getcol(wrk,i,j), getcol(deta,i,j));
+  };
+  Kokkos::parallel_for(ttr, f);
+}
+
+template <typename Range>
+KOKKOS_FUNCTION void
+limit_deta (const KernelVariables& kv, const Range& tvr_nlev, const Range& tvr_nlevp,
+            const CRnV& hy_etai, const CRnV& deta_ref, const Real deta_tol,
+            const RnV& eta) {
+  
+}
+
+KOKKOS_FUNCTION void
+limit_deta (const KernelVariables& kv, const int nlev, const CRnV& hy_etai,
+            const CRnV& deta_ref, const Real deta_tol, const RelnV& eta) {
+  assert(hy_etai.extent_int(0) >= nlev+1);
+  assert(deta_ref.extent_int(0) >= nlev+1);
+  assert_eln(eta, nlev);
+  const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
+  const auto tvr_nlev  = Kokkos::ThreadVectorRange(kv.team, nlev);
+  const auto tvr_nlevp = Kokkos::ThreadVectorRange(kv.team, nlev+1);
+  const auto f = [&] (const int idx) {
+    const int i = idx / NP, j = idx % NP;
+    limit_deta(kv, tvr_nlev, tvr_nlevp, hy_etai, deta_ref, deta_tol,
+               getcol(eta,i,j));
   };
   Kokkos::parallel_for(ttr, f);
 }
