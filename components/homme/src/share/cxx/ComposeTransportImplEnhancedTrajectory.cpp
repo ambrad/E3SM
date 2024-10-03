@@ -440,7 +440,7 @@ static int test_deta_caas (TestData& td) {
   const int nlev = 77;
   const Real deta_tol = 10*td.eps/nlev;
 
-  // nlev+1 deltas: diff([0, etam, 1])
+  // nlev+1 deltas: deta = diff([0, etam, 1])
   ExecView<Real[nlev+1]> deta_ref("deta_ref");
   ExecView<Real[NP][NP][nlev+1]> deta("deta"), wrk("wrk");
   nerr += make_random_deta(td, deta_tol, deta_ref);
@@ -463,7 +463,7 @@ static int test_deta_caas (TestData& td) {
     bool diff = false;
     for (int i = 0; i < NP; ++i)
       for (int j = 0; j < NP; ++j)
-        for (int k = 0; k < nlev; ++k)
+        for (int k = 0; k <= nlev; ++k)
           if (m(i,j,k) != copy(i,j,k))
             diff = true;
     if (diff) ++nerr;
@@ -472,17 +472,61 @@ static int test_deta_caas (TestData& td) {
   { // Modify one etam and test that only adjacent intervals change beyond eps.
     // nlev midpoints
     ExecView<Real[nlev]> etam_ref("etam_ref");
-    ExecView<Real[NP][NP][nlev]> etam("etam");
     const auto her = Kokkos::create_mirror_view(etam_ref);
+    const auto hder = cmvdc(deta_ref);
     {
-      const auto hder = cmvdc(deta_ref);
       her(0) = hder(0);
       for (int k = 1; k < nlev; ++k)
         her(k) = her(k-1) + hder(k);
       Kokkos::deep_copy(etam_ref, her);
     }
+    std::vector<Real> etam(nlev);
+    const auto hde = Kokkos::create_mirror_view(deta);
+    const auto get_idx = [&] (const int i, const int j) {
+      const int idx = static_cast<int>(0.15*nlev);
+      return std::max(1, std::min(nlev-2, idx+NP*i+j));
+    };
     for (int trial = 0; trial < 2; ++trial) {
-      todev(her, etam);
+      for (int i = 0; i < NP; ++i)
+        for (int j = 0; j < NP; ++j) {
+          for (int k = 0; k < nlev; ++k) etam[k] = her(k);
+          // Perturb one level.
+          const int idx = get_idx(i,j);
+          etam[idx] += trial == 0 ? 1.1 : -13.1;
+          hde(i,j,0) = etam[0];
+          for (int k = 1; k < nlev; ++k) hde(i,j,k) = etam[k] - etam[k-1];
+          hde(i,j,nlev) = 1 - etam[nlev-1];
+          // Make sure we have a meaningful test.
+          Real minval = 1;
+          for (int k = 0; k <= nlev; ++k) minval = std::min(minval, hde(i,j,k));
+          if (minval >= deta_tol) ++nerr;
+        }
+      Kokkos::deep_copy(deta, hde);
+      run(deta);
+      Kokkos::deep_copy(hde, deta);
+      for (int i = 0; i < NP; ++i)
+        for (int j = 0; j < NP; ++j) {
+          const int idx = get_idx(i,j);
+          // Min val should be deta_tol.
+          Real minval = 1;
+          for (int k = 0; k <= nlev; ++k) minval = std::min(minval, hde(i,j,k));
+          if (minval != deta_tol) ++nerr;
+          // Sum of levels should be 1.
+          Real sum = 0;
+          for (int k = 0; k <= nlev; ++k) sum += hde(i,j,k);
+          if (std::abs(sum - 1) > 100*td.eps) ++nerr;
+          // Only two deltas should be affected.
+          Real maxdiff = 0;
+          for (int k = 0; k <= nlev; ++k) {
+            const auto diff = std::abs(hde(i,j,k) - hder(k));
+            if (k == idx || k == idx+1) {
+              if (diff <= deta_tol) ++nerr;
+            } else {
+              maxdiff = std::max(maxdiff, diff);
+            }
+          }
+          if (maxdiff > 100*td.eps) ++nerr;
+        }
     }
   }
   
