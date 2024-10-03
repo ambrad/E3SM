@@ -205,7 +205,7 @@ eta_to_dp (const KernelVariables& kv, const int nlev,
  */
 template <typename Range>
 KOKKOS_FUNCTION void
-deta_caas (const KernelVariables& kv, const Range& tvr,
+deta_caas (const KernelVariables& kv, const Range& tvr_nlevp,
            const CRnV& deta_ref, const Real low, const RnV& w,
            const RnV& deta) {
   const auto g1 = [&] (const int k, Kokkos::Real2& sums) {
@@ -223,7 +223,7 @@ deta_caas (const KernelVariables& kv, const Range& tvr,
     w(k) = wk;
   };
   Kokkos::Real2 sums;
-  Dispatch<>::parallel_reduce(kv.team, tvr, g1, sums);
+  Dispatch<>::parallel_reduce(kv.team, tvr_nlevp, g1, sums);
   const Real wneeded = sums.v[0];
   if (wneeded == 0) return;
   // Remove what is needed from the donors.
@@ -231,17 +231,17 @@ deta_caas (const KernelVariables& kv, const Range& tvr,
   const auto g2 = [&] (const int k) {
     deta(k) += wneeded*(w(k)/wavail);
   };
-  Kokkos::parallel_for(tvr, g2);
+  Kokkos::parallel_for(tvr_nlevp, g2);
 }
 
 KOKKOS_FUNCTION void
-deta_caas (const KernelVariables& kv, const int nlev, const CRnV& deta_ref,
+deta_caas (const KernelVariables& kv, const int nlevp, const CRnV& deta_ref,
            const Real low, const RelnV& wrk, const RelnV& deta) {
-  assert(deta_ref.extent_int(0) >= nlev);
-  assert_eln(wrk, nlev);
-  assert_eln(deta, nlev);
+  assert(deta_ref.extent_int(0) >= nlevp);
+  assert_eln(wrk, nlevp);
+  assert_eln(deta, nlevp);
   const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
-  const auto tvr = Kokkos::ThreadVectorRange(kv.team, nlev);
+  const auto tvr = Kokkos::ThreadVectorRange(kv.team, nlevp);
   const auto f = [&] (const int idx) {
     const int i = idx / NP, j = idx % NP;
     deta_caas(kv, tvr, deta_ref, low, getcol(wrk,i,j), getcol(deta,i,j));
@@ -249,29 +249,56 @@ deta_caas (const KernelVariables& kv, const int nlev, const CRnV& deta_ref,
   Kokkos::parallel_for(ttr, f);
 }
 
-template <typename Range>
-KOKKOS_FUNCTION void
-limit_deta (const KernelVariables& kv, const Range& tvr_nlev, const Range& tvr_nlevp,
-            const CRnV& hy_etai, const CRnV& deta_ref, const Real deta_tol,
-            const RnV& eta) {
-  
-}
-
 KOKKOS_FUNCTION void
 limit_deta (const KernelVariables& kv, const int nlev, const CRnV& hy_etai,
-            const CRnV& deta_ref, const Real deta_tol, const RelnV& eta) {
+            const CRnV& deta_ref, const Real deta_tol, const RelnV& wrk,
+            const RelnV& deta, const RelnV& eta) {
   assert(hy_etai.extent_int(0) >= nlev+1);
   assert(deta_ref.extent_int(0) >= nlev+1);
-  assert_eln(eta, nlev);
+  assert_eln(wrk , nlev+1);
+  assert_eln(deta, nlev+1);
+  assert_eln(eta , nlev  );
   const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
-  const auto tvr_nlev  = Kokkos::ThreadVectorRange(kv.team, nlev);
-  const auto tvr_nlevp = Kokkos::ThreadVectorRange(kv.team, nlev+1);
-  const auto f = [&] (const int idx) {
+  const auto tvr = Kokkos::ThreadVectorRange(kv.team, nlev+1);
+  // eta -> deta; limit deta if needed.
+  const auto f1 = [&] (const int idx) {
     const int i = idx / NP, j = idx % NP;
-    limit_deta(kv, tvr_nlev, tvr_nlevp, hy_etai, deta_ref, deta_tol,
-               getcol(eta,i,j));
+    const auto  etaij = getcol( eta,i,j);
+    const auto detaij = getcol(deta,i,j);
+    const auto g1 = [&] (const int k, int& nbad) {
+      const auto d = (k == 0    ? etaij(0) - hy_etai(0) :
+                      k == nlev ? hy_etai(nlev) - etaij(nlev-1) :
+                      /**/        etaij(k) - etaij(k-1));
+      const bool ok = d >= deta_tol;
+      if (not ok) ++nbad;
+      detaij(k) = d;
+    };
+    int nbad = 0;
+    Dispatch<>::parallel_reduce(kv.team, tvr, g1, nbad);
+    if (nbad == 0) {
+      // Signal this column is fine.
+      Kokkos::single(Kokkos::PerThread(kv.team), [&] () { detaij(0) = -1; });
+      return;
+    };
+    deta_caas(kv, tvr, deta_ref, deta_tol, getcol(wrk,i,j), detaij);
   };
-  Kokkos::parallel_for(ttr, f);
+  Kokkos::parallel_for(ttr, f1);
+  kv.team_barrier();
+  // deta -> eta; ignore columns where limiting wasn't needed.
+  const auto f2 = [&] (const int idx) {
+    const int i = idx / NP, j = idx % NP;
+    const auto  etaij = getcol( eta,i,j);
+    const auto detaij = getcol(deta,i,j);
+    if (detaij(0) == -1) return;
+    const auto g = [&] (const int k, Real& accum, const bool final) {
+      assert(k != 0 || accum == 0);
+      const Real d = k == 0 ? hy_etai(0) + detaij(0) : detaij(k);
+      accum += d;
+      if (final) etaij(k) = accum;
+    };
+    Dispatch<>::parallel_scan(kv.team, nlev, g);
+  };
+  Kokkos::parallel_for(ttr, f2);
 }
 
 } // namespace anon
