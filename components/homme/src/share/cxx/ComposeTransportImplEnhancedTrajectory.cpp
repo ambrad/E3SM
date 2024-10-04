@@ -523,6 +523,7 @@ int test_deta_caas (TestData& td) {
       deta_caas(kv, nlev+1, deta_ref, deta_tol, wrk, deta);
     };
     Kokkos::parallel_for(policy, f);
+    Kokkos::fence();
   };
 
   { // Test that if all is OK, the input is not altered.
@@ -698,19 +699,38 @@ int test_limit_etam (TestData& td) {
   todev(h.etai, hy_etai);
   todev(h.deta_ref, deta_ref);
 
+  const auto he = Kokkos::create_mirror_view(etam);
+
   const auto policy = get_test_team_policy(1, nlev);
-  const auto run = [&] (const RelnV& deta) {
+  const auto run = [&] () {
+    Kokkos::deep_copy(etam, he);
     const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
       KernelVariables kv(team);
       limit_etam(kv, nlev, hy_etai, deta_ref, deta_tol, wrk1, wrk2, etam);
     };
     Kokkos::parallel_for(policy, f);
+    Kokkos::fence();
+    Kokkos::deep_copy(he, etam);
   };
 
-  const auto he = Kokkos::create_mirror_view(etam);
-  Kokkos::deep_copy(etam, he);
-
-  Kokkos::deep_copy(he, etam);
+  // Col 0 should be untouched. Cols 1 and 2 should have very specific changes.
+  const int col1_idx = static_cast<int>(0.25*nlev);
+  he(0,0,col1_idx) += 0.3;
+  const int col2_idx = static_cast<int>(0.8*nlev);
+  he(0,1,col1_idx) -= 5.3;
+  // The rest of the columns get wild changes.
+  for (int idx = 2; idx < NP*NP; ++idx) {
+    const int i = idx / NP, j = idx % NP;
+    for (int k = 0; k < nlev; ++k)
+      he(i,j,k) += td.urand(-0.5, 0.5)*(h.etai[k+1] - h.etai[k-1]);
+  }
+  run();
+  bool ok = true;
+  for (int k = 0; k < nlev; ++k)
+    if (he(0,0,k) != h.etam[k])
+      ok = false;
+#pragma message "pick up"
+  //if (not ok) ++nerr;
   
   return nerr;
 }
@@ -758,6 +778,7 @@ int test_eta_to_dp (TestData& td) {
       eta_to_dp(kv, nlev, hy_ps0, hy_bi, hy_etai, ps, etai, wrk, dp);
     };
     Kokkos::parallel_for(policy, f);
+    Kokkos::fence();
   };
 
   { // Test that for etai_ref we get the same as the usual formula.
