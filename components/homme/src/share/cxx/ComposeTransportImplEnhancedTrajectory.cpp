@@ -252,7 +252,7 @@ deta_caas (const KernelVariables& kv, const int nlevp, const CRnV& deta_ref,
 // values. On output, deta_caas has been applied, if necessary, to
 // diff(eta(i,j,:)).
 KOKKOS_FUNCTION void
-limit_deta (const KernelVariables& kv, const int nlev, const CRnV& hy_etai,
+limit_etam (const KernelVariables& kv, const int nlev, const CRnV& hy_etai,
             const CRnV& deta_ref, const Real deta_tol, const RelnV& wrk1,
             const RelnV& wrk2, const RelnV& eta) {
   assert(hy_etai.extent_int(0) >= nlev+1);
@@ -636,7 +636,7 @@ int test_deta_caas (TestData& td) {
 
 struct HybridLevels {
   Real ps0;
-  std::vector<Real> ai, bi, am, bm, etai, etam;
+  std::vector<Real> ai, bi, am, bm, etai, etam, deta_ref;
 };
 
 // Follow DCMIP2012 3D tracer transport specification for a, b, eta.
@@ -676,9 +676,14 @@ void fill (HybridLevels& h, const int n) {
   tomid(h.ai, h.am);
   tomid(h.bi, h.bm);
   tomid(h.etai, h.etam);
+
+  h.deta_ref.resize(n+1);
+  h.deta_ref[0] = h.etam[0] - h.etai[0];
+  for (int i = 1; i < n; ++i) h.deta_ref[i] = h.etam[i] - h.etam[i-1];
+  h.deta_ref[n] = h.etai[n] - h.etam[n-1];
 }
 
-int test_limit_deta (TestData& td) {
+int test_limit_etam (TestData& td) {
   int nerr = 0;
 
   const int nlev = 92;
@@ -691,15 +696,21 @@ int test_limit_deta (TestData& td) {
   HybridLevels h;
   fill(h, nlev);
   todev(h.etai, hy_etai);
+  todev(h.deta_ref, deta_ref);
 
   const auto policy = get_test_team_policy(1, nlev);
   const auto run = [&] (const RelnV& deta) {
     const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
       KernelVariables kv(team);
-      limit_deta(kv, nlev, hy_etai, deta_ref, deta_tol, wrk1, wrk2, etam);
+      limit_etam(kv, nlev, hy_etai, deta_ref, deta_tol, wrk1, wrk2, etam);
     };
     Kokkos::parallel_for(policy, f);
   };
+
+  const auto he = Kokkos::create_mirror_view(etam);
+  Kokkos::deep_copy(etam, he);
+
+  Kokkos::deep_copy(he, etam);
   
   return nerr;
 }
@@ -824,7 +835,7 @@ int ComposeTransportImpl::run_enhanced_trajectory_unit_tests () {
   comunittest(test_eta_interp_horiz);
   comunittest(test_eta_to_dp);
   comunittest(test_deta_caas);
-  comunittest(test_limit_deta);
+  comunittest(test_limit_etam);
   comunittest(test_init_velocity_record);
   return nerr;
 }

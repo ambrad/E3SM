@@ -1718,7 +1718,7 @@ contains
 
        ! Reconstruct Lagrangian levels at t1 on arrival column:
        !     eta_arr_int = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_int)
-       call limit_deta(hvcoord, deta_ref, dep_points_all(4,:,:,:,ie), v1)
+       call limit_etam(hvcoord, deta_ref, dep_points_all(4,:,:,:,ie), v1)
        v2(:,:,1) = hvcoord%etai(1)
        v2(:,:,nlevp) = hvcoord%etai(nlevp)
        call eta_interp_eta(hvcoord, v1, hvcoord%etam, &
@@ -1763,7 +1763,7 @@ contains
     deta_tol = 10_real_kind*eps*deta_ave
   end subroutine set_deta_tol
 
-  subroutine limit_deta(hvcoord, deta_ref, eta, eta_lim)
+  subroutine limit_etam(hvcoord, deta_ref, eta, eta_lim)
     type (hvcoord_t), intent(in) :: hvcoord
     real(real_kind), intent(in) :: deta_ref(nlevp), eta(np,np,nlev)
     real(real_kind), intent(out) :: eta_lim(np,np,nlev)
@@ -1808,7 +1808,7 @@ contains
           end do
        end do
     end do
-  end subroutine limit_deta
+  end subroutine limit_etam
 
   subroutine deta_caas(nlp, deta_ref, lo, deta)
     integer, intent(in) :: nlp
