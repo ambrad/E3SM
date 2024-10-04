@@ -132,14 +132,13 @@ linterp (const Range& range,
   Kokkos::parallel_for(range, f);
 }
 
-/*
-  Compute level pressure thickness given eta at interfaces using the following
-  approximation:
-         e = A(e) + B(e)
-      p(e) = A(e) p0 + B(e) ps
-           = e p0 + B(e) (ps - p0)
-          a= e p0 + I[Bi(eref)](e) (ps - p0).
-  Then dp = diff(p).
+/* Compute level pressure thickness given eta at interfaces using the following
+   approximation:
+          e = A(e) + B(e)
+       p(e) = A(e) p0 + B(e) ps
+            = e p0 + B(e) (ps - p0)
+           a= e p0 + I[Bi(eref)](e) (ps - p0).
+   Then dp = diff(p).
 */
 KOKKOS_FUNCTION void
 eta_to_dp (const KernelVariables& kv, const int nlev,
@@ -249,13 +248,17 @@ deta_caas (const KernelVariables& kv, const int nlevp, const CRnV& deta_ref,
   Kokkos::parallel_for(ttr, f);
 }
 
+// Wrapper to deta_caas. On input and output, eta contains the midpoint eta
+// values. On output, deta_caas has been applied, if necessary, to
+// diff(eta(i,j,:)).
 KOKKOS_FUNCTION void
 limit_deta (const KernelVariables& kv, const int nlev, const CRnV& hy_etai,
-            const CRnV& deta_ref, const Real deta_tol, const RelnV& wrk,
-            const RelnV& deta, const RelnV& eta) {
+            const CRnV& deta_ref, const Real deta_tol, const RelnV& wrk1,
+            const RelnV& wrk2, const RelnV& eta) {
   assert(hy_etai.extent_int(0) >= nlev+1);
   assert(deta_ref.extent_int(0) >= nlev+1);
-  assert_eln(wrk , nlev+1);
+  const auto deta = wrk2;
+  assert_eln(wrk1, nlev+1);
   assert_eln(deta, nlev+1);
   assert_eln(eta , nlev  );
   const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
@@ -280,7 +283,7 @@ limit_deta (const KernelVariables& kv, const int nlev, const CRnV& hy_etai,
       Kokkos::single(Kokkos::PerThread(kv.team), [&] () { detaij(0) = -1; });
       return;
     };
-    deta_caas(kv, tvr, deta_ref, deta_tol, getcol(wrk,i,j), detaij);
+    deta_caas(kv, tvr, deta_ref, deta_tol, getcol(wrk1,i,j), detaij);
   };
   Kokkos::parallel_for(ttr, f1);
   kv.team_barrier();
@@ -317,6 +320,16 @@ decltype(Kokkos::create_mirror_view(V())) cmvdc (const V& v) {
   const auto h = Kokkos::create_mirror_view(v);
   deep_copy(h, v);
   return h;
+}
+
+Kokkos::TeamPolicy<ExecSpace>
+get_test_team_policy (const int nelem, const int nlev, const int ncol=NP*NP) {
+  ThreadPreferences tp;
+  tp.max_threads_usable = ncol;
+  tp.max_vectors_usable = nlev;
+  tp.prefer_threads = true;
+  tp.prefer_larger_team = true;
+  return Homme::get_default_team_policy<ExecSpace>(nelem, tp);
 }
 
 struct TestData {
@@ -402,7 +415,7 @@ void run_linterp (const std::vector<Real>& x, const std::vector<Real>& y,
   tp.max_vectors_usable = ni;
   tp.prefer_threads = false;
   tp.prefer_larger_team = true;
-  const auto policy = Homme::get_default_team_policy<ExecSpace>(1, tp);
+  const auto policy = get_test_team_policy(1, n);
   Kokkos::parallel_for(policy, f);
   Kokkos::fence();
   // output -> host
@@ -481,8 +494,7 @@ int make_random_deta (TestData& td, const Real deta_tol, const RnV& deta) {
   return nerr;  
 }
 
-int
-make_random_deta (TestData& td, const Real deta_tol, const RelnV& deta) {
+int make_random_deta (TestData& td, const Real deta_tol, const RelnV& deta) {
   int nerr = 0;
   const int nlev = deta.extent_int(2);
   const auto m = Kokkos::create_mirror_view(deta);
@@ -504,7 +516,7 @@ int test_deta_caas (TestData& td) {
   ExecView<Real[NP][NP][nlev+1]> deta("deta"), wrk("wrk");
   nerr += make_random_deta(td, deta_tol, deta_ref);
 
-  const auto policy = Homme::get_default_team_policy<ExecSpace>(1);
+  const auto policy = get_test_team_policy(1, nlev);
   const auto run = [&] (const RelnV& deta) {
     const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
       KernelVariables kv(team);
@@ -668,7 +680,27 @@ void fill (HybridLevels& h, const int n) {
 
 int test_limit_deta (TestData& td) {
   int nerr = 0;
-  pr("test_limit_deta");
+
+  const int nlev = 92;
+  const Real deta_tol = 10*td.eps/nlev;
+
+  ExecView<Real[nlev+1]> hy_etai("hy_etai"), deta_ref("deta_ref");
+  ExecView<Real[NP][NP][nlev+1]> wrk1("wrk1"), wrk2("wrk2");
+  ExecView<Real[NP][NP][nlev]> etam("etam");
+
+  HybridLevels h;
+  fill(h, nlev);
+  todev(h.etai, hy_etai);
+
+  const auto policy = get_test_team_policy(1, nlev);
+  const auto run = [&] (const RelnV& deta) {
+    const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
+      KernelVariables kv(team);
+      limit_deta(kv, nlev, hy_etai, deta_ref, deta_tol, wrk1, wrk2, etam);
+    };
+    Kokkos::parallel_for(policy, f);
+  };
+  
   return nerr;
 }
 
@@ -708,7 +740,7 @@ int test_eta_to_dp (TestData& td) {
       psm(i,j) = (1 + 0.1*td.urand(-1, 1))*h.ps0;
   Kokkos::deep_copy(ps, psm);
 
-  const auto policy = Homme::get_default_team_policy<ExecSpace>(1);
+  const auto policy = get_test_team_policy(1, nlev);
   const auto run = [&] () {
     const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
       KernelVariables kv(team);
