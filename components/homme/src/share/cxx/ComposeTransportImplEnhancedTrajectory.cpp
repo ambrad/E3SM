@@ -61,7 +61,7 @@ RnV getcol (const RelnV& a, const int i, const int j) {
 }
 
 KOKKOS_INLINE_FUNCTION
-CRnV getcol (const CRelnV& a, const int i, const int j) {
+CRnV getcolc (const CRelnV& a, const int i, const int j) {
   return Kokkos::subview(a,i,j,Kokkos::ALL);
 }
 
@@ -98,10 +98,9 @@ int find_support (const int n, const ConstRealArray& x, const int x_idx,
 }
 
 // Linear interpolation core computation.
-template <typename ConstRealArray>
+template <typename XT, typename YT>
 KOKKOS_FUNCTION Real
-linterp (const int n, const ConstRealArray& x, const ConstRealArray& y,
-         const int x_idx, const Real xi) {
+linterp (const int n, const XT& x, const YT& y, const int x_idx, const Real xi) {
   const auto isup = find_support(n, x, x_idx, xi);
   const Real a = (xi - x[isup])/(x[isup+1] - x[isup]);
   return (1-a)*y[isup] + a*y[isup+1];
@@ -171,8 +170,8 @@ eta_interp_eta (const KernelVariables& kv, const int nlev,
   const auto f_linterp = [&] (const int idx) {
     const int i = idx / NP, j = idx % NP;
     linterp(tvr_ni,
-            nlev+2, getcol(xbdy,i,j), ybdy,
-            ni,     xi,               getcol(yi,i,j),
+            nlev+2, getcolc(xbdy,i,j), ybdy,
+            ni,     xi,                getcol(yi,i,j),
             1, "eta_interp_eta");
   };
   Kokkos::parallel_for(ttr, f_linterp);
@@ -217,8 +216,8 @@ eta_interp_horiz (const KernelVariables& kv, const int nlev,
   const auto f_linterp = [&] (const int idx) {
     const int i = idx / NP, j = idx % NP;
     linterp(tvr_nlev,
-            nlev+2, xbdy,           getcol(ybdy,i,j),
-            nlev,   getcol(xi,i,j), getcol(yi,i,j),
+            nlev+2, xbdy,            getcolc(ybdy,i,j),
+            nlev,   getcolc(xi,i,j), getcol(yi,i,j),
             1, "eta_interp_horiz");
   };
   Kokkos::parallel_for(ttr, f_linterp);
@@ -250,7 +249,7 @@ eta_to_dp (const KernelVariables& kv, const int nlev,
     const int i = idx / NP, j = idx % NP;
     linterp(tvr_linterp,
             nlevp, hy_etai, hy_bi,
-            nlevp, getcol(etai,i,j), getcol(bi,i,j),
+            nlevp, getcolc(etai,i,j), getcol(bi,i,j),
             0, "eta_to_dp");
   };
   Kokkos::parallel_for(ttr, f_linterp);
@@ -358,7 +357,7 @@ limit_etam (const KernelVariables& kv, const int nlev, const CRnV& hy_etai,
   // eta -> deta; limit deta if needed.
   const auto f1 = [&] (const int idx) {
     const int i = idx / NP, j = idx % NP;
-    const auto  etaij = getcol( eta,i,j);
+    const auto  etaij = getcolc( eta,i,j);
     const auto detaij = getcol(deta,i,j);
     const auto g1 = [&] (const int k, int& nbad) {
       const auto d = (k == 0    ? etaij(0) - hy_etai(0) :
@@ -847,15 +846,53 @@ int test_limit_etam (TestData& td) {
   return nerr;
 }
 
-int test_eta_interp_eta (TestData& td) {
+int test_eta_interp (TestData& td) {
   int nerr = 0;
-  pr("test_eta_interp_eta");
-  return nerr;
-}
 
-int test_eta_interp_horiz (TestData& td) {
-  int nerr = 0;
-  pr("test_eta_interp_horiz");
+  const int nlev = 56;
+  HybridLevels h;
+  fill(h, nlev);
+
+  ExecView<Real[nlev+1]> hy_etai("hy_etai");
+  ExecView<Real[NP][NP][nlev  ]> x("x"), y("y");
+  ExecView<Real[NP][NP][nlev+1]> xi("xi"), yi("yi");
+  ExecView<Real[NP][NP][nlev+2]> xwrk("xwrk"), ywrk("ywrk");
+
+  const auto xh  = Kokkos::create_mirror_view(x );
+  const auto yh  = Kokkos::create_mirror_view(y );
+  const auto xih = Kokkos::create_mirror_view(xi);
+  const auto yih = Kokkos::create_mirror_view(xi);
+
+  const auto policy = get_test_team_policy(1, nlev);
+  const auto run_eta = [&] (const int ni) {
+    Kokkos::deep_copy(x, xh); Kokkos::deep_copy(y, yh);
+    Kokkos::deep_copy(xi, xih);
+    const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
+      KernelVariables kv(team);
+      eta_interp_eta(kv, nlev, hy_etai,
+                     x, getcolc(y,0,0),
+                     xwrk, getcol(ywrk,0,0),
+                     ni, getcolc(xi,0,0), yi);
+    };
+    Kokkos::parallel_for(policy, f);
+    Kokkos::fence();
+    Kokkos::deep_copy(yih, yi);
+  };
+  const auto run_horiz = [&] () {
+    Kokkos::deep_copy(x, xh); Kokkos::deep_copy(y, yh);
+    Kokkos::deep_copy(xi, xih);
+    const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
+      KernelVariables kv(team);
+      eta_interp_horiz(kv, nlev, hy_etai,
+                       getcolc(x,0,0), y,
+                       getcol(xwrk,0,0), ywrk,
+                       xi, yi);
+    };
+    Kokkos::parallel_for(policy, f);
+    Kokkos::fence();
+    Kokkos::deep_copy(yih, yi);
+  };
+  
   return nerr;
 }
 
@@ -964,8 +1001,7 @@ int ComposeTransportImpl::run_enhanced_trajectory_unit_tests () {
   TestData td(1);
   comunittest(test_find_support);
   comunittest(test_linterp);
-  comunittest(test_eta_interp_eta);
-  comunittest(test_eta_interp_horiz);
+  comunittest(test_eta_interp);
   comunittest(test_eta_to_dp);
   comunittest(test_deta_caas);
   comunittest(test_limit_etam);
