@@ -370,14 +370,17 @@ void todev (const std::vector<Real>& h, const RnV& d) {
   Kokkos::deep_copy(d, m);
 }
 
+void fillcols (const int n, const Real* const h, const RelnV::HostMirror& a) {
+  assert(n <= a.extent_int(2));
+  for (int i = 0; i < a.extent_int(0); ++i)
+    for (int j = 0; j < a.extent_int(1); ++j)
+      for (size_t k = 0; k < n; ++k)
+        a(i,j,k) = h[k];  
+}
+
 void todev (const int n, const Real* const h, const RelnV& d) {
-  assert(n <= d.extent_int(2));
-  const int nlev = static_cast<int>(n);
   const auto m = Kokkos::create_mirror_view(d);
-  for (int i = 0; i < m.extent_int(0); ++i)
-    for (int j = 0; j < m.extent_int(1); ++j)
-      for (size_t k = 0; k < nlev; ++k)
-        m(i,j,k) = h[k];
+  fillcols(n, h, m)  ;
   Kokkos::deep_copy(d, m);
 }
 
@@ -688,7 +691,7 @@ int test_limit_etam (TestData& td) {
   int nerr = 0;
 
   const int nlev = 92;
-  const Real deta_tol = 10*td.eps/nlev;
+  const Real deta_tol = 1e5*td.eps/nlev;
 
   ExecView<Real[nlev+1]> hy_etai("hy_etai"), deta_ref("deta_ref");
   ExecView<Real[NP][NP][nlev+1]> wrk1("wrk1"), wrk2("wrk2");
@@ -713,24 +716,41 @@ int test_limit_etam (TestData& td) {
     Kokkos::deep_copy(he, etam);
   };
 
+  fillcols(h.etam.size(), h.etam.data(), he);
   // Col 0 should be untouched. Cols 1 and 2 should have very specific changes.
   const int col1_idx = static_cast<int>(0.25*nlev);
-  he(0,0,col1_idx) += 0.3;
+  he(0,1,col1_idx) += 0.3;
   const int col2_idx = static_cast<int>(0.8*nlev);
-  he(0,1,col1_idx) -= 5.3;
+  he(0,2,col2_idx) -= 5.3;
   // The rest of the columns get wild changes.
-  for (int idx = 2; idx < NP*NP; ++idx) {
+  for (int idx = 3; idx < NP*NP; ++idx) {
     const int i = idx / NP, j = idx % NP;
     for (int k = 0; k < nlev; ++k)
-      he(i,j,k) += td.urand(-0.5, 0.5)*(h.etai[k+1] - h.etai[k-1]);
+      he(i,j,k) += td.urand(-1, 1)*(h.etai[k+1] - h.etai[k]);
   }
   run();
   bool ok = true;
   for (int k = 0; k < nlev; ++k)
-    if (he(0,0,k) != h.etam[k])
-      ok = false;
-#pragma message "pick up"
-  //if (not ok) ++nerr;
+    if (he(0,0,k) != h.etam[k]) ok = false;
+  for (int k = 0; k < nlev; ++k) {
+    if (k == col1_idx) continue;
+    if (std::abs(he(0,1,k) - h.etam[k]) > 100*td.eps) ok = false;
+  }
+  for (int k = 0; k < nlev; ++k) {
+    if (k == col2_idx) continue;
+    if (std::abs(he(0,2,k) - h.etam[k]) > 100*td.eps) ok = false;
+  }
+  Real mingap = 1;
+  for (int i = 0; i < NP; ++i)
+    for (int j = 0; j < NP; ++j) {
+      mingap = std::min(mingap, he(i,j,0) - h.etai[0]);
+      for (int k = 1; k < nlev; ++k)
+        mingap = std::min(mingap, he(i,j,k) - he(i,j,k-1));
+      mingap = std::min(mingap, h.etai[nlev] - he(i,j,nlev-1));
+    }
+  // Test minimum level delta, with room for numerical error.
+  if (mingap < 0.8*deta_tol) ok = false;
+  if (not ok) ++nerr;
   
   return nerr;
 }
