@@ -111,11 +111,12 @@ linterp (const int n, const ConstRealArray& x, const ConstRealArray& y,
 //   Range provides this ||ism over index 0 <= k < ni.
 //   Interpolate y(x) to yi(xi).
 //   x_idx_offset is added to k in the call to find_support.
-template <typename Range, typename ConstRealArray, typename RealArray>
+//   Arrays should all have rank 1.
+template <typename Range, typename XT, typename YT, typename XIT, typename YIT>
 KOKKOS_FUNCTION void
 linterp (const Range& range,
-         const int n , const ConstRealArray& x , const ConstRealArray& y,
-         const int ni, const ConstRealArray& xi, const RealArray& yi,
+         const int n , const XT& x , const YT& y,
+         const int ni, const XIT& xi, const YIT& yi,
          const int x_idx_offset = 0, const char* const caller = nullptr) {
 #ifndef NDEBUG
   if (xi[0] < x[0] or xi[ni-1] > x[n-1]) {
@@ -130,6 +131,97 @@ linterp (const Range& range,
     yi[k] = linterp(n, x, y, k + x_idx_offset, xi[k]);
   };
   Kokkos::parallel_for(range, f);
+}
+
+KOKKOS_FUNCTION void
+eta_interp_eta (const KernelVariables& kv, const int nlev,
+                const CRnV& hy_etai, const CRelnV& x, const CRnV& y,
+                const RelnV& xwrk, const RnV& ywrk,
+                const int ni, const CRnV& xi, const RelnV& yi) {
+  const auto& xbdy = xwrk;
+  const auto& ybdy = ywrk;
+  assert(hy_etai.extent_int(0) >= nlev+1);
+  assert_eln(x, nlev);
+  assert(y.extent_int(0) >= nlev);
+  assert_eln(xbdy, nlev+2);
+  assert(ybdy.extent_int(0) >= nlev+2);
+  assert(xi.extent_int(0) >= ni);
+  assert_eln(yi, ni);
+  const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
+  const auto tvr_ni = Kokkos::ThreadVectorRange(kv.team, ni);
+  const auto tvr_nlevp2 = Kokkos::ThreadVectorRange(kv.team, nlev+2);
+  const auto f_y = [&] (const int k) {
+    ybdy(k) = (k == 0      ? hy_etai(0) :
+               k == nlev+1 ? hy_etai(nlev) :
+               /**/          y(k-1));
+  };
+  Kokkos::parallel_for(Kokkos::TeamVectorRange(kv.team, nlev+2), f_y);
+  kv.team_barrier();
+  const auto f_x = [&] (const int idx) {
+    const int i = idx / NP, j = idx % NP;
+    const auto g = [&] (const int k) {
+      xbdy(i,j,k) = (k == 0      ? hy_etai(0) :
+                     k == nlev+1 ? hy_etai(nlev) :
+                     /**/          x(i,j,k-1));
+    };
+    Kokkos::parallel_for(tvr_nlevp2, g);
+  };
+  Kokkos::parallel_for(ttr, f_x);
+  kv.team_barrier();
+  const auto f_linterp = [&] (const int idx) {
+    const int i = idx / NP, j = idx % NP;
+    linterp(tvr_ni,
+            nlev+2, getcol(xbdy,i,j), ybdy,
+            ni,     xi,               getcol(yi,i,j),
+            1, "eta_interp_eta");
+  };
+  Kokkos::parallel_for(ttr, f_linterp);
+}
+
+KOKKOS_FUNCTION void
+eta_interp_horiz (const KernelVariables& kv, const int nlev,
+                  const CRnV& hy_etai, const CRnV& x, const CRelnV& y,
+                  const RnV& xwrk, const RelnV& ywrk,
+                  const CRelnV& xi, const RelnV& yi) {
+  const auto& xbdy = xwrk;
+  const auto& ybdy = ywrk;
+  assert(hy_etai.extent_int(0) >= nlev+1);
+  assert(x.extent_int(0) >= nlev);
+  assert_eln(y, nlev);
+  assert(xbdy.extent_int(0) >= nlev+2);
+  assert_eln(ybdy, nlev+2);
+  assert_eln(xi, nlev);
+  assert_eln(yi, nlev);
+  const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
+  const auto tvr_nlev = Kokkos::ThreadVectorRange(kv.team, nlev);
+  const auto tvr_nlevp2 = Kokkos::ThreadVectorRange(kv.team, nlev+2);
+  const auto f_x = [&] (const int k) {
+    xbdy(k) = (k == 0      ? hy_etai(0) :
+               k == nlev+1 ? hy_etai(nlev) :
+               /**/          x(k-1));
+  };
+  Kokkos::parallel_for(Kokkos::TeamVectorRange(kv.team, nlev+2), f_x);
+  kv.team_barrier();
+  const auto f_y = [&] (const int idx) {
+    const int i = idx / NP, j = idx % NP;
+    const auto g = [&] (const int k) {
+      // Constant interp outside of the etam support.
+      ybdy(i,j,k) = (k == 0      ? y(i,j,0) :
+                     k == nlev+1 ? y(i,j,nlev-1) :
+                     /**/          y(i,j,k));
+    };
+    Kokkos::parallel_for(tvr_nlevp2, g);
+  };
+  Kokkos::parallel_for(ttr, f_y);
+  kv.team_barrier();
+  const auto f_linterp = [&] (const int idx) {
+    const int i = idx / NP, j = idx % NP;
+    linterp(tvr_nlev,
+            nlev+2, xbdy,           getcol(ybdy,i,j),
+            nlev,   getcol(xi,i,j), getcol(yi,i,j),
+            1, "eta_interp_horiz");
+  };
+  Kokkos::parallel_for(ttr, f_linterp);
 }
 
 /* Compute level pressure thickness given eta at interfaces using the following
