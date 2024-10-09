@@ -208,7 +208,7 @@ eta_interp_horiz (const KernelVariables& kv, const int nlev,
       // Constant interp outside of the etam support.
       ybdy(i,j,k) = (k == 0      ? y(i,j,0) :
                      k == nlev+1 ? y(i,j,nlev-1) :
-                     /**/          y(i,j,k));
+                     /**/          y(i,j,k-1));
     };
     Kokkos::parallel_for(tvr_nlevp2, g);
   };
@@ -604,6 +604,7 @@ int test_deta_caas (TestData& td) {
   int nerr = 0;
 
   const int nlev = 77;
+  const Real tol = 100*td.eps;
   const Real deta_tol = 10*td.eps/nlev;
 
   // nlev+1 deltas: deta = diff([0, etam, 1])
@@ -681,7 +682,7 @@ int test_deta_caas (TestData& td) {
           // Sum of levels should be 1.
           Real sum = 0;
           for (int k = 0; k <= nlev; ++k) sum += hde(i,j,k);
-          if (std::abs(sum - 1) > 100*td.eps) ++nerr;
+          if (std::abs(sum - 1) > tol) ++nerr;
           // Only two deltas should be affected.
           Real maxdiff = 0;
           for (int k = 0; k <= nlev; ++k) {
@@ -692,7 +693,7 @@ int test_deta_caas (TestData& td) {
               maxdiff = std::max(maxdiff, diff);
             }
           }
-          if (maxdiff > 100*td.eps) ++nerr;
+          if (maxdiff > tol) ++nerr;
         }
     }
   }
@@ -712,7 +713,7 @@ int test_deta_caas (TestData& td) {
         for (int k = 0; k <= nlev; ++k) hde(i,j,k) /= colsum;
         sum = 0;
         for (int k = 0; k <= nlev; ++k) sum += hde(i,j,k);
-        if (std::abs(sum - 1) > 100*td.eps) ++nerr;
+        if (std::abs(sum - 1) > tol) ++nerr;
       }
     Kokkos::deep_copy(deta, hde);
     run(deta);
@@ -783,6 +784,7 @@ int test_limit_etam (TestData& td) {
   int nerr = 0;
 
   const int nlev = 92;
+  const Real tol = 100*td.eps;
   const Real deta_tol = 1e5*td.eps/nlev;
 
   ExecView<Real[nlev+1]> hy_etai("hy_etai"), deta_ref("deta_ref");
@@ -826,11 +828,11 @@ int test_limit_etam (TestData& td) {
     if (he(0,0,k) != h.etam[k]) ok = false;
   for (int k = 0; k < nlev; ++k) {
     if (k == col1_idx) continue;
-    if (std::abs(he(0,1,k) - h.etam[k]) > 100*td.eps) ok = false;
+    if (std::abs(he(0,1,k) - h.etam[k]) > tol) ok = false;
   }
   for (int k = 0; k < nlev; ++k) {
     if (k == col2_idx) continue;
-    if (std::abs(he(0,2,k) - h.etam[k]) > 100*td.eps) ok = false;
+    if (std::abs(he(0,2,k) - h.etam[k]) > tol) ok = false;
   }
   Real mingap = 1;
   for (int i = 0; i < NP; ++i)
@@ -851,6 +853,7 @@ int test_eta_interp (TestData& td) {
   int nerr = 0;
 
   const int nlev = 56;
+  const Real tol = 100*td.eps;
   HybridLevels h;
   fill(h, nlev);
 
@@ -864,7 +867,7 @@ int test_eta_interp (TestData& td) {
   const auto xh  = Kokkos::create_mirror_view(x );
   const auto yh  = Kokkos::create_mirror_view(y );
   const auto xih = Kokkos::create_mirror_view(xi);
-  const auto yih = Kokkos::create_mirror_view(xi);
+  const auto yih = Kokkos::create_mirror_view(yi);
 
   const auto policy = get_test_team_policy(1, nlev);
   const auto run_eta = [&] (const int ni) {
@@ -898,6 +901,7 @@ int test_eta_interp (TestData& td) {
 
   std::vector<Real> v;
   const Real d = 1e-6, vlo = h.etai[0]+d, vhi = h.etai[nlev]-d;
+
   for (const int ni : {int(0.7*nlev), nlev-1, nlev, nlev+1}) {
     make_random_sorted(td, nlev, vlo, vhi, v);
     fillcols(nlev, v.data(), xh);
@@ -909,7 +913,38 @@ int test_eta_interp (TestData& td) {
     for (int i = 0; i < NP; ++i)
       for (int j = 0; j < NP; ++j)
         for (int k = 0; k < ni; ++k)
-          if (std::abs(yih(i,j,k) - xih(i,j,k)) > 100*td.eps) ok = false;
+          if (std::abs(yih(i,j,k) - xih(i,j,k)) > tol)
+            ok = false;
+    if (not ok) ++nerr;
+  }
+
+  { // Test exact interp of line in the interior, const interp near the bdys.
+    make_random_sorted(td, nlev, vlo+0.05, vhi-0.1, v);
+    fillcols(nlev, v.data(), xh);
+    for (int i = 0; i < NP; ++i)
+      for (int j = 0; j < NP; ++j) {
+        for (int k = 0; k < nlev; ++k)
+          yh(i,j,k) = i*xh(0,0,k) - j;
+        make_random_sorted(td, nlev, vlo, vhi, v);
+        for (int k = 0; k < nlev; ++k)
+          xih(i,j,k) = v[k];
+      }
+    run_horiz();
+    bool ok = true;
+    for (int i = 0; i < NP; ++i)
+      for (int j = 0; j < NP; ++j)
+        for (int k = 0; k < nlev; ++k) {
+          if (xih(i,j,k) < xh(0,0,0)) {
+            if (std::abs(yih(i,j,k) - yi(i,j,0)) > tol)
+              ok = false;
+          } else if (xih(i,j,k) > xh(0,0,nlev-1)) {
+            if (std::abs(yih(i,j,k) - yi(i,j,nlev-1)) > tol)
+              ok = false;            
+          } else {
+            if (std::abs(yih(i,j,k) - (i*xih(i,j,k) - j)) > tol)
+              ok = false;
+          }
+        }
     if (not ok) ++nerr;
   }
   
@@ -920,6 +955,7 @@ int test_eta_to_dp (TestData& td) {
   int nerr = 0;
 
   const int nlev = 88;
+  const Real tol = 100*td.eps;
   HybridLevels h;
   fill(h, nlev);
 
@@ -969,7 +1005,7 @@ int test_eta_to_dp (TestData& td) {
       for (int j = 0; j < NP; ++j)
         for (int k = 0; k < nlev; ++k)
           err_max = std::max(err_max, std::abs(dph(i,j,k) - dp1(i,j,k)));
-    if (err_max > 100*td.eps*dp1_max) ++nerr;
+    if (err_max > tol*dp1_max) ++nerr;
   }
 
   { // Test that sum(dp) = ps for random input etai.
@@ -983,7 +1019,7 @@ int test_eta_to_dp (TestData& td) {
         Real ps = h.ai[0]*h.ps0;
         for (int k = 0; k < nlev; ++k)
           ps += dph1(i,j,k);
-        if (std::abs(ps - psm(i,j)) > 100*td.eps*psm(i,j)) ++nerr;
+        if (std::abs(ps - psm(i,j)) > tol*psm(i,j)) ++nerr;
       }    
     // Test that values on input don't affect solution.
     Kokkos::deep_copy(wrk, 0);
