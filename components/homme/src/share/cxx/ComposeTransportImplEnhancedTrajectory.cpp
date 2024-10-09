@@ -120,7 +120,8 @@ linterp (const Range& range,
 #ifndef NDEBUG
   if (xi[0] < x[0] or xi[ni-1] > x[n-1]) {
     if (caller)
-      printf("linterp: xi out of bounds: %s\n", caller);
+      printf("linterp: xi out of bounds: %s %1.15e %1.15e %1.15e %1.15e\n",
+             caller, x[0], xi[0], xi[ni-1], x[n-1]);
     assert(false);
   }
 #endif
@@ -858,6 +859,8 @@ int test_eta_interp (TestData& td) {
   ExecView<Real[NP][NP][nlev+1]> xi("xi"), yi("yi");
   ExecView<Real[NP][NP][nlev+2]> xwrk("xwrk"), ywrk("ywrk");
 
+  todev(h.etai, hy_etai);
+
   const auto xh  = Kokkos::create_mirror_view(x );
   const auto yh  = Kokkos::create_mirror_view(y );
   const auto xih = Kokkos::create_mirror_view(xi);
@@ -892,6 +895,23 @@ int test_eta_interp (TestData& td) {
     Kokkos::fence();
     Kokkos::deep_copy(yih, yi);
   };
+
+  std::vector<Real> v;
+  const Real d = 1e-6, vlo = h.etai[0]+d, vhi = h.etai[nlev]-d;
+  for (const int ni : {int(0.7*nlev), nlev-1, nlev, nlev+1}) {
+    make_random_sorted(td, nlev, vlo, vhi, v);
+    fillcols(nlev, v.data(), xh);
+    fillcols(nlev, v.data(), yh);
+    make_random_sorted(td, ni, vlo, vhi, v);
+    fillcols(ni, v.data(), xih);
+    run_eta(ni);
+    bool ok = true;
+    for (int i = 0; i < NP; ++i)
+      for (int j = 0; j < NP; ++j)
+        for (int k = 0; k < ni; ++k)
+          if (std::abs(yih(i,j,k) - xih(i,j,k)) > 100*td.eps) ok = false;
+    if (not ok) ++nerr;
+  }
   
   return nerr;
 }
