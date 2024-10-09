@@ -70,7 +70,7 @@ struct ComposeTransportImpl {
   struct Data {
     int nelemd, qsize, limiter_option, cdr_check, hv_q, hv_subcycle_q;
     int geometry_type; // 0: sphere, 1: plane
-    int trajectory_alg; // 0: original, 1: enhanced
+    int trajectory_nsubstep; // 0: original alg, >= 1: enhanced
     Real nu_q, hv_scaling, dp_tol;
     bool independent_time_steps;
 

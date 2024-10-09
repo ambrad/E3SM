@@ -13,7 +13,7 @@
 extern "C" void
 sl_get_params(double* nu_q, double* hv_scaling, int* hv_q, int* hv_subcycle_q,
               int* limiter_option, int* cdr_check, int* geometry_type,
-              int* trajectory_alg);
+              int* trajectory_nsubstep);
 
 namespace Homme {
 
@@ -57,7 +57,7 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
 
   sl_get_params(&m_data.nu_q, &m_data.hv_scaling, &m_data.hv_q, &m_data.hv_subcycle_q,
                 &m_data.limiter_option, &m_data.cdr_check, &m_data.geometry_type,
-                &m_data.trajectory_alg);
+                &m_data.trajectory_nsubstep);
 
   if (independent_time_steps != m_data.independent_time_steps ||
       m_data.nelemd != num_elems || m_data.qsize != params.qsize) {
@@ -67,7 +67,7 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
     const auto& d = m_derived;
     const auto nel = num_elems;
     const auto nlev = NUM_LEV*packn;
-    const int ndim = (m_data.trajectory_alg == 0 ?
+    const int ndim = (m_data.trajectory_nsubstep == 0 ?
                       3 :
                       (m_data.independent_time_steps ? 4 : 3));
     m_data.dep_pts = DeparturePoints("dep_pts", nel, num_phys_lev, np, np, ndim);
@@ -189,7 +189,10 @@ void ComposeTransportImpl::init_boundary_exchanges () {
 void ComposeTransportImpl::run (const TimeLevel& tl, const Real dt) {
   GPTLstart("compose_transport");
 
-  calc_trajectory(tl.np1, dt);
+  if (m_data.trajectory_nsubstep == 0)
+    calc_trajectory(tl.np1, dt);
+  else
+    calc_enhanced_trajectory(tl.np1, dt);
   
   GPTLstart("compose_isl");
   homme::compose::advect(tl.np1, tl.n0_qdp, tl.np1_qdp);
