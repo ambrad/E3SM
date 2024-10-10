@@ -30,6 +30,7 @@ void ComposeTransportImpl::set_deta_tol () {
 namespace { // anon
 
 using cti = ComposeTransportImpl;
+using CTI = ComposeTransportImpl;
 using CSelNlev  = cti::CSNlev;
 using CRelNlev  = cti::CRNlev;
 using CSelNlevp = cti::CSNlevp;
@@ -394,7 +395,7 @@ limit_etam (const KernelVariables& kv, const int nlev, const CRnV& hy_etai,
     const auto detaij = getcol(deta,i,j);
     if (detaij(0) == -1) return;
     const auto g = [&] (const int k, Real& accum, const bool final) {
-      assert(k != 0 || accum == 0);
+      assert(k != 0 or accum == 0);
       const Real d = k == 0 ? hy_etai(0) + detaij(0) : detaij(k);
       accum += d;
       if (final) etaij(k) = accum;
@@ -404,12 +405,61 @@ limit_etam (const KernelVariables& kv, const int nlev, const CRnV& hy_etai,
   Kokkos::parallel_for(ttr, f2);
 }
 
+// Set dep_points_all to level-midpoint arrival points.
+template <typename SCT, typename ET, typename DPT> void
+init_dep_points_all (const CTI& c, const SCT& sphere_cart, const ET& etam,
+                     const DPT& dep_pts) {
+  const auto independent_time_steps = c.m_data.independent_time_steps;
+  assert(not independent_time_steps or dep_pts.extent_int(4) == 4);
+  const auto f = KOKKOS_LAMBDA (const int idx) {
+    int ie, lev, i, j;
+    cti::idx_ie_physlev_ij(idx, ie, lev, i, j);
+    for (int d = 0; d < 3; ++d)
+      dep_pts(ie,lev,i,j,d) = sphere_cart(ie,i,j,d);
+    if (independent_time_steps)
+      dep_pts(ie,lev,i,j,3) = etam(lev);
+  };
+  c.launch_ie_physlev_ij(f);
+}
+
 } // namespace anon
 
 // Public function.
 
+
 void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real dt) {
   GPTLstart("compose_calc_enhanced_trajectory");
+
+  const auto sphere_ops = m_sphere_ops;
+  const auto geo = m_geometry;
+  const auto m_vec_sph2cart = geo.m_vec_sph2cart;
+  const auto m_vstar = m_derived.m_vstar;
+  const auto m_spheremp = geo.m_spheremp;
+  const auto m_rspheremp = geo.m_rspheremp;
+  const auto m_v = m_state.m_v;
+  const auto m_vn0 = m_derived.m_vn0;
+  const auto m_dp3d = m_state.m_dp3d;
+  const auto m_dp = m_derived.m_dp;
+  const auto m_divdp = m_derived.m_divdp;
+  const Real deta_tol = m_data.deta_tol;
+  const Real h_ps0 = m_hvcoord.ps0;
+  const auto h_etai = m_hvcoord.etai;
+  const auto h_bi = m_hvcoord.hybrid_bi;
+  const auto independent_time_steps = m_data.independent_time_steps;
+  const auto tu_ne = m_tu_ne;
+
+  RelnV buf1s[3];
+  for (int i = 0; i < 3; ++i)
+    buf1s[i] = RelnV(pack2real(m_data.buf1e[i]), np, np,
+                     m_data.buf1e[i].extent_int(2)*packn);
+  const auto buf2a = m_data.buf2[0];
+  const auto buf2b = m_data.buf2[1];
+
+  init_dep_points_all(*this,
+                      geo.m_sphere_cart,
+                      CRnV(pack2real(m_hvcoord.etam), num_phys_lev),
+                      m_data.dep_pts);
+  
   GPTLstop("compose_calc_enhanced_trajectory");
 }
 
@@ -690,7 +740,7 @@ int test_deta_caas (TestData& td) {
           Real maxdiff = 0;
           for (int k = 0; k <= nlev; ++k) {
             const auto diff = std::abs(hde(i,j,k) - hder(k));
-            if (k == idx || k == idx+1) {
+            if (k == idx or k == idx+1) {
               if (diff <= deta_tol) ++nerr;
             } else {
               maxdiff = std::max(maxdiff, diff);
@@ -764,7 +814,7 @@ void fill (HybridLevels& h, const int n) {
     h.etai[i] = calc_pressure(z)/p0;
     h.bi[i] = i == 0 ? 0 : (h.etai[i] - eta_top)/(1 - eta_top);
     h.ai[i] = h.etai[i] - h.bi[i];
-    assert(i == 0 || h.etai[i] > h.etai[i-1]);
+    assert(i == 0 or h.etai[i] > h.etai[i-1]);
   }
   assert(h.bi  [0] == 0); // Real(n - i)/n is exactly 1, so exact = holds
   assert(h.bi  [n] == 1); // exp(0) is exactly 0, so exact = holds

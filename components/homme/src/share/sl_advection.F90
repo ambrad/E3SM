@@ -1403,8 +1403,7 @@ contains
                 dep_points_all(1:3,i,j,k,ie) = dep_points_all(1:3,i,j,1,ie)
              end do
              if (independent_time_steps) then
-                dep_points_all(4,i,j,1,ie) = hvcoord%etam(1)
-                do k = 2, nlev
+                do k = 1, nlev
                    dep_points_all(4,i,j,k,ie) = hvcoord%etam(k)
                 end do
              end if
