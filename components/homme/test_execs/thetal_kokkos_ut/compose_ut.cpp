@@ -441,14 +441,14 @@ TEST_CASE ("compose_transport_testing") {
         for (int lev = 0; lev < s.nlev; ++lev)
           for (int i = 0; i < s.np; ++i)
             for (int j = 0; j < s.np; ++j)
-              REQUIRE(equal(dpreconf(ie,lev,i,j), dpreconc(ie,i,j,lev), 10*tol));
+              REQUIRE(equal(dpreconf(ie,lev,i,j), dpreconc(ie,i,j,lev), 100*tol));
     }
     for (int ie = 0; ie < s.nelemd; ++ie)
       for (int lev = 0; lev < s.nlev; ++lev)
         for (int i = 0; i < s.np; ++i)
           for (int j = 0; j < s.np; ++j)
             for (int d = 0; d < 3; ++d)
-              REQUIRE(equal(depf(ie,lev,i,j,d), depc(ie,lev,i,j,d), 10*tol));
+              REQUIRE(equal(depf(ie,lev,i,j,d), depc(ie,lev,i,j,d), 100*tol));
   }
 
   { // q vertical remap

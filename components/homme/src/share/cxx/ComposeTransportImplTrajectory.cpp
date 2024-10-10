@@ -314,9 +314,9 @@ void ComposeTransportImpl::calc_trajectory (const int np1, const Real dt) {
   const auto m_vstar = m_derived.m_vstar;
   const auto tu_ne = m_tu_ne;
   { // Calculate midpoint velocity.
-    const auto buf1a = m_data.buf1[0]; const auto buf1b = m_data.buf1[1];
-    const auto buf1c = m_data.buf1[2]; const auto buf2a = m_data.buf2[0];
-    const auto buf2b = m_data.buf2[1];
+    const auto buf1a = m_data.buf1o[0]; const auto buf1b = m_data.buf1o[1];
+    const auto buf1c = m_data.buf1o[2];
+    const auto buf2a = m_data.buf2[0]; const auto buf2b = m_data.buf2[1];
     const auto m_spheremp = geo.m_spheremp;
     const auto m_rspheremp = geo.m_rspheremp;
     const auto m_v = m_state.m_v;

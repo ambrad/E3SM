@@ -49,7 +49,12 @@ struct ComposeTransportImpl {
   using TeamPolicy = Kokkos::TeamPolicy<ExecSpace>;
   using MT = typename TeamPolicy::member_type;
 
-  using Buf1 = ExecViewUnmanaged<Scalar*[NP][NP][NUM_LEV_P]>;
+  // For the enhanced trajectory, we need one extra level beyond the usual.
+  using Buf1Alloc = ExecViewUnmanaged<Scalar*[NP][NP][
+    ((NUM_PHYSICAL_LEV + 2) + VECTOR_SIZE - 1) / VECTOR_SIZE]>;
+  using Buf1o = ExecViewUnmanaged<Scalar*[NP][NP][NUM_LEV_P]>;
+  using Buf1e = Buf1Alloc;
+
   using Buf2 = ExecViewUnmanaged<Scalar*[2][NP][NP][NUM_LEV_P]>;
 
   using DeparturePoints = ExecViewManaged<Real*****>;
@@ -74,7 +79,10 @@ struct ComposeTransportImpl {
     Real nu_q, hv_scaling, dp_tol;
     bool independent_time_steps;
 
-    Buf1 buf1[3];
+    // buf1o and buf1e point to the same memory, sized to the larger of the
+    // two. They are used in different parts of the code.
+    Buf1o buf1o[3];
+    Buf1e buf1e[3];
     Buf2 buf2[2];
 
     DeparturePoints dep_pts;
