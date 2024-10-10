@@ -69,7 +69,7 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
     const auto nlev = NUM_LEV*packn;
     const int ndim = (m_data.trajectory_nsubstep == 0 ?
                       3 :
-                      (m_data.independent_time_steps ? 4 : 3));
+                      (independent_time_steps ? 4 : 3));
     m_data.dep_pts = DeparturePoints("dep_pts", nel, num_phys_lev, np, np, ndim);
     homme::compose::set_views(
       g.m_spheremp,
@@ -85,9 +85,9 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
         nel, t.qdp.extent_int(1), t.qdp.extent_int(2), np, np, nlev),
       homme::compose::SetView<Real*****> (reinterpret_cast<Real*>(t.Q.data()),
                                           nel, t.Q.extent_int(1), np, np, nlev),
-      //todo Generalize for enhanced trajectory.
       m_data.dep_pts, ndim);
   }
+
   m_data.independent_time_steps = independent_time_steps;
   if (m_data.nelemd == num_elems && m_data.qsize == params.qsize) return;
 

@@ -401,6 +401,8 @@ limit_etam (const KernelVariables& kv, const int nlev, const CRnV& hy_etai,
 // Public function.
 
 void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real dt) {
+  GPTLstart("compose_calc_enhanced_trajectory");
+  GPTLstop("compose_calc_enhanced_trajectory");
 }
 
 // Testing.
