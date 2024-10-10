@@ -1753,12 +1753,7 @@ contains
     ! here even as another thread does the same. But because there is no read
     ! and only one value to write, the redundant writes don't matter.
 
-    deta_ave = zero
-    do k = 1, nlev
-       deta_ave = deta_ave + (hvcoord%etai(k+1) - hvcoord%etai(k))
-    end do
-    deta_ave = deta_ave / nlev
-
+    deta_ave = (hvcoord%etai(nlev+1) - hvcoord%etai(1)) / nlev
     deta_tol = 10_real_kind*eps*deta_ave
   end subroutine set_deta_tol
 

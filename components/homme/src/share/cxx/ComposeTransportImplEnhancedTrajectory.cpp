@@ -19,6 +19,14 @@
 #include <random>
 
 namespace Homme {
+
+// For limit_etam.
+void ComposeTransportImpl::set_deta_tol () {
+  const auto etai = cmvdc(m_hvcoord.etai);
+  const Real deta_ave = (etai(num_phys_lev) - etai(0)) / num_phys_lev;
+  m_data.deta_tol = 10*std::numeric_limits<Real>::epsilon()*deta_ave;
+}
+
 namespace { // anon
 
 using cti = ComposeTransportImpl;
@@ -409,13 +417,6 @@ void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real d
 
 namespace { // anon
 
-template <typename V>
-decltype(Kokkos::create_mirror_view(V())) cmvdc (const V& v) {
-  const auto h = Kokkos::create_mirror_view(v);
-  deep_copy(h, v);
-  return h;
-}
-
 Kokkos::TeamPolicy<ExecSpace>
 get_test_team_policy (const int nelem, const int nlev, const int ncol=NP*NP) {
   ThreadPreferences tp;
@@ -629,7 +630,7 @@ int test_deta_caas (TestData& td) {
     ExecView<Real[NP][NP][nlev+1]>::HostMirror copy("copy");
     Kokkos::deep_copy(copy, deta);
     run(deta);
-    const auto m = cmvdc(deta);
+    const auto m = cti::cmvdc(deta);
     bool diff = false;
     for (int i = 0; i < NP; ++i)
       for (int j = 0; j < NP; ++j)
@@ -643,7 +644,7 @@ int test_deta_caas (TestData& td) {
     // nlev midpoints
     ExecView<Real[nlev]> etam_ref("etam_ref");
     const auto her = Kokkos::create_mirror_view(etam_ref);
-    const auto hder = cmvdc(deta_ref);
+    const auto hder = cti::cmvdc(deta_ref);
     {
       her(0) = hder(0);
       for (int k = 1; k < nlev; ++k)
@@ -1001,7 +1002,7 @@ int test_eta_to_dp (TestData& td) {
           dp1_max = std::max(dp1_max, std::abs(dp1(i,j,k)));
         }
     run();
-    const auto dph = cmvdc(dp);
+    const auto dph = cti::cmvdc(dp);
     Real err_max = 0;
     for (int i = 0; i < NP; ++i)
       for (int j = 0; j < NP; ++j)
@@ -1015,7 +1016,7 @@ int test_eta_to_dp (TestData& td) {
     make_random_sorted(td, nlev+1, h.etai[0], h.etai[nlev], etai_r);
     todev(etai_r, etai);
     run();
-    const auto dph1 = cmvdc(dp);
+    const auto dph1 = cti::cmvdc(dp);
     for (int i = 0; i < NP; ++i)
       for (int j = 0; j < NP; ++j) {
         Real ps = h.ai[0]*h.ps0;
@@ -1027,7 +1028,7 @@ int test_eta_to_dp (TestData& td) {
     Kokkos::deep_copy(wrk, 0);
     Kokkos::deep_copy(dp, 0);
     run();
-    const auto dph2 = cmvdc(dp);
+    const auto dph2 = cti::cmvdc(dp);
     bool alleq = true;
     for (int i = 0; i < NP; ++i)
       for (int j = 0; j < NP; ++j)

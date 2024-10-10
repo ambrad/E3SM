@@ -76,7 +76,7 @@ struct ComposeTransportImpl {
     int nelemd, qsize, limiter_option, cdr_check, hv_q, hv_subcycle_q;
     int geometry_type; // 0: sphere, 1: plane
     int trajectory_nsubstep; // 0: original alg, >= 1: enhanced
-    Real nu_q, hv_scaling, dp_tol;
+    Real nu_q, hv_scaling, dp_tol, deta_tol;
     bool independent_time_steps;
 
     // buf1o and buf1e point to the same memory, sized to the larger of the
@@ -121,6 +121,7 @@ struct ComposeTransportImpl {
   }
 
   void set_dp_tol();
+  void set_deta_tol();
   void reset(const SimulationParams& params);
   int requested_buffer_size() const;
   void init_buffers(const FunctorsBuffersManager& fbm);
