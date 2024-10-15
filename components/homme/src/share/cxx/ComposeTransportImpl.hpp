@@ -324,7 +324,42 @@ struct ComposeTransportImpl {
             yk  *((         1 /(xk   - xkm1))*((xk - xkp1)/(xk   - xkp1)) +
                   ((xk - xkm1)/(xk   - xkm1))*(         1 /(xk   - xkp1))) +
             ykp1*(((xk - xkm1)/(xkp1 - xkm1))*(         1 /(xkp1 - xk  ))));
-  }  
+  }
+
+  template <typename HyBiPackT, typename DivDpScalT,
+            typename EddPackT, typename EddScalT>
+  KOKKOS_FUNCTION static void calc_eta_dot_dpdn (
+    const KernelVariables& kv,
+    const HyBiPackT& hybrid_bi, // const Scalar[NUM_LEV_P]
+    // divergence_sphere of (v dp), scalar
+    const DivDpScalT& divdps,
+    // eta_dot_dpdn, pack and scalar views of same data
+    const EddPackT& edd, const EddScalT& edds)
+  {
+    const auto ttr = TeamThreadRange(kv.team, NP*NP);
+    const auto tvr = ThreadVectorRange(kv.team, NUM_LEV);
+    const auto f = [&] (const int idx) {
+      const int i = idx / NP, j = idx % NP;
+      const auto r = [&] (const int k, Real& dps, const bool final) {
+        assert(k != 0 || dps == 0);
+        if (final) edds(i,j,k) = dps;
+        dps += divdps(i,j,k);
+      };
+      Dispatch<>::parallel_scan(kv.team, num_phys_lev, r);
+      const int kend = num_phys_lev - 1;
+      const Real dps = edds(i,j,kend) + divdps(i,j,kend);
+      assert(hybrid_bi(0)[0] == 0);
+      const auto s = [&] (const int kp) {
+        edd(i,j,kp) = hybrid_bi(kp)*dps - edd(i,j,kp);
+        if (kp == 0) edd(i,j,kp)[0] = 0;
+      };
+      parallel_for(tvr, s);
+      assert(edds(i,j,0) == 0);
+      const int bottom = num_phys_lev;
+      edds(i,j,bottom) = 0;
+    };
+    parallel_for(ttr, f);
+  }
 };
 
 } // namespace Homme

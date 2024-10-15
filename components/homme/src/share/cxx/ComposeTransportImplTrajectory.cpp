@@ -195,31 +195,11 @@ KOKKOS_FUNCTION static void calc_vertically_lagrangian_levels (
       };
       cti::loop_ijk<cti::num_lev_pack>(kv, f);
     }
-
+    kv.team_barrier();
     sphere_ops.divergence_sphere(kv, vdp, divdp);
-
+    kv.team_barrier();
     RNlevp edds(cti::pack2real(edd)), divdps(cti::pack2real(divdp));
-    const auto f = [&] (const int idx) {
-      const int i = idx / NP, j = idx % NP;
-      const auto r = [&] (const int k, Real& dps, const bool final) {
-        assert(k != 0 || dps == 0);
-        if (final) edds(i,j,k) = dps;
-        dps += divdps(i,j,k);
-      };
-      Dispatch<>::parallel_scan(kv.team, cti::num_phys_lev, r);
-      const int kend = cti::num_phys_lev - 1;
-      const Real dps = edds(i,j,kend) + divdps(i,j,kend);
-      assert(hybrid_bi(0)[0] == 0);
-      const auto s = [&] (const int kp) {
-        edd(i,j,kp) = hybrid_bi(kp)*dps - edd(i,j,kp);
-        if (kp == 0) edd(i,j,kp)[0] = 0;
-      };
-      parallel_for(tvr, s);
-      assert(edds(i,j,0) == 0);
-      const int bottom = cti::num_phys_lev;
-      edds(i,j,bottom) = 0;
-    };
-    parallel_for(ttr, f);
+    cti::calc_eta_dot_dpdn(kv, hybrid_bi, divdps, edd, edds);
   }
   
   // Use p0 as the reference coordinate system. p0 differs from p1 by B(eta)
