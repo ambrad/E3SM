@@ -356,7 +356,7 @@ struct ComposeTransportImpl {
       parallel_for(tvr, s);
       assert(edds(i,j,0) == 0);
       const int bottom = num_phys_lev;
-      edds(i,j,bottom) = 0;
+      edds(i,j,bottom) = 0; // benign write race
     };
     parallel_for(ttr, f);
   }
