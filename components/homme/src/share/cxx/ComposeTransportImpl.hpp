@@ -84,7 +84,7 @@ struct ComposeTransportImpl {
     Buf1e buf1e[3];
     Buf2 buf2[2];
 
-    ExecViewUnmanaged<Scalar[NUM_LEV]> hydetai; // diff(etai)
+    ExecView<Scalar[NUM_LEV]> hydetai; // diff(etai)
 
     DeparturePoints dep_pts;
 

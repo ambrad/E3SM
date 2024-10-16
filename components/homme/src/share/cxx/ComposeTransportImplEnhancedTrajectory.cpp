@@ -27,6 +27,7 @@ void ComposeTransportImpl::set_deta_tol () {
   m_data.deta_tol = 10*std::numeric_limits<Real>::epsilon()*deta_ave;
 
   // Also compute diff(etai).
+  m_data.hydetai = decltype(m_data.hydetai)("hydetai");
   const auto detai_pack = Kokkos::create_mirror_view(m_data.hydetai);
   ExecViewUnmanaged<Real[NUM_PHYSICAL_LEV]> detai(pack2real(detai_pack));
   for (int k = 0; k < num_phys_lev; ++k)
