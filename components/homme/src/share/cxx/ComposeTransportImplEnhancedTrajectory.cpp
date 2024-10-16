@@ -25,6 +25,13 @@ void ComposeTransportImpl::set_deta_tol () {
   const auto etai = cmvdc(m_hvcoord.etai);
   const Real deta_ave = (etai(num_phys_lev) - etai(0)) / num_phys_lev;
   m_data.deta_tol = 10*std::numeric_limits<Real>::epsilon()*deta_ave;
+
+  // Also compute diff(etai).
+  const auto detai_pack = Kokkos::create_mirror_view(m_data.hydetai);
+  ExecViewUnmanaged<Real[NUM_PHYSICAL_LEV]> detai(pack2real(detai_pack));
+  for (int k = 0; k < num_phys_lev; ++k)
+    detai(k) = etai(k+1) - etai(k);
+  Kokkos::deep_copy(m_data.hydetai, detai_pack);
 }
 
 namespace { // anon
@@ -498,7 +505,6 @@ KOKKOS_FUNCTION void calc_etadotmid_from_etadotdpdnint (
   }
 }
 
-#pragma message "TODO make diff(etai) packed array"
 KOKKOS_FUNCTION void calc_eta_dot_ref_mid (
   const SphereOperators& sphere_ops, const KernelVariables& kv,
   const Real& ps0, const Real& hyai0, const CSNV<NUM_LEV_P>& hybi,
@@ -913,7 +919,7 @@ int test_deta_caas (TestData& td) {
 
 struct HybridLevels {
   Real ps0;
-  std::vector<Real> ai, bi, am, bm, etai, etam, deta_ref;
+  std::vector<Real> ai, dai, bi, dbi, am, bm, etai, detai, etam, detam;
 };
 
 // Follow DCMIP2012 3D tracer transport specification for a, b, eta.
@@ -954,10 +960,18 @@ void fill (HybridLevels& h, const int n) {
   tomid(h.bi, h.bm);
   tomid(h.etai, h.etam);
 
-  h.deta_ref.resize(n+1);
-  h.deta_ref[0] = h.etam[0] - h.etai[0];
-  for (int i = 1; i < n; ++i) h.deta_ref[i] = h.etam[i] - h.etam[i-1];
-  h.deta_ref[n] = h.etai[n] - h.etam[n-1];
+  const auto diff = [&] (const std::vector<Real>& ai, std::vector<Real>& dai) {
+    dai.resize(n);
+    for (int i = 0; i < n; ++i) dai[i] = ai[i+1] - ai[i];
+  };
+  diff(h.ai, h.dai);
+  diff(h.bi, h.dbi);
+  diff(h.etai, h.detai);
+
+  h.detam.resize(n+1);
+  h.detam[0] = h.etam[0] - h.etai[0];
+  for (int i = 1; i < n; ++i) h.detam[i] = h.etam[i] - h.etam[i-1];
+  h.detam[n] = h.etai[n] - h.etam[n-1];
 }
 
 int test_limit_etam (TestData& td) {
@@ -967,14 +981,14 @@ int test_limit_etam (TestData& td) {
   const Real tol = 100*td.eps;
   const Real deta_tol = 1e5*td.eps/nlev;
 
-  ExecView<Real[nlev+1]> hy_etai("hy_etai"), deta_ref("deta_ref");
+  ExecView<Real[nlev+1]> hy_etai("hy_etai"), detam("detam");
   ExecView<Real[NP][NP][nlev+1]> wrk1("wrk1"), wrk2("wrk2");
   ExecView<Real[NP][NP][nlev]> etam("etam");
 
   HybridLevels h;
   fill(h, nlev);
   todev(h.etai, hy_etai);
-  todev(h.deta_ref, deta_ref);
+  todev(h.detam, detam);
 
   const auto he = Kokkos::create_mirror_view(etam);
 
@@ -983,7 +997,7 @@ int test_limit_etam (TestData& td) {
     Kokkos::deep_copy(etam, he);
     const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
       KernelVariables kv(team);
-      limit_etam(kv, nlev, hy_etai, deta_ref, deta_tol, wrk1, wrk2, etam);
+      limit_etam(kv, nlev, hy_etai, detam, deta_tol, wrk1, wrk2, etam);
     };
     Kokkos::parallel_for(policy, f);
     Kokkos::fence();

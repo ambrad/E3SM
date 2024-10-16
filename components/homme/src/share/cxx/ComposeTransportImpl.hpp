@@ -41,7 +41,6 @@ struct ComposeTransportImpl {
   enum : int { max_num_lev_pack = NUM_LEV_P };
   enum : int { max_num_lev_aligned = max_num_lev_pack*packn };
   enum : int { num_phys_lev = NUM_PHYSICAL_LEV };
-  enum : int { num_work = 12 };
 
   static_assert(max_num_lev_aligned >= 3,
                 "We use wrk(0:2,:) and so need max_num_lev_aligned >= 3");
@@ -84,6 +83,8 @@ struct ComposeTransportImpl {
     Buf1o buf1o[3];
     Buf1e buf1e[3];
     Buf2 buf2[2];
+
+    ExecViewUnmanaged<Scalar[NUM_LEV]> hydetai; // diff(etai)
 
     DeparturePoints dep_pts;
 
