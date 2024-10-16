@@ -425,43 +425,64 @@ init_dep_points (const CTI& c, const SCT& sphere_cart, const ET& etam,
   c.launch_ie_physlev_ij(f);
 }
 
+KOKKOS_FUNCTION void calc_ps (
+  const KernelVariables& kv, const Real& ps0, const Real& hyai0,
+  const Real alpha[2], const CSelNlev& dp1, const CSelNlev& dp2,
+  const ExecViewUnmanaged<Real[2][NP][NP]>& ps)
+{
+  const auto ttr = TeamThreadRange(kv.team, NP*NP);
+  const auto tvr_snlev = ThreadVectorRange(kv.team, NUM_PHYSICAL_LEV);
+  const CRelNlev dps[] = {CRelNlev(cti::pack2real(dp1)),
+                          CRelNlev(cti::pack2real(dp2))};
+  const auto f1 = [&] (const int idx) {
+    const int i = idx / NP, j = idx % NP;
+    for (int t = 0; t < 2; ++t) {
+      const auto& dp = dps[t];
+      const auto g = [&] (int k, Real& sum) { sum += dp(i,j,k); };
+      Real sum;
+      Dispatch<>::parallel_reduce(kv.team, tvr_snlev, g, sum);
+      Kokkos::single(Kokkos::PerThread(kv.team), [&] { ps(t,i,j) = sum; });
+    }
+  };
+  Kokkos::parallel_for(ttr, f1);
+  kv.team_barrier();
+  const auto f2 = [&] (const int idx) {
+    const int i = idx / NP, j = idx % NP;
+    const auto g = [&] () {
+      Real vals[2];
+      for (int t = 0; t < 2; ++t)
+        vals[t] = (hyai0*ps0 +
+                   (1 - alpha[t])*ps(0,i,j) +
+                   /**/ alpha[t] *ps(1,i,j));
+      for (int t = 0; t < 2; ++t)
+        ps(t,i,j) = vals[t];
+    };
+    Kokkos::single(Kokkos::PerThread(kv.team), g);
+  };
+  Kokkos::parallel_for(ttr, f2);
+}
+
 #pragma message "TODO make diff(etai) packed array"
-template <typename V1T, typename DP1T, typename V2T, typename DP2T>
 KOKKOS_FUNCTION void calc_eta_dot_ref_mid(
   const SphereOperators& sphere_ops, const KernelVariables& kv,
   const Real& ps0, const Real& hyai0, const CSNV<NUM_LEV_P>& hybi,
   const CSNV<NUM_LEV>& hydai, const CSNV<NUM_LEV>& hydbi, // delta ai, bi
   const CSNV<NUM_LEV>& hydetai, // delta etai
   const Real alpha[2],
-  const V1T& v1, const DP1T& dp1, const V2T& v2, const DP2T& dp2, // packs
+  const CS2elNlev& v1, const CSelNlev& dp1, const CS2elNlev& v2, const CSelNlev& dp2,
   const SelNlevp& wrk1, const S2elNlevp& wrk2, const SelNlevp& wrk3,
   const SelNlevp* eta_dot[2])
 {
   const auto ttr = TeamThreadRange(kv.team, NP*NP);
   const auto tvr_pnlev = ThreadVectorRange(kv.team, cti::num_lev_pack);
-  const auto tvr_snlev = ThreadVectorRange(kv.team, cti::num_phys_lev);
 
   // Partition workspace.
   SelNlev divdp(wrk1.data());
   S2elNlev vdp(wrk2.data());
-  ExecViewUnmanaged<Real[NP][NP]> ps(wrk3.data());
-  ExecViewUnmanaged<Real[2][NP][NP]> dpsums(ps.data() + NP*NP);
+  ExecViewUnmanaged<Real[2][NP][NP]> ps(cti::pack2real(wrk3));
 
-  { // Compute dp1,2 sums for later.
-    const CRelNlev dps[] = {CRelNlev(cti::pack2real(dp1)),
-                            CRelNlev(cti::pack2real(dp2))};
-    const auto f = [&] (const int idx) {
-      const int i = idx / NP, j = idx % NP;
-      for (int t = 0; t < 2; ++t) {
-        const auto& dp = dps[t];
-        const auto g = [&] (int k, Real& sum) { sum += dp(i,j,k); };
-        Real sum;
-        Dispatch<>::parallel_reduce(kv.team, tvr_snlev, g, sum);
-        dpsums(t,i,j) = sum; // benign write race
-      }
-    };
-    Kokkos::parallel_for(ttr, f);
-  }
+  calc_ps(kv, ps0, hyai0, alpha, dp1, dp2, ps);
+  kv.team_barrier();
 
   for (int t = 0; t < 2; ++t) {
     { // Compute divdp.
@@ -486,39 +507,25 @@ KOKKOS_FUNCTION void calc_eta_dot_ref_mid(
     // formula
     //     eta_dot = eta_dot_dpdn/(A_eta p0 + B_eta ps).
     //            a= eta_dot_dpdn diff(eta)/(diff(A) p0 + diff(B) ps).
-    {
-      { // Compute ps.
-        const auto f = [&] (const int idx) {
-          const int i = idx / NP, j = idx % NP;
-          const auto g = [&] () {
-            ps(i,j) = (hyai0*ps0 +
-                       (1 - alpha[t])*dpsums(0,i,j) +
-                       /**/ alpha[t] *dpsums(1,i,j));
-          };
-          Kokkos::single(Kokkos::PerThread(kv.team), g);
+    { // eta_dot_dpdn -> eta_dot.
+      const auto& ed = *eta_dot[t];
+      // Store eta_dot_dpdn at level midpoints in a tmp array.
+      const auto& edd_mid = divdp;
+      {
+        CRelNlevp edd(cti::pack2real(ed));
+        RelNlev tmp(cti::pack2real(edd_mid));
+        const auto f = [&] (const int i, const int j, const int k) {
+          tmp(i,j,k) = (edd(i,j,k) + edd(i,j,k+1))/2;
         };
-        Kokkos::parallel_for(ttr, f);
+        cti::loop_ijk<cti::num_phys_lev>(kv, f);
       }
-      { // eta_dot_dpdn -> eta_dot.
-        const auto& ed = *eta_dot[t];
-        // Store eta_dot_dpdn at level midpoints in a tmp array.
-        const auto& edd_mid = divdp;
-        {
-          CRelNlevp edd(cti::pack2real(ed));
-          RelNlev tmp(cti::pack2real(edd_mid));
-          const auto f = [&] (const int i, const int j, const int k) {
-            tmp(i,j,k) = (edd(i,j,k) + edd(i,j,k+1))/2;
-          };
-          cti::loop_ijk<cti::num_phys_lev>(kv, f);
-        }
-        {
-          const auto f = [&] (const int i, const int j, const int kp) {
-            ed(i,j,kp) = (edd_mid(i,j,kp)
-                          * hydetai(kp)
-                          / (hydai(kp)*ps0 + hydbi(kp)*ps(i,j)));
-          };
-          cti::loop_ijk<cti::num_lev_pack>(kv, f);
-        }
+      {
+        const auto f = [&] (const int i, const int j, const int kp) {
+          ed(i,j,kp) = (edd_mid(i,j,kp)
+                        * hydetai(kp)
+                        / (hydai(kp)*ps0 + hydbi(kp)*ps(t,i,j)));
+        };
+        cti::loop_ijk<cti::num_lev_pack>(kv, f);
       }
     }
   }
