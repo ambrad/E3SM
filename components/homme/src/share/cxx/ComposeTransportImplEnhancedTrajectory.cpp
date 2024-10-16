@@ -462,8 +462,36 @@ KOKKOS_FUNCTION void calc_ps (
   Kokkos::parallel_for(ttr, f2);
 }
 
+// Transform eta_dot_dpdn at interfaces to eta_dot at midpoints using the
+// formula
+//     eta_dot = eta_dot_dpdn/(A_eta p0 + B_eta ps).
+//            a= eta_dot_dpdn diff(eta)/(diff(A) p0 + diff(B) ps).
+KOKKOS_FUNCTION void calc_etadotmid_from_etadotdpdnint (
+  const KernelVariables& kv, const Real& ps0, const CSNV<NUM_LEV>& hydai,
+  const CSNV<NUM_LEV>& hydbi, const CSNV<NUM_LEV>& hydetai, const CRelV& ps,
+  const SelNlev& wrk, const SelNlevp& ed)
+{
+  const auto& edd_mid = wrk;
+  {
+    CRelNlevp edd(cti::pack2real(ed));
+    RelNlev tmp(cti::pack2real(edd_mid));
+    const auto f = [&] (const int i, const int j, const int k) {
+      tmp(i,j,k) = (edd(i,j,k) + edd(i,j,k+1))/2;
+    };
+    cti::loop_ijk<cti::num_phys_lev>(kv, f);
+  }
+  {
+    const auto f = [&] (const int i, const int j, const int kp) {
+      ed(i,j,kp) = (edd_mid(i,j,kp)
+                    * hydetai(kp)
+                    / (hydai(kp)*ps0 + hydbi(kp)*ps(i,j)));
+    };
+    cti::loop_ijk<cti::num_lev_pack>(kv, f);
+  }
+}
+
 #pragma message "TODO make diff(etai) packed array"
-KOKKOS_FUNCTION void calc_eta_dot_ref_mid(
+KOKKOS_FUNCTION void calc_eta_dot_ref_mid (
   const SphereOperators& sphere_ops, const KernelVariables& kv,
   const Real& ps0, const Real& hyai0, const CSNV<NUM_LEV_P>& hybi,
   const CSNV<NUM_LEV>& hydai, const CSNV<NUM_LEV>& hydbi, // delta ai, bi
@@ -473,61 +501,34 @@ KOKKOS_FUNCTION void calc_eta_dot_ref_mid(
   const SelNlevp& wrk1, const S2elNlevp& wrk2, const SelNlevp& wrk3,
   const SelNlevp* eta_dot[2])
 {
-  const auto ttr = TeamThreadRange(kv.team, NP*NP);
-  const auto tvr_pnlev = ThreadVectorRange(kv.team, cti::num_lev_pack);
-
+  using Kokkos::ALL;
   // Partition workspace.
   SelNlev divdp(wrk1.data());
   S2elNlev vdp(wrk2.data());
   ExecViewUnmanaged<Real[2][NP][NP]> ps(cti::pack2real(wrk3));
-
+  // Calc surface pressure for use at the end.
   calc_ps(kv, ps0, hyai0, alpha, dp1, dp2, ps);
   kv.team_barrier();
-
   for (int t = 0; t < 2; ++t) {
-    { // Compute divdp.
-      const auto f = [&] (const int i, const int j, const int kp) {
-        for (int d = 0; d < 2; ++d)
-          vdp(d,i,j,kp) = ((1 - alpha[t])*v1(d,i,j,kp)*dp1(i,j,kp) +
-                           /**/ alpha[t] *v2(d,i,j,kp)*dp2(i,j,kp));
-      };
-      cti::loop_ijk<cti::num_lev_pack>(kv, f);
-      kv.team_barrier();
-      sphere_ops.divergence_sphere(kv, vdp, divdp);
-    }
+    // Compute divdp.
+    const auto f = [&] (const int i, const int j, const int kp) {
+      for (int d = 0; d < 2; ++d)
+        vdp(d,i,j,kp) = ((1 - alpha[t])*v1(d,i,j,kp)*dp1(i,j,kp) +
+                         /**/ alpha[t] *v2(d,i,j,kp)*dp2(i,j,kp));
+    };
+    cti::loop_ijk<cti::num_lev_pack>(kv, f);
     kv.team_barrier();
-    { // Compute eta_dot_dpdn at interface nodes.
-      const auto& edd = *eta_dot[t];
-      RelNlevp edds(cti::pack2real(edd));
-      RelNlev divdps(cti::pack2real(divdp));
-      cti::calc_eta_dot_dpdn(kv, hybi, divdps, edd, edds);
-    }
+    sphere_ops.divergence_sphere(kv, vdp, divdp);
+    kv.team_barrier();    
+    // Compute eta_dot_dpdn at interface nodes.
+    const auto& edd = *eta_dot[t];
+    RelNlevp edds(cti::pack2real(edd));
+    RelNlev divdps(cti::pack2real(divdp));
+    cti::calc_eta_dot_dpdn(kv, hybi, divdps, edd, edds);
     kv.team_barrier();
-    // Transform eta_dot_dpdn at interfaces to eta_dot at midpoints using the
-    // formula
-    //     eta_dot = eta_dot_dpdn/(A_eta p0 + B_eta ps).
-    //            a= eta_dot_dpdn diff(eta)/(diff(A) p0 + diff(B) ps).
-    { // eta_dot_dpdn -> eta_dot.
-      const auto& ed = *eta_dot[t];
-      // Store eta_dot_dpdn at level midpoints in a tmp array.
-      const auto& edd_mid = divdp;
-      {
-        CRelNlevp edd(cti::pack2real(ed));
-        RelNlev tmp(cti::pack2real(edd_mid));
-        const auto f = [&] (const int i, const int j, const int k) {
-          tmp(i,j,k) = (edd(i,j,k) + edd(i,j,k+1))/2;
-        };
-        cti::loop_ijk<cti::num_phys_lev>(kv, f);
-      }
-      {
-        const auto f = [&] (const int i, const int j, const int kp) {
-          ed(i,j,kp) = (edd_mid(i,j,kp)
-                        * hydetai(kp)
-                        / (hydai(kp)*ps0 + hydbi(kp)*ps(t,i,j)));
-        };
-        cti::loop_ijk<cti::num_lev_pack>(kv, f);
-      }
-    }
+    calc_etadotmid_from_etadotdpdnint(
+      kv, ps0, hydai, hydbi, hydetai, Kokkos::subview(ps,t,ALL,ALL),
+      divdp, edd);
   }
 }
 
