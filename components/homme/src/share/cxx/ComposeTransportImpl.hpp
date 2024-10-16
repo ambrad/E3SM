@@ -331,9 +331,9 @@ struct ComposeTransportImpl {
   KOKKOS_FUNCTION static void calc_eta_dot_dpdn (
     const KernelVariables& kv,
     const HyBiPackT& hybrid_bi, // const Scalar[NUM_LEV_P]
-    // divergence_sphere of (v dp), scalar
+    // divergence_sphere of (v dp) at midpoints, scalar
     const DivDpScalT& divdps,
-    // eta_dot_dpdn, pack and scalar views of same data
+    // eta_dot_dpdn at interfaces, pack and scalar views of same data
     const EddPackT& edd, const EddScalT& edds)
   {
     const auto ttr = TeamThreadRange(kv.team, NP*NP);

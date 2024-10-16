@@ -47,6 +47,9 @@ using S2elNlevp = cti::S2Nlevp;
 using RelV = ExecViewUnmanaged<Real[NP][NP]>;
 using CRelV = typename ViewConst<RelV>::type;
 
+template <int N> using SelNV = ExecViewUnmanaged<Scalar[NP][NP][N]>;
+template <int N> using CSelNV = typename ViewConst<SelNV<N>>::type;
+
 template <int N> using RelNV = ExecViewUnmanaged<Real[NP][NP][N]>;
 template <int N> using CRelNV = typename ViewConst<RelNV<N>>::type;
 
@@ -425,9 +428,10 @@ init_dep_points (const CTI& c, const SCT& sphere_cart, const ET& etam,
   c.launch_ie_physlev_ij(f);
 }
 
+template <int Nlev = NUM_LEV>
 KOKKOS_FUNCTION void calc_ps (
   const KernelVariables& kv, const Real& ps0, const Real& hyai0,
-  const Real alpha[2], const CSelNlev& dp1, const CSelNlev& dp2,
+  const Real alpha[2], const CSelNV<Nlev>& dp1, const CSelNV<Nlev>& dp2,
   const ExecViewUnmanaged<Real[2][NP][NP]>& ps)
 {
   const auto ttr = TeamThreadRange(kv.team, NP*NP);
@@ -466,10 +470,14 @@ KOKKOS_FUNCTION void calc_ps (
 // formula
 //     eta_dot = eta_dot_dpdn/(A_eta p0 + B_eta ps).
 //            a= eta_dot_dpdn diff(eta)/(diff(A) p0 + diff(B) ps).
+template <int Nlev = NUM_LEV, int Nlevp = NUM_LEV_P>
 KOKKOS_FUNCTION void calc_etadotmid_from_etadotdpdnint (
-  const KernelVariables& kv, const Real& ps0, const CSNV<NUM_LEV>& hydai,
-  const CSNV<NUM_LEV>& hydbi, const CSNV<NUM_LEV>& hydetai, const CRelV& ps,
-  const SelNlev& wrk, const SelNlevp& ed)
+  const KernelVariables& kv, const Real& ps0, const CSNV<Nlev>& hydai,
+  const CSNV<Nlev>& hydbi, const CSNV<Nlev>& hydetai, const CRelV& ps,
+  const SelNV<Nlevp>& wrk,
+  // input: eta_dot_dpdn at interfaces
+  // output: eta_dot at midpoints
+  const SelNV<Nlevp>& ed)
 {
   const auto& edd_mid = wrk;
   {
@@ -502,12 +510,11 @@ KOKKOS_FUNCTION void calc_eta_dot_ref_mid (
   const SelNlevp* eta_dot[2])
 {
   using Kokkos::ALL;
-  // Partition workspace.
   SelNlev divdp(wrk1.data());
   S2elNlev vdp(wrk2.data());
   ExecViewUnmanaged<Real[2][NP][NP]> ps(cti::pack2real(wrk3));
   // Calc surface pressure for use at the end.
-  calc_ps(kv, ps0, hyai0, alpha, dp1, dp2, ps);
+  calc_ps<>(kv, ps0, hyai0, alpha, dp1, dp2, ps);
   kv.team_barrier();
   for (int t = 0; t < 2; ++t) {
     // Compute divdp.
@@ -523,12 +530,12 @@ KOKKOS_FUNCTION void calc_eta_dot_ref_mid (
     // Compute eta_dot_dpdn at interface nodes.
     const auto& edd = *eta_dot[t];
     RelNlevp edds(cti::pack2real(edd));
-    RelNlev divdps(cti::pack2real(divdp));
+    RelNlev divdps(cti::pack2real(wrk1));
     cti::calc_eta_dot_dpdn(kv, hybi, divdps, edd, edds);
     kv.team_barrier();
-    calc_etadotmid_from_etadotdpdnint(
+    calc_etadotmid_from_etadotdpdnint<>(
       kv, ps0, hydai, hydbi, hydetai, Kokkos::subview(ps,t,ALL,ALL),
-      divdp, edd);
+      wrk1, edd);
   }
 }
 
