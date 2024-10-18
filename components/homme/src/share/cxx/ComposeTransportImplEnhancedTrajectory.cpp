@@ -68,6 +68,8 @@ using CRNlevp = CRNV<cti::num_phys_lev+1>;
 
 using RnV = ExecViewUnmanaged<Real*>;
 using CRnV = ExecViewUnmanaged<const Real*>;
+using SnV = ExecViewUnmanaged<Scalar*>;
+using CSnV = ExecViewUnmanaged<const Scalar*>;
 
 template <int N> using SNV = ExecViewUnmanaged<Scalar[N]>;
 template <int N> using CSNV = typename ViewConst<SNV<N>>::type;
@@ -77,6 +79,18 @@ KOKKOS_INLINE_FUNCTION int len (const CRnV& v) { return v.extent_int(0); }
 
 using RelnV = ExecViewUnmanaged<Real***>;
 using CRelnV = ExecViewUnmanaged<const Real***>;
+using SelnV = ExecViewUnmanaged<Scalar***>;
+using CSelnV = ExecViewUnmanaged<const Scalar***>;
+
+KOKKOS_INLINE_FUNCTION
+static int calc_npack (const int nscal) {
+  return (nscal + cti::packn - 1) / VECTOR_SIZE;
+}
+
+KOKKOS_INLINE_FUNCTION
+static int calc_nscal (const int npack) {
+  return npack * VECTOR_SIZE;
+}
 
 KOKKOS_INLINE_FUNCTION
 RnV getcol (const RelnV& a, const int i, const int j) {
@@ -89,10 +103,22 @@ CRnV getcolc (const CRelnV& a, const int i, const int j) {
 }
 
 KOKKOS_INLINE_FUNCTION
+CRelnV elp2r (const CSelnV& p) {
+  return CRelnV(cti::pack2real(p), NP, NP, calc_nscal(p.extent_int(2)));
+}
+
+KOKKOS_INLINE_FUNCTION
 void assert_eln (const CRelnV& a, const int nlev) {
   assert(a.extent_int(0) >= NP);
   assert(a.extent_int(1) >= NP);
   assert(a.extent_int(2) >= nlev);
+}
+
+KOKKOS_INLINE_FUNCTION
+void assert_eln (const CSelnV& a, const int nlev) {
+  assert(a.extent_int(0) >= NP);
+  assert(a.extent_int(1) >= NP);
+  assert(calc_nscal(a.extent_int(2)) >= nlev);
 }
 
 // For sorted ascending x[0:n] and x in [x[0], x[n-1]] with hint xi_idx, return
@@ -436,16 +462,17 @@ init_dep_points (const CTI& c, const SCT& sphere_cart, const ET& etam,
   c.launch_ie_physlev_ij(f);
 }
 
-template <int Nlev = NUM_LEV>
 KOKKOS_FUNCTION void calc_ps (
-  const KernelVariables& kv, const Real& ps0, const Real& hyai0,
-  const Real alpha[2], const CSelNV<Nlev>& dp1, const CSelNV<Nlev>& dp2,
+  const int nlev, const KernelVariables& kv,
+  const Real& ps0, const Real& hyai0,
+  const Real alpha[2], const CSelnV& dp1, const CSelnV& dp2,
   const ExecViewUnmanaged<Real[2][NP][NP]>& ps)
 {
+  assert_eln(dp1, nlev);
+  assert_eln(dp2, nlev);
   const auto ttr = TeamThreadRange(kv.team, NP*NP);
-  const auto tvr_snlev = ThreadVectorRange(kv.team, NUM_PHYSICAL_LEV);
-  const CRelNlev dps[] = {CRelNlev(cti::pack2real(dp1)),
-                          CRelNlev(cti::pack2real(dp2))};
+  const auto tvr_snlev = ThreadVectorRange(kv.team, nlev);
+  const CRelnV dps[] = {elp2r(dp1), elp2r(dp2)};
   const auto f1 = [&] (const int idx) {
     const int i = idx / NP, j = idx % NP;
     for (int t = 0; t < 2; ++t) {
@@ -521,7 +548,7 @@ KOKKOS_FUNCTION void calc_eta_dot_ref_mid (
   S2elNlev vdp(wrk2.data());
   ExecViewUnmanaged<Real[2][NP][NP]> ps(cti::pack2real(wrk3));
   // Calc surface pressure for use at the end.
-  calc_ps<>(kv, ps0, hyai0, alpha, dp1, dp2, ps);
+  calc_ps(NUM_PHYSICAL_LEV, kv, ps0, hyai0, alpha, dp1, dp2, ps);
   kv.team_barrier();
   for (int t = 0; t < 2; ++t) {
     // Compute divdp.
@@ -621,6 +648,41 @@ struct TestData {
     std::uniform_real_distribution<Real> urb(lo, hi);
     return urb(engine);
   }
+};
+
+// Data to deal with views of packs easily in tests.
+struct ColData {
+  int npack;
+  ExecView<Scalar*> d;
+  ExecView<Scalar*>::HostMirror h;
+  ExecView<Real*>::HostMirror r;
+
+  ColData (const std::string& name, const int nlev) {
+    npack = calc_npack(nlev);
+    d = decltype(d)(name, npack);
+    h = Kokkos::create_mirror_view(d);
+    r = decltype(r)(cti::pack2real(h), calc_nscal(npack));
+  }
+
+  void d2h () { Kokkos::deep_copy(h, d); }
+  void h2d () { Kokkos::deep_copy(d, h); }
+};
+
+struct ElData {
+  int npack;
+  ExecView<Scalar***> d;
+  ExecView<Scalar***>::HostMirror h;
+  ExecView<Real***>::HostMirror r;
+
+  ElData (const std::string& name, const int nlev) {
+    npack = calc_npack(nlev);
+    d = decltype(d)(name, NP, NP, npack);
+    h = Kokkos::create_mirror_view(d);
+    r = decltype(r)(cti::pack2real(h), NP, NP, calc_nscal(npack));
+  }
+
+  void d2h () { Kokkos::deep_copy(h, d); }
+  void h2d () { Kokkos::deep_copy(d, h); }
 };
 
 const Real TestData::eps = std::numeric_limits<Real>::epsilon();
@@ -1233,6 +1295,58 @@ int test_eta_to_dp (TestData& td) {
   return nerr;
 }
 
+int test_calc_ps (TestData& td) {
+  int nerr = 0;
+  const Real tol = 1e2*td.eps;
+
+  for (const int nlev : {6, 55, 177}) {
+    HybridLevels h;
+    fill(h, nlev);
+    const auto ps0 = h.ps0, hyai0 = h.ai[0];
+
+    ElData dp1("dp1", nlev), dp2("dp2", nlev);
+    for (int i = 0; i < NP; ++i)
+      for (int j = 0; j < NP; ++j)
+        for (int k = 0; k < nlev; ++k) {
+          dp1.r(i,j,k) = td.urand(0, 1000);
+          dp2.r(i,j,k) = td.urand(0, 1000);
+        }
+    dp1.h2d();
+    dp2.h2d();
+
+    const Real alpha[] = {td.urand(0,1), td.urand(0,1)};
+
+    ExecView<Real[2][NP][NP]> ps("ps");
+    const auto policy = get_test_team_policy(1, nlev);
+    const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
+      KernelVariables kv(team);
+      calc_ps(nlev, kv, ps0, hyai0, alpha, dp1.d, dp2.d, ps);
+    };
+    Kokkos::parallel_for(policy, f);
+    Kokkos::fence();
+
+    const auto ps_h = cti::cmvdc(ps);
+    for (int i = 0; i < NP; ++i)
+      for (int j = 0; j < NP; ++j)
+        for (int t = 0; t < 2; ++t) {
+          Real ps = h.ai[0]*h.ps0;
+          for (int k = 0; k < nlev; ++k)
+            ps += (1 - alpha[t])*dp1.r(i,j,k) + alpha[t]*dp2.r(i,j,k);
+          if (std::abs(ps_h(t,i,j) - ps) > tol*ps) ++nerr;
+        }
+  }
+
+  return nerr;
+}
+
+int test_calc_etadotmid_from_etadotdpdnint (TestData& td) {
+  int nerr = 0;
+
+#pragma message "TODO test_calc_etadotmid_from_etadotdpdnint"
+
+  return nerr;
+}
+
 int test_init_velocity_record (TestData& td) {
   int nerr = 0;
   pr("test_init_velocity_record");
@@ -1256,6 +1370,8 @@ int ComposeTransportImpl::run_enhanced_trajectory_unit_tests () {
   comunittest(test_eta_to_dp);
   comunittest(test_deta_caas);
   comunittest(test_limit_etam);
+  comunittest(test_calc_ps);
+  comunittest(test_calc_etadotmid_from_etadotdpdnint);
   comunittest(test_init_velocity_record);
   return nerr;
 }
