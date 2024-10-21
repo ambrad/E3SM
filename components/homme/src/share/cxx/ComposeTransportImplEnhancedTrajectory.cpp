@@ -103,6 +103,11 @@ CRnV getcolc (const CRelnV& a, const int i, const int j) {
 }
 
 KOKKOS_INLINE_FUNCTION
+RelnV elp2r (const SelnV& p) {
+  return RelnV(cti::pack2real(p), NP, NP, calc_nscal(p.extent_int(2)));
+}
+
+KOKKOS_INLINE_FUNCTION
 CRelnV elp2r (const CSelnV& p) {
   return CRelnV(cti::pack2real(p), NP, NP, calc_nscal(p.extent_int(2)));
 }
@@ -509,8 +514,8 @@ KOKKOS_FUNCTION void calc_etadotmid_from_etadotdpdnint (
   const int nlev, const KernelVariables& kv,
   const Real& ps0, const CSnV& hydai, const CSnV& hydbi,
   const CSnV& hydetai, const CRelV& ps, const SelnV& wrk,
-  // input: eta_dot_dpdn at interfaces
-  // output: eta_dot at midpoints
+  //  in: eta_dot_dpdn at interfaces
+  // out: eta_dot at midpoints
   const SelnV& ed)
 {
   assert(calc_nscal(hydai.extent_int(0)) >= nlev);
@@ -520,20 +525,21 @@ KOKKOS_FUNCTION void calc_etadotmid_from_etadotdpdnint (
   assert_eln(ed, nlev+1);
   const auto& edd_mid = wrk;
   {
-    CRelNlevp edd(cti::pack2real(ed));
-    RelNlev tmp(cti::pack2real(edd_mid));
+    CRelnV edd(elp2r(ed));
+    RelnV tmp(elp2r(wrk));
     const auto f = [&] (const int i, const int j, const int k) {
       tmp(i,j,k) = (edd(i,j,k) + edd(i,j,k+1))/2;
     };
-    cti::loop_ijk<cti::num_phys_lev>(kv, f);
+    cti::loop_ijk(nlev, kv, f);
   }
+  kv.team_barrier();
   {
     const auto f = [&] (const int i, const int j, const int kp) {
       ed(i,j,kp) = (edd_mid(i,j,kp)
                     * hydetai(kp)
                     / (hydai(kp)*ps0 + hydbi(kp)*ps(i,j)));
     };
-    cti::loop_ijk<cti::num_lev_pack>(kv, f);
+    cti::loop_ijk(calc_npack(nlev), kv, f);
   }
 }
 
@@ -986,7 +992,7 @@ int test_deta_caas (TestData& td) {
 }
 
 struct HybridLevels {
-  Real ps0;
+  Real ps0, a_eta, b_eta;
   std::vector<Real> ai, dai, bi, dbi, am, bm, etai, detai, etam, detam;
 };
 
@@ -1020,6 +1026,11 @@ void fill (HybridLevels& h, const int n) {
   assert(h.bi  [0] == 0); // Real(n - i)/n is exactly 1, so exact = holds
   assert(h.bi  [n] == 1); // exp(0) is exactly 0, so exact = holds
   assert(h.etai[n] == 1); // same
+  // b = (eta - eta_top)/(1 - eta_top) => b_eta = 1/(1 - eta_top)
+  // a = eta - b => a_eta = 1 - b_eta = -eta_top/(1 - eta_top)
+  // p_eta = a_eta p0 + b_eta ps
+  h.b_eta = 1/(1 - eta_top);
+  h.a_eta = 1 - h.b_eta;
 
   const auto tomid = [&] (const std::vector<Real>& in, std::vector<Real>& mi) {
     for (int i = 0; i < n; ++i) mi[i] = (in[i] + in[i+1])/2;
@@ -1350,7 +1361,61 @@ int test_calc_ps (TestData& td) {
 int test_calc_etadotmid_from_etadotdpdnint (TestData& td) {
   int nerr = 0;
 
-  
+  const Real tol = 100*td.eps;
+
+  for (const int nlev : {143, 64, 81}) {
+    HybridLevels h;
+    fill(h, nlev);
+
+    // Test function:
+    //     eta_dot_dpdn(eta) = c eta + d.
+    // Then
+    //     eta_dot = eta_dot_dpdn(eta)/dpdn(eta)
+    //             = (c eta + d)/(a_eta p0 + b_eta ps).
+    // Since a_eta, b_eta are constants independent of eta in this test, eta_dot
+    // is then also a linear function of eta. Thus, we can test for exact
+    // agreement with the true solution.
+
+    ColData hydai("hydai",nlev), hydbi("hydbi",nlev), hydetai("hydetai",nlev);
+    ElData wrk("wrk",nlev+1), ed("ed",nlev+1);
+    ExecView<Real[NP][NP]> ps("ps");
+    const Real ps0 = h.ps0;
+
+    const auto ps_m = Kokkos::create_mirror_view(ps);
+    for (int i = 0; i < NP; ++i)
+      for (int j = 0; j < NP; ++j) {
+        ps(i,j) = td.urand(0.5, 1.2)*ps0;
+        for (int k = 0; k < nlev; ++k) {
+          hydai.r[k] = h.dai[k];
+          hydbi.r[k] = h.dbi[k];
+          hydetai.r[k] = h.detai[k];
+        }
+        for (int k = 0; k <= nlev; ++k)
+          ed.r(i,j,k) = (i-j)*h.etai[k] + 0.3;
+      }
+    Kokkos::deep_copy(ps, ps_m);
+    hydai.h2d(); hydbi.h2d(); hydetai.h2d();
+    ed.h2d();
+
+    const auto policy = get_test_team_policy(1, nlev);
+    const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
+      KernelVariables kv(team);
+      calc_etadotmid_from_etadotdpdnint(
+        nlev, kv, ps0, hydai.d, hydbi.d, hydetai.d, ps, wrk.d, ed.d);
+    };
+    Kokkos::parallel_for(policy, f);
+    Kokkos::fence();
+    ed.d2h();
+
+    for (int i = 0; i < NP; ++i)
+      for (int j = 0; j < NP; ++j) {
+        const auto den = h.a_eta*h.ps0 + h.b_eta*ps_m(i,j);
+        for (int k = 0; k < nlev; ++k) {
+          const auto ed_true = ((i-j)*h.etam[k] + 0.3)/den;
+          if (std::abs(ed.r(i,j,k) - ed_true) > tol*(10/den)) ++nerr;
+        }
+      }
+  }
 
   return nerr;
 }

@@ -148,8 +148,8 @@ struct ComposeTransportImpl {
   // avoid non-bfb-ness in, e.g., trig functions.
   void test_2d(const bool bfb, const int nstep, std::vector<Real>& eval);
 
-  template <int KLIM, typename Fn> KOKKOS_INLINE_FUNCTION
-  static void loop_ijk (const KernelVariables& kv, const Fn& h) {
+  template <typename Fn> KOKKOS_INLINE_FUNCTION
+  static void loop_ijk (const int KLIM, const KernelVariables& kv, const Fn& h) {
     using Kokkos::parallel_for;
     if (OnGpu<ExecSpace>::value) {
       const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
@@ -174,6 +174,11 @@ struct ComposeTransportImpl {
       };
       parallel_for(tr, f);
     }
+  }
+
+  template <int KLIM, typename Fn> KOKKOS_INLINE_FUNCTION
+  static void loop_ijk (const KernelVariables& kv, const Fn& h) {
+    loop_ijk(KLIM, kv, h);
   }
 
   template <typename Fn> KOKKOS_INLINE_FUNCTION
