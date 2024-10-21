@@ -580,6 +580,7 @@ KOKKOS_FUNCTION void calc_eta_dot_ref_mid (
     calc_etadotmid_from_etadotdpdnint(
       NUM_PHYSICAL_LEV, kv, ps0, hydai, hydbi, hydetai,
       Kokkos::subview(ps,t,ALL,ALL), wrk1, edd);
+    // No team_barrier: wrk1 is protected in second iteration.
   }
 }
 
@@ -1360,7 +1361,6 @@ int test_calc_ps (TestData& td) {
 
 int test_calc_etadotmid_from_etadotdpdnint (TestData& td) {
   int nerr = 0;
-
   const Real tol = 100*td.eps;
 
   for (const int nlev : {143, 64, 81}) {
@@ -1420,6 +1420,19 @@ int test_calc_etadotmid_from_etadotdpdnint (TestData& td) {
   return nerr;
 }
 
+int test_calc_eta_dot_ref_mid (TestData& td) {
+  int nerr = 0;
+
+  // calc_eta_dot_ref_mid calls several routines that are all tested
+  // mathematically. calc_eta_dot_ref_mid itself is too complicated to test
+  // mathematically. But we can still test it for s/w properties like
+  // determinism.
+
+  //todo
+
+  return nerr;
+}
+
 int test_init_velocity_record (TestData& td) {
   int nerr = 0;
   pr("test_init_velocity_record");
@@ -1445,6 +1458,7 @@ int ComposeTransportImpl::run_enhanced_trajectory_unit_tests () {
   comunittest(test_limit_etam);
   comunittest(test_calc_ps);
   comunittest(test_calc_etadotmid_from_etadotdpdnint);
+  comunittest(test_calc_eta_dot_ref_mid);
   comunittest(test_init_velocity_record);
   return nerr;
 }

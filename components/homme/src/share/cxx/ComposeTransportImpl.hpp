@@ -332,6 +332,24 @@ struct ComposeTransportImpl {
             ykp1*(((xk - xkm1)/(xkp1 - xkm1))*(         1 /(xkp1 - xk  ))));
   }
 
+  KOKKOS_INLINE_FUNCTION static void approx_derivative (
+    const KernelVariables& kv, const CSNlevp& xs, const CSNlevp& ys,
+    const SNlev& yps) // yps(:,:,0) is undefined
+  {
+    CRNlevp x(cpack2real(xs));
+    CRNlevp y(cpack2real(ys));
+    RNlev yp(pack2real(yps));
+    const auto f = [&] (const int i, const int j, const int k) {
+      if (k == 0) return;
+      const auto& xkm1 = x(i,j,k-1);
+      const auto& xk   = x(i,j,k  ); // also the interpolation point
+      const auto& xkp1 = x(i,j,k+1);
+      yp(i,j,k) = approx_derivative(x(i,j,k-1), x(i,j,k), x(i,j,k+1),
+                                    y(i,j,k-1), y(i,j,k), y(i,j,k+1));
+    };
+    loop_ijk<num_phys_lev>(kv, f);
+  }
+
   template <typename HyBiPackT, typename DivDpScalT,
             typename EddPackT, typename EddScalT>
   KOKKOS_FUNCTION static void calc_eta_dot_dpdn (

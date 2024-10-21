@@ -49,24 +49,6 @@ calc_p (const KernelVariables& kv, const Real& ps0, const Real& hybrid_ai0,
   cti::loop_ij(kv, f);
 }
 
-KOKKOS_FUNCTION static void approx_derivative (
-  const KernelVariables& kv, const CSNlevp& xs, const CSNlevp& ys,
-  const SNlev& yps) // yps(:,:,0) is undefined
-{
-  CRNlevp x(cti::cpack2real(xs));
-  CRNlevp y(cti::cpack2real(ys));
-  RNlev yp(cti::pack2real(yps));
-  const auto f = [&] (const int i, const int j, const int k) {
-    if (k == 0) return;
-    const auto& xkm1 = x(i,j,k-1);
-    const auto& xk   = x(i,j,k  ); // also the interpolation point
-    const auto& xkp1 = x(i,j,k+1);
-    yp(i,j,k) = cti::approx_derivative(x(i,j,k-1), x(i,j,k), x(i,j,k+1),
-                                       y(i,j,k-1), y(i,j,k), y(i,j,k+1));
-  };
-  cti::loop_ijk<cti::num_phys_lev>(kv, f);
-}
-
 // Move mass around in a column as needed to make dp nonnegative.
 KOKKOS_FUNCTION static void
 reconstruct_and_limit_dp (const KernelVariables& kv, const CSNlev& dprefp, const Real& dt,
@@ -219,7 +201,7 @@ KOKKOS_FUNCTION static void calc_vertically_lagrangian_levels (
   // Gradient of eta_dot_dpdn = p_eta deta/dt at final time w.r.t. p at initial
   // time.
   const auto& ptp0 = dprecon;
-  approx_derivative(kv, pref, *eta_dot_dpdn[1], ptp0);
+  cti::approx_derivative(kv, pref, *eta_dot_dpdn[1], ptp0);
 
   {
     const auto& edd = *eta_dot_dpdn[0];
@@ -452,7 +434,7 @@ static int test_approx_derivative () {
   { // Run approx_derivative.
     const auto f = KOKKOS_LAMBDA (const cti::MT& team) {
       KernelVariables kv(team);
-      approx_derivative(kv, xp, yp, yip);
+      cti::approx_derivative(kv, xp, yp, yip);
     };
     Kokkos::fence();
     Kokkos::parallel_for(policy, f);
