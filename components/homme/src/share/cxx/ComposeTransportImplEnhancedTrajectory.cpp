@@ -851,130 +851,131 @@ int make_random_deta (TestData& td, const Real deta_tol, const RelnV& deta) {
 
 int test_deta_caas (TestData& td) {
   int nerr = 0;
-
-  const int nlev = 77;
   const Real tol = 100*td.eps;
-  const Real deta_tol = 10*td.eps/nlev;
 
-  // nlev+1 deltas: deta = diff([0, etam, 1])
-  ExecView<Real[nlev+1]> deta_ref("deta_ref");
-  ExecView<Real[NP][NP][nlev+1]> deta("deta"), wrk("wrk");
-  nerr += make_random_deta(td, deta_tol, deta_ref);
+  for (const int nlev : {15, 64, 161}) {
+    const Real deta_tol = 10*td.eps/nlev;
 
-  const auto policy = get_test_team_policy(1, nlev);
-  const auto run = [&] (const RelnV& deta) {
-    const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
-      KernelVariables kv(team);
-      deta_caas(kv, nlev+1, deta_ref, deta_tol, wrk, deta);
+    // nlev+1 deltas: deta = diff([0, etam, 1])
+    ExecView<Real*> deta_ref("deta_ref", nlev+1);
+    ExecView<Real***> deta("deta",NP,NP,nlev+1), wrk("wrk",NP,NP,nlev+1);
+    nerr += make_random_deta(td, deta_tol, deta_ref);
+
+    const auto policy = get_test_team_policy(1, nlev);
+    const auto run = [&] (const RelnV& deta) {
+      const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
+        KernelVariables kv(team);
+        deta_caas(kv, nlev+1, deta_ref, deta_tol, wrk, deta);
+      };
+      Kokkos::parallel_for(policy, f);
+      Kokkos::fence();
     };
-    Kokkos::parallel_for(policy, f);
-    Kokkos::fence();
-  };
 
-  { // Test that if all is OK, the input is not altered.
-    nerr += make_random_deta(td, deta_tol, deta);
-    ExecView<Real[NP][NP][nlev+1]>::HostMirror copy("copy");
-    Kokkos::deep_copy(copy, deta);
-    run(deta);
-    const auto m = cti::cmvdc(deta);
-    bool diff = false;
-    for (int i = 0; i < NP; ++i)
-      for (int j = 0; j < NP; ++j)
-        for (int k = 0; k <= nlev; ++k)
-          if (m(i,j,k) != copy(i,j,k))
-            diff = true;
-    if (diff) ++nerr;
-  }
-
-  { // Modify one etam and test that only adjacent intervals change beyond eps.
-    // nlev midpoints
-    ExecView<Real[nlev]> etam_ref("etam_ref");
-    const auto her = Kokkos::create_mirror_view(etam_ref);
-    const auto hder = cti::cmvdc(deta_ref);
-    {
-      her(0) = hder(0);
-      for (int k = 1; k < nlev; ++k)
-        her(k) = her(k-1) + hder(k);
-      Kokkos::deep_copy(etam_ref, her);
+    { // Test that if all is OK, the input is not altered.
+      nerr += make_random_deta(td, deta_tol, deta);
+      ExecView<Real***>::HostMirror copy("copy",NP,NP,nlev+1);
+      Kokkos::deep_copy(copy, deta);
+      run(deta);
+      const auto m = cti::cmvdc(deta);
+      bool diff = false;
+      for (int i = 0; i < NP; ++i)
+        for (int j = 0; j < NP; ++j)
+          for (int k = 0; k <= nlev; ++k)
+            if (m(i,j,k) != copy(i,j,k))
+              diff = true;
+      if (diff) ++nerr;
     }
-    std::vector<Real> etam(nlev);
-    const auto hde = Kokkos::create_mirror_view(deta);
-    const auto get_idx = [&] (const int i, const int j) {
-      const int idx = static_cast<int>(0.15*nlev);
-      return std::max(1, std::min(nlev-2, idx+NP*i+j));
-    };
-    for (int trial = 0; trial < 2; ++trial) {
+
+    { // Modify one etam and test that only adjacent intervals change beyond eps.
+      // nlev midpoints
+      ExecView<Real*> etam_ref("etam_ref",nlev);
+      const auto her = Kokkos::create_mirror_view(etam_ref);
+      const auto hder = cti::cmvdc(deta_ref);
+      {
+        her(0) = hder(0);
+        for (int k = 1; k < nlev; ++k)
+          her(k) = her(k-1) + hder(k);
+        Kokkos::deep_copy(etam_ref, her);
+      }
+      std::vector<Real> etam(nlev);
+      const auto hde = Kokkos::create_mirror_view(deta);
+      const auto get_idx = [&] (const int i, const int j) {
+        const int idx = static_cast<int>(0.15*nlev);
+        return std::max(1, std::min(nlev-2, idx+NP*i+j));
+      };
+      for (int trial = 0; trial < 2; ++trial) {
+        for (int i = 0; i < NP; ++i)
+          for (int j = 0; j < NP; ++j) {
+            for (int k = 0; k < nlev; ++k) etam[k] = her(k);
+            // Perturb one level.
+            const int idx = get_idx(i,j);
+            etam[idx] += trial == 0 ? 1.1 : -13.1;
+            hde(i,j,0) = etam[0];
+            for (int k = 1; k < nlev; ++k) hde(i,j,k) = etam[k] - etam[k-1];
+            hde(i,j,nlev) = 1 - etam[nlev-1];
+            // Make sure we have a meaningful test.
+            Real minval = 1;
+            for (int k = 0; k <= nlev; ++k) minval = std::min(minval, hde(i,j,k));
+            if (minval >= deta_tol) ++nerr;
+          }
+        Kokkos::deep_copy(deta, hde);
+        run(deta);
+        Kokkos::deep_copy(hde, deta);
+        for (int i = 0; i < NP; ++i)
+          for (int j = 0; j < NP; ++j) {
+            const int idx = get_idx(i,j);
+            // Min val should be deta_tol.
+            Real minval = 1;
+            for (int k = 0; k <= nlev; ++k) minval = std::min(minval, hde(i,j,k));
+            if (minval != deta_tol) ++nerr;
+            // Sum of levels should be 1.
+            Real sum = 0;
+            for (int k = 0; k <= nlev; ++k) sum += hde(i,j,k);
+            if (std::abs(sum - 1) > tol) ++nerr;
+            // Only two deltas should be affected.
+            Real maxdiff = 0;
+            for (int k = 0; k <= nlev; ++k) {
+              const auto diff = std::abs(hde(i,j,k) - hder(k));
+              if (k == idx or k == idx+1) {
+                if (diff <= deta_tol) ++nerr;
+              } else {
+                maxdiff = std::max(maxdiff, diff);
+              }
+            }
+            if (maxdiff > tol) ++nerr;
+          }
+      }
+    }
+
+    { // Test generally (and highly) perturbed levels.
+      const auto hde = Kokkos::create_mirror_view(deta);
       for (int i = 0; i < NP; ++i)
         for (int j = 0; j < NP; ++j) {
-          for (int k = 0; k < nlev; ++k) etam[k] = her(k);
-          // Perturb one level.
-          const int idx = get_idx(i,j);
-          etam[idx] += trial == 0 ? 1.1 : -13.1;
-          hde(i,j,0) = etam[0];
-          for (int k = 1; k < nlev; ++k) hde(i,j,k) = etam[k] - etam[k-1];
-          hde(i,j,nlev) = 1 - etam[nlev-1];
-          // Make sure we have a meaningful test.
-          Real minval = 1;
-          for (int k = 0; k <= nlev; ++k) minval = std::min(minval, hde(i,j,k));
-          if (minval >= deta_tol) ++nerr;
+          Real sum = 0;
+          for (int k = 0; k <= nlev; ++k) {
+            hde(i,j,k) = td.urand(-0.5, 0.5);
+            sum += hde(i,j,k);
+          }
+          // Make the column sum to 0.2 for safety in the next step.
+          const Real colsum = 0.2;
+          for (int k = 0; k <= nlev; ++k) hde(i,j,k) += (colsum - sum)/(nlev+1);
+          for (int k = 0; k <= nlev; ++k) hde(i,j,k) /= colsum;
+          sum = 0;
+          for (int k = 0; k <= nlev; ++k) sum += hde(i,j,k);
+          if (std::abs(sum - 1) > tol) ++nerr;
         }
       Kokkos::deep_copy(deta, hde);
       run(deta);
       Kokkos::deep_copy(hde, deta);
       for (int i = 0; i < NP; ++i)
         for (int j = 0; j < NP; ++j) {
-          const int idx = get_idx(i,j);
-          // Min val should be deta_tol.
-          Real minval = 1;
-          for (int k = 0; k <= nlev; ++k) minval = std::min(minval, hde(i,j,k));
-          if (minval != deta_tol) ++nerr;
-          // Sum of levels should be 1.
-          Real sum = 0;
+          Real sum = 0, minval = 1;
           for (int k = 0; k <= nlev; ++k) sum += hde(i,j,k);
-          if (std::abs(sum - 1) > tol) ++nerr;
-          // Only two deltas should be affected.
-          Real maxdiff = 0;
-          for (int k = 0; k <= nlev; ++k) {
-            const auto diff = std::abs(hde(i,j,k) - hder(k));
-            if (k == idx or k == idx+1) {
-              if (diff <= deta_tol) ++nerr;
-            } else {
-              maxdiff = std::max(maxdiff, diff);
-            }
-          }
-          if (maxdiff > tol) ++nerr;
+          for (int k = 0; k <= nlev; ++k) minval = std::min(minval, hde(i,j,k));
+          if (std::abs(sum - 1) > 1e3*td.eps) ++nerr;
+          if (minval != deta_tol) ++nerr;
         }
     }
-  }
-
-  { // Test generally (and highly) perturbed levels.
-    const auto hde = Kokkos::create_mirror_view(deta);
-    for (int i = 0; i < NP; ++i)
-      for (int j = 0; j < NP; ++j) {
-        Real sum = 0;
-        for (int k = 0; k <= nlev; ++k) {
-          hde(i,j,k) = td.urand(-0.5, 0.5);
-          sum += hde(i,j,k);
-        }
-        // Make the column sum to 0.2 for safety in the next step.
-        const Real colsum = 0.2;
-        for (int k = 0; k <= nlev; ++k) hde(i,j,k) += (colsum - sum)/(nlev+1);
-        for (int k = 0; k <= nlev; ++k) hde(i,j,k) /= colsum;
-        sum = 0;
-        for (int k = 0; k <= nlev; ++k) sum += hde(i,j,k);
-        if (std::abs(sum - 1) > tol) ++nerr;
-      }
-    Kokkos::deep_copy(deta, hde);
-    run(deta);
-    Kokkos::deep_copy(hde, deta);
-    for (int i = 0; i < NP; ++i)
-      for (int j = 0; j < NP; ++j) {
-        Real sum = 0, minval = 1;
-        for (int k = 0; k <= nlev; ++k) sum += hde(i,j,k);
-        for (int k = 0; k <= nlev; ++k) minval = std::min(minval, hde(i,j,k));
-        if (std::abs(sum - 1) > 1e3*td.eps) ++nerr;
-        if (minval != deta_tol) ++nerr;
-      }
   }
   
   return nerr;
@@ -1039,170 +1040,172 @@ void fill (HybridLevels& h, const int n) {
 
 int test_limit_etam (TestData& td) {
   int nerr = 0;
-
-  const int nlev = 92;
   const Real tol = 100*td.eps;
-  const Real deta_tol = 1e5*td.eps/nlev;
 
-  ExecView<Real[nlev+1]> hy_etai("hy_etai"), detam("detam");
-  ExecView<Real[NP][NP][nlev+1]> wrk1("wrk1"), wrk2("wrk2");
-  ExecView<Real[NP][NP][nlev]> etam("etam");
+  for (const int nlev : {143, 64, 81}) {
+    const Real deta_tol = 1e5*td.eps/nlev;
 
-  HybridLevels h;
-  fill(h, nlev);
-  todev(h.etai, hy_etai);
-  todev(h.detam, detam);
+    ExecView<Real*> hy_etai("hy_etai",nlev+1), detam("detam",nlev+1);
+    ExecView<Real***> wrk1("wrk1",NP,NP,nlev+1), wrk2("wrk2",NP,NP,nlev+1);
+    ExecView<Real***> etam("etam",NP,NP,nlev);
 
-  const auto he = Kokkos::create_mirror_view(etam);
+    HybridLevels h;
+    fill(h, nlev);
+    todev(h.etai, hy_etai);
+    todev(h.detam, detam);
 
-  const auto policy = get_test_team_policy(1, nlev);
-  const auto run = [&] () {
-    Kokkos::deep_copy(etam, he);
-    const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
-      KernelVariables kv(team);
-      limit_etam(kv, nlev, hy_etai, detam, deta_tol, wrk1, wrk2, etam);
+    const auto he = Kokkos::create_mirror_view(etam);
+
+    const auto policy = get_test_team_policy(1, nlev);
+    const auto run = [&] () {
+      Kokkos::deep_copy(etam, he);
+      const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
+        KernelVariables kv(team);
+        limit_etam(kv, nlev, hy_etai, detam, deta_tol, wrk1, wrk2, etam);
+      };
+      Kokkos::parallel_for(policy, f);
+      Kokkos::fence();
+      Kokkos::deep_copy(he, etam);
     };
-    Kokkos::parallel_for(policy, f);
-    Kokkos::fence();
-    Kokkos::deep_copy(he, etam);
-  };
 
-  fillcols(h.etam.size(), h.etam.data(), he);
-  // Col 0 should be untouched. Cols 1 and 2 should have very specific changes.
-  const int col1_idx = static_cast<int>(0.25*nlev);
-  he(0,1,col1_idx) += 0.3;
-  const int col2_idx = static_cast<int>(0.8*nlev);
-  he(0,2,col2_idx) -= 5.3;
-  // The rest of the columns get wild changes.
-  for (int idx = 3; idx < NP*NP; ++idx) {
-    const int i = idx / NP, j = idx % NP;
-    for (int k = 0; k < nlev; ++k)
-      he(i,j,k) += td.urand(-1, 1)*(h.etai[k+1] - h.etai[k]);
-  }
-  run();
-  bool ok = true;
-  for (int k = 0; k < nlev; ++k)
-    if (he(0,0,k) != h.etam[k]) ok = false;
-  for (int k = 0; k < nlev; ++k) {
-    if (k == col1_idx) continue;
-    if (std::abs(he(0,1,k) - h.etam[k]) > tol) ok = false;
-  }
-  for (int k = 0; k < nlev; ++k) {
-    if (k == col2_idx) continue;
-    if (std::abs(he(0,2,k) - h.etam[k]) > tol) ok = false;
-  }
-  Real mingap = 1;
-  for (int i = 0; i < NP; ++i)
-    for (int j = 0; j < NP; ++j) {
-      mingap = std::min(mingap, he(i,j,0) - h.etai[0]);
-      for (int k = 1; k < nlev; ++k)
-        mingap = std::min(mingap, he(i,j,k) - he(i,j,k-1));
-      mingap = std::min(mingap, h.etai[nlev] - he(i,j,nlev-1));
+    fillcols(h.etam.size(), h.etam.data(), he);
+    // Col 0 should be untouched. Cols 1 and 2 should have very specific changes.
+    const int col1_idx = static_cast<int>(0.25*nlev);
+    he(0,1,col1_idx) += 0.3;
+    const int col2_idx = static_cast<int>(0.8*nlev);
+    he(0,2,col2_idx) -= 5.3;
+    // The rest of the columns get wild changes.
+    for (int idx = 3; idx < NP*NP; ++idx) {
+      const int i = idx / NP, j = idx % NP;
+      for (int k = 0; k < nlev; ++k)
+        he(i,j,k) += td.urand(-1, 1)*(h.etai[k+1] - h.etai[k]);
     }
-  // Test minimum level delta, with room for numerical error.
-  if (mingap < 0.8*deta_tol) ok = false;
-  if (not ok) ++nerr;
+    run();
+    bool ok = true;
+    for (int k = 0; k < nlev; ++k)
+      if (he(0,0,k) != h.etam[k]) ok = false;
+    for (int k = 0; k < nlev; ++k) {
+      if (k == col1_idx) continue;
+      if (std::abs(he(0,1,k) - h.etam[k]) > tol) ok = false;
+    }
+    for (int k = 0; k < nlev; ++k) {
+      if (k == col2_idx) continue;
+      if (std::abs(he(0,2,k) - h.etam[k]) > tol) ok = false;
+    }
+    Real mingap = 1;
+    for (int i = 0; i < NP; ++i)
+      for (int j = 0; j < NP; ++j) {
+        mingap = std::min(mingap, he(i,j,0) - h.etai[0]);
+        for (int k = 1; k < nlev; ++k)
+          mingap = std::min(mingap, he(i,j,k) - he(i,j,k-1));
+        mingap = std::min(mingap, h.etai[nlev] - he(i,j,nlev-1));
+      }
+    // Test minimum level delta, with room for numerical error.
+    if (mingap < 0.8*deta_tol) ok = false;
+    if (not ok) ++nerr;
+  }
   
   return nerr;
 }
 
 int test_eta_interp (TestData& td) {
   int nerr = 0;
-
-  const int nlev = 56;
   const Real tol = 100*td.eps;
-  HybridLevels h;
-  fill(h, nlev);
 
-  ExecView<Real[nlev+1]> hy_etai("hy_etai");
-  ExecView<Real[NP][NP][nlev  ]> x("x"), y("y");
-  ExecView<Real[NP][NP][nlev+1]> xi("xi"), yi("yi");
-  ExecView<Real[NP][NP][nlev+2]> xwrk("xwrk"), ywrk("ywrk");
+  for (const int nlev : {15, 64, 161}) {
+    HybridLevels h;
+    fill(h, nlev);
 
-  todev(h.etai, hy_etai);
+    ExecView<Real*> hy_etai("hy_etai",nlev+1);
+    ExecView<Real***> x("x",NP,NP,nlev), y("y",NP,NP,nlev);
+    ExecView<Real***> xi("xi",NP,NP,nlev+1), yi("yi",NP,NP,nlev+1);
+    ExecView<Real***> xwrk("xwrk",NP,NP,nlev+2), ywrk("ywrk",NP,NP,nlev+2);
 
-  const auto xh  = Kokkos::create_mirror_view(x );
-  const auto yh  = Kokkos::create_mirror_view(y );
-  const auto xih = Kokkos::create_mirror_view(xi);
-  const auto yih = Kokkos::create_mirror_view(yi);
+    todev(h.etai, hy_etai);
 
-  const auto policy = get_test_team_policy(1, nlev);
-  const auto run_eta = [&] (const int ni) {
-    Kokkos::deep_copy(x, xh); Kokkos::deep_copy(y, yh);
-    Kokkos::deep_copy(xi, xih);
-    const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
-      KernelVariables kv(team);
-      eta_interp_eta(kv, nlev, hy_etai,
-                     x, getcolc(y,0,0),
-                     xwrk, getcol(ywrk,0,0),
-                     ni, getcolc(xi,0,0), yi);
+    const auto xh  = Kokkos::create_mirror_view(x );
+    const auto yh  = Kokkos::create_mirror_view(y );
+    const auto xih = Kokkos::create_mirror_view(xi);
+    const auto yih = Kokkos::create_mirror_view(yi);
+
+    const auto policy = get_test_team_policy(1, nlev);
+    const auto run_eta = [&] (const int ni) {
+      Kokkos::deep_copy(x, xh); Kokkos::deep_copy(y, yh);
+      Kokkos::deep_copy(xi, xih);
+      const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
+        KernelVariables kv(team);
+        eta_interp_eta(kv, nlev, hy_etai,
+                       x, getcolc(y,0,0),
+                       xwrk, getcol(ywrk,0,0),
+                       ni, getcolc(xi,0,0), yi);
+      };
+      Kokkos::parallel_for(policy, f);
+      Kokkos::fence();
+      Kokkos::deep_copy(yih, yi);
     };
-    Kokkos::parallel_for(policy, f);
-    Kokkos::fence();
-    Kokkos::deep_copy(yih, yi);
-  };
-  const auto run_horiz = [&] () {
-    Kokkos::deep_copy(x, xh); Kokkos::deep_copy(y, yh);
-    Kokkos::deep_copy(xi, xih);
-    const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
-      KernelVariables kv(team);
-      eta_interp_horiz(kv, nlev, hy_etai,
-                       getcolc(x,0,0), y,
-                       getcol(xwrk,0,0), ywrk,
-                       xi, yi);
+    const auto run_horiz = [&] () {
+      Kokkos::deep_copy(x, xh); Kokkos::deep_copy(y, yh);
+      Kokkos::deep_copy(xi, xih);
+      const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
+        KernelVariables kv(team);
+        eta_interp_horiz(kv, nlev, hy_etai,
+                         getcolc(x,0,0), y,
+                         getcol(xwrk,0,0), ywrk,
+                         xi, yi);
+      };
+      Kokkos::parallel_for(policy, f);
+      Kokkos::fence();
+      Kokkos::deep_copy(yih, yi);
     };
-    Kokkos::parallel_for(policy, f);
-    Kokkos::fence();
-    Kokkos::deep_copy(yih, yi);
-  };
 
-  std::vector<Real> v;
-  const Real d = 1e-6, vlo = h.etai[0]+d, vhi = h.etai[nlev]-d;
+    std::vector<Real> v;
+    const Real d = 1e-6, vlo = h.etai[0]+d, vhi = h.etai[nlev]-d;
 
-  for (const int ni : {int(0.7*nlev), nlev-1, nlev, nlev+1}) {
-    make_random_sorted(td, nlev, vlo, vhi, v);
-    fillcols(nlev, v.data(), xh);
-    fillcols(nlev, v.data(), yh);
-    make_random_sorted(td, ni, vlo, vhi, v);
-    fillcols(ni, v.data(), xih);
-    run_eta(ni);
-    bool ok = true;
-    for (int i = 0; i < NP; ++i)
-      for (int j = 0; j < NP; ++j)
-        for (int k = 0; k < ni; ++k)
-          if (std::abs(yih(i,j,k) - xih(i,j,k)) > tol)
-            ok = false;
-    if (not ok) ++nerr;
-  }
-
-  { // Test exact interp of line in the interior, const interp near the bdys.
-    make_random_sorted(td, nlev, vlo+0.05, vhi-0.1, v);
-    fillcols(nlev, v.data(), xh);
-    for (int i = 0; i < NP; ++i)
-      for (int j = 0; j < NP; ++j) {
-        for (int k = 0; k < nlev; ++k)
-          yh(i,j,k) = i*xh(0,0,k) - j;
-        make_random_sorted(td, nlev, vlo, vhi, v);
-        for (int k = 0; k < nlev; ++k)
-          xih(i,j,k) = v[k];
-      }
-    run_horiz();
-    bool ok = true;
-    for (int i = 0; i < NP; ++i)
-      for (int j = 0; j < NP; ++j)
-        for (int k = 0; k < nlev; ++k) {
-          if (xih(i,j,k) < xh(0,0,0)) {
-            if (std::abs(yih(i,j,k) - yi(i,j,0)) > tol)
+    for (const int ni : {int(0.7*nlev), nlev-1, nlev, nlev+1}) {
+      make_random_sorted(td, nlev, vlo, vhi, v);
+      fillcols(nlev, v.data(), xh);
+      fillcols(nlev, v.data(), yh);
+      make_random_sorted(td, ni, vlo, vhi, v);
+      fillcols(ni, v.data(), xih);
+      run_eta(ni);
+      bool ok = true;
+      for (int i = 0; i < NP; ++i)
+        for (int j = 0; j < NP; ++j)
+          for (int k = 0; k < ni; ++k)
+            if (std::abs(yih(i,j,k) - xih(i,j,k)) > tol)
               ok = false;
-          } else if (xih(i,j,k) > xh(0,0,nlev-1)) {
-            if (std::abs(yih(i,j,k) - yi(i,j,nlev-1)) > tol)
-              ok = false;            
-          } else {
-            if (std::abs(yih(i,j,k) - (i*xih(i,j,k) - j)) > tol)
-              ok = false;
-          }
+      if (not ok) ++nerr;
+    }
+
+    { // Test exact interp of line in the interior, const interp near the bdys.
+      make_random_sorted(td, nlev, vlo+0.05, vhi-0.1, v);
+      fillcols(nlev, v.data(), xh);
+      for (int i = 0; i < NP; ++i)
+        for (int j = 0; j < NP; ++j) {
+          for (int k = 0; k < nlev; ++k)
+            yh(i,j,k) = i*xh(0,0,k) - j;
+          make_random_sorted(td, nlev, vlo, vhi, v);
+          for (int k = 0; k < nlev; ++k)
+            xih(i,j,k) = v[k];
         }
-    if (not ok) ++nerr;
+      run_horiz();
+      bool ok = true;
+      for (int i = 0; i < NP; ++i)
+        for (int j = 0; j < NP; ++j)
+          for (int k = 0; k < nlev; ++k) {
+            if (xih(i,j,k) < xh(0,0,0)) {
+              if (std::abs(yih(i,j,k) - yi(i,j,0)) > tol)
+                ok = false;
+            } else if (xih(i,j,k) > xh(0,0,nlev-1)) {
+              if (std::abs(yih(i,j,k) - yi(i,j,nlev-1)) > tol)
+                ok = false;            
+            } else {
+              if (std::abs(yih(i,j,k) - (i*xih(i,j,k) - j)) > tol)
+                ok = false;
+            }
+          }
+      if (not ok) ++nerr;
+    }
   }
   
   return nerr;
@@ -1210,86 +1213,87 @@ int test_eta_interp (TestData& td) {
 
 int test_eta_to_dp (TestData& td) {
   int nerr = 0;
-
-  const int nlev = 88;
   const Real tol = 100*td.eps;
-  HybridLevels h;
-  fill(h, nlev);
 
-  ExecView<Real[nlev+1]> hy_bi("hy_bi"), hy_etai("hy_etai");
-  ExecView<Real[NP][NP][nlev+1]> etai("etai"), wrk("wrk");
-  ExecView<Real[NP][NP][nlev]> dp("dp");
-  ExecView<Real[NP][NP]> ps("ps");
-  const Real hy_ps0 = h.ps0;
+  for (const int nlev : {143, 64, 81}) {
+    HybridLevels h;
+    fill(h, nlev);
 
-  todev(h.bi, hy_bi);
-  todev(h.etai, hy_etai);
+    ExecView<Real*> hy_bi("hy_bi",nlev+1), hy_etai("hy_etai",nlev+1);
+    ExecView<Real***> etai("etai",NP,NP,nlev+1), wrk("wrk",NP,NP,nlev+1);
+    ExecView<Real***> dp("dp",NP,NP,nlev);
+    ExecView<Real[NP][NP]> ps("ps");
+    const Real hy_ps0 = h.ps0;
 
-  const auto psm = Kokkos::create_mirror_view(ps);
-  HostView<Real[NP][NP][nlev]> dp1("dp1");
-  Real dp1_max = 0;
-  for (int i = 0; i < NP; ++i)
-    for (int j = 0; j < NP; ++j)
-      psm(i,j) = (1 + 0.1*td.urand(-1, 1))*h.ps0;
-  Kokkos::deep_copy(ps, psm);
+    todev(h.bi, hy_bi);
+    todev(h.etai, hy_etai);
 
-  const auto policy = get_test_team_policy(1, nlev);
-  const auto run = [&] () {
-    const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
-      KernelVariables kv(team);
-      eta_to_dp(kv, nlev, hy_ps0, hy_bi, hy_etai, ps, etai, wrk, dp);
-    };
-    Kokkos::parallel_for(policy, f);
-    Kokkos::fence();
-  };
-
-  { // Test that for etai_ref we get the same as the usual formula.
-    todev(h.etai, etai);
     const auto psm = Kokkos::create_mirror_view(ps);
-    HostView<Real[NP][NP][nlev]> dp1("dp1");
+    HostView<Real***> dp1("dp1",NP,NP,nlev);
     Real dp1_max = 0;
     for (int i = 0; i < NP; ++i)
       for (int j = 0; j < NP; ++j)
-        for (int k = 0; k < nlev; ++k) {
-          dp1(i,j,k) = ((h.ai[k+1] - h.ai[k])*h.ps0 +
-                        (h.bi[k+1] - h.bi[k])*psm(i,j));
-          dp1_max = std::max(dp1_max, std::abs(dp1(i,j,k)));
-        }
-    run();
-    const auto dph = cti::cmvdc(dp);
-    Real err_max = 0;
-    for (int i = 0; i < NP; ++i)
-      for (int j = 0; j < NP; ++j)
-        for (int k = 0; k < nlev; ++k)
-          err_max = std::max(err_max, std::abs(dph(i,j,k) - dp1(i,j,k)));
-    if (err_max > tol*dp1_max) ++nerr;
-  }
+        psm(i,j) = (1 + 0.1*td.urand(-1, 1))*h.ps0;
+    Kokkos::deep_copy(ps, psm);
 
-  { // Test that sum(dp) = ps for random input etai.
-    std::vector<Real> etai_r;
-    make_random_sorted(td, nlev+1, h.etai[0], h.etai[nlev], etai_r);
-    todev(etai_r, etai);
-    run();
-    const auto dph1 = cti::cmvdc(dp);
-    for (int i = 0; i < NP; ++i)
-      for (int j = 0; j < NP; ++j) {
-        Real ps = h.ai[0]*h.ps0;
-        for (int k = 0; k < nlev; ++k)
-          ps += dph1(i,j,k);
-        if (std::abs(ps - psm(i,j)) > tol*psm(i,j)) ++nerr;
-      }    
-    // Test that values on input don't affect solution.
-    Kokkos::deep_copy(wrk, 0);
-    Kokkos::deep_copy(dp, 0);
-    run();
-    const auto dph2 = cti::cmvdc(dp);
-    bool alleq = true;
-    for (int i = 0; i < NP; ++i)
-      for (int j = 0; j < NP; ++j)
-        for (int k = 0; k < nlev; ++k)
-          if (dph2(i,j,k) != dph1(i,j,k))
-            alleq = false;
-    if (not alleq) ++nerr;
+    const auto policy = get_test_team_policy(1, nlev);
+    const auto run = [&] () {
+      const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
+        KernelVariables kv(team);
+        eta_to_dp(kv, nlev, hy_ps0, hy_bi, hy_etai, ps, etai, wrk, dp);
+      };
+      Kokkos::parallel_for(policy, f);
+      Kokkos::fence();
+    };
+
+    { // Test that for etai_ref we get the same as the usual formula.
+      todev(h.etai, etai);
+      const auto psm = Kokkos::create_mirror_view(ps);
+      HostView<Real***> dp1("dp1",NP,NP,nlev);
+      Real dp1_max = 0;
+      for (int i = 0; i < NP; ++i)
+        for (int j = 0; j < NP; ++j)
+          for (int k = 0; k < nlev; ++k) {
+            dp1(i,j,k) = ((h.ai[k+1] - h.ai[k])*h.ps0 +
+                          (h.bi[k+1] - h.bi[k])*psm(i,j));
+            dp1_max = std::max(dp1_max, std::abs(dp1(i,j,k)));
+          }
+      run();
+      const auto dph = cti::cmvdc(dp);
+      Real err_max = 0;
+      for (int i = 0; i < NP; ++i)
+        for (int j = 0; j < NP; ++j)
+          for (int k = 0; k < nlev; ++k)
+            err_max = std::max(err_max, std::abs(dph(i,j,k) - dp1(i,j,k)));
+      if (err_max > tol*dp1_max) ++nerr;
+    }
+
+    { // Test that sum(dp) = ps for random input etai.
+      std::vector<Real> etai_r;
+      make_random_sorted(td, nlev+1, h.etai[0], h.etai[nlev], etai_r);
+      todev(etai_r, etai);
+      run();
+      const auto dph1 = cti::cmvdc(dp);
+      for (int i = 0; i < NP; ++i)
+        for (int j = 0; j < NP; ++j) {
+          Real ps = h.ai[0]*h.ps0;
+          for (int k = 0; k < nlev; ++k)
+            ps += dph1(i,j,k);
+          if (std::abs(ps - psm(i,j)) > tol*psm(i,j)) ++nerr;
+        }    
+      // Test that values on input don't affect solution.
+      Kokkos::deep_copy(wrk, 0);
+      Kokkos::deep_copy(dp, 0);
+      run();
+      const auto dph2 = cti::cmvdc(dp);
+      bool alleq = true;
+      for (int i = 0; i < NP; ++i)
+        for (int j = 0; j < NP; ++j)
+          for (int k = 0; k < nlev; ++k)
+            if (dph2(i,j,k) != dph1(i,j,k))
+              alleq = false;
+      if (not alleq) ++nerr;
+    }
   }
 
   return nerr;
@@ -1299,7 +1303,7 @@ int test_calc_ps (TestData& td) {
   int nerr = 0;
   const Real tol = 1e2*td.eps;
 
-  for (const int nlev : {6, 55, 177}) {
+  for (const int nlev : {15, 64, 161}) {
     HybridLevels h;
     fill(h, nlev);
     const auto ps0 = h.ps0, hyai0 = h.ai[0];
@@ -1342,7 +1346,7 @@ int test_calc_ps (TestData& td) {
 int test_calc_etadotmid_from_etadotdpdnint (TestData& td) {
   int nerr = 0;
 
-#pragma message "TODO test_calc_etadotmid_from_etadotdpdnint"
+  
 
   return nerr;
 }
