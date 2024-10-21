@@ -505,15 +505,19 @@ KOKKOS_FUNCTION void calc_ps (
 // formula
 //     eta_dot = eta_dot_dpdn/(A_eta p0 + B_eta ps).
 //            a= eta_dot_dpdn diff(eta)/(diff(A) p0 + diff(B) ps).
-template <int Nlev = NUM_LEV, int Nlevp = NUM_LEV_P>
 KOKKOS_FUNCTION void calc_etadotmid_from_etadotdpdnint (
-  const KernelVariables& kv, const Real& ps0, const CSNV<Nlev>& hydai,
-  const CSNV<Nlev>& hydbi, const CSNV<Nlev>& hydetai, const CRelV& ps,
-  const SelNV<Nlevp>& wrk,
+  const int nlev, const KernelVariables& kv,
+  const Real& ps0, const CSnV& hydai, const CSnV& hydbi,
+  const CSnV& hydetai, const CRelV& ps, const SelnV& wrk,
   // input: eta_dot_dpdn at interfaces
   // output: eta_dot at midpoints
-  const SelNV<Nlevp>& ed)
+  const SelnV& ed)
 {
+  assert(calc_nscal(hydai.extent_int(0)) >= nlev);
+  assert(calc_nscal(hydbi.extent_int(0)) >= nlev);
+  assert(calc_nscal(hydetai.extent_int(0)) >= nlev);
+  assert_eln(wrk, nlev+1);
+  assert_eln(ed, nlev+1);
   const auto& edd_mid = wrk;
   {
     CRelNlevp edd(cti::pack2real(ed));
@@ -567,9 +571,9 @@ KOKKOS_FUNCTION void calc_eta_dot_ref_mid (
     RelNlev divdps(cti::pack2real(wrk1));
     cti::calc_eta_dot_dpdn(kv, hybi, divdps, edd, edds);
     kv.team_barrier();
-    calc_etadotmid_from_etadotdpdnint<>(
-      kv, ps0, hydai, hydbi, hydetai, Kokkos::subview(ps,t,ALL,ALL),
-      wrk1, edd);
+    calc_etadotmid_from_etadotdpdnint(
+      NUM_PHYSICAL_LEV, kv, ps0, hydai, hydbi, hydetai,
+      Kokkos::subview(ps,t,ALL,ALL), wrk1, edd);
   }
 }
 
