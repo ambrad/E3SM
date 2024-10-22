@@ -1356,6 +1356,14 @@ contains
                independent_time_steps, dtsub, nsubstep, step, nets, nete)
        end if
 
+#pragma message "NOTE: dss_vnode"
+       ! We need to address this corner case: In step 1, vdep at a node is
+       ! 0. The dep pt is then exactly on the node.  In a subsequent step, each
+       ! elem sharing the node detects the node to be in a different elem.  Then
+       ! the trajectories diverge.
+       !   To fix this, we should dss_vnode here, in ever step, and skip
+       ! dss_vdep.
+
        ! Fill vdep.
        call slmm_calc_trajectory(nets, nete, step, dtsub, dep_points_all, &
             &                    dep_points_ndim, vnode, vdep, info)

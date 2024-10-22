@@ -640,6 +640,15 @@ KOKKOS_FUNCTION void calc_vel_horiz_formula_node_ref_mid (
   }
 }
 
+KOKKOS_FUNCTION void calc_eta_dot_formula_node_ref_mid (
+  const SphereOperators& sphere_ops, const KernelVariables& kv,
+  const CRNV<NUM_INTERFACE_LEV>& etai, const CSNV<NUM_LEV>& etam,
+  const Real dtsub, const CS2elNlev* const vsph[2], const CSelNlev* const eta_dot[2],
+  const ExecViewUnmanaged<Real****>& vnode)
+{
+  
+}
+
 } // namespace anon
 
 // Public function.
