@@ -44,6 +44,7 @@ using CRelNlev  = cti::CRNlev;
 using CSelNlevp = cti::CSNlevp;
 using CRelNlevp = cti::CRNlevp;
 using CS2elNlev = cti::CS2Nlev;
+using CR2elNlev = cti::CR2Nlev;
 using SelNlev   = cti::SNlev;
 using RelNlev   = cti::RNlev;
 using SelNlevp  = cti::SNlevp;
@@ -551,7 +552,7 @@ KOKKOS_FUNCTION void calc_eta_dot_ref_mid (
   const Real alpha[2],
   const CS2elNlev& v1, const CSelNlev& dp1, const CS2elNlev& v2, const CSelNlev& dp2,
   const SelNlevp& wrk1, const S2elNlevp& wrk2, const SelNlevp& wrk3,
-  const SelNlevp* eta_dot[2])
+  const SelNlevp* const eta_dot[2])
 {
   using Kokkos::ALL;
   SelNlev divdp(wrk1.data());
@@ -584,6 +585,61 @@ KOKKOS_FUNCTION void calc_eta_dot_ref_mid (
   }
 }
 
+KOKKOS_FUNCTION void calc_vel_horiz_formula_node_ref_mid (
+  const SphereOperators& sphere_ops, const KernelVariables& kv,
+  const CSNV<NUM_LEV>& etam, const ExecViewUnmanaged<Real[2][3][NP][NP]>& vec_sph2cart,
+  const Real dtsub, const CS2elNlev* const vsph[2], const CSelNlev* const eta_dot[2],
+  const SelNlev& wrk1, const S2elNlev& vwrk1, const S2elNlev& vwrk2,
+  const ExecViewUnmanaged<Real****>& vnode)
+{
+  using Kokkos::ALL;
+  const auto& vfsph = vwrk1;
+  R2elNlev vfsphs(cti::pack2real(vfsph));
+  const auto& vsph1 = *vsph[0];
+  const auto& vsph2 = *vsph[1];
+  { // Horizontal terms.
+    cti::ugradv_sphere(sphere_ops, kv, vec_sph2cart, vsph2, vsph1, wrk1, vwrk2,
+                       vfsph);
+    for (int d = 0; d < 2; ++d) {
+      const auto f = [&] (const int i, const int j, const int k) {
+        vfsph(d,i,j,k) = vsph1(d,i,j,k) + vsph2(d,i,j,k) - dtsub*vfsph(d,i,j,k);
+      };
+      cti::loop_ijk<cti::num_lev_pack>(kv, f);
+    }
+  }
+  { // Vertical terms.
+    CRNV<NUM_PHYSICAL_LEV> etams(cti::pack2real(etam));
+    CR2elNlev vsph1s(cti::pack2real(vsph1));
+    RelNlev eds(cti::pack2real(*eta_dot[1]));
+    for (int d = 0; d < 2; ++d) {
+      const auto f = [&] (const int i, const int j, const int k) {
+        Real deriv;
+        if (k == 0 or k+1 == NUM_PHYSICAL_LEV) {
+          const int k1 = k == 0 ? 0 : NUM_PHYSICAL_LEV-2;
+          const int k2 = k == 0 ? 1 : NUM_PHYSICAL_LEV-1;
+          deriv = ((vsph1s(d,i,j,k2) - vsph1s(d,i,j,k1)) /
+                   (etams(k2) - etams(k1)));
+        } else {
+          deriv = cti::approx_derivative(
+            etams(k-1), etams(k), etams(k+1),
+            vsph1s(d,i,j,k-1), vsph1s(d,i,j,k), vsph1s(d,i,j,k+1));
+        }
+        vfsphs(d,i,j,k) =  (vfsphs(d,i,j,k) - dtsub*eds(i,j,k)*deriv)/2;
+      };
+      cti::loop_ijk<cti::num_phys_lev>(kv, f);
+    }
+  }
+  { // Transform to Cartesian.
+    for (int d = 0; d < 3; ++d) {
+      const auto f = [&] (const int i, const int j, const int k) {
+        vnode(i,j,k,d) = (vec_sph2cart(0,d,i,j)*vfsphs(0,i,j,k) +
+                          vec_sph2cart(1,d,i,j)*vfsphs(1,i,j,k));
+      };
+      cti::loop_ijk<cti::num_phys_lev>(kv, f);
+    }
+  }
+}
+
 } // namespace anon
 
 // Public function.
@@ -591,7 +647,7 @@ KOKKOS_FUNCTION void calc_eta_dot_ref_mid (
 void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real dt) {
   GPTLstart("compose_calc_enhanced_trajectory");
 
-  const auto sphere_ops = m_sphere_ops;
+  const auto sph_ops = m_sphere_ops;
   const auto geo = m_geometry;
   const auto m_vec_sph2cart = geo.m_vec_sph2cart;
   const auto m_vstar = m_derived.m_vstar;
@@ -864,7 +920,7 @@ int test_deta_caas (TestData& td) {
   int nerr = 0;
   const Real tol = 100*td.eps;
 
-  for (const int nlev : {15, 64, 161}) {
+  for (const int nlev : {15, 128, 161}) {
     const Real deta_tol = 10*td.eps/nlev;
 
     // nlev+1 deltas: deta = diff([0, etam, 1])
@@ -1058,7 +1114,7 @@ int test_limit_etam (TestData& td) {
   int nerr = 0;
   const Real tol = 100*td.eps;
 
-  for (const int nlev : {143, 64, 81}) {
+  for (const int nlev : {143, 128, 81}) {
     const Real deta_tol = 1e5*td.eps/nlev;
 
     ExecView<Real*> hy_etai("hy_etai",nlev+1), detam("detam",nlev+1);
@@ -1128,7 +1184,7 @@ int test_eta_interp (TestData& td) {
   int nerr = 0;
   const Real tol = 100*td.eps;
 
-  for (const int nlev : {15, 64, 161}) {
+  for (const int nlev : {15, 128, 161}) {
     HybridLevels h;
     fill(h, nlev);
 
@@ -1231,7 +1287,7 @@ int test_eta_to_dp (TestData& td) {
   int nerr = 0;
   const Real tol = 100*td.eps;
 
-  for (const int nlev : {143, 64, 81}) {
+  for (const int nlev : {143, 128, 81}) {
     HybridLevels h;
     fill(h, nlev);
 
@@ -1319,7 +1375,7 @@ int test_calc_ps (TestData& td) {
   int nerr = 0;
   const Real tol = 1e2*td.eps;
 
-  for (const int nlev : {15, 64, 161}) {
+  for (const int nlev : {15, 128, 161}) {
     HybridLevels h;
     fill(h, nlev);
     const auto ps0 = h.ps0, hyai0 = h.ai[0];
@@ -1363,7 +1419,7 @@ int test_calc_etadotmid_from_etadotdpdnint (TestData& td) {
   int nerr = 0;
   const Real tol = 100*td.eps;
 
-  for (const int nlev : {143, 64, 81}) {
+  for (const int nlev : {143, 128, 81}) {
     HybridLevels h;
     fill(h, nlev);
 

@@ -70,6 +70,7 @@ struct ComposeTransportImpl {
   typedef typename ViewConst<SNlevp>::type CSNlevp;
   typedef typename ViewConst<RNlevp>::type CRNlevp;
   typedef typename ViewConst<S2Nlev>::type CS2Nlev;
+  typedef typename ViewConst<R2Nlev>::type CR2Nlev;
 
   struct Data {
     int nelemd, qsize, limiter_option, cdr_check, hv_q, hv_subcycle_q;
