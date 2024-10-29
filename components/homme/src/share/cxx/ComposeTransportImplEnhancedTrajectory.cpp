@@ -452,9 +452,10 @@ limit_etam (const KernelVariables& kv, const int nlev, const CRnV& hy_etai,
 }
 
 // Set dep_points_all to level-midpoint arrival points.
-template <typename SCT, typename ET, typename DPT> void
-init_dep_points (const CTI& c, const SCT& sphere_cart, const ET& etam,
-                 const DPT& dep_pts) {
+void init_dep_points (
+  const CTI& c, const ExecViewUnmanaged<const Real*[NP][NP][3]>& sphere_cart,
+  const CRnV& etam, const cti::DeparturePoints& dep_pts)
+{
   const auto independent_time_steps = c.m_data.independent_time_steps;
   assert(not independent_time_steps or dep_pts.extent_int(4) == 4);
   const auto f = KOKKOS_LAMBDA (const int idx) {
@@ -689,6 +690,35 @@ KOKKOS_FUNCTION void calc_eta_dot_formula_node_ref_mid (
     };
     cti::loop_ijk<cti::num_lev_pack>(kv, f);
   }
+}
+
+KOKKOS_FUNCTION void update_dep_points (
+  const CTI& c, const Real dtsub, const cti::DeparturePoints& vdep,
+  const cti::DeparturePoints& dep_pts)
+{
+  const auto independent_time_steps = c.m_data.independent_time_steps;
+  const auto is_sphere = c.m_data.geometry_type == 0;
+  const auto scale_factor = c.m_geometry.m_scale_factor;
+  const auto f = KOKKOS_LAMBDA (const int idx) {
+    int ie, lev, i, j;
+    cti::idx_ie_physlev_ij(idx, ie, lev, i, j);
+    // Update horizontal position.
+    Real p[4];
+    for (int d = 0; d < 3; ++d)
+      p[d] = dep_pts(ie,lev,i,j,d) - dtsub*vdep(ie,lev,i,j,d)/scale_factor;
+    if (is_sphere) {
+      const auto norm = std::sqrt(square(p[0]) + square(p[1]) + square(p[2]));
+      for (int d = 0; d < 3; ++d)
+        p[d] /= norm;
+    }
+    for (int d = 0; d < 3; ++d)
+      dep_pts(ie,lev,i,j,d) = p[d];
+    if (independent_time_steps) {
+      // Update vertical position.
+      dep_pts(ie,lev,i,j,3) -= dtsub*vdep(ie,lev,i,j,3);
+    }
+  };
+  c.launch_ie_physlev_ij(f);
 }
 
 } // namespace anon
