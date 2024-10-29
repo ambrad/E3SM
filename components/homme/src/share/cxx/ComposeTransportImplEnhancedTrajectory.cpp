@@ -693,12 +693,12 @@ KOKKOS_FUNCTION void calc_eta_dot_formula_node_ref_mid (
 }
 
 void calc_nodal_velocities (
-  
+  const CTI& c
 )
 {
-  const auto f = KOKKOS_LAMBDA (const cti::MT& team); {
+  const auto f = KOKKOS_LAMBDA (const cti::MT& team) {
   };
-  Kokkos::parallel_for(m_tp_ne, f);
+  Kokkos::parallel_for(c.m_tp_ne, f);
 }
 
 void update_dep_points (
