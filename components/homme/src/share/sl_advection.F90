@@ -1575,13 +1575,15 @@ contains
     real(real_kind), intent(in) :: dtsub, vsph(np,np,2,nlev,2), eta_dot(np,np,nlevp,2)
     real(real_kind), intent(inout) :: vnode(:,:,:,:)
 
+    integer, parameter :: t0 = 1, t1 = 2
+
     real(real_kind) :: vfsph(np,np,2), w1(np,np), w2(np,np), w3(np,np,3)
     integer :: k, d, i, k1, k2
 
     do k = 1, nlev
        ! Horizontal terms.
-       vfsph = ugradv_sphere(vsph(:,:,:,k,2), vsph(:,:,:,k,1), deriv, elem)
-       vfsph = vsph(:,:,:,k,1) + vsph(:,:,:,k,2) - dtsub*vfsph
+       vfsph = ugradv_sphere(vsph(:,:,:,k,t1), vsph(:,:,:,k,t0), deriv, elem)
+       vfsph = vsph(:,:,:,k,t0) + vsph(:,:,:,k,t1) - dtsub*vfsph
        ! Vertical term.
        do d = 1, 2 ! horiz vel dims
           if (k == 1 .or. k == nlev) then
@@ -1590,16 +1592,16 @@ contains
              else
                 k1 = nlev-1; k2 = nlev
              end if
-             w1 = (vsph(:,:,d,k2,1) - vsph(:,:,d,k1,1)) / &
+             w1 = (vsph(:,:,d,k2,t0) - vsph(:,:,d,k1,t0)) / &
                   (hvcoord%etam(k2) - hvcoord%etam(k1))
           else
              do i = 1, 3
                 w3(:,:,i) = hvcoord%etam(k-2+i) ! interp support
              end do
              w2 = hvcoord%etam(k) ! derivative at this eta value
-             call eval_lagrange_poly_derivative(3, w3, vsph(:,:,d,k-1:k+1,1), w2, w1)
+             call eval_lagrange_poly_derivative(3, w3, vsph(:,:,d,k-1:k+1,t0), w2, w1)
           end if
-          vfsph(:,:,d) = vfsph(:,:,d) - dtsub*eta_dot(:,:,k,2)*w1
+          vfsph(:,:,d) = vfsph(:,:,d) - dtsub*eta_dot(:,:,k,t1)*w1
        end do
        ! Finish the formula.
        vfsph = half*vfsph
@@ -1619,6 +1621,8 @@ contains
     real(real_kind), intent(in) :: dtsub, vsph(np,np,2,nlev,2), eta_dot(np,np,nlevp,2)
     real(real_kind), intent(inout) :: vnode(:,:,:,:)
 
+    integer, parameter :: t0 = 1, t1 = 2
+    
     real(real_kind) :: vfsph(np,np,2), w1(np,np), w2(np,np), w3(np,np,3), w4(np,np,3)
     integer :: k, d, i, k1, k2
 
@@ -1630,12 +1634,12 @@ contains
              w4(:,:,1) = zero
              do i = 1, 2
                 w3(:,:,i+1) = hvcoord%etam(i)
-                w4(:,:,i+1) = eta_dot(:,:,i,2)
+                w4(:,:,i+1) = eta_dot(:,:,i,t0)
              end do
           else
              do i = 1, 2
                 w3(:,:,i) = hvcoord%etam(nlev-2+i)
-                w4(:,:,i) = eta_dot(:,:,nlev-2+i,2)
+                w4(:,:,i) = eta_dot(:,:,nlev-2+i,t0)
              end do
              w3(:,:,3) = hvcoord%etai(nlevp)
              w4(:,:,3) = zero
@@ -1647,13 +1651,13 @@ contains
           do i = 1, 3
              w3(:,:,i) = hvcoord%etam(k1-1+i)
           end do
-          call eval_lagrange_poly_derivative(k2-k1+1, w3, eta_dot(:,:,k1:k2,2), w2, w1)
+          call eval_lagrange_poly_derivative(k2-k1+1, w3, eta_dot(:,:,k1:k2,t0), w2, w1)
        end if
-       w3(:,:,1:2) = gradient_sphere(eta_dot(:,:,k,2), deriv, elem%Dinv)
+       w3(:,:,1:2) = gradient_sphere(eta_dot(:,:,k,t0), deriv, elem%Dinv)
        vnode(4,:,:,k) = &
-            half*(eta_dot(:,:,k,1) + eta_dot(:,:,k,2) &
-            &     - dtsub*(vsph(:,:,1,k,1)*w3(:,:,1) + vsph(:,:,2,k,1)*w3(:,:,2) &
-            &              + eta_dot(:,:,k,1)*w1))
+            half*(eta_dot(:,:,k,t0) + eta_dot(:,:,k,t1) &
+            &     - dtsub*(vsph(:,:,1,k,t1)*w3(:,:,1) + vsph(:,:,2,k,t1)*w3(:,:,2) &
+            &              + eta_dot(:,:,k,t1)*w1))
     end do
   end subroutine calc_eta_dot_formula_node_ref_mid
 

@@ -624,7 +624,7 @@ KOKKOS_FUNCTION void calc_vel_horiz_formula_node_ref_mid (
             etams(k-1), etams(k), etams(k+1),
             vsph1s(d,i,j,k-1), vsph1s(d,i,j,k), vsph1s(d,i,j,k+1));
         }
-        vfsphs(d,i,j,k) =  (vfsphs(d,i,j,k) - dtsub*eds(i,j,k)*deriv)/2;
+        vfsphs(d,i,j,k) = (vfsphs(d,i,j,k) - dtsub*eds(i,j,k)*deriv)/2;
       };
       cti::loop_ijk<cti::num_phys_lev>(kv, f);
     }
