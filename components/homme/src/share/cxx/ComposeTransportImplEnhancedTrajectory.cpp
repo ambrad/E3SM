@@ -589,17 +589,17 @@ KOKKOS_FUNCTION void calc_vel_horiz_formula_node_ref_mid (
   const SphereOperators& sphere_ops, const KernelVariables& kv,
   const CSNV<NUM_LEV>& etam, const ExecViewUnmanaged<Real[2][3][NP][NP]>& vec_sph2cart,
   const Real dtsub, const CS2elNlev* const vsph[2], const CSelNlev* const eta_dot[2],
-  const SelNlev& wrk1, const S2elNlev& vwrk1, const S2elNlev& vwrk2,
+  const SelNlevp& wrk1, const S2elNlevp& vwrk1, const S2elNlevp& vwrk2,
   const ExecViewUnmanaged<Real****>& vnode)
 {
   using Kokkos::ALL;
-  const auto& vfsph = vwrk1;
+  S2elNlev vfsph(vwrk1.data()), vw2(vwrk2.data());
+  SelNlev w1(wrk1.data());
   R2elNlev vfsphs(cti::pack2real(vfsph));
   const auto& vsph1 = *vsph[0];
   const auto& vsph2 = *vsph[1];
   { // Horizontal terms.
-    cti::ugradv_sphere(sphere_ops, kv, vec_sph2cart, vsph2, vsph1, wrk1, vwrk2,
-                       vfsph);
+    cti::ugradv_sphere(sphere_ops, kv, vec_sph2cart, vsph2, vsph1, w1, vw2, vfsph);
     for (int d = 0; d < 2; ++d) {
       const auto f = [&] (const int i, const int j, const int k) {
         vfsph(d,i,j,k) = vsph1(d,i,j,k) + vsph2(d,i,j,k) - dtsub*vfsph(d,i,j,k);
@@ -607,6 +607,7 @@ KOKKOS_FUNCTION void calc_vel_horiz_formula_node_ref_mid (
       cti::loop_ijk<cti::num_lev_pack>(kv, f);
     }
   }
+  kv.team_barrier();
   { // Vertical terms.
     CRNV<NUM_PHYSICAL_LEV> etams(cti::pack2real(etam));
     CR2elNlev vsph1s(cti::pack2real(vsph1));
@@ -644,9 +645,50 @@ KOKKOS_FUNCTION void calc_eta_dot_formula_node_ref_mid (
   const SphereOperators& sphere_ops, const KernelVariables& kv,
   const CRNV<NUM_INTERFACE_LEV>& etai, const CSNV<NUM_LEV>& etam,
   const Real dtsub, const CS2elNlev* const vsph[2], const CSelNlev* const eta_dot[2],
+  const SelNlevp& wrk1, const S2elNlevp& vwrk1,
   const ExecViewUnmanaged<Real****>& vnode)
 {
-  
+  SelNlev ed1_vderiv(wrk1.data());
+  {
+    CRNV<NUM_PHYSICAL_LEV> etams(cti::pack2real(etam));
+    RelNlev ed1s(cti::pack2real(*eta_dot[0]));
+    RelNlev ed1_vderiv_s(cti::pack2real(ed1_vderiv));
+    const auto f = [&] (const int i, const int j, const int k) {
+      Real deriv;
+      if (k == 0 or k+1 == NUM_PHYSICAL_LEV) {
+        deriv = cti::approx_derivative(
+          k == 0 ? etai(0) : etams(k-1),
+          etams(k),
+          k+1 == NUM_PHYSICAL_LEV ? etai(NUM_PHYSICAL_LEV) : etams(k+1),
+          k == 0 ? 0 : ed1s(i,j,k-1),
+          ed1s(i,j,k),
+          k+1 == NUM_PHYSICAL_LEV ? 0 : ed1s(i,j,k+1));
+      } else {
+        deriv = cti::approx_derivative(
+          etams(k-1), etams(k), etams(k+1),
+          ed1s(i,j,k-1), ed1s(i,j,k), ed1s(i,j,k+1));
+      }
+      ed1_vderiv_s(i,j,k) = deriv;
+    };
+    cti::loop_ijk<cti::num_phys_lev>(kv, f);
+  }
+  kv.team_barrier();
+  S2elNlev ed1_hderiv(vwrk1.data());
+  sphere_ops.gradient_sphere(kv, *eta_dot[0], ed1_hderiv);
+  {
+    const auto& vsph2 = *vsph[1];
+    const auto& ed1 = *eta_dot[0];
+    const auto& ed2 = *eta_dot[1];
+    const auto f = [&] (const int i, const int j, const int k) {
+      const auto v = (ed1(i,j,k) + ed2(i,j,k)
+                      - dtsub*(  vsph2(0,i,j,k)*ed1_hderiv(0,i,j,k)
+                               + vsph2(1,i,j,k)*ed1_hderiv(1,i,j,k)
+                               +   ed2(  i,j,k)*ed1_vderiv(  i,j,k)))/2;
+      for (int s = 0; s < VECTOR_SIZE; ++s)
+        vnode(i,j, VECTOR_SIZE*k+s ,3) = v[s];
+    };
+    cti::loop_ijk<cti::num_lev_pack>(kv, f);
+  }
 }
 
 } // namespace anon
