@@ -714,14 +714,18 @@ void calc_nodal_velocities (
   const auto& hydetai = c.m_data.hydetai;
   const auto& buf1a = c.m_data.buf1o[0]; const auto& buf1b = c.m_data.buf1o[1];
   const auto& buf1c = c.m_data.buf1o[2]; const auto& buf1d = c.m_data.buf1o[3];
-  const auto& buf2a = c.m_data.buf2[0];
+  const auto& buf2a = c.m_data.buf2[0]; const auto& buf2b = c.m_data.buf2[1];
+  const auto& buf2c = c.m_data.buf2[2]; const auto& buf2d = c.m_data.buf2[3];
   const auto f = KOKKOS_LAMBDA (const cti::MT& team) {
     KernelVariables kv(team);
     const auto  wrk1 = Homme::subview(buf1a, kv.team_idx);
     const auto  wrk2 = Homme::subview(buf1b, kv.team_idx);
     const auto vwrk1 = Homme::subview(buf2a, kv.team_idx);
+    const auto vwrk2 = Homme::subview(buf2b, kv.team_idx);
     SelNlevp eta_dot[] = {Homme::subview(buf1c, kv.team_idx),
                           Homme::subview(buf1d, kv.team_idx)};
+    S2elNlev vsph[] = {S2elNlev(Homme::subview(buf2c, kv.team_idx).data()),
+                       S2elNlev(Homme::subview(buf2d, kv.team_idx).data())};
     if (independent_time_steps) {
       calc_eta_dot_ref_mid(kv, sphere_ops,
                            ps0, hyai0, hybi, hydai, hydbi, hydetai,
@@ -729,13 +733,24 @@ void calc_nodal_velocities (
                            wrk1, wrk2, vwrk1,
                            eta_dot);
     } else {
-      //todo eta_dot = 0
+      for (int t = 0; t < 2; ++t) {
+        const auto& ed = eta_dot[t];
+        const auto f = [&] (const int i, const int j, const int k) {
+          ed(i,j,k) = 0;
+        };
+        cti::loop_ijk<cti::num_lev_pack>(kv, f);
+      }
     }
-    kv.team_barrier();
     // Collect the horizontal nodal velocities. v1,2 are on Eulerian levels. v1
     // is from time t1 < t2.
     for (int t = 0; t < 2; ++t) {
-      //todo vsph
+      const auto& v = vsph[t];
+      for (int d = 0; d < 2; ++d) {
+        const auto f = [&] (const int i, const int j, const int k) {
+          v(d,i,j,k) = (1 - alpha[t])*v1(d,i,j,k) + alpha[t]*v2(d,i,j,k);
+        };
+        cti::loop_ijk<cti::num_lev_pack>(kv, f);
+      }
     }
     kv.team_barrier();
     // Given the vertical and horizontal nodal velocities at time endpoints,

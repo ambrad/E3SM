@@ -81,7 +81,7 @@ struct ComposeTransportImpl {
 
     // buf1o and buf1e point to the same memory, sized to the larger of the
     // two. They are used in different parts of the code.
-    static constexpr int n_buf1 = 4, n_buf2 = 3;
+    static constexpr int n_buf1 = 4, n_buf2 = 4;
     Buf1o buf1o[n_buf1];
     Buf1e buf1e[n_buf1];
     Buf2 buf2[n_buf2];
