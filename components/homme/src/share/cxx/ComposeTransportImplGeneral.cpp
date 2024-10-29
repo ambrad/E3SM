@@ -123,18 +123,18 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
 
 int ComposeTransportImpl::requested_buffer_size () const {
   // FunctorsBuffersManager wants the size in terms of sizeof(Real).
-  return (3*Buf1Alloc::shmem_size(nslot) +
-          2*Buf2::shmem_size(nslot))/sizeof(Real);
+  return (m_data.n_buf1*Buf1Alloc::shmem_size(nslot) +
+          m_data.n_buf2*Buf2::shmem_size(nslot))/sizeof(Real);
 }
 
 void ComposeTransportImpl::init_buffers (const FunctorsBuffersManager& fbm) {
   Scalar* mem = reinterpret_cast<Scalar*>(fbm.get_memory());
-  for (int i = 0; i < 3; ++i) {
+  for (int i = 0; i < m_data.n_buf1; ++i) {
     m_data.buf1o[i] = Buf1o(mem, nslot);
     m_data.buf1e[i] = Buf1e(mem, nslot); // use the same memory
     mem += Buf1Alloc::shmem_size(nslot)/sizeof(Scalar);
   }
-  for (int i = 0; i < 2; ++i) {
+  for (int i = 0; i < m_data.n_buf2; ++i) {
     m_data.buf2[i] = Buf2(mem, nslot);
     mem += Buf2::shmem_size(nslot)/sizeof(Scalar);
   }

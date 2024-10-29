@@ -546,19 +546,19 @@ KOKKOS_FUNCTION void calc_etadotmid_from_etadotdpdnint (
 }
 
 KOKKOS_FUNCTION void calc_eta_dot_ref_mid (
-  const SphereOperators& sphere_ops, const KernelVariables& kv,
+  const KernelVariables& kv, const SphereOperators& sphere_ops,
   const Real& ps0, const Real& hyai0, const CSNV<NUM_LEV_P>& hybi,
   const CSNV<NUM_LEV>& hydai, const CSNV<NUM_LEV>& hydbi, // delta ai, bi
   const CSNV<NUM_LEV>& hydetai, // delta etai
   const Real alpha[2],
   const CS2elNlev& v1, const CSelNlev& dp1, const CS2elNlev& v2, const CSelNlev& dp2,
-  const SelNlevp& wrk1, const S2elNlevp& wrk2, const SelNlevp& wrk3,
-  const SelNlevp* const eta_dot[2])
+  const SelNlevp& wrk1, const SelNlevp& wrk2, const S2elNlevp& vwrk1,
+  const SelNlevp eta_dot[2])
 {
   using Kokkos::ALL;
   SelNlev divdp(wrk1.data());
-  S2elNlev vdp(wrk2.data());
-  ExecViewUnmanaged<Real[2][NP][NP]> ps(cti::pack2real(wrk3));
+  S2elNlev vdp(vwrk1.data());
+  ExecViewUnmanaged<Real[2][NP][NP]> ps(cti::pack2real(wrk2));
   // Calc surface pressure for use at the end.
   calc_ps(NUM_PHYSICAL_LEV, kv, ps0, hyai0, alpha, dp1, dp2, ps);
   kv.team_barrier();
@@ -574,7 +574,7 @@ KOKKOS_FUNCTION void calc_eta_dot_ref_mid (
     sphere_ops.divergence_sphere(kv, vdp, divdp);
     kv.team_barrier();    
     // Compute eta_dot_dpdn at interface nodes.
-    const auto& edd = *eta_dot[t];
+    const auto& edd = eta_dot[t];
     RelNlevp edds(cti::pack2real(edd));
     RelNlev divdps(cti::pack2real(wrk1));
     cti::calc_eta_dot_dpdn(kv, hybi, divdps, edd, edds);
@@ -587,9 +587,9 @@ KOKKOS_FUNCTION void calc_eta_dot_ref_mid (
 }
 
 KOKKOS_FUNCTION void calc_vel_horiz_formula_node_ref_mid (
-  const SphereOperators& sphere_ops, const KernelVariables& kv,
+  const KernelVariables& kv, const SphereOperators& sphere_ops,
   const CSNV<NUM_LEV>& etam, const ExecViewUnmanaged<Real[2][3][NP][NP]>& vec_sph2cart,
-  const Real dtsub, const CS2elNlev* const vsph[2], const CSelNlev* const eta_dot[2],
+  const Real dtsub, const CS2elNlev vsph[2], const CSelNlev eta_dot[2],
   const SelNlevp& wrk1, const S2elNlevp& vwrk1, const S2elNlevp& vwrk2,
   const ExecViewUnmanaged<Real****>& vnode)
 {
@@ -597,8 +597,8 @@ KOKKOS_FUNCTION void calc_vel_horiz_formula_node_ref_mid (
   S2elNlev vfsph(vwrk1.data()), vw2(vwrk2.data());
   SelNlev w1(wrk1.data());
   R2elNlev vfsphs(cti::pack2real(vfsph));
-  const auto& vsph1 = *vsph[0];
-  const auto& vsph2 = *vsph[1];
+  const auto& vsph1 = vsph[0];
+  const auto& vsph2 = vsph[1];
   { // Horizontal terms.
     cti::ugradv_sphere(sphere_ops, kv, vec_sph2cart, vsph2, vsph1, w1, vw2, vfsph);
     for (int d = 0; d < 2; ++d) {
@@ -612,7 +612,7 @@ KOKKOS_FUNCTION void calc_vel_horiz_formula_node_ref_mid (
   { // Vertical terms.
     CRNV<NUM_PHYSICAL_LEV> etams(cti::pack2real(etam));
     CR2elNlev vsph1s(cti::pack2real(vsph1));
-    RelNlev eds(cti::pack2real(*eta_dot[1]));
+    RelNlev eds(cti::pack2real(eta_dot[1]));
     for (int d = 0; d < 2; ++d) {
       const auto f = [&] (const int i, const int j, const int k) {
         Real deriv;
@@ -643,16 +643,16 @@ KOKKOS_FUNCTION void calc_vel_horiz_formula_node_ref_mid (
 }
 
 KOKKOS_FUNCTION void calc_eta_dot_formula_node_ref_mid (
-  const SphereOperators& sphere_ops, const KernelVariables& kv,
+  const KernelVariables& kv, const SphereOperators& sphere_ops,
   const CRNV<NUM_INTERFACE_LEV>& etai, const CSNV<NUM_LEV>& etam,
-  const Real dtsub, const CS2elNlev* const vsph[2], const CSelNlev* const eta_dot[2],
+  const Real dtsub, const CS2elNlev vsph[2], const CSelNlev eta_dot[2],
   const SelNlevp& wrk1, const S2elNlevp& vwrk1,
   const ExecViewUnmanaged<Real****>& vnode)
 {
   SelNlev ed1_vderiv(wrk1.data());
   {
     CRNV<NUM_PHYSICAL_LEV> etams(cti::pack2real(etam));
-    RelNlev ed1s(cti::pack2real(*eta_dot[0]));
+    RelNlev ed1s(cti::pack2real(eta_dot[0]));
     RelNlev ed1_vderiv_s(cti::pack2real(ed1_vderiv));
     const auto f = [&] (const int i, const int j, const int k) {
       Real deriv;
@@ -675,11 +675,11 @@ KOKKOS_FUNCTION void calc_eta_dot_formula_node_ref_mid (
   }
   kv.team_barrier();
   S2elNlev ed1_hderiv(vwrk1.data());
-  sphere_ops.gradient_sphere(kv, *eta_dot[0], ed1_hderiv);
+  sphere_ops.gradient_sphere(kv, eta_dot[0], ed1_hderiv);
   {
-    const auto& vsph2 = *vsph[1];
-    const auto& ed1 = *eta_dot[0];
-    const auto& ed2 = *eta_dot[1];
+    const auto& vsph2 = vsph[1];
+    const auto& ed1 = eta_dot[0];
+    const auto& ed2 = eta_dot[1];
     const auto f = [&] (const int i, const int j, const int k) {
       const auto v = (ed1(i,j,k) + ed2(i,j,k)
                       - dtsub*(  vsph2(0,i,j,k)*ed1_hderiv(0,i,j,k)
@@ -692,11 +692,59 @@ KOKKOS_FUNCTION void calc_eta_dot_formula_node_ref_mid (
   }
 }
 
+/* Evaluate a formula to provide an estimate of nodal velocities that are use to
+   create a 2nd-order update to the trajectory. The fundamental formula for the
+   update in position p from arrival point p1 to departure point p0 is
+       p0 = p1 - dt/2 (v(p1,t0) + v(p1,t1) - dt v(p1,t1) grad v(p1,t0)).
+   Here we compute the velocity estimate at the nodes:
+       1/2 (v(p1,t0) + v(p1,t1) - dt v(p1,t1) grad v(p1,t0)).
+*/
 void calc_nodal_velocities (
-  const CTI& c
-)
+  const CTI& c, const Real dtsub, const Real alpha[2],
+  const CS2elNlev& v1, const CSelNlev& dp1, const CS2elNlev& v2, const CSelNlev& dp2,
+  const cti::DeparturePoints& vnode)
 {
+  const bool independent_time_steps = c.m_data.independent_time_steps;
+  const auto& sphere_ops = c.m_sphere_ops;
+  const auto ps0 = c.m_hvcoord.ps0;
+  const auto hyai0 = c.m_hvcoord.hybrid_ai0;
+  const auto& hybi = c.m_hvcoord.hybrid_bi_packed;
+  const auto& hydai = c.m_hvcoord.hybrid_ai_delta;
+  const auto& hydbi = c.m_hvcoord.hybrid_bi_delta;
+  const auto& hydetai = c.m_data.hydetai;
+  const auto& buf1a = c.m_data.buf1o[0]; const auto& buf1b = c.m_data.buf1o[1];
+  const auto& buf1c = c.m_data.buf1o[2]; const auto& buf1d = c.m_data.buf1o[3];
+  const auto& buf2a = c.m_data.buf2[0];
   const auto f = KOKKOS_LAMBDA (const cti::MT& team) {
+    KernelVariables kv(team);
+    const auto  wrk1 = Homme::subview(buf1a, kv.team_idx);
+    const auto  wrk2 = Homme::subview(buf1b, kv.team_idx);
+    const auto vwrk1 = Homme::subview(buf2a, kv.team_idx);
+    SelNlevp eta_dot[] = {Homme::subview(buf1c, kv.team_idx),
+                          Homme::subview(buf1d, kv.team_idx)};
+    if (independent_time_steps) {
+      calc_eta_dot_ref_mid(kv, sphere_ops,
+                           ps0, hyai0, hybi, hydai, hydbi, hydetai,
+                           alpha, v1, dp1, v2, dp2,
+                           wrk1, wrk2, vwrk1,
+                           eta_dot);
+    } else {
+      //todo eta_dot = 0
+    }
+    kv.team_barrier();
+    // Collect the horizontal nodal velocities. v1,2 are on Eulerian levels. v1
+    // is from time t1 < t2.
+    for (int t = 0; t < 2; ++t) {
+      //todo vsph
+    }
+    kv.team_barrier();
+    // Given the vertical and horizontal nodal velocities at time endpoints,
+    // evaluate the velocity estimate formula, providing the final horizontal
+    // and vertical velocity estimates at midpoint nodes.
+    //todo calc_vel_horiz_formula_node_ref_mid();
+    if (independent_time_steps) {
+      //todo calc_eta_dot_formula_node_ref_mid();
+    }
   };
   Kokkos::parallel_for(c.m_tp_ne, f);
 }
