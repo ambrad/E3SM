@@ -692,7 +692,16 @@ KOKKOS_FUNCTION void calc_eta_dot_formula_node_ref_mid (
   }
 }
 
-KOKKOS_FUNCTION void update_dep_points (
+void calc_nodal_velocities (
+  
+)
+{
+  const auto f = KOKKOS_LAMBDA (const cti::MT& team); {
+  };
+  Kokkos::parallel_for(m_tp_ne, f);
+}
+
+void update_dep_points (
   const CTI& c, const Real dtsub, const cti::DeparturePoints& vdep,
   const cti::DeparturePoints& dep_pts)
 {
@@ -720,6 +729,12 @@ KOKKOS_FUNCTION void update_dep_points (
   };
   c.launch_ie_physlev_ij(f);
 }
+
+void interp_departure_points_to_floating_level_midpoints () {}
+
+void dss_vnode () {}
+
+void dss_divdp () {}
 
 } // namespace anon
 

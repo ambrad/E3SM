@@ -1369,7 +1369,8 @@ contains
     if (independent_time_steps) then
        call interp_departure_points_to_floating_level_midpoints( &
             elem, nets, nete, tl, hvcoord, dep_points_all)
-       call dss_divdp(elem, nets, nete, hybrid)
+       ! Not needed in practice. Corner cases will be cleaned up by dss_Qdp.
+       !call dss_divdp(elem, nets, nete, hybrid)
     end if
 
     call t_stopf('SLMM_trajectory')
