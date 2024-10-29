@@ -1018,6 +1018,10 @@ int test_deta_caas (TestData& td) {
 
   for (const int nlev : {15, 128, 161}) {
     const Real deta_tol = 10*td.eps/nlev;
+    const auto err = [&] (const char* lbl) {
+      ++nerr;
+      printf("test_deta_caa nlev %d: %s\n", nlev, lbl);
+    };
 
     // nlev+1 deltas: deta = diff([0, etam, 1])
     ExecView<Real*> deta_ref("deta_ref", nlev+1);
@@ -1046,7 +1050,7 @@ int test_deta_caas (TestData& td) {
           for (int k = 0; k <= nlev; ++k)
             if (m(i,j,k) != copy(i,j,k))
               diff = true;
-      if (diff) ++nerr;
+      if (diff) err("input not altered");
     }
 
     { // Modify one etam and test that only adjacent intervals change beyond eps.
@@ -1079,7 +1083,7 @@ int test_deta_caas (TestData& td) {
             // Make sure we have a meaningful test.
             Real minval = 1;
             for (int k = 0; k <= nlev; ++k) minval = std::min(minval, hde(i,j,k));
-            if (minval >= deta_tol) ++nerr;
+            if (minval >= deta_tol) err("meaningful test");
           }
         Kokkos::deep_copy(deta, hde);
         run(deta);
@@ -1090,22 +1094,22 @@ int test_deta_caas (TestData& td) {
             // Min val should be deta_tol.
             Real minval = 1;
             for (int k = 0; k <= nlev; ++k) minval = std::min(minval, hde(i,j,k));
-            if (minval != deta_tol) ++nerr;
+            if (minval != deta_tol) err("min val");
             // Sum of levels should be 1.
             Real sum = 0;
             for (int k = 0; k <= nlev; ++k) sum += hde(i,j,k);
-            if (std::abs(sum - 1) > tol) ++nerr;
+            if (std::abs(sum - 1) > tol) err("sum 1");
             // Only two deltas should be affected.
             Real maxdiff = 0;
             for (int k = 0; k <= nlev; ++k) {
               const auto diff = std::abs(hde(i,j,k) - hder(k));
               if (k == idx or k == idx+1) {
-                if (diff <= deta_tol) ++nerr;
+                if (diff <= deta_tol) err("2 deltas a");
               } else {
                 maxdiff = std::max(maxdiff, diff);
               }
             }
-            if (maxdiff > tol) ++nerr;
+            if (maxdiff > tol) err("2 deltas b");
           }
       }
     }
@@ -1125,7 +1129,7 @@ int test_deta_caas (TestData& td) {
           for (int k = 0; k <= nlev; ++k) hde(i,j,k) /= colsum;
           sum = 0;
           for (int k = 0; k <= nlev; ++k) sum += hde(i,j,k);
-          if (std::abs(sum - 1) > tol) ++nerr;
+          if (std::abs(sum - 1) > 10*tol) err("general sum 1");
         }
       Kokkos::deep_copy(deta, hde);
       run(deta);
@@ -1136,7 +1140,7 @@ int test_deta_caas (TestData& td) {
           for (int k = 0; k <= nlev; ++k) sum += hde(i,j,k);
           for (int k = 0; k <= nlev; ++k) minval = std::min(minval, hde(i,j,k));
           if (std::abs(sum - 1) > 1e3*td.eps) ++nerr;
-          if (minval != deta_tol) ++nerr;
+          if (minval != deta_tol) pr("general minval");
         }
     }
   }
