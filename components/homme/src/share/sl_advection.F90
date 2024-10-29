@@ -1356,25 +1356,11 @@ contains
                independent_time_steps, dtsub, nsubstep, step, nets, nete)
        end if
 
-#pragma message "NOTE: dss_vnode"
-       ! We need to address this corner case: In step 1, vdep at a node is
-       ! 0. The dep pt is then exactly on the node.  In a subsequent step, each
-       ! elem sharing the node detects the node to be in a different elem.  Then
-       ! the trajectories diverge.
-       !   To fix this, we should dss_vnode here, in ever step, and skip
-       ! dss_vdep.
+       call dss_vnode(elem, nets, nete, hybrid, vnode)
 
        ! Fill vdep.
        call slmm_calc_trajectory(nets, nete, step, dtsub, dep_points_all, &
             &                    dep_points_ndim, vnode, vdep, info)
-
-       if (step == 1) then
-          ! In the first substep, vdep = nvode, and we need to DSS vdep to get
-          ! an element boundary node to have the same departure point. In
-          ! subsequent substeps, (redundant) calculations in each element lead
-          ! to the same departure point for such a node.
-          call dss_vdep(elem, nets, nete, hybrid, vdep)
-       end if
 
        ! Using vdep, update dep_points_all to departure points.
        call update_dep_points_all(independent_time_steps, dtsub, nets, nete)
@@ -1951,26 +1937,26 @@ contains
     end do
   end subroutine eta_to_dp
 
-  subroutine dss_vdep(elem, nets, nete, hybrid, vdep)
+  subroutine dss_vnode(elem, nets, nete, hybrid, vnode)
     type (element_t), intent(in) :: elem(:)
     type (hybrid_t), intent(in) :: hybrid
     integer, intent(in) :: nets, nete
-    real(real_kind) :: vdep(:,:,:,:,:)
+    real(real_kind) :: vnode(:,:,:,:,:)
 
     integer :: nd, nlyr, ie, k, d
 
-    nd = size(vdep, 1)
+    nd = size(vnode, 1)
     nlyr = nd*nlev
     
     do ie = nets, nete
        do k = 1, nlev
           do d = 1, nd
-             vdep(d,:,:,k,ie) = vdep(d,:,:,k,ie)* &
-                  &             elem(ie)%spheremp*elem(ie)%rspheremp
+             vnode(d,:,:,k,ie) = vnode(d,:,:,k,ie)* &
+                  &              elem(ie)%spheremp*elem(ie)%rspheremp
           end do
        end do
        do d = 1, nd
-          call edgeVpack_nlyr(edge_g, elem(ie)%desc, vdep(d,:,:,:,ie), &
+          call edgeVpack_nlyr(edge_g, elem(ie)%desc, vnode(d,:,:,:,ie), &
                &              nlev, nlev*(d-1), nlyr)
        end do
     end do
@@ -1981,7 +1967,7 @@ contains
 
     do ie = nets, nete
        do d = 1, nd
-          call edgeVunpack_nlyr(edge_g, elem(ie)%desc, vdep(d,:,:,:,ie), &
+          call edgeVunpack_nlyr(edge_g, elem(ie)%desc, vnode(d,:,:,:,ie), &
                &                nlev, nlev*(d-1), nlyr)
        end do
     end do
@@ -1989,7 +1975,7 @@ contains
 #if (defined HORIZ_OPENMP)
     !$omp barrier
 #endif
-  end subroutine dss_vdep
+  end subroutine dss_vnode
 
   subroutine dss_divdp(elem, nets, nete, hybrid)
     type (element_t), intent(inout) :: elem(:)
