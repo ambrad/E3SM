@@ -820,7 +820,33 @@ void update_dep_points (
   c.launch_ie_physlev_ij(f);
 }
 
-void interp_departure_points_to_floating_level_midpoints () {}
+/* Determine the departure points corresponding to the vertically Lagragnian
+   grid's arrival midpoints, where the floating levels are those that evolve
+   over the course of the full tracer time step. Also compute divdp, which holds
+   the floating levels' dp values for later use in vertical remap.
+*/
+void interp_departure_points_to_floating_level_midpoints (
+  const CTI& c  
+)
+{
+  const auto f = KOKKOS_LAMBDA (const cti::MT& team) {
+    KernelVariables kv(team);
+
+    // Surface pressure.
+
+    // Reconstruct Lagrangian levels at t1 on arrival column:
+    //     eta_arr_int = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_int)
+
+    // Compute Lagrangian level midpoints at t1 on arrival column:
+    //     eta_arr_mid = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_mid)
+
+    // Compute departure horizontal points corresponding to arrival
+    // Lagrangian level midpoints:
+    //     p_dep_mid(eta_arr_mid) = I[p_dep_mid(eta_ref_mid)](eta_arr_mid)
+
+  };
+  Kokkos::parallel_for(c.m_tp_ne, f);  
+}
 
 void dss_vnode () {}
 
