@@ -667,7 +667,7 @@ KOKKOS_FUNCTION void calc_vel_horiz_formula_node_ref_mid (
   { // Transform to Cartesian.
     for (int d = 0; d < 3; ++d) {
       const auto f = [&] (const int i, const int j, const int k) {
-        vnode(i,j,k,d) = (vec_sph2cart(0,d,i,j)*vfsphs(0,i,j,k) +
+        vnode(k,i,j,d) = (vec_sph2cart(0,d,i,j)*vfsphs(0,i,j,k) +
                           vec_sph2cart(1,d,i,j)*vfsphs(1,i,j,k));
       };
       cti::loop_ijk<cti::num_phys_lev>(kv, f);
@@ -720,7 +720,7 @@ KOKKOS_FUNCTION void calc_eta_dot_formula_node_ref_mid (
                                + vsph2(1,i,j,k)*ed1_hderiv(1,i,j,k)
                                +   ed2(  i,j,k)*ed1_vderiv(  i,j,k)))/2;
       for (int s = 0; s < VECTOR_SIZE; ++s)
-        vnode(i,j, VECTOR_SIZE*k+s ,3) = v[s];
+        vnode(VECTOR_SIZE*k+s, i,j,3) = v[s];
     };
     cti::loop_ijk<cti::num_lev_pack>(kv, f);
   }
@@ -868,9 +868,6 @@ void calc_nodal_velocities (
   Kokkos::parallel_for(c.m_tp_ne, f);
 }
 
-template <typename Layout> struct IsLayoutRight      { enum : bool { value = false }; };
-template<> struct IsLayoutRight<Kokkos::LayoutRight> { enum : bool { value = true  }; };
-
 /* Determine the departure points corresponding to the vertically Lagragnian
    grid's arrival midpoints, where the floating levels are those that evolve
    over the course of the full tracer time step. Also compute divdp, which holds
@@ -972,7 +969,9 @@ void interp_departure_points_to_floating_level_midpoints (const CTI& c, const in
   Kokkos::parallel_for(c.m_tp_ne, f);
 }
 
-void dss_vnode () {}
+void dss_vnode (const CTI& c) {
+  
+}
 
 } // namespace anon
 
