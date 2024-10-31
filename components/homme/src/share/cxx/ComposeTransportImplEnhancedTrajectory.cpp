@@ -208,7 +208,9 @@ KOKKOS_FUNCTION void
 eta_interp_eta (const KernelVariables& kv, const int nlev,
                 const CRnV& hy_etai, const CRelnV& x, const CRnV& y,
                 const RelnV& xwrk, const RnV& ywrk,
-                const int ni, const CRnV& xi, const RelnV& yi) {
+                const int ni, const CRnV& xi,
+                // Use yi(i,j,yi_os:)
+                const RelnV& yi, const int yi_os=0) {
   const auto& xbdy = xwrk;
   const auto& ybdy = ywrk;
   assert(hy_etai.extent_int(0) >= nlev+1);
@@ -217,7 +219,7 @@ eta_interp_eta (const KernelVariables& kv, const int nlev,
   assert_eln(xbdy, nlev+2);
   assert(ybdy.extent_int(0) >= nlev+2);
   assert(xi.extent_int(0) >= ni);
-  assert_eln(yi, ni);
+  assert_eln(yi, yi_os + ni);
   const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
   const auto tvr_ni = Kokkos::ThreadVectorRange(kv.team, ni);
   const auto tvr_nlevp2 = Kokkos::ThreadVectorRange(kv.team, nlev+2);
@@ -243,7 +245,7 @@ eta_interp_eta (const KernelVariables& kv, const int nlev,
     const int i = idx / NP, j = idx % NP;
     linterp(tvr_ni,
             nlev+2, getcolc(xbdy,i,j), ybdy,
-            ni,     xi,                getcol(yi,i,j),
+            ni,     xi,                getcol(yi,i,j).data() + yi_os,
             1, "eta_interp_eta");
   };
   Kokkos::parallel_for(ttr, f_linterp);
@@ -546,8 +548,8 @@ KOKKOS_FUNCTION void calc_etadotmid_from_etadotdpdnint (
   assert_eln(ed, nlev+1);
   const auto& edd_mid = wrk;
   {
-    CRelnV edd(elp2r(ed));
-    RelnV tmp(elp2r(wrk));
+    const CRelnV edd(elp2r(ed));
+    const RelnV tmp(elp2r(wrk));
     const auto f = [&] (const int i, const int j, const int k) {
       tmp(i,j,k) = (edd(i,j,k) + edd(i,j,k+1))/2;
     };
@@ -578,9 +580,9 @@ KOKKOS_FUNCTION void calc_eta_dot_ref_mid (
 {
   using Kokkos::ALL;
   const int nlev = NUM_PHYSICAL_LEV;
-  SelNlev divdp(wrk1.data());
-  S2elNlev vdp(vwrk1.data());
-  ExecViewUnmanaged<Real[2][NP][NP]> ps(cti::pack2real(wrk2));
+  const SelNlev divdp(wrk1.data());
+  const S2elNlev vdp(vwrk1.data());
+  const ExecViewUnmanaged<Real[2][NP][NP]> ps(cti::pack2real(wrk2));
   // Calc surface pressure for use at the end.
   calc_ps(kv, nlev,
           ps0, hyai0,
@@ -600,8 +602,8 @@ KOKKOS_FUNCTION void calc_eta_dot_ref_mid (
     kv.team_barrier();    
     // Compute eta_dot_dpdn at interface nodes.
     const auto& edd = eta_dot[t];
-    RelNlevp edds(cti::pack2real(edd));
-    RelNlev divdps(cti::pack2real(wrk1));
+    const RelNlevp edds(cti::pack2real(edd));
+    const RelNlev divdps(cti::pack2real(wrk1));
     cti::calc_eta_dot_dpdn(kv,
                            hybi,
                            divdps, edd,
@@ -625,9 +627,9 @@ KOKKOS_FUNCTION void calc_vel_horiz_formula_node_ref_mid (
   const ExecViewUnmanaged<Real****>& vnode)
 {
   using Kokkos::ALL;
-  S2elNlev vfsph(vwrk1.data()), vw2(vwrk2.data());
-  SelNlev w1(wrk1.data());
-  R2elNlev vfsphs(cti::pack2real(vfsph));
+  const S2elNlev vfsph(vwrk1.data()), vw2(vwrk2.data());
+  const SelNlev w1(wrk1.data());
+  const R2elNlev vfsphs(cti::pack2real(vfsph));
   const auto& vsph1 = vsph[0];
   const auto& vsph2 = vsph[1];
   { // Horizontal terms.
@@ -641,9 +643,9 @@ KOKKOS_FUNCTION void calc_vel_horiz_formula_node_ref_mid (
   }
   kv.team_barrier();
   { // Vertical terms.
-    CRNV<NUM_PHYSICAL_LEV> etams(cti::cpack2real(hyetam));
-    CR2elNlev vsph1s(cti::cpack2real(vsph1));
-    CRelNlev eds(cti::cpack2real(eta_dot[1]));
+    const CRNV<NUM_PHYSICAL_LEV> etams(cti::cpack2real(hyetam));
+    const CR2elNlev vsph1s(cti::cpack2real(vsph1));
+    const CRelNlev eds(cti::cpack2real(eta_dot[1]));
     for (int d = 0; d < 2; ++d) {
       const auto f = [&] (const int i, const int j, const int k) {
         Real deriv;
@@ -681,11 +683,11 @@ KOKKOS_FUNCTION void calc_eta_dot_formula_node_ref_mid (
   const SelNlevp& wrk1, const S2elNlevp& vwrk1,
   const ExecViewUnmanaged<Real****>& vnode)
 {
-  SelNlev ed1_vderiv(wrk1.data());
+  const SelNlev ed1_vderiv(wrk1.data());
   {
-    CRNV<NUM_PHYSICAL_LEV> etams(cti::cpack2real(hyetam));
-    CRelNlev ed1s(cti::cpack2real(eta_dot[0]));
-    RelNlev ed1_vderiv_s(cti::pack2real(ed1_vderiv));
+    const CRNV<NUM_PHYSICAL_LEV> etams(cti::cpack2real(hyetam));
+    const CRelNlev ed1s(cti::cpack2real(eta_dot[0]));
+    const RelNlev ed1_vderiv_s(cti::pack2real(ed1_vderiv));
     const auto f = [&] (const int i, const int j, const int k) {
       Real deriv;
       if (k == 0 or k+1 == NUM_PHYSICAL_LEV) {
@@ -706,7 +708,7 @@ KOKKOS_FUNCTION void calc_eta_dot_formula_node_ref_mid (
     cti::loop_ijk<cti::num_phys_lev>(kv, f);
   }
   kv.team_barrier();
-  S2elNlev ed1_hderiv(vwrk1.data());
+  const S2elNlev ed1_hderiv(vwrk1.data());
   sphere_ops.gradient_sphere(kv, eta_dot[0], ed1_hderiv);
   {
     const auto& vsph2 = vsph[1];
@@ -884,10 +886,13 @@ void interp_departure_points_to_floating_level_midpoints (
   const auto& h = c.m_hvcoord;
   const auto ps0 = h.ps0;
   const auto hyai0 = h.hybrid_ai0;
+  const auto& hybi = h.hybrid_bi;
   const auto& hyetai = h.etai;
+  const CRNV<NUM_PHYSICAL_LEV> hyetam(cti::cpack2real(h.etam));
   const auto& detam_ref = d.hydetam_ref;
   const auto deta_tol = d.deta_tol;
   const auto& dp3d = c.m_state.m_dp3d;
+  const auto& divdp = c.m_derived.m_divdp;
   const auto& buf1a = d.buf1e[0]; const auto& buf1b = d.buf1e[1];
   const auto& buf1c = d.buf1e[2]; const auto& buf1d = d.buf1e[3];
   const auto f = KOKKOS_LAMBDA (const cti::MT& team) {
@@ -896,30 +901,40 @@ void interp_departure_points_to_floating_level_midpoints (
     const auto wrk2 = Homme::subview(buf1b, kv.team_idx);
     const auto wrk3 = Homme::subview(buf1c, kv.team_idx);
     const auto wrk4 = Homme::subview(buf1d, kv.team_idx);
-    const RelNlev etam = p2rel(wrk4.data(), nlev);
+    const RelNlev etam = p2rel(wrk3.data(), nlev );
+    const RelNlev etai = p2rel(wrk4.data(), nlevp);
+
     // Reconstruct Lagrangian levels at t1 on arrival column:
     //     eta_arr_int = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_int)
     limit_etam(kv, nlev,
                hyetai, detam_ref, deta_tol,
                p2rel(wrk1.data(), nlevp), p2rel(wrk2.data(), nlevp),
                etam);
-    // We require LayoutRight (as, e.g., in SubviewUtils.hpp) here so that we
-    // can cheaply extract the middle part of these arrays.
-    static_assert(
-      IsLayoutRight<typename ExecViewUnmanaged<Real***>::traits::array_layout>::value,
-      "LayoutRight required.");
-#if 0
+    kv.team_barrier();
     eta_interp_eta(kv, nlev,
                    hyetai,
                    etam, hyetam,
-                   p2rel(wrk1.data(), nlev+2), p2rel(wrk2.data(), nlev+2),
-                   /* pick up */);
+                   p2rel(wrk1.data(), nlev+2), RnV(cti::pack2real(wrk2), nlev+2),
+                   nlevp-2, CRnV(&hyetai(1)), etai, 1);
+    const auto f = [&] (const int i, const int j) {
+      etai(i,j,0) = hyetai(0);
+      etai(i,j,nlev) = hyetai(nlev);
+    };
+    c.loop_ij(kv, f);
+
+    // Compute divdp.
+    const ExecViewUnmanaged<Real[NP][NP]> ps(cti::pack2real(wrk1));
     calc_ps(kv, nlev,
             ps0, hyai0,
-            Homme::subviewutils(dp3d, ie, np1),
+            Homme::subview(dp3d, kv.ie, np1),
             ps);
-    eta_to_dp();
-#endif
+    kv.team_barrier();
+    eta_to_dp(kv, nlev,
+              ps0, hybi, hyetai,
+              ps, etai,
+              p2rel(wrk2.data(), nlev+1),
+              RelnV(cti::pack2real(Homme::subview(c.m_derived.m_divdp, kv.ie)),
+                    NP, NP, NUM_LEV*VECTOR_SIZE));
 
     // Compute Lagrangian level midpoints at t1 on arrival column:
     //     eta_arr_mid = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_mid)
@@ -933,8 +948,6 @@ void interp_departure_points_to_floating_level_midpoints (
 }
 
 void dss_vnode () {}
-
-void dss_divdp () {}
 
 } // namespace anon
 
