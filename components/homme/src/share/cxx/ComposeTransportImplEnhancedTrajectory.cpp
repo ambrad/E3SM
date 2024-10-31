@@ -472,6 +472,27 @@ void init_dep_points (
 KOKKOS_FUNCTION void calc_ps (
   const int nlev, const KernelVariables& kv,
   const Real& ps0, const Real& hyai0,
+  const CSelnV& dp,
+  const ExecViewUnmanaged<Real[NP][NP]>& ps)
+{
+  assert_eln(dp, nlev);
+  const auto ttr = TeamThreadRange(kv.team, NP*NP);
+  const auto tvr_snlev = ThreadVectorRange(kv.team, nlev);
+  const CRelnV dps = elp2r(dp);
+  const auto f1 = [&] (const int idx) {
+    const int i = idx / NP, j = idx % NP;
+    const auto g = [&] (int k, Real& sum) { sum += dps(i,j,k); };
+    Real sum;
+    Dispatch<>::parallel_reduce(kv.team, tvr_snlev, g, sum);
+    Kokkos::single(Kokkos::PerThread(kv.team),
+                   [&] { ps(i,j) = hyai0*ps0 + sum; });
+  };
+  Kokkos::parallel_for(ttr, f1);
+}
+
+KOKKOS_FUNCTION void calc_ps (
+  const int nlev, const KernelVariables& kv,
+  const Real& ps0, const Real& hyai0,
   const Real alpha[2], const CSelnV& dp1, const CSelnV& dp2,
   const ExecViewUnmanaged<Real[2][NP][NP]>& ps)
 {
@@ -1608,24 +1629,34 @@ int test_calc_ps (TestData& td) {
 
     const Real alpha[] = {td.urand(0,1), td.urand(0,1)};
 
-    ExecView<Real[2][NP][NP]> ps("ps");
+    ExecView<Real[NP][NP]> ps("ps");
+    ExecView<Real[2][NP][NP]> ps2("ps2");
     const auto policy = get_test_team_policy(1, nlev);
     const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
       KernelVariables kv(team);
-      calc_ps(nlev, kv, ps0, hyai0, alpha, dp1.d, dp2.d, ps);
+      calc_ps(nlev, kv, ps0, hyai0, alpha, dp1.d, dp2.d, ps2);
+      calc_ps(nlev, kv, ps0, hyai0, dp1.d, ps);
     };
     Kokkos::parallel_for(policy, f);
     Kokkos::fence();
 
     const auto ps_h = cti::cmvdc(ps);
+    const auto ps2_h = cti::cmvdc(ps2);
     for (int i = 0; i < NP; ++i)
-      for (int j = 0; j < NP; ++j)
+      for (int j = 0; j < NP; ++j) {
+        {
+          Real ps = h.ai[0]*h.ps0;
+          for (int k = 0; k < nlev; ++k)
+            ps += dp1.r(i,j,k);
+          if (std::abs(ps_h(i,j) - ps) > tol*ps) ++nerr;
+        }
         for (int t = 0; t < 2; ++t) {
           Real ps = h.ai[0]*h.ps0;
           for (int k = 0; k < nlev; ++k)
             ps += (1 - alpha[t])*dp1.r(i,j,k) + alpha[t]*dp2.r(i,j,k);
-          if (std::abs(ps_h(t,i,j) - ps) > tol*ps) ++nerr;
+          if (std::abs(ps2_h(t,i,j) - ps) > tol*ps) ++nerr;
         }
+      }
   }
 
   return nerr;
