@@ -210,7 +210,7 @@ eta_interp_eta (const KernelVariables& kv, const int nlev,
                 const RelnV& xwrk, const RnV& ywrk,
                 const int ni, const CRnV& xi,
                 // Use yi(i,j,yi_os:)
-                const RelnV& yi, const int yi_os=0) {
+                const RelnV& yi, const int yi_os = 0) {
   const auto& xbdy = xwrk;
   const auto& ybdy = ywrk;
   assert(hy_etai.extent_int(0) >= nlev+1);
@@ -901,44 +901,50 @@ void interp_departure_points_to_floating_level_midpoints (
     const auto wrk2 = Homme::subview(buf1b, kv.team_idx);
     const auto wrk3 = Homme::subview(buf1c, kv.team_idx);
     const auto wrk4 = Homme::subview(buf1d, kv.team_idx);
-    const RelNlev etam = p2rel(wrk3.data(), nlev );
-    const RelNlev etai = p2rel(wrk4.data(), nlevp);
-
     // Reconstruct Lagrangian levels at t1 on arrival column:
     //     eta_arr_int = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_int)
+    const RelNlev etam = p2rel(wrk3.data(), nlev );
     limit_etam(kv, nlev,
                hyetai, detam_ref, deta_tol,
                p2rel(wrk1.data(), nlevp), p2rel(wrk2.data(), nlevp),
                etam);
     kv.team_barrier();
+    {
+      // Compute eta_arr_int.
+      const RelNlev etai_arr = p2rel(wrk4.data(), nlevp);
+      eta_interp_eta(kv, nlev,
+                     hyetai,
+                     etam, hyetam,
+                     p2rel(wrk1.data(), nlev+2), RnV(cti::pack2real(wrk2), nlev+2),
+                     nlevp-2, CRnV(&hyetai(1)), etai_arr, 1);
+      const auto f = [&] (const int i, const int j) {
+                       etai_arr(i,j,0) = hyetai(0);
+                       etai_arr(i,j,nlev) = hyetai(nlev);
+                     };
+      c.loop_ij(kv, f);
+      // Compute divdp.
+      const ExecViewUnmanaged<Real[NP][NP]> ps(cti::pack2real(wrk1));
+      calc_ps(kv, nlev,
+              ps0, hyai0,
+              Homme::subview(dp3d, kv.ie, np1),
+              ps);
+      kv.team_barrier();
+      eta_to_dp(kv, nlev,
+                ps0, hybi, hyetai,
+                ps, etai_arr,
+                p2rel(wrk2.data(), nlev+1),
+                RelnV(cti::pack2real(Homme::subview(c.m_derived.m_divdp, kv.ie)),
+                      NP, NP, NUM_LEV*VECTOR_SIZE));
+    }
+    // Compute Lagrangian level midpoints at t1 on arrival column:
+    //     eta_arr_mid = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_mid)
+    const RelNlev etam_arr = p2rel(wrk4.data(), nlev);
     eta_interp_eta(kv, nlev,
                    hyetai,
                    etam, hyetam,
                    p2rel(wrk1.data(), nlev+2), RnV(cti::pack2real(wrk2), nlev+2),
-                   nlevp-2, CRnV(&hyetai(1)), etai, 1);
-    const auto f = [&] (const int i, const int j) {
-      etai(i,j,0) = hyetai(0);
-      etai(i,j,nlev) = hyetai(nlev);
-    };
-    c.loop_ij(kv, f);
-
-    // Compute divdp.
-    const ExecViewUnmanaged<Real[NP][NP]> ps(cti::pack2real(wrk1));
-    calc_ps(kv, nlev,
-            ps0, hyai0,
-            Homme::subview(dp3d, kv.ie, np1),
-            ps);
+                   nlev, hyetam, etam_arr);
     kv.team_barrier();
-    eta_to_dp(kv, nlev,
-              ps0, hybi, hyetai,
-              ps, etai,
-              p2rel(wrk2.data(), nlev+1),
-              RelnV(cti::pack2real(Homme::subview(c.m_derived.m_divdp, kv.ie)),
-                    NP, NP, NUM_LEV*VECTOR_SIZE));
-
-    // Compute Lagrangian level midpoints at t1 on arrival column:
-    //     eta_arr_mid = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_mid)
-
     // Compute departure horizontal points corresponding to arrival
     // Lagrangian level midpoints:
     //     p_dep_mid(eta_arr_mid) = I[p_dep_mid(eta_ref_mid)](eta_arr_mid)
