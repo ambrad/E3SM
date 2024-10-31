@@ -33,6 +33,17 @@ void ComposeTransportImpl::set_deta_tol () {
   for (int k = 0; k < num_phys_lev; ++k)
     detai(k) = etai(k+1) - etai(k);
   Kokkos::deep_copy(m_data.hydetai, detai_pack);
+
+  // And deta_ref.
+  m_data.hydetam_ref = decltype(m_data.hydetam_ref)("hydetam_ref");
+  const auto m = Kokkos::create_mirror_view(m_data.hydetam_ref);
+  const auto etamp = cmvdc(m_hvcoord.etam);
+  ExecViewUnmanaged<Real[NUM_PHYSICAL_LEV]> etam(pack2real(etamp));
+  const int nlev = num_phys_lev;
+  m(0) = etam(0) - etai(0);
+  for (int k = 1; k < nlev; ++k) m(k) = etam(k) - etam(k-1);
+  m(nlev) = etai(nlev) - etam(nlev-1);
+  Kokkos::deep_copy(m_data.hydetam_ref, m);
 }
 
 namespace { // anon
@@ -110,7 +121,12 @@ RelnV elp2r (const SelnV& p) {
 
 KOKKOS_INLINE_FUNCTION
 CRelnV elp2r (const CSelnV& p) {
-  return CRelnV(cti::pack2real(p), NP, NP, calc_nscal(p.extent_int(2)));
+  return CRelnV(cti::cpack2real(p), NP, NP, calc_nscal(p.extent_int(2)));
+}
+
+KOKKOS_INLINE_FUNCTION
+RelnV p2rel (Scalar* data, const int nlev) {
+  return RelnV(cti::pack2real(data), NP, NP, nlev);
 }
 
 KOKKOS_INLINE_FUNCTION
@@ -591,9 +607,9 @@ KOKKOS_FUNCTION void calc_eta_dot_ref_mid (
                            divdps, edd,
                            edds);
     kv.team_barrier();
-    const auto ps_t = Kokkos::subview(ps,t,ALL,ALL);
     calc_etadotmid_from_etadotdpdnint(kv, nlev,
-                                      ps0, hydai, hydbi, hydetai, ps_t,
+                                      ps0, hydai, hydbi, hydetai,
+                                      Kokkos::subview(ps,t,ALL,ALL),
                                       wrk1,
                                       edd);
     // No team_barrier: wrk1 is protected in second iteration.
@@ -625,9 +641,9 @@ KOKKOS_FUNCTION void calc_vel_horiz_formula_node_ref_mid (
   }
   kv.team_barrier();
   { // Vertical terms.
-    CRNV<NUM_PHYSICAL_LEV> etams(cti::pack2real(hyetam));
-    CR2elNlev vsph1s(cti::pack2real(vsph1));
-    RelNlev eds(cti::pack2real(eta_dot[1]));
+    CRNV<NUM_PHYSICAL_LEV> etams(cti::cpack2real(hyetam));
+    CR2elNlev vsph1s(cti::cpack2real(vsph1));
+    CRelNlev eds(cti::cpack2real(eta_dot[1]));
     for (int d = 0; d < 2; ++d) {
       const auto f = [&] (const int i, const int j, const int k) {
         Real deriv;
@@ -667,8 +683,8 @@ KOKKOS_FUNCTION void calc_eta_dot_formula_node_ref_mid (
 {
   SelNlev ed1_vderiv(wrk1.data());
   {
-    CRNV<NUM_PHYSICAL_LEV> etams(cti::pack2real(hyetam));
-    RelNlev ed1s(cti::pack2real(eta_dot[0]));
+    CRNV<NUM_PHYSICAL_LEV> etams(cti::cpack2real(hyetam));
+    CRelNlev ed1s(cti::cpack2real(eta_dot[0]));
     RelNlev ed1_vderiv_s(cti::pack2real(ed1_vderiv));
     const auto f = [&] (const int i, const int j, const int k) {
       Real deriv;
@@ -850,43 +866,60 @@ void calc_nodal_velocities (
   Kokkos::parallel_for(c.m_tp_ne, f);
 }
 
+template <typename Layout> struct IsLayoutRight      { enum : bool { value = false }; };
+template<> struct IsLayoutRight<Kokkos::LayoutRight> { enum : bool { value = true  }; };
+
 /* Determine the departure points corresponding to the vertically Lagragnian
    grid's arrival midpoints, where the floating levels are those that evolve
    over the course of the full tracer time step. Also compute divdp, which holds
    the floating levels' dp values for later use in vertical remap.
 */
 void interp_departure_points_to_floating_level_midpoints (
-  const CTI& c
+  const CTI& c, const int np1
 )
 {
-#if 0
   using Kokkos::ALL;
-  const int nlev = NUM_PHYSICAL_LEV;
+  const int nlev = NUM_PHYSICAL_LEV, nlevp = nlev+1;
   const auto& d = c.m_data;
   const auto& h = c.m_hvcoord;
   const auto ps0 = h.ps0;
   const auto hyai0 = h.hybrid_ai0;
   const auto& hyetai = h.etai;
-  const auto& deta_ref = ;
-  const auto deta_tol = ;
-  const auto& dp3d = ;
-  const auto& buf1a = d.buf1o[0]; const auto& buf1b = d.buf1o[1];
-  const auto& buf1c = d.buf1o[2]; const auto& buf1d = d.buf1o[3];
+  const auto& detam_ref = d.hydetam_ref;
+  const auto deta_tol = d.deta_tol;
+  const auto& dp3d = c.m_state.m_dp3d;
+  const auto& buf1a = d.buf1e[0]; const auto& buf1b = d.buf1e[1];
+  const auto& buf1c = d.buf1e[2]; const auto& buf1d = d.buf1e[3];
   const auto f = KOKKOS_LAMBDA (const cti::MT& team) {
     KernelVariables kv(team);
     const auto wrk1 = Homme::subview(buf1a, kv.team_idx);
     const auto wrk2 = Homme::subview(buf1b, kv.team_idx);
-    RelNlev eta(cti::pack2real(buf1c).data());
+    const auto wrk3 = Homme::subview(buf1c, kv.team_idx);
+    const auto wrk4 = Homme::subview(buf1d, kv.team_idx);
+    const RelNlev etam = p2rel(wrk4.data(), nlev);
     // Reconstruct Lagrangian levels at t1 on arrival column:
     //     eta_arr_int = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_int)
     limit_etam(kv, nlev,
-               hyetai, deta_ref, deta_tol,
-               wrk1, wrk2,
-               eta);
+               hyetai, detam_ref, deta_tol,
+               p2rel(wrk1.data(), nlevp), p2rel(wrk2.data(), nlevp),
+               etam);
+    // We require LayoutRight (as, e.g., in SubviewUtils.hpp) here so that we
+    // can cheaply extract the middle part of these arrays.
+    static_assert(
+      IsLayoutRight<typename ExecViewUnmanaged<Real***>::traits::array_layout>::value,
+      "LayoutRight required.");
+#if 0
     eta_interp_eta(kv, nlev,
-                   hyetai, );
-    calc_ps(kv, nlev, ps0, hyai0, dp3d, ps);
+                   hyetai,
+                   etam, hyetam,
+                   p2rel(wrk1.data(), nlev+2), p2rel(wrk2.data(), nlev+2),
+                   /* pick up */);
+    calc_ps(kv, nlev,
+            ps0, hyai0,
+            Homme::subviewutils(dp3d, ie, np1),
+            ps);
     eta_to_dp();
+#endif
 
     // Compute Lagrangian level midpoints at t1 on arrival column:
     //     eta_arr_mid = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_mid)
@@ -897,7 +930,6 @@ void interp_departure_points_to_floating_level_midpoints (
 
   };
   Kokkos::parallel_for(c.m_tp_ne, f);
-#endif
 }
 
 void dss_vnode () {}
@@ -1641,7 +1673,7 @@ int test_eta_to_dp (TestData& td) {
 
 int test_calc_ps (TestData& td) {
   int nerr = 0;
-  const Real tol = 1e2*td.eps;
+  const Real tol = 100*td.eps;
 
   for (const int nlev : {15, 128, 161}) {
     HybridLevels h;

@@ -87,6 +87,7 @@ struct ComposeTransportImpl {
     Buf2 buf2[n_buf2];
 
     ExecView<Scalar[NUM_LEV]> hydetai; // diff(etai)
+    ExecView<Real[NUM_INTERFACE_LEV]> hydetam_ref;
 
     DeparturePoints dep_pts;
 
@@ -283,10 +284,14 @@ struct ComposeTransportImpl {
     return h;
   }
 
+  static KOKKOS_INLINE_FUNCTION
+  Real* pack2real (Scalar* pack) { return &(*pack)[0]; }
+  static KOKKOS_INLINE_FUNCTION
+  const Real* pack2real (const Scalar* pack) { return &(*pack)[0]; }
   template <typename View> static KOKKOS_INLINE_FUNCTION
-  Real* pack2real (const View& v) { return &(*v.data())[0]; }
+  Real* pack2real (const View& v) { return pack2real(v.data()); }
   template <typename View> static KOKKOS_INLINE_FUNCTION
-  const Real* cpack2real (const View& v) { return &(*v.data())[0]; }
+  const Real* cpack2real (const View& v) { return pack2real(v.data()); }
 
   KOKKOS_FUNCTION
   static void ugradv_sphere (

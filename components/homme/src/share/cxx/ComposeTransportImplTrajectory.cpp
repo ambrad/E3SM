@@ -19,6 +19,7 @@ using CRNlev  = cti::CRNlev;
 using CSNlevp = cti::CSNlevp;
 using CRNlevp = cti::CRNlevp;
 using CS2Nlev = cti::CS2Nlev;
+using CR2Nlev = cti::CR2Nlev;
 using SNlev   = cti::SNlev;
 using RNlev   = cti::RNlev;
 using SNlevp  = cti::SNlevp;
@@ -205,7 +206,7 @@ KOKKOS_FUNCTION static void calc_vertically_lagrangian_levels (
 
   {
     const auto& edd = *eta_dot_dpdn[0];
-    const R2Nlev vstars(cti::pack2real(vstar));
+    const CR2Nlev vstars(cti::cpack2real(vstar));
     const auto f_v = [&] (const int i, const int j, const int kp) {
       // Horizontal velocity at initial time.
       Scalar v[2];
