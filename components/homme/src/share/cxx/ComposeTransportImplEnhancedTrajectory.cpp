@@ -451,26 +451,8 @@ limit_etam (const KernelVariables& kv, const int nlev, const CRnV& hy_etai,
   Kokkos::parallel_for(ttr, f2);
 }
 
-// Set dep_points_all to level-midpoint arrival points.
-void init_dep_points (
-  const CTI& c, const ExecViewUnmanaged<const Real*[NP][NP][3]>& sphere_cart,
-  const CRnV& etam, const cti::DeparturePoints& dep_pts)
-{
-  const auto independent_time_steps = c.m_data.independent_time_steps;
-  assert(not independent_time_steps or dep_pts.extent_int(4) == 4);
-  const auto f = KOKKOS_LAMBDA (const int idx) {
-    int ie, lev, i, j;
-    cti::idx_ie_physlev_ij(idx, ie, lev, i, j);
-    for (int d = 0; d < 3; ++d)
-      dep_pts(ie,lev,i,j,d) = sphere_cart(ie,i,j,d);
-    if (independent_time_steps)
-      dep_pts(ie,lev,i,j,3) = etam(lev);
-  };
-  c.launch_ie_physlev_ij(f);
-}
-
 KOKKOS_FUNCTION void calc_ps (
-  const int nlev, const KernelVariables& kv,
+  const KernelVariables& kv, const int nlev,
   const Real& ps0, const Real& hyai0,
   const CSelnV& dp,
   const ExecViewUnmanaged<Real[NP][NP]>& ps)
@@ -491,7 +473,7 @@ KOKKOS_FUNCTION void calc_ps (
 }
 
 KOKKOS_FUNCTION void calc_ps (
-  const int nlev, const KernelVariables& kv,
+  const KernelVariables& kv, const int nlev,
   const Real& ps0, const Real& hyai0,
   const Real alpha[2], const CSelnV& dp1, const CSelnV& dp2,
   const ExecViewUnmanaged<Real[2][NP][NP]>& ps)
@@ -534,7 +516,7 @@ KOKKOS_FUNCTION void calc_ps (
 //     eta_dot = eta_dot_dpdn/(A_eta p0 + B_eta ps).
 //            a= eta_dot_dpdn diff(eta)/(diff(A) p0 + diff(B) ps).
 KOKKOS_FUNCTION void calc_etadotmid_from_etadotdpdnint (
-  const int nlev, const KernelVariables& kv,
+  const KernelVariables& kv, const int nlev,
   const Real& ps0, const CSnV& hydai, const CSnV& hydbi,
   const CSnV& hydetai, const CRelV& ps, const SelnV& wrk,
   //  in: eta_dot_dpdn at interfaces
@@ -579,11 +561,15 @@ KOKKOS_FUNCTION void calc_eta_dot_ref_mid (
   const SelNlevp eta_dot[2])
 {
   using Kokkos::ALL;
+  const int nlev = NUM_PHYSICAL_LEV;
   SelNlev divdp(wrk1.data());
   S2elNlev vdp(vwrk1.data());
   ExecViewUnmanaged<Real[2][NP][NP]> ps(cti::pack2real(wrk2));
   // Calc surface pressure for use at the end.
-  calc_ps(NUM_PHYSICAL_LEV, kv, ps0, hyai0, alpha, dp1, dp2, ps);
+  calc_ps(kv, nlev,
+          ps0, hyai0,
+          alpha, dp1, dp2,
+          ps);
   kv.team_barrier();
   for (int t = 0; t < 2; ++t) {
     // Compute divdp.
@@ -600,11 +586,16 @@ KOKKOS_FUNCTION void calc_eta_dot_ref_mid (
     const auto& edd = eta_dot[t];
     RelNlevp edds(cti::pack2real(edd));
     RelNlev divdps(cti::pack2real(wrk1));
-    cti::calc_eta_dot_dpdn(kv, hybi, divdps, edd, edds);
+    cti::calc_eta_dot_dpdn(kv,
+                           hybi,
+                           divdps, edd,
+                           edds);
     kv.team_barrier();
-    calc_etadotmid_from_etadotdpdnint(
-      NUM_PHYSICAL_LEV, kv, ps0, hydai, hydbi, hydetai,
-      Kokkos::subview(ps,t,ALL,ALL), wrk1, edd);
+    const auto ps_t = Kokkos::subview(ps,t,ALL,ALL);
+    calc_etadotmid_from_etadotdpdnint(kv, nlev,
+                                      ps0, hydai, hydbi, hydetai, ps_t,
+                                      wrk1,
+                                      edd);
     // No team_barrier: wrk1 is protected in second iteration.
   }
 }
@@ -717,6 +708,53 @@ KOKKOS_FUNCTION void calc_eta_dot_formula_node_ref_mid (
   }
 }
 
+// Set dep_points_all to level-midpoint arrival points.
+void init_dep_points (
+  const CTI& c, const ExecViewUnmanaged<const Real*[NP][NP][3]>& sphere_cart,
+  const CRnV& etam, const cti::DeparturePoints& dep_pts)
+{
+  const auto independent_time_steps = c.m_data.independent_time_steps;
+  assert(not independent_time_steps or dep_pts.extent_int(4) == 4);
+  const auto f = KOKKOS_LAMBDA (const int idx) {
+    int ie, lev, i, j;
+    cti::idx_ie_physlev_ij(idx, ie, lev, i, j);
+    for (int d = 0; d < 3; ++d)
+      dep_pts(ie,lev,i,j,d) = sphere_cart(ie,i,j,d);
+    if (independent_time_steps)
+      dep_pts(ie,lev,i,j,3) = etam(lev);
+  };
+  c.launch_ie_physlev_ij(f);
+}
+
+void update_dep_points (
+  const CTI& c, const Real dtsub, const cti::DeparturePoints& vdep,
+  const cti::DeparturePoints& dep_pts)
+{
+  const auto independent_time_steps = c.m_data.independent_time_steps;
+  const auto is_sphere = c.m_data.geometry_type == 0;
+  const auto scale_factor = c.m_geometry.m_scale_factor;
+  const auto f = KOKKOS_LAMBDA (const int idx) {
+    int ie, lev, i, j;
+    cti::idx_ie_physlev_ij(idx, ie, lev, i, j);
+    // Update horizontal position.
+    Real p[4];
+    for (int d = 0; d < 3; ++d)
+      p[d] = dep_pts(ie,lev,i,j,d) - dtsub*vdep(ie,lev,i,j,d)/scale_factor;
+    if (is_sphere) {
+      const auto norm = std::sqrt(square(p[0]) + square(p[1]) + square(p[2]));
+      for (int d = 0; d < 3; ++d)
+        p[d] /= norm;
+    }
+    for (int d = 0; d < 3; ++d)
+      dep_pts(ie,lev,i,j,d) = p[d];
+    if (independent_time_steps) {
+      // Update vertical position.
+      dep_pts(ie,lev,i,j,3) -= dtsub*vdep(ie,lev,i,j,3);
+    }
+  };
+  c.launch_ie_physlev_ij(f);
+}
+
 /* Evaluate a formula to provide an estimate of nodal velocities that are use to
    create a 2nd-order update to the trajectory. The fundamental formula for the
    update in position p from arrival point p1 to departure point p0 is
@@ -812,51 +850,43 @@ void calc_nodal_velocities (
   Kokkos::parallel_for(c.m_tp_ne, f);
 }
 
-void update_dep_points (
-  const CTI& c, const Real dtsub, const cti::DeparturePoints& vdep,
-  const cti::DeparturePoints& dep_pts)
-{
-  const auto independent_time_steps = c.m_data.independent_time_steps;
-  const auto is_sphere = c.m_data.geometry_type == 0;
-  const auto scale_factor = c.m_geometry.m_scale_factor;
-  const auto f = KOKKOS_LAMBDA (const int idx) {
-    int ie, lev, i, j;
-    cti::idx_ie_physlev_ij(idx, ie, lev, i, j);
-    // Update horizontal position.
-    Real p[4];
-    for (int d = 0; d < 3; ++d)
-      p[d] = dep_pts(ie,lev,i,j,d) - dtsub*vdep(ie,lev,i,j,d)/scale_factor;
-    if (is_sphere) {
-      const auto norm = std::sqrt(square(p[0]) + square(p[1]) + square(p[2]));
-      for (int d = 0; d < 3; ++d)
-        p[d] /= norm;
-    }
-    for (int d = 0; d < 3; ++d)
-      dep_pts(ie,lev,i,j,d) = p[d];
-    if (independent_time_steps) {
-      // Update vertical position.
-      dep_pts(ie,lev,i,j,3) -= dtsub*vdep(ie,lev,i,j,3);
-    }
-  };
-  c.launch_ie_physlev_ij(f);
-}
-
 /* Determine the departure points corresponding to the vertically Lagragnian
    grid's arrival midpoints, where the floating levels are those that evolve
    over the course of the full tracer time step. Also compute divdp, which holds
    the floating levels' dp values for later use in vertical remap.
 */
 void interp_departure_points_to_floating_level_midpoints (
-  const CTI& c  
+  const CTI& c
 )
 {
+#if 0
+  using Kokkos::ALL;
+  const int nlev = NUM_PHYSICAL_LEV;
+  const auto& d = c.m_data;
+  const auto& h = c.m_hvcoord;
+  const auto ps0 = h.ps0;
+  const auto hyai0 = h.hybrid_ai0;
+  const auto& hyetai = h.etai;
+  const auto& deta_ref = ;
+  const auto deta_tol = ;
+  const auto& dp3d = ;
+  const auto& buf1a = d.buf1o[0]; const auto& buf1b = d.buf1o[1];
+  const auto& buf1c = d.buf1o[2]; const auto& buf1d = d.buf1o[3];
   const auto f = KOKKOS_LAMBDA (const cti::MT& team) {
     KernelVariables kv(team);
-
-    // Surface pressure.
-
+    const auto wrk1 = Homme::subview(buf1a, kv.team_idx);
+    const auto wrk2 = Homme::subview(buf1b, kv.team_idx);
+    RelNlev eta(cti::pack2real(buf1c).data());
     // Reconstruct Lagrangian levels at t1 on arrival column:
     //     eta_arr_int = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_int)
+    limit_etam(kv, nlev,
+               hyetai, deta_ref, deta_tol,
+               wrk1, wrk2,
+               eta);
+    eta_interp_eta(kv, nlev,
+                   hyetai, );
+    calc_ps(kv, nlev, ps0, hyai0, dp3d, ps);
+    eta_to_dp();
 
     // Compute Lagrangian level midpoints at t1 on arrival column:
     //     eta_arr_mid = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_mid)
@@ -866,7 +896,8 @@ void interp_departure_points_to_floating_level_midpoints (
     //     p_dep_mid(eta_arr_mid) = I[p_dep_mid(eta_ref_mid)](eta_arr_mid)
 
   };
-  Kokkos::parallel_for(c.m_tp_ne, f);  
+  Kokkos::parallel_for(c.m_tp_ne, f);
+#endif
 }
 
 void dss_vnode () {}
@@ -1634,8 +1665,8 @@ int test_calc_ps (TestData& td) {
     const auto policy = get_test_team_policy(1, nlev);
     const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
       KernelVariables kv(team);
-      calc_ps(nlev, kv, ps0, hyai0, alpha, dp1.d, dp2.d, ps2);
-      calc_ps(nlev, kv, ps0, hyai0, dp1.d, ps);
+      calc_ps(kv, nlev, ps0, hyai0, alpha, dp1.d, dp2.d, ps2);
+      calc_ps(kv, nlev, ps0, hyai0, dp1.d, ps);
     };
     Kokkos::parallel_for(policy, f);
     Kokkos::fence();
@@ -1704,7 +1735,7 @@ int test_calc_etadotmid_from_etadotdpdnint (TestData& td) {
     const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
       KernelVariables kv(team);
       calc_etadotmid_from_etadotdpdnint(
-        nlev, kv, ps0, hydai.d, hydbi.d, hydetai.d, ps, wrk.d, ed.d);
+        kv, nlev, ps0, hydai.d, hydbi.d, hydetai.d, ps, wrk.d, ed.d);
     };
     Kokkos::parallel_for(policy, f);
     Kokkos::fence();
