@@ -876,10 +876,7 @@ template<> struct IsLayoutRight<Kokkos::LayoutRight> { enum : bool { value = tru
    over the course of the full tracer time step. Also compute divdp, which holds
    the floating levels' dp values for later use in vertical remap.
 */
-void interp_departure_points_to_floating_level_midpoints (
-  const CTI& c, const int np1
-)
-{
+void interp_departure_points_to_floating_level_midpoints (const CTI& c, const int np1) {
   using Kokkos::ALL;
   const int nlev = NUM_PHYSICAL_LEV, nlevp = nlev+1;
   const auto& d = c.m_data;
@@ -891,16 +888,20 @@ void interp_departure_points_to_floating_level_midpoints (
   const CRNV<NUM_PHYSICAL_LEV> hyetam(cti::cpack2real(h.etam));
   const auto& detam_ref = d.hydetam_ref;
   const auto deta_tol = d.deta_tol;
+  const auto& dep_pts = d.dep_pts;
   const auto& dp3d = c.m_state.m_dp3d;
   const auto& divdp = c.m_derived.m_divdp;
   const auto& buf1a = d.buf1e[0]; const auto& buf1b = d.buf1e[1];
   const auto& buf1c = d.buf1e[2]; const auto& buf1d = d.buf1e[3];
+  const auto& buf2a = d.buf2[0];
   const auto f = KOKKOS_LAMBDA (const cti::MT& team) {
     KernelVariables kv(team);
+    const int ie = kv.ie;
     const auto wrk1 = Homme::subview(buf1a, kv.team_idx);
     const auto wrk2 = Homme::subview(buf1b, kv.team_idx);
     const auto wrk3 = Homme::subview(buf1c, kv.team_idx);
     const auto wrk4 = Homme::subview(buf1d, kv.team_idx);
+    const auto vwrk = Homme::subview(buf2a, kv.team_idx);
     // Reconstruct Lagrangian levels at t1 on arrival column:
     //     eta_arr_int = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_int)
     const RelNlev etam = p2rel(wrk3.data(), nlev );
@@ -926,14 +927,14 @@ void interp_departure_points_to_floating_level_midpoints (
       const ExecViewUnmanaged<Real[NP][NP]> ps(cti::pack2real(wrk1));
       calc_ps(kv, nlev,
               ps0, hyai0,
-              Homme::subview(dp3d, kv.ie, np1),
+              Homme::subview(dp3d, ie, np1),
               ps);
       kv.team_barrier();
       eta_to_dp(kv, nlev,
                 ps0, hybi, hyetai,
                 ps, etai_arr,
                 p2rel(wrk2.data(), nlev+1),
-                RelnV(cti::pack2real(Homme::subview(c.m_derived.m_divdp, kv.ie)),
+                RelnV(cti::pack2real(Homme::subview(c.m_derived.m_divdp, ie)),
                       NP, NP, NUM_LEV*VECTOR_SIZE));
     }
     // Compute Lagrangian level midpoints at t1 on arrival column:
@@ -948,7 +949,25 @@ void interp_departure_points_to_floating_level_midpoints (
     // Compute departure horizontal points corresponding to arrival
     // Lagrangian level midpoints:
     //     p_dep_mid(eta_arr_mid) = I[p_dep_mid(eta_ref_mid)](eta_arr_mid)
-
+    {
+      const RelnV dpts_in(cti::pack2real(vwrk), NP, NP, nlev);
+      const RelnV dpts_out(dpts_in.data() + NP*NP*nlev, NP, NP, nlev);
+      for (int d = 0; d < 3; ++d) {
+        const auto f = [&] (const int i, const int j, const int k) {
+          dpts_in(i,j,k) = dep_pts(ie,k,i,j,d);
+        };
+        c.loop_ijk<cti::num_phys_lev>(kv, f);
+        eta_interp_horiz(kv, nlev,
+                         hyetai,
+                         hyetam, dpts_in,
+                         RnV(cti::pack2real(wrk2), nlev+2), p2rel(wrk1.data(), nlev+2),
+                         etam_arr, dpts_out);
+        const auto g = [&] (const int i, const int j, const int k) {
+          dep_pts(ie,k,i,j,d) = dpts_out(i,j,k);
+        };
+        c.loop_ijk<cti::num_phys_lev>(kv, g);
+      }
+    }
   };
   Kokkos::parallel_for(c.m_tp_ne, f);
 }
