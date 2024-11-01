@@ -73,10 +73,10 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
                       3 :
                       (independent_time_steps ? 4 : 3));
     m_data.dep_pts = DeparturePoints("dep_pts", nel, num_phys_lev, np, np, ndim);
-    if (m_data.trajectory_nsubstep > 0) {
+    if (m_data.trajectory_nsubstep > 0)
       m_data.vnode = DeparturePoints("vnode", nel, num_phys_lev, np, np, ndim);
+    if (m_data.trajectory_nsubstep > 1)
       m_data.vdep  = DeparturePoints("vdep" , nel, num_phys_lev, np, np, ndim);
-    }
     homme::compose::set_views(
       g.m_spheremp,
       homme::compose::SetView<Real****>  (reinterpret_cast<Real*>(d.m_dp.data()),

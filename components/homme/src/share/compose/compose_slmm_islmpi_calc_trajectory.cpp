@@ -188,9 +188,10 @@ calc_v_departure (IslMpi<MT>& cm, const Int nets, const Int nete,
 
   const auto ndim = cm.dep_points_ndim;
 
-#ifdef COMPOSE_PORT_TODO
+#ifdef COMPOSE_PORT
+  const auto& vnode = cm.tracer_arrays->vnode;
+  const auto& vdep  = cm.tracer_arrays->vdep;
 #else
-# pragma message "TODO"
   CA4<const Real> vnode(vnode_r, cm.nelemd, cm.nlev, cm.np2, ndim);
   CA4<      Real> vdep (vdep_r , cm.nelemd, cm.nlev, cm.np2, ndim);
 #endif
@@ -206,7 +207,7 @@ calc_v_departure (IslMpi<MT>& cm, const Int nets, const Int nete,
   }
 
 #ifdef COMPOSE_PORT
-  auto& dep_points = cm.tracer_arrays->dep_points;
+  const auto& dep_points = cm.tracer_arrays->dep_points;
 #else
   DepPointsH<MT> dep_points(dep_points_r, cm.nelemd, cm.nlev, cm.np2, ndim);
 #endif

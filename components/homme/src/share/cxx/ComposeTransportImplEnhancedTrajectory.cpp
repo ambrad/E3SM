@@ -1043,12 +1043,16 @@ void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real d
     Kokkos::fence();
     GPTLstop("compose_v_bexchv");
 
-    GPTLstart("compose_vdep");
-    homme::compose::calc_v_departure(step, dtsub);
-    Kokkos::fence();
-    GPTLstop("compose_vdep");
+    if (step == 0) {
+      update_dep_points(*this, dtsub, vnode, dep_pts);
+    } else {
+      GPTLstart("compose_vdep");
+      homme::compose::calc_v_departure(step, dtsub);
+      Kokkos::fence();
+      GPTLstop("compose_vdep");
 
-    update_dep_points(*this, dtsub, vdep, dep_pts);
+      update_dep_points(*this, dtsub, vdep, dep_pts);
+    }
   }
   Kokkos::fence();
 
