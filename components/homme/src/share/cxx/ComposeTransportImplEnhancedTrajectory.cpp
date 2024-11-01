@@ -1021,15 +1021,43 @@ void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real d
   const Real dtsub = dt / m_data.trajectory_nsubstep;
   const int nsubstep = m_data.trajectory_nsubstep;
   for (int step = 0; step < nsubstep; ++step) {
-    const Real alpha[] = {Real(nsubstep-step-1)/nsubstep,
-                          Real(nsubstep-step  )/nsubstep};
-    const ExecViewUnmanaged<const Scalar*[1][2][NP][NP][NUM_LEV]>
-      v1(m_derived.m_vstar.data(), nelemd);
-    const ExecViewUnmanaged<const Scalar*[1]   [NP][NP][NUM_LEV]>
-      dp1(m_derived.m_dp.data(), nelemd);
-    const auto& v2 = m_state.m_v;
-    const auto& dp2 = m_state.m_dp3d;
-    calc_nodal_velocities(*this, dtsub, alpha, v1, dp1, 0, v2, dp2, np1, vnode);
+    {
+      Kokkos::fence();
+      GPTLstart("compose_vnode");
+      const Real alpha[] = {Real(nsubstep-step-1)/nsubstep,
+                            Real(nsubstep-step  )/nsubstep};
+      const ExecViewUnmanaged<const Scalar*[1][2][NP][NP][NUM_LEV]>
+        v1(m_derived.m_vstar.data(), nelemd);
+      const ExecViewUnmanaged<const Scalar*[1]   [NP][NP][NUM_LEV]>
+        dp1(m_derived.m_dp.data(), nelemd);
+      const auto& v2 = m_state.m_v;
+      const auto& dp2 = m_state.m_dp3d;
+      calc_nodal_velocities(*this, dtsub, alpha,
+                            v1, dp1, 0, v2, dp2, np1,
+                            vnode);
+      Kokkos::fence();
+      GPTLstop("compose_vnode");
+    }
+
+    GPTLstart("compose_v_bexchv");
+    dss_vnode(*this, vnode);
+    Kokkos::fence();
+    GPTLstop("compose_v_bexchv");
+
+    GPTLstart("compose_vdep");
+    //slmm_calc_trajectory();
+    Kokkos::fence();
+    GPTLstop("compose_vdep");
+
+    update_dep_points(*this, dtsub, vdep, dep_pts);
+  }
+  Kokkos::fence();
+
+  if (m_data.independent_time_steps) {
+    GPTLstart("compose_floating_dep_pts");
+    interp_departure_points_to_floating_level_midpoints(*this, np1);
+    Kokkos::fence();
+    GPTLstop("compose_floating_dep_pts");
   }
   
   GPTLstop("compose_calc_enhanced_trajectory");
