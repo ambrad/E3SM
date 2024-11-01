@@ -727,11 +727,10 @@ KOKKOS_FUNCTION void calc_eta_dot_formula_node_ref_mid (
 }
 
 // Set dep_points_all to level-midpoint arrival points.
-void init_dep_points (
-  const CTI& c, const ExecViewUnmanaged<const Real*[NP][NP][3]>& sphere_cart,
-  const CRnV& etam, const cti::DeparturePoints& dep_pts)
-{
+void init_dep_points (const CTI& c, const cti::DeparturePoints& dep_pts) {
   const auto independent_time_steps = c.m_data.independent_time_steps;
+  const auto& sphere_cart = c.m_geometry.m_sphere_cart;
+  const CRNV<NUM_PHYSICAL_LEV> hyetam(cti::cpack2real(c.m_hvcoord.etam));
   assert(not independent_time_steps or dep_pts.extent_int(4) == 4);
   const auto f = KOKKOS_LAMBDA (const int idx) {
     int ie, lev, i, j;
@@ -739,7 +738,7 @@ void init_dep_points (
     for (int d = 0; d < 3; ++d)
       dep_pts(ie,lev,i,j,d) = sphere_cart(ie,i,j,d);
     if (independent_time_steps)
-      dep_pts(ie,lev,i,j,3) = etam(lev);
+      dep_pts(ie,lev,i,j,3) = hyetam(lev);
   };
   c.launch_ie_physlev_ij(f);
 }
@@ -782,7 +781,10 @@ void update_dep_points (
 */
 void calc_nodal_velocities (
   const CTI& c, const Real dtsub, const Real alpha[2],
-  const CS2elNlev& v1, const CSelNlev& dp1, const CS2elNlev& v2, const CSelNlev& dp2,
+  const ExecViewUnmanaged<const Scalar**[2][NP][NP][NUM_LEV]>& v1,
+  const ExecViewUnmanaged<const Scalar**   [NP][NP][NUM_LEV]>& dp1, const int idx1,
+  const ExecViewUnmanaged<const Scalar**[2][NP][NP][NUM_LEV]>& v2,
+  const ExecViewUnmanaged<const Scalar**   [NP][NP][NUM_LEV]>& dp2, const int idx2,
   const cti::DeparturePoints& vnode)
 {
   using Kokkos::ALL;
@@ -805,19 +807,24 @@ void calc_nodal_velocities (
   const auto& buf2c = d.buf2 [2]; const auto& buf2d = d.buf2 [3];
   const auto f = KOKKOS_LAMBDA (const cti::MT& team) {
     KernelVariables kv(team);
+    const int ie = kv.ie;
     const auto  wrk1 = Homme::subview(buf1a, kv.team_idx);
     const auto  wrk2 = Homme::subview(buf1b, kv.team_idx);
     const auto vwrk1 = Homme::subview(buf2a, kv.team_idx);
     const auto vwrk2 = Homme::subview(buf2b, kv.team_idx);
+    const auto v1_ie = Homme::subview(v1, ie, idx1);
+    const auto v2_ie = Homme::subview(v2, ie, idx2);
     CSelNlevp eta_dot[] = {Homme::subview(buf1c, kv.team_idx),
                            Homme::subview(buf1d, kv.team_idx)};
     {
       SelNlevp eta_dot[] = {Homme::subview(buf1c, kv.team_idx),
                             Homme::subview(buf1d, kv.team_idx)};
       if (independent_time_steps) {
+        const auto dp1_ie = Homme::subview(dp1, ie, idx1);
+        const auto dp2_ie = Homme::subview(dp2, ie, idx2);
         calc_eta_dot_ref_mid(kv, sphere_ops,
                              ps0, hyai0, hybi, hydai, hydbi, hydetai,
-                             alpha, v1, dp1, v2, dp2,
+                             alpha, v1_ie, dp1_ie, v2_ie, dp2_ie,
                              wrk1, wrk2, vwrk1,
                              eta_dot);
       } else {
@@ -841,7 +848,8 @@ void calc_nodal_velocities (
         const auto& v = vsph[t];
         for (int d = 0; d < 2; ++d) {
           const auto f = [&] (const int i, const int j, const int k) {
-            v(d,i,j,k) = (1 - alpha[t])*v1(d,i,j,k) + alpha[t]*v2(d,i,j,k);
+            v(d,i,j,k) = ((1 - alpha[t])*v1_ie(d,i,j,k) +
+                          /**/ alpha[t] *v2_ie(d,i,j,k));
           };
           cti::loop_ijk<cti::num_lev_pack>(kv, f);
         }
@@ -851,8 +859,8 @@ void calc_nodal_velocities (
     // Given the vertical and horizontal nodal velocities at time endpoints,
     // evaluate the velocity estimate formula, providing the final horizontal
     // and vertical velocity estimates at midpoint nodes.
-    const auto vnode_ie = Kokkos::subview(vnode, kv.ie, ALL,ALL,ALL,ALL);
-    const auto vec_sph2cart_ie = Homme::subview(vec_sph2cart, kv.ie);
+    const auto vnode_ie = Kokkos::subview(vnode, ie, ALL,ALL,ALL,ALL);
+    const auto vec_sph2cart_ie = Homme::subview(vec_sph2cart, ie);
     calc_vel_horiz_formula_node_ref_mid(kv, sphere_ops,
                                         hyetam, vec_sph2cart_ie,
                                         dtsub, vsph, eta_dot,
@@ -1003,45 +1011,25 @@ void dss_vnode (const CTI& c, const cti::DeparturePoints& vnode) {
 void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real dt) {
   GPTLstart("compose_calc_enhanced_trajectory");
 
-  const auto sph_ops = m_sphere_ops;
-  const auto geo = m_geometry;
-  const auto m_vec_sph2cart = geo.m_vec_sph2cart;
-  const auto m_vstar = m_derived.m_vstar;
-  const auto m_spheremp = geo.m_spheremp;
-  const auto m_rspheremp = geo.m_rspheremp;
-  const auto m_v = m_state.m_v;
-  const auto m_vn0 = m_derived.m_vn0;
-  const auto m_dp3d = m_state.m_dp3d;
-  const auto m_dp = m_derived.m_dp;
-  const auto m_divdp = m_derived.m_divdp;
-  const Real deta_tol = m_data.deta_tol;
-  const Real h_ps0 = m_hvcoord.ps0;
-  const auto h_etai = m_hvcoord.etai;
-  const auto h_bi = m_hvcoord.hybrid_bi;
-  const auto independent_time_steps = m_data.independent_time_steps;
-  const auto tu_ne = m_tu_ne;
+  const auto& dep_pts = m_data.dep_pts;
+  const auto& vnode = m_data.vnode;
+  const auto& vdep = m_data.vdep;
 
-  Buf1o buf1_pack[3];
-  for (int i = 0; i < 3; ++i) buf1_pack[i] = m_data.buf1o[i];
-  RelnV buf1_scal[3]; // same memory as buf1_pack
-  for (int i = 0; i < 3; ++i)
-    buf1_scal[i] = RelnV(pack2real(m_data.buf1e[i]), np, np,
-                         m_data.buf1e[i].extent_int(2)*packn);
-  Buf2 buf2[2];
-  for (int i = 0; i < 2; ++i) buf2[i] = m_data.buf2[i];
+  init_dep_points(*this, dep_pts);
 
-  init_dep_points(
-    *this,
-    geo.m_sphere_cart,
-    CRnV(pack2real(m_hvcoord.etam), num_phys_lev),
-    m_data.dep_pts);
-
+  const int nelemd = m_data.nelemd;
   const Real dtsub = dt / m_data.trajectory_nsubstep;
-  for (int step = 0; step < m_data.trajectory_nsubstep; ++step) {
-#if 0
-    calc_nodal_velocities(
-      *this, nsubstep, step);
-#endif
+  const int nsubstep = m_data.trajectory_nsubstep;
+  for (int step = 0; step < nsubstep; ++step) {
+    const Real alpha[] = {Real(nsubstep-step-1)/nsubstep,
+                          Real(nsubstep-step  )/nsubstep};
+    const ExecViewUnmanaged<const Scalar*[1][2][NP][NP][NUM_LEV]>
+      v1(m_derived.m_vstar.data(), nelemd);
+    const ExecViewUnmanaged<const Scalar*[1]   [NP][NP][NUM_LEV]>
+      dp1(m_derived.m_dp.data(), nelemd);
+    const auto& v2 = m_state.m_v;
+    const auto& dp2 = m_state.m_dp3d;
+    calc_nodal_velocities(*this, dtsub, alpha, v1, dp1, 0, v2, dp2, np1, vnode);
   }
   
   GPTLstop("compose_calc_enhanced_trajectory");
