@@ -16,6 +16,8 @@ void set_views(const SetView<HommexxReal***>& spheremp,
                const SetView<HommexxReal******>& qdp, const SetView<HommexxReal*****>& q,
                const SetView<HommexxReal*****>& dep_points, const int dep_points_ndim);
 
+void calc_v_departure(const int step, const HommexxReal dtsub);
+
 void advect(const int np1, const int n0_qdp, const int np1_qdp);
 
 void set_dp3d_np1(const int np1);

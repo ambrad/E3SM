@@ -44,6 +44,12 @@ void set_views (const SetView<HommexxReal***>& spheremp,
 #endif
 }
 
+void calc_v_departure (const int step, const HommexxReal dtsub) {
+  auto& cm = *get_isl_mpi_singleton();
+  islmpi::calc_v_departure<>(cm, 0, cm.nelemd - 1, step, dtsub,
+                             nullptr, nullptr, nullptr);
+}
+
 void advect (const int np1, const int n0_qdp, const int np1_qdp) {
   auto& cm = *get_isl_mpi_singleton();
   cm.tracer_arrays->np1 = np1;

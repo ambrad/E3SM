@@ -12,9 +12,8 @@
 #include "/home/ac.ambradl/compy-goodies/util/dbg.hpp"
 
 #include "ComposeTransportImpl.hpp"
-#include "PhysicalConstants.hpp"
 
-#include "compose_test.hpp"
+#include "compose_hommexx.hpp"
 
 #include <random>
 
@@ -1045,7 +1044,7 @@ void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real d
     GPTLstop("compose_v_bexchv");
 
     GPTLstart("compose_vdep");
-    //slmm_calc_trajectory();
+    homme::compose::calc_v_departure(step, dtsub);
     Kokkos::fence();
     GPTLstop("compose_vdep");
 

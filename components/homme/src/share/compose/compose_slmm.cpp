@@ -408,7 +408,7 @@ void slmm_set_hvcoord (const homme::Real* etam) {
   amb::dev_fin_threads();
 }
 
-void slmm_calc_trajectory (
+void slmm_calc_v_departure (
   homme::Int nets, homme::Int nete, homme::Int step, homme::Real dtsub,
   homme::Real* dep_points, homme::Int dep_points_ndim, const homme::Real* vnode,
   homme::Real* vdep, homme::Int* info)
@@ -421,8 +421,8 @@ void slmm_calc_trajectory (
   slmm_assert(cm.dep_points_ndim == dep_points_ndim);
   { slmm::Timer timer("h2d");
     homme::sl_traj_h2d(*cm.tracer_arrays, dep_points, cm.dep_points_ndim); }
-  homme::islmpi::calc_trajectory(cm, nets - 1, nete - 1, step - 1,
-                                 dtsub, dep_points, vnode, vdep);
+  homme::islmpi::calc_v_departure(cm, nets - 1, nete - 1, step - 1,
+                                  dtsub, dep_points, vnode, vdep);
   *info = 0;
   { slmm::Timer timer("d2h");
     homme::sl_traj_d2h(*cm.tracer_arrays, dep_points, cm.dep_points_ndim); }

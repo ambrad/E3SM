@@ -175,9 +175,9 @@ void traj_copy_next_step (IslMpi<MT>& cm, Trajectory& t) {
 }
 
 template <typename MT> void
-calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
-                 const Int step, const Real dtsub,
-                 Real* dep_points_r, const Real* vnode_r, Real* vdep_r)
+calc_v_departure (IslMpi<MT>& cm, const Int nets, const Int nete,
+                  const Int step, const Real dtsub,
+                  Real* dep_points_r, const Real* vnode_r, Real* vdep_r)
 {
   const int np = 4;
 
@@ -187,9 +187,13 @@ calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
 #endif
 
   const auto ndim = cm.dep_points_ndim;
-  
+
+#ifdef COMPOSE_PORT_TODO
+#else
+# pragma message "TODO"
   CA4<const Real> vnode(vnode_r, cm.nelemd, cm.nlev, cm.np2, ndim);
   CA4<      Real> vdep (vdep_r , cm.nelemd, cm.nlev, cm.np2, ndim);
+#endif
 
   if (step == 0) {
     // The departure points are at the nodes. No interpolation is needed.
@@ -228,7 +232,7 @@ calc_trajectory (IslMpi<MT>& cm, const Int nets, const Int nete,
   wait_on_send(cm, true /* skip_if_empty */);
 }
 
-template void calc_trajectory(
+template void calc_v_departure(
   IslMpi<ko::MachineTraits>&, const Int, const Int, const Int, const Real,
   Real*, const Real*, Real*);
 

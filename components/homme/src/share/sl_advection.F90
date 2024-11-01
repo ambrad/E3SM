@@ -331,9 +331,6 @@ contains
     ! For DCMIP16 supercell test case.
     use control_mod,            only : dcmip16_mu_q
     use prim_advection_base,    only : advance_physical_vis
-#ifdef HOMME_ENABLE_COMPOSE
-    use compose_mod,            only : compose_h2d, compose_d2h
-#endif
     use iso_c_binding,          only : c_bool
 
     implicit none
@@ -1359,7 +1356,7 @@ contains
        call dss_vnode(elem, nets, nete, hybrid, vnode)
 
        ! Fill vdep.
-       call slmm_calc_trajectory(nets, nete, step, dtsub, dep_points_all, &
+       call slmm_calc_v_departure(nets, nete, step, dtsub, dep_points_all, &
             &                    dep_points_ndim, vnode, vdep, info)
 
        ! Using vdep, update dep_points_all to departure points.

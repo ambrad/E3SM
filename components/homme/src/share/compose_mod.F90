@@ -194,8 +194,8 @@ module compose_mod
        real(kind=c_double), intent(in) :: etam(nlev)
      end subroutine slmm_set_hvcoord
 
-     subroutine slmm_calc_trajectory(nets, nete, step, dtsub, dep_points, dep_points_ndim, &
-          vnode, vdep, info) bind(c)
+     subroutine slmm_calc_v_departure(nets, nete, step, dtsub, dep_points, &
+          dep_points_ndim, vnode, vdep, info) bind(c)
        use iso_c_binding, only: c_int, c_double
        use dimensions_mod, only : np, nlev, nelemd, qsize
        use coordinate_systems_mod, only : cartesian3D_t
@@ -205,7 +205,7 @@ module compose_mod
        real(kind=c_double), intent(in) :: vnode(dep_points_ndim,np,np,nlev,nelemd)
        real(kind=c_double), intent(out) :: vdep(dep_points_ndim,np,np,nlev,nelemd)
        integer(kind=c_int), intent(out) :: info
-     end subroutine slmm_calc_trajectory
+     end subroutine slmm_calc_v_departure
 
      subroutine slmm_csl_set_elem_data(ie, metdet, qdp, n0_qdp, dp, q, nelem_in_patch, &
           h2d, d2h) bind(c)
