@@ -89,7 +89,7 @@ struct ComposeTransportImpl {
     ExecView<Scalar[NUM_LEV]> hydetai; // diff(etai)
     ExecView<Real[NUM_INTERFACE_LEV]> hydetam_ref;
 
-    DeparturePoints dep_pts; // (ie,lev,i,j,d)
+    DeparturePoints dep_pts, vnode, vdep; // (ie,lev,i,j,d)
 
     Data ()
       : nelemd(-1), qsize(-1), limiter_option(9), cdr_check(0), hv_q(0),

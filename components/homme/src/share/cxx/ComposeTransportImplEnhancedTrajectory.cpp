@@ -969,8 +969,31 @@ void interp_departure_points_to_floating_level_midpoints (const CTI& c, const in
   Kokkos::parallel_for(c.m_tp_ne, f);
 }
 
-void dss_vnode (const CTI& c) {
-  
+void dss_vnode (const CTI& c, const cti::DeparturePoints& vnode) {
+  const int ndim = c.m_data.independent_time_steps ? 4 : 3;
+  const auto& spheremp = c.m_geometry.m_spheremp;
+  const auto& rspheremp = c.m_geometry.m_rspheremp;
+  const auto& vp = c.m_tracers.qtens_biharmonic;
+  const ExecViewUnmanaged<Real**[NP][NP][NUM_LEV*VECTOR_SIZE]>
+    v(cti::pack2real(vp), vp.extent_int(0), vp.extent_int(1));
+  const auto f = KOKKOS_LAMBDA (const int idx) {
+    int ie, lev, i, j;
+    cti::idx_ie_physlev_ij(idx, ie, lev, i, j);
+    for (int d = 0; d < ndim; ++d)
+      v(ie,d,i,j,lev) = vnode(ie,lev,i,j,d)*spheremp(ie,i,j)*rspheremp(ie,i,j);
+  };
+  c.launch_ie_physlev_ij(f);
+  Kokkos::fence();
+  const auto be = c.m_v_dss_be[c.m_data.independent_time_steps ? 1 : 0];
+  be->exchange();
+  Kokkos::fence();
+  const auto g = KOKKOS_LAMBDA (const int idx) {
+    int ie, lev, i, j;
+    cti::idx_ie_physlev_ij(idx, ie, lev, i, j);
+    for (int d = 0; d < ndim; ++d)
+      vnode(ie,lev,i,j,d) = v(ie,d,i,j,lev);
+  };
+  c.launch_ie_physlev_ij(g);
 }
 
 } // namespace anon

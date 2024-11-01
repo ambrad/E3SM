@@ -166,20 +166,22 @@ void ComposeTransportImpl::init_boundary_exchanges () {
       be->set_label(std::string("ComposeTransport-v-DSS-" + std::to_string(i)));
       be->set_diagnostics_level(sp.internal_diagnostics_level);
       be->set_buffers_manager(bm_exchange);
-      be->set_num_fields(0, 0, 2 + (i ? 1 : 0));
+      be->set_num_fields(0, 0, 2+i);
       be->register_field(m_derived.m_vstar, 2, 0);
       if (i) be->register_field(m_derived.m_divdp);
       be->registration_completed();
     }
   } else {
-    m_v_dss_be[0] = std::make_shared<BoundaryExchange>();
-    auto be = m_v_dss_be[0];
-    be->set_label(std::string("ComposeTransport-v-DSS"));
-    be->set_diagnostics_level(sp.internal_diagnostics_level);
-    be->set_buffers_manager(bm_exchange);
-    be->set_num_fields(0, 0, 4);
-    be->register_field(m_tracers.qtens_biharmonic, 4, 0);
-    be->registration_completed();
+    for (int i = 0; i < 2; ++i) {
+      m_v_dss_be[i] = std::make_shared<BoundaryExchange>();
+      auto be = m_v_dss_be[i];
+      be->set_label(std::string("ComposeTransport-v-DSS-" + std::to_string(i)));
+      be->set_diagnostics_level(sp.internal_diagnostics_level);
+      be->set_buffers_manager(bm_exchange);
+      be->set_num_fields(0, 0, 3+i);
+      be->register_field(m_tracers.qtens_biharmonic, 3+i, 0);
+      be->registration_completed();
+    }
   }
 
   // For optional HV applied to q.
