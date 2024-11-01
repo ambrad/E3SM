@@ -11,10 +11,13 @@ typedef double HommexxReal;
 template <typename DataType>
 using SetView = Kokkos::View<DataType, Kokkos::LayoutRight, Kokkos::DefaultExecutionSpace>;
 
+typedef SetView<HommexxReal*****> SetView5;
+
 void set_views(const SetView<HommexxReal***>& spheremp,
-               const SetView<HommexxReal****>& dp, const SetView<HommexxReal*****>& dp3d,
-               const SetView<HommexxReal******>& qdp, const SetView<HommexxReal*****>& q,
-               const SetView<HommexxReal*****>& dep_points, const int dep_points_ndim);
+               const SetView<HommexxReal****>& dp, const SetView5& dp3d,
+               const SetView<HommexxReal******>& qdp, const SetView5& q,
+               const SetView5& dep_points, const SetView5& vnode,
+               const SetView5& vdep, const int trajectory_ndim);
 
 void calc_v_departure(const int step, const HommexxReal dtsub);
 

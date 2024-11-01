@@ -22,9 +22,10 @@ using View = typename TracerArrays<ko::MachineTraits>::View<DataType>;
 #endif
 
 void set_views (const SetView<HommexxReal***>& spheremp,
-                const SetView<HommexxReal****>& dp, const SetView<HommexxReal*****>& dp3d,
-                const SetView<HommexxReal******>& qdp, const SetView<HommexxReal*****>& q,
-                const SetView<HommexxReal*****>& dep_points, const Int ndim) {
+                const SetView<HommexxReal****>& dp, const SetView5& dp3d,
+                const SetView<HommexxReal******>& qdp, const SetView5& q,
+                const SetView5& dep_points, const SetView5& vnode,
+                const SetView5& vdep, const Int ndim) {
   static_assert(std::is_same<Real, HommexxReal>::value,
                 "Hommexx and Compose real types must be the same.");
 #ifdef COMPOSE_PORT
@@ -38,6 +39,10 @@ void set_views (const SetView<HommexxReal***>& spheremp,
   ta.qdp = View<Real*****>(qdp.data(), nel, qdp.extent_int(1), qdp.extent_int(2), np2, nlev);
   ta.q = View<Real****>(q.data(), nel, q.extent_int(1), np2, nlev);
   ta.dep_points = View<Real****>(dep_points.data(), nel, dep_points.extent_int(1), np2, ndim);
+  if (vnode.data()) {
+    ta.vnode = View<Real****>(vnode.data(), nel, dep_points.extent_int(1), np2, ndim);
+    ta.vdep = View<Real****>(vdep.data(), nel, dep_points.extent_int(1), np2, ndim);
+  }
 #else
   slmm_throw_if(true, "Running a Hommexx code path with the non-Hommexx build"
                 " is not supported.\n");

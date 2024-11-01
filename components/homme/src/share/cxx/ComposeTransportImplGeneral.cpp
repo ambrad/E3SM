@@ -73,6 +73,10 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
                       3 :
                       (independent_time_steps ? 4 : 3));
     m_data.dep_pts = DeparturePoints("dep_pts", nel, num_phys_lev, np, np, ndim);
+    if (m_data.trajectory_nsubstep > 0) {
+      m_data.vnode = DeparturePoints("vnode", nel, num_phys_lev, np, np, ndim);
+      m_data.vdep  = DeparturePoints("vdep" , nel, num_phys_lev, np, np, ndim);
+    }
     homme::compose::set_views(
       g.m_spheremp,
       homme::compose::SetView<Real****>  (reinterpret_cast<Real*>(d.m_dp.data()),
@@ -87,7 +91,7 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
         nel, t.qdp.extent_int(1), t.qdp.extent_int(2), np, np, nlev),
       homme::compose::SetView<Real*****> (reinterpret_cast<Real*>(t.Q.data()),
                                           nel, t.Q.extent_int(1), np, np, nlev),
-      m_data.dep_pts, ndim);
+      m_data.dep_pts, m_data.vnode, m_data.vdep, ndim);
   }
 
   m_data.independent_time_steps = independent_time_steps;

@@ -255,7 +255,7 @@ struct TracerArrays {
   View<Real****>  dp3d; // elem%state%dp3d or the sl3d equivalent
   View<Real*****> qdp;  // elem%state%Qdp(:,:,:,:,:)
   View<Real****>  q;    // elem%state%Q
-  DepPoints<MT> dep_points;
+  DepPoints<MT> dep_points, vnode, vdep;
   QExtrema<MT> q_min, q_max;
   void alloc_if_not();
 #else
