@@ -39,10 +39,10 @@ void set_views (const SetView<HommexxReal***>& spheremp,
   ta.qdp = View<Real*****>(qdp.data(), nel, qdp.extent_int(1), qdp.extent_int(2), np2, nlev);
   ta.q = View<Real****>(q.data(), nel, q.extent_int(1), np2, nlev);
   ta.dep_points = View<Real****>(dep_points.data(), nel, dep_points.extent_int(1), np2, ndim);
-  if (vnode.data()) {
-    ta.vnode = View<Real****>(vnode.data(), nel, dep_points.extent_int(1), np2, ndim);
-    ta.vdep = View<Real****>(vdep.data(), nel, dep_points.extent_int(1), np2, ndim);
-  }
+  if (vnode.data())
+    ta.vnode = View<Real****>(vnode.data(), nel, vnode.extent_int(1), np2, ndim);
+  if (vdep.data())
+    ta.vdep  = View<Real****>(vdep.data(),  nel, vdep .extent_int(1), np2, ndim);
 #else
   slmm_throw_if(true, "Running a Hommexx code path with the non-Hommexx build"
                 " is not supported.\n");

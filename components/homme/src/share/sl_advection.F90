@@ -1355,12 +1355,16 @@ contains
 
        call dss_vnode(elem, nets, nete, hybrid, vnode)
 
-       ! Fill vdep.
-       call slmm_calc_v_departure(nets, nete, step, dtsub, dep_points_all, &
-            &                    dep_points_ndim, vnode, vdep, info)
+       if (step == 1) then
+          call update_dep_points_all(independent_time_steps, dtsub, nets, nete, vnode)
+       else
+          ! Fill vdep.
+          call slmm_calc_v_departure(nets, nete, step, dtsub, dep_points_all, &
+               &                    dep_points_ndim, vnode, vdep, info)
 
-       ! Using vdep, update dep_points_all to departure points.
-       call update_dep_points_all(independent_time_steps, dtsub, nets, nete)
+          ! Using vdep, update dep_points_all to departure points.
+          call update_dep_points_all(independent_time_steps, dtsub, nets, nete, vdep)
+       end if
     end do
 
     if (independent_time_steps) then
@@ -1645,7 +1649,7 @@ contains
     end do
   end subroutine calc_eta_dot_formula_node_ref_mid
 
-  subroutine update_dep_points_all(independent_time_steps, dtsub, nets, nete)
+  subroutine update_dep_points_all(independent_time_steps, dtsub, nets, nete, vdep)
     ! Determine the departure points corresponding to the reference grid's
     ! arrival midpoints. Reads and writes dep_points_all. Reads vdep.
     
@@ -1654,6 +1658,7 @@ contains
     logical, intent(in) :: independent_time_steps
     real(real_kind), intent(in) :: dtsub
     integer, intent(in) :: nets, nete
+    real(real_kind), intent(in) :: vdep(:,:,:,:,:)
 
     real(real_kind) :: norm, p(3)
     integer :: ie, k, j, i
