@@ -410,7 +410,7 @@ void slmm_set_hvcoord (const homme::Real* etam) {
 
 void slmm_calc_v_departure (
   homme::Int nets, homme::Int nete, homme::Int step, homme::Real dtsub,
-  homme::Real* dep_points, homme::Int dep_points_ndim, const homme::Real* vnode,
+  homme::Real* dep_points, homme::Int dep_points_ndim, homme::Real* vnode,
   homme::Real* vdep, homme::Int* info)
 {
   amb::dev_init_threads();
@@ -419,13 +419,19 @@ void slmm_calc_v_departure (
   slmm_assert(homme::g_csl_mpi->sendsz.empty()); // alloc_mpi_buffers was called
   auto& cm = *homme::g_csl_mpi;
   slmm_assert(cm.dep_points_ndim == dep_points_ndim);
-  { slmm::Timer timer("h2d");
-    homme::sl_traj_h2d(*cm.tracer_arrays, dep_points, cm.dep_points_ndim); }
+  {
+    slmm::Timer timer("h2d");
+    homme::sl_traj_h2d(*cm.tracer_arrays, dep_points, vnode, vdep,
+                       cm.dep_points_ndim);
+  }
   homme::islmpi::calc_v_departure(cm, nets - 1, nete - 1, step - 1,
                                   dtsub, dep_points, vnode, vdep);
   *info = 0;
-  { slmm::Timer timer("d2h");
-    homme::sl_traj_d2h(*cm.tracer_arrays, dep_points, cm.dep_points_ndim); }
+  {
+    slmm::Timer timer("d2h");
+    homme::sl_traj_d2h(*cm.tracer_arrays, dep_points, vnode, vdep,
+                       cm.dep_points_ndim);
+  }
   amb::dev_fin_threads();
 }
 

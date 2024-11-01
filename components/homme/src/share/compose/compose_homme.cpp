@@ -30,7 +30,8 @@ void TracerArrays<MT>::alloc_if_not () {
 #endif
 
 template <typename MT>
-void sl_traj_h2d (TracerArrays<MT>& ta, Real* dep_points, Int ndim) {
+void sl_traj_h2d (TracerArrays<MT>& ta, Real* dep_points, Real* vnode,
+                  Real* vdep, Int ndim) {
 #if defined COMPOSE_PORT
 # if defined COMPOSE_HORIZ_OPENMP
 # pragma omp master
@@ -41,6 +42,14 @@ void sl_traj_h2d (TracerArrays<MT>& ta, Real* dep_points, Int ndim) {
   const Int nelemd = ta.nelemd, qsize = ta.qsize, np2 = ta.np2, nlev = ta.nlev;
   const DepPointsH<MT> cart_h(dep_points, nelemd, nlev, np2, ndim);
   ko::deep_copy(ta.dep_points, cart_h);
+  if (vnode) {
+    const DepPointsH<MT> h(vnode, nelemd, nlev, np2, ndim);
+    ko::deep_copy(ta.vnode, h);
+  }
+  if (vdep) {
+    const DepPointsH<MT> h(vdep, nelemd, nlev, np2, ndim);
+    ko::deep_copy(ta.vdep, h);    
+  }
 # ifdef COMPOSE_HORIZ_OPENMP
   }
 # pragma omp barrier
@@ -49,7 +58,8 @@ void sl_traj_h2d (TracerArrays<MT>& ta, Real* dep_points, Int ndim) {
 }
 
 template <typename MT>
-void sl_traj_d2h (const TracerArrays<MT>& ta, Real* dep_points, Int ndim) {
+void sl_traj_d2h (const TracerArrays<MT>& ta, Real* dep_points, Real* vnode,
+                  Real* vdep, Int ndim) {
 #if defined COMPOSE_PORT
 # if defined COMPOSE_HORIZ_OPENMP
 # pragma omp master
@@ -60,6 +70,14 @@ void sl_traj_d2h (const TracerArrays<MT>& ta, Real* dep_points, Int ndim) {
   const Int nelemd = ta.nelemd, np2 = ta.np2, nlev = ta.nlev;
   const DepPointsH<MT> dep_points_h(dep_points, nelemd, nlev, np2, ndim);
   ko::deep_copy(dep_points_h, ta.dep_points);
+  if (vnode) {
+    const DepPointsH<MT> h(vnode, nelemd, nlev, np2, ndim);
+    ko::deep_copy(h, ta.vnode);
+  }
+  if (vdep) {
+    const DepPointsH<MT> h(vdep, nelemd, nlev, np2, ndim);
+    ko::deep_copy(h, ta.vdep);    
+  }
 # ifdef COMPOSE_HORIZ_OPENMP
   }
 # pragma omp barrier
@@ -226,9 +244,9 @@ void delete_tracer_arrays () {
 
 template struct TracerArrays<ko::MachineTraits>;
 template void sl_traj_h2d(TracerArrays<ko::MachineTraits>& ta,
-                          Real* dep_points, Int ndim);
+                          Real*, Real*, Real*, Int ndim);
 template void sl_traj_d2h(const TracerArrays<ko::MachineTraits>& ta,
-                          Real* dep_points, Int ndim);
+                          Real*, Real*, Real*, Int ndim);
 template void sl_h2d(TracerArrays<ko::MachineTraits>& ta, bool transfer,
                      Real* dep_points, Int ndim);
 template void sl_d2h(const TracerArrays<ko::MachineTraits>& ta, bool transfer,
