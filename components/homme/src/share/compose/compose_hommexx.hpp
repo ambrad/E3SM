@@ -19,6 +19,7 @@ void set_views(const SetView<HommexxReal***>& spheremp,
                const SetView5& dep_points, const SetView5& vnode,
                const SetView5& vdep, const int trajectory_ndim);
 
+void set_hvcoord(const HommexxReal* etam);
 void calc_v_departure(const int step, const HommexxReal dtsub);
 
 void advect(const int np1, const int n0_qdp, const int np1_qdp);

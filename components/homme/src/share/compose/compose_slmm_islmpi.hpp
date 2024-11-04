@@ -700,6 +700,9 @@ void step(
   Real* q_min_r, Real* q_max_r);
 
 template <typename MT = ko::MachineTraits>
+void set_hvcoord(IslMpi<MT>& cm, const Real* etam);
+
+template <typename MT = ko::MachineTraits>
 void calc_v_departure(
   IslMpi<MT>& cm, const Int nets, const Int nete, const Int step, const Real dtsub,
   Real* dep_points_r, const Real* vnode, Real* vdep);

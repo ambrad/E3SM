@@ -125,7 +125,7 @@ struct ComposeTransportImpl {
   }
 
   void set_dp_tol();
-  void set_deta_tol();
+  void setup_enhanced_trajectory();
   void reset(const SimulationParams& params);
   int requested_buffer_size() const;
   void init_buffers(const FunctorsBuffersManager& fbm);

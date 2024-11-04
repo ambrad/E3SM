@@ -20,12 +20,12 @@
 namespace Homme {
 
 // For limit_etam.
-void ComposeTransportImpl::set_deta_tol () {
+void ComposeTransportImpl::setup_enhanced_trajectory () {
   const auto etai = cmvdc(m_hvcoord.etai);
   const Real deta_ave = (etai(num_phys_lev) - etai(0)) / num_phys_lev;
   m_data.deta_tol = 10*std::numeric_limits<Real>::epsilon()*deta_ave;
 
-  // Also compute diff(etai).
+  // diff(etai)
   m_data.hydetai = decltype(m_data.hydetai)("hydetai");
   const auto detai_pack = Kokkos::create_mirror_view(m_data.hydetai);
   ExecViewUnmanaged<Real[NUM_PHYSICAL_LEV]> detai(pack2real(detai_pack));
@@ -33,16 +33,20 @@ void ComposeTransportImpl::set_deta_tol () {
     detai(k) = etai(k+1) - etai(k);
   Kokkos::deep_copy(m_data.hydetai, detai_pack);
 
-  // And deta_ref.
+  const auto etamp = cmvdc(m_hvcoord.etam);
+  HostViewUnmanaged<Real[NUM_PHYSICAL_LEV]> etam(pack2real(etamp));
+  
+  // hydetam_ref.
   m_data.hydetam_ref = decltype(m_data.hydetam_ref)("hydetam_ref");
   const auto m = Kokkos::create_mirror_view(m_data.hydetam_ref);
-  const auto etamp = cmvdc(m_hvcoord.etam);
-  ExecViewUnmanaged<Real[NUM_PHYSICAL_LEV]> etam(pack2real(etamp));
   const int nlev = num_phys_lev;
   m(0) = etam(0) - etai(0);
   for (int k = 1; k < nlev; ++k) m(k) = etam(k) - etam(k-1);
   m(nlev) = etai(nlev) - etam(nlev-1);
   Kokkos::deep_copy(m_data.hydetam_ref, m);
+
+  // etam
+  homme::compose::set_hvcoord(etam.data());
 }
 
 namespace { // anon

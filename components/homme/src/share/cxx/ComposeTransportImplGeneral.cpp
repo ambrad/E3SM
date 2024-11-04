@@ -47,7 +47,7 @@ void ComposeTransportImpl::setup () {
   m_sphere_ops = Context::singleton().get<SphereOperators>();
   
   set_dp_tol();
-  set_deta_tol();
+  setup_enhanced_trajectory();
   
   nslot = calc_nslot(m_geometry.num_elems());
 }

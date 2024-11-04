@@ -49,6 +49,11 @@ void set_views (const SetView<HommexxReal***>& spheremp,
 #endif
 }
 
+void set_hvcoord (const HommexxReal* etam) {
+  auto& cm = *get_isl_mpi_singleton();
+  islmpi::set_hvcoord(cm, etam);
+}
+
 void calc_v_departure (const int step, const HommexxReal dtsub) {
   auto& cm = *get_isl_mpi_singleton();
   islmpi::calc_v_departure<>(cm, 0, cm.nelemd - 1, step, dtsub,
