@@ -207,9 +207,8 @@ KOKKOS_FUNCTION void
 eta_interp_eta (const KernelVariables& kv, const int nlev,
                 const CRnV& hy_etai, const CRelnV& x, const CRnV& y,
                 const RelnV& xwrk, const RnV& ywrk,
-                const int ni, const CRnV& xi,
-                // Use yi(i,j,yi_os:)
-                const RelnV& yi, const int yi_os = 0) {
+                // Use xi(yi_os:), yi(i,j,yi_os:).
+                const int ni, const CRnV& xi, const RelnV& yi, const int yi_os = 0) {
   const auto& xbdy = xwrk;
   const auto& ybdy = ywrk;
   assert(hy_etai.extent_int(0) >= nlev+1);
@@ -217,7 +216,7 @@ eta_interp_eta (const KernelVariables& kv, const int nlev,
   assert(y.extent_int(0) >= nlev);
   assert_eln(xbdy, nlev+2);
   assert(ybdy.extent_int(0) >= nlev+2);
-  assert(xi.extent_int(0) >= ni);
+  assert(xi.extent_int(0) >= yi_os + ni);
   assert_eln(yi, yi_os + ni);
   const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
   const auto tvr_ni = Kokkos::ThreadVectorRange(kv.team, ni);
@@ -244,7 +243,7 @@ eta_interp_eta (const KernelVariables& kv, const int nlev,
     const int i = idx / NP, j = idx % NP;
     linterp(tvr_ni,
             nlev+2, getcolc(xbdy,i,j), ybdy,
-            ni,     xi,                getcol(yi,i,j).data() + yi_os,
+            ni,     xi.data() + yi_os, getcol(yi,i,j).data() + yi_os,
             1, "eta_interp_eta");
   };
   Kokkos::parallel_for(ttr, f_linterp);
@@ -598,7 +597,7 @@ KOKKOS_FUNCTION void calc_eta_dot_ref_mid (
     cti::loop_ijk<cti::num_lev_pack>(kv, f);
     kv.team_barrier();
     sphere_ops.divergence_sphere(kv, vdp, divdp);
-    kv.team_barrier();    
+    kv.team_barrier();
     // Compute eta_dot_dpdn at interface nodes.
     const auto& edd = eta_dot[t];
     const RelNlevp edds(cti::pack2real(edd));
@@ -825,7 +824,7 @@ void calc_nodal_velocities (
                              ps0, hyai0, hybi, hydai, hydbi, hydetai,
                              alpha, v1_ie, dp1_ie, v2_ie, dp2_ie,
                              wrk1, wrk2, vwrk1,
-                             eta_dot);
+                             eta_dot), ie==0;
       } else {
         for (int t = 0; t < 2; ++t) {
           const auto& ed = eta_dot[t];
@@ -916,16 +915,16 @@ void interp_departure_points_to_floating_level_midpoints (const CTI& c, const in
     kv.team_barrier();
     {
       // Compute eta_arr_int.
-      const RelNlev etai_arr = p2rel(wrk4.data(), nlevp);
+      const auto etai_arr = p2rel(wrk4.data(), nlevp);
       eta_interp_eta(kv, nlev,
                      hyetai,
                      etam, hyetam,
                      p2rel(wrk1.data(), nlev+2), RnV(cti::pack2real(wrk2), nlev+2),
-                     nlevp-2, CRnV(&hyetai(1)), etai_arr, 1);
+                     nlevp-2, hyetai, etai_arr, 1);
       const auto f = [&] (const int i, const int j) {
-                       etai_arr(i,j,0) = hyetai(0);
-                       etai_arr(i,j,nlev) = hyetai(nlev);
-                     };
+        etai_arr(i,j,0) = hyetai(0);
+        etai_arr(i,j,nlev) = hyetai(nlev);
+      };
       c.loop_ij(kv, f);
       // Compute divdp.
       const ExecViewUnmanaged<Real[NP][NP]> ps(cti::pack2real(wrk1));
