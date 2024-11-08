@@ -211,8 +211,8 @@ KOKKOS_FUNCTION void
 eta_interp_eta (const KernelVariables& kv, const int nlev,
                 const CRnV& hy_etai, const CRelnV& x, const CRnV& y,
                 const RelnV& xwrk, const RnV& ywrk,
-                // Use xi(yi_os:), yi(i,j,yi_os:).
-                const int ni, const CRnV& xi, const RelnV& yi, const int yi_os = 0) {
+                // Use xi(i_os:), yi(i,j,i_os:).
+                const int ni, const CRnV& xi, const RelnV& yi, const int i_os = 0) {
   const auto& xbdy = xwrk;
   const auto& ybdy = ywrk;
   assert(hy_etai.extent_int(0) >= nlev+1);
@@ -220,8 +220,8 @@ eta_interp_eta (const KernelVariables& kv, const int nlev,
   assert(y.extent_int(0) >= nlev);
   assert_eln(xbdy, nlev+2);
   assert(ybdy.extent_int(0) >= nlev+2);
-  assert(xi.extent_int(0) >= yi_os + ni);
-  assert_eln(yi, yi_os + ni);
+  assert(xi.extent_int(0) >= i_os + ni);
+  assert_eln(yi, i_os + ni);
   const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
   const auto tvr_ni = Kokkos::ThreadVectorRange(kv.team, ni);
   const auto tvr_nlevp2 = Kokkos::ThreadVectorRange(kv.team, nlev+2);
@@ -247,7 +247,7 @@ eta_interp_eta (const KernelVariables& kv, const int nlev,
     const int i = idx / NP, j = idx % NP;
     linterp(tvr_ni,
             nlev+2, getcolc(xbdy,i,j), ybdy,
-            ni,     xi.data() + yi_os, getcol(yi,i,j).data() + yi_os,
+            ni,     xi.data() + i_os, getcol(yi,i,j).data() + i_os,
             1, "eta_interp_eta");
   };
   Kokkos::parallel_for(ttr, f_linterp);
@@ -828,13 +828,13 @@ void calc_nodal_velocities (
                              ps0, hyai0, hybi, hydai, hydbi, hydetai,
                              alpha, v1_ie, dp1_ie, v2_ie, dp2_ie,
                              wrk1, wrk2, vwrk1,
-                             eta_dot), ie==0;
+                             eta_dot);
       } else {
         for (int t = 0; t < 2; ++t) {
           const auto& ed = eta_dot[t];
           const auto f = [&] (const int i, const int j, const int k) {
-                           ed(i,j,k) = 0;
-                         };
+            ed(i,j,k) = 0;
+          };
           cti::loop_ijk<cti::num_lev_pack>(kv, f);
         }
       }
@@ -868,21 +868,22 @@ void calc_nodal_velocities (
                                         dtsub, vsph, eta_dot,
                                         wrk1, vwrk1, vwrk2,
                                         vnode_ie);
-    if (independent_time_steps)
+    if (independent_time_steps) {
+      kv.team_barrier();
       calc_eta_dot_formula_node_ref_mid(kv, sphere_ops,
                                         hyetai, hyetam,
                                         dtsub, vsph, eta_dot,
                                         wrk1, vwrk1,
                                         vnode_ie);
+    }
   };
   Kokkos::parallel_for(c.m_tp_ne, f);
 }
 
-/* Determine the departure points corresponding to the vertically Lagragnian
-   grid's arrival midpoints, where the floating levels are those that evolve
-   over the course of the full tracer time step. Also compute divdp, which holds
-   the floating levels' dp values for later use in vertical remap.
-*/
+// Determine the departure points corresponding to the vertically Lagragnian
+// grid's arrival midpoints, where the floating levels are those that evolve
+// over the course of the full tracer time step. Also compute divdp, which holds
+// the floating levels' dp values for later use in vertical remap.
 void interp_departure_points_to_floating_level_midpoints (const CTI& c, const int np1) {
   using Kokkos::ALL;
   const int nlev = NUM_PHYSICAL_LEV, nlevp = nlev+1;
@@ -911,7 +912,12 @@ void interp_departure_points_to_floating_level_midpoints (const CTI& c, const in
     const auto vwrk = Homme::subview(buf2a, kv.team_idx);
     // Reconstruct Lagrangian levels at t1 on arrival column:
     //     eta_arr_int = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_int)
-    const RelNlev etam = p2rel(wrk3.data(), nlev );
+    const RelNlev etam = p2rel(wrk3.data(), nlev);
+    const auto f = [&] (const int i, const int j, const int k) {
+      etam(i,j,k) = dep_pts(ie,k,i,j,3);
+    };
+    cti::loop_ijk<cti::num_phys_lev>(kv, f);
+    kv.team_barrier();
     limit_etam(kv, nlev,
                hyetai, detam_ref, deta_tol,
                p2rel(wrk1.data(), nlevp), p2rel(wrk2.data(), nlevp),
@@ -964,15 +970,18 @@ void interp_departure_points_to_floating_level_midpoints (const CTI& c, const in
           dpts_in(i,j,k) = dep_pts(ie,k,i,j,d);
         };
         c.loop_ijk<cti::num_phys_lev>(kv, f);
+        kv.team_barrier();
         eta_interp_horiz(kv, nlev,
                          hyetai,
                          hyetam, dpts_in,
                          RnV(cti::pack2real(wrk2), nlev+2), p2rel(wrk1.data(), nlev+2),
                          etam_arr, dpts_out);
+        kv.team_barrier();
         const auto g = [&] (const int i, const int j, const int k) {
           dep_pts(ie,k,i,j,d) = dpts_out(i,j,k);
         };
         c.loop_ijk<cti::num_phys_lev>(kv, g);
+        kv.team_barrier();
       }
     }
   };
@@ -1012,6 +1021,25 @@ void dss_vnode (const CTI& c, const cti::DeparturePoints& vnode) {
 
 void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real dt) {
   GPTLstart("compose_calc_enhanced_trajectory");
+
+  if (0) {
+    const auto& d = m_data;
+    const auto& t = m_tracers;
+    Real qmax = 0;
+    for (int ie = 0; ie < d.nelemd; ++ie)
+      for (int i = 0; i < NP; ++i)
+        for (int j = 0; j < NP; ++j) {
+          Real* q = &t.Q(ie,0,i,j,0)[0];
+          for (int k = 0; k < cti::num_phys_lev; ++k)
+            qmax = std::max(qmax, q[k]);
+        }
+    const auto& comm = Context::singleton().get<Comm>();
+    MPI_Allreduce(MPI_IN_PLACE, &qmax, 1, MPI_DOUBLE, MPI_MAX, comm.mpi_comm());
+    if (comm.root()) {
+      printf("qmax> %1.3e\n", qmax);
+      fflush(stdout);
+    }
+  }
 
   const auto& dep_pts = m_data.dep_pts;
   const auto& vnode = m_data.vnode;
@@ -1065,6 +1093,13 @@ void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real d
     Kokkos::fence();
     GPTLstop("compose_floating_dep_pts");
   }
+
+  if (0)
+    for (int ie = 0; ie < m_data.nelemd; ++ie)
+      for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 4; ++j)
+          for (int k = 0; k < NUM_LEV; ++k)
+            m_derived.m_divdp(ie,i,j,k) = m_state.m_dp3d(ie,np1,i,j,k);
   
   GPTLstop("compose_calc_enhanced_trajectory");
 }
