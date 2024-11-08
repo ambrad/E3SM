@@ -647,7 +647,7 @@ KOKKOS_FUNCTION void calc_vel_horiz_formula_node_ref_mid (
   { // Vertical terms.
     const CRNV<NUM_PHYSICAL_LEV> etams(cti::cpack2real(hyetam));
     const CR2elNlev vsph1s(cti::cpack2real(vsph1));
-    const CRelNlev eds(cti::cpack2real(eta_dot[1]));
+    const CRelNlevp eds(cti::cpack2real(eta_dot[1]));
     for (int d = 0; d < 2; ++d) {
       const auto f = [&] (const int i, const int j, const int k) {
         Real deriv;
@@ -688,7 +688,7 @@ KOKKOS_FUNCTION void calc_eta_dot_formula_node_ref_mid (
   const SelNlev ed1_vderiv(wrk1.data());
   {
     const CRNV<NUM_PHYSICAL_LEV> etams(cti::cpack2real(hyetam));
-    const CRelNlev ed1s(cti::cpack2real(eta_dot[0]));
+    const CRelNlevp ed1s(cti::cpack2real(eta_dot[0]));
     const RelNlev ed1_vderiv_s(cti::pack2real(ed1_vderiv));
     const auto f = [&] (const int i, const int j, const int k) {
       Real deriv;
@@ -711,7 +711,7 @@ KOKKOS_FUNCTION void calc_eta_dot_formula_node_ref_mid (
   }
   kv.team_barrier();
   const S2elNlev ed1_hderiv(vwrk1.data());
-  sphere_ops.gradient_sphere(kv, eta_dot[0], ed1_hderiv);
+  sphere_ops.gradient_sphere(kv, eta_dot[0], ed1_hderiv, NUM_LEV);
   {
     const auto& vsph2 = vsph[1];
     const auto& ed1 = eta_dot[0];
