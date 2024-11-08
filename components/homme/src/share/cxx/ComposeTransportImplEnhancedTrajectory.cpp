@@ -1095,8 +1095,11 @@ get_test_team_policy (const int nelem, const int nlev, const int ncol=NP*NP) {
 struct TestData {
   std::mt19937_64 engine;
   static const Real eps;
+  const ComposeTransportImpl& cti;
 
-  TestData (const int seed) : engine(seed) {}
+  TestData (const CTI& cti_, const int seed = 0)
+    : cti(cti_), engine(seed == 0 ? std::random_device()() : seed)
+  {}
 
   Real urand (const Real lo = 0, const Real hi = 1) {
     std::uniform_real_distribution<Real> urb(lo, hi);
@@ -1890,6 +1893,14 @@ int test_calc_eta_dot_ref_mid (TestData& td) {
   return nerr;
 }
 
+int test_interp_departure_points_to_floating_level_midpoints (TestData& td) {
+  int nerr = 0;
+
+  //todo test case of ed = 0
+
+  return nerr;
+}
+
 int test_init_velocity_record (TestData& td) {
   int nerr = 0;
   pr("test_init_velocity_record");
@@ -1906,7 +1917,7 @@ int test_init_velocity_record (TestData& td) {
 
 int ComposeTransportImpl::run_enhanced_trajectory_unit_tests () {
   int nerr = 0, ne;
-  TestData td(1);
+  TestData td(*this);
   comunittest(test_find_support);
   comunittest(test_linterp);
   comunittest(test_eta_interp);
