@@ -1022,25 +1022,6 @@ void dss_vnode (const CTI& c, const cti::DeparturePoints& vnode) {
 void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real dt) {
   GPTLstart("compose_calc_enhanced_trajectory");
 
-  if (0) {
-    const auto& d = m_data;
-    const auto& t = m_tracers;
-    Real qmax = 0;
-    for (int ie = 0; ie < d.nelemd; ++ie)
-      for (int i = 0; i < NP; ++i)
-        for (int j = 0; j < NP; ++j) {
-          Real* q = &t.Q(ie,0,i,j,0)[0];
-          for (int k = 0; k < cti::num_phys_lev; ++k)
-            qmax = std::max(qmax, q[k]);
-        }
-    const auto& comm = Context::singleton().get<Comm>();
-    MPI_Allreduce(MPI_IN_PLACE, &qmax, 1, MPI_DOUBLE, MPI_MAX, comm.mpi_comm());
-    if (comm.root()) {
-      printf("qmax> %1.3e\n", qmax);
-      fflush(stdout);
-    }
-  }
-
   const auto& dep_pts = m_data.dep_pts;
   const auto& vnode = m_data.vnode;
   const auto& vdep = m_data.vdep;
@@ -1094,13 +1075,6 @@ void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real d
     GPTLstop("compose_floating_dep_pts");
   }
 
-  if (0)
-    for (int ie = 0; ie < m_data.nelemd; ++ie)
-      for (int i = 0; i < 4; ++i)
-        for (int j = 0; j < 4; ++j)
-          for (int k = 0; k < NUM_LEV; ++k)
-            m_derived.m_divdp(ie,i,j,k) = m_state.m_dp3d(ie,np1,i,j,k);
-  
   GPTLstop("compose_calc_enhanced_trajectory");
 }
 
