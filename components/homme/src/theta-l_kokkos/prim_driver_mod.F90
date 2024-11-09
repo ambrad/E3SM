@@ -11,7 +11,11 @@ module prim_driver_mod
   use prim_driver_base,     only : deriv1, smooth_topo_datasets
   use prim_cxx_driver_base, only : prim_init1, prim_finalize
   use physical_constants,   only : scale_factor, laplacian_rigid_factor
-
+  use hybrid_mod,           only : hybrid_t
+  use hybvcoord_mod,        only : hvcoord_t
+  use derivative_mod,       only : derivative_t
+  use time_mod,             only : timelevel_t
+  
   implicit none
 
   public :: prim_init2
@@ -23,10 +27,19 @@ module prim_driver_mod
   public :: prim_init_ref_states_views
   public :: prim_init_diags_views
 
+  type, private :: PrescribedWind_t
+     type (element_t), pointer :: elem(:)
+     type (hybrid_t) :: hybrid
+     type (hvcoord_t) :: hvcoord
+     type (derivative_t) :: deriv
+     integer :: nets, nete
+  end type PrescribedWind_t
+
+  type (PrescribedWind_t), private :: prescribed_wind_args
+
 contains
 
   subroutine prim_init2(elem, hybrid, nets, nete, tl, hvcoord)
-    use hybrid_mod,       only : hybrid_t
     use hybvcoord_mod,    only : hvcoord_t
     use time_mod,         only : timelevel_t
     use prim_driver_base, only : deriv1, prim_init2_base => prim_init2
@@ -450,9 +463,6 @@ contains
                              elem_derived_FPHI, elem_derived_FQ)
       call t_stopf('push_to_cxx')
     end if
-    if (prescribed_wind == 1) then ! standalone Homme
-      call set_prescribed_wind_f(elem,deriv1,hybrid,hvcoord,dt,tl,nets,nete)
-    end if
 
     call prim_run_subcycle_c(dt,nstep_c,nm1_c,n0_c,np1_c,nextOutputStep,nsplit_iteration)
 
@@ -622,6 +632,14 @@ contains
     dt = 0        ! value unused in initialization
     eta_ave_w = 0 ! same
     call set_prescribed_wind(elem,deriv,hybrid,hvcoord,dt,tl,nets,nete,eta_ave_w)
+
+    ! Save arguments for the C++-F90 bridge for prescribed winds.
+    prescribed_wind_args%elem => elem
+    prescribed_wind_args%hybrid = hybrid
+    prescribed_wind_args%hvcoord = hvcoord
+    prescribed_wind_args%deriv = deriv
+    prescribed_wind_args%nets = nets
+    prescribed_wind_args%nete = nete
 #endif
   end subroutine init_standalone_test
 
@@ -709,5 +727,25 @@ contains
     call t_stopf('push_to_cxx')
 #endif
   end subroutine set_prescribed_wind_f
+
+  subroutine set_prescribed_wind_f_bridge(n0, np1, nstep, dt) bind(c)
+    ! This routine is called from the C++ prim_advance_exp implementation.
+    
+    use iso_c_binding, only: c_int, c_double
+    
+    integer(c_int), value, intent(in) :: n0, np1, nstep
+    real(c_double), value, intent(in) :: dt
+
+    type (TimeLevel_t) :: tl
+
+    ! Only these fields need to be valid.
+    tl%n0 = n0+1
+    tl%np1 = np1+1
+    tl%nstep = nstep
+
+    call set_prescribed_wind_f(prescribed_wind_args%elem, prescribed_wind_args%deriv, &
+         prescribed_wind_args%hybrid, prescribed_wind_args%hvcoord, dt, tl, &
+         prescribed_wind_args%nets, prescribed_wind_args%nete)
+  end subroutine set_prescribed_wind_f_bridge
 
 end module
