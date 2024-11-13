@@ -7,6 +7,64 @@ namespace islmpi {
 
 template <typename T> using CA4 = ko::View<T****, ko::LayoutRight, ko::HostSpace>;
 
+template <Int np, typename EtamT, typename VnodeT> SLMM_KF void
+interpolate_vertical (const Int nlev, const EtamT& etam, const VnodeT& vnode,
+                      const Int src_lid, const Int lev, const Real eta_dep,
+                      const Real rx[np], const Real ry[np], Real* const v_tgt) {
+  slmm_assert(eta_dep > 0 && eta_dep < 1);
+  
+  // Search for the eta midpoint values that support the departure point's eta
+  // value.
+  Int lev_dep = lev;
+  if (eta_dep != etam(lev)) {
+    if (eta_dep < etam(lev)) {
+      for (lev_dep = lev-1; lev_dep >= 0; --lev_dep)
+        if (eta_dep >= etam(lev_dep))
+          break;
+    } else {
+      for (lev_dep = lev; lev_dep < nlev-1; ++lev_dep)
+        if (eta_dep < etam(lev_dep+1))
+          break;
+    }
+  }
+  slmm_assert(lev_dep >= -1 && lev_dep < nlev);
+  slmm_assert(lev_dep == -1 || eta_dep >= etam(lev_dep));
+  Real a;
+  bool bdy = false;
+  if (lev_dep == -1) {
+    lev_dep = 0;
+    a = 0;
+    bdy = true;
+  } else if (lev_dep == nlev-1) {
+    a = 0;
+    bdy = true;
+  } else {
+    a = ((eta_dep - etam(lev_dep)) /
+         (etam(lev_dep+1) - etam(lev_dep)));
+  }
+  // Linear interp coefficients.
+  const Real alpha[] = {1-a, a};
+
+  for (int d = 0; d < 4; ++d)
+    v_tgt[d] = 0;
+  for (int i = 0; i < 2; ++i) {
+    if (alpha[i] == 0) continue;
+    for (int d = 0; d < 4; ++d) {
+      Real vel_nodes[np*np];
+      for (int k = 0; k < np*np; ++k)
+        vel_nodes[k] = vnode(src_lid,lev_dep+i,k,d);
+      v_tgt[d] += alpha[i]*calc_q_tgt(rx, ry, vel_nodes);
+    }
+  }
+  // Treat eta_dot specially since eta_dot goes to 0 at the boundaries.
+  if (bdy) {
+    if (lev_dep == 0)
+      v_tgt[3] *= eta_dep/etam(0);
+    else
+      v_tgt[3] *= (1 - eta_dep)/(1 - etam(nlev-1));
+  }
+}
+
 template <Int np, typename VnodeT, typename MT> SLMM_KF
 void calc_v (const IslMpi<MT>& cm, const VnodeT& vnode,
              const Int src_lid, const Int lev,
@@ -32,59 +90,8 @@ void calc_v (const IslMpi<MT>& cm, const VnodeT& vnode,
   }
 
   slmm_assert(cm.dep_points_ndim == 4);
-  slmm_assert(dep_point[3] > 0 && dep_point[3] < 1);
-
-  // Search for the eta midpoint values that support the departure point's eta
-  // value.
-  const auto eta_dep = dep_point[3];
-  Int lev_dep = lev;
-  if (eta_dep != cm.etam(lev)) {
-    if (eta_dep < cm.etam(lev)) {
-      for (lev_dep = lev-1; lev_dep >= 0; --lev_dep)
-        if (eta_dep >= cm.etam(lev_dep))
-          break;
-    } else {
-      for (lev_dep = lev; lev_dep < cm.nlev-1; ++lev_dep)
-        if (eta_dep < cm.etam(lev_dep+1))
-          break;
-    }
-  }
-  slmm_assert(lev_dep >= -1 && lev_dep < cm.nlev);
-  slmm_assert(lev_dep == -1 || eta_dep >= cm.etam(lev_dep));
-  Real a;
-  bool bdy = false;
-  if (lev_dep == -1) {
-    lev_dep = 0;
-    a = 0;
-    bdy = true;
-  } else if (lev_dep == cm.nlev-1) {
-    a = 0;
-    bdy = true;
-  } else {
-    a = ((eta_dep - cm.etam(lev_dep)) /
-         (cm.etam(lev_dep+1) - cm.etam(lev_dep)));
-  }
-  // Linear interp coefficients.
-  const Real alpha[] = {1-a, a};
-
-  for (int d = 0; d < 4; ++d)
-    v_tgt[d] = 0;
-  for (int i = 0; i < 2; ++i) {
-    if (alpha[i] == 0) continue;
-    for (int d = 0; d < 4; ++d) {
-      Real vel_nodes[np*np];
-      for (int k = 0; k < np*np; ++k)
-        vel_nodes[k] = vnode(src_lid,lev_dep+i,k,d);
-      v_tgt[d] += alpha[i]*calc_q_tgt(rx, ry, vel_nodes);
-    }
-  }
-  // Treat eta_dot specially since eta_dot goes to 0 at the boundaries.
-  if (bdy) {
-    if (lev_dep == 0)
-      v_tgt[3] *= eta_dep/cm.etam(0);
-    else
-      v_tgt[3] *= (1 - eta_dep)/(1 - cm.etam(cm.nlev-1));
-  }
+  interpolate_vertical<np>(cm.nlev, cm.etam, vnode, src_lid, lev, dep_point[3],
+                           rx, ry, v_tgt);
 }
 
 template <int np, typename VnodeT, typename MT>
