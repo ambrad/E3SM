@@ -79,7 +79,6 @@ void calc_v (const IslMpi<MT>& cm, const VnodeT& vnode,
   interpolate<MT>(cm.advecter->alg(), ref_coord, rx, ry);
 
   if (not cm.traj_3d) {
-    slmm_assert(cm.dep_points_ndim == 3);
     for (int d = 0; d < cm.dep_points_ndim; ++d) {
       Real vel_nodes[np*np];
       for (int k = 0; k < np*np; ++k)
@@ -94,6 +93,56 @@ void calc_v (const IslMpi<MT>& cm, const VnodeT& vnode,
                            rx, ry, v_tgt);
 }
 
+template <typename MT>
+struct CalcVData {
+  typedef slmm::Advecter<MT> Adv;
+  const typename Adv::LocalMeshesD local_meshes;
+  const typename Adv::Alg::Enum interp_alg;
+  const slmm::SphereToRef<typename MT::DES> s2r;
+  const bool traj_3d;
+  const int dep_points_ndim;
+  const int nlev;
+  const typename IslMpi<MT>::template ArrayD<Real*> etam;
+
+  CalcVData (const IslMpi<MT>& cm)
+    : local_meshes(cm.advecter->local_meshes()),
+      interp_alg(cm.advecter->alg()),
+      s2r(cm.advecter->s2r()),
+      traj_3d(cm.traj_3d),
+      dep_points_ndim(cm.dep_points_ndim),
+      nlev(cm.nlev),
+      etam(cm.etam)
+  {}
+};
+
+template <Int np, typename VnodeT, typename MT> SLMM_KF
+void calc_v (const CalcVData<MT>& cvd, const VnodeT& vnode,
+             const Int src_lid, const Int lev,
+             const Real* const dep_point, Real* const v_tgt) {
+  Real ref_coord[2]; {
+    const auto& m = cvd.local_meshes(src_lid);
+    cvd.s2r.calc_sphere_to_ref(src_lid, m, dep_point,
+                               ref_coord[0], ref_coord[1]);
+  }
+
+  Real rx[np], ry[np];
+  interpolate<MT>(cvd.interp_alg, ref_coord, rx, ry);
+
+  if (not cvd.traj_3d) {
+    for (int d = 0; d < cvd.dep_points_ndim; ++d) {
+      Real vel_nodes[np*np];
+      for (int k = 0; k < np*np; ++k)
+        vel_nodes[k] = vnode(src_lid,lev,k,d);
+      v_tgt[d] = calc_q_tgt(rx, ry, vel_nodes);
+    }
+    return;
+  }
+
+  slmm_assert(cvd.dep_points_ndim == 4);
+  interpolate_vertical<np>(cvd.nlev, cvd.etam, vnode, src_lid, lev, dep_point[3],
+                           rx, ry, v_tgt);
+}
+
 template <int np, typename VnodeT, typename MT>
 void traj_calc_rmt_next_step (IslMpi<MT>& cm, const VnodeT& vnode) {
   calc_rmt_q_pass1(cm, true);
@@ -101,6 +150,7 @@ void traj_calc_rmt_next_step (IslMpi<MT>& cm, const VnodeT& vnode) {
   const auto& rmt_xs_h = cm.rmt_xs_h;
   const auto& sendbuf = cm.sendbuf;
   const auto& recvbuf = cm.recvbuf;
+  CalcVData<MT> cvd(cm);
 #ifdef COMPOSE_PORT
   ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, cm.nrmt_xs),
                    COMPOSE_LAMBDA (const Int it)
@@ -116,7 +166,7 @@ void traj_calc_rmt_next_step (IslMpi<MT>& cm, const VnodeT& vnode) {
       xos = rmt_xs_h(5*it + 3), vos = ndim*rmt_xs_h(5*it + 4);
     const auto&& xs = recvbuf(ri);
     auto&& v = sendbuf(ri);
-    calc_v<np>(cm, vnode, lid, lev, &xs(xos), &v(vos));
+    calc_v<np>(cvd, vnode, lid, lev, &xs(xos), &v(vos));
   }
 #ifdef COMPOSE_PORT
   );
@@ -130,6 +180,7 @@ void traj_calc_own_next_step (IslMpi<MT>& cm, const DepPoints<MT>& dep_points,
 #ifdef COMPOSE_PORT
   const auto& ed_d = cm.ed_d;
   const auto& own_dep_list = cm.own_dep_list;
+  CalcVData<MT> cvd(cm);
   const auto f = COMPOSE_LAMBDA (const Int& it) {
     const Int tci = own_dep_list(it,0);
     const Int tgt_lev = own_dep_list(it,1);
@@ -137,7 +188,7 @@ void traj_calc_own_next_step (IslMpi<MT>& cm, const DepPoints<MT>& dep_points,
     const auto& ed = ed_d(tci);
     const Int slid = ed.nbrs(ed.src(tgt_lev, tgt_k)).lid_on_rank;
     Real v_tgt[4];
-    calc_v<np>(cm, vnode, slid, tgt_lev, &dep_points(tci,tgt_lev,tgt_k,0), v_tgt);
+    calc_v<np>(cvd, vnode, slid, tgt_lev, &dep_points(tci,tgt_lev,tgt_k,0), v_tgt);
     for (int d = 0; d < ndim; ++d)
       vdep(tci,tgt_lev,tgt_k,d) = v_tgt[d];
   };
@@ -217,6 +268,8 @@ calc_v_departure (IslMpi<MT>& cm, const Int nets, const Int nete,
   const int np = 4;
 
   slmm_assert(cm.np == np);
+  slmm_assert((cm.traj_3d and cm.dep_points_ndim == 4) or
+              (not cm.traj_3d and cm.dep_points_ndim == 3));
 #ifdef COMPOSE_PORT
   slmm_assert(nets == 0 && nete+1 == cm.nelemd);
 #endif
