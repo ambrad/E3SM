@@ -170,6 +170,27 @@ template <typename MT>
 void traj_copy_next_step (IslMpi<MT>& cm, Trajectory& t) {
   const auto myrank = cm.p->rank();
   const auto ndim = cm.dep_points_ndim;
+  const auto& vdep = t.vdep;
+#ifdef COMPOSE_PORT
+  const auto& mylid_with_comm = cm.mylid_with_comm_d;
+  const auto& ed_d = cm.ed_d;
+  const auto& recvbufs = cm.recvbuf;
+  const Int nlid = cm.mylid_with_comm_h.size();
+  const Int nlev = cm.nlev, np2 = cm.np2;
+  const auto f = COMPOSE_LAMBDA (const Int& it) {
+    const Int tci = mylid_with_comm(it/(np2*nlev));
+    const Int rmt_id = it % (np2*nlev);
+    auto& ed = ed_d(tci);
+    if (rmt_id >= ed.rmt.size()) return;
+    const auto& e = ed.rmt(rmt_id);
+    slmm_kernel_assert(ed.nbrs(ed.src(e.lev, e.k)).rank != myrank);
+    const Int ri = ed.nbrs(ed.src(e.lev, e.k)).rank_idx;
+    const auto&& recvbuf = recvbufs(ri);
+    for (int d = 0; d < ndim; ++d)
+      vdep(tci,e.lev,e.k,d) = recvbuf(e.q_ptr + d);
+  };
+  ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, nlid*np2*nlev), f);
+#else
   const int tid = get_tid();
   for (Int ptr = cm.mylid_with_comm_tid_ptr_h(tid),
            end = cm.mylid_with_comm_tid_ptr_h(tid+1);
@@ -181,9 +202,10 @@ void traj_copy_next_step (IslMpi<MT>& cm, Trajectory& t) {
       const Int ri = ed.nbrs(ed.src(e.lev, e.k)).rank_idx;
       const auto&& recvbuf = cm.recvbuf(ri);
       for (int d = 0; d < ndim; ++d)
-        t.vdep(tci,e.lev,e.k,d) = recvbuf(e.q_ptr + d);
+        vdep(tci,e.lev,e.k,d) = recvbuf(e.q_ptr + d);
     }
   }
+#endif
 }
 
 template <typename MT> void
