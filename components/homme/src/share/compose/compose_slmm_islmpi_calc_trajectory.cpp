@@ -101,17 +101,29 @@ template <int np, typename MT>
 void traj_calc_rmt_next_step (IslMpi<MT>& cm, Trajectory& t) {
   calc_rmt_q_pass1(cm, true);
   const auto ndim = cm.dep_points_ndim;
-#ifdef COMPOSE_HORIZ_OPENMP
-# pragma omp for
+  const auto& rmt_xs_h = cm.rmt_xs_h;
+  const auto& sendbuf = cm.sendbuf;
+  const auto& recvbuf = cm.recvbuf;
+#ifdef COMPOSE_PORT
+  ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, cm.nrmt_xs),
+                   COMPOSE_LAMBDA (const Int it)
+#else
+# ifdef COMPOSE_HORIZ_OPENMP
+#  pragma omp for
+# endif
+  for (Int it = 0; it < cm.nrmt_xs; ++it)
 #endif
-  for (Int it = 0; it < cm.nrmt_xs; ++it) {
+  {
     const Int
-      ri = cm.rmt_xs_h(5*it), lid = cm.rmt_xs_h(5*it + 1), lev = cm.rmt_xs_h(5*it + 2),
-      xos = cm.rmt_xs_h(5*it + 3), vos = ndim*cm.rmt_xs_h(5*it + 4);
-    const auto&& xs = cm.recvbuf(ri);
-    auto&& v = cm.sendbuf(ri);
+      ri = rmt_xs_h(5*it), lid = rmt_xs_h(5*it + 1), lev = rmt_xs_h(5*it + 2),
+      xos = rmt_xs_h(5*it + 3), vos = ndim*rmt_xs_h(5*it + 4);
+    const auto&& xs = recvbuf(ri);
+    auto&& v = sendbuf(ri);
     calc_v<np>(cm, t, lid, lev, &xs(xos), &v(vos));
   }
+#ifdef COMPOSE_PORT
+  );
+#endif
 }
 
 template <int np, typename MT>
@@ -186,6 +198,11 @@ calc_v_departure (IslMpi<MT>& cm, const Int nets, const Int nete,
   slmm_assert(nets == 0 && nete+1 == cm.nelemd);
 #endif
 
+  // If step = 0, the departure points are at the nodes and no interpolation is
+  // needed. calc_v_departure should not have been called; rather, the calling
+  // routine should use vdep instead of vnode in subsequent calculations.
+  slmm_assert(step > 0);
+
   const auto ndim = cm.dep_points_ndim;
 
 #ifdef COMPOSE_PORT
@@ -195,16 +212,8 @@ calc_v_departure (IslMpi<MT>& cm, const Int nets, const Int nete,
   CA4<const Real> vnode(vnode_r, cm.nelemd, cm.nlev, cm.np2, ndim);
   CA4<      Real> vdep (vdep_r , cm.nelemd, cm.nlev, cm.np2, ndim);
 #endif
-
-  if (step == 0) {
-    // The departure points are at the nodes. No interpolation is needed.
-    for (Int ie = nets; ie <= nete; ++ie)
-      for (Int lev = 0; lev < cm.nlev; ++lev)
-        for (Int k = 0; k < cm.np2; ++k)
-          for (Int d = 0; d < ndim; ++d)
-            vdep(ie,lev,k,d) = vnode(ie,lev,k,d);
-    return;
-  }
+  slmm_assert(vnode.extent_int(3) == ndim);
+  slmm_assert(vdep .extent_int(3) == ndim);
 
 #ifdef COMPOSE_PORT
   const auto& dep_points = cm.tracer_arrays->dep_points;
