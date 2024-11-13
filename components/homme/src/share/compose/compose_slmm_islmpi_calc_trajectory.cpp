@@ -69,14 +69,14 @@ template <Int np, typename VnodeT, typename MT> SLMM_KF
 void calc_v (const IslMpi<MT>& cm, const VnodeT& vnode,
              const Int src_lid, const Int lev,
              const Real* const dep_point, Real* const v_tgt) {
-  Real ref_coord[2]; {
+  // Horizontal interpolation.
+  Real rx[np], ry[np]; {
+    Real ref_coord[2];
     const auto& m = cm.advecter->local_mesh(src_lid);
     cm.advecter->s2r().calc_sphere_to_ref(src_lid, m, dep_point,
                                           ref_coord[0], ref_coord[1]);
+    interpolate<MT>(cm.advecter->alg(), ref_coord, rx, ry);
   }
-
-  Real rx[np], ry[np];
-  interpolate<MT>(cm.advecter->alg(), ref_coord, rx, ry);
 
   if (not cm.traj_3d) {
     for (int d = 0; d < cm.dep_points_ndim; ++d) {
@@ -88,6 +88,7 @@ void calc_v (const IslMpi<MT>& cm, const VnodeT& vnode,
     return;
   }
 
+  // Vertical Interpolation.
   slmm_assert(cm.dep_points_ndim == 4);
   interpolate_vertical<np>(cm.nlev, cm.etam, vnode, src_lid, lev, dep_point[3],
                            rx, ry, v_tgt);
@@ -119,14 +120,14 @@ template <Int np, typename VnodeT, typename MT> SLMM_KF
 void calc_v (const CalcVData<MT>& cvd, const VnodeT& vnode,
              const Int src_lid, const Int lev,
              const Real* const dep_point, Real* const v_tgt) {
-  Real ref_coord[2]; {
+  // Horizontal interpolation.
+  Real rx[np], ry[np]; {
+    Real ref_coord[2];
     const auto& m = cvd.local_meshes(src_lid);
     cvd.s2r.calc_sphere_to_ref(src_lid, m, dep_point,
                                ref_coord[0], ref_coord[1]);
+    interpolate<MT>(cvd.interp_alg, ref_coord, rx, ry);
   }
-
-  Real rx[np], ry[np];
-  interpolate<MT>(cvd.interp_alg, ref_coord, rx, ry);
 
   if (not cvd.traj_3d) {
     for (int d = 0; d < cvd.dep_points_ndim; ++d) {
@@ -138,6 +139,7 @@ void calc_v (const CalcVData<MT>& cvd, const VnodeT& vnode,
     return;
   }
 
+  // Vertical Interpolation.
   slmm_assert(cvd.dep_points_ndim == 4);
   interpolate_vertical<np>(cvd.nlev, cvd.etam, vnode, src_lid, lev, dep_point[3],
                            rx, ry, v_tgt);
