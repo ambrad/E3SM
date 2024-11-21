@@ -196,18 +196,18 @@ module physics_types
 !===============================================================================
 contains
 !===============================================================================
-  subroutine physics_type_alloc(phys_state, phys_tend, begchunk, endchunk, psetcols)
+  subroutine physics_type_alloc(phys_state, phys_tend, begchunk, endchunk, nbrhdchunk, psetcols)
     implicit none
     type(physics_state), pointer :: phys_state(:)
     type(physics_tend), pointer :: phys_tend(:)
-    integer, intent(in) :: begchunk, endchunk
+    integer, intent(in) :: begchunk, endchunk, nbrhdchunk
     integer, intent(in) :: psetcols
     
-    integer :: ierr=0, lchnk
+    integer :: ierr=0, lchnk, n
     type(physics_state), pointer :: state
     type(physics_tend), pointer :: tend
 
-    allocate(phys_state(begchunk:endchunk), stat=ierr)
+    allocate(phys_state(begchunk:endchunk+nbrhdchunk), stat=ierr)
     if( ierr /= 0 ) then
        write(iulog,*) 'physics_types: phys_state allocation error = ',ierr
        call endrun('physics_types: failed to allocate physics_state array')
@@ -216,6 +216,11 @@ contains
     do lchnk=begchunk,endchunk
        call physics_state_alloc(phys_state(lchnk),lchnk,pcols)
     end do
+    if (nbrhdchunk > 0) then
+       lchnk = endchunk+nbrhdchunk
+       n = get_ncols_p(lchnk)
+       call physics_state_alloc(phys_state(lchnk),lchnk,n)
+    end if
 
     allocate(phys_tend(begchunk:endchunk), stat=ierr)
     if( ierr /= 0 ) then
@@ -1147,32 +1152,44 @@ end subroutine physics_ptend_copy
 
 !===============================================================================
 
-  subroutine physics_state_set_grid(lchnk, phys_state)
+  subroutine physics_state_set_grid(lchnk, phys_state, nonstandard_pcols_in)
 !-----------------------------------------------------------------------
 ! Set the grid components of the physics_state object
 !-----------------------------------------------------------------------
 
     integer,             intent(in)    :: lchnk
     type(physics_state), intent(inout) :: phys_state
+    logical, optional,   intent(in)    :: nonstandard_pcols_in
 
     ! local variables
     integer  :: i, ncol
-    real(r8) :: rlon(pcols)
-    real(r8) :: rlat(pcols)
+    real(r8), allocatable :: rlon(:)
+    real(r8), allocatable :: rlat(:)
+    logical  :: nonstandard_pcols
+
+    nonstandard_pcols = .false.
+    if (present(nonstandard_pcols_in)) nonstandard_pcols = nonstandard_pcols_in
 
     !-----------------------------------------------------------------------
     ! get_ncols_p requires a state which does not have sub-columns
-    if (phys_state%psetcols .ne. pcols) then
+    if (.not. nonstandard_pcols .and. phys_state%psetcols .ne. pcols) then
        call endrun('physics_state_set_grid: cannot pass in a state which has sub-columns')
     end if
 
     ncol = get_ncols_p(lchnk)
 
     if(ncol<=0) then
-       write(iulog,*) lchnk, ncol
-       call endrun('physics_state_set_grid')
+       if (nonstandard_pcols_in) then
+          phys_state%ncol  = ncol
+          phys_state%lchnk = lchnk
+          return
+       else
+          write(iulog,*) lchnk, ncol
+          call endrun('physics_state_set_grid')
+       end if
     end if
 
+    allocate(rlon(ncol), rlat(ncol))
     call get_rlon_all_p(lchnk, ncol, rlon)
     call get_rlat_all_p(lchnk, ncol, rlat)
     phys_state%ncol  = ncol
@@ -1181,6 +1198,7 @@ end subroutine physics_ptend_copy
        phys_state%lat(i) = rlat(i)
        phys_state%lon(i) = rlon(i)
     end do
+    deallocate(rlon, rlat)
     call init_geo_unique(phys_state,ncol)
 
   end subroutine physics_state_set_grid

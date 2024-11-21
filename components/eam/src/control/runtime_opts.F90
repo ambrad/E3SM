@@ -127,6 +127,18 @@ integer :: phys_chnk_per_thd
 ! phys_chnk_cost_write Output option for evaluating physics chunk load balance.  See 
 !                      phys_grid module.  
 logical :: phys_chnk_cost_write
+!
+! Physics column neighborhood options
+!
+! Maximum angle in degrees between a column and a neighbor, measured at column
+! centers, the (lat,lon) from physics_state.
+real(r8) :: phys_nbrhd_degrees
+! Number of constituents to communicate, 1:phys_nbrhd_pcnst, with
+! phys_nbrhd_pcnst <= pcnst.
+integer  :: phys_nbrhd_pcnst
+! Verbosity and test levels
+integer  :: phys_nbrhd_verbose, phys_nbrhd_test
+!
 ! 
 ! tracers_flag = .F.    If true, implement tracer test code. Number of tracers determined
 !                      in tracers_suite.F90 must agree with PCNST
@@ -218,6 +230,7 @@ contains
    ! TBH  9/8/03 
    !
    use phys_grid,        only: phys_grid_defaultopts, phys_grid_setopts
+   use phys_grid_nbrhd,  only: nbrhd_defaultopts, nbrhd_setopts
 
    use chem_surfvals,    only: chem_surfvals_readnl
    use check_energy,     only: check_energy_defaultopts, check_energy_setopts
@@ -330,6 +343,10 @@ contains
                      phys_alltoall, phys_loadbalance, phys_twin_algorithm, &
                      phys_chnk_per_thd, phys_chnk_cost_write
 
+   ! physics column neighborhood
+   namelist /cam_inparm/ phys_nbrhd_degrees, phys_nbrhd_pcnst, &
+                         phys_nbrhd_verbose, phys_nbrhd_test
+
    ! physics buffer
    namelist /cam_inparm/ pbuf_global_allocate
 
@@ -369,6 +386,12 @@ contains
       phys_alltoall_out       =phys_alltoall,       &
       phys_chnk_per_thd_out   =phys_chnk_per_thd,   &
       phys_chnk_cost_write_out=phys_chnk_cost_write )
+
+   call nbrhd_defaultopts( &
+      phys_nbrhd_degrees_out = phys_nbrhd_degrees, &
+      phys_nbrhd_pcnst_out   = phys_nbrhd_pcnst,   &
+      phys_nbrhd_verbose_out = phys_nbrhd_verbose, &
+      phys_nbrhd_test_out    = phys_nbrhd_test)
 
    ! conservation
    call check_energy_defaultopts( &
@@ -448,6 +471,13 @@ contains
        phys_alltoall_in       =phys_alltoall,       &
        phys_chnk_per_thd_in   =phys_chnk_per_thd,   &
        phys_chnk_cost_write_in=phys_chnk_cost_write )
+
+   ! physics column neighborhood
+   call nbrhd_setopts( &
+       phys_nbrhd_degrees_in = phys_nbrhd_degrees, &
+       phys_nbrhd_pcnst_in   = phys_nbrhd_pcnst,   &
+       phys_nbrhd_verbose_in = phys_nbrhd_verbose, &
+       phys_nbrhd_test_in    = phys_nbrhd_test)
 
    ! conservation
    call check_energy_setopts( &
@@ -682,6 +712,12 @@ subroutine distnl
    call mpibcast (phys_alltoall       ,1,mpiint,0,mpicom)
    call mpibcast (phys_chnk_per_thd   ,1,mpiint,0,mpicom)
    call mpibcast (phys_chnk_cost_write,1,mpilog,0,mpicom)
+
+   ! physics column neighborhood
+   call mpibcast (phys_nbrhd_degrees, 1, mpir8 , 0, mpicom)
+   call mpibcast (phys_nbrhd_pcnst  , 1, mpiint, 0, mpicom)
+   call mpibcast (phys_nbrhd_verbose, 1, mpiint, 0, mpicom)
+   call mpibcast (phys_nbrhd_test   , 1, mpiint, 0, mpicom)
 
    ! Physics buffer
    call mpibcast (pbuf_global_allocate, 1, mpilog, 0, mpicom)
