@@ -10,7 +10,7 @@ void run_relaxed_local (CDR<MT>& cdr, const Data& d, Real* q_min_r,
                         const Real* q_max_r, const Int nets, const Int nete) {
   const auto& ta = *d.ta;
   cedr_assert(ta.np == np_);
-  static const Int np = np_, np2 = np_*np_;
+  static const Int np2 = np_*np_;
   const Int nlev = ta.nlev, qsize = ta.qsize, nlevwrem = cdr.nsuplev*cdr.nsublev;
 #ifdef COMPOSE_PORT
   const auto& q_min = ta.q_min;
@@ -22,7 +22,6 @@ void run_relaxed_local (CDR<MT>& cdr, const Data& d, Real* q_min_r,
     q_max(q_max_r, ta.nelemd, ta.qsize, ta.nlev, np2);
 #endif
   const auto np1 = ta.np1;
-  const auto n1_qdp = ta.n1_qdp;
   const auto& spheremp = ta.spheremp;
   const auto& dp3d_c = ta.dp3d;
   const auto& q_c = ta.q;
@@ -31,7 +30,6 @@ void run_relaxed_local (CDR<MT>& cdr, const Data& d, Real* q_min_r,
   const auto caas_in_suplev = cdr.caas_in_suplev;
   cedr_assert( ! caas_in_suplev);
   const auto is_point = Alg::is_point(cdr.alg);
-  const Int n_in_elem = is_point ? np2 : 1;
 #ifdef COMPOSE_PORT
   const auto f = COMPOSE_LAMBDA (const Int& idx) {
     const Int ie = nets + idx/(nsuplev*qsize);
@@ -51,7 +49,6 @@ void run_relaxed_local (CDR<MT>& cdr, const Data& d, Real* q_min_r,
     for (Int sbli = 0; sbli < nsublev; ++sbli) {
       const Int k = k0 + sbli;
       if (k >= nlev) break;
-      static const Int np2 = np_*np_;
       Real qlo[np2], qhi[np2], wa[np2], y[np2], x[np2], Qm = 0;
       for (Int g = 0; g < np2; ++g) {
         const auto del = 0.01*(qhi[g] - qlo[g]);

@@ -120,7 +120,8 @@ void finalize_init_phase (IslMpi<MT>& cm, typename IslMpi<MT>::Advecter& advecte
 }
 
 template <typename MT>
-void set_hvcoord (IslMpi<MT>& cm, const Real* etam) {
+void set_hvcoord (IslMpi<MT>& cm, const Real etai_beg, const Real etai_end,
+                  const Real* etam) {
   if (cm.etam.size() > 0) return;
 #if defined COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
@@ -128,6 +129,8 @@ void set_hvcoord (IslMpi<MT>& cm, const Real* etam) {
 #endif
   {
     slmm_assert(cm.nlev > 0);
+    cm.etai_beg = etai_beg;
+    cm.etai_end = etai_end;
     cm.etam = typename IslMpi<MT>::template ArrayD<Real*>("etam", cm.nlev);
     const auto h = ko::create_mirror_view(cm.etam);
     for (int k = 0; k < cm.nlev; ++k) {
@@ -135,7 +138,7 @@ void set_hvcoord (IslMpi<MT>& cm, const Real* etam) {
       slmm_assert(k == 0 || h(k) > h(k-1));
       slmm_assert(h(k) > 0 && h(k) < 1);
     }
-    ko::deep_copy(h, cm.etam);
+    ko::deep_copy(cm.etam, h);
   }
 #if defined COMPOSE_HORIZ_OPENMP
 # pragma omp barrier
@@ -399,10 +402,11 @@ void slmm_check_ref2sphere (homme::Int ie, homme::Cartesian3D* p) {
   amb::dev_fin_threads();
 }
 
-void slmm_set_hvcoord (const homme::Real* etam) {
+void slmm_set_hvcoord (const homme::Real etai_beg, const homme::Real etai_end,
+                       const homme::Real* etam) {
   amb::dev_init_threads();
   slmm_assert(homme::g_csl_mpi);
-  homme::islmpi::set_hvcoord(*homme::g_csl_mpi, etam);
+  homme::islmpi::set_hvcoord(*homme::g_csl_mpi, etai_beg, etai_end, etam);
   amb::dev_fin_threads();
 }
 

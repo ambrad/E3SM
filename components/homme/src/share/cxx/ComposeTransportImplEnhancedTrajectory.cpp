@@ -9,7 +9,6 @@
 
 #pragma message "CTET undef NDEBUG"
 #undef NDEBUG
-#include "/home/ac.ambradl/compy-goodies/util/dbg.hpp"
 
 #include "ComposeTransportImpl.hpp"
 
@@ -28,7 +27,7 @@ void ComposeTransportImpl::setup_enhanced_trajectory () {
   // diff(etai)
   m_data.hydetai = decltype(m_data.hydetai)("hydetai");
   const auto detai_pack = Kokkos::create_mirror_view(m_data.hydetai);
-  ExecViewUnmanaged<Real[NUM_PHYSICAL_LEV]> detai(pack2real(detai_pack));
+  HostViewUnmanaged<Real[NUM_PHYSICAL_LEV]> detai(pack2real(detai_pack));
   for (int k = 0; k < num_phys_lev; ++k)
     detai(k) = etai(k+1) - etai(k);
   Kokkos::deep_copy(m_data.hydetai, detai_pack);
@@ -46,7 +45,7 @@ void ComposeTransportImpl::setup_enhanced_trajectory () {
   Kokkos::deep_copy(m_data.hydetam_ref, m);
 
   // etam
-  homme::compose::set_hvcoord(etam.data());
+  homme::compose::set_hvcoord(etai(0), etai(num_phys_lev), etam.data());
 }
 
 namespace { // anon
@@ -88,9 +87,6 @@ using CSnV = ExecViewUnmanaged<const Scalar*>;
 
 template <int N> using SNV = ExecViewUnmanaged<Scalar[N]>;
 template <int N> using CSNV = typename ViewConst<SNV<N>>::type;
-
-KOKKOS_INLINE_FUNCTION int len (const  RnV& v) { return v.extent_int(0); }
-KOKKOS_INLINE_FUNCTION int len (const CRnV& v) { return v.extent_int(0); }
 
 using RelnV = ExecViewUnmanaged<Real***>;
 using CRelnV = ExecViewUnmanaged<const Real***>;
@@ -180,7 +176,7 @@ linterp (const int n, const XT& x, const YT& y, const int x_idx, const Real xi) 
   return (1-a)*y[isup] + a*y[isup+1];
 }
 
-// Linear interpolation at the lowest team ||ism.
+// Linear interpolation at the lowest level of team ||ism.
 //   Range provides this ||ism over index 0 <= k < ni.
 //   Interpolate y(x) to yi(xi).
 //   x_idx_offset is added to k in the call to find_support.
@@ -195,12 +191,12 @@ linterp (const Range& range,
   if (xi[0] < x[0] or xi[ni-1] > x[n-1]) {
     if (caller)
       printf("linterp: xi out of bounds: %s %1.15e %1.15e %1.15e %1.15e\n",
-             caller, x[0], xi[0], xi[ni-1], x[n-1]);
+             caller ? caller : "NONE", x[0], xi[0], xi[ni-1], x[n-1]);
     assert(false);
   }
 #endif
-  assert(range.start >= 0 );
-  assert(range.end   <= ni);
+  assert(range.start ==  0);
+  assert(range.end   == ni);
   const auto f = [&] (const int k) {
     yi[k] = linterp(n, x, y, k + x_idx_offset, xi[k]);
   };
@@ -478,8 +474,8 @@ KOKKOS_FUNCTION void calc_ps (
   const ExecViewUnmanaged<Real[NP][NP]>& ps)
 {
   assert_eln(dp, nlev);
-  const auto ttr = TeamThreadRange(kv.team, NP*NP);
-  const auto tvr_snlev = ThreadVectorRange(kv.team, nlev);
+  const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
+  const auto tvr_snlev = Kokkos::ThreadVectorRange(kv.team, nlev);
   const CRelnV dps = elp2r(dp);
   const auto f1 = [&] (const int idx) {
     const int i = idx / NP, j = idx % NP;
@@ -500,8 +496,8 @@ KOKKOS_FUNCTION void calc_ps (
 {
   assert_eln(dp1, nlev);
   assert_eln(dp2, nlev);
-  const auto ttr = TeamThreadRange(kv.team, NP*NP);
-  const auto tvr_snlev = ThreadVectorRange(kv.team, nlev);
+  const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
+  const auto tvr_snlev = Kokkos::ThreadVectorRange(kv.team, nlev);
   const CRelnV dps[] = {elp2r(dp1), elp2r(dp2)};
   const auto f1 = [&] (const int idx) {
     const int i = idx / NP, j = idx % NP;
@@ -782,7 +778,7 @@ void update_dep_points (
        1/2 (v(p1,t0) + v(p1,t1) - dt v(p1,t1) grad v(p1,t0)).
 */
 void calc_nodal_velocities (
-  const CTI& c, const Real dtsub, const Real alpha[2],
+  const CTI& c, const Real dtsub, const Real halpha[2],
   const ExecViewUnmanaged<const Scalar**[2][NP][NP][NUM_LEV]>& v1,
   const ExecViewUnmanaged<const Scalar**   [NP][NP][NUM_LEV]>& dp1, const int idx1,
   const ExecViewUnmanaged<const Scalar**[2][NP][NP][NUM_LEV]>& v2,
@@ -807,6 +803,7 @@ void calc_nodal_velocities (
   const auto& buf1c = d.buf1o[2]; const auto& buf1d = d.buf1o[3];
   const auto& buf2a = d.buf2 [0]; const auto& buf2b = d.buf2 [1];
   const auto& buf2c = d.buf2 [2]; const auto& buf2d = d.buf2 [3];
+  const auto alpha0 = halpha[0], alpha1 = halpha[1];
   const auto f = KOKKOS_LAMBDA (const cti::MT& team) {
     KernelVariables kv(team);
     const int ie = kv.ie;
@@ -816,6 +813,7 @@ void calc_nodal_velocities (
     const auto vwrk2 = Homme::subview(buf2b, kv.team_idx);
     const auto v1_ie = Homme::subview(v1, ie, idx1);
     const auto v2_ie = Homme::subview(v2, ie, idx2);
+    const Real alpha[] = {alpha0, alpha1};
     CSelNlevp eta_dot[] = {Homme::subview(buf1c, kv.team_idx),
                            Homme::subview(buf1d, kv.team_idx)};
     {
@@ -898,7 +896,6 @@ void interp_departure_points_to_floating_level_midpoints (const CTI& c, const in
   const auto deta_tol = d.deta_tol;
   const auto& dep_pts = d.dep_pts;
   const auto& dp3d = c.m_state.m_dp3d;
-  const auto& divdp = c.m_derived.m_divdp;
   const auto& buf1a = d.buf1e[0]; const auto& buf1b = d.buf1e[1];
   const auto& buf1c = d.buf1e[2]; const auto& buf1d = d.buf1e[3];
   const auto& buf2a = d.buf2[0];
@@ -937,7 +934,7 @@ void interp_departure_points_to_floating_level_midpoints (const CTI& c, const in
       };
       c.loop_ij(kv, f);
       // Compute divdp.
-      const ExecViewUnmanaged<Real[NP][NP]> ps(cti::pack2real(wrk1));
+      const ExecViewUnmanaged<Real[NP][NP]> ps(cti::pack2real(vwrk));
       calc_ps(kv, nlev,
               ps0, hyai0,
               Homme::subview(dp3d, ie, np1),
@@ -1121,7 +1118,6 @@ struct ColData {
     r = decltype(r)(cti::pack2real(h), calc_nscal(npack));
   }
 
-  void d2h () { Kokkos::deep_copy(h, d); }
   void h2d () { Kokkos::deep_copy(d, h); }
 };
 
@@ -1184,10 +1180,6 @@ void todev (const int n, const Real* const h, const RelnV& d) {
 
 void todev (const std::vector<Real>& h, const RelnV& d) {
   todev(h.size(), h.data(), d);
-}
-
-void todev (const CRnV::HostMirror& h, const RelnV& d) {
-  todev(h.extent_int(0), h.data(), d);
 }
 
 void tohost (const ExecView<const Real*>& d, std::vector<Real>& h) {
@@ -1434,7 +1426,7 @@ int test_deta_caas (TestData& td) {
           for (int k = 0; k <= nlev; ++k) sum += hde(i,j,k);
           for (int k = 0; k <= nlev; ++k) minval = std::min(minval, hde(i,j,k));
           if (std::abs(sum - 1) > 1e3*td.eps) ++nerr;
-          if (minval != deta_tol) pr("general minval");
+          if (minval != deta_tol) err("general minval");
         }
     }
   }
@@ -1660,10 +1652,10 @@ int test_eta_interp (TestData& td) {
         for (int j = 0; j < NP; ++j)
           for (int k = 0; k < nlev; ++k) {
             if (xih(i,j,k) < xh(0,0,0)) {
-              if (std::abs(yih(i,j,k) - yi(i,j,0)) > tol)
+              if (std::abs(yih(i,j,k) - yih(i,j,0)) > tol)
                 ok = false;
             } else if (xih(i,j,k) > xh(0,0,nlev-1)) {
-              if (std::abs(yih(i,j,k) - yi(i,j,nlev-1)) > tol)
+              if (std::abs(yih(i,j,k) - yih(i,j,nlev-1)) > tol)
                 ok = false;            
             } else {
               if (std::abs(yih(i,j,k) - (i*xih(i,j,k) - j)) > tol)
@@ -1682,6 +1674,11 @@ int test_eta_to_dp (TestData& td) {
   const Real tol = 100*td.eps;
 
   for (const int nlev : {143, 128, 81}) {
+    const auto err = [&] (const char* lbl) {
+      ++nerr;
+      printf("test_eta_to_dp nlev %d: %s\n", nlev, lbl);
+    };
+
     HybridLevels h;
     fill(h, nlev);
 
@@ -1696,7 +1693,6 @@ int test_eta_to_dp (TestData& td) {
 
     const auto psm = Kokkos::create_mirror_view(ps);
     HostView<Real***> dp1("dp1",NP,NP,nlev);
-    Real dp1_max = 0;
     for (int i = 0; i < NP; ++i)
       for (int j = 0; j < NP; ++j)
         psm(i,j) = (1 + 0.1*td.urand(-1, 1))*h.ps0;
@@ -1714,7 +1710,6 @@ int test_eta_to_dp (TestData& td) {
 
     { // Test that for etai_ref we get the same as the usual formula.
       todev(h.etai, etai);
-      const auto psm = Kokkos::create_mirror_view(ps);
       HostView<Real***> dp1("dp1",NP,NP,nlev);
       Real dp1_max = 0;
       for (int i = 0; i < NP; ++i)
@@ -1731,7 +1726,7 @@ int test_eta_to_dp (TestData& td) {
         for (int j = 0; j < NP; ++j)
           for (int k = 0; k < nlev; ++k)
             err_max = std::max(err_max, std::abs(dph(i,j,k) - dp1(i,j,k)));
-      if (err_max > tol*dp1_max) ++nerr;
+      if (err_max > tol*dp1_max) err("t1");
     }
 
     { // Test that sum(dp) = ps for random input etai.
@@ -1745,7 +1740,7 @@ int test_eta_to_dp (TestData& td) {
           Real ps = h.ai[0]*h.ps0;
           for (int k = 0; k < nlev; ++k)
             ps += dph1(i,j,k);
-          if (std::abs(ps - psm(i,j)) > tol*psm(i,j)) ++nerr;
+          if (std::abs(ps - psm(i,j)) > tol*psm(i,j)) err("t2");
         }    
       // Test that values on input don't affect solution.
       Kokkos::deep_copy(wrk, 0);
@@ -1758,7 +1753,7 @@ int test_eta_to_dp (TestData& td) {
           for (int k = 0; k < nlev; ++k)
             if (dph2(i,j,k) != dph1(i,j,k))
               alleq = false;
-      if (not alleq) ++nerr;
+      if (not alleq) err("t3");
     }
   }
 
@@ -1844,7 +1839,7 @@ int test_calc_etadotmid_from_etadotdpdnint (TestData& td) {
     const auto ps_m = Kokkos::create_mirror_view(ps);
     for (int i = 0; i < NP; ++i)
       for (int j = 0; j < NP; ++j) {
-        ps(i,j) = td.urand(0.5, 1.2)*ps0;
+        ps_m(i,j) = td.urand(0.5, 1.2)*ps0;
         for (int k = 0; k < nlev; ++k) {
           hydai.r[k] = h.dai[k];
           hydbi.r[k] = h.dbi[k];
@@ -1895,15 +1890,13 @@ int test_calc_eta_dot_ref_mid (TestData& td) {
 
 int test_interp_departure_points_to_floating_level_midpoints (TestData& td) {
   int nerr = 0;
-
   //todo test case of ed = 0
-
   return nerr;
 }
 
 int test_init_velocity_record (TestData& td) {
   int nerr = 0;
-  pr("test_init_velocity_record");
+  //todo
   return nerr;
 }
 
@@ -1927,6 +1920,7 @@ int ComposeTransportImpl::run_enhanced_trajectory_unit_tests () {
   comunittest(test_calc_ps);
   comunittest(test_calc_etadotmid_from_etadotdpdnint);
   comunittest(test_calc_eta_dot_ref_mid);
+  comunittest(test_interp_departure_points_to_floating_level_midpoints);
   comunittest(test_init_velocity_record);
   return nerr;
 }

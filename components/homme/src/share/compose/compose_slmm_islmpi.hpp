@@ -259,6 +259,40 @@ void deep_copy (FixedCapList<T, DTD>& d, const FixedCapList<T, DTS>& s) {
 #endif
 }
 
+template <typename T>
+struct FixedCapListHostOnly {
+  FixedCapListHostOnly (const Int cap = 0) {
+    slmm_assert_high(cap >= 0);
+    reset_capacity(cap);
+  }
+
+  void reset_capacity (const Int cap, const bool also_size = false) {
+    slmm_assert(cap >= 0);
+    d_.resize(cap);
+    n_ = also_size ? cap : 0;
+  }
+
+  Int capacity () const { return d_.size(); }
+  Int size () const { return n_; }
+  Int n () const { return n_; }
+  
+  void clear () { n_ = 0; }
+
+  void inc () { ++n_; slmm_kernel_assert_high(n_ <= static_cast<Int>(d_.size())); }
+  void inc (const Int& dn) { n_ += dn; slmm_kernel_assert_high(n_ <= static_cast<Int>(d_.size())); }
+
+  T& operator() (const Int& i) { slmm_kernel_assert_high(i >= 0 && i < n_); return d_[i]; }
+
+  T* data () { return d_.data(); }  
+  T& back () { slmm_kernel_assert_high(n_ > 0); return d_[n_-1]; }
+  T* begin () { return d_.data(); }
+  T* end () { return d_.data() + n_; }
+
+private:
+  std::vector<T> d_;
+  Int n_;
+};
+
 template <typename DT> struct BufferLayoutArray;
 
 template <typename T, typename DT>
@@ -522,6 +556,8 @@ struct IslMpi {
   const Int np, np2, nlev, qsize, qsized, nelemd, halo;
   const bool traj_3d;
   const Int traj_nsubstep, dep_points_ndim;
+
+  Real etai_beg, etai_end;
   ArrayD<Real*> etam;
 
   ElemDataListH ed_h; // this rank's owned cells, indexed by LID
@@ -537,7 +573,7 @@ struct IslMpi {
   BufferLayoutArray<DDT> bla;
 
   // MPI comm data.
-  FixedCapList<mpi::Request, HDT> sendreq, recvreq;
+  FixedCapListHostOnly<mpi::Request> sendreq, recvreq;
   FixedCapList<Int, HDT> recvreq_ri;
   ListOfLists<Real, DDT> sendbuf, recvbuf;
 #ifdef COMPOSE_MPI_ON_HOST
@@ -700,7 +736,8 @@ void step(
   Real* q_min_r, Real* q_max_r);
 
 template <typename MT = ko::MachineTraits>
-void set_hvcoord(IslMpi<MT>& cm, const Real* etam);
+void set_hvcoord(IslMpi<MT>& cm, const Real etai_beg, const Real etai_end,
+                 const Real* etam);
 
 template <typename MT = ko::MachineTraits>
 void calc_v_departure(

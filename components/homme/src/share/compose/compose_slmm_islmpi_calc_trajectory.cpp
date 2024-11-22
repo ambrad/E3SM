@@ -8,10 +8,11 @@ namespace islmpi {
 template <typename T> using CA4 = ko::View<T****, ko::LayoutRight, ko::HostSpace>;
 
 template <Int np, typename EtamT, typename VnodeT> SLMM_KF void
-interpolate_vertical (const Int nlev, const EtamT& etam, const VnodeT& vnode,
+interpolate_vertical (const Int nlev, const Real etai_beg, const Real etai_end,
+                      const EtamT& etam, const VnodeT& vnode,
                       const Int src_lid, const Int lev, const Real eta_dep,
                       const Real rx[np], const Real ry[np], Real* const v_tgt) {
-  slmm_assert(eta_dep > 0 && eta_dep < 1);
+  slmm_kernel_assert(eta_dep > etai_beg && eta_dep < etai_end);
   
   // Search for the eta midpoint values that support the departure point's eta
   // value.
@@ -27,8 +28,8 @@ interpolate_vertical (const Int nlev, const EtamT& etam, const VnodeT& vnode,
           break;
     }
   }
-  slmm_assert(lev_dep >= -1 && lev_dep < nlev);
-  slmm_assert(lev_dep == -1 || eta_dep >= etam(lev_dep));
+  slmm_kernel_assert(lev_dep >= -1 && lev_dep < nlev);
+  slmm_kernel_assert(lev_dep == -1 || eta_dep >= etam(lev_dep));
   Real a;
   bool bdy = false;
   if (lev_dep == -1) {
@@ -58,14 +59,16 @@ interpolate_vertical (const Int nlev, const EtamT& etam, const VnodeT& vnode,
   }
   // Treat eta_dot specially since eta_dot goes to 0 at the boundaries.
   if (bdy) {
+    slmm_kernel_assert(etam(0) > etai_beg);
+    slmm_kernel_assert(etam(nlev-1) < etai_end);
     if (lev_dep == 0)
-      v_tgt[3] *= eta_dep/etam(0);
+      v_tgt[3] *= (eta_dep - etai_beg)/(etam(0) - etai_beg);
     else
-      v_tgt[3] *= (1 - eta_dep)/(1 - etam(nlev-1));
+      v_tgt[3] *= (etai_end - eta_dep)/(etai_end - etam(nlev-1));
   }
 }
 
-template <Int np, typename VnodeT, typename MT> SLMM_KF
+template <Int np, typename VnodeT, typename MT>
 void calc_v (const IslMpi<MT>& cm, const VnodeT& vnode,
              const Int src_lid, const Int lev,
              const Real* const dep_point, Real* const v_tgt) {
@@ -89,9 +92,9 @@ void calc_v (const IslMpi<MT>& cm, const VnodeT& vnode,
   }
 
   // Vertical Interpolation.
-  slmm_assert(cm.dep_points_ndim == 4);
-  interpolate_vertical<np>(cm.nlev, cm.etam, vnode, src_lid, lev, dep_point[3],
-                           rx, ry, v_tgt);
+  slmm_kernel_assert(cm.dep_points_ndim == 4);
+  interpolate_vertical<np>(cm.nlev, cm.etai_beg, cm.etai_end, cm.etam, vnode,
+                           src_lid, lev, dep_point[3], rx, ry, v_tgt);
 }
 
 template <typename MT>
@@ -103,6 +106,7 @@ struct CalcVData {
   const bool traj_3d;
   const int dep_points_ndim;
   const int nlev;
+  const Real etai_beg, etai_end;
   const typename IslMpi<MT>::template ArrayD<Real*> etam;
 
   CalcVData (const IslMpi<MT>& cm)
@@ -112,6 +116,7 @@ struct CalcVData {
       traj_3d(cm.traj_3d),
       dep_points_ndim(cm.dep_points_ndim),
       nlev(cm.nlev),
+      etai_beg(cm.etai_beg), etai_end(cm.etai_end),
       etam(cm.etam)
   {}
 };
@@ -140,16 +145,16 @@ void calc_v (const CalcVData<MT>& cvd, const VnodeT& vnode,
   }
 
   // Vertical Interpolation.
-  slmm_assert(cvd.dep_points_ndim == 4);
-  interpolate_vertical<np>(cvd.nlev, cvd.etam, vnode, src_lid, lev, dep_point[3],
-                           rx, ry, v_tgt);
+  slmm_kernel_assert(cvd.dep_points_ndim == 4);
+  interpolate_vertical<np>(cvd.nlev, cvd.etai_beg, cvd.etai_end, cvd.etam, vnode,
+                           src_lid, lev, dep_point[3], rx, ry, v_tgt);
 }
 
 template <int np, typename VnodeT, typename MT>
 void traj_calc_rmt_next_step (IslMpi<MT>& cm, const VnodeT& vnode) {
   calc_rmt_q_pass1(cm, true);
   const auto ndim = cm.dep_points_ndim;
-  const auto& rmt_xs_h = cm.rmt_xs_h;
+  const auto& rmt_xs = cm.rmt_xs;
   const auto& sendbuf = cm.sendbuf;
   const auto& recvbuf = cm.recvbuf;
   CalcVData<MT> cvd(cm);
@@ -164,8 +169,8 @@ void traj_calc_rmt_next_step (IslMpi<MT>& cm, const VnodeT& vnode) {
 #endif
   {
     const Int
-      ri = rmt_xs_h(5*it), lid = rmt_xs_h(5*it + 1), lev = rmt_xs_h(5*it + 2),
-      xos = rmt_xs_h(5*it + 3), vos = ndim*rmt_xs_h(5*it + 4);
+      ri = rmt_xs(5*it), lid = rmt_xs(5*it + 1), lev = rmt_xs(5*it + 2),
+      xos = rmt_xs(5*it + 3), vos = ndim*rmt_xs(5*it + 4);
     const auto&& xs = recvbuf(ri);
     auto&& v = sendbuf(ri);
     calc_v<np>(cvd, vnode, lid, lev, &xs(xos), &v(vos));
@@ -311,6 +316,7 @@ calc_v_departure (IslMpi<MT>& cm, const Int nets, const Int nete,
   isend(cm);
   recv_and_wait_on_send(cm);
   traj_calc_rmt_next_step<np>(cm, vnode);
+  Kokkos::fence();
   isend(cm, true /* want_req */, true /* skip_if_empty */);
   setup_irecv(cm, true /* skip_if_empty */);
   traj_calc_own_next_step<np>(cm, dep_points, vnode, vdep);

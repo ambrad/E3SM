@@ -78,6 +78,7 @@ void prim_advance_exp (TimeLevel& tl, const Real dt, const bool compute_diagnost
   // If prescribed wind, set the dynamics explicitly and skip time-integration.
   if (params.prescribed_wind) {
     set_prescribed_wind_f_bridge(tl.n0, tl.np1, tl.nstep, dt);
+    GPTLstop("tl-ae prim_advance_exp");
     return;
   }
 #endif

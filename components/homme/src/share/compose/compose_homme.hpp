@@ -140,26 +140,26 @@ struct HommeFormatArray {
   COMPOSE_FORCEINLINE_FUNCTION
   T& operator() (const Int& ie, const Int& i) const {
     static_assert(rank == 2, "rank 2 array");
-    assert(i >= 0);
-    assert(ie_data_ptr[ie]);
     // These routines are not used on the GPU, but they can be called from
     // KOKKOS_FUNCTIONs on CPU in GPU builds. Avoid nvcc warnings as follows:
 #if defined __CUDA_ARCH__ || defined __HIP_DEVICE_COMPILE__
     return unused();
 #else
+    assert(i >= 0);
+    assert(ie_data_ptr[ie]);
     return *(ie_data_ptr[ie] + i);
 #endif
   }
   COMPOSE_FORCEINLINE_FUNCTION 
   T& operator() (const Int& ie, const Int& k, const Int& lev) const {
     static_assert(rank == 3, "rank 3 array");
+#if defined __CUDA_ARCH__ || defined __HIP_DEVICE_COMPILE__
+    return unused();
+#else
     assert(k >= 0);
     assert(lev >= 0);
     assert(ie_data_ptr[ie]);
     check(ie, k, lev);
-#if defined __CUDA_ARCH__ || defined __HIP_DEVICE_COMPILE__
-    return unused();
-#else
     return *(ie_data_ptr[ie] + lev*np2 + k);
 #endif
   }
@@ -167,14 +167,14 @@ struct HommeFormatArray {
   T& operator() (const Int& ie, const Int& q_or_timelev, const Int& k,
                  const Int& lev) const {
     static_assert(rank == 4, "rank 4 array");
+#if defined __CUDA_ARCH__ || defined __HIP_DEVICE_COMPILE__
+    return unused();
+#else
     assert(q_or_timelev >= 0);
     assert(k >= 0);
     assert(lev >= 0);
     assert(ie_data_ptr[ie]);
     check(ie, k, lev, q_or_timelev);
-#if defined __CUDA_ARCH__ || defined __HIP_DEVICE_COMPILE__
-    return unused();
-#else
     return *(ie_data_ptr[ie] + (q_or_timelev*nlev + lev)*np2 + k);
 #endif
   }
@@ -182,15 +182,15 @@ struct HommeFormatArray {
   T& operator() (const Int& ie, const Int& timelev, const Int& q, const Int& k,
                  const Int& lev) const {
     static_assert(rank == 5, "rank 4 array");
+#if defined __CUDA_ARCH__ || defined __HIP_DEVICE_COMPILE__
+    return unused();
+#else
     assert(timelev >= 0);
     assert(q >= 0);
     assert(k >= 0);
     assert(lev >= 0);
     assert(ie_data_ptr[ie]);
     check(ie, k, lev, q, timelev);
-#if defined __CUDA_ARCH__ || defined __HIP_DEVICE_COMPILE__
-    return unused();
-#else
     return *(ie_data_ptr[ie] + ((timelev*qsized + q)*nlev + lev)*np2 + k);
 #endif
   }

@@ -367,8 +367,8 @@ struct ComposeTransportImpl {
     // eta_dot_dpdn at interfaces, pack and scalar views of same data
     const EddPackT& edd, const EddScalT& edds)
   {
-    const auto ttr = TeamThreadRange(kv.team, NP*NP);
-    const auto tvr = ThreadVectorRange(kv.team, NUM_LEV);
+    const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
+    const auto tvr = Kokkos::ThreadVectorRange(kv.team, NUM_LEV);
     const auto f = [&] (const int idx) {
       const int i = idx / NP, j = idx % NP;
       const auto r = [&] (const int k, Real& dps, const bool final) {
@@ -384,12 +384,12 @@ struct ComposeTransportImpl {
         edd(i,j,kp) = hybrid_bi(kp)*dps - edd(i,j,kp);
         if (kp == 0) edd(i,j,kp)[0] = 0;
       };
-      parallel_for(tvr, s);
+      Kokkos::parallel_for(tvr, s);
       assert(edds(i,j,0) == 0);
       const int bottom = num_phys_lev;
       edds(i,j,bottom) = 0; // benign write race
     };
-    parallel_for(ttr, f);
+    Kokkos::parallel_for(ttr, f);
   }
 };
 
