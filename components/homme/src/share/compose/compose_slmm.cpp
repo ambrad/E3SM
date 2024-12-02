@@ -145,6 +145,10 @@ void set_hvcoord (IslMpi<MT>& cm, const Real etai_beg, const Real etai_end,
 #endif
 }
 
+template void set_hvcoord(
+  IslMpi<ko::MachineTraits>& cm, const Real etai_beg, const Real etai_end,
+  const Real* etam);
+
 // Set pointers to HOMME data arrays.
 template <typename MT>
 void set_elem_data (IslMpi<MT>& cm, const Int ie, Real* qdp, const Int n0_qdp,
