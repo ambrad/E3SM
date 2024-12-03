@@ -1360,7 +1360,7 @@ contains
        else
           ! Fill vdep.
           call slmm_calc_v_departure(nets, nete, step, dtsub, dep_points_all, &
-               &                    dep_points_ndim, vnode, vdep, info)
+               &                     dep_points_ndim, vnode, vdep, info)
 
           ! Using vdep, update dep_points_all to departure points.
           call update_dep_points_all(independent_time_steps, dtsub, nets, nete, vdep)

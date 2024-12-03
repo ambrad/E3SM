@@ -22,14 +22,14 @@ class Parallel {
   MPI_Comm comm_;
 public:
   typedef std::shared_ptr<Parallel> Ptr;
-  Parallel(MPI_Comm comm) : comm_(comm) {}
+  Parallel (MPI_Comm comm) : comm_(comm) {}
   MPI_Comm comm () const { return comm_; }
-  Int size() const {
+  Int size () const {
     int sz = 0;
     MPI_Comm_size(comm_, &sz);
     return sz;
   }
-  Int rank() const {
+  Int rank () const {
     int pid = 0;
     MPI_Comm_rank(comm_, &pid);
     return pid;
