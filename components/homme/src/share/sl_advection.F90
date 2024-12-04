@@ -1700,8 +1700,9 @@ contains
     type (TimeLevel_t), intent(in) :: tl
     real(real_kind), intent(inout) :: dep_points_all(:,:,:,:,:)
 
-    real(real_kind) :: deta_ref(nlevp), w1(np,np), v1(np,np,nlev), v2(np,np,nlevp)
-    integer :: ie, k, d
+    real(real_kind) :: deta_ref(nlevp), w1(np,np), v1(np,np,nlev), &
+         &             v2(np,np,nlevp), p(3)
+    integer :: ie, i, j, k, d
 
     call set_deta_tol(hvcoord)
 
@@ -1738,6 +1739,18 @@ contains
           call eta_interp_horiz(hvcoord, hvcoord%etam, v1, &
                &                v2(:,:,1:nlev), dep_points_all(d,:,:,:,ie))
        end do
+       if (is_sphere) then
+          ! Normalize p = (x,y,z).
+          do k = 1, nlev
+             do j = 1, np
+                do i = 1, np
+                   p = dep_points_all(1:3,i,j,k,ie)
+                   p = p/sqrt(p(1)*p(1) + p(2)*p(2) + p(3)*p(3))
+                   dep_points_all(1:3,i,j,k,ie) = p
+                end do
+             end do
+          end do
+       end if
     end do
   end subroutine interp_departure_points_to_floating_level_midpoints
 

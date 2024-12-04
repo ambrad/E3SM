@@ -752,7 +752,7 @@ void update_dep_points (
     int ie, lev, i, j;
     cti::idx_ie_physlev_ij(idx, ie, lev, i, j);
     // Update horizontal position.
-    Real p[4];
+    Real p[3];
     for (int d = 0; d < 3; ++d)
       p[d] = dep_pts(ie,lev,i,j,d) - dtsub*vdep(ie,lev,i,j,d)/scale_factor;
     if (is_sphere) {
@@ -885,6 +885,7 @@ void calc_nodal_velocities (
 void interp_departure_points_to_floating_level_midpoints (const CTI& c, const int np1) {
   using Kokkos::ALL;
   const int nlev = NUM_PHYSICAL_LEV, nlevp = nlev+1;
+  const auto is_sphere = c.m_data.geometry_type == 0;
   const auto& d = c.m_data;
   const auto& h = c.m_hvcoord;
   const auto ps0 = h.ps0;
@@ -979,6 +980,16 @@ void interp_departure_points_to_floating_level_midpoints (const CTI& c, const in
         };
         c.loop_ijk<cti::num_phys_lev>(kv, g);
         kv.team_barrier();
+      }
+      if (is_sphere) {
+        // Normalize.
+        const auto h = [&] (const int i, const int j, const int k) {
+          Real norm = 0;
+          for (int d = 0; d < 3; ++d) norm += square(dep_pts(ie,k,i,j,d));
+          norm = std::sqrt(norm);
+          for (int d = 0; d < 3; ++d) dep_pts(ie,k,i,j,d) /= norm;
+        };
+        c.loop_ijk<cti::num_phys_lev>(kv, h);
       }
     }
   };
