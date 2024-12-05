@@ -947,6 +947,7 @@ void interp_departure_points_to_floating_level_midpoints (const CTI& c, const in
                 p2rel(wrk2.data(), nlev+1),
                 RelnV(cti::pack2real(Homme::subview(c.m_derived.m_divdp, ie)),
                       NP, NP, NUM_LEV*VECTOR_SIZE));
+      kv.team_barrier();
     }
     // Compute Lagrangian level midpoints at t1 on arrival column:
     //     eta_arr_mid = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_mid)
