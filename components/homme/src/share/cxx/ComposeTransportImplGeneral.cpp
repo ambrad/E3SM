@@ -216,6 +216,7 @@ void ComposeTransportImpl::run (const TimeLevel& tl, const Real dt) {
   
   GPTLstart("compose_isl");
   homme::compose::advect(tl.np1, tl.n0_qdp, tl.np1_qdp);
+  Kokkos::fence();
   GPTLstop("compose_isl");
   
   if (m_data.hv_q > 0 && m_data.nu_q > 0) {
