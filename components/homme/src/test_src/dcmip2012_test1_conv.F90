@@ -1,7 +1,6 @@
 module dcmip2012_test1_conv
 
-  ! DCMIP 2012 tests 1-1,2,3, with modification for good convergence
-  ! testing. See dcmip2012_test1_2_3.F90 for the original code.
+  ! Based on DCMIP 2012 tests 1-1,2,3.
 
   use parallel_mod,       only: abortmp
   ! Use physical constants consistent with HOMME
@@ -287,7 +286,7 @@ contains
          bs_a    = 1.0d0                   ! shape function smoothness
 
     real(rt) :: r, height, zs, zetam, ztaper, rho0, z_q_shape, ptop, ptop_t, &
-         &      c0, fl, fl_lat, gz, gz_z, fz, fz_z, delta
+         &      c0, fl, fl_lat, gz, gz_z, fz, fz_z, delta, lambdam_t
 
     if (cfv /= 0)         call abortmp('test1_conv_advection_orography does not support cfv != 0')
     if (.not. hybrid_eta) call abortmp('test1_conv_advection_orography does not support !hybrid_eta')
@@ -296,11 +295,16 @@ contains
     ! Mountain oscillation half-width (radians).
     zetam = pi/16.d0
     ! Smooth mountains very less resource-intensive convergence testing.
-    if (test_minor == 'c') zetam = pi/2.d0
+    if (test_minor == 'c' .or. test_minor == 'f') zetam = pi/2.d0
     ! Smoother than default but still fairly rough.
     if (test_minor == 'd') zetam = pi/8.d0
 
-    r = great_circle_dist(lambdam, phim, lon, lat)
+    lambdam_t = lambdam
+    if (test_minor == 'f') then
+       ! Move the topography half way around the sphere by time tau.
+       lambdam_t = lambdam_t - pi*time/tau
+    end if
+    r = great_circle_dist(lambdam_t, phim, lon, lat)
     if (r .lt. Rm) then
        zs = (h0/2.d0)*(one+cos(pi*r/Rm))*cos(pi*r/zetam)**2.d0
     else
@@ -336,12 +340,14 @@ contains
        u = u0*(cos(lat)*cos(alpha)+sin(lat)*cos(lon)*sin(alpha))
        ! Meridional Velocity
        v = -u0*(sin(lon)*sin(alpha))
+       u = u*ztaper
+       v = v*ztaper
     case('b')
        ! 2D nondiv flow in each layer.
        call get_nondiv2d_uv(time, lon + lon_offset, lat, u, v)
        u = u*ztaper
        v = v*ztaper
-    case('c', 'd')
+    case('c', 'd', 'f')
        ! 3D nondiv flow.
        ptop_t = p0*exp(-ztop_t/H)
        ptop = p0*exp(-ztop/H)
@@ -367,6 +373,12 @@ contains
     case default
        call abortmp('test1_conv_advection_orography: invalid case')
     end select
+
+    if (test_minor == 'f') then
+       ! Low-level solid-body rotational wind for consistency with the moving ps
+       ! field.
+       u = u - u0/2*(1 - ztaper)
+    end if
 
     if (time > 0) then
        q1 = 0; q2 = 0; q3 = 0; q4 = 0
@@ -403,7 +415,7 @@ contains
   end subroutine test1_conv_advection_orography
 
   subroutine test1_conv_advection(test_case,time,lon,lat,hya,hyb,p,z,u,v,w,use_w,t,phis,ps,rho,q)
-    character(len=*), intent(in) :: test_case  ! dcmip2012_test1_{3a,3b,3c,3d,3e}_conv
+    character(len=*), intent(in) :: test_case  ! dcmip2012_test1_{3a-f}_conv
     real(rt), intent(in)     :: time       ! simulation time (s)
     real(rt), intent(in)     :: lon, lat   ! Longitude, latitude (radians)
     real(rt), intent(in)     :: hya, hyb   ! Hybrid a, b coefficients
@@ -430,7 +442,7 @@ contains
     use_w = .true.
     select case(test_major)
     case('3')
-       !use_w = .false.
+       use_w = .false.
        call test1_conv_advection_orography( &
             test_minor,time,lon,lat,p,z,zcoords,cfv,use_eta,hya,hyb,u,v,w,t,phis,ps,rho, &
             q(1),q(2),q(3),q(4))
