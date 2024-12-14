@@ -295,15 +295,16 @@ contains
     ! Mountain oscillation half-width (radians).
     zetam = pi/16.d0
     ! Smooth mountains very less resource-intensive convergence testing.
-    if (test_minor == 'c' .or. test_minor == 'f') zetam = pi/2.d0
+    if (test_minor == 'c') zetam = pi/2.d0
     ! Smoother than default but still fairly rough.
     if (test_minor == 'd') zetam = pi/8.d0
+    if (test_minor == 'f') zetam = pi/6.d0
 
     lambdam_t = lambdam
     if (test_minor == 'f') then
        ! Move the topography to make ps depend on time.
        !lambdam_t = lambdam_t - two*pi*time/tau
-       u_topo_fac = -u0/3.d0
+       u_topo_fac = -(1.0d0/2.d0)*u0
        lambdam_t = lambdam_t + &
             &      sin(pi*time/tau)*(tau/pi)*u_topo_fac & ! integral of u at lat = 0
             &      /a ! to radians
