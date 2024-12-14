@@ -302,7 +302,7 @@ contains
     lambdam_t = lambdam
     if (test_minor == 'f') then
        ! Move the topography half way around the sphere by time tau.
-       lambdam_t = lambdam_t - pi*time/tau
+       lambdam_t = lambdam_t - two*pi*time/tau
     end if
     r = great_circle_dist(lambdam_t, phim, lon, lat)
     if (r .lt. Rm) then
@@ -377,7 +377,7 @@ contains
     if (test_minor == 'f') then
        ! Low-level solid-body rotational wind for consistency with the moving ps
        ! field.
-       u = u - u0/2*(1 - ztaper)
+       u = u - u0*(1 - ztaper)*cos(lat)
     end if
 
     if (time > 0) then
