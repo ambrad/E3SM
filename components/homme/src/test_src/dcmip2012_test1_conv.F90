@@ -293,18 +293,16 @@ contains
     if (zcoords /= 0)     call abortmp('test1_conv_advection_orography does not support zcoords != 0')
 
     ! Mountain oscillation half-width (radians).
-    zetam = pi/16.d0
-    ! Smooth mountains very less resource-intensive convergence testing.
+    zetam = pi/14.d0
+    ! Smooth mountains for very less resource-intensive convergence testing.
     if (test_minor == 'c') zetam = pi/2.d0
     ! Smoother than default but still fairly rough.
-    if (test_minor == 'd') zetam = pi/8.d0
-    if (test_minor == 'f') zetam = pi/6.d0
+    if (test_minor == 'd' .or. test_minor == 'f') zetam = pi/6.d0
 
     lambdam_t = lambdam
     if (test_minor == 'f') then
        ! Move the topography to make ps depend on time.
-       !lambdam_t = lambdam_t - two*pi*time/tau
-       u_topo_fac = -(1.0d0/2.d0)*u0
+       u_topo_fac = -u0/two
        lambdam_t = lambdam_t + &
             &      sin(pi*time/tau)*(tau/pi)*u_topo_fac & ! integral of u at lat = 0
             &      /a ! to radians
@@ -382,7 +380,6 @@ contains
     if (test_minor == 'f') then
        ! Low-level solid-body rotational wind for consistency with the moving ps
        ! field.
-       !u = u - u0*(1 - ztaper)*cos(lat)
        u = u + cos(pi*time/tau)*u_topo_fac*(1 - ztaper)*cos(lat)
     end if
 
