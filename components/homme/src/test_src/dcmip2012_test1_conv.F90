@@ -442,10 +442,9 @@ contains
     test_major = test_case(17:17)
     if (test_major == '3') test_minor = test_case(18:18)
 
-    use_w = .true.
+    use_w = .false.
     select case(test_major)
     case('3')
-       use_w = .false.
        call test1_conv_advection_orography( &
             test_minor,time,lon,lat,p,z,zcoords,cfv,use_eta,hya,hyb,u,v,w,t,phis,ps,rho, &
             q(1),q(2),q(3),q(4))
