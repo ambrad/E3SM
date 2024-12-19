@@ -135,8 +135,6 @@ contains
     if (transport_alg > 0) then
        call sl_parse_transport_alg(transport_alg, slmm, cisl, qos, sl_test, &
             independent_time_steps)
-       if (par%masterproc .and. nu_q > 0 .and. semi_lagrange_hv_q > 0) &
-            write(iulog,*) 'COMPOSE> use HV; nu_q, all:', nu_q, semi_lagrange_hv_q
        is_sphere = trim(geometry) /= 'plane'
        enhanced_trajectory = semi_lagrange_trajectory_nsubstep > 0
        dep_points_ndim = 3
@@ -173,6 +171,15 @@ contains
             vrec, i)
        dp_tol = -one
        deta_tol = -one
+       if (par%masterproc) then
+          if (nu_q > 0 .and. semi_lagrange_hv_q > 0) then
+             write(iulog,*) 'COMPOSE> use HV; nu_q, all:', nu_q, semi_lagrange_hv_q
+          end if
+          if (enhanced_trajectory) then
+             write(iulog,*) 'COMPOSE> use enhanced trajectory; nsub, nvel:', &
+                  &         semi_lagrange_trajectory_nsubstep, vrec%nvel
+          end if
+       end if
     endif
     call t_stopf('sl_init1')
 #endif
@@ -2205,7 +2212,8 @@ contains
 
   contains
     subroutine test(dtf, drf, nsub, nvel, v, error)
-      integer, intent(in) :: dtf, drf, nsub, nvel, error
+      integer, intent(in) :: dtf, drf, nsub, nvel
+      integer, intent(inout) :: error
       type (velocity_record_t), intent(in) :: v
 
       real(kind=real_kind) :: endslots(2), ys(dtf), a, x, y, y0, y1, &
@@ -2297,6 +2305,7 @@ contains
          do n = 0, nsub
             print '(i3,i3)', n, v%run_step(n)
          end do
+         error = 1
       end if
     end subroutine test
 
