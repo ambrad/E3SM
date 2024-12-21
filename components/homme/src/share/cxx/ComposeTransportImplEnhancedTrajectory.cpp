@@ -1024,6 +1024,12 @@ void dss_vnode (const CTI& c, const cti::DeparturePoints& vnode) {
 
 } // namespace anon
 
+// When nvelocity > 2, we need to do bookkeeping to (1) accumulate intermediate
+// velocity data and (2) use these data. This struct does this bookkeeping. At
+// init time, it builds small integer and real arrays with indices and
+// weights. During time stepping, it provides these data to the
+// velocity-accumulation function and the trajectory method.
+//
 // Parameter short names:
 //   dtf = dt_tracer_factor
 //   drf = dt_remap_factor
