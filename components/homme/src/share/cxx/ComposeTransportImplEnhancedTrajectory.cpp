@@ -1024,9 +1024,183 @@ void dss_vnode (const CTI& c, const cti::DeparturePoints& vnode) {
 
 } // namespace anon
 
+// Parameter short names:
+//   dtf = dt_tracer_factor
+//   drf = dt_remap_factor
+//   nsub = semi_lagrange_trajectory_nsubstep
+//   nvel = semi_lagrange_trajectory_nvelocity
 struct CTI::VelocityRecord {
+  VelocityRecord () {}
+  VelocityRecord (const int dtf, const int drf, const int nsub, const int nvel)
+  { init(dtf, drf, nsub, nvel); }
+
+  void init(const int dtf, const int drf, const int nsub, const int nvel);
+
+  int dtf () const { return _dtf; }
+  int drf () const { return _drf; }
+  int nsub () const { return _nsub; }
+  int nvel () const { return _nvel; }
   
+  // Times to which velocity slots i in 0:nvel-1 correspond, in reference time
+  // [0,dtf].
+  Real t_vel(const int i) const;
+
+  // For n = 0:dtf, obs_slots(n,0:1) = [slot1, slot2], -1 if unused. These are
+  // the slots to which velocity sample n contributes. obs_slots(0 or dtf,:) are
+  // always -1.
+  int obs_slots(const int n, const int k) const;
+
+  // For n = 0:dtf, obs_wts(n,0:1) = [wt1, wt2], 0 if unused.
+  Real obs_wts(const int n, const int k) const;
+
+  // Substep end point i in 0:nsub uses velocity slots run_step(n),
+  // run_step(n)-1.
+  int run_step(const int i) const;
+  
+private:
+  int _dtf = -1, _drf = -1, _nsub = -1, _nvel = -1;
+  std::vector<int> _obs_slots, _run_step;
+  std::vector<Real> _t_vel, _obs_wts;
+
+  Real& t_vel(const int i);
+  int& obs_slots(const int n, const int k);
+  Real& obs_wts(const int n, const int k);
+  int& run_step(const int i);
 };
+
+Real& CTI::VelocityRecord::t_vel (const int i) {
+  assert(_nvel > 2);
+  assert(i >= 0 and i < _nvel);
+  return _t_vel[i];
+}
+
+int& CTI::VelocityRecord::obs_slots (const int n, const int k) {
+  assert(_nvel > 2);
+  assert(n >= 0 and n <= _dtf);
+  assert(k >= 0 and k <= 1);
+  return _obs_slots[2*n+k];
+}
+
+Real& CTI::VelocityRecord::obs_wts (const int n, const int k) {
+  assert(_nvel > 2);
+  assert(n >= 0 and n <= _dtf);
+  assert(k >= 0 and k <= 1);
+  return _obs_wts[2*n+k];  
+}
+
+int& CTI::VelocityRecord::run_step (const int i) {
+  assert(_nvel > 2);
+  assert(i >= 0 and i <= _nsub);
+  return _run_step[i];
+}
+
+Real CTI::VelocityRecord::t_vel (const int i) const {
+  return const_cast<VelocityRecord*>(this)->t_vel(i);
+}
+
+int CTI::VelocityRecord::obs_slots (const int n, const int k) const {
+  return const_cast<VelocityRecord*>(this)->obs_slots(n,k);
+}
+
+Real CTI::VelocityRecord::obs_wts (const int n, const int k) const {
+  return const_cast<VelocityRecord*>(this)->obs_wts(n,k);
+}
+
+int CTI::VelocityRecord::run_step (const int i) const {
+  return const_cast<VelocityRecord*>(this)->run_step(i);
+}
+
+void CTI::VelocityRecord
+::init (const int dtf, const int drf_param, const int nsub, const int nvel_param) {
+  const int
+    drf = drf_param == 0 ? 1 : drf_param,
+    navail = dtf/drf + 1,
+    nvel = std::min(nvel_param == -1 ?
+                    (2 + (nsub-1)/2) :  // default value
+                    nvel_param,
+                    std::min(nsub+1,    // can't use more than this
+                             navail));  // this is the max available
+
+  _dtf = dtf; _drf = drf; _nsub = nsub; _nvel = nvel;
+
+  // nsub <= 1: No substepping.
+  // nvel <= 2: Save velocity only at endpoints, as always occurs.
+  if (nsub <= 1 or nvel <= 2) {
+    _nvel = 2;
+    return;
+  }
+
+  _t_vel.resize(nvel);
+  _obs_slots.resize(2*(dtf+1)); _obs_wts.resize(2*(dtf+1));
+  _run_step.resize(nsub+1);
+
+  // Times at which velocity data are available.
+  std::vector<int> t_avail(navail); {
+    int i = 0;
+    for (int n = 0; n <= dtf; ++n) {
+      if (n % drf != 0) continue;
+      t_avail[i] = n;
+      i = i + 1;
+    }
+    assert(i == navail);
+    assert(t_avail[navail-1] == dtf);
+  }
+
+  // Times to which we associate velocity data.
+  for (int n = 0; n < nvel; ++n) {
+    t_vel(n) = ((n*dtf) % (nvel-1) == 0 ?
+                /**/ (n*dtf) / (nvel-1) :
+                Real (n*dtf) / (nvel-1));
+    assert(t_vel(n) >= 0 and t_vel(n) <= dtf);
+    assert(n == 0 or t_vel(n) > t_vel(n-1));
+  }
+
+  // Build the tables mapping n in 0:dtf-1 to velocity slots to accumulate into.
+  for (int n = 0; n <= dtf; ++n) {
+    for (int k = 0; k < 2; ++k) {
+      obs_slots(n,k) = -1;
+      obs_wts(n,k) = 0;
+    }
+    if (n == 0 or n == dtf) continue;
+    if (n % drf != 0) continue;
+    const int time = n;
+    int iav = -1;
+    for (int i = 1; i < navail-1; ++i)
+      if (time == t_avail[i]) {
+        iav = i;
+        break;
+      }
+    assert(iav > 0 and iav < navail-1);
+    for (int i = 1; i < nvel-1; ++i) {
+      if (t_avail[iav-1] < t_vel(i) and time > t_vel(i)) {
+        obs_slots(n,0) = i;
+        obs_wts(n,0) = ((t_vel(i) - t_avail[iav-1]) /
+                        (t_avail[iav] - t_avail[iav-1]));
+      }
+      if (time <= t_vel(i) and t_avail[iav+1] > t_vel(i)) {
+        obs_slots(n,1) = i;
+        obs_wts(n,1) = ((t_avail[iav+1] - t_vel(i)) /
+                        (t_avail[iav+1] - t_avail[iav]));
+      }
+    }
+  }
+
+  // Build table mapping n to interval to use. The trajectories go backward in
+  // time, and this table reflects that.
+  run_step(0) = nvel-1;
+  run_step(nsub) = 1;
+  for (int n = 1; n < nsub; ++n) {
+    const auto time = Real((nsub-n)*dtf)/nsub;
+    int ifnd = -1;
+    for (int i = 0; i < nvel-1; ++i)
+      if (t_vel(i) <= time and time <= t_vel(i+1)) {
+        ifnd = i;
+        break;
+      }
+    assert(ifnd >= 0 and ifnd < nvel-1);
+    run_step(n) = ifnd + 1;
+  }
+}
 
 // Public function.
 
@@ -1906,9 +2080,142 @@ int test_interp_departure_points_to_floating_level_midpoints (TestData& td) {
   return nerr;
 }
 
+static int test1_init_velocity_record (
+  const int dtf, const int drf, const int nsub, const int nvel)
+{
+  const auto eps = std::numeric_limits<Real>::epsilon();
+  int e = 0;
+
+  if (dtf % drf != 0) {
+    printf("Testing erro: dtf %% drf == 0 is required: %d %d\n", dtf, drf);
+    ++e; 
+  }
+
+  const CTI::VelocityRecord v(dtf, drf, nsub, nvel);
+  if (v.dtf() != dtf) ++e;
+  if (v.nsub() != nsub) ++e;
+
+  // Check that t_vel is monotonically increasing.
+  for (int n = 1; n < v.nvel(); ++n)
+    if (v.t_vel(n) <= v.t_vel(n-1))
+      ++e;
+
+  // Check that obs_slots does not reference end points. This should not happen
+  // b/c nvel <= navail and observations are uniformly spaced.
+  for (int n = 0; n < dtf; ++n)
+    for (int i = 0; i < 2; ++i)
+      if (v.obs_slots(n,i) == 0 or v.obs_slots(n,i) == dtf)
+        ++e;
+
+  // Check that weights sum to 1.
+  std::vector<Real> ys(dtf);
+  for (int n = 0; n < dtf; ++n)
+    for (int i = 0; i < 2; ++i)
+      if (v.obs_slots(n,i) >= 0)
+        ys[v.obs_slots(n,i)] += v.obs_wts(n,i);
+  for (int i = 1; i < v.nvel()-1; ++i)
+    if (std::abs(ys[i] - 1) > 1e3*eps)
+      ++e;
+
+  // Test for exact interp of an affine function.
+  const auto tfn = [] (const Real x) { return 7.1*x - 11.5; };
+  //   Observe data forward in time.
+  Real endslots[2];
+  endslots[0] = tfn(0);
+  endslots[1] = tfn(dtf);
+  ys[0] = -1000; // unused
+  for (int i = 1; i < dtf; ++i) ys[i] = 0;
+  for (int n = 1; n < dtf; ++n) {
+    if (n % drf != 0) continue;
+    const Real y = tfn(n);
+    for (int i = 0; i < 2; ++i) {
+      if (v.obs_slots(n,i) < 0) continue;
+      ys[v.obs_slots(n,i)] += v.obs_wts(n,i)*y;
+    }
+  }
+  //   Use the data backward in time.
+  for (int n = 0; n < nsub; ++n) {
+    // Each segment orders the data forward in time. Thus, data are always
+    // ordered forward in time but used backward.
+    Real xsup[2], ysup[2];
+    for (int i = 0; i < 2; ++i) {
+      int k = nsub - (n+1) + i;
+      xsup[i] = (k*v.t_vel(v.nvel()-1))/nsub;
+      k = v.run_step(nsub-i);
+      const Real
+        y0 = k == 1 ? endslots[0] : ys[k-1],
+        y1 = k == v.nvel()-1 ? endslots[2] : ys[k];
+      ysup[i] = (((v.t_vel(k) - xsup[i])*y0 + (xsup[i] - v.t_vel(k-1))*y1) /
+                 (v.t_vel(k) - v.t_vel(k-1)));
+    }
+    for (int i = 0; i <= 10; ++i) {
+      const Real
+        a = Real(i)/10,
+        x = (1-a)*xsup[0] + a*xsup[1],
+        y = (1-a)*ysup[0] + a*ysup[1];
+      if (std::abs(y - tfn(x)) > 1e3*eps) {
+        printf("n %d i %2d x %7.3f y %7.3f t %7.3f\n", n, i, x, y, tfn(x));
+        ++e;
+      }
+    }
+  }
+  
+  if (e) {
+    printf("ERROR e %d\n", e);
+    printf("dtf %d drf %d nsub %d nvel %d v.nvel %d\n",
+           dtf, drf, nsub, nvel, v.nvel());
+    printf("  t_vel:");
+    for (int i = 0; i < v.nvel(); ++i) printf(" %1.3f", v.t_vel(i));
+    printf("\n  obs:\n");
+    for (int n = 0; n <= dtf; ++n)
+      printf("    %2d %2d %2d %1.3f %1.3f\n",
+             n, v.obs_slots(n,0), v.obs_slots(n,1), v.obs_wts(n,0),
+             v.obs_wts(n,1));
+    printf("  run_step:\n");
+    for (int n = 0; n <= nsub; ++n) printf("    %2d %2d\n", n, v.run_step(n));
+  }
+
+  return e;
+}
+
 int test_init_velocity_record (TestData& td) {
-  int nerr = 0;
-  //todo
+  int dtf, drf, nsub, nvel, nerr;
+
+  nerr = 0;
+
+  const auto f = [&] () {
+    const int e = test1_init_velocity_record(dtf, drf, nsub, nvel);
+    if (e > 0) ++nerr;
+  };
+
+  nerr = 0;
+  dtf = 6;
+  drf = 2;
+  nsub = 3;
+  nvel = 4;
+  f();
+  nvel = 3;
+  f();
+  drf = 3;
+  nvel = 6;
+  f();
+  drf = 1;
+  nsub = 5;
+  f();
+  dtf = 12;
+  drf = 2;
+  nsub = 3;
+  nvel = -1;
+  f();
+  nsub = 5;
+  nvel = 5;
+  f();
+  dtf = 27;
+  drf = 3;
+  nsub = 51;
+  nvel = 99;
+  f();
+
   return nerr;
 }
 
