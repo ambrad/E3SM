@@ -72,6 +72,12 @@ struct ComposeTransportImpl {
   typedef typename ViewConst<S2Nlev>::type CS2Nlev;
   typedef typename ViewConst<R2Nlev>::type CR2Nlev;
 
+  using  DpSlot = ExecViewUnmanaged<      Scalar**   [NP][NP][NUM_LEV]>;
+  using   VSlot = ExecViewUnmanaged<      Scalar**[2][NP][NP][NUM_LEV]>;
+  using CDpSlot = ExecViewUnmanaged<const Scalar**   [NP][NP][NUM_LEV]>;
+  using  CVSlot = ExecViewUnmanaged<const Scalar**[2][NP][NP][NUM_LEV]>;
+  struct VelocityRecord;
+
   struct Data {
     int nelemd, qsize, limiter_option, cdr_check, hv_q, hv_subcycle_q;
     int geometry_type; // 0: sphere, 1: plane
@@ -90,6 +96,8 @@ struct ComposeTransportImpl {
     ExecView<Real[NUM_INTERFACE_LEV]> hydetam_ref;
 
     DeparturePoints dep_pts, vnode, vdep; // (ie,lev,i,j,d)
+
+    std::shared_ptr<VelocityRecord> vrec;
 
     Data ()
       : nelemd(-1), qsize(-1), limiter_option(9), cdr_check(0), hv_q(0),

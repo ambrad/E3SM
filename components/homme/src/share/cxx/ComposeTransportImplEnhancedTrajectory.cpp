@@ -779,10 +779,8 @@ void update_dep_points (
 */
 void calc_nodal_velocities (
   const CTI& c, const Real dtsub, const Real halpha[2],
-  const ExecViewUnmanaged<const Scalar**[2][NP][NP][NUM_LEV]>& v1,
-  const ExecViewUnmanaged<const Scalar**   [NP][NP][NUM_LEV]>& dp1, const int idx1,
-  const ExecViewUnmanaged<const Scalar**[2][NP][NP][NUM_LEV]>& v2,
-  const ExecViewUnmanaged<const Scalar**   [NP][NP][NUM_LEV]>& dp2, const int idx2,
+  const cti::CVSlot& v1, const cti::CDpSlot& dp1, const int idx1,
+  const cti::CVSlot& v2, const cti::CDpSlot& dp2, const int idx2,
   const cti::DeparturePoints& vnode)
 {
   using Kokkos::ALL;
@@ -1026,6 +1024,10 @@ void dss_vnode (const CTI& c, const cti::DeparturePoints& vnode) {
 
 } // namespace anon
 
+struct CTI::VelocityRecord {
+  
+};
+
 // Public function.
 
 void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real dt) {
@@ -1046,10 +1048,8 @@ void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real d
       GPTLstart("compose_vnode");
       const Real alpha[] = {Real(nsubstep-step-1)/nsubstep,
                             Real(nsubstep-step  )/nsubstep};
-      const ExecViewUnmanaged<const Scalar*[1][2][NP][NP][NUM_LEV]>
-        v1(m_derived.m_vstar.data(), nelemd);
-      const ExecViewUnmanaged<const Scalar*[1]   [NP][NP][NUM_LEV]>
-        dp1(m_derived.m_dp.data(), nelemd);
+      const CVSlot v1(m_derived.m_vstar.data(), nelemd, 1);
+      const CDpSlot dp1(m_derived.m_dp.data(), nelemd, 1);
       const auto& v2 = m_state.m_v;
       const auto& dp2 = m_state.m_dp3d;
       calc_nodal_velocities(*this, dtsub, alpha,
