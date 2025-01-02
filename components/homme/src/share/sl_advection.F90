@@ -118,7 +118,8 @@ contains
     use interpolate_mod,        only : interpolate_tracers_init
     use control_mod,            only : transport_alg, semi_lagrange_cdr_alg, cubed_sphere_map, &
          nu_q, semi_lagrange_hv_q, semi_lagrange_cdr_check, semi_lagrange_trajectory_nsubstep, &
-         semi_lagrange_trajectory_nvelocity, geometry, dt_remap_factor, dt_tracer_factor
+         semi_lagrange_trajectory_nvelocity, geometry, dt_remap_factor, dt_tracer_factor, &
+         semi_lagrange_halo
     use element_state,          only : timelevels
     use coordinate_systems_mod, only : cartesian3D_t
     use perf_mod, only: t_startf, t_stopf
@@ -133,6 +134,15 @@ contains
 #ifdef HOMME_ENABLE_COMPOSE
     call t_startf('sl_init1')
     if (transport_alg > 0) then
+       if (semi_lagrange_halo < 1) then
+          ! For test problems, the relationship between dt_tracer_factor and
+          ! halo may not be clear. But for real problems, the advective CFL
+          ! implies that a parcel can cross a cell in three time steps. Since
+          ! this is closely related to the dynamics' tstep, dt_tracer_factor is
+          ! meaningful, implying:
+          semi_lagrange_halo = dt_tracer_factor / 3
+          if (semi_lagrange_halo < 1) semi_lagrange_halo = 1
+       end if
        call sl_parse_transport_alg(transport_alg, slmm, cisl, qos, sl_test, &
             independent_time_steps)
        is_sphere = trim(geometry) /= 'plane'
@@ -173,11 +183,16 @@ contains
        deta_tol = -one
        if (par%masterproc) then
           if (nu_q > 0 .and. semi_lagrange_hv_q > 0) then
-             write(iulog,*) 'COMPOSE> use HV; nu_q, all:', nu_q, semi_lagrange_hv_q
+             write(iulog,'(a,es13.4,i3)') 'COMPOSE> use HV; nu_q, hv_q:', &
+                  nu_q, semi_lagrange_hv_q
           end if
           if (enhanced_trajectory) then
-             write(iulog,*) 'COMPOSE> use enhanced trajectory; nsub, nvel:', &
-                  &         semi_lagrange_trajectory_nsubstep, vrec%nvel
+             write(iulog,'(a,i3,i3,i3)') &
+                  'COMPOSE> dt_tracer_factor, dt_remap_factor, halo:', &
+                  dt_tracer_factor, dt_remap_factor, semi_lagrange_halo
+             write(iulog,'(a,i3,i3)') &
+                  'COMPOSE> use enhanced trajectory; nsub, nvel:', &
+                  semi_lagrange_trajectory_nsubstep, vrec%nvel
           end if
        end if
     endif
