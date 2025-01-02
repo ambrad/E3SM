@@ -134,15 +134,6 @@ contains
 #ifdef HOMME_ENABLE_COMPOSE
     call t_startf('sl_init1')
     if (transport_alg > 0) then
-       if (semi_lagrange_halo < 1) then
-          ! For test problems, the relationship between dt_tracer_factor and
-          ! halo may not be clear. But for real problems, the advective CFL
-          ! implies that a parcel can cross a cell in three time steps. Since
-          ! this is closely related to the dynamics' tstep, dt_tracer_factor is
-          ! meaningful, implying:
-          semi_lagrange_halo = dt_tracer_factor / 3
-          if (semi_lagrange_halo < 1) semi_lagrange_halo = 1
-       end if
        call sl_parse_transport_alg(transport_alg, slmm, cisl, qos, sl_test, &
             independent_time_steps)
        is_sphere = trim(geometry) /= 'plane'
