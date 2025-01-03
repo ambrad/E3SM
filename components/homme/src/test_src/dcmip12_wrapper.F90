@@ -12,7 +12,7 @@ module dcmip12_wrapper
 use control_mod,          only: test_case, dcmip4_moist, dcmip4_X, vanalytic
 use dcmip2012_test1_2_3,  only: test1_advection_deformation, test1_advection_hadley, test1_advection_orography, &
                                 test2_steady_state_mountain, test2_schaer_mountain,test3_gravity_wave
-use dcmip2012_test1_conv, only: test1_conv_advection, test1_conv_print_results
+use dcmip2012_test1_conv_mod, only: test1_conv_advection, test1_conv_print_results
 use dcmip2012_test4,      only: test4_baroclinic_wave 
 use mtests,               only: mtest_state
 use derivative_mod,       only: derivative_t, gradient_sphere
