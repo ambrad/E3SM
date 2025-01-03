@@ -313,6 +313,7 @@ contains
     else
        zs = zero
     endif
+    if (test_minor == 'a') zs = zero
     zs = -zs ! holes instead of mountains
     phis = g*zs
     ps = p0 * exp(-zs/H)
@@ -337,7 +338,7 @@ contains
     w = zero
 
     select case(test_minor)
-    case('a')
+    case('z') ! currently unused
        ! Solid body rotation
        ! Zonal Velocity
        u = u0*(cos(lat)*cos(alpha)+sin(lat)*cos(lon)*sin(alpha))
@@ -350,7 +351,7 @@ contains
        call get_nondiv2d_uv(time, lon + lon_offset, lat, u, v)
        u = u*ztaper
        v = v*ztaper
-    case('c', 'd', 'f')
+    case('a', 'c', 'd', 'f')
        ! 3D nondiv flow.
        ptop_t = p0*exp(-ztop_t/H)
        ptop = p0*exp(-ztop/H)

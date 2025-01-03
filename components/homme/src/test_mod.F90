@@ -68,9 +68,8 @@ subroutine set_test_initial_conditions(elem, deriv, hybrid, hvcoord, tl, nets, n
     case('asp_tracer');
     case('baroclinic');
     case('dcmip2012_test1_1');
-    case('dcmip2012_test1_1_conv', 'dcmip2012_test1_2_conv', 'dcmip2012_test1_3a_conv', &
-         'dcmip2012_test1_3b_conv', 'dcmip2012_test1_3c_conv', 'dcmip2012_test1_3d_conv', &
-         'dcmip2012_test1_3e_conv', 'dcmip2012_test1_3f_conv')
+    case('dcmip2012_test1_3a_conv', 'dcmip2012_test1_3b_conv', 'dcmip2012_test1_3c_conv', &
+         'dcmip2012_test1_3d_conv', 'dcmip2012_test1_3e_conv', 'dcmip2012_test1_3f_conv')
     case('dcmip2012_test1_2');
     case('dcmip2012_test1_3');
     case('dcmip2012_test2_0');
