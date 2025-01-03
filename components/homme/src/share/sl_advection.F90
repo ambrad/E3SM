@@ -9,8 +9,8 @@ module sl_advection
   use element_mod, only        : element_t
   use hybvcoord_mod, only      : hvcoord_t
   use time_mod, only           : TimeLevel_t, TimeLevel_Qdp
-  use control_mod, only        : integration, test_case, hypervis_order, transport_alg, limiter_option,&
-                                 vert_remap_q_alg
+  use control_mod, only        : integration, test_case, hypervis_order, transport_alg, &
+       &                         limiter_option, vert_remap_q_alg, semi_lagrange_diagnostics
   use edge_mod, only           : edgevpack_nlyr, edgevunpack_nlyr, edge_g
   use edgetype_mod, only       : EdgeDescriptor_t, EdgeBuffer_t
   use hybrid_mod, only         : hybrid_t
@@ -1329,6 +1329,9 @@ contains
     ! permits multiple substeps, optionally using more reference-grid velocity
     ! snapshots.
 
+    use reduction_mod, only: ParallelSum
+    use kinds, only: iulog
+    
     type (element_t), intent(inout) :: elem(:)
     type (derivative_t), intent(in) :: deriv
     type (hvcoord_t), intent(in) :: hvcoord
@@ -1339,7 +1342,7 @@ contains
     logical, intent(in) :: independent_time_steps
 
 #ifdef HOMME_ENABLE_COMPOSE
-    integer :: step, ie, info
+    integer :: step, ie, info, limiter_active_count
     real(real_kind) :: alpha(2), dtsub
 
     call t_startf('SLMM_trajectory')
@@ -1349,6 +1352,7 @@ contains
     ! Set dep_points_all to level-midpoint arrival points.
     call init_dep_points_all(elem, hvcoord, nets, nete, independent_time_steps)
 
+    limiter_active_count = 0
     dtsub = dt / nsubstep
     do step = 1, nsubstep
        ! Fill vnode.
@@ -1383,9 +1387,16 @@ contains
 
     if (independent_time_steps) then
        call interp_departure_points_to_floating_level_midpoints( &
-            elem, nets, nete, tl, hvcoord, dep_points_all)
+            elem, nets, nete, tl, hvcoord, dep_points_all, limiter_active_count)
        ! Not needed in practice. Corner cases will be cleaned up by dss_Qdp.
        !call dss_divdp(elem, nets, nete, hybrid)
+       if (iand(semi_lagrange_diagnostics, 1) /= 0) then
+          limiter_active_count = ParallelSum(limiter_active_count, hybrid)
+          if (limiter_active_count > 0 .and. hybrid%masterthread) then
+             write(iulog, '(a,i11)') 'COMPOSE> limiter_active_count', &
+                  limiter_active_count
+          end if
+       end if
     end if
 
     call t_stopf('SLMM_trajectory')
@@ -1702,7 +1713,7 @@ contains
   end subroutine update_dep_points_all
 
   subroutine interp_departure_points_to_floating_level_midpoints( &
-       elem, nets, nete, tl, hvcoord, dep_points_all)
+       elem, nets, nete, tl, hvcoord, dep_points_all, limcnt)
     ! Determine the departure points corresponding to the vertically Lagragnian
     ! grid's arrival midpoints, where the floating levels are those that evolve
     ! over the course of the full tracer time step. Also compute
@@ -1714,6 +1725,7 @@ contains
     type (hvcoord_t), intent(in) :: hvcoord
     type (TimeLevel_t), intent(in) :: tl
     real(real_kind), intent(inout) :: dep_points_all(:,:,:,:,:)
+    integer, intent(inout) :: limcnt
 
     real(real_kind) :: deta_ref(nlevp), w1(np,np), v1(np,np,nlev), &
          &             v2(np,np,nlevp), p(3)
@@ -1733,7 +1745,7 @@ contains
 
        ! Reconstruct Lagrangian levels at t1 on arrival column:
        !     eta_arr_int = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_int)
-       call limit_etam(hvcoord, deta_ref, dep_points_all(4,:,:,:,ie), v1)
+       call limit_etam(hvcoord, deta_ref, dep_points_all(4,:,:,:,ie), v1, limcnt)
        v2(:,:,1) = hvcoord%etai(1)
        v2(:,:,nlevp) = hvcoord%etai(nlevp)
        call eta_interp_eta(hvcoord, v1, hvcoord%etam, &
@@ -1785,10 +1797,11 @@ contains
     deta_tol = 10_real_kind*eps*deta_ave
   end subroutine set_deta_tol
 
-  subroutine limit_etam(hvcoord, deta_ref, eta, eta_lim)
+  subroutine limit_etam(hvcoord, deta_ref, eta, eta_lim, cnt)
     type (hvcoord_t), intent(in) :: hvcoord
     real(real_kind), intent(in) :: deta_ref(nlevp), eta(np,np,nlev)
     real(real_kind), intent(out) :: eta_lim(np,np,nlev)
+    integer, intent(inout) :: cnt
 
     real(real_kind) :: deta(nlevp)
     integer :: i, j, k
@@ -1823,6 +1836,7 @@ contains
           deta(nlevp) = hvcoord%etai(nlevp) - eta(i,j,nlev)
           ! [0, etam(1)] and [etam(nlev),1] are half levels, but deta_tol is so
           ! small there's no reason not to use it as a lower bound for these.
+          cnt = cnt + 1
           call deta_caas(nlevp, deta_ref, deta_tol, deta)
           eta_lim(i,j,1) = hvcoord%etai(1) + deta(1)
           do k = 2, nlev

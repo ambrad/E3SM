@@ -44,6 +44,7 @@ module control_mod
   integer, public :: semi_lagrange_halo = -1
   integer, public :: semi_lagrange_trajectory_nsubstep = 0
   integer, public :: semi_lagrange_trajectory_nvelocity = -1
+  integer, public :: semi_lagrange_diagnostics = 0
 
 ! flag used by preqx, theta-l and theta-c models
 ! should be renamed to "hydrostatic_mode"
