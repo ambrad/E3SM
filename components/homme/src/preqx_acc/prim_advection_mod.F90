@@ -41,6 +41,7 @@ module prim_advection_mod
   logical, private :: first_time = .true.
 
   public :: Prim_Advec_Tracers_remap
+  public :: Prim_Advec_Tracers_observe_velocity
   public :: prim_advec_init1
   public :: prim_advec_init2
 
