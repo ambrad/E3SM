@@ -7,9 +7,6 @@
 #include "Config.hpp"
 #ifdef HOMME_ENABLE_COMPOSE
 
-#pragma message "CTET undef NDEBUG"
-#undef NDEBUG
-
 #include "ComposeTransportImpl.hpp"
 
 #include "compose_hommexx.hpp"
