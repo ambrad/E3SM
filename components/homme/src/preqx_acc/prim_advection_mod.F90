@@ -302,6 +302,17 @@ contains
     !$omp barrier
   end subroutine prim_advec_init2
 
+  subroutine Prim_Advec_Tracers_observe_velocity(elem, tl, n, nets, nete)
+    type (element_t)     , intent(inout) :: elem(:)
+    type (TimeLevel_t)   , intent(in   ) :: tl
+    integer              , intent(in   ) :: n
+    integer              , intent(in   ) :: nets
+    integer              , intent(in   ) :: nete
+
+    ! Do nothing. Only SL transport uses this routine, and it's not supported in
+    ! preqx.
+  end subroutine Prim_Advec_Tracers_observe_velocity
+
   subroutine advance_hypervis_scalar(  elem , hvcoord , hybrid , deriv , nt , nt_qdp , nets , nete , dt2 )
     !  hyperviscsoity operator for foward-in-time scheme
     !  take one timestep of:  
