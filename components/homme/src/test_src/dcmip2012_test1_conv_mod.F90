@@ -286,7 +286,9 @@ contains
          bs_a    = 1.0d0                   ! shape function smoothness
 
     real(rt) :: r, height, zs, zetam, ztaper, rho0, z_q_shape, ptop, ptop_t, &
-         &      c0, fl, fl_lat, gz, gz_z, fz, fz_z, delta, lambdam_t, u_topo_fac
+         &      c0, fl, fl_lat, gz, gz_z, fz, fz_z, delta, lambdam_t, u_topo_fac, &
+         &      u0_topo, tau_topo
+    logical :: ps_timedep
 
     if (cfv /= 0)         call abortmp('test1_conv_advection_orography does not support cfv != 0')
     if (.not. hybrid_eta) call abortmp('test1_conv_advection_orography does not support !hybrid_eta')
@@ -299,12 +301,19 @@ contains
     ! Smoother than default but still fairly rough.
     if (test_minor == 'd' .or. test_minor == 'f') zetam = pi/6.d0
 
+    ps_timedep = test_minor == 'e' .or. test_minor == 'f'
     lambdam_t = lambdam
-    if (test_minor == 'f') then
+    if (ps_timedep) then
        ! Move the topography to make ps depend on time.
-       u_topo_fac = -u0/two
+       u0_topo = u0
+       tau_topo = tau
+       if (test_minor == 'e') then
+          u0_topo = u0_h
+          tau_topo = tau_h
+       end if
+       u_topo_fac = -u0_topo/two
        lambdam_t = lambdam_t + &
-            &      sin(pi*time/tau)*(tau/pi)*u_topo_fac & ! integral of u at lat = 0
+            &      sin(pi*time/tau_topo)*(tau_topo/pi)*u_topo_fac & ! integral of u at lat = 0
             &      /a ! to radians
     end if
     r = great_circle_dist(lambdam_t, phim, lon, lat)
@@ -378,10 +387,10 @@ contains
        call abortmp('test1_conv_advection_orography: invalid case')
     end select
 
-    if (test_minor == 'f') then
+    if (ps_timedep) then
        ! Low-level solid-body rotational wind for consistency with the moving ps
        ! field.
-       u = u + cos(pi*time/tau)*u_topo_fac*(1 - ztaper)*cos(lat)
+       u = u + cos(pi*time/tau_topo)*u_topo_fac*(1 - ztaper)*cos(lat)
     end if
 
     if (time > 0) then
