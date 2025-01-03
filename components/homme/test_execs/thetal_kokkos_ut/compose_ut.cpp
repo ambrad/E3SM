@@ -143,16 +143,6 @@ struct Session {
     p.scale_factor = is_sphere ? PhysicalConstants::rearth0 : 1;
     p.laplacian_rigid_factor = is_sphere ? 1/p.scale_factor : 0;
 
-#pragma message "figure out why this causes diffs"
-    // It seems that if I call h.init with the already existing values, it still
-    // diffs.
-    if (0)
-    { // Set hybrid coordinate values to deterministic ones.
-      std::vector<Real> hyam(nlev, 0), hyai(nlev+1, 0), hybm(nlev), hybi(nlev+1);
-      for (int i = 0; i < nlev+1; ++i) hybi[i] = Real(i)/nlev;
-      for (int i = 0; i < nlev; ++i) hybm[i] = (hybi[i] + hybi[i+1])/2;
-      h.init(1e5, hyam.data(), hyai.data(), hybm.data(), hybi.data());
-    }
     const auto hyai = cmvdc(h.hybrid_ai);
     const auto hybi = cmvdc(h.hybrid_bi);
     const auto hyam = cmvdc(h.hybrid_am);
@@ -400,7 +390,7 @@ void run_sl_vertical_remap_bfb_cpp (const Session& s, ComposeTransport& ct,
 TEST_CASE ("compose_transport_testing") {
   static constexpr Real tol = std::numeric_limits<Real>::epsilon();
 
-  auto& s = Session::singleton(); //try {
+  auto& s = Session::singleton(); try {
   do { // breakable
 
   if (s.run_only_advection_test) {
@@ -422,37 +412,36 @@ TEST_CASE ("compose_transport_testing") {
   REQUIRE(fails.empty());
 
   // trajectory BFB
-  if (s.traj_nsubstep == 0)
-  for (const bool independent_time_steps : {false, true}) {
-    printf("independent_time_steps %d\n", independent_time_steps);
-    const Real twelve_days = 3600 * 24 * 12;
-    const Real t0 = 0.13*twelve_days;
-    const Real t1 = independent_time_steps ? t0 + 1800 : 0.22*twelve_days;
-    CA5d depf("depf", s.nelemd, s.nlev, s.np, s.np, 3);
-    CA4d dpreconf("dpreconf", s.nelemd, s.nlev, s.np, s.np);
-    run_trajectory_f90(t0, t1, independent_time_steps, depf.data(),
-                       dpreconf.data());
-    const auto depc = ct.test_trajectory(t0, t1, independent_time_steps);
-    REQUIRE(depc.extent_int(0) == s.nelemd);
-    REQUIRE(depc.extent_int(2) == s.np);
-    REQUIRE(depc.extent_int(4) == 3);
-    if (independent_time_steps) {
-      const auto dpreconc = cmvdc(RNlev(pack2real(s.e->m_derived.m_divdp), s.nelemd));
+  if (s.traj_nsubstep == 0) {
+    for (const bool independent_time_steps : {false, true}) {
+      printf("independent_time_steps %d\n", independent_time_steps);
+      const Real twelve_days = 3600 * 24 * 12;
+      const Real t0 = 0.13*twelve_days;
+      const Real t1 = independent_time_steps ? t0 + 1800 : 0.22*twelve_days;
+      CA5d depf("depf", s.nelemd, s.nlev, s.np, s.np, 3);
+      CA4d dpreconf("dpreconf", s.nelemd, s.nlev, s.np, s.np);
+      run_trajectory_f90(t0, t1, independent_time_steps, depf.data(),
+                         dpreconf.data());
+      const auto depc = ct.test_trajectory(t0, t1, independent_time_steps);
+      REQUIRE(depc.extent_int(0) == s.nelemd);
+      REQUIRE(depc.extent_int(2) == s.np);
+      REQUIRE(depc.extent_int(4) == 3);
+      if (independent_time_steps) {
+        const auto dpreconc = cmvdc(RNlev(pack2real(s.e->m_derived.m_divdp), s.nelemd));
+        for (int ie = 0; ie < s.nelemd; ++ie)
+          for (int lev = 0; lev < s.nlev; ++lev)
+            for (int i = 0; i < s.np; ++i)
+              for (int j = 0; j < s.np; ++j)
+                REQUIRE(equal(dpreconf(ie,lev,i,j), dpreconc(ie,i,j,lev), 100*tol));
+      }
       for (int ie = 0; ie < s.nelemd; ++ie)
         for (int lev = 0; lev < s.nlev; ++lev)
           for (int i = 0; i < s.np; ++i)
             for (int j = 0; j < s.np; ++j)
-              REQUIRE(equal(dpreconf(ie,lev,i,j), dpreconc(ie,i,j,lev), 100*tol));
+              for (int d = 0; d < 3; ++d)
+                REQUIRE(equal(depf(ie,lev,i,j,d), depc(ie,lev,i,j,d), 100*tol));
     }
-    for (int ie = 0; ie < s.nelemd; ++ie)
-      for (int lev = 0; lev < s.nlev; ++lev)
-        for (int i = 0; i < s.np; ++i)
-          for (int j = 0; j < s.np; ++j)
-            for (int d = 0; d < 3; ++d)
-              REQUIRE(equal(depf(ie,lev,i,j,d), depc(ie,lev,i,j,d), 100*tol));
   }
-  else
-    printf("-----------------> SKIPPING run_trajectory_f90; TODO impl this test\n");
 
   { // q vertical remap
     Real diagnostic_f90, diagnostic_cpp;
@@ -487,6 +476,6 @@ TEST_CASE ("compose_transport_testing") {
   }
 
   } while (false); // do
-  //} catch (...) {}
+  } catch (...) {}
   Session::delete_singleton();
 }
