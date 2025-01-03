@@ -1338,6 +1338,7 @@ contains
     integer, intent(in) :: nets, nete, nsubstep
     logical, intent(in) :: independent_time_steps
 
+#ifdef HOMME_ENABLE_COMPOSE
     integer :: step, ie, info
     real(real_kind) :: alpha(2), dtsub
 
@@ -1388,6 +1389,7 @@ contains
     end if
 
     call t_stopf('SLMM_trajectory')
+#endif
   end subroutine calc_enhanced_trajectory
 
   subroutine init_dep_points_all(elem, hvcoord, nets, nete, independent_time_steps)
