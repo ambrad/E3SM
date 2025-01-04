@@ -13,7 +13,7 @@
 // AMB 2017/06-2020/05 Initial for E3SMv2
 // AMB 2020/05-2021/01 Performance-portable impl
 // AMB 2021/04         Support doubly-periodic planar mode
-// AMB 2024/04-?       Enhanced trajectory method
+// AMB 2024/04-2025/01 Enhanced trajectory method
 
 namespace homme {
 namespace mpi { //todo Share with cedr.
