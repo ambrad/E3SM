@@ -521,8 +521,9 @@ _TESTS = {
                  "SMS.ne4pg2_oQU480.F2010.eam-thetanh_ftype2",
                  "SMS.ne4pg2_oQU480.F2010.eam-thetanh_ftype4",
                  "SMS.ne4pg2_oQU480.F2010.eam-thetahy_sl",
+                 "ERS.ne4pg2_oQU480.F2010.eam-thetahy_sl_nsubstep2",
                  "ERS.ne4pg2_oQU480.F2010.eam-thetahy_ftype2",
-                 "ERS.ne4pg2_oQU480.F2010.eam-thetanh_ftype2",
+                 "ERS.ne4pg2_oQU480.F2010.eam-thetanh_ftype2"
                  )
     },
     "eam_theta_pg2" : {
