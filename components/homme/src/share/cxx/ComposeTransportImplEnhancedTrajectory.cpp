@@ -905,7 +905,7 @@ void interp_departure_points_to_floating_level_midpoints (const CTI& c, const in
     const auto vwrk = Homme::subview(buf2a, kv.team_idx);
     // Reconstruct Lagrangian levels at t1 on arrival column:
     //     eta_arr_int = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_int)
-    const RelNlev etam = p2rel(wrk3.data(), nlev);
+    const auto etam = p2rel(wrk3.data(), nlev);
     const auto f = [&] (const int i, const int j, const int k) {
       etam(i,j,k) = dep_pts(ie,k,i,j,3);
     };
@@ -946,7 +946,7 @@ void interp_departure_points_to_floating_level_midpoints (const CTI& c, const in
     }
     // Compute Lagrangian level midpoints at t1 on arrival column:
     //     eta_arr_mid = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_mid)
-    const RelNlev etam_arr = p2rel(wrk4.data(), nlev);
+    const auto etam_arr = p2rel(wrk4.data(), nlev);
     eta_interp_eta(kv, nlev,
                    hyetai,
                    etam, hyetam,
