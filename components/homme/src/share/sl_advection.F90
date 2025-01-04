@@ -302,6 +302,8 @@ contains
   end subroutine init_velocity_record
 
   subroutine prim_advec_tracers_observe_velocity_ALE(elem, tl, n, nets, nete)
+    use control_mod, only: dt_remap_factor
+    
     type (element_t)     , intent(inout) :: elem(:)
     type (TimeLevel_t)   , intent(in   ) :: tl
     integer              , intent(in   ) :: n       ! step in 1:dt_tracer_factor
@@ -312,7 +314,8 @@ contains
 
     if (vrec%nvel == 2) return
 
-    if (n == 1) then
+    if (n == dt_remap_factor .or. (dt_remap_factor == 0 .and. n == 1)) then
+       ! First observation of the tracer time step: zero accumulated quantities.
        do ie = nets, nete
           do slot = 2, vrec%nvel-1
              vrec%vel(:,:,:,:,slot,ie) = 0
