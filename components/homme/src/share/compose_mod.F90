@@ -305,7 +305,9 @@ contains
        ! related to the dynamics' tstep, dt_tracer_factor is meaningful,
        ! implying:
        semi_lagrange_halo = (dt_tracer_factor + 2) / 3
-       if (semi_lagrange_halo < 1) semi_lagrange_halo = 1
+       ! Set the lower bound to 2. 1 is also reasonable, but 2 is a conservative
+       ! choice with no performance impact.
+       if (semi_lagrange_halo < 2) semi_lagrange_halo = 2
     end if
 
     geometry_type = 0 ! sphere
