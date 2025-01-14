@@ -21,7 +21,7 @@ void set_views(const SetView<HommexxReal***>& spheremp,
 
 void set_hvcoord(const HommexxReal etai_beg, const HommexxReal etai_end,
                  const HommexxReal* etam);
-void calc_v_departure(const int step, const HommexxReal dtsub);
+void interp_v_update(const int step, const HommexxReal dtsub);
 
 void advect(const int np1, const int n0_qdp, const int np1_qdp);
 

@@ -268,9 +268,9 @@ void traj_copy_next_step (IslMpi<MT>& cm, const VdepT& vdep) {
 // 3D Cartesian representation of the horizontal velocity; dim = 3 is for
 // eta_dot.
 template <typename MT> void
-calc_v_departure (IslMpi<MT>& cm, const Int nets, const Int nete,
-                  const Int step, const Real dtsub,
-                  Real* dep_points_r, const Real* vnode_r, Real* vdep_r)
+interp_v_update (IslMpi<MT>& cm, const Int nets, const Int nete,
+                 const Int step, const Real dtsub,
+                 Real* dep_points_r, const Real* vnode_r, Real* vdep_r)
 {
   const int np = 4;
 
@@ -282,7 +282,7 @@ calc_v_departure (IslMpi<MT>& cm, const Int nets, const Int nete,
 #endif
 
   // If step = 0, the departure points are at the nodes and no interpolation is
-  // needed. calc_v_departure should not have been called; rather, the calling
+  // needed. interp_v_update should not have been called; rather, the calling
   // routine should use vnode instead of vdep in subsequent calculations.
   slmm_assert(step > 0);
 
@@ -325,7 +325,7 @@ calc_v_departure (IslMpi<MT>& cm, const Int nets, const Int nete,
   wait_on_send(cm, true /* skip_if_empty */);
 }
 
-template void calc_v_departure(
+template void interp_v_update(
   IslMpi<ko::MachineTraits>&, const Int, const Int, const Int, const Real,
   Real*, const Real*, Real*);
 

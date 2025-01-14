@@ -93,7 +93,7 @@
    (calc_vel_horiz_formula_node_ref_mid, calc_eta_dot_formula_node_ref_mid).
      In general, the trajectory arrival point at t1 is not on the grid, but it
    is in the first substep. If it is not on the grid, interpolate V_upd to the
-   arrival points to produce V_upd' (calc_v_departure). A detail here is we
+   arrival points to produce V_upd' (interp_v_update). A detail here is we
    should actually think of the original velocity data as being interpolated,
    and then V_upd' is computed from the interpolated data. But the formula to
    compute V_upd is linear in these data, so we can defer interpolation to the
@@ -499,7 +499,7 @@ void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real d
       update_dep_points(*this, dtsub, vnode, dep_pts);
     } else {
       GPTLstart("compose_vdep");
-      homme::compose::calc_v_departure(step, dtsub);
+      homme::compose::interp_v_update(step, dtsub);
       Kokkos::fence();
       GPTLstop("compose_vdep");
 

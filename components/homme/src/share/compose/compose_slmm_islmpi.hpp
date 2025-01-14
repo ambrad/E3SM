@@ -740,7 +740,7 @@ void set_hvcoord(IslMpi<MT>& cm, const Real etai_beg, const Real etai_end,
                  const Real* etam);
 
 template <typename MT = ko::MachineTraits>
-void calc_v_departure(
+void interp_v_update(
   IslMpi<MT>& cm, const Int nets, const Int nete, const Int step, const Real dtsub,
   Real* dep_points_r, const Real* vnode, Real* vdep);
 

@@ -55,10 +55,10 @@ void set_hvcoord (const HommexxReal etai_beg, const HommexxReal etai_end,
   islmpi::set_hvcoord(cm, etai_beg, etai_end, etam);
 }
 
-void calc_v_departure (const int step, const HommexxReal dtsub) {
+void interp_v_update (const int step, const HommexxReal dtsub) {
   auto& cm = *get_isl_mpi_singleton();
-  islmpi::calc_v_departure<>(cm, 0, cm.nelemd - 1, step, dtsub,
-                             nullptr, nullptr, nullptr);
+  islmpi::interp_v_update<>(cm, 0, cm.nelemd - 1, step, dtsub,
+                            nullptr, nullptr, nullptr);
 }
 
 void advect (const int np1, const int n0_qdp, const int np1_qdp) {
