@@ -457,18 +457,7 @@ use physical_constants, only : Sx, Sy, Lx, Ly, dx, dy, dx_ref, dy_ref
     ne              = 0
     ne_x              = 0
     ne_y              = 0
-    transport_alg = 0
-    semi_lagrange_cdr_alg = 3
-    semi_lagrange_cdr_check = .false.
-    semi_lagrange_hv_q = 1
-    semi_lagrange_nearest_point_lev = 256
-    semi_lagrange_halo = 2
-    semi_lagrange_trajectory_nsubstep = 0
-    semi_lagrange_trajectory_nvelocity = -1
-    semi_lagrange_diagnostics = 0
     disable_diagnostics = .false.
-    se_fv_phys_remap_alg = 1
-    internal_diagnostics_level = 0
     planar_slice = .false.
 
     theta_hydrostatic_mode = .true.    ! for preqx, this must be .true.
