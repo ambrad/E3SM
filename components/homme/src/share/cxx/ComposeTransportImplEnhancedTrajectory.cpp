@@ -89,17 +89,17 @@
    (calc_etadotmid_from_etadotdpdnint).
      Use eta_dot, the horizontal velocity data, and the update formula described
    in the comment for calc_nodal_velocities to compute the velocity term in the
-   update formula at the Eulerian vertical-midpoint nodes. Call the result V
+   update formula at the Eulerian vertical-midpoint nodes. Call the result V_upd
    (calc_vel_horiz_formula_node_ref_mid, calc_eta_dot_formula_node_ref_mid).
      In general, the trajectory arrival point at t1 is not on the grid, but it
-   is in the first substep. If it is not on the grid, interpolate V to the
-   arrival points to produce V_dep (calc_v_departure). A detail here is we
+   is in the first substep. If it is not on the grid, interpolate V_upd to the
+   arrival points to produce V_upd' (calc_v_departure). A detail here is we
    should actually think of the original velocity data as being interpolated,
-   and then V_dep is computed from the interpolated data. But the formula to
-   compute V is linear in these data, so we can defer interpolation to the end
-   and do it just once.
+   and then V_upd' is computed from the interpolated data. But the formula to
+   compute V_upd is linear in these data, so we can defer interpolation to the
+   end and do it just once.
      Integrate the trajectory backward from t1 at the arrival point to t0 at the
-   departure point using V_dep (update_dep_points).
+   departure point using V_upd or V_upd' (update_dep_points).
      The algorithm up to this point can be substepped, running multiple times to
    go backward from t1 to t0 in multiple steps.
      After substepping is finished, there is one final part.
