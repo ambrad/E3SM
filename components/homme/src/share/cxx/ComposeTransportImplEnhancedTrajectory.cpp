@@ -129,6 +129,143 @@
 #include "ComposeTransportImplEnhancedTrajectoryImpl.hpp"
 
 namespace Homme {
+
+using CTI = ComposeTransportImpl;
+
+Real& CTI::VelocityRecord::t_vel (const int i) {
+  assert(_nvel > 2);
+  assert(i >= 0 and i < _nvel);
+  return _t_vel[i];
+}
+
+int& CTI::VelocityRecord::obs_slots (const int n, const int k) {
+  assert(_nvel > 2);
+  assert(n >= 0 and n <= _dtf);
+  assert(k >= 0 and k <= 1);
+  return _obs_slots[2*n+k];
+}
+
+Real& CTI::VelocityRecord::obs_wts (const int n, const int k) {
+  assert(_nvel > 2);
+  assert(n >= 0 and n <= _dtf);
+  assert(k >= 0 and k <= 1);
+  return _obs_wts[2*n+k];  
+}
+
+int& CTI::VelocityRecord::run_step (const int i) {
+  assert(_nvel > 2);
+  assert(i >= 0 and i <= _nsub);
+  return _run_step[i];
+}
+
+Real CTI::VelocityRecord::t_vel (const int i) const {
+  return const_cast<VelocityRecord*>(this)->t_vel(i);
+}
+
+int CTI::VelocityRecord::obs_slots (const int n, const int k) const {
+  return const_cast<VelocityRecord*>(this)->obs_slots(n,k);
+}
+
+Real CTI::VelocityRecord::obs_wts (const int n, const int k) const {
+  return const_cast<VelocityRecord*>(this)->obs_wts(n,k);
+}
+
+int CTI::VelocityRecord::run_step (const int i) const {
+  return const_cast<VelocityRecord*>(this)->run_step(i);
+}
+
+void CTI::VelocityRecord
+::init (const int dtf, const int drf_param, const int nsub, const int nvel_param) {
+  const int
+    drf = drf_param == 0 ? 1 : drf_param,
+    navail = dtf/drf + 1,
+    nvel = std::min(nvel_param == -1 ?
+                    (2 + (nsub-1)/2) :  // default value
+                    nvel_param,
+                    std::min(nsub+1,    // can't use more than this
+                             navail));  // this is the max available
+
+  _dtf = dtf; _drf = drf; _nsub = nsub; _nvel = nvel;
+
+  // nsub <= 1: No substepping.
+  // nvel <= 2: Save velocity only at endpoints, as always occurs.
+  if (nsub <= 1 or nvel <= 2) {
+    _nvel = 2;
+    return;
+  }
+
+  _t_vel.resize(nvel);
+  _obs_slots.resize(2*(dtf+1)); _obs_wts.resize(2*(dtf+1));
+  _run_step.resize(nsub+1);
+
+  // Times at which velocity data are available.
+  std::vector<int> t_avail(navail); {
+    int i = 0;
+    for (int n = 0; n <= dtf; ++n) {
+      if (n % drf != 0) continue;
+      t_avail[i] = n;
+      i = i + 1;
+    }
+    assert(i == navail);
+    assert(t_avail[navail-1] == dtf);
+  }
+
+  // Times to which we associate velocity data.
+  for (int n = 0; n < nvel; ++n) {
+    t_vel(n) = ((n*dtf) % (nvel-1) == 0 ?
+                /**/ (n*dtf) / (nvel-1) :
+                Real (n*dtf) / (nvel-1));
+    assert(t_vel(n) >= 0 and t_vel(n) <= dtf);
+    assert(n == 0 or t_vel(n) > t_vel(n-1));
+  }
+
+  // Build the tables mapping n in 0:dtf-1 to velocity slots to accumulate into.
+  for (int n = 0; n <= dtf; ++n) {
+    for (int k = 0; k < 2; ++k) {
+      obs_slots(n,k) = -1;
+      obs_wts(n,k) = 0;
+    }
+    if (n == 0 or n == dtf) continue;
+    if (n % drf != 0) continue;
+    const int time = n;
+    int iav = -1;
+    for (int i = 1; i < navail-1; ++i)
+      if (time == t_avail[i]) {
+        iav = i;
+        break;
+      }
+    assert(iav > 0 and iav < navail-1);
+    for (int i = 1; i < nvel-1; ++i) {
+      if (t_avail[iav-1] < t_vel(i) and time > t_vel(i)) {
+        obs_slots(n,0) = i;
+        obs_wts(n,0) = ((t_vel(i) - t_avail[iav-1]) /
+                        (t_avail[iav] - t_avail[iav-1]));
+      }
+      if (time <= t_vel(i) and t_avail[iav+1] > t_vel(i)) {
+        obs_slots(n,1) = i;
+        obs_wts(n,1) = ((t_avail[iav+1] - t_vel(i)) /
+                        (t_avail[iav+1] - t_avail[iav]));
+      }
+    }
+  }
+
+  // Build table mapping n to interval to use. The trajectories go backward in
+  // time, and this table reflects that.
+  run_step(0) = nvel-1;
+  run_step(nsub) = 1;
+  for (int n = 1; n < nsub; ++n) {
+    const auto time = Real((nsub-n)*dtf)/nsub;
+    int ifnd = -1;
+    for (int i = 0; i < nvel-1; ++i)
+      if (t_vel(i) <= time and time <= t_vel(i+1)) {
+        ifnd = i;
+        break;
+      }
+    assert(ifnd >= 0 and ifnd < nvel-1);
+    run_step(n) = ifnd + 1;
+  }
+}
+
 namespace {
 
 // Set dep_points_all to level-midpoint arrival points.

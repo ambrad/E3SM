@@ -15,6 +15,51 @@
 #include "compose_hommexx.hpp"
 
 namespace Homme {
+
+// Parameter short names:
+//   dtf = dt_tracer_factor
+//   drf = dt_remap_factor
+//   nsub = semi_lagrange_trajectory_nsubstep
+//   nvel = semi_lagrange_trajectory_nvelocity
+struct ComposeTransportImpl::VelocityRecord {
+  VelocityRecord () {}
+  VelocityRecord (const int dtf, const int drf, const int nsub, const int nvel)
+  { init(dtf, drf, nsub, nvel); }
+
+  void init(const int dtf, const int drf, const int nsub, const int nvel);
+
+  int dtf () const { return _dtf; }
+  int drf () const { return _drf; }
+  int nsub () const { return _nsub; }
+  int nvel () const { return _nvel; }
+  
+  // Times to which velocity slots i in 0:nvel-1 correspond, in reference time
+  // [0,dtf].
+  Real t_vel(const int i) const;
+
+  // For n = 0:dtf, obs_slots(n,0:1) = [slot1, slot2], -1 if unused. These are
+  // the slots to which velocity sample n contributes. obs_slots(0 or dtf,:) are
+  // always -1.
+  int obs_slots(const int n, const int k) const;
+
+  // For n = 0:dtf, obs_wts(n,0:1) = [wt1, wt2], 0 if unused.
+  Real obs_wts(const int n, const int k) const;
+
+  // Substep end point i in 0:nsub uses velocity slots run_step(n),
+  // run_step(n)-1.
+  int run_step(const int i) const;
+  
+private:
+  int _dtf = -1, _drf = -1, _nsub = -1, _nvel = -1;
+  std::vector<int> _obs_slots, _run_step;
+  std::vector<Real> _t_vel, _obs_wts;
+
+  Real& t_vel(const int i);
+  int& obs_slots(const int n, const int k);
+  Real& obs_wts(const int n, const int k);
+  int& run_step(const int i);
+};
+
 namespace { // anon
 
 using cti = ComposeTransportImpl;
