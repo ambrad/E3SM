@@ -695,6 +695,35 @@ int test_eta_to_dp (TestData& td) {
   return nerr;
 }
 
+struct Snapshots {
+  const Real alpha[2];
+  const ExecViewUnmanaged<Scalar***> dps[2];
+
+  struct Element {
+    const ExecViewUnmanaged<Scalar***> dps[2];
+
+    Element (const Snapshots& s, const int ie)
+      : dps{s.dps[0], s.dps[1]}
+    {}
+
+    KOKKOS_INLINE_FUNCTION
+    Real get_dp_real(const int t, const int i, const int j, const int k) const {
+      return dps[t](i,j, k / VECTOR_SIZE)[k % VECTOR_SIZE];
+    }
+  };
+
+  Snapshots (const Real as[2], const ExecViewUnmanaged<Scalar***>& dp1,
+             const ExecViewUnmanaged<Scalar***>& dp2)
+    : alpha{as[0], as[1]}, dps{dp1, dp2}
+  {}
+
+  KOKKOS_INLINE_FUNCTION Real get_alpha (const int t) const { return alpha[t]; }
+
+  KOKKOS_INLINE_FUNCTION Element get_element (const int ie) const {
+    return Element(*this, ie);
+  }
+};
+
 int test_calc_ps (TestData& td) {
   int nerr = 0;
   const Real tol = 100*td.eps;
@@ -719,9 +748,10 @@ int test_calc_ps (TestData& td) {
     ExecView<Real[NP][NP]> ps("ps");
     ExecView<Real[2][NP][NP]> ps2("ps2");
     const auto policy = get_test_team_policy(1, nlev);
+    Snapshots snaps(alpha, dp1.d, dp2.d);
     const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
       KernelVariables kv(team);
-      calc_ps(kv, nlev, ps0, hyai0, alpha, dp1.d, dp2.d, ps2);
+      calc_ps(kv, nlev, ps0, hyai0, snaps, ps2);
       calc_ps(kv, nlev, ps0, hyai0, dp1.d, ps);
     };
     Kokkos::parallel_for(policy, f);
@@ -810,6 +840,145 @@ int test_calc_etadotmid_from_etadotdpdnint (TestData& td) {
   return nerr;
 }
 
+int test1_init_velocity_record (
+  const int dtf, const int drf, const int nsub, const int nvel)
+{
+  const auto eps = std::numeric_limits<Real>::epsilon();
+  int e = 0;
+
+  if (dtf % drf != 0) {
+    printf("Testing erro: dtf %% drf == 0 is required: %d %d\n", dtf, drf);
+    ++e; 
+  }
+
+  const CTI::VelocityRecord v(dtf, drf, nsub, nvel);
+  if (v.dtf() != dtf) ++e;
+  if (v.nsub() != nsub) ++e;
+
+  // Check that t_vel is monotonically increasing.
+  for (int n = 1; n < v.nvel(); ++n)
+    if (v.t_vel(n) <= v.t_vel(n-1))
+      ++e;
+
+  // Check that obs_slots does not reference end points. This should not happen
+  // b/c nvel <= navail and observations are uniformly spaced.
+  for (int n = 0; n < dtf; ++n)
+    for (int i = 0; i < 2; ++i)
+      if (v.obs_slots(n,i) == 0 or v.obs_slots(n,i) == dtf)
+        ++e;
+
+  // Check that weights sum to 1.
+  std::vector<Real> ys(dtf);
+  for (int n = 0; n < dtf; ++n)
+    for (int i = 0; i < 2; ++i)
+      if (v.obs_slots(n,i) >= 0)
+        ys[v.obs_slots(n,i)] += v.obs_wts(n,i);
+  for (int i = 1; i < v.nvel()-1; ++i)
+    if (std::abs(ys[i] - 1) > 1e3*eps)
+      ++e;
+
+  // Test for exact interp of an affine function.
+  const auto tfn = [] (const Real x) { return 7.1*x - 11.5; };
+  //   Observe data forward in time.
+  Real endslots[2];
+  endslots[0] = tfn(0);
+  endslots[1] = tfn(dtf);
+  ys[0] = -1000; // unused
+  for (int i = 1; i < dtf; ++i) ys[i] = 0;
+  for (int n = 0; n < dtf; ++n) {
+    if ((n+1) % drf != 0) continue;
+    const Real y = tfn(n+1);
+    for (int i = 0; i < 2; ++i) {
+      if (v.obs_slots(n,i) < 0) continue;
+      ys[v.obs_slots(n,i)] += v.obs_wts(n,i)*y;
+    }
+  }
+  //   Use the data backward in time.
+  for (int n = 0; n < nsub; ++n) {
+    // Each segment orders the data forward in time. Thus, data are always
+    // ordered forward in time but used backward.
+    Real xsup[2], ysup[2];
+    for (int i = 0; i < 2; ++i) {
+      int k = nsub - (n+1) + i;
+      xsup[i] = (k*v.t_vel(v.nvel()-1))/nsub;
+      k = v.run_step(n);
+      const Real
+        y0 = k == 1 ? endslots[0] : ys[k-1],
+        y1 = k == v.nvel()-1 ? endslots[1] : ys[k];
+      ysup[i] = (((v.t_vel(k) - xsup[i])*y0 + (xsup[i] - v.t_vel(k-1))*y1) /
+                 (v.t_vel(k) - v.t_vel(k-1)));
+    }
+    for (int i = 0; i <= 10; ++i) {
+      const Real
+        a = Real(i)/10,
+        x = (1-a)*xsup[0] + a*xsup[1],
+        y = (1-a)*ysup[0] + a*ysup[1];
+      if (std::abs(y - tfn(x)) > 1e3*eps) {
+        printf("n %d i %2d x %7.3f y %7.3f t %7.3f\n", n, i, x, y, tfn(x));
+        ++e;
+      }
+    }
+  }
+  
+  if (e) {
+    printf("ERROR e %d\n", e);
+    printf("dtf %d drf %d nsub %d nvel %d v.nvel %d\n",
+           dtf, drf, nsub, nvel, v.nvel());
+    printf("  t_vel:");
+    for (int i = 0; i < v.nvel(); ++i) printf(" %1.3f", v.t_vel(i));
+    printf("\n  obs:\n");
+    for (int n = 0; n <= dtf; ++n)
+      printf("    %2d %2d %2d %1.3f %1.3f\n",
+             n, v.obs_slots(n,0), v.obs_slots(n,1), v.obs_wts(n,0),
+             v.obs_wts(n,1));
+    printf("  run_step:\n");
+    for (int n = 0; n <= nsub; ++n) printf("    %2d %2d\n", n, v.run_step(n));
+  }
+
+  return e;
+}
+
+int test_init_velocity_record (TestData& td) {
+  int dtf, drf, nsub, nvel, error;
+
+  error = 0;
+
+  const auto f = [&] () {
+    const int e = test1_init_velocity_record(dtf, drf, nsub, nvel);
+    if (e > 0) error = 1;
+  };
+
+  error = 0;
+  dtf = 6;
+  drf = 2;
+  nsub = 3;
+  nvel = 4;
+  f();
+  nvel = 3;
+  f();
+  drf = 3;
+  nvel = 6;
+  f();
+  drf = 1;
+  nsub = 5;
+  f();
+  dtf = 12;
+  drf = 2;
+  nsub = 3;
+  nvel = -1;
+  f();
+  nsub = 5;
+  nvel = 5;
+  f();
+  dtf = 27;
+  drf = 3;
+  nsub = 51;
+  nvel = 99;
+  f();
+
+  return error;
+}
+
 } // namespace anon
 
 #define comunittest(f) do {                     \
@@ -829,6 +998,7 @@ int ComposeTransportImpl::run_enhanced_trajectory_unit_tests () {
   comunittest(test_limit_etam);
   comunittest(test_calc_ps);
   comunittest(test_calc_etadotmid_from_etadotdpdnint);
+  comunittest(test_init_velocity_record);
   return nerr;
 }
 

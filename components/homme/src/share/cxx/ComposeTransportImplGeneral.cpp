@@ -13,7 +13,7 @@
 extern "C" void
 sl_get_params(double* nu_q, double* hv_scaling, int* hv_q, int* hv_subcycle_q,
               int* limiter_option, int* cdr_check, int* geometry_type,
-              int* trajectory_nsubstep);
+              int* trajectory_nsubstep, int* trajectory_nvelocity);
 
 namespace Homme {
 
@@ -47,7 +47,6 @@ void ComposeTransportImpl::setup () {
   m_sphere_ops = Context::singleton().get<SphereOperators>();
   
   set_dp_tol();
-  setup_enhanced_trajectory();
   
   nslot = calc_nslot(m_geometry.num_elems());
 }
@@ -59,10 +58,10 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
 
   sl_get_params(&m_data.nu_q, &m_data.hv_scaling, &m_data.hv_q, &m_data.hv_subcycle_q,
                 &m_data.limiter_option, &m_data.cdr_check, &m_data.geometry_type,
-                &m_data.trajectory_nsubstep);
+                &m_data.trajectory_nsubstep, &m_data.trajectory_nvelocity);
 
-  if (independent_time_steps != m_data.independent_time_steps ||
-      m_data.nelemd != num_elems || m_data.qsize != params.qsize) {
+  if (independent_time_steps != m_data.independent_time_steps or
+      m_data.nelemd != num_elems or m_data.qsize != params.qsize) {
     const auto& g = m_geometry;
     const auto& t = m_tracers;
     const auto& s = m_state;
@@ -77,6 +76,8 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
       m_data.vnode = DeparturePoints("vnode", nel, num_phys_lev, np, np, ndim);
     if (m_data.trajectory_nsubstep > 1)
       m_data.vdep  = DeparturePoints("vdep" , nel, num_phys_lev, np, np, ndim);
+    if (m_data.trajectory_nsubstep > 0)
+      setup_enhanced_trajectory(params, num_elems);
     homme::compose::set_views(
       g.m_spheremp,
       homme::compose::SetView<Real****>  (reinterpret_cast<Real*>(d.m_dp.data()),

@@ -15,6 +15,7 @@
 #include "ErrorDefs.hpp"
 #include "CamForcing.hpp"
 #include "profiling.hpp"
+#include "utilities/IndexUtils.hpp"
 
 namespace Homme
 {
@@ -44,10 +45,8 @@ void initialize_dp3d_from_ps_c () {
     const auto tln0 = tl.n0;
     Kokkos::parallel_for(Kokkos::RangePolicy<ExecSpace> (0,elements.num_elems()*NP*NP*NUM_LEV),
                          KOKKOS_LAMBDA(const int idx) {
-      const int ie   = ((idx / NUM_LEV) / NP) / NP;
-      const int igp  = ((idx / NUM_LEV) / NP) % NP;
-      const int jgp  =  (idx / NUM_LEV) % NP;
-      const int ilev =   idx % NUM_LEV;
+      int ie, igp, jgp, ilev;
+      get_ie_igp_jgp_midlevpack(idx, ie, igp, jgp, ilev);
 
       dp3d(ie,tln0,igp,jgp,ilev) = hybrid_ai_delta[ilev]*ps0
                                  + hybrid_bi_delta[ilev]*ps_v(ie,tln0,igp,jgp);

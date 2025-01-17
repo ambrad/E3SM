@@ -72,16 +72,16 @@ struct ComposeTransportImpl {
   typedef typename ViewConst<S2Nlev>::type CS2Nlev;
   typedef typename ViewConst<R2Nlev>::type CR2Nlev;
 
-  using  DpSlot = ExecViewUnmanaged<      Scalar**   [NP][NP][NUM_LEV]>;
-  using   VSlot = ExecViewUnmanaged<      Scalar**[2][NP][NP][NUM_LEV]>;
-  using CDpSlot = ExecViewUnmanaged<const Scalar**   [NP][NP][NUM_LEV]>;
-  using  CVSlot = ExecViewUnmanaged<const Scalar**[2][NP][NP][NUM_LEV]>;
+  using DpSnaps = ExecViewManaged<Scalar**   [NP][NP][NUM_LEV]>;
+  using  VSnaps = ExecViewManaged<Scalar**[2][NP][NP][NUM_LEV]>;
+
   struct VelocityRecord;
 
   struct Data {
     int nelemd, qsize, limiter_option, cdr_check, hv_q, hv_subcycle_q;
     int geometry_type; // 0: sphere, 1: plane
     int trajectory_nsubstep; // 0: original alg, >= 1: enhanced
+    int trajectory_nvelocity;
     Real nu_q, hv_scaling, dp_tol, deta_tol;
     bool independent_time_steps;
 
@@ -95,7 +95,10 @@ struct ComposeTransportImpl {
     ExecView<Scalar[NUM_LEV]> hydetai; // diff(etai)
     ExecView<Real[NUM_INTERFACE_LEV]> hydetam_ref;
 
+    // Persistent, allocated memory, depending on options.
     DeparturePoints dep_pts, vnode, vdep; // (ie,lev,i,j,d)
+    DpSnaps dp_extra_snapshots; // (ie,snapshot,i,j,lev)
+    VSnaps vel_extra_snapshots; // (ie,snapshot,d,i,j,lev)
 
     std::shared_ptr<VelocityRecord> vrec;
 
@@ -133,12 +136,13 @@ struct ComposeTransportImpl {
   }
 
   void set_dp_tol();
-  void setup_enhanced_trajectory();
+  void setup_enhanced_trajectory(const SimulationParams& params, const int num_elems);
   void reset(const SimulationParams& params);
   int requested_buffer_size() const;
   void init_buffers(const FunctorsBuffersManager& fbm);
   void init_boundary_exchanges();
 
+  void observe_velocity(const TimeLevel& tl, const int step);
   void run(const TimeLevel& tl, const Real dt);
   void remap_q(const TimeLevel& tl);
 

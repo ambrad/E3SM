@@ -127,8 +127,147 @@
  */
 
 #include "ComposeTransportImplEnhancedTrajectoryImpl.hpp"
+#include "utilities/IndexUtils.hpp"
 
 namespace Homme {
+
+using CTI = ComposeTransportImpl;
+
+Real& CTI::VelocityRecord::t_vel (const int i) {
+  assert(_nvel > 2);
+  assert(i >= 0 and i < _nvel);
+  return _t_vel[i];
+}
+
+int& CTI::VelocityRecord::obs_slots (const int n, const int k) {
+  assert(_nvel > 2);
+  assert(n >= 0 and n <= _dtf);
+  assert(k >= 0 and k <= 1);
+  return _obs_slots[2*n+k];
+}
+
+Real& CTI::VelocityRecord::obs_wts (const int n, const int k) {
+  assert(_nvel > 2);
+  assert(n >= 0 and n <= _dtf);
+  assert(k >= 0 and k <= 1);
+  return _obs_wts[2*n+k];  
+}
+
+int& CTI::VelocityRecord::run_step (const int i) {
+  assert(_nvel > 2);
+  assert(i >= 0 and i <= _nsub);
+  return _run_step[i];
+}
+
+Real CTI::VelocityRecord::t_vel (const int i) const {
+  return const_cast<VelocityRecord*>(this)->t_vel(i);
+}
+
+int CTI::VelocityRecord::obs_slots (const int n, const int k) const {
+  return const_cast<VelocityRecord*>(this)->obs_slots(n,k);
+}
+
+Real CTI::VelocityRecord::obs_wts (const int n, const int k) const {
+  return const_cast<VelocityRecord*>(this)->obs_wts(n,k);
+}
+
+int CTI::VelocityRecord::run_step (const int i) const {
+  return const_cast<VelocityRecord*>(this)->run_step(i);
+}
+
+void CTI::VelocityRecord
+::init (const int dtf, const int drf_param, const int nsub, const int nvel_param) {
+  const int
+    drf = drf_param == 0 ? 1 : drf_param,
+    navail = dtf/drf + 1,
+    nvel = std::min(nvel_param == -1 ?
+                    (2 + (nsub-1)/2) :  // default value
+                    nvel_param,
+                    std::min(nsub+1,    // can't use more than this
+                             navail));  // this is the max available
+
+  _dtf = dtf; _drf = drf; _nsub = nsub; _nvel = nvel;
+
+  // nsub <= 1: No substepping.
+  // nvel <= 2: Save velocity only at endpoints, as always occurs.
+  if (nsub <= 1 or nvel <= 2) {
+    _nvel = 2;
+    return;
+  }
+
+  _t_vel.resize(nvel);
+  _obs_slots.resize(2*dtf); _obs_wts.resize(2*dtf);
+  _run_step.resize(nsub+1);
+
+  // Times at which velocity data are available.
+  std::vector<int> t_avail(navail); {
+    t_avail[0] = 0;
+    int i = 1;
+    for (int n = 0; n < dtf; ++n) {
+      if ((n+1) % drf != 0) continue;
+      t_avail[i] = n+1;
+      i = i + 1;
+    }
+    assert(i == navail);
+    assert(t_avail[navail-1] == dtf);
+  }
+
+  // Times to which we associate velocity data.
+  for (int n = 0; n < nvel; ++n) {
+    t_vel(n) = ((n*dtf) % (nvel-1) == 0 ?
+                /**/ (n*dtf) / (nvel-1) :
+                Real (n*dtf) / (nvel-1));
+    assert(t_vel(n) >= 0 and t_vel(n) <= dtf);
+    assert(n == 0 or t_vel(n) > t_vel(n-1));
+  }
+
+  // Build the tables mapping n in 0:dtf-1 to velocity slots to accumulate into.
+  for (int n = 0; n < dtf; ++n) {
+    for (int k = 0; k < 2; ++k) {
+      obs_slots(n,k) = -1;
+      obs_wts(n,k) = 0;
+    }
+    if (n == dtf-1) continue;
+    if ((n+1) % drf != 0) continue;
+    const int time = n+1;
+    int iav = -1;
+    for (int i = 1; i <= navail-1; ++i)
+      if (time == t_avail[i]) {
+        iav = i;
+        break;
+      }
+    assert(iav > 0 and iav < navail-1);
+    for (int i = 1; i < nvel-1; ++i) {
+      if (t_avail[iav-1] < t_vel(i) and time > t_vel(i)) {
+        obs_slots(n,0) = i;
+        obs_wts(n,0) = ((t_vel(i) - t_avail[iav-1]) /
+                        (t_avail[iav] - t_avail[iav-1]));
+      }
+      if (time <= t_vel(i) and t_avail[iav+1] > t_vel(i)) {
+        obs_slots(n,1) = i;
+        obs_wts(n,1) = ((t_avail[iav+1] - t_vel(i)) /
+                        (t_avail[iav+1] - t_avail[iav]));
+      }
+    }
+  }
+
+  // Build table mapping n to interval to use. The trajectories go backward in
+  // time, and this table reflects that.
+  run_step(0) = nvel-1;
+  run_step(nsub) = 1;
+  for (int n = 1; n < nsub; ++n) {
+    const auto time = Real((nsub-n)*dtf)/nsub;
+    int ifnd = -1;
+    for (int i = 0; i < nvel-1; ++i)
+      if (t_vel(i) <= time and time <= t_vel(i+1)) {
+        ifnd = i;
+        break;
+      }
+    assert(ifnd >= 0 and ifnd < nvel-1);
+    run_step(n) = ifnd + 1;
+  }
+}
+
 namespace {
 
 // Set dep_points_all to level-midpoint arrival points.
@@ -184,10 +323,9 @@ void update_dep_points (
    Here we compute the velocity estimate at the nodes:
        1/2 (v(p1,t0) + v(p1,t1) - dt v(p1,t1) grad v(p1,t0)).
 */
+template <typename Snapshots>
 void calc_nodal_velocities (
-  const CTI& c, const Real dtsub, const Real halpha[2],
-  const cti::CVSlot& v1, const cti::CDpSlot& dp1, const int idx1,
-  const cti::CVSlot& v2, const cti::CDpSlot& dp2, const int idx2,
+  const CTI& c, const Real dtsub, const Snapshots& snaps,
   const cti::DeparturePoints& vnode)
 {
   using Kokkos::ALL;
@@ -208,7 +346,6 @@ void calc_nodal_velocities (
   const auto& buf1c = d.buf1o[2]; const auto& buf1d = d.buf1o[3];
   const auto& buf2a = d.buf2 [0]; const auto& buf2b = d.buf2 [1];
   const auto& buf2c = d.buf2 [2]; const auto& buf2d = d.buf2 [3];
-  const auto alpha0 = halpha[0], alpha1 = halpha[1];
   const auto f = KOKKOS_LAMBDA (const cti::MT& team) {
     KernelVariables kv(team);
     const int ie = kv.ie;
@@ -216,20 +353,14 @@ void calc_nodal_velocities (
     const auto  wrk2 = Homme::subview(buf1b, kv.team_idx);
     const auto vwrk1 = Homme::subview(buf2a, kv.team_idx);
     const auto vwrk2 = Homme::subview(buf2b, kv.team_idx);
-    const auto v1_ie = Homme::subview(v1, ie, idx1);
-    const auto v2_ie = Homme::subview(v2, ie, idx2);
-    const Real alpha[] = {alpha0, alpha1};
     CSelNlevp eta_dot[] = {Homme::subview(buf1c, kv.team_idx),
                            Homme::subview(buf1d, kv.team_idx)};
     {
       SelNlevp eta_dot[] = {Homme::subview(buf1c, kv.team_idx),
                             Homme::subview(buf1d, kv.team_idx)};
       if (independent_time_steps) {
-        const auto dp1_ie = Homme::subview(dp1, ie, idx1);
-        const auto dp2_ie = Homme::subview(dp2, ie, idx2);
-        calc_eta_dot_ref_mid(kv, sphere_ops,
+        calc_eta_dot_ref_mid(kv, sphere_ops, snaps,
                              ps0, hyai0, hybi, hydai, hydbi, hydetai,
-                             alpha, v1_ie, dp1_ie, v2_ie, dp2_ie,
                              wrk1, wrk2, vwrk1,
                              eta_dot);
       } else {
@@ -242,19 +373,18 @@ void calc_nodal_velocities (
         }
       }
     }
-    // Collect the horizontal nodal velocities. v1,2 are on Eulerian levels. v1
-    // is from time t1 < t2.
+    // Collect the horizontal nodal velocities.
     auto* vm1 = Homme::subview(buf2c, kv.team_idx).data();
     auto* vm2 = Homme::subview(buf2d, kv.team_idx).data();
     CS2elNlev vsph[] = {CS2elNlev(vm1), CS2elNlev(vm2)};
     {
       S2elNlev vsph[] = {S2elNlev(vm1), S2elNlev(vm2)};
+      const auto e = snaps.get_element(ie);
       for (int t = 0; t < 2; ++t) {
         const auto& v = vsph[t];
         for (int d = 0; d < 2; ++d) {
           const auto f = [&] (const int i, const int j, const int k) {
-            v(d,i,j,k) = ((1 - alpha[t])*v1_ie(d,i,j,k) +
-                          /**/ alpha[t] *v2_ie(d,i,j,k));
+            v(d,i,j,k) = e.combine_v(t, d, i, j, k);
           };
           cti::loop_ijk<cti::num_lev_pack>(kv, f);
         }
@@ -432,7 +562,10 @@ void dss_vnode (const CTI& c, const cti::DeparturePoints& vnode) {
 } // namespace anon
 
 // For limit_etam.
-void ComposeTransportImpl::setup_enhanced_trajectory () {
+void ComposeTransportImpl
+::setup_enhanced_trajectory (const SimulationParams& params, const int num_elems) {
+  assert(params.dt_tracer_factor > 0);
+
   const auto etai = cmvdc(m_hvcoord.etai);
   const Real deta_ave = (etai(num_phys_lev) - etai(0)) / num_phys_lev;
   m_data.deta_tol = 10*std::numeric_limits<Real>::epsilon()*deta_ave;
@@ -459,6 +592,54 @@ void ComposeTransportImpl::setup_enhanced_trajectory () {
 
   // etam
   homme::compose::set_hvcoord(etai(0), etai(num_phys_lev), etam.data());
+
+  // Initialization for semi_lagrange_trajectory_nvelocity > 2.
+  m_data.vrec = std::make_shared<VelocityRecord>(
+    params.dt_tracer_factor, params.dt_remap_factor, m_data.trajectory_nsubstep,
+    m_data.trajectory_nvelocity);
+  const auto nv = m_data.vrec->nvel();
+  if (nv > 2) {
+    m_data.dp_extra_snapshots = DpSnaps( "dp_extra_snapshots", num_elems, nv-2);
+    m_data.vel_extra_snapshots = VSnaps("vel_extra_snapshots", num_elems, nv-2);
+  }
+}
+
+void ComposeTransportImpl::observe_velocity (const TimeLevel& tl, const int step) {
+  // Optionally observe the dynamics velocity snapshot available at this step.
+
+  if (not m_data.vrec or m_data.vrec->nvel() == 2) return;
+
+  const auto& v = *m_data.vrec;
+  assert((step + 1) % v.drf() == 0);
+
+  if (step + 1 == v.drf()) {
+    // This is either (1) the first vertical remap step in the tracer step or
+    // (2) the first dynamics step and we're running vertically Eulerian. In
+    // either case, zero the quantities accumulated over the step.
+    Kokkos::deep_copy(m_data.dp_extra_snapshots, 0);
+    Kokkos::deep_copy(m_data.vel_extra_snapshots, 0);
+  }
+
+  const auto& state = Context::singleton().get<ElementsState>();
+  const auto np1 = tl.np1;
+  for (int t = 0; t < 2; ++t) {
+    const auto slot = v.obs_slots(step, t);
+    if (slot == -1) continue;
+    assert(slot > 0 and slot < v.nvel()-1);
+    const auto wt = v.obs_wts(step, t);
+    const auto& dp_snap = m_data.dp_extra_snapshots;
+    const auto& v_snap = m_data.vel_extra_snapshots;
+    const auto& dp3d = state.m_dp3d;
+    const auto& v = state.m_v;
+    const auto f = KOKKOS_LAMBDA (const int idx) {
+      int ie, igp, jgp, ilev;
+      idx_ie_ij_nlev<num_lev_pack>(idx, ie, igp, jgp, ilev);
+      dp_snap(ie,slot-1,igp,jgp,ilev) += wt * dp3d(ie,np1,igp,jgp,ilev);
+      for (int d = 0; d < 2; ++d)
+        v_snap(ie,slot-1,d,igp,jgp,ilev) += wt * v(ie,np1,d,igp,jgp,ilev);
+    };
+    launch_ie_ij_nlev<num_lev_pack>(f);
+  }
 }
 
 void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real dt) {
@@ -477,15 +658,23 @@ void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real d
     {
       Kokkos::fence();
       GPTLstart("compose_vnode");
-      const Real alpha[] = {Real(nsubstep-step-1)/nsubstep,
-                            Real(nsubstep-step  )/nsubstep};
-      const CVSlot v1(m_derived.m_vstar.data(), nelemd, 1);
-      const CDpSlot dp1(m_derived.m_dp.data(), nelemd, 1);
+      const CVSnap v1(m_derived.m_vstar.data(), nelemd, 1);
+      const CDpSnap dp1(m_derived.m_dp.data(), nelemd, 1);
       const auto& v2 = m_state.m_v;
       const auto& dp2 = m_state.m_dp3d;
-      calc_nodal_velocities(*this, dtsub, alpha,
-                            v1, dp1, 0, v2, dp2, np1,
-                            vnode);
+      if (m_data.vrec->nvel() == 2) {
+        const Real alpha[] = {Real(nsubstep-step-1)/nsubstep,
+                              Real(nsubstep-step  )/nsubstep};
+        EndpointSnapshots snaps(alpha, dp1, v1, 0, dp2, v2, np1);
+        calc_nodal_velocities(*this, dtsub, snaps, vnode);
+      } else {
+        ManySnapshots snaps(*m_data.vrec,
+                            dp1, v1, 0, dp2, v2, np1,
+                            m_data.dp_extra_snapshots, m_data.vel_extra_snapshots,
+                            nsubstep, step);
+        calc_nodal_velocities(*this, dtsub, snaps, vnode);
+      }
+        
       Kokkos::fence();
       GPTLstop("compose_vnode");
     }

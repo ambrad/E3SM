@@ -15,6 +15,57 @@
 #include "compose_hommexx.hpp"
 
 namespace Homme {
+
+// Organize and interpolate velocity snapshots from the dynamics. The result is
+// a set of snapshots to be used in computing the SL trajectories. To
+// distinguish between these types of snapshots, we refer to "dynamics
+// snapshots" (available at vertical remap time steps) and "internal snapshots"
+// (interpolated to tracer trajectory substeps).
+//
+// Parameter short names:
+//   dtf = dt_tracer_factor
+//   drf = dt_remap_factor
+//   nsub = semi_lagrange_trajectory_nsubstep
+//   nvel = semi_lagrange_trajectory_nvelocity
+struct ComposeTransportImpl::VelocityRecord {
+  VelocityRecord () {}
+  VelocityRecord (const int dtf, const int drf, const int nsub, const int nvel)
+  { init(dtf, drf, nsub, nvel); }
+
+  void init(const int dtf, const int drf, const int nsub, const int nvel);
+
+  int dtf () const { return _dtf; }
+  int drf () const { return _drf; }
+  int nsub () const { return _nsub; }
+  int nvel () const { return _nvel; }
+
+  // Times to which velocity slots i in 0:nvel-1 correspond, in reference time
+  // [0,dtf].
+  Real t_vel(const int i) const;
+
+  // For n = 0:dtf-1, obs_slots(n,0:1) = [slot1, slot2], -1 if unused. These are
+  // the slots to which velocity sample n contributes. obs_slots(dtf-1,:) is
+  // always -1.
+  int obs_slots(const int n, const int k) const;
+
+  // For n = 0:dtf-1, obs_wts(n,0:1) = [wt1, wt2], 0 if unused.
+  Real obs_wts(const int n, const int k) const;
+
+  // Substep end point i in 0:nsub uses velocity slots run_step(i),
+  // run_step(i)-1.
+  int run_step(const int i) const;
+
+private:
+  int _dtf = -1, _drf = -1, _nsub = -1, _nvel = -1;
+  std::vector<int> _obs_slots, _run_step;
+  std::vector<Real> _t_vel, _obs_wts;
+
+  Real& t_vel(const int i);
+  int& obs_slots(const int n, const int k);
+  Real& obs_wts(const int n, const int k);
+  int& run_step(const int i);
+};
+
 namespace { // anon
 
 using cti = ComposeTransportImpl;
@@ -111,6 +162,161 @@ void assert_eln (const CSelnV& a, const int nlev) {
   assert(a.extent_int(1) >= NP);
   assert(calc_nscal(a.extent_int(2)) >= nlev);
 }
+
+// Structs to manage access to internal velocity snapshots at the end points of
+// a substep interval.
+//   dp1,2 and v1,2 are on Eulerian levels. dp,v1 is from time t1 < t2.
+
+using  DpSnap   = ExecViewUnmanaged<      Scalar**    [NP][NP][NUM_LEV]>;
+using   VSnap   = ExecViewUnmanaged<      Scalar** [2][NP][NP][NUM_LEV]>;
+using CDpSnap   = ExecViewUnmanaged<const Scalar**    [NP][NP][NUM_LEV]>;
+using  CVSnap   = ExecViewUnmanaged<const Scalar** [2][NP][NP][NUM_LEV]>;
+using CDpSnapEl = ExecViewUnmanaged<const Scalar      [NP][NP][NUM_LEV]>;
+using  CVSnapEl = ExecViewUnmanaged<const Scalar   [2][NP][NP][NUM_LEV]>;
+
+// This is the simple case, for nvelocity = 2. We have velocity snapshots only
+// at the tracer time step end points; dynamics and internal are the same. We
+// linearly interpolate them to give values anywhere within the time step. In
+// particular, for a particular substep's interval, we linearly interpolate
+// using alpha[t] for t = 0,1 the start and end of the substep interval.
+struct EndpointSnapshots {
+  const Real alpha[2];
+  const int idxs[2];
+  const CDpSnap dps[2];
+  const CVSnap vs[2];
+
+  // Use subview access for efficiency.
+  struct Element {
+    const Real alpha[2];
+    const CDpSnapEl dps[2];
+    const CVSnapEl vs[2];
+
+    KOKKOS_INLINE_FUNCTION
+    Element (const EndpointSnapshots& s, const int ie)
+      : alpha{s.alpha[0], s.alpha[1]},
+        dps{Homme::subview(s.dps[0], ie, s.idxs[0]), Homme::subview(s.dps[1], ie, s.idxs[1])},
+        vs{Homme::subview(s.vs[0], ie, s.idxs[0]), Homme::subview(s.vs[1], ie, s.idxs[1])}
+    {}
+
+    // Direct access.
+
+    KOKKOS_INLINE_FUNCTION
+    Real get_dp_real (const int t, const int i, const int j, const int k) const {
+      return dps[t](i,j, k / VECTOR_SIZE)[k % VECTOR_SIZE];
+    }
+
+    // Linear combinations.
+
+    KOKKOS_INLINE_FUNCTION
+    Scalar combine_v (const int t, const int d, const int i, const int j, const int k) const {
+      return (1 - alpha[t])*vs[0](d,i,j,k) + alpha[t]*vs[1](d,i,j,k);
+    }
+
+    KOKKOS_INLINE_FUNCTION
+    Scalar combine_vdp (const int t, const int d, const int i, const int j, const int k) const {
+      return ((1 - alpha[t])*vs[0](d,i,j,k)*dps[0](i,j,k)
+              +    alpha[t] *vs[1](d,i,j,k)*dps[1](i,j,k));
+    }
+  };
+
+  EndpointSnapshots (const Real alpha_[2],
+                     const CDpSnap& dp1, const CVSnap& v1, const int idx1,
+                     const CDpSnap& dp2, const CVSnap& v2, const int idx2)
+    : alpha{alpha_[0], alpha_[1]}, idxs{idx1, idx2}, dps{dp1, dp2}, vs{v1, v2}
+  {}
+
+  KOKKOS_INLINE_FUNCTION Real get_alpha (const int t) const { return alpha[t]; }
+
+  KOKKOS_INLINE_FUNCTION Element get_element (const int ie) const {
+    return Element(*this, ie);
+  }
+};
+
+// This is the more complicated case: we have dynamics velocity snapshots at the
+// time step end points, plus internal snapshots that may be interpolated from
+// multiple dynamics snapshots. alpha is no longer needed; values are trivially
+// set to 0 or 1. Interpolation of snapshots here takes the place of alpha.
+struct ManySnapshots {
+  Real beta[2];
+  int idxs[4];
+  CDpSnap dps[4];
+  CVSnap vs[4];
+
+  struct Element {
+    const Real beta[2];
+    const CDpSnapEl dps[4];
+    const CVSnapEl vs[4];
+
+    KOKKOS_INLINE_FUNCTION
+    Element (const ManySnapshots& s, const int ie)
+      : beta{s.beta[0], s.beta[1]},
+        dps{Homme::subview(s.dps[0], ie, s.idxs[0]), Homme::subview(s.dps[1], ie, s.idxs[1]),
+            Homme::subview(s.dps[2], ie, s.idxs[2]), Homme::subview(s.dps[3], ie, s.idxs[3])},
+        vs{Homme::subview(s.vs[0], ie, s.idxs[0]), Homme::subview(s.vs[1], ie, s.idxs[1]),
+           Homme::subview(s.vs[2], ie, s.idxs[2]), Homme::subview(s.vs[3], ie, s.idxs[3])}
+    {}
+
+    KOKKOS_INLINE_FUNCTION
+    Real get_dp_real (const int t, const int i, const int j, const int k) const {
+      const int os = 2*t, kp = k / VECTOR_SIZE, ks = k % VECTOR_SIZE;
+      return ((1 - beta[t])*dps[os  ](i,j,kp)[ks]
+              +    beta[t] *dps[os+1](i,j,kp)[ks]);
+    }
+
+    KOKKOS_INLINE_FUNCTION
+    Scalar combine_v (const int t, const int d, const int i, const int j, const int k) const {
+      const int os = 2*t;
+      return ((1 - beta[t])*vs[os  ](d,i,j,k)
+              +    beta[t] *vs[os+1](d,i,j,k));
+    }
+
+    KOKKOS_INLINE_FUNCTION
+    Scalar combine_vdp (const int t, const int d, const int i, const int j, const int k) const {
+      const int os = 2*t;
+      return ((1 - beta[t])*vs[os  ](d,i,j,k)*dps[os  ](i,j,k)
+              +    beta[t] *vs[os+1](d,i,j,k)*dps[os+1](i,j,k));
+    }
+  };
+
+  ManySnapshots (const CTI::VelocityRecord& vrec,
+                 // endpoint data
+                 const CDpSnap& dp1, const CVSnap& v1, const int idx1,
+                 const CDpSnap& dp2, const CVSnap& v2, const int idx2,
+                 // interior data
+                 const CDpSnap& dps_int, const CVSnap& vs_int,
+                 // current substep
+                 const int nsubstep, const int step) {
+    const int end = vrec.nvel() - 1;
+    for (int t = 0; t < 2; ++t) {
+      const int substep_idx = nsubstep - (step+1) + t;
+      const Real time = (substep_idx * vrec.t_vel(end))/nsubstep;
+      const int k = vrec.run_step(step);
+      const int os = 2*t;
+      // Get the two relevant dynamics snapshots.
+      idxs[os]   = k == 1   ? idx1 : (k-2);
+      dps [os]   = k == 1   ? dp1  : dps_int;
+      vs  [os]   = k == 1   ? v1   : vs_int;
+      idxs[os+1] = k == end ? idx2 : (k-1);
+      dps[os+1]  = k == end ? dp2  : dps_int;
+      vs[os+1]   = k == end ? v2   : vs_int;
+      assert(idxs[os] >= 0 and idxs[os+1] >= 0);
+      assert(idxs[os] < dps[os].extent_int(1) and idxs[os+1] < dps[os+1].extent_int(1));
+      // Parameter for the linear combination of the two dynamics snapshots to
+      // make an internal snapshot.
+      beta[t] = (time - vrec.t_vel(k-1))/(vrec.t_vel(k) - vrec.t_vel(k-1));
+    }
+  }
+
+  KOKKOS_INLINE_FUNCTION Real get_alpha (const int t) const {
+    return t == 0 ? 0 : 1;
+  }
+
+  KOKKOS_INLINE_FUNCTION Element get_element (const int ie) const {
+    return Element(*this, ie);
+  }
+};
+
+// Routines to interpolate in the vertical direction.
 
 // Find the support for the linear interpolant.
 //   For sorted ascending x[0:n] and x in [x[0], x[n-1]] with hint xi_idx,
@@ -470,22 +676,23 @@ KOKKOS_FUNCTION void calc_ps (
 
 // Compute the surface pressure ps[i] at time point i corresponding to
 // dp[i] = (1-alpha[i]) dp1 + alpha[i] dp2.
+template <typename Snapshots>
 KOKKOS_FUNCTION void calc_ps (
   const KernelVariables& kv, const int nlev,
   const Real& ps0, const Real& hyai0,
-  const Real alpha[2], const CSelnV& dp1, const CSelnV& dp2,
+  const Snapshots& snaps,
   const ExecViewUnmanaged<Real[2][NP][NP]>& ps)
 {
-  assert_eln(dp1, nlev);
-  assert_eln(dp2, nlev);
+  const auto ie = kv.ie;
   const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
   const auto tvr_snlev = Kokkos::ThreadVectorRange(kv.team, nlev);
-  const CRelnV dps[] = {elp2r(dp1), elp2r(dp2)};
   const auto f1 = [&] (const int idx) {
     const int i = idx / NP, j = idx % NP;
     for (int t = 0; t < 2; ++t) {
-      const auto& dp = dps[t];
-      const auto g = [&] (int k, Real& sum) { sum += dp(i,j,k); };
+      const auto e = snaps.get_element(ie);
+      const auto g = [&] (int k, Real& sum) {
+        sum += e.get_dp_real(t,i,j,k);
+      };
       Real sum;
       Dispatch<>::parallel_reduce(kv.team, tvr_snlev, g, sum);
       Kokkos::single(Kokkos::PerThread(kv.team), [&] { ps(t,i,j) = sum; });
@@ -497,10 +704,12 @@ KOKKOS_FUNCTION void calc_ps (
     const int i = idx / NP, j = idx % NP;
     const auto g = [&] () {
       Real vals[2];
-      for (int t = 0; t < 2; ++t)
+      for (int t = 0; t < 2; ++t) {
+        const auto alpha = snaps.get_alpha(t);
         vals[t] = (hyai0*ps0 +
-                   (1 - alpha[t])*ps(0,i,j) +
-                   /**/ alpha[t] *ps(1,i,j));
+                   (1 - alpha)*ps(0,i,j) +
+                   /**/ alpha *ps(1,i,j));
+      }
       for (int t = 0; t < 2; ++t)
         ps(t,i,j) = vals[t];
     };
@@ -547,19 +756,19 @@ KOKKOS_FUNCTION void calc_etadotmid_from_etadotdpdnint (
 }
 
 // Compute eta_dot at midpoint nodes at the start and end of the substep.
+template <typename Snapshots>
 KOKKOS_FUNCTION void calc_eta_dot_ref_mid (
-  const KernelVariables& kv, const SphereOperators& sphere_ops,
+  const KernelVariables& kv, const SphereOperators& sphops, const Snapshots& snaps,
   const Real& ps0, const Real& hyai0, const CSNV<NUM_LEV_P>& hybi,
   const CSNV<NUM_LEV>& hydai, const CSNV<NUM_LEV>& hydbi, // delta ai, bi
   const CSNV<NUM_LEV>& hydetai, // delta etai
-  const Real alpha[2],
-  const CS2elNlev& v1, const CSelNlev& dp1, const CS2elNlev& v2, const CSelNlev& dp2,
   const SelNlevp& wrk1, const SelNlevp& wrk2, const S2elNlevp& vwrk1,
   // Holds interface levels as intermediate data but is midpoint data on output,
   // with final slot unused.
   const SelNlevp eta_dot[2])
 {
   using Kokkos::ALL;
+  const auto ie = kv.ie;
   const int nlev = NUM_PHYSICAL_LEV;
   const SelNlev divdp(wrk1.data());
   const S2elNlev vdp(vwrk1.data());
@@ -567,19 +776,19 @@ KOKKOS_FUNCTION void calc_eta_dot_ref_mid (
   // Calc surface pressure for use at the end.
   calc_ps(kv, nlev,
           ps0, hyai0,
-          alpha, dp1, dp2,
+          snaps,
           ps);
   kv.team_barrier();
   for (int t = 0; t < 2; ++t) {
     // Compute divdp.
+    const auto e = snaps.get_element(ie);
     const auto f = [&] (const int i, const int j, const int kp) {
       for (int d = 0; d < 2; ++d)
-        vdp(d,i,j,kp) = ((1 - alpha[t])*v1(d,i,j,kp)*dp1(i,j,kp) +
-                         /**/ alpha[t] *v2(d,i,j,kp)*dp2(i,j,kp));
+        vdp(d,i,j,kp) = e.combine_vdp(t,d,i,j,kp);
     };
     cti::loop_ijk<cti::num_lev_pack>(kv, f);
     kv.team_barrier();
-    sphere_ops.divergence_sphere(kv, vdp, divdp);
+    sphops.divergence_sphere(kv, vdp, divdp);
     kv.team_barrier();
     // Compute eta_dot_dpdn at interface nodes.
     const auto& edd = eta_dot[t];
