@@ -420,6 +420,18 @@ void calc_nodal_velocities (
   Kokkos::parallel_for(c.m_tp_ne, f);
 }
 
+// Wrapper around calc_nodal_velocities that generalizes the (vi,dpi), i=1,2,
+// pairs that can be used. In particular, use velocity snapshots from within the
+// tracer time step in addition to the endpoint pair.
+void calc_nodal_velocities_using_vrec (
+  const CTI& c, const Real dtsub, const int step, const cti::DeparturePoints& vnode)
+{
+  const auto& d = c.m_data;
+  const int nsubstep = d.trajectory_nsubstep;
+
+  
+}
+
 // Determine the departure points corresponding to the vertically Lagrangian
 // grid's arrival midpoints, where the floating levels are those that evolve
 // over the course of the full tracer time step. Also compute divdp, which holds
@@ -569,7 +581,8 @@ void dss_vnode (const CTI& c, const cti::DeparturePoints& vnode) {
 } // namespace anon
 
 // For limit_etam.
-void ComposeTransportImpl::setup_enhanced_trajectory () {
+void ComposeTransportImpl
+::setup_enhanced_trajectory (const SimulationParams& params) {
   const auto etai = cmvdc(m_hvcoord.etai);
   const Real deta_ave = (etai(num_phys_lev) - etai(0)) / num_phys_lev;
   m_data.deta_tol = 10*std::numeric_limits<Real>::epsilon()*deta_ave;
@@ -596,6 +609,10 @@ void ComposeTransportImpl::setup_enhanced_trajectory () {
 
   // etam
   homme::compose::set_hvcoord(etai(0), etai(num_phys_lev), etam.data());
+
+  m_data.vrec = std::make_shared<VelocityRecord>(
+    params.dt_tracer_factor, params.dt_remap_factor, m_data.trajectory_nsubstep,
+    m_data.trajectory_nvelocity);
 }
 
 void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real dt) {
@@ -614,15 +631,20 @@ void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real d
     {
       Kokkos::fence();
       GPTLstart("compose_vnode");
-      const Real alpha[] = {Real(nsubstep-step-1)/nsubstep,
-                            Real(nsubstep-step  )/nsubstep};
-      const CVSlot v1(m_derived.m_vstar.data(), nelemd, 1);
-      const CDpSlot dp1(m_derived.m_dp.data(), nelemd, 1);
-      const auto& v2 = m_state.m_v;
-      const auto& dp2 = m_state.m_dp3d;
-      calc_nodal_velocities(*this, dtsub, alpha,
-                            v1, dp1, 0, v2, dp2, np1,
-                            vnode);
+      if (m_data.vrec->nvel() == 2) {
+        const Real alpha[] = {Real(nsubstep-step-1)/nsubstep,
+                              Real(nsubstep-step  )/nsubstep};
+        const CVSlot v1(m_derived.m_vstar.data(), nelemd, 1);
+        const CDpSlot dp1(m_derived.m_dp.data(), nelemd, 1);
+        const auto& v2 = m_state.m_v;
+        const auto& dp2 = m_state.m_dp3d;
+        calc_nodal_velocities(*this, dtsub, alpha,
+                              v1, dp1, 0, v2, dp2, np1,
+                              vnode);
+      } else {
+        calc_nodal_velocities_using_vrec(*this, dtsub, step, vnode);
+      }
+        
       Kokkos::fence();
       GPTLstop("compose_vnode");
     }
