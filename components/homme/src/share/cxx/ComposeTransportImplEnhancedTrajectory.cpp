@@ -314,6 +314,41 @@ void update_dep_points (
   c.launch_ie_physlev_ij(f);
 }
 
+using  DpSnap   = ExecViewUnmanaged<      Scalar**    [NP][NP][NUM_LEV]>;
+using   VSnap   = ExecViewUnmanaged<      Scalar** [2][NP][NP][NUM_LEV]>;
+using CDpSnap   = ExecViewUnmanaged<const Scalar**    [NP][NP][NUM_LEV]>;
+using  CVSnap   = ExecViewUnmanaged<const Scalar** [2][NP][NP][NUM_LEV]>;
+using  DpSnapEl = ExecViewUnmanaged<      Scalar      [NP][NP][NUM_LEV]>;
+using   VSnapEl = ExecViewUnmanaged<      Scalar   [2][NP][NP][NUM_LEV]>;
+using CDpSnapEl = ExecViewUnmanaged<const Scalar      [NP][NP][NUM_LEV]>;
+using  CVSnapEl = ExecViewUnmanaged<const Scalar   [2][NP][NP][NUM_LEV]>;
+using  DpElBuf  = ExecViewUnmanaged<      Scalar      [NP][NP][NUM_LEV_P]>;
+using VelElBuf  = ExecViewUnmanaged<      Scalar   [2][NP][NP][NUM_LEV_P]>;
+
+// For nvelocity = 2. Does not use Dp/VelElBufs.
+struct EndpointSnapshots {
+  Real alpha[2];
+  int idxs[2];
+  const CDpSnap dps[2];
+  const CVSnap vs[2];
+
+  EndpointSnapshots (const Real alpha_[2],
+                     const CDpSnap& dp1, const CVSnap& v1, const int idx1,
+                     const CDpSnap& dp2, const CVSnap& v2, const int idx2)
+    : alpha{alpha_[0], alpha_[1]}, idxs{idx1, idx2}, dps{dp1, dp2}, vs{v1, v2}
+  {}
+
+  KOKKOS_INLINE_FUNCTION
+  CDpSnapEl get_dp (const int ie, const int t, const DpElBuf&) const {
+    return Homme::subview(dps[t], ie, idxs[t]);
+  }
+
+  KOKKOS_INLINE_FUNCTION
+  CVSnapEl get_v (const int ie, const int t, const VelElBuf&) const {
+    return Homme::subview(vs[t], ie, idxs[t]);
+  }
+};
+
 /* Evaluate a formula to provide an estimate of nodal velocities that are use to
    create a 2nd-order update to the trajectory. The fundamental formula for the
    update in position p from arrival point p1 to departure point p0 is
@@ -321,10 +356,9 @@ void update_dep_points (
    Here we compute the velocity estimate at the nodes:
        1/2 (v(p1,t0) + v(p1,t1) - dt v(p1,t1) grad v(p1,t0)).
 */
+template <typename Snapshots>
 void calc_nodal_velocities (
-  const CTI& c, const Real dtsub, const Real halpha[2],
-  const cti::CVSlot& v1, const cti::CDpSlot& dp1, const int idx1,
-  const cti::CVSlot& v2, const cti::CDpSlot& dp2, const int idx2,
+  const CTI& c, const Real dtsub, const Snapshots& snaps,
   const cti::DeparturePoints& vnode)
 {
   using Kokkos::ALL;
@@ -345,7 +379,6 @@ void calc_nodal_velocities (
   const auto& buf1c = d.buf1o[2]; const auto& buf1d = d.buf1o[3];
   const auto& buf2a = d.buf2 [0]; const auto& buf2b = d.buf2 [1];
   const auto& buf2c = d.buf2 [2]; const auto& buf2d = d.buf2 [3];
-  const auto alpha0 = halpha[0], alpha1 = halpha[1];
   const auto f = KOKKOS_LAMBDA (const cti::MT& team) {
     KernelVariables kv(team);
     const int ie = kv.ie;
@@ -353,20 +386,19 @@ void calc_nodal_velocities (
     const auto  wrk2 = Homme::subview(buf1b, kv.team_idx);
     const auto vwrk1 = Homme::subview(buf2a, kv.team_idx);
     const auto vwrk2 = Homme::subview(buf2b, kv.team_idx);
-    const auto v1_ie = Homme::subview(v1, ie, idx1);
-    const auto v2_ie = Homme::subview(v2, ie, idx2);
-    const Real alpha[] = {alpha0, alpha1};
+    const auto v1_ie = snaps.get_v(ie, 0, Homme::subview(buf2c, kv.team_idx));
+    const auto v2_ie = snaps.get_v(ie, 1, Homme::subview(buf2d, kv.team_idx));
     CSelNlevp eta_dot[] = {Homme::subview(buf1c, kv.team_idx),
                            Homme::subview(buf1d, kv.team_idx)};
     {
       SelNlevp eta_dot[] = {Homme::subview(buf1c, kv.team_idx),
                             Homme::subview(buf1d, kv.team_idx)};
       if (independent_time_steps) {
-        const auto dp1_ie = Homme::subview(dp1, ie, idx1);
-        const auto dp2_ie = Homme::subview(dp2, ie, idx2);
+        const auto dp1_ie = snaps.get_dp(ie, 0, wrk1);
+        const auto dp2_ie = snaps.get_dp(ie, 1, wrk2);
         calc_eta_dot_ref_mid(kv, sphere_ops,
                              ps0, hyai0, hybi, hydai, hydbi, hydetai,
-                             alpha, v1_ie, dp1_ie, v2_ie, dp2_ie,
+                             snaps.alpha, v1_ie, dp1_ie, v2_ie, dp2_ie,
                              wrk1, wrk2, vwrk1,
                              eta_dot);
       } else {
@@ -390,8 +422,8 @@ void calc_nodal_velocities (
         const auto& v = vsph[t];
         for (int d = 0; d < 2; ++d) {
           const auto f = [&] (const int i, const int j, const int k) {
-            v(d,i,j,k) = ((1 - alpha[t])*v1_ie(d,i,j,k) +
-                          /**/ alpha[t] *v2_ie(d,i,j,k));
+            v(d,i,j,k) = ((1 - snaps.alpha[t])*v1_ie(d,i,j,k) +
+                          /**/ snaps.alpha[t] *v2_ie(d,i,j,k));
           };
           cti::loop_ijk<cti::num_lev_pack>(kv, f);
         }
@@ -634,13 +666,12 @@ void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real d
       if (m_data.vrec->nvel() == 2) {
         const Real alpha[] = {Real(nsubstep-step-1)/nsubstep,
                               Real(nsubstep-step  )/nsubstep};
-        const CVSlot v1(m_derived.m_vstar.data(), nelemd, 1);
-        const CDpSlot dp1(m_derived.m_dp.data(), nelemd, 1);
+        const CVSnap v1(m_derived.m_vstar.data(), nelemd, 1);
+        const CDpSnap dp1(m_derived.m_dp.data(), nelemd, 1);
         const auto& v2 = m_state.m_v;
         const auto& dp2 = m_state.m_dp3d;
-        calc_nodal_velocities(*this, dtsub, alpha,
-                              v1, dp1, 0, v2, dp2, np1,
-                              vnode);
+        EndpointSnapshots snaps(alpha, dp1, v1, 0, dp2, v2, np1);
+        calc_nodal_velocities(*this, dtsub, snaps, vnode);
       } else {
         calc_nodal_velocities_using_vrec(*this, dtsub, step, vnode);
       }

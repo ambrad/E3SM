@@ -72,12 +72,8 @@ struct ComposeTransportImpl {
   typedef typename ViewConst<S2Nlev>::type CS2Nlev;
   typedef typename ViewConst<R2Nlev>::type CR2Nlev;
 
-  using  DpSlots = ExecViewManaged  <      Scalar***   [NP][NP][NUM_LEV]>;
-  using   VSlots = ExecViewManaged  <      Scalar***[2][NP][NP][NUM_LEV]>;
-  using  DpSlot  = ExecViewUnmanaged<      Scalar**    [NP][NP][NUM_LEV]>;
-  using   VSlot  = ExecViewUnmanaged<      Scalar** [2][NP][NP][NUM_LEV]>;
-  using CDpSlot  = ExecViewUnmanaged<const Scalar**    [NP][NP][NUM_LEV]>;
-  using  CVSlot  = ExecViewUnmanaged<const Scalar** [2][NP][NP][NUM_LEV]>;
+  using  DpSnaps = ExecViewManaged<Scalar***   [NP][NP][NUM_LEV]>;
+  using   VSnaps = ExecViewManaged<Scalar***[2][NP][NP][NUM_LEV]>;
 
   struct VelocityRecord;
 
@@ -101,8 +97,8 @@ struct ComposeTransportImpl {
 
     // Persistent, allocated memory, depending on options.
     DeparturePoints dep_pts, vnode, vdep; // (ie,lev,i,j,d)
-    DpSlots dp_extra_snapshots; // (ie,snapshot,i,j,lev)
-    VSlots vel_extra_snapshots; // (ie,snapshot,d,i,j,lev)
+    DpSnaps dp_extra_snapshots; // (ie,snapshot,i,j,lev)
+    VSnaps vel_extra_snapshots; // (ie,snapshot,d,i,j,lev)
 
     std::shared_ptr<VelocityRecord> vrec;
 
