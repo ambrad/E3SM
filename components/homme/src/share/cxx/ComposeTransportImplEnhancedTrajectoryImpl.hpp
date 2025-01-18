@@ -157,7 +157,8 @@ void assert_eln (const CSelnV& a, const int nlev) {
   assert(calc_nscal(a.extent_int(2)) >= nlev);
 }
 
-// Structs to manage velocity snapshots.
+// Structs to manage access to velocity snapshots at the end points of a substep
+// interval.
 //   dp1,2 and v1,2 are on Eulerian levels. dp,v1 is from time t1 < t2.
 
 using  DpSnap   = ExecViewUnmanaged<      Scalar**    [NP][NP][NUM_LEV]>;
@@ -167,13 +168,18 @@ using  CVSnap   = ExecViewUnmanaged<const Scalar** [2][NP][NP][NUM_LEV]>;
 using CDpSnapEl = ExecViewUnmanaged<const Scalar      [NP][NP][NUM_LEV]>;
 using  CVSnapEl = ExecViewUnmanaged<const Scalar   [2][NP][NP][NUM_LEV]>;
 
-// For nvelocity = 2. Does not use Dp/VelElBufs.
+// This is the simple case, for nvelocity = 2. We have velocity snapshots only
+// at the tracer time step end points. We linearly interpolate them to give
+// values anywhere within the time step. In particular, for a particular
+// substep's interval, we linearly interpolate using alpha[t] for t = 0,1 the
+// start and end of the substep interval.
 struct EndpointSnapshots {
   const Real alpha[2];
   const int idxs[2];
   const CDpSnap dps[2];
   const CVSnap vs[2];
 
+  // Use subview access for efficiency.
   struct Element {
     const Real alpha[2];
     const CDpSnapEl dps[2];
@@ -185,25 +191,14 @@ struct EndpointSnapshots {
         vs{Homme::subview(s.vs[0], ie, s.idxs[0]), Homme::subview(s.vs[1], ie, s.idxs[1])}
     {}
 
-    KOKKOS_INLINE_FUNCTION
-    Scalar get_dp (const int t, const int i, const int j, const int k) const {
-      return dps[t](i,j,k);
-    }
+    // Direct access.
 
     KOKKOS_INLINE_FUNCTION
     Real get_dp_real (const int t, const int i, const int j, const int k) const {
       return dps[t](i,j, k / VECTOR_SIZE)[k % VECTOR_SIZE];
     }
 
-    KOKKOS_INLINE_FUNCTION
-    Scalar get_v (const int t, const int d, const int i, const int j, const int k) const {
-      return vs[t](d,i,j,k);
-    }
-
-    KOKKOS_INLINE_FUNCTION
-    Scalar combine_dp (const int t, const int i, const int j, const int k) const {
-      return (1 - alpha[t])*dps[0](i,j,k) + alpha[t]*dps[1](i,j,k);
-    }
+    // Linear combinations.
 
     KOKKOS_INLINE_FUNCTION
     Scalar combine_v (const int t, const int d, const int i, const int j, const int k) const {
