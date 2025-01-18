@@ -164,14 +164,8 @@ using  DpSnap   = ExecViewUnmanaged<      Scalar**    [NP][NP][NUM_LEV]>;
 using   VSnap   = ExecViewUnmanaged<      Scalar** [2][NP][NP][NUM_LEV]>;
 using CDpSnap   = ExecViewUnmanaged<const Scalar**    [NP][NP][NUM_LEV]>;
 using  CVSnap   = ExecViewUnmanaged<const Scalar** [2][NP][NP][NUM_LEV]>;
-using  DpSnapEl = ExecViewUnmanaged<      Scalar      [NP][NP][NUM_LEV]>;
-using   VSnapEl = ExecViewUnmanaged<      Scalar   [2][NP][NP][NUM_LEV]>;
 using CDpSnapEl = ExecViewUnmanaged<const Scalar      [NP][NP][NUM_LEV]>;
 using  CVSnapEl = ExecViewUnmanaged<const Scalar   [2][NP][NP][NUM_LEV]>;
-using  DpElBuf  = ExecViewUnmanaged<      Scalar      [NP][NP][NUM_LEV_P]>;
-using VelElBuf  = ExecViewUnmanaged<      Scalar   [2][NP][NP][NUM_LEV_P]>;
-
-//todo subview version
 
 // For nvelocity = 2. Does not use Dp/VelElBufs.
 struct EndpointSnapshots {
