@@ -157,6 +157,75 @@ void assert_eln (const CSelnV& a, const int nlev) {
   assert(calc_nscal(a.extent_int(2)) >= nlev);
 }
 
+// Structs to manage velocity snapshots.
+//   dp1,2 and v1,2 are on Eulerian levels. dp,v1 is from time t1 < t2.
+
+using  DpSnap   = ExecViewUnmanaged<      Scalar**    [NP][NP][NUM_LEV]>;
+using   VSnap   = ExecViewUnmanaged<      Scalar** [2][NP][NP][NUM_LEV]>;
+using CDpSnap   = ExecViewUnmanaged<const Scalar**    [NP][NP][NUM_LEV]>;
+using  CVSnap   = ExecViewUnmanaged<const Scalar** [2][NP][NP][NUM_LEV]>;
+using  DpSnapEl = ExecViewUnmanaged<      Scalar      [NP][NP][NUM_LEV]>;
+using   VSnapEl = ExecViewUnmanaged<      Scalar   [2][NP][NP][NUM_LEV]>;
+using CDpSnapEl = ExecViewUnmanaged<const Scalar      [NP][NP][NUM_LEV]>;
+using  CVSnapEl = ExecViewUnmanaged<const Scalar   [2][NP][NP][NUM_LEV]>;
+using  DpElBuf  = ExecViewUnmanaged<      Scalar      [NP][NP][NUM_LEV_P]>;
+using VelElBuf  = ExecViewUnmanaged<      Scalar   [2][NP][NP][NUM_LEV_P]>;
+
+//todo subview version
+
+// For nvelocity = 2. Does not use Dp/VelElBufs.
+struct EndpointSnapshots {
+  Real alpha[2];
+  int idxs[2];
+  const CDpSnap dps[2];
+  const CVSnap vs[2];
+
+  EndpointSnapshots (const Real alpha_[2],
+                     const CDpSnap& dp1, const CVSnap& v1, const int idx1,
+                     const CDpSnap& dp2, const CVSnap& v2, const int idx2)
+    : alpha{alpha_[0], alpha_[1]}, idxs{idx1, idx2}, dps{dp1, dp2}, vs{v1, v2}
+  {}
+
+  KOKKOS_INLINE_FUNCTION Real get_alpha (const int t) const { return alpha[t]; }
+
+  KOKKOS_INLINE_FUNCTION
+  Scalar get_dp(const int t, const int ie, const int i, const int j,
+                const int k) const {
+    return dps[t](ie,idxs[t],i,j,k);
+  }
+
+  KOKKOS_INLINE_FUNCTION
+  Real get_dp_real(const int t, const int ie, const int i, const int j,
+                   const int k) const {
+    return dps[t](ie,idxs[t],i,j, k / VECTOR_SIZE)[k % VECTOR_SIZE];
+  }
+
+  KOKKOS_INLINE_FUNCTION
+  Scalar get_v(const int t, const int ie, const int d, const int i, const int j,
+                const int k) const {
+    return vs[t](ie,idxs[t],d,i,j,k);
+  }
+
+  KOKKOS_INLINE_FUNCTION
+  Scalar combine_dp(const int t, const int ie, const int i, const int j,
+                    const int k) const {
+    return (1 - alpha[t])*dps[0](ie,idxs[t],i,j,k) + alpha[t]*dps[1](ie,idxs[t],i,j,k);
+  }
+
+  KOKKOS_INLINE_FUNCTION
+  Scalar combine_v(const int t, const int ie, const int d, const int i, const int j,
+                   const int k) const {
+    return (1 - alpha[t])*vs[0](ie,idxs[t],d,i,j,k) + alpha[t]*vs[1](ie,idxs[t],d,i,j,k);
+  }
+
+  KOKKOS_INLINE_FUNCTION
+  Scalar combine_vdp(const int t, const int ie, const int d, const int i, const int j,
+                     const int k) const {
+    return ((1 - alpha[t])*vs[0](ie,idxs[t],d,i,j,k)*dps[0](ie,idxs[t],i,j,k)
+            +    alpha[t] *vs[1](ie,idxs[t],d,i,j,k)*dps[1](ie,idxs[t],i,j,k));
+  }
+};
+
 // Find the support for the linear interpolant.
 //   For sorted ascending x[0:n] and x in [x[0], x[n-1]] with hint xi_idx,
 // return i such that x[i] <= xi <= x[i+1].
@@ -515,22 +584,22 @@ KOKKOS_FUNCTION void calc_ps (
 
 // Compute the surface pressure ps[i] at time point i corresponding to
 // dp[i] = (1-alpha[i]) dp1 + alpha[i] dp2.
+template <typename Snapshots>
 KOKKOS_FUNCTION void calc_ps (
   const KernelVariables& kv, const int nlev,
   const Real& ps0, const Real& hyai0,
-  const Real alpha[2], const CSelnV& dp1, const CSelnV& dp2,
+  const Snapshots& snaps,
   const ExecViewUnmanaged<Real[2][NP][NP]>& ps)
 {
-  assert_eln(dp1, nlev);
-  assert_eln(dp2, nlev);
+  const auto ie = kv.ie;
   const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
   const auto tvr_snlev = Kokkos::ThreadVectorRange(kv.team, nlev);
-  const CRelnV dps[] = {elp2r(dp1), elp2r(dp2)};
   const auto f1 = [&] (const int idx) {
     const int i = idx / NP, j = idx % NP;
     for (int t = 0; t < 2; ++t) {
-      const auto& dp = dps[t];
-      const auto g = [&] (int k, Real& sum) { sum += dp(i,j,k); };
+      const auto g = [&] (int k, Real& sum) {
+        sum += snaps.get_dp_real(t,ie,i,j,k);
+      };
       Real sum;
       Dispatch<>::parallel_reduce(kv.team, tvr_snlev, g, sum);
       Kokkos::single(Kokkos::PerThread(kv.team), [&] { ps(t,i,j) = sum; });
@@ -542,10 +611,12 @@ KOKKOS_FUNCTION void calc_ps (
     const int i = idx / NP, j = idx % NP;
     const auto g = [&] () {
       Real vals[2];
-      for (int t = 0; t < 2; ++t)
+      for (int t = 0; t < 2; ++t) {
+        const auto alpha = snaps.get_alpha(t);
         vals[t] = (hyai0*ps0 +
-                   (1 - alpha[t])*ps(0,i,j) +
-                   /**/ alpha[t] *ps(1,i,j));
+                   (1 - alpha)*ps(0,i,j) +
+                   /**/ alpha *ps(1,i,j));
+      }
       for (int t = 0; t < 2; ++t)
         ps(t,i,j) = vals[t];
     };
@@ -592,19 +663,19 @@ KOKKOS_FUNCTION void calc_etadotmid_from_etadotdpdnint (
 }
 
 // Compute eta_dot at midpoint nodes at the start and end of the substep.
+template <typename Snapshots>
 KOKKOS_FUNCTION void calc_eta_dot_ref_mid (
-  const KernelVariables& kv, const SphereOperators& sphere_ops,
+  const KernelVariables& kv, const SphereOperators& sphops, const Snapshots& snaps,
   const Real& ps0, const Real& hyai0, const CSNV<NUM_LEV_P>& hybi,
   const CSNV<NUM_LEV>& hydai, const CSNV<NUM_LEV>& hydbi, // delta ai, bi
   const CSNV<NUM_LEV>& hydetai, // delta etai
-  const Real alpha[2],
-  const CS2elNlev& v1, const CSelNlev& dp1, const CS2elNlev& v2, const CSelNlev& dp2,
   const SelNlevp& wrk1, const SelNlevp& wrk2, const S2elNlevp& vwrk1,
   // Holds interface levels as intermediate data but is midpoint data on output,
   // with final slot unused.
   const SelNlevp eta_dot[2])
 {
   using Kokkos::ALL;
+  const auto ie = kv.ie;
   const int nlev = NUM_PHYSICAL_LEV;
   const SelNlev divdp(wrk1.data());
   const S2elNlev vdp(vwrk1.data());
@@ -612,19 +683,18 @@ KOKKOS_FUNCTION void calc_eta_dot_ref_mid (
   // Calc surface pressure for use at the end.
   calc_ps(kv, nlev,
           ps0, hyai0,
-          alpha, dp1, dp2,
+          snaps,
           ps);
   kv.team_barrier();
   for (int t = 0; t < 2; ++t) {
     // Compute divdp.
     const auto f = [&] (const int i, const int j, const int kp) {
       for (int d = 0; d < 2; ++d)
-        vdp(d,i,j,kp) = ((1 - alpha[t])*v1(d,i,j,kp)*dp1(i,j,kp) +
-                         /**/ alpha[t] *v2(d,i,j,kp)*dp2(i,j,kp));
+        vdp(d,i,j,kp) = snaps.combine_vdp(t,ie,d,i,j,kp);
     };
     cti::loop_ijk<cti::num_lev_pack>(kv, f);
     kv.team_barrier();
-    sphere_ops.divergence_sphere(kv, vdp, divdp);
+    sphops.divergence_sphere(kv, vdp, divdp);
     kv.team_barrier();
     // Compute eta_dot_dpdn at interface nodes.
     const auto& edd = eta_dot[t];

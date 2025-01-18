@@ -314,41 +314,6 @@ void update_dep_points (
   c.launch_ie_physlev_ij(f);
 }
 
-using  DpSnap   = ExecViewUnmanaged<      Scalar**    [NP][NP][NUM_LEV]>;
-using   VSnap   = ExecViewUnmanaged<      Scalar** [2][NP][NP][NUM_LEV]>;
-using CDpSnap   = ExecViewUnmanaged<const Scalar**    [NP][NP][NUM_LEV]>;
-using  CVSnap   = ExecViewUnmanaged<const Scalar** [2][NP][NP][NUM_LEV]>;
-using  DpSnapEl = ExecViewUnmanaged<      Scalar      [NP][NP][NUM_LEV]>;
-using   VSnapEl = ExecViewUnmanaged<      Scalar   [2][NP][NP][NUM_LEV]>;
-using CDpSnapEl = ExecViewUnmanaged<const Scalar      [NP][NP][NUM_LEV]>;
-using  CVSnapEl = ExecViewUnmanaged<const Scalar   [2][NP][NP][NUM_LEV]>;
-using  DpElBuf  = ExecViewUnmanaged<      Scalar      [NP][NP][NUM_LEV_P]>;
-using VelElBuf  = ExecViewUnmanaged<      Scalar   [2][NP][NP][NUM_LEV_P]>;
-
-// For nvelocity = 2. Does not use Dp/VelElBufs.
-struct EndpointSnapshots {
-  Real alpha[2];
-  int idxs[2];
-  const CDpSnap dps[2];
-  const CVSnap vs[2];
-
-  EndpointSnapshots (const Real alpha_[2],
-                     const CDpSnap& dp1, const CVSnap& v1, const int idx1,
-                     const CDpSnap& dp2, const CVSnap& v2, const int idx2)
-    : alpha{alpha_[0], alpha_[1]}, idxs{idx1, idx2}, dps{dp1, dp2}, vs{v1, v2}
-  {}
-
-  KOKKOS_INLINE_FUNCTION
-  CDpSnapEl get_dp (const int ie, const int t, const DpElBuf&) const {
-    return Homme::subview(dps[t], ie, idxs[t]);
-  }
-
-  KOKKOS_INLINE_FUNCTION
-  CVSnapEl get_v (const int ie, const int t, const VelElBuf&) const {
-    return Homme::subview(vs[t], ie, idxs[t]);
-  }
-};
-
 /* Evaluate a formula to provide an estimate of nodal velocities that are use to
    create a 2nd-order update to the trajectory. The fundamental formula for the
    update in position p from arrival point p1 to departure point p0 is
@@ -386,19 +351,14 @@ void calc_nodal_velocities (
     const auto  wrk2 = Homme::subview(buf1b, kv.team_idx);
     const auto vwrk1 = Homme::subview(buf2a, kv.team_idx);
     const auto vwrk2 = Homme::subview(buf2b, kv.team_idx);
-    const auto v1_ie = snaps.get_v(ie, 0, Homme::subview(buf2c, kv.team_idx));
-    const auto v2_ie = snaps.get_v(ie, 1, Homme::subview(buf2d, kv.team_idx));
     CSelNlevp eta_dot[] = {Homme::subview(buf1c, kv.team_idx),
                            Homme::subview(buf1d, kv.team_idx)};
     {
       SelNlevp eta_dot[] = {Homme::subview(buf1c, kv.team_idx),
                             Homme::subview(buf1d, kv.team_idx)};
       if (independent_time_steps) {
-        const auto dp1_ie = snaps.get_dp(ie, 0, wrk1);
-        const auto dp2_ie = snaps.get_dp(ie, 1, wrk2);
-        calc_eta_dot_ref_mid(kv, sphere_ops,
+        calc_eta_dot_ref_mid(kv, sphere_ops, snaps,
                              ps0, hyai0, hybi, hydai, hydbi, hydetai,
-                             snaps.alpha, v1_ie, dp1_ie, v2_ie, dp2_ie,
                              wrk1, wrk2, vwrk1,
                              eta_dot);
       } else {
@@ -411,8 +371,7 @@ void calc_nodal_velocities (
         }
       }
     }
-    // Collect the horizontal nodal velocities. v1,2 are on Eulerian levels. v1
-    // is from time t1 < t2.
+    // Collect the horizontal nodal velocities.
     auto* vm1 = Homme::subview(buf2c, kv.team_idx).data();
     auto* vm2 = Homme::subview(buf2d, kv.team_idx).data();
     CS2elNlev vsph[] = {CS2elNlev(vm1), CS2elNlev(vm2)};
@@ -422,8 +381,7 @@ void calc_nodal_velocities (
         const auto& v = vsph[t];
         for (int d = 0; d < 2; ++d) {
           const auto f = [&] (const int i, const int j, const int k) {
-            v(d,i,j,k) = ((1 - snaps.alpha[t])*v1_ie(d,i,j,k) +
-                          /**/ snaps.alpha[t] *v2_ie(d,i,j,k));
+            v(d,i,j,k) = snaps.combine_v(t, ie, d, i, j, k);
           };
           cti::loop_ijk<cti::num_lev_pack>(kv, f);
         }

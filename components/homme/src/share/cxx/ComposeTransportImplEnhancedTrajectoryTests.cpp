@@ -695,6 +695,24 @@ int test_eta_to_dp (TestData& td) {
   return nerr;
 }
 
+struct Snapshots {
+  Real alpha[2];
+  ExecViewUnmanaged<Scalar***> dps[2];
+
+  Snapshots (const Real as[2], const ExecViewUnmanaged<Scalar***>& dp1,
+             const ExecViewUnmanaged<Scalar***>& dp2)
+    : alpha{as[0], as[1]}, dps{dp1, dp2}
+  {}
+
+  KOKKOS_INLINE_FUNCTION Real get_alpha (const int t) const { return alpha[t]; }
+
+  KOKKOS_INLINE_FUNCTION
+  Real get_dp_real(const int t, const int ie, const int i, const int j,
+                   const int k) const {
+    return dps[t](i,j, k / VECTOR_SIZE)[k % VECTOR_SIZE];
+  }
+};
+
 int test_calc_ps (TestData& td) {
   int nerr = 0;
   const Real tol = 100*td.eps;
@@ -719,9 +737,10 @@ int test_calc_ps (TestData& td) {
     ExecView<Real[NP][NP]> ps("ps");
     ExecView<Real[2][NP][NP]> ps2("ps2");
     const auto policy = get_test_team_policy(1, nlev);
+    Snapshots snaps(alpha, dp1.d, dp2.d);
     const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
       KernelVariables kv(team);
-      calc_ps(kv, nlev, ps0, hyai0, alpha, dp1.d, dp2.d, ps2);
+      calc_ps(kv, nlev, ps0, hyai0, snaps, ps2);
       calc_ps(kv, nlev, ps0, hyai0, dp1.d, ps);
     };
     Kokkos::parallel_for(policy, f);
