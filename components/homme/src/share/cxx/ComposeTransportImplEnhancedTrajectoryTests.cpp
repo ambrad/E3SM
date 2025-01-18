@@ -696,8 +696,21 @@ int test_eta_to_dp (TestData& td) {
 }
 
 struct Snapshots {
-  Real alpha[2];
-  ExecViewUnmanaged<Scalar***> dps[2];
+  const Real alpha[2];
+  const ExecViewUnmanaged<Scalar***> dps[2];
+
+  struct Element {
+    const ExecViewUnmanaged<Scalar***> dps[2];
+
+    Element (const Snapshots& s, const int ie)
+      : dps{s.dps[0], s.dps[1]}
+    {}
+
+    KOKKOS_INLINE_FUNCTION
+    Real get_dp_real(const int t, const int i, const int j, const int k) const {
+      return dps[t](i,j, k / VECTOR_SIZE)[k % VECTOR_SIZE];
+    }
+  };
 
   Snapshots (const Real as[2], const ExecViewUnmanaged<Scalar***>& dp1,
              const ExecViewUnmanaged<Scalar***>& dp2)
@@ -706,10 +719,8 @@ struct Snapshots {
 
   KOKKOS_INLINE_FUNCTION Real get_alpha (const int t) const { return alpha[t]; }
 
-  KOKKOS_INLINE_FUNCTION
-  Real get_dp_real(const int t, const int ie, const int i, const int j,
-                   const int k) const {
-    return dps[t](i,j, k / VECTOR_SIZE)[k % VECTOR_SIZE];
+  KOKKOS_INLINE_FUNCTION Element get_element (const int ie) const {
+    return Element(*this, ie);
   }
 };
 

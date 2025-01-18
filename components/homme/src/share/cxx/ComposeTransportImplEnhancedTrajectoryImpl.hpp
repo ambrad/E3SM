@@ -175,10 +175,53 @@ using VelElBuf  = ExecViewUnmanaged<      Scalar   [2][NP][NP][NUM_LEV_P]>;
 
 // For nvelocity = 2. Does not use Dp/VelElBufs.
 struct EndpointSnapshots {
-  Real alpha[2];
-  int idxs[2];
+  const Real alpha[2];
+  const int idxs[2];
   const CDpSnap dps[2];
   const CVSnap vs[2];
+
+  struct Element {
+    const Real alpha[2];
+    const CDpSnapEl dps[2];
+    const CVSnapEl vs[2];
+    
+    Element (const EndpointSnapshots& s, const int ie)
+      : alpha{s.alpha[0], s.alpha[1]},
+        dps{Homme::subview(s.dps[0], ie, s.idxs[0]), Homme::subview(s.dps[1], ie, s.idxs[1])},
+        vs{Homme::subview(s.vs[0], ie, s.idxs[0]), Homme::subview(s.vs[1], ie, s.idxs[1])}
+    {}
+
+    KOKKOS_INLINE_FUNCTION
+    Scalar get_dp (const int t, const int i, const int j, const int k) const {
+      return dps[t](i,j,k);
+    }
+
+    KOKKOS_INLINE_FUNCTION
+    Real get_dp_real (const int t, const int i, const int j, const int k) const {
+      return dps[t](i,j, k / VECTOR_SIZE)[k % VECTOR_SIZE];
+    }
+
+    KOKKOS_INLINE_FUNCTION
+    Scalar get_v (const int t, const int d, const int i, const int j, const int k) const {
+      return vs[t](d,i,j,k);
+    }
+
+    KOKKOS_INLINE_FUNCTION
+    Scalar combine_dp (const int t, const int i, const int j, const int k) const {
+      return (1 - alpha[t])*dps[0](i,j,k) + alpha[t]*dps[1](i,j,k);
+    }
+
+    KOKKOS_INLINE_FUNCTION
+    Scalar combine_v (const int t, const int d, const int i, const int j, const int k) const {
+      return (1 - alpha[t])*vs[0](d,i,j,k) + alpha[t]*vs[1](d,i,j,k);
+    }
+
+    KOKKOS_INLINE_FUNCTION
+    Scalar combine_vdp (const int t, const int d, const int i, const int j, const int k) const {
+      return ((1 - alpha[t])*vs[0](d,i,j,k)*dps[0](i,j,k)
+              +    alpha[t] *vs[1](d,i,j,k)*dps[1](i,j,k));
+    }
+  };
 
   EndpointSnapshots (const Real alpha_[2],
                      const CDpSnap& dp1, const CVSnap& v1, const int idx1,
@@ -188,41 +231,8 @@ struct EndpointSnapshots {
 
   KOKKOS_INLINE_FUNCTION Real get_alpha (const int t) const { return alpha[t]; }
 
-  KOKKOS_INLINE_FUNCTION
-  Scalar get_dp(const int t, const int ie, const int i, const int j,
-                const int k) const {
-    return dps[t](ie,idxs[t],i,j,k);
-  }
-
-  KOKKOS_INLINE_FUNCTION
-  Real get_dp_real(const int t, const int ie, const int i, const int j,
-                   const int k) const {
-    return dps[t](ie,idxs[t],i,j, k / VECTOR_SIZE)[k % VECTOR_SIZE];
-  }
-
-  KOKKOS_INLINE_FUNCTION
-  Scalar get_v(const int t, const int ie, const int d, const int i, const int j,
-                const int k) const {
-    return vs[t](ie,idxs[t],d,i,j,k);
-  }
-
-  KOKKOS_INLINE_FUNCTION
-  Scalar combine_dp(const int t, const int ie, const int i, const int j,
-                    const int k) const {
-    return (1 - alpha[t])*dps[0](ie,idxs[t],i,j,k) + alpha[t]*dps[1](ie,idxs[t],i,j,k);
-  }
-
-  KOKKOS_INLINE_FUNCTION
-  Scalar combine_v(const int t, const int ie, const int d, const int i, const int j,
-                   const int k) const {
-    return (1 - alpha[t])*vs[0](ie,idxs[t],d,i,j,k) + alpha[t]*vs[1](ie,idxs[t],d,i,j,k);
-  }
-
-  KOKKOS_INLINE_FUNCTION
-  Scalar combine_vdp(const int t, const int ie, const int d, const int i, const int j,
-                     const int k) const {
-    return ((1 - alpha[t])*vs[0](ie,idxs[t],d,i,j,k)*dps[0](ie,idxs[t],i,j,k)
-            +    alpha[t] *vs[1](ie,idxs[t],d,i,j,k)*dps[1](ie,idxs[t],i,j,k));
+  KOKKOS_INLINE_FUNCTION Element get_element (const int ie) const {
+    return Element(*this, ie);
   }
 };
 
@@ -597,8 +607,9 @@ KOKKOS_FUNCTION void calc_ps (
   const auto f1 = [&] (const int idx) {
     const int i = idx / NP, j = idx % NP;
     for (int t = 0; t < 2; ++t) {
+      const auto e = snaps.get_element(ie);
       const auto g = [&] (int k, Real& sum) {
-        sum += snaps.get_dp_real(t,ie,i,j,k);
+        sum += e.get_dp_real(t,i,j,k);
       };
       Real sum;
       Dispatch<>::parallel_reduce(kv.team, tvr_snlev, g, sum);
@@ -688,9 +699,10 @@ KOKKOS_FUNCTION void calc_eta_dot_ref_mid (
   kv.team_barrier();
   for (int t = 0; t < 2; ++t) {
     // Compute divdp.
+    const auto e = snaps.get_element(ie);
     const auto f = [&] (const int i, const int j, const int kp) {
       for (int d = 0; d < 2; ++d)
-        vdp(d,i,j,kp) = snaps.combine_vdp(t,ie,d,i,j,kp);
+        vdp(d,i,j,kp) = e.combine_vdp(t,d,i,j,kp);
     };
     cti::loop_ijk<cti::num_lev_pack>(kv, f);
     kv.team_barrier();

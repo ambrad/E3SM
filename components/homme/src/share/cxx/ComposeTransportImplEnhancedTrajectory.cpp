@@ -377,11 +377,12 @@ void calc_nodal_velocities (
     CS2elNlev vsph[] = {CS2elNlev(vm1), CS2elNlev(vm2)};
     {
       S2elNlev vsph[] = {S2elNlev(vm1), S2elNlev(vm2)};
+      const auto e = snaps.get_element(ie);
       for (int t = 0; t < 2; ++t) {
         const auto& v = vsph[t];
         for (int d = 0; d < 2; ++d) {
           const auto f = [&] (const int i, const int j, const int k) {
-            v(d,i,j,k) = snaps.combine_v(t, ie, d, i, j, k);
+            v(d,i,j,k) = e.combine_v(t, d, i, j, k);
           };
           cti::loop_ijk<cti::num_lev_pack>(kv, f);
         }
