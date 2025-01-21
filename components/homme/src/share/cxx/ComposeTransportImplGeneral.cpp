@@ -77,7 +77,7 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
     if (m_data.trajectory_nsubstep > 1)
       m_data.vdep  = DeparturePoints("vdep" , nel, num_phys_lev, np, np, ndim);
     if (m_data.trajectory_nsubstep > 0)
-        setup_enhanced_trajectory(params);
+      setup_enhanced_trajectory(params);
     homme::compose::set_views(
       g.m_spheremp,
       homme::compose::SetView<Real****>  (reinterpret_cast<Real*>(d.m_dp.data()),

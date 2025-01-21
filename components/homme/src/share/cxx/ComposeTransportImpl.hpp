@@ -72,8 +72,8 @@ struct ComposeTransportImpl {
   typedef typename ViewConst<S2Nlev>::type CS2Nlev;
   typedef typename ViewConst<R2Nlev>::type CR2Nlev;
 
-  using  DpSnaps = ExecViewManaged<Scalar***   [NP][NP][NUM_LEV]>;
-  using   VSnaps = ExecViewManaged<Scalar***[2][NP][NP][NUM_LEV]>;
+  using DpSnaps = ExecViewManaged<Scalar**   [NP][NP][NUM_LEV]>;
+  using  VSnaps = ExecViewManaged<Scalar**[2][NP][NP][NUM_LEV]>;
 
   struct VelocityRecord;
 

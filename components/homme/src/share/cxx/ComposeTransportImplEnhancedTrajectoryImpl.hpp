@@ -16,6 +16,12 @@
 
 namespace Homme {
 
+// Organize and interpolate velocity snapshots from the dynamics. The result is
+// a set of snapshots to be used in computing the SL trajectories. To
+// distinguish between these types of snapshots, we refer to "dynamics
+// snapshots" (available at vertical remap time steps) and "internal snapshots"
+// (interpolated to tracer trajectory substeps).
+//
 // Parameter short names:
 //   dtf = dt_tracer_factor
 //   drf = dt_remap_factor
@@ -32,7 +38,7 @@ struct ComposeTransportImpl::VelocityRecord {
   int drf () const { return _drf; }
   int nsub () const { return _nsub; }
   int nvel () const { return _nvel; }
-  
+
   // Times to which velocity slots i in 0:nvel-1 correspond, in reference time
   // [0,dtf].
   Real t_vel(const int i) const;
@@ -48,7 +54,7 @@ struct ComposeTransportImpl::VelocityRecord {
   // Substep end point i in 0:nsub uses velocity slots run_step(n),
   // run_step(n)-1.
   int run_step(const int i) const;
-  
+
 private:
   int _dtf = -1, _drf = -1, _nsub = -1, _nvel = -1;
   std::vector<int> _obs_slots, _run_step;
@@ -157,8 +163,8 @@ void assert_eln (const CSelnV& a, const int nlev) {
   assert(calc_nscal(a.extent_int(2)) >= nlev);
 }
 
-// Structs to manage access to velocity snapshots at the end points of a substep
-// interval.
+// Structs to manage access to internal velocity snapshots at the end points of
+// a substep interval.
 //   dp1,2 and v1,2 are on Eulerian levels. dp,v1 is from time t1 < t2.
 
 using  DpSnap   = ExecViewUnmanaged<      Scalar**    [NP][NP][NUM_LEV]>;
@@ -169,10 +175,10 @@ using CDpSnapEl = ExecViewUnmanaged<const Scalar      [NP][NP][NUM_LEV]>;
 using  CVSnapEl = ExecViewUnmanaged<const Scalar   [2][NP][NP][NUM_LEV]>;
 
 // This is the simple case, for nvelocity = 2. We have velocity snapshots only
-// at the tracer time step end points. We linearly interpolate them to give
-// values anywhere within the time step. In particular, for a particular
-// substep's interval, we linearly interpolate using alpha[t] for t = 0,1 the
-// start and end of the substep interval.
+// at the tracer time step end points; dynamics and internal are the same. We
+// linearly interpolate them to give values anywhere within the time step. In
+// particular, for a particular substep's interval, we linearly interpolate
+// using alpha[t] for t = 0,1 the start and end of the substep interval.
 struct EndpointSnapshots {
   const Real alpha[2];
   const int idxs[2];
@@ -184,7 +190,8 @@ struct EndpointSnapshots {
     const Real alpha[2];
     const CDpSnapEl dps[2];
     const CVSnapEl vs[2];
-    
+
+    KOKKOS_INLINE_FUNCTION
     Element (const EndpointSnapshots& s, const int ie)
       : alpha{s.alpha[0], s.alpha[1]},
         dps{Homme::subview(s.dps[0], ie, s.idxs[0]), Homme::subview(s.dps[1], ie, s.idxs[1])},
@@ -224,6 +231,90 @@ struct EndpointSnapshots {
     return Element(*this, ie);
   }
 };
+
+// This is the more complicated case: we have dynamics velocity snapshots at the
+// time step end points, plus internal snapshots that may be interpolated from
+// multiple dynamics snapshots. alpha is no longer needed; values are trivially
+// set to 0 or 1. Interpolation of snapshots here takes the place of alpha.
+struct ManySnapshots {
+  Real beta[2];
+  int idxs[4];
+  CDpSnap dps[4];
+  CVSnap vs[4];
+
+  struct Element {
+    const Real beta[2];
+    const CDpSnapEl dps[4];
+    const CVSnapEl vs[4];
+
+    KOKKOS_INLINE_FUNCTION
+    Element (const ManySnapshots& s, const int ie)
+      : beta{s.beta[0], s.beta[1]},
+        dps{Homme::subview(s.dps[0], ie, s.idxs[0]), Homme::subview(s.dps[1], ie, s.idxs[1]),
+            Homme::subview(s.dps[2], ie, s.idxs[2]), Homme::subview(s.dps[3], ie, s.idxs[3])},
+        vs{Homme::subview(s.vs[0], ie, s.idxs[0]), Homme::subview(s.vs[1], ie, s.idxs[1]),
+           Homme::subview(s.vs[2], ie, s.idxs[2]), Homme::subview(s.vs[3], ie, s.idxs[3])}
+    {}
+
+    KOKKOS_INLINE_FUNCTION
+    Real get_dp_real (const int t, const int i, const int j, const int k) const {
+      const int os = 2*t, kp = k / VECTOR_SIZE, ks = k % VECTOR_SIZE;
+      return ((1 - beta[t])*dps[os  ](i,j,kp)[ks]
+              +    beta[t] *dps[os+1](i,j,kp)[ks]);
+    }
+
+    KOKKOS_INLINE_FUNCTION
+    Scalar combine_v (const int t, const int d, const int i, const int j, const int k) const {
+      const int os = 2*t;
+      return ((1 - beta[t])*vs[os  ](d,i,j,k)
+              +    beta[t] *vs[os+1](d,i,j,k));
+    }
+
+    KOKKOS_INLINE_FUNCTION
+    Scalar combine_vdp (const int t, const int d, const int i, const int j, const int k) const {
+      const int os = 2*t;
+      return ((1 - beta[t])*vs[os  ](d,i,j,k)*dps[os  ](i,j,k)
+              +    beta[t] *vs[os+1](d,i,j,k)*dps[os+1](i,j,k));
+    }
+  };
+
+  ManySnapshots (const CTI::VelocityRecord& vrec,
+                 // endpoint data
+                 const CDpSnap& dp1, const CVSnap& v1, const int idx1,
+                 const CDpSnap& dp2, const CVSnap& v2, const int idx2,
+                 // interior data
+                 const CDpSnap& dps_int, const CVSnap& vs_int,
+                 // current substep
+                 const int nsubstep, const int step) {
+    const int end = vrec.nvel() - 1;
+    for (int t = 0; t < 2; ++t) {
+      const int substep_idx = nsubstep - (step+1) + t;
+      const Real time = (substep_idx * vrec.t_vel(end))/nsubstep;
+      const int k = vrec.run_step(step);
+      const int os = 2*t;
+      // Get the two relevant dynamics snapshots.
+      idxs[os]   = k == 1   ? idx1 : (k-1);
+      dps [os]   = k == 1   ? dp1  : dps_int;
+      vs  [os]   = k == 1   ? v1   : vs_int;
+      idxs[os+1] = k == end ? idx2 : k;
+      dps[os+1]  = k == end ? dp2  : dps_int;
+      vs[os+1]   = k == end ? v2   : vs_int;
+      // Parameter for the linear combination of the two dynamics snapshots to
+      // make an internal snapshot.
+      beta[t] = (time - vrec.t_vel(k-1))/(vrec.t_vel(k) - vrec.t_vel(k-1));
+    }
+  }
+
+  KOKKOS_INLINE_FUNCTION Real get_alpha (const int t) const {
+    return t == 0 ? 0 : 1;
+  }
+
+  KOKKOS_INLINE_FUNCTION Element get_element (const int ie) const {
+    return Element(*this, ie);
+  }
+};
+
+// Routines to interpolate in the vertical direction.
 
 // Find the support for the linear interpolant.
 //   For sorted ascending x[0:n] and x in [x[0], x[n-1]] with hint xi_idx,

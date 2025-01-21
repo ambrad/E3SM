@@ -901,10 +901,10 @@ int test1_init_velocity_record (
     for (int i = 0; i < 2; ++i) {
       int k = nsub - (n+1) + i;
       xsup[i] = (k*v.t_vel(v.nvel()-1))/nsub;
-      k = v.run_step(nsub-i);
+      k = v.run_step(n);
       const Real
         y0 = k == 1 ? endslots[0] : ys[k-1],
-        y1 = k == v.nvel()-1 ? endslots[2] : ys[k];
+        y1 = k == v.nvel()-1 ? endslots[1] : ys[k];
       ysup[i] = (((v.t_vel(k) - xsup[i])*y0 + (xsup[i] - v.t_vel(k-1))*y1) /
                  (v.t_vel(k) - v.t_vel(k-1)));
     }
