@@ -60,8 +60,8 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
                 &m_data.limiter_option, &m_data.cdr_check, &m_data.geometry_type,
                 &m_data.trajectory_nsubstep, &m_data.trajectory_nvelocity);
 
-  if (independent_time_steps != m_data.independent_time_steps ||
-      m_data.nelemd != num_elems || m_data.qsize != params.qsize) {
+  if (independent_time_steps != m_data.independent_time_steps or
+      m_data.nelemd != num_elems or m_data.qsize != params.qsize) {
     const auto& g = m_geometry;
     const auto& t = m_tracers;
     const auto& s = m_state;

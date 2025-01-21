@@ -55,6 +55,11 @@ void ComposeTransport::init_boundary_exchanges () {
   m_compose_impl->init_boundary_exchanges();
 }
 
+void ComposeTransport::observe_velocity (const TimeLevel& tl, const int step) {
+  assert(is_setup);
+  m_compose_impl->observe_velocity(tl, step);
+}
+
 void ComposeTransport::run (const TimeLevel& tl, const Real dt) {
   assert(is_setup);
   m_compose_impl->run(tl, dt);

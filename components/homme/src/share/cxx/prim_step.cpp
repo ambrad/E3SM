@@ -12,11 +12,13 @@
 #include "Diagnostics.hpp"
 #include "ComposeTransport.hpp"
 #include "profiling.hpp"
+#include "utilities/IndexUtils.hpp"
 
 namespace Homme
 {
 
 void prim_advance_exp (TimeLevel& tl, const Real dt, const bool compute_diagnostics);
+void prim_advec_tracers_observe_velocity (const int step);
 void prim_advec_tracers_remap (const Real);
 void vertical_remap (const Real);
 
@@ -41,10 +43,8 @@ static void set_tracer_transport_derived_values (
     const auto n0 = tl.n0;
     Kokkos::parallel_for(Kokkos::RangePolicy<ExecSpace> (0,elements.num_elems()*NP*NP*NUM_LEV),
                          KOKKOS_LAMBDA(const int idx) {
-      const int ie   = ((idx / NUM_LEV) / NP) / NP;
-      const int igp  = ((idx / NUM_LEV) / NP) % NP;
-      const int jgp  =  (idx / NUM_LEV) % NP;
-      const int ilev =   idx % NUM_LEV;
+      int ie, igp, jgp, ilev;
+      get_ie_igp_jgp_midlevpack(idx, ie, igp, jgp, ilev);
       eta_dot_dpdn(ie,igp,jgp,ilev) = 0;
       derived_vn0(ie,0,igp,jgp,ilev) = 0;
       derived_vn0(ie,1,igp,jgp,ilev) = 0;
@@ -169,10 +169,12 @@ void prim_step_flexible (const Real dt, const bool compute_diagnostics) {
     prim_advance_exp(tl, dt, compute_diagnostics);
     tl.tevolve += dt;
 
+    bool observe = false;
     if (params.dt_remap_factor == 0) {
       // Since dt_remap == 0, the only part of vertical_remap that is active is
       // the updates to ps_v(:,:,np1) and dp3d(:,:,:,np1).
       vertical_remap(dt_remap);
+      observe = true;
     } else if ((n+1) % params.dt_remap_factor == 0) {
       if (compute_diagnostics)
         context.get<Diagnostics>().run_diagnostics(false, 3);
@@ -187,7 +189,10 @@ void prim_step_flexible (const Real dt, const bool compute_diagnostics) {
         vertical_remap(dt_remap);
         GPTLstop("tl-sc vertical_remap");
       }
+      observe = true;
     }
+    if (observe)
+      prim_advec_tracers_observe_velocity(n);
   }
 
   if (params.qsize > 0)
