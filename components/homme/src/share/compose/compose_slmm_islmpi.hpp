@@ -751,6 +751,25 @@ void calc_v_departure(
   IslMpi<MT>& cm, const Int nets, const Int nete, const Int step, const Real dtsub,
   Real* dep_points_r, const Real* vnode, Real* vdep);
 
+typedef std::uint64_t HashType;
+
+// Each hash function accumulates v into accum using a hash of its bits.
+
+KOKKOS_INLINE_FUNCTION void hash (const HashType v, HashType& accum) {
+  constexpr auto first_bit = 1ULL << 63;
+  accum += ~first_bit & v; // no overflow
+  accum ^=  first_bit & v; // handle most significant bit  
+}
+
+KOKKOS_INLINE_FUNCTION void hash (const double v_, HashType& accum) {
+  HashType v;
+  std::memcpy(&v, &v_, sizeof(HashType));
+  hash(v, accum);
+}
+
+int all_reduce_HashType(MPI_Comm comm, const HashType* sendbuf, HashType* rcvbuf,
+                        int count);
+
 } // namespace islmpi
 } // namespace homme
 

@@ -10,6 +10,23 @@ module compose_mod
   logical, private :: control_kokkos_init_and_fin = .true.
   
   interface
+
+     subroutine fhash(x, hash) bind(c)
+       use iso_c_binding, only: c_double
+       real(c_double), value, intent(in) :: x
+       real(c_double), intent(inout) :: hash
+     end subroutine fhash
+     subroutine fhashred(n, sendbuf, recvbuf) bind(c)
+       use iso_c_binding, only: c_int, c_double
+       integer(c_int), value, intent(in) :: n
+       real(c_double), intent(in) :: sendbuf(:)
+       real(c_double), intent(out) :: recvbuf(:)
+     end subroutine fhashred
+     subroutine fhashwrite(n, buf, idx) bind(c)
+       use iso_c_binding, only: c_int, c_double
+       integer(c_int), value, intent(in) :: n, idx
+       real(c_double), intent(in) :: buf(:)
+     end subroutine fhashwrite
      
 #ifdef HOMME_ENABLE_COMPOSE
      subroutine kokkos_init() bind(c)
