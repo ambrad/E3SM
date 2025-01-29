@@ -19,13 +19,13 @@ module compose_mod
      subroutine fhashred(n, sendbuf, recvbuf) bind(c)
        use iso_c_binding, only: c_int, c_double
        integer(c_int), value, intent(in) :: n
-       real(c_double), intent(in) :: sendbuf(:)
-       real(c_double), intent(out) :: recvbuf(:)
+       real(c_double), intent(in) :: sendbuf(n)
+       real(c_double), intent(out) :: recvbuf(n)
      end subroutine fhashred
      subroutine fhashwrite(n, buf, idx) bind(c)
        use iso_c_binding, only: c_int, c_double
        integer(c_int), value, intent(in) :: n, idx
-       real(c_double), intent(in) :: buf(:)
+       real(c_double), intent(in) :: buf(n)
      end subroutine fhashwrite
      
 #ifdef HOMME_ENABLE_COMPOSE

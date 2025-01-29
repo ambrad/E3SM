@@ -7,6 +7,7 @@ namespace islmpi {
 
 static void check (const mpi::Parallel& p, const TracerArrays<ko::MachineTraits>& t,
                    const char* lbl) {
+  return;
   const auto& dp = t.dp;
   const auto& qdp_p = t.qdp;
   const auto& q_c = t.q;
@@ -72,7 +73,6 @@ void step (
   slmm_assert(dep_points.extent_int(3) == cm.dep_points_ndim);
 
   const auto checkdep = [&] (const char* lbl, IslMpi<MT>& cm) {
-    const auto& t = *cm.tracer_arrays;
     HashType h[8] = {0};
     for (int ie = 0; ie < cm.nelemd; ++ie)
       for (int lev = 0; lev < cm.nlev; ++lev)

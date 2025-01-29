@@ -359,9 +359,15 @@ contains
                 call fhash(elem(ie)%derived%vstar(i,j,2,k), hash(n)); n=n+1
                 call fhash(elem(ie)%state%dp3d(i,j,k,tl%np1), hash(n)); n=n+1
                 do q = 1,qsize
-                   call fhash(elem(ie)%state%Qdp(i,j,k,q,1), hash(n)); n=n+1
-                   call fhash(elem(ie)%state%Qdp(i,j,k,q,2), hash(n)); n=n+1
-                   call fhash(elem(ie)%state%Q(i,j,k,q), hash(n)); n=n+1
+                   call fhash(elem(ie)%state%Qdp(i,j,k,q,1), hash(n));
+                end do
+                n = n+1
+                do q = 1,qsize
+                   call fhash(elem(ie)%state%Qdp(i,j,k,q,2), hash(n));
+                end do
+                n = n+1
+                do q = 1,qsize
+                   call fhash(elem(ie)%state%Q(i,j,k,q), hash(n));
                 end do
              end do
           end do
