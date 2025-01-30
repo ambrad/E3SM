@@ -50,7 +50,7 @@ void deep_copy (ElemData<ESD>& d, ElemData<ESS>& s) {
   //d.own.copy(s.own); unused in COMPOSE_PORT
   d.rmt.copy(s.rmt);
   siqk::resize_and_copy(d.src, s.src);
-  d.q_extrema = typename IslMpi<MT>::template Array<Real**[2], ESD>(
+  d.q_extrema = Array<Real**[2], ESD>(
     "q_extrema", s.q_extrema.extent_int(0), s.q_extrema.extent_int(1));
   ko::deep_copy(d.q_extrema, s.q_extrema);
   d.qdp = s.qdp;
