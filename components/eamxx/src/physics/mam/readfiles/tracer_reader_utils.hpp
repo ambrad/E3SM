@@ -295,6 +295,7 @@ inline void setup_tracer_data(TracerData &tracer_data,             // out
                               const int cyclical_ymd)              // in
 {
   scorpio::register_file(trace_data_file, scorpio::Read);
+  scorpio::pretend_dim_is_unlimited(trace_data_file,"time");
   // by default, I am assuming a zonal file.
   TracerFileType tracer_file_type = ZONAL;
 
@@ -475,7 +476,7 @@ inline void update_tracer_data_from_file(
   scorpio_reader->read_variables(time_index);
   // 2. Run the horiz remapper (it is a do-nothing op if tracer external forcing
   // data is on same grid as model)
-  tracer_horiz_interp.remap(/*forward = */ true);
+  tracer_horiz_interp.remap_fwd();
   //
   const int nvars = tracer_data.nvars_;
   //

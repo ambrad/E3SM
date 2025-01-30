@@ -95,6 +95,7 @@ _TESTS = {
             "SMS_Ly2_P1x1.1x1_smallvilleIA.IELMCNCROP.elm-per_crop",
             "SMS_Ly2_P1x1.1x1_smallvilleIA.IELMCNCROP.elm-fan",
             "SMS.r05_r05.IELM.elm-topounit",
+            "SMS.r05_r05.IELM.elm-topounit_im2",
             "ERS.ELM_USRDAT.I1850ELM.elm-usrdat",
             "ERS.r05_r05.IELM.elm-lnd_rof_2way",
             "ERS.r05_r05.IELM.elm-V2_ELM_MOSART_features",
@@ -405,7 +406,7 @@ _TESTS = {
             "SMS_Ld1.ne30pg2_r05_IcoswISC30E3r5.WCYCL1850.allactive-wcprod_1850",
             "SMS_Ld1.ne30pg2_r05_IcoswISC30E3r5.WCYCLSSP370.allactive-wcprodssp",
             "SMS_Ld1.ne30pg2_r05_IcoswISC30E3r5.WCYCLSSP585.allactive-wcprodssp",
-            "SMS_Ld1_PS.northamericax4v1pg2_WC14to60E2r3.WCYCL1850.allactive-wcprodrrm_1850",
+            "SMS_Ld1_P512.northamericax4v1pg2_r025_IcoswISC30E3r5.WCYCL1850.allactive-wcprodrrm_1850",
             "SMS_D_Ld1.ne30pg2_r05_IcoswISC30E3r5.CRYO1850",
             )
         },
