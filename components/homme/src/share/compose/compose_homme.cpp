@@ -1,5 +1,52 @@
 #include "compose_homme.hpp"
 
+#include <mpi.h>
+
+namespace fimpl {
+typedef std::uint64_t HashType;
+static void hash (const HashType v, HashType& accum) {
+  constexpr auto first_bit = 1ULL << 63;
+  accum += ~first_bit & v; // no overflow
+  accum ^=  first_bit & v; // handle most significant bit  
+}
+static void hash (const double v_, HashType& accum) {
+  HashType v;
+  std::memcpy(&v, &v_, sizeof(HashType));
+  hash(v, accum);
+}
+static void reduce_hash (void* invec, void* inoutvec, int* len, MPI_Datatype* /* datatype */) {
+  const int n = *len;
+  const auto* s = reinterpret_cast<const HashType*>(invec);
+  auto* d = reinterpret_cast<HashType*>(inoutvec);
+  for (int i = 0; i < n; ++i) hash(s[i], d[i]);
+}
+static int all_reduce_HashType (MPI_Comm comm, const HashType* sendbuf, HashType* rcvbuf,
+                                int count) {
+  static_assert(sizeof(long long int) == sizeof(HashType),
+                "HashType must have size sizeof(long long int).");
+  MPI_Op op;
+  MPI_Op_create(reduce_hash, true, &op);
+  return MPI_Allreduce(sendbuf, rcvbuf, count, MPI_LONG_LONG_INT, op, comm);
+  MPI_Op_free(&op);
+}
+} // namespace fimpl
+extern "C" void fhash (const double x, double* hash) {
+  auto& h = *reinterpret_cast<fimpl::HashType*>(hash);
+  fimpl::hash(x, h);
+}
+extern "C" void fhashred (const int n, const double* sendbuf, double* recvbuf) {
+  const auto* s = reinterpret_cast<const fimpl::HashType*>(sendbuf);
+  auto* r = reinterpret_cast<fimpl::HashType*>(recvbuf);
+  fimpl::all_reduce_HashType(MPI_COMM_WORLD, s, r, n);
+}
+extern "C" void fhashwrite (const int n, const double* buf, const int idx) {
+  static int cnt = 0;
+  const auto* h = reinterpret_cast<const fimpl::HashType*>(buf);
+  for (int i = 0; i < n; ++i)
+    printf("amb> %5s %2d %d %5d %16" PRIx64 "\n", "sl", idx, i, cnt, h[i]);
+  ++cnt;
+}
+
 namespace homme {
 
 template <typename MT>

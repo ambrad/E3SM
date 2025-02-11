@@ -5,6 +5,70 @@
 namespace homme {
 namespace sl {
 
+typedef std::uint64_t HashType;
+KOKKOS_INLINE_FUNCTION void hash (const HashType v, HashType& accum) {
+  constexpr auto first_bit = 1ULL << 63;
+  accum += ~first_bit & v; // no overflow
+  accum ^=  first_bit & v; // handle most significant bit  
+}
+KOKKOS_INLINE_FUNCTION void hash (const double v_, HashType& accum) {
+  HashType v;
+  std::memcpy(&v, &v_, sizeof(HashType));
+  hash(v, accum);
+}
+static void reduce_hash (void* invec, void* inoutvec, int* len, MPI_Datatype* /* datatype */) {
+  const int n = *len;
+  const auto* s = reinterpret_cast<const HashType*>(invec);
+  auto* d = reinterpret_cast<HashType*>(inoutvec);
+  for (int i = 0; i < n; ++i) hash(s[i], d[i]);
+}
+static int all_reduce_HashType (MPI_Comm comm, const HashType* sendbuf, HashType* rcvbuf,
+                                int count) {
+  static_assert(sizeof(long long int) == sizeof(HashType),
+                "HashType must have size sizeof(long long int).");
+  MPI_Op op;
+  MPI_Op_create(reduce_hash, true, &op);
+  return MPI_Allreduce(sendbuf, rcvbuf, count, MPI_LONG_LONG_INT, op, comm);
+  MPI_Op_free(&op);
+}
+
+static void check (const cedr::mpi::Parallel& p, const TracerArrays<ko::MachineTraits>& t,
+                   const char* lbl) {
+  const auto& dp3d_c = t.dp3d;
+  const auto& qdp_p = t.qdp;
+  const auto& q_c = t.q;
+  const auto np1 = t.np1;
+  const auto n0_qdp = t.n0_qdp;
+  HashType h[8] = {0};
+  for (int ie = 0; ie < t.nelemd; ++ie)
+    for (int k = 0; k < t.np2; ++k)
+      for (int lev = 0; lev < t.nlev; ++lev)
+        for (int q = 0; q < t.qsize; ++q)
+          hash(q_c(ie,q,k,lev), h[0]);
+  for (int ie = 0; ie < t.nelemd; ++ie)
+    for (int k = 0; k < t.np2; ++k)
+      for (int lev = 0; lev < t.nlev; ++lev)
+        for (int q = 0; q < t.qsize; ++q)
+          hash(qdp_p(ie,n0_qdp,q,k,lev), h[1]);
+  for (int ie = 0; ie < t.nelemd; ++ie)
+    for (int k = 0; k < t.np2; ++k)
+      for (int lev = 0; lev < t.nlev; ++lev)
+        hash(dp3d_c(ie,np1,k,lev), h[2]);
+  HashType g[8] = {0};
+  all_reduce_HashType(p.comm(), h, g, 3);
+  static int cnt = 0;
+  if (p.amroot()) {
+    for (int i = 0; i < 3; ++i) {
+      if (i == 0)
+        printf("amb> %8s %d %5d %16" PRIx64 "\n", lbl, i, cnt, g[i]);
+      else
+        printf("amb> %8s %d %5d %16" PRIx64 "\n", "", i, cnt, g[i]);
+      fflush(stdout);
+    }
+  }
+  ++cnt;
+}
+
 template <int np_,
           typename CV1, typename CV3,
           typename QV4, typename CQV4,
@@ -296,6 +360,8 @@ template <typename MT>
 void run_local (CDR<MT>& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
                 const Int nets, const Int nete, const bool scalar_bounds,
                 const Int limiter_option) {
+  const auto& ta = *d.ta;
+  check(*cdr.p, ta, "ledr0");
   if (dynamic_cast<typename CDR<MT>::QLTT*>(cdr.cdr.get()))
     run_local<4, MT, typename CDR<MT>::QLTT>(
       cdr, dynamic_cast<typename CDR<MT>::QLTT*>(cdr.cdr.get()),
@@ -306,6 +372,7 @@ void run_local (CDR<MT>& cdr, const Data& d, Real* q_min_r, const Real* q_max_r,
       d, q_min_r, q_max_r, nets, nete, scalar_bounds, limiter_option);
   else
     cedr_throw_if(true, "run_local: could not cast cdr.");
+  check(*cdr.p, ta, "ledre");
 }
 
 template void

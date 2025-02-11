@@ -1,7 +1,47 @@
 #include "compose_slmm_islmpi.hpp"
 
+#include <cinttypes>
+
 namespace homme {
 namespace islmpi {
+
+static void check (const mpi::Parallel& p, const TracerArrays<ko::MachineTraits>& t,
+                   const char* lbl) {
+  const auto& dp = t.dp;
+  const auto& qdp_p = t.qdp;
+  const auto& q_c = t.q;
+  const auto n0_qdp = t.n0_qdp;
+  HashType h[8] = {0};
+  for (int ie = 0; ie < t.nelemd; ++ie)
+    for (int k = 0; k < t.np2; ++k)
+      for (int lev = 0; lev < t.nlev; ++lev)
+        for (int q = 0; q < t.qsize; ++q)
+          hash(q_c(ie,q,k,lev), h[0]);
+  for (int ie = 0; ie < t.nelemd; ++ie)
+    for (int k = 0; k < t.np2; ++k)
+      for (int lev = 0; lev < t.nlev; ++lev)
+        for (int q = 0; q < t.qsize; ++q)
+          hash(qdp_p(ie,n0_qdp,q,k,lev), h[1]);
+#if 0
+  for (int ie = 0; ie < t.nelemd; ++ie)
+    for (int k = 0; k < t.np2; ++k)
+      for (int lev = 0; lev < t.nlev; ++lev)
+        hash(dp(ie,k,lev), h[2]);
+#endif
+  HashType g[8] = {0};
+  all_reduce_HashType(p.comm(), h, g, 2);
+  static int cnt = 0;
+  if (p.amroot()) {
+    for (int i = 0; i < 2; ++i) {
+      if (i == 0)
+        printf("amb> %8s %d %5d %16" PRIx64 "\n", lbl, i, cnt, g[i]);
+      else
+        printf("amb> %8s %d %5d %16" PRIx64 "\n", "", i, cnt, g[i]);
+      fflush(stdout);
+    }
+  }
+  ++cnt;
+}
 
 // dep_points is const in principle, but if lev <=
 // semi_lagrange_nearest_point_lev, a departure point may be altered if the
@@ -31,6 +71,30 @@ void step (
     q_max(q_max_r, cm.nelemd, cm.qsize, cm.nlev, cm.np2);
 #endif
   slmm_assert(dep_points.extent_int(3) == cm.dep_points_ndim);
+
+  const auto checkdep = [&] (const char* lbl, IslMpi<MT>& cm) {
+    HashType h[8] = {0};
+    for (int ie = 0; ie < cm.nelemd; ++ie)
+      for (int lev = 0; lev < cm.nlev; ++lev)
+        for (int k = 0; k < cm.np2; ++k)
+          for (int d = 0; d < cm.dep_points_ndim; ++d)
+            hash(dep_points(ie,lev,k,d), h[0]);
+    HashType g[8] = {0};
+    all_reduce_HashType(cm.p->comm(), h, g, 1);
+    static int cnt = 0;
+    if (cm.p->amroot()) {
+      for (int i = 0; i < 1; ++i) {
+        if (i == 0)
+          printf("amb> %8s %d %5d %16" PRIx64 "\n", lbl, i, cnt, g[i]);
+        else
+          printf("amb> %8s %d %5d %16" PRIx64 "\n", "", i, cnt, g[i]);
+      }
+    }
+    ++cnt;
+  };
+
+  check(*cm.p, *cm.tracer_arrays, "step0");
+  checkdep("depp0", cm);
 
   // Partition my elements that communicate with remotes among threads, if I
   // haven't done that yet.
@@ -80,6 +144,9 @@ void step (
   // Wait on send buffer so it's free to be used by others.
   { Timer t("15_wait_on_send");
     wait_on_send(cm, true /* skip_if_empty */); }
+
+  check(*cm.p, *cm.tracer_arrays, "stepe");
+  checkdep("deppe", cm);
 }
 
 template void step(IslMpi<ko::MachineTraits>&, const Int, const Int, Real*, Real*, Real*);

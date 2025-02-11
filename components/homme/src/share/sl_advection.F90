@@ -4,7 +4,7 @@
 
 module sl_advection
   use kinds, only              : real_kind, int_kind
-  use dimensions_mod, only     : nlev, nlevp, np, qsize, qsize_d
+  use dimensions_mod, only     : nlev, nlevp, np, qsize, qsize_d, nelemd
   use derivative_mod, only     : derivative_t, gradient_sphere, divergence_sphere, ugradv_sphere
   use element_mod, only        : element_t
   use hybvcoord_mod, only      : hvcoord_t
@@ -338,6 +338,46 @@ contains
     end do
   end subroutine prim_advec_tracers_observe_velocity_ALE
 
+  subroutine check(hybrid, elem, tl, idx)
+    type (element_t), intent(in) :: elem(:)
+    type (TimeLevel_t), intent(in) :: tl
+    type (hybrid_t), intent(in) :: hybrid
+    integer, intent(in) :: idx
+    
+    integer :: ie,i,j,k,q,n
+    
+    real(8) :: hash(16), ghash(16)
+    hash(:) = 0
+    do ie = 1,nelemd
+       do k = 1,nlev
+          do j = 1,np
+             do i = 1,np
+                n = 1
+                call fhash(elem(ie)%state%v(i,j,1,k,tl%np1), hash(n)); n=n+1
+                call fhash(elem(ie)%state%v(i,j,2,k,tl%np1), hash(n)); n=n+1
+                call fhash(elem(ie)%derived%vstar(i,j,1,k), hash(n)); n=n+1
+                call fhash(elem(ie)%derived%vstar(i,j,2,k), hash(n)); n=n+1
+                call fhash(elem(ie)%state%dp3d(i,j,k,tl%np1), hash(n)); n=n+1
+                do q = 1,qsize
+                   call fhash(elem(ie)%state%Qdp(i,j,k,q,1), hash(n));
+                end do
+                n = n+1
+                do q = 1,qsize
+                   call fhash(elem(ie)%state%Qdp(i,j,k,q,2), hash(n));
+                end do
+                n = n+1
+                do q = 1,qsize
+                   call fhash(elem(ie)%state%Q(i,j,k,q), hash(n));
+                end do
+             end do
+          end do
+       end do
+    end do
+    n = 8
+    call fhashred(n, hash, ghash)
+    if (hybrid%masterthread) call fhashwrite(n, ghash, idx)
+  end subroutine check
+
   subroutine prim_advec_tracers_remap_ALE(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete)
     use coordinate_systems_mod, only : cartesian3D_t, cartesian2D_t
     use dimensions_mod,         only : max_neigh_edges
@@ -374,6 +414,8 @@ contains
     h2d = compose_h2d .or. h2d
     call TimeLevel_Qdp(tl, dt_tracer_factor, n0_qdp, np1_qdp)
 
+    call check(hybrid, elem, tl, 0)
+
     if (enhanced_trajectory) then
        call calc_enhanced_trajectory(elem, deriv, hvcoord, hybrid, dt, tl, nets, nete, &
             semi_lagrange_trajectory_nsubstep, independent_time_steps)
@@ -405,11 +447,15 @@ contains
     if (barrier) call perf_barrier(hybrid)
     call t_stopf('SLMM_csl')
 
+    call check(hybrid, elem, tl, 1)
+
     if (semi_lagrange_hv_q > 0 .and. nu_q > 0) then
        n = semi_lagrange_hv_q
        call advance_hypervis_scalar(elem, hvcoord, hybrid, deriv, tl%np1, np1_qdp, nets, nete, dt, n)
        ! No barrier needed: advance_hypervis_scalar has a horiz thread barrier at the end.
     end if
+
+    call check(hybrid, elem, tl, 2)
 
     ! CEDR works with either classical SL or IR.
     if (semi_lagrange_cdr_alg > 1 .and. semi_lagrange_cdr_alg /= 42) then
@@ -451,6 +497,7 @@ contains
           enddo
        end do
     end if
+    call check(hybrid, elem, tl, 3)
     ! Technically, dss_Qdp is needed only if semi_lagrange_cdr_alg > 1;
     ! otherwise, each Q(dp) field is already continuous. But SL transport would
     ! be run without a CDR only by a specialist doing some debugging. Meanwhile,
@@ -472,6 +519,7 @@ contains
        call advance_physical_vis(elem, hvcoord, hybrid, deriv, tl%np1, np1_qdp, nets, nete, dt, dcmip16_mu_q)
     endif
     call t_stopf('Prim_Advec_Tracers_remap_ALE')
+    call check(hybrid, elem, tl, 4)
 #endif
   end subroutine prim_advec_tracers_remap_ALE
   
