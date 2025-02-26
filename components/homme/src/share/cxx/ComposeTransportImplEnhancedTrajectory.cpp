@@ -627,13 +627,12 @@ void ComposeTransportImpl::observe_velocity (const TimeLevel& tl, const int step
     const auto& v = state.m_v;
     const auto f = KOKKOS_LAMBDA (const int idx) {
       int ie, igp, jgp, ilev;
-      get_ie_igp_jgp_midlevpack(idx, ie, igp, jgp, ilev);
+      idx_ie_ij_nlev<num_lev_pack>(idx, ie, igp, jgp, ilev);
       dp_snap(ie,slot,igp,jgp,ilev) += wt * dp3d(ie,np1,igp,jgp,ilev);
       for (int d = 0; d < 2; ++d)
         v_snap(ie,slot,d,igp,jgp,ilev) += wt * v(ie,np1,d,igp,jgp,ilev);
     };
-    Kokkos::parallel_for(
-      Kokkos::RangePolicy<ExecSpace>(0,m_data.nelemd*NP*NP*NUM_LEV), f);
+    launch_ie_ij_nlev<num_lev_pack>(f);
   }
 }
 
