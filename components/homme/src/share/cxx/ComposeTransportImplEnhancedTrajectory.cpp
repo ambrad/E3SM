@@ -562,7 +562,7 @@ void dss_vnode (const CTI& c, const cti::DeparturePoints& vnode) {
 
 // For limit_etam.
 void ComposeTransportImpl
-::setup_enhanced_trajectory (const SimulationParams& params) {
+::setup_enhanced_trajectory (const SimulationParams& params, const int num_elems) {
   const auto etai = cmvdc(m_hvcoord.etai);
   const Real deta_ave = (etai(num_phys_lev) - etai(0)) / num_phys_lev;
   m_data.deta_tol = 10*std::numeric_limits<Real>::epsilon()*deta_ave;
@@ -596,8 +596,8 @@ void ComposeTransportImpl
     m_data.trajectory_nvelocity);
   const auto nv = m_data.vrec->nvel();
   if (nv > 2) {
-    m_data.dp_extra_snapshots = DpSnaps("dp_extra_snapshots", m_data.nelemd, nv);
-    m_data.vel_extra_snapshots = VSnaps("vel_extra_snapshots", m_data.nelemd, nv);
+    m_data.dp_extra_snapshots = DpSnaps( "dp_extra_snapshots", num_elems, nv-2);
+    m_data.vel_extra_snapshots = VSnaps("vel_extra_snapshots", num_elems, nv-2);
   }
 }
 
@@ -628,9 +628,9 @@ void ComposeTransportImpl::observe_velocity (const TimeLevel& tl, const int step
     const auto f = KOKKOS_LAMBDA (const int idx) {
       int ie, igp, jgp, ilev;
       idx_ie_ij_nlev<num_lev_pack>(idx, ie, igp, jgp, ilev);
-      dp_snap(ie,slot,igp,jgp,ilev) += wt * dp3d(ie,np1,igp,jgp,ilev);
+      dp_snap(ie,slot-1,igp,jgp,ilev) += wt * dp3d(ie,np1,igp,jgp,ilev);
       for (int d = 0; d < 2; ++d)
-        v_snap(ie,slot,d,igp,jgp,ilev) += wt * v(ie,np1,d,igp,jgp,ilev);
+        v_snap(ie,slot-1,d,igp,jgp,ilev) += wt * v(ie,np1,d,igp,jgp,ilev);
     };
     launch_ie_ij_nlev<num_lev_pack>(f);
   }
