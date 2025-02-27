@@ -293,15 +293,17 @@ struct ManySnapshots {
       const int k = vrec.run_step(step);
       const int os = 2*t;
       // Get the two relevant dynamics snapshots.
-      idxs[os]   = k == 1   ? idx1 : (k-1);
+      idxs[os]   = k == 1   ? idx1 : (k-2);
       dps [os]   = k == 1   ? dp1  : dps_int;
       vs  [os]   = k == 1   ? v1   : vs_int;
-      idxs[os+1] = k == end ? idx2 : k;
+      idxs[os+1] = k == end ? idx2 : k-1;
       dps[os+1]  = k == end ? dp2  : dps_int;
       vs[os+1]   = k == end ? v2   : vs_int;
       // Parameter for the linear combination of the two dynamics snapshots to
       // make an internal snapshot.
       beta[t] = (time - vrec.t_vel(k-1))/(vrec.t_vel(k) - vrec.t_vel(k-1));
+      assert(idxs[os  ] > 0);
+      assert(idxs[os+1] > 0);
     }
   }
 

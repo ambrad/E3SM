@@ -620,6 +620,7 @@ void ComposeTransportImpl::observe_velocity (const TimeLevel& tl, const int step
   for (int t = 0; t < 2; ++t) {
     const auto slot = v.obs_slots(step, t);
     if (slot == -1) continue;
+    assert(slot > 0 and slot < v.nvel()-1);
     const auto wt = v.obs_wts(step, t);
     const auto& dp_snap = m_data.dp_extra_snapshots;
     const auto& v_snap = m_data.vel_extra_snapshots;

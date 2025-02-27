@@ -868,13 +868,13 @@ int test1_init_velocity_record (
         ++e;
 
   // Check that weights sum to 1.
-  std::vector<Real> ys(dtf);
+  std::vector<Real> ys(dtf-2); // interior y values
   for (int n = 0; n < dtf; ++n)
     for (int i = 0; i < 2; ++i)
       if (v.obs_slots(n,i) >= 0)
-        ys[v.obs_slots(n,i)] += v.obs_wts(n,i);
+        ys[v.obs_slots(n,i)-1] += v.obs_wts(n,i);
   for (int i = 1; i < v.nvel()-1; ++i)
-    if (std::abs(ys[i] - 1) > 1e3*eps)
+    if (std::abs(ys[i-1] - 1) > 1e3*eps)
       ++e;
 
   // Test for exact interp of an affine function.
@@ -883,14 +883,13 @@ int test1_init_velocity_record (
   Real endslots[2];
   endslots[0] = tfn(0);
   endslots[1] = tfn(dtf);
-  ys[0] = -1000; // unused
-  for (int i = 1; i < dtf; ++i) ys[i] = 0;
+  for (int i = 0; i < dtf-2; ++i) ys[i] = 0;
   for (int n = 1; n < dtf; ++n) {
     if (n % drf != 0) continue;
     const Real y = tfn(n);
     for (int i = 0; i < 2; ++i) {
       if (v.obs_slots(n,i) < 0) continue;
-      ys[v.obs_slots(n,i)] += v.obs_wts(n,i)*y;
+      ys[v.obs_slots(n,i)-1] += v.obs_wts(n,i)*y;
     }
   }
   //   Use the data backward in time.
@@ -903,8 +902,8 @@ int test1_init_velocity_record (
       xsup[i] = (k*v.t_vel(v.nvel()-1))/nsub;
       k = v.run_step(n);
       const Real
-        y0 = k == 1 ? endslots[0] : ys[k-1],
-        y1 = k == v.nvel()-1 ? endslots[1] : ys[k];
+        y0 = k == 1 ? endslots[0] : ys[k-2],
+        y1 = k == v.nvel()-1 ? endslots[1] : ys[k-1];
       ysup[i] = (((v.t_vel(k) - xsup[i])*y0 + (xsup[i] - v.t_vel(k-1))*y1) /
                  (v.t_vel(k) - v.t_vel(k-1)));
     }
