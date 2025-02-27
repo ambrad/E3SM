@@ -136,8 +136,8 @@ struct Session {
     p.remap_alg = RemapAlg::PPM_LIMITED_EXTRAP;
     p.qsplit = 1;
     p.rsplit = 1;
-    p.dt_tracer_factor = -1;
-    p.dt_remap_factor = -1;
+    p.dt_tracer_factor = 1;
+    p.dt_remap_factor = 1;
     p.params_set = true;
     p.theta_hydrostatic_mode = true;
     p.scale_factor = is_sphere ? PhysicalConstants::rearth0 : 1;

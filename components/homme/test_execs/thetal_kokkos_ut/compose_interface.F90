@@ -43,8 +43,8 @@ contains
     vert_remap_q_alg = 10
     qsplit = 1
     rsplit = 1
-    dt_tracer_factor = -1
-    dt_remap_factor = -1
+    dt_tracer_factor = 1
+    dt_remap_factor = 1
     theta_hydrostatic_mode = .true.
     semi_lagrange_nearest_point_lev = -1
     if (nearest_point) semi_lagrange_nearest_point_lev = 100000
