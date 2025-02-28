@@ -43,16 +43,16 @@ struct ComposeTransportImpl::VelocityRecord {
   // [0,dtf].
   Real t_vel(const int i) const;
 
-  // For n = 0:dtf, obs_slots(n,0:1) = [slot1, slot2], -1 if unused. These are
-  // the slots to which velocity sample n contributes. obs_slots(0 or dtf,:) are
+  // For n = 0:dtf-1, obs_slots(n,0:1) = [slot1, slot2], -1 if unused. These are
+  // the slots to which velocity sample n contributes. obs_slots(dtf-1,:) is
   // always -1.
   int obs_slots(const int n, const int k) const;
 
-  // For n = 0:dtf, obs_wts(n,0:1) = [wt1, wt2], 0 if unused.
+  // For n = 0:dtf-1, obs_wts(n,0:1) = [wt1, wt2], 0 if unused.
   Real obs_wts(const int n, const int k) const;
 
-  // Substep end point i in 0:nsub uses velocity slots run_step(n),
-  // run_step(n)-1.
+  // Substep end point i in 0:nsub uses velocity slots run_step(i),
+  // run_step(i)-1.
   int run_step(const int i) const;
 
 private:
@@ -286,6 +286,7 @@ struct ManySnapshots {
                  const CDpSnap& dps_int, const CVSnap& vs_int,
                  // current substep
                  const int nsubstep, const int step) {
+    const auto root = Context::singleton().get<Comm>().root();
     const int end = vrec.nvel() - 1;
     for (int t = 0; t < 2; ++t) {
       const int substep_idx = nsubstep - (step+1) + t;
@@ -296,14 +297,17 @@ struct ManySnapshots {
       idxs[os]   = k == 1   ? idx1 : (k-2);
       dps [os]   = k == 1   ? dp1  : dps_int;
       vs  [os]   = k == 1   ? v1   : vs_int;
-      idxs[os+1] = k == end ? idx2 : k-1;
+      idxs[os+1] = k == end ? idx2 : (k-1);
       dps[os+1]  = k == end ? dp2  : dps_int;
       vs[os+1]   = k == end ? v2   : vs_int;
+      assert(idxs[os] >= 0 and idxs[os+1] >= 0);
+      assert(idxs[os] < dps[os].extent_int(1) and idxs[os+1] < dps[os+1].extent_int(1));
       // Parameter for the linear combination of the two dynamics snapshots to
       // make an internal snapshot.
       beta[t] = (time - vrec.t_vel(k-1))/(vrec.t_vel(k) - vrec.t_vel(k-1));
-      assert(idxs[os  ] > 0);
-      assert(idxs[os+1] > 0);
+      if (root)
+        printf("amb> ms step %2d t %d idxs %d (%d) %d (%d) beta %1.3f\n",
+               step, t, idxs[os], int(k == 1), idxs[os+1], int(k == end), beta[t]);
     }
   }
 

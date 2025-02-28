@@ -26,6 +26,8 @@ module sl_advection
 
   private
 
+  logical :: amroot
+
   ! Constants
   real(real_kind), parameter :: zero = 0.0_real_kind, fourth = 0.25_real_kind, &
        half = 0.5_real_kind, one = 1.0_real_kind, two = 2.0_real_kind, &
@@ -130,6 +132,8 @@ contains
     type (cartesian3D_t) :: pinside
     integer :: nslots, ie, num_neighbors, need_conservation, i, j
     logical :: slmm, cisl, qos, sl_test, independent_time_steps
+
+    amroot = par%masterproc
 
 #ifdef HOMME_ENABLE_COMPOSE
     call t_startf('sl_init1')
@@ -313,8 +317,10 @@ contains
     integer              , intent(in   ) :: nete
 
     integer :: nstore, islot, slot, k, ie
+    real(8) :: sm
 
     if (vrec%nvel == 2) return
+    if (amroot) print '(a,i4)', 'amb> observe_velocity nstep',tl%nstep
 
     if (n == dt_remap_factor .or. (dt_remap_factor == 0 .and. n == 1)) then
        ! First observation of the tracer time step: zero accumulated quantities.
@@ -329,14 +335,18 @@ contains
     do islot = 1, 2
        slot = vrec%obs_slots(n,islot)
        if (slot == -1) cycle
+       if (amroot) print '(a,i2,i2,es9.2)', 'amb> ov',islot-1,slot,vrec%obs_wts(n,islot)
+       sm = 0
        do ie = nets, nete
           do k = 1, nlev
              vrec%vel(:,:,:,k,slot,ie) = vrec%vel(:,:,:,k,slot,ie) + &
                   vrec%obs_wts(n,islot) * elem(ie)%state%v(:,:,:,k,tl%np1)
              vrec%dp (:,:,  k,slot,ie) = vrec%dp (:,:,  k,slot,ie) + &
                   vrec%obs_wts(n,islot) * elem(ie)%state%dp3d(:,:,k,tl%np1)
+             sm = sm + sum(vrec%vel(:,:,:,k,slot,ie))
           end do
        end do
+       if (amroot) print '(a,i4,i2,es22.15)', 'amb> obs',tl%nstep,n,sm
     end do
   end subroutine prim_advec_tracers_observe_velocity_ALE
 
@@ -1373,7 +1383,8 @@ contains
           end do
        else
           call calc_nodal_velocities_using_vrec(elem, deriv, hvcoord, tl, &
-               independent_time_steps, dtsub, nsubstep, step, nets, nete)
+               independent_time_steps, dtsub, nsubstep, step, nets, nete, &
+               hybrid%masterthread)
        end if
 
        call dss_vnode(elem, nets, nete, hybrid, vnode)
@@ -1440,7 +1451,7 @@ contains
   end subroutine init_dep_points_all
 
   subroutine calc_nodal_velocities_using_vrec(elem, deriv, hvcoord, tl, &
-       independent_time_steps, dtsub, nsubstep, step, nets, nete)
+       independent_time_steps, dtsub, nsubstep, step, nets, nete, root)
 
     ! Wrapper to calc_nodal_velocities that orchestrates the use of the various
     ! sources of velocity data.
@@ -1452,10 +1463,12 @@ contains
     logical, intent(in) :: independent_time_steps
     real(real_kind), intent(in) :: dtsub
     integer, intent(in) :: nsubstep, step, nets, nete
+    logical, intent(in) :: root
     
-    integer :: ie, i, k, os
-    real(real_kind) :: time, alpha(2), vs(np,np,2,nlev,3), dps(np,np,nlev,3)
+    integer :: ie, i, k, os, d, j, t
+    real(real_kind) :: time, alpha(2), vs(np,np,2,nlev,3), dps(np,np,nlev,3), sum(2)
 
+    sum = 0
     do ie = nets, nete
        do i = 1, 2
           k = nsubstep - step + (i-1)
@@ -1481,13 +1494,31 @@ contains
           vs(:,:,:,:,os+1) = alpha(1)*vs(:,:,:,:,os+1) + alpha(2)*vs(:,:,:,:,os+2)
           dps(:,:,:, os+1) = alpha(1)*dps(:,:,:, os+1) + alpha(2)*dps(:,:,:, os+2)
        end do
+       if (.true.) then
+          do i = 1,np
+             do j = 1,np
+                do k = 1,nlev
+                   do d = 1,2
+                      do t = 1,2
+                         sum(t) = sum(t) + vs(i,j,d,k,t)
+                      end do
+                   end do
+                end do
+             end do
+          end do
+       end if
        alpha(1) = 0
        alpha(2) = 1
        call calc_nodal_velocities(elem(ie), deriv, hvcoord, tl, &
             independent_time_steps, dtsub, alpha, &
             vs(:,:,:,:,1), dps(:,:,:,1), vs(:,:,:,:,2), dps(:,:,:,2), &
             vnode(:,:,:,:,ie))
-    end do    
+    end do
+    if (root) then
+       do t = 1,2
+          print '(a,i3,i2,es22.15)','amb> sum',step,t,sum(t)
+       end do
+    end if
   end subroutine calc_nodal_velocities_using_vrec
 
   subroutine calc_nodal_velocities(elem, deriv, hvcoord, tl, &

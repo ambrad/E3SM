@@ -126,8 +126,12 @@
    phase 3, and eta_arr_int is used in phase 6.
  */
 
+#undef NDEBUG
+
 #include "ComposeTransportImplEnhancedTrajectoryImpl.hpp"
 #include "utilities/IndexUtils.hpp"
+
+#undef NDEBUG
 
 namespace Homme {
 
@@ -196,15 +200,16 @@ void CTI::VelocityRecord
   }
 
   _t_vel.resize(nvel);
-  _obs_slots.resize(2*(dtf+1)); _obs_wts.resize(2*(dtf+1));
+  _obs_slots.resize(2*dtf); _obs_wts.resize(2*dtf);
   _run_step.resize(nsub+1);
 
   // Times at which velocity data are available.
   std::vector<int> t_avail(navail); {
-    int i = 0;
-    for (int n = 0; n <= dtf; ++n) {
-      if (n % drf != 0) continue;
-      t_avail[i] = n;
+    t_avail[0] = 0;
+    int i = 1;
+    for (int n = 0; n < dtf; ++n) {
+      if ((n+1) % drf != 0) continue;
+      t_avail[i] = n+1;
       i = i + 1;
     }
     assert(i == navail);
@@ -221,16 +226,16 @@ void CTI::VelocityRecord
   }
 
   // Build the tables mapping n in 0:dtf-1 to velocity slots to accumulate into.
-  for (int n = 0; n <= dtf; ++n) {
+  for (int n = 0; n < dtf; ++n) {
     for (int k = 0; k < 2; ++k) {
       obs_slots(n,k) = -1;
       obs_wts(n,k) = 0;
     }
-    if (n == 0 or n == dtf) continue;
-    if (n % drf != 0) continue;
-    const int time = n;
+    if (n == dtf-1) continue;
+    if ((n+1) % drf != 0) continue;
+    const int time = n+1;
     int iav = -1;
-    for (int i = 1; i < navail-1; ++i)
+    for (int i = 1; i <= navail-1; ++i)
       if (time == t_avail[i]) {
         iav = i;
         break;
@@ -563,6 +568,8 @@ void dss_vnode (const CTI& c, const cti::DeparturePoints& vnode) {
 // For limit_etam.
 void ComposeTransportImpl
 ::setup_enhanced_trajectory (const SimulationParams& params, const int num_elems) {
+  assert(params.dt_tracer_factor > 0);
+
   const auto etai = cmvdc(m_hvcoord.etai);
   const Real deta_ave = (etai(num_phys_lev) - etai(0)) / num_phys_lev;
   m_data.deta_tol = 10*std::numeric_limits<Real>::epsilon()*deta_ave;
@@ -604,10 +611,16 @@ void ComposeTransportImpl
 void ComposeTransportImpl::observe_velocity (const TimeLevel& tl, const int step) {
   // Optionally observe the dynamics velocity snapshot available at this step.
 
+  const auto root = Context::singleton().get<Comm>().root();
+  if (root) printf("amb> observe_velocity nstep %d\n", tl.nstep);
+
   if (not m_data.vrec or m_data.vrec->nvel() == 2) return;
 
   const auto& v = *m_data.vrec;
+  assert((step + 1) % v.drf() == 0);
+
   if (step + 1 == v.drf()) {
+    if (root) printf("amb> observe_velocity zero\n", tl.nstep);
     // This is either (1) the first vertical remap step in the tracer step or
     // (2) the first dynamics step and we're running vertically Eulerian. In
     // either case, zero the quantities accumulated over the step.
@@ -619,6 +632,7 @@ void ComposeTransportImpl::observe_velocity (const TimeLevel& tl, const int step
   const auto np1 = tl.np1;
   for (int t = 0; t < 2; ++t) {
     const auto slot = v.obs_slots(step, t);
+    if (root) printf("amb> ov t %d slot %d wt %1.3f\n", t, slot, v.obs_wts(step,t));
     if (slot == -1) continue;
     assert(slot > 0 and slot < v.nvel()-1);
     const auto wt = v.obs_wts(step, t);
@@ -634,6 +648,17 @@ void ComposeTransportImpl::observe_velocity (const TimeLevel& tl, const int step
         v_snap(ie,slot-1,d,igp,jgp,ilev) += wt * v(ie,np1,d,igp,jgp,ilev);
     };
     launch_ie_ij_nlev<num_lev_pack>(f);
+    if (Context::singleton().get<Comm>().root()) {
+      Real sum = 0;
+      for (int ie = 0; ie < m_data.nelemd; ++ie) {
+        for (int i = 0; i < NP; ++i)
+          for (int j = 0; j < NP; ++j)
+            for (int k = 0; k < num_phys_lev; ++k)
+              for (int d = 0; d < 2; ++d)
+                sum += v_snap(ie,slot-1,d,i,j,k/VECTOR_SIZE)[k%VECTOR_SIZE];
+      }
+      printf("amb> obs %d %d %1.15e\n", tl.nstep, step, sum);
+    }
   }
 }
 
@@ -667,6 +692,20 @@ void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real d
                             dp1, v1, 0, dp2, v2, np1,
                             m_data.dp_extra_snapshots, m_data.vel_extra_snapshots,
                             nsubstep, step);
+        if (Context::singleton().get<Comm>().root()) {
+          for (int t = 0; t < 2; ++t) {
+            Real sum = 0;
+            for (int ie = 0; ie < nelemd; ++ie) {
+              const auto e = snaps.get_element(ie);
+              for (int i = 0; i < NP; ++i)
+                for (int j = 0; j < NP; ++j)
+                  for (int k = 0; k < num_phys_lev; ++k)
+                    for (int d = 0; d < 2; ++d)
+                      sum += e.combine_v(t,d,i,j,k/VECTOR_SIZE)[k%VECTOR_SIZE];
+            }
+            printf("amb> sum %2d %d %1.15e\n", step, t, sum);
+          }
+        }
         calc_nodal_velocities(*this, dtsub, snaps, vnode);
       }
         
