@@ -286,7 +286,6 @@ struct ManySnapshots {
                  const CDpSnap& dps_int, const CVSnap& vs_int,
                  // current substep
                  const int nsubstep, const int step) {
-    const auto root = Context::singleton().get<Comm>().root();
     const int end = vrec.nvel() - 1;
     for (int t = 0; t < 2; ++t) {
       const int substep_idx = nsubstep - (step+1) + t;
@@ -305,9 +304,6 @@ struct ManySnapshots {
       // Parameter for the linear combination of the two dynamics snapshots to
       // make an internal snapshot.
       beta[t] = (time - vrec.t_vel(k-1))/(vrec.t_vel(k) - vrec.t_vel(k-1));
-      if (root)
-        printf("amb> ms step %2d t %d idxs %d (%d) %d (%d) beta %1.3f\n",
-               step, t, idxs[os], int(k == 1), idxs[os+1], int(k == end), beta[t]);
     }
   }
 

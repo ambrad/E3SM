@@ -126,12 +126,8 @@
    phase 3, and eta_arr_int is used in phase 6.
  */
 
-#undef NDEBUG
-
 #include "ComposeTransportImplEnhancedTrajectoryImpl.hpp"
 #include "utilities/IndexUtils.hpp"
-
-#undef NDEBUG
 
 namespace Homme {
 
@@ -611,16 +607,12 @@ void ComposeTransportImpl
 void ComposeTransportImpl::observe_velocity (const TimeLevel& tl, const int step) {
   // Optionally observe the dynamics velocity snapshot available at this step.
 
-  const auto root = Context::singleton().get<Comm>().root();
-  if (root) printf("amb> observe_velocity nstep %d\n", tl.nstep);
-
   if (not m_data.vrec or m_data.vrec->nvel() == 2) return;
 
   const auto& v = *m_data.vrec;
   assert((step + 1) % v.drf() == 0);
 
   if (step + 1 == v.drf()) {
-    if (root) printf("amb> observe_velocity zero\n", tl.nstep);
     // This is either (1) the first vertical remap step in the tracer step or
     // (2) the first dynamics step and we're running vertically Eulerian. In
     // either case, zero the quantities accumulated over the step.
@@ -632,7 +624,6 @@ void ComposeTransportImpl::observe_velocity (const TimeLevel& tl, const int step
   const auto np1 = tl.np1;
   for (int t = 0; t < 2; ++t) {
     const auto slot = v.obs_slots(step, t);
-    if (root) printf("amb> ov t %d slot %d wt %1.3f\n", t, slot, v.obs_wts(step,t));
     if (slot == -1) continue;
     assert(slot > 0 and slot < v.nvel()-1);
     const auto wt = v.obs_wts(step, t);
@@ -648,17 +639,6 @@ void ComposeTransportImpl::observe_velocity (const TimeLevel& tl, const int step
         v_snap(ie,slot-1,d,igp,jgp,ilev) += wt * v(ie,np1,d,igp,jgp,ilev);
     };
     launch_ie_ij_nlev<num_lev_pack>(f);
-    if (Context::singleton().get<Comm>().root()) {
-      Real sum = 0;
-      for (int ie = 0; ie < m_data.nelemd; ++ie) {
-        for (int i = 0; i < NP; ++i)
-          for (int j = 0; j < NP; ++j)
-            for (int k = 0; k < num_phys_lev; ++k)
-              for (int d = 0; d < 2; ++d)
-                sum += v_snap(ie,slot-1,d,i,j,k/VECTOR_SIZE)[k%VECTOR_SIZE];
-      }
-      printf("amb> obs %d %d %1.15e\n", tl.nstep, step, sum);
-    }
   }
 }
 
@@ -692,20 +672,6 @@ void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real d
                             dp1, v1, 0, dp2, v2, np1,
                             m_data.dp_extra_snapshots, m_data.vel_extra_snapshots,
                             nsubstep, step);
-        if (Context::singleton().get<Comm>().root()) {
-          for (int t = 0; t < 2; ++t) {
-            Real sum = 0;
-            for (int ie = 0; ie < nelemd; ++ie) {
-              const auto e = snaps.get_element(ie);
-              for (int i = 0; i < NP; ++i)
-                for (int j = 0; j < NP; ++j)
-                  for (int k = 0; k < num_phys_lev; ++k)
-                    for (int d = 0; d < 2; ++d)
-                      sum += e.combine_v(t,d,i,j,k/VECTOR_SIZE)[k%VECTOR_SIZE];
-            }
-            printf("amb> sum %2d %d %1.15e\n", step, t, sum);
-          }
-        }
         calc_nodal_velocities(*this, dtsub, snaps, vnode);
       }
         
