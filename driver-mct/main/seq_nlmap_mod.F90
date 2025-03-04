@@ -345,7 +345,8 @@ contains
     if (special == 0) then
        call mct_sMat_avMult(avp_i, mapper%sMatp, avp_o, VECTOR=mct_usevector)
     else
-       lnorm = .false.
+       call mct_sMat_avMult(avp_i, mapper%sMatp, avp_o, VECTOR=mct_usevector) !amb
+       !amb lnorm = .false.
        k_sarea = mct_aVect_indexRA(mapper%dom_cx_s%data, afldname)
        k_sfrac = mct_aVect_indexRA(fractions_ax(1), 'lfrac')
        if (special == 1) then
@@ -379,7 +380,7 @@ contains
     
     allocate(lcl_lo(natt,lsize_o), lcl_hi(natt,lsize_o))
     call sMat_avMult_and_calc_bounds(avp_i, mapper%nl_sMatp, lnorm, natt, &
-         nl_avp_o, lcl_lo, lcl_hi)
+         &                           nl_avp_o, lcl_lo, lcl_hi)
 
     ! Mask high-order field against low-order. An exact 0 in the low-order field
     ! will mask the high-order field unnecessarily, but that's OK: it's a rare,
@@ -390,12 +391,12 @@ contains
        if (special == 1) then
           zero = fractions_lx(1)%rAttr(k_dfrac1,j) <= 0
        elseif (special == 2) then
-          zero = fractions_ox(1)%rAttr(k_dfrac1,j) + fractions_ix(1)%rAttr(k_dfrac2,j) <= 0
+          zero = fractions_ox(1)%rAttr(k_dfrac1,j) + fractions_ox(1)%rAttr(k_dfrac2,j) <= 0
        end if
        if (special > 0 .and. zero) n = n + 1
        do k = 1,natt
           if (special == 0) zero = avp_o%rAttr(k,j) == 0
-          if (zero) then
+          if (zero .or. avp_o%rAttr(k,j) == 0) then !amb
              nl_avp_o%rAttr(k,j) = 0
              ! Need to set bounds to 0 so that the mass is not modified.
              lcl_lo(k,j) = 0
