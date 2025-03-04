@@ -284,7 +284,7 @@ contains
 
   end subroutine sort_rowcols
 
-  subroutine seq_nlmap_avNormArr(mapper, avp_i, avp_o, lnorm, special)
+  subroutine seq_nlmap_avNormArr(mapper, avp_i, avp_o, lnorm_in, special)
     ! When mapper%nl_available, the call to mct_sMat_avMult in seq_map_avNormArr
     ! can be replaced with a call to this routine. This routine applies the
     ! nonlinear map, just as mct_sMat_avMult applies a linear map.
@@ -292,7 +292,7 @@ contains
     type(seq_map)   , intent(inout) :: mapper ! mapper
     type(mct_aVect) , intent(in)    :: avp_i  ! input
     type(mct_aVect) , intent(inout) :: avp_o  ! output
-    logical         , intent(in)    :: lnorm  ! normalize at end
+    logical         , intent(in)    :: lnorm_in  ! normalize at end
     integer(IN)     , intent(in)    :: special
 
     type(mct_aVect)        :: nl_avp_o
@@ -304,7 +304,7 @@ contains
     character(len=*),parameter :: ffld = 'norm8wt'
     character(len=*), parameter :: afldname  = 'aream'
     character(len=128) :: msg
-    logical :: amroot, verbose, found
+    logical :: amroot, verbose, found, lnorm
     integer(IN) :: mpicom, ierr, k, natt, nsum, nfld, k_darea, lidata(2), gidata(2), i, n, &
          &         k_sarea, k_dfrac, k_sfrac
     real(r8) :: tmp, area, lo, hi, y, frac
@@ -321,6 +321,7 @@ contains
 
     call t_startf('seq_nlmap_avNormArr')
 
+    lnorm = lnorm_in
     verbose = nlmaps_verbosity > 0
     call seq_comm_setptrs(CPLID, mpicom=mpicom)
     amroot = seq_comm_iamroot(CPLID)
@@ -344,6 +345,7 @@ contains
     if (special == 0) then
        call mct_sMat_avMult(avp_i, mapper%sMatp, avp_o, VECTOR=mct_usevector)
     else
+       lnorm = .false.
        k_sarea = mct_aVect_indexRA(mapper%dom_cx_s%data, afldname)
        k_sfrac = mct_aVect_indexRA(fractions_ax(1), 'ofrac')
        if (special == 1) then
@@ -357,10 +359,13 @@ contains
        if (amroot) then
           write(logunit, '(4A,2L2,I3)') 'nlmap> ', trim(mapper%nl_mapfile), ' ', &
                trim(mapper%strategy), mapper%nl_conservative, lnorm, natt
+          if (special > 0) then
+             write(logunit, '(A,2I2)') 'nlmap> k_*', k_sfrac, k_dfrac
+          end if
        end if
     end if
 
-    if (lnorm) then
+    if (lnorm_in) then
        kf = mct_aVect_indexRA(avp_i,ffld)
        if (kf /= natt) then
           call shr_sys_abort(subname// &
@@ -387,7 +392,7 @@ contains
                 lcl_hi(k,j) = 0
              end if
           else
-             if (fractions_ax(1)%rAttr(k_sfrac,j) == 0) then
+             if (fractions_ax(1)%rAttr(k_sfrac,j) <= 0) then
                 nl_avp_o%rAttr(k,j) = 0
                 lcl_lo(k,j) = 0
                 lcl_hi(k,j) = 0
@@ -456,15 +461,17 @@ contains
           call shr_reprosum_calc(dof_masses, glbl_masses, nsum, nsum, nfld, commid=mpicom)
           deallocate(dof_masses)
        else
-          allocate(dof_masses(max(lsize_i, lsize_o), natt))
+          nsum = max(lsize_i, lsize_o)
+          allocate(dof_masses(nsum,natt))
           do j = 1,lsize_i
              area = mapper%dom_cx_s%data%rAttr(k_sarea,j)
              frac = fractions_ax(1)%rAttr(k_sfrac,j)
              if (special == 1) frac = 1 - frac
+             if (frac < 0) frac = 0
              dof_masses(j,1:natt) = avp_i%rAttr(1:natt,j)*area*frac
           end do
-          call shr_reprosum_calc(dof_masses, glbl_masses, lsize_i, lsize_i, natt, &
-               &                 commid=mpicom)
+          call shr_reprosum_calc(dof_masses(1:lsize_i,:), glbl_masses, &
+               &                 lsize_i, lsize_i, natt, commid=mpicom)
           do j = 1,lsize_o
              area = mapper%dom_cx_d%data%rAttr(k_darea,j)
              if (special == 1) then
@@ -472,10 +479,11 @@ contains
              else
                 frac = fractions_ox(1)%rAttr(k_dfrac,j)
              end if
+             if (frac < 0) frac = 0
              dof_masses(j,1:natt) = nl_avp_o%rAttr(1:natt,j)*area*frac
           end do
-          call shr_reprosum_calc(dof_masses, glbl_masses(natt+1:nfld), lsize_i, &
-               &                 lsize_i, natt, commid=mpicom)
+          call shr_reprosum_calc(dof_masses(1:lsize_o,:), glbl_masses(natt+1:nfld), &
+               &                 lsize_o, lsize_o, natt, commid=mpicom)
           deallocate(dof_masses)
        end if
 
@@ -491,6 +499,7 @@ contains
              else
                 frac = fractions_ox(1)%rAttr(k_dfrac,j)
              end if
+             if (frac < 0) frac = 0
              area = area * frac
           end if
           do k = 1,natt
@@ -582,18 +591,20 @@ contains
 
        ! Set avp_o.
        do k = 1,natt
-          call mct_aVect_getRList(mstring, k, avp_i)
-          fldname = mct_string_toChar(mstring)
-          call mct_string_clean(mstring)
-          found = .false.
-          do j = 1, nlmaps_exclude_n_fields
-             if ( trim(fldname                 (1:nlmaps_exclude_max_nchar)) == &
-                  trim(nlmaps_exclude_fields(j)(1:nlmaps_exclude_max_nchar))) then
-                found = .true.
-                exit
-             end if
-          end do
-          if (found) cycle
+          if (special == 0) then
+             call mct_aVect_getRList(mstring, k, avp_i)
+             fldname = mct_string_toChar(mstring)
+             call mct_string_clean(mstring)
+             found = .false.
+             do j = 1, nlmaps_exclude_n_fields
+                if ( trim(fldname                 (1:nlmaps_exclude_max_nchar)) == &
+                     trim(nlmaps_exclude_fields(j)(1:nlmaps_exclude_max_nchar))) then
+                   found = .true.
+                   exit
+                end if
+             end do
+             if (found) cycle
+          end if
           do j = 1,lsize_o
              avp_o%rAttr(k,j) = nl_avp_o%rAttr(k,j)
           end do
@@ -615,6 +626,7 @@ contains
                 else
                    frac = fractions_ox(1)%rAttr(k_dfrac,j)
                 end if
+                if (frac < 0) frac = 0
                 area = area * frac
              end if
              dof_masses(j,:natt) = avp_o%rAttr(:natt,j)*area
