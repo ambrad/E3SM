@@ -131,6 +131,7 @@ module seq_nlmap_mod
   use shr_infnan_mod   , only: shr_infnan_isnan, shr_infnan_isinf
   use seq_infodata_mod , only: nlmaps_exclude_max_number, nlmaps_exclude_nchar
   use perf_mod
+  use amb_data_mod
 
   implicit none
   save
@@ -283,7 +284,7 @@ contains
 
   end subroutine sort_rowcols
 
-  subroutine seq_nlmap_avNormArr(mapper, avp_i, avp_o, lnorm)
+  subroutine seq_nlmap_avNormArr(mapper, avp_i, avp_o, lnorm, special)
     ! When mapper%nl_available, the call to mct_sMat_avMult in seq_map_avNormArr
     ! can be replaced with a call to this routine. This routine applies the
     ! nonlinear map, just as mct_sMat_avMult applies a linear map.
@@ -292,6 +293,7 @@ contains
     type(mct_aVect) , intent(in)    :: avp_i  ! input
     type(mct_aVect) , intent(inout) :: avp_o  ! output
     logical         , intent(in)    :: lnorm  ! normalize at end
+    integer(IN)     , intent(in)    :: special
 
     type(mct_aVect)        :: nl_avp_o
     integer(IN)            :: j,kf
@@ -303,8 +305,9 @@ contains
     character(len=*), parameter :: afldname  = 'aream'
     character(len=128) :: msg
     logical :: amroot, verbose, found
-    integer(IN) :: mpicom, ierr, k, natt, nsum, nfld, kArea, lidata(2), gidata(2), i, n
-    real(r8) :: tmp, area, lo, hi, y
+    integer(IN) :: mpicom, ierr, k, natt, nsum, nfld, k_darea, lidata(2), gidata(2), i, n, &
+         &         k_sarea, k_dfrac, k_sfrac
+    real(r8) :: tmp, area, lo, hi, y, frac
     real(r8), allocatable, dimension(:) :: lmins, gmins, lmaxs, gmaxs, glbl_masses, gwts
     real(r8), allocatable, dimension(:,:) :: dof_masses, caas_wgt, oglims, lcl_lo, lcl_hi
     type(mct_string) :: mstring
@@ -325,9 +328,30 @@ contains
     lsize_i = mct_aVect_lsize(avp_i)
     lsize_o = mct_aVect_lsize(avp_o)
     natt = size(avp_i%rAttr, 1)
+    
+    if (mct_aVect_lSize(mapper%dom_cx_s%data) /= lsize_i) then
+       write(logunit, '(A,2I8)') 'nlmap> src sizes do not match', &
+            lsize_i, mct_aVect_lSize(mapper%dom_cx_s%data)
+       call shr_sys_abort(subname//' ERROR: nlmap> src sizes do not match')
+    end if
+    if (mct_aVect_lSize(mapper%dom_cx_d%data) /= lsize_o) then
+       write(logunit, '(A,2I8)') 'nlmap> dst sizes do not match', &
+            lsize_o, mct_aVect_lSize(mapper%dom_cx_d%data)
+       call shr_sys_abort(subname//' ERROR: nlmap> dst sizes do not match')
+    end if
 
     call mct_aVect_init(nl_avp_o, avp_o, lsize=lsize_o)
-    call mct_sMat_avMult(avp_i, mapper%sMatp, avp_o, VECTOR=mct_usevector)
+    if (special == 0) then
+       call mct_sMat_avMult(avp_i, mapper%sMatp, avp_o, VECTOR=mct_usevector)
+    else
+       k_sarea = mct_aVect_indexRA(mapper%dom_cx_s%data, afldname)
+       k_sfrac = mct_aVect_indexRA(fractions_ax(1), 'ofrac')
+       if (special == 1) then
+          k_dfrac = mct_aVect_indexRA(fractions_lx(1), 'lfrin')
+       else
+          k_dfrac = mct_aVect_indexRA(fractions_ox(1), 'ofrac')
+       end if
+    end if
     
     if (verbose) then
        if (amroot) then
@@ -355,11 +379,19 @@ contains
     ! local reduction in order to one, not a wrong value.
     do j = 1,lsize_o
        do k = 1,natt
-          if (avp_o%rAttr(k,j) == 0) then
-             nl_avp_o%rAttr(k,j) = 0
-             ! Need to set bounds to 0 so that the mass is not modified.
-             lcl_lo(k,j) = 0
-             lcl_hi(k,j) = 0
+          if (special == 0) then
+             if (avp_o%rAttr(k,j) == 0) then
+                nl_avp_o%rAttr(k,j) = 0
+                ! Need to set bounds to 0 so that the mass is not modified.
+                lcl_lo(k,j) = 0
+                lcl_hi(k,j) = 0
+             end if
+          else
+             if (fractions_ax(1)%rAttr(k_sfrac,j) == 0) then
+                nl_avp_o%rAttr(k,j) = 0
+                lcl_lo(k,j) = 0
+                lcl_hi(k,j) = 0
+             end if
           end if
        end do
     end do
@@ -395,8 +427,10 @@ contains
                 lmaxs(k) = max(lmaxs(k), tmp)
              end do
           end do
-          call mpi_allreduce(lmins, oglims(:,1), natt, MPI_DOUBLE_PRECISION, MPI_MIN, mpicom, ierr)
-          call mpi_allreduce(lmaxs, oglims(:,2), natt, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, ierr)
+          call mpi_allreduce(lmins, oglims(:,1), natt, MPI_DOUBLE_PRECISION, MPI_MIN, &
+               &             mpicom, ierr)
+          call mpi_allreduce(lmaxs, oglims(:,2), natt, MPI_DOUBLE_PRECISION, MPI_MAX, &
+               &             mpicom, ierr)
           if (amroot) then
              do k = 1,natt
                 write(logunit, '(a,i2,a,i2,es23.15,es23.15)') &
@@ -406,31 +440,59 @@ contains
           deallocate(oglims)
        end if
        deallocate(lmins, lmaxs)
-
+       
        ! Compute global mass in low-order and high-order fields.
-       kArea = mct_aVect_indexRA(mapper%dom_cx_d%data, afldname)
-       nsum = lsize_o
+       k_darea = mct_aVect_indexRA(mapper%dom_cx_d%data, afldname)
        nfld = 2*natt
-       allocate(dof_masses(nsum,nfld), glbl_masses(nfld)) ! low- and high-order
-       if (mct_aVect_lSize(mapper%dom_cx_d%data) /= lsize_o) then
-          write(logunit, '(A,2I8)') 'nlmap> sizes do not match', &
-               lsize_o, mct_aVect_lSize(mapper%dom_cx_d%data)
-          call shr_sys_abort(subname//' ERROR: nlmap> sizes do not match')
+       allocate(glbl_masses(nfld))
+       if (special == 0) then
+          nsum = lsize_o
+          allocate(dof_masses(nsum,nfld)) ! low- and high-order
+          do j = 1,lsize_o
+             area = mapper%dom_cx_d%data%rAttr(k_darea,j)
+             dof_masses(j,     1:natt) =    avp_o%rAttr(1:natt,j)*area
+             dof_masses(j,natt+1:nfld) = nl_avp_o%rAttr(1:natt,j)*area
+          end do
+          call shr_reprosum_calc(dof_masses, glbl_masses, nsum, nsum, nfld, commid=mpicom)
+          deallocate(dof_masses)
+       else
+          allocate(dof_masses(max(lsize_i, lsize_o), natt))
+          do j = 1,lsize_i
+             area = mapper%dom_cx_s%data%rAttr(k_sarea,j)
+             frac = fractions_ax(1)%rAttr(k_sfrac,j)
+             if (special == 1) frac = 1 - frac
+             dof_masses(j,1:natt) = avp_i%rAttr(1:natt,j)*area*frac
+          end do
+          call shr_reprosum_calc(dof_masses, glbl_masses, lsize_i, lsize_i, natt, &
+               &                 commid=mpicom)
+          do j = 1,lsize_o
+             area = mapper%dom_cx_d%data%rAttr(k_darea,j)
+             if (special == 1) then
+                frac = fractions_lx(1)%rAttr(k_dfrac,j)
+             else
+                frac = fractions_ox(1)%rAttr(k_dfrac,j)
+             end if
+             dof_masses(j,1:natt) = nl_avp_o%rAttr(1:natt,j)*area*frac
+          end do
+          call shr_reprosum_calc(dof_masses, glbl_masses(natt+1:nfld), lsize_i, &
+               &                 lsize_i, natt, commid=mpicom)
+          deallocate(dof_masses)
        end if
-       do j = 1,lsize_o
-          area = mapper%dom_cx_d%data%rAttr(kArea,j)
-          dof_masses(j,     1:natt) =    avp_o%rAttr(1:natt,j)*area
-          dof_masses(j,natt+1:nfld) = nl_avp_o%rAttr(1:natt,j)*area
-       end do
-       call shr_reprosum_calc(dof_masses, glbl_masses, nsum, nsum, nfld, commid=mpicom)
-       deallocate(dof_masses)
 
        ! Check solution against local bounds.
        nsum = lsize_o
        nfld = 3*natt
        allocate(caas_wgt(nsum,nfld)) ! dm, cap low, cap high
        do j = 1,lsize_o
-          area = mapper%dom_cx_d%data%rAttr(kArea,j)
+          area = mapper%dom_cx_d%data%rAttr(k_darea,j)
+          if (special > 0) then
+             if (special == 1) then
+                frac = fractions_lx(1)%rAttr(k_dfrac,j)
+             else
+                frac = fractions_ox(1)%rAttr(k_dfrac,j)
+             end if
+             area = area * frac
+          end if
           do k = 1,natt
              y = nl_avp_o%rAttr(k,j)
              lo = lcl_lo(k,j)
@@ -546,7 +608,16 @@ contains
           nfld = 2*natt
           allocate(dof_masses(nsum,nfld), gwts(nfld))
           do j = 1,lsize_o
-             dof_masses(j,:natt) = avp_o%rAttr(:natt,j)*mapper%dom_cx_d%data%rAttr(kArea,j)
+             area = mapper%dom_cx_d%data%rAttr(k_darea,j)
+             if (special > 0) then
+                if (special == 1) then
+                   frac = fractions_lx(1)%rAttr(k_dfrac,j)
+                else
+                   frac = fractions_ox(1)%rAttr(k_dfrac,j)
+                end if
+                area = area * frac
+             end if
+             dof_masses(j,:natt) = avp_o%rAttr(:natt,j)*area
              ! Sum |cell mass|. If all cell masses are >= 0, then the abs does
              ! not matter; if the signs are mixed, we use this quantity to
              ! compute a meaningful relative error.
@@ -566,7 +637,8 @@ contains
                       msg = ' ALARM'
                    end if
                    write(logunit, '(a,i2,a,i2,es23.15,es23.15,es10.2,a)') &
-                        'nlmap> fin-mass ', k, '/', natt, glbl_masses(k), gwts(k), tmp, trim(msg)
+                        'nlmap> fin-mass ', k, '/', natt, glbl_masses(k), gwts(k), &
+                        tmp, trim(msg)
                 end if
              end do
           end if
@@ -582,8 +654,10 @@ contains
                 lmaxs(k) = max(lmaxs(k), tmp)
              end do
           end do
-          call mpi_allreduce(lmins, oglims(:,1), natt, MPI_DOUBLE_PRECISION, MPI_MIN, mpicom, ierr)
-          call mpi_allreduce(lmaxs, oglims(:,2), natt, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, ierr)
+          call mpi_allreduce(lmins, oglims(:,1), natt, MPI_DOUBLE_PRECISION, MPI_MIN, &
+               &             mpicom, ierr)
+          call mpi_allreduce(lmaxs, oglims(:,2), natt, MPI_DOUBLE_PRECISION, MPI_MAX, &
+               &             mpicom, ierr)
           if (amroot) then
              do k = 1,natt
                 if (oglims(k,1) >= gmins(k) .and. oglims(k,2) <= gmaxs(k)) then

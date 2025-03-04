@@ -270,7 +270,7 @@ contains
   !=======================================================================
 
   subroutine seq_map_map( mapper, av_s, av_d, fldlist, norm, avwts_s, avwtsfld_s, &
-       string, msgtag, omit_nonlinear )
+       string, msgtag, omit_nonlinear, special )
 
     implicit none
     !-----------------------------------------------------
@@ -287,10 +287,12 @@ contains
     character(len=*),intent(in),optional :: string
     integer(IN)     ,intent(in),optional :: msgtag
     logical         ,intent(in),optional :: omit_nonlinear
+    integer(IN)     ,intent(in),optional :: special
     !
     ! Local Variables
     !
     logical :: lnorm, lomit_nonlinear
+    integer(IN) :: lspecial
     integer(IN),save :: ltag    ! message tag for rearrange
     character(len=*),parameter :: subname = "(seq_map_map) "
     !-----------------------------------------------------
@@ -308,6 +310,8 @@ contains
     if (present(omit_nonlinear)) then
        lomit_nonlinear = omit_nonlinear
     endif
+    lspecial = 0
+    if (present(special)) lspecial = special
 
     if (present(msgtag)) then
        ltag = msgtag
@@ -353,18 +357,18 @@ contains
        if (present(avwts_s)) then
           if (present(fldlist)) then
              call seq_map_avNorm(mapper, av_s, av_d, avwts_s, trim(avwtsfld_s), &
-                  rList=fldlist, norm=lnorm, omit_nonlinear=lomit_nonlinear)
+                  rList=fldlist, norm=lnorm, omit_nonlinear=lomit_nonlinear, special=lspecial)
           else
              call seq_map_avNorm(mapper, av_s, av_d, avwts_s, trim(avwtsfld_s), &
-                  norm=lnorm, omit_nonlinear=lomit_nonlinear)
+                  norm=lnorm, omit_nonlinear=lomit_nonlinear, special=lspecial)
           endif
        else
           if (present(fldlist)) then
              call seq_map_avNorm(mapper, av_s, av_d, rList=fldlist, norm=lnorm, &
-                  omit_nonlinear=lomit_nonlinear)
+                  omit_nonlinear=lomit_nonlinear, special=lspecial)
           else
              call seq_map_avNorm(mapper, av_s, av_d, norm=lnorm, &
-                  omit_nonlinear=lomit_nonlinear)
+                  omit_nonlinear=lomit_nonlinear, special=lspecial)
           endif
        endif
     end if
@@ -790,7 +794,7 @@ contains
   !=======================================================================
 
   subroutine seq_map_avNormAvF(mapper, av_i, av_o, avf_i, avfifld, rList, norm, &
-       omit_nonlinear)
+       omit_nonlinear, special)
 
     implicit none
     !-----------------------------------------------------
@@ -805,8 +809,9 @@ contains
     character(len=*), intent(in),optional :: rList   ! fields list
     logical         , intent(in),optional :: norm    ! normalize at end
     logical         , intent(in),optional :: omit_nonlinear
+    integer(IN)     , intent(in),optional :: special
     !
-    integer(IN) :: lsize_i, lsize_f, kf, j
+    integer(IN) :: lsize_i, lsize_f, kf, j, lspecial
     real(r8),allocatable :: frac_i(:)
     logical :: lnorm, lomit_nonlinear
     character(*),parameter :: subName = '(seq_map_avNormAvF) '
@@ -821,6 +826,8 @@ contains
     if (present(omit_nonlinear)) then
        lomit_nonlinear = omit_nonlinear
     endif
+    lspecial = 0
+    if (present(special)) lspecial = special
 
     lsize_i = mct_aVect_lsize(av_i)
     lsize_f = mct_aVect_lsize(avf_i)
@@ -839,10 +846,10 @@ contains
 
     if (present(rList)) then
        call seq_map_avNormArr(mapper, av_i, av_o, frac_i, rList=rList, norm=lnorm, &
-            omit_nonlinear=lomit_nonlinear)
+            omit_nonlinear=lomit_nonlinear, special=lspecial)
     else
        call seq_map_avNormArr(mapper, av_i, av_o, frac_i, norm=lnorm, &
-            omit_nonlinear=lomit_nonlinear)
+            omit_nonlinear=lomit_nonlinear, special=lspecial)
     endif
 
     deallocate(frac_i)
@@ -851,7 +858,7 @@ contains
 
   !=======================================================================
 
-  subroutine seq_map_avNormArr(mapper, av_i, av_o, norm_i, rList, norm, omit_nonlinear)
+  subroutine seq_map_avNormArr(mapper, av_i, av_o, norm_i, rList, norm, omit_nonlinear, special)
 
     implicit none
     !-----------------------------------------------------
@@ -865,11 +872,12 @@ contains
     character(len=*), intent(in), optional :: rList ! fields list
     logical         , intent(in), optional :: norm  ! normalize at end
     logical         , intent(in), optional :: omit_nonlinear ! use nonlinear map if available
+    integer(IN)     , intent(in), optional :: special
     !
     ! Local variables
     !
     type(mct_aVect)        :: avp_i , avp_o
-    integer(IN)            :: j,kf
+    integer(IN)            :: j,kf,lspecial
     integer(IN)            :: lsize_i,lsize_o
     real(r8)               :: normval
     character(CX)          :: lrList,appnd
@@ -885,6 +893,8 @@ contains
           if (omit_nonlinear) use_nonlinear_map = .false.
        end if
     end if
+    lspecial = 0
+    if (present(special)) lspecial = special
 
     lsize_i = mct_aVect_lsize(av_i)
     lsize_o = mct_aVect_lsize(av_o)
@@ -944,7 +954,7 @@ contains
     else
        ! MCT based SMM
        if (use_nonlinear_map) then
-          call seq_nlmap_avNormArr(mapper, avp_i, avp_o, norm)
+          call seq_nlmap_avNormArr(mapper, avp_i, avp_o, norm, lspecial)
        else
           call mct_sMat_avMult(avp_i, mapper%sMatp, avp_o, VECTOR=mct_usevector)
        end if
