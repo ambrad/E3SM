@@ -396,7 +396,7 @@ contains
        if (special > 0 .and. zero) n = n + 1
        do k = 1,natt
           if (special == 0) zero = avp_o%rAttr(k,j) == 0
-          if (zero .or. avp_o%rAttr(k,j) == 0) then !amb
+          if (zero) then ! .or. avp_o%rAttr(k,j) == 0) then !amb
              nl_avp_o%rAttr(k,j) = 0
              ! Need to set bounds to 0 so that the mass is not modified.
              lcl_lo(k,j) = 0
