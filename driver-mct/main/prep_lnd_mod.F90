@@ -392,7 +392,7 @@ contains
     call t_drvstartf (trim(timer),barrier=mpicom_CPLID)
     do eai = 1,num_inst_atm
        a2x_ax => component_get_c2x_cx(atm(eai))
-       call seq_map_map(mapper_Fa2l, a2x_ax, a2x_lx(eai), norm=.true., special=1)
+       call seq_map_map(mapper_Fa2l, a2x_ax, a2x_lx(eai), norm=.false., special=1)
     enddo
     call t_drvstopf  (trim(timer))
 

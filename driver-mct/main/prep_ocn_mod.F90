@@ -1297,7 +1297,7 @@ contains
 
        call seq_map_map(mapper_Sa2o, a2x_ax, a2x_ox(eai), fldlist=seq_flds_a2x_states, norm=.true.)
 
-       call seq_map_map(mapper_Fa2o, a2x_ax, a2x_ox(eai), fldlist=seq_flds_a2x_fluxes, norm=.true., special=2)
+       call seq_map_map(mapper_Fa2o, a2x_ax, a2x_ox(eai), fldlist=seq_flds_a2x_fluxes, norm=.false., special=2)
 
 #ifdef COMPARE_TO_NUOPC
        call seq_map_mapvect(mapper_Va2o, vect_map, a2x_ax, a2x_ox(eai), 'Sa_u', 'Sa_v', norm=.true.)

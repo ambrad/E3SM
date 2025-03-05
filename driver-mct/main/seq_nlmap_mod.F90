@@ -345,8 +345,6 @@ contains
     if (special == 0) then
        call mct_sMat_avMult(avp_i, mapper%sMatp, avp_o, VECTOR=mct_usevector)
     else
-       call mct_sMat_avMult(avp_i, mapper%sMatp, avp_o, VECTOR=mct_usevector) !amb
-       !amb lnorm = .false.
        k_sarea = mct_aVect_indexRA(mapper%dom_cx_s%data, afldname)
        k_sfrac = mct_aVect_indexRA(fractions_ax(1), 'lfrac')
        if (special == 1) then
@@ -356,6 +354,11 @@ contains
           k_dfrac1 = mct_aVect_indexRA(fractions_ox(1), 'ofrac')
           k_dfrac2 = mct_aVect_indexRA(fractions_ox(1), 'ifrac')
        end if
+       if (lnorm_in) then
+          ! Need this to satisfy lnorm calcs in calling routine.
+          call mct_sMat_avMult(avp_i, mapper%sMatp, avp_o, VECTOR=mct_usevector)
+       end if
+       lnorm = .false.
     end if
     
     if (verbose) then
@@ -378,6 +381,36 @@ contains
        natt = natt - 1
     end if
     
+    if (special > 0 .and. lnorm_in .and. verbose) then
+       lrdata(1) = 10; lrdata(2) = -10
+       do j = 1,lsize_i
+          frac = fractions_ax(1)%rAttr(k_sfrac,j)
+          if (special == 2) frac = 1 - frac
+          if (frac > 0) then
+             lrdata(1) = min(lrdata(1), avp_i%rAttr(natt+1,j))
+             lrdata(2) = max(lrdata(2), avp_i%rAttr(natt+1,j))
+          end if
+       end do
+       call mpi_allreduce(lrdata(1:1), grdata(1:1), 1, MPI_DOUBLE_PRECISION, MPI_MIN, mpicom, ierr)
+       call mpi_allreduce(lrdata(2:2), grdata(2:2), 1, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, ierr)
+       if (amroot) write(logunit, '(a,2es23.15)') 'nlmap> lnorm i min/max', grdata(1), grdata(2)
+       lrdata(1) = 10; lrdata(2) = -10
+       do j = 1,lsize_o
+          if (special == 1) then
+             frac = fractions_lx(1)%rAttr(k_dfrac1,j)
+          else
+             frac = fractions_ox(1)%rAttr(k_dfrac1,j) + fractions_ox(1)%rAttr(k_dfrac2,j)
+          end if
+          if (frac > 0) then
+             lrdata(1) = min(lrdata(1), avp_o%rAttr(natt+1,j))
+             lrdata(2) = max(lrdata(2), avp_o%rAttr(natt+1,j))
+          end if
+       end do
+       call mpi_allreduce(lrdata(1:1), grdata(1:1), 1, MPI_DOUBLE_PRECISION, MPI_MIN, mpicom, ierr)
+       call mpi_allreduce(lrdata(2:2), grdata(2:2), 1, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, ierr)
+       if (amroot) write(logunit, '(a,2es23.15)') 'nlmap> lnorm o min/max', grdata(1), grdata(2)
+    end if
+    
     allocate(lcl_lo(natt,lsize_o), lcl_hi(natt,lsize_o))
     call sMat_avMult_and_calc_bounds(avp_i, mapper%nl_sMatp, lnorm, natt, &
          &                           nl_avp_o, lcl_lo, lcl_hi)
@@ -396,7 +429,7 @@ contains
        if (special > 0 .and. zero) n = n + 1
        do k = 1,natt
           if (special == 0) zero = avp_o%rAttr(k,j) == 0
-          if (zero) then ! .or. avp_o%rAttr(k,j) == 0) then !amb
+          if (zero) then
              nl_avp_o%rAttr(k,j) = 0
              ! Need to set bounds to 0 so that the mass is not modified.
              lcl_lo(k,j) = 0
@@ -610,8 +643,15 @@ contains
 
        ! Clip for numerics, just against the global extrema.
        do j = 1,lsize_o
+          if (special == 1) then
+             if (fractions_lx(1)%rAttr(k_dfrac1,j) <= 0) cycle
+          elseif (special == 2) then
+             if (fractions_ox(1)%rAttr(k_dfrac1,j) + fractions_ox(1)%rAttr(k_dfrac2,j) <= 0) cycle
+          end if
           do k = 1,natt
-             if (avp_o%rAttr(k,j) == 0) cycle ! 0-mask
+             if (special == 0) then
+                if (avp_o%rAttr(k,j) == 0) cycle ! 0-mask
+             end if
              nl_avp_o%rAttr(k,j) = max(gmins(k), min(gmaxs(k), nl_avp_o%rAttr(k,j)))
           end do
        end do
