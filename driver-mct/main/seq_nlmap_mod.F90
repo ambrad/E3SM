@@ -649,7 +649,7 @@ contains
 
        ! Set avp_o.
        do k = 1,natt
-          if (special == 0) then
+          if (special == 0 .or. verbose) then
              call mct_aVect_getRList(mstring, k, avp_i)
              fldname = mct_string_toChar(mstring)
              call mct_string_clean(mstring)
@@ -661,7 +661,11 @@ contains
                    exit
                 end if
              end do
-             if (found) cycle
+             if (special == 0 .and. found) cycle
+             if (found .and. amroot .and. verbose) then
+                write(logunit, '(2a,4i)') &
+                     'nlmap> field ', trim(fldname(1:nlmaps_exclude_max_nchar)), k
+             end if
           end if
           do j = 1,lsize_o
              avp_o%rAttr(k,j) = nl_avp_o%rAttr(k,j)
