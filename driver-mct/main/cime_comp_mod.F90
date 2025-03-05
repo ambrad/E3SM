@@ -3174,6 +3174,8 @@ contains
           endif
        end if
 
+       if (do_budgets) call cime_run_calc_budgets2() !amb
+
        !----------------------------------------------------------
        !| RUN ATM MODEL
        !----------------------------------------------------------
@@ -3222,9 +3224,9 @@ contains
        !----------------------------------------------------------
        !| Budget with new fractions
        !----------------------------------------------------------
-       if (do_budgets) then
-          call cime_run_calc_budgets2()
-       endif
+       !if (do_budgets) then
+       !   call cime_run_calc_budgets2()
+       !endif
 
        !----------------------------------------------------------
        !| OCN RECV-POST (NOT cesm1_mod_tight or nuopc_tight)

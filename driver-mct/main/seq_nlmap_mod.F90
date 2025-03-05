@@ -313,6 +313,8 @@ contains
     type(mct_string) :: mstring
     character(CL) :: fldname
 
+    !integer, parameter :: special = 0
+
     ! BFB speedups to do:
     ! * Combine matvecs into one routine that shares the X->X' comm.
     ! * Combine the min/max reductions using a custom reduce.
@@ -464,6 +466,15 @@ contains
        end do
        call mpi_allreduce(lrdata, grdata, 2, MPI_DOUBLE_PRECISION, MPI_SUM, mpicom, ierr)
        if (amroot) write(logunit, '(a,2es23.15)') 'nlmap> fracsum s,a', grdata(1), grdata(2)
+       lrdata = 0
+       n = 1
+       if (special == 1) n = 15
+       do j = 1,lsize_i
+          area = mapper%dom_cx_s%data%rAttr(k_sarea,j)
+          lrdata(1) = lrdata(1) + area*(avp_i%rAttr(n,j) + avp_i%rAttr(n+1,j))
+       end do
+       call mpi_allreduce(lrdata, grdata, 1, MPI_DOUBLE_PRECISION, MPI_SUM, mpicom, ierr)
+       if (amroot) write(logunit, '(a,es23.15)') 'nlmap> wrain', grdata(1)
     end if
 
     if (mapper%nl_conservative) then
