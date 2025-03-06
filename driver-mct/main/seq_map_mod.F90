@@ -31,6 +31,8 @@ module seq_map_mod
   ! Public interfaces
   !--------------------------------------------------------------------------
 
+  public :: seq_map_setopts         ! cpl pes
+
   public :: seq_map_init_rcfile     ! cpl pes
   public :: seq_map_init_rearrolap  ! cpl pes
   public :: seq_map_initvect        ! cpl pes
@@ -40,7 +42,6 @@ module seq_map_mod
 
   ! For exaction conservation in atm-to-surface flux mapping when the surface
   ! grids overlap.
-  public :: seq_map_setopts         ! cpl pes
   public :: seq_map_init_a2oi_cons  ! cpl pes
   public :: seq_map_init_a2l_cons   ! cpl pes
 
@@ -217,7 +218,7 @@ contains
     type(seq_map), pointer, intent(inout) :: mapper ! Fa2o
     type(mct_aVect)       , intent(in)    :: fractions_ax(:), fractions_ox(:)
 
-    integer :: k_sarea, k_sfrac, k_dfrac1, k_dfrac2, lsize_s, lsize_d, j
+    integer(IN) :: k_sarea, k_sfrac, k_dfrac1, k_dfrac2, lsize_s, lsize_d, j
 
     k_sarea = mct_aVect_indexRA(mapper%dom_cx_s%data, 'aream')
     k_sfrac = mct_aVect_indexRA(fractions_ax(1), 'lfrac')
@@ -245,7 +246,11 @@ contains
     type(mct_aVect)       , intent(in)    :: fractions_ax(:), fractions_lx(:)
     logical               , intent(in)    :: samegrid_al
 
-    integer :: k_sarea, k_sfrac, k_dfrac, lsize_s, lsize_d, j
+    integer(IN) :: k_sarea, k_sfrac, k_dfrac, k_darea, lsize_s, lsize_d, j, ne, irow, &
+         &     icol, iwgt, row, col, mpicom
+    real(R8) :: frac, area, wgt
+    real(R8), allocatable :: den(:)
+    type(mct_sMatp) :: sMatp
 
     k_sarea = mct_aVect_indexRA(mapper%dom_cx_s%data, 'aream')
     k_sfrac = mct_aVect_indexRA(fractions_ax(1), 'lfrac')
@@ -267,6 +272,30 @@ contains
        mapper%frac_d(j) = fractions_lx(1)%rAttr(k_dfrac,j)
     end do
 
+    k_darea = mct_aVect_indexRA(mapper%dom_cx_d%data, 'aream')
+    allocate(mapper%scale_s(lsize_s), den(lsize_s))
+    mapper%scale_s = 0
+    call seq_comm_setptrs(CPLID, mpicom=mpicom)
+    call shr_mct_sMatPInitnc(sMatp, mapper%gsMap_s, mapper%gsMap_d, &
+         &                   trim(mapper%mapfile), 'Y', mpicom)
+    ne = mct_sMat_lsize(sMatp%Matrix)
+    irow = mct_sMat_indexIA(sMatp%Matrix, 'lrow')
+    icol = mct_sMat_indexIA(sMatp%Matrix, 'lcol')
+    iwgt = mct_sMat_indexRA(sMatp%Matrix, 'weight')
+    do j = 1, ne
+       row = sMatp%Matrix%data%iAttr(irow,j)
+       col = sMatp%Matrix%data%iAttr(icol,j)
+       wgt = sMatp%Matrix%data%rAttr(iwgt,j)
+       area = mapper%dom_cx_d%data%rAttr(k_darea,row)
+       frac = mapper%frac_d(row)
+       mapper%scale_s(col) = mapper%scale_s(col) + area*wgt
+       den(col) = den(col) + frac*area*wgt
+    end do
+    do j = 1, lsize_s
+       if (den(j) > 0) mapper%scale_s(j) = mapper%scale_s(j)/den(j)
+    end do
+    deallocate(den)
+    call mct_sMatp_clean(sMatp)
   end subroutine seq_map_init_a2l_cons
 
   !=======================================================================
