@@ -89,8 +89,7 @@ contains
 
   !================================================================================================
 
-  subroutine prep_lnd_init(infodata, atm_c2_lnd, rof_c2_lnd, glc_c2_lnd, iac_c2_lnd, &
-       fractions_ax, fractions_lx)
+  subroutine prep_lnd_init(infodata, atm_c2_lnd, rof_c2_lnd, glc_c2_lnd, iac_c2_lnd)
 
     !---------------------------------------------------------------
     ! Description
@@ -103,8 +102,6 @@ contains
     logical                 , intent(in)    :: rof_c2_lnd ! .true.  => rof to lnd coupling on
     logical                 , intent(in)    :: glc_c2_lnd ! .true.  => glc to lnd coupling on
     logical                 , intent(in)    :: iac_c2_lnd ! .true.  => iac to lnd coupling on
-    type(mct_aVect)         , intent(in)    :: fractions_ax(:)
-    type(mct_aVect)         , intent(in)    :: fractions_lx(:)
     !
     ! Local Variables
     integer                  :: lsize_l

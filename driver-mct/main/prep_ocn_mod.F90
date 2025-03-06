@@ -120,7 +120,7 @@ contains
   !================================================================================================
 
   subroutine prep_ocn_init(infodata, atm_c2_ocn, atm_c2_ice, ice_c2_ocn, rof_c2_ocn, &
-       wav_c2_ocn, glc_c2_ocn, glcshelf_c2_ocn, fractions_ax, fractions_ox)
+       wav_c2_ocn, glc_c2_ocn, glcshelf_c2_ocn)
 
     !---------------------------------------------------------------
     ! Description
@@ -136,7 +136,6 @@ contains
     logical                 , intent(in)    :: wav_c2_ocn ! .true.=>wav to ocn coupling on
     logical                 , intent(in)    :: glc_c2_ocn ! .true.=>glc to ocn coupling on
     logical                 , intent(in)    :: glcshelf_c2_ocn ! .true.=>glc ice shelf to ocn coupling on
-    type(mct_aVect)         , intent(in)    :: fractions_ax(:), fractions_ox(:)
     !
     ! Local Variables
     logical                  :: esmf_map_flag  ! .true. => use esmf for mapping

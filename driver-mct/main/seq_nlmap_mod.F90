@@ -132,7 +132,6 @@ module seq_nlmap_mod
   use shr_infnan_mod   , only: shr_infnan_isnan, shr_infnan_isinf
   use seq_infodata_mod , only: nlmaps_exclude_max_number, nlmaps_exclude_nchar
   use perf_mod
-  use amb_data_mod
 
   implicit none
   save
