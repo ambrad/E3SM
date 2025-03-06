@@ -305,10 +305,9 @@ contains
     character(len=*), parameter :: afldname  = 'aream'
     character(len=128) :: msg
     logical :: amroot, verbose, found, lnorm, zero
-    integer(IN) :: mpicom, ierr, k, natt, nsum, nfld, k_darea, lidata(3), gidata(3), i, n, &
-         &         k_sarea, k_dfrac1, k_dfrac2, k_sfrac
+    integer(IN) :: mpicom, ierr, k, natt, nsum, nfld, k_sarea, k_darea, i, n, lidata(3), gidata(3)
     real(r8) :: tmp, area, lo, hi, y, frac, lrdata(3), grdata(3)
-    real(r8), allocatable, dimension(:) :: lmins, gmins, lmaxs, gmaxs, glbl_masses, gwts, sfrac, dfrac
+    real(r8), allocatable, dimension(:) :: lmins, gmins, lmaxs, gmaxs, glbl_masses, gwts
     real(r8), allocatable, dimension(:,:) :: dof_masses, caas_wgt, oglims, lcl_lo, lcl_hi
     type(mct_string) :: mstring
     character(CL) :: fldname
@@ -347,29 +346,6 @@ contains
     if (special == 0) then
        call mct_sMat_avMult(avp_i, mapper%sMatp, avp_o, VECTOR=mct_usevector)
     else
-       k_sarea = mct_aVect_indexRA(mapper%dom_cx_s%data, afldname)
-       k_sfrac = mct_aVect_indexRA(fractions_ax(1), 'lfrac')
-       if (special == 1) then
-          k_dfrac1 = mct_aVect_indexRA(fractions_lx(1), 'lfrin')
-          k_dfrac2 = -1
-       else
-          k_dfrac1 = mct_aVect_indexRA(fractions_ox(1), 'ofrac')
-          k_dfrac2 = mct_aVect_indexRA(fractions_ox(1), 'ifrac')
-       end if
-       allocate(sfrac(lsize_i), dfrac(lsize_o))
-       do j = 1,lsize_i
-          frac = fractions_ax(1)%rAttr(k_sfrac,j)
-          if (special == 2) frac = 1 - frac
-          sfrac(j) = frac
-       end do
-       do j = 1,lsize_o
-          if (special == 1) then
-             frac = fractions_lx(1)%rAttr(k_dfrac1,j)
-          else
-             frac = fractions_ox(1)%rAttr(k_dfrac1,j) + fractions_ox(1)%rAttr(k_dfrac2,j)
-          end if
-          dfrac(j) = frac
-       end do
        if (lnorm_in) then
           ! Need this to satisfy lnorm calcs in calling routine.
           call mct_sMat_avMult(avp_i, mapper%sMatp, avp_o, VECTOR=mct_usevector)
@@ -382,7 +358,7 @@ contains
           write(logunit, '(4A,2L2,I3)') 'nlmap> ', trim(mapper%nl_mapfile), ' ', &
                trim(mapper%strategy), mapper%nl_conservative, lnorm, natt
           if (special > 0) then
-             write(logunit, '(A,4I2)') 'nlmap> special', special, k_sfrac, k_dfrac1, k_dfrac2
+             write(logunit, '(A,4I2)') 'nlmap> special', special
           end if
        end if
     end if
@@ -400,7 +376,7 @@ contains
     if (special > 0 .and. lnorm_in .and. verbose) then
        lrdata(1) = 10; lrdata(2) = -10
        do j = 1,lsize_i
-          frac = sfrac(j)
+          frac = mapper%frac_s(j)
           if (frac > 0) then
              lrdata(1) = min(lrdata(1), avp_i%rAttr(natt+1,j))
              lrdata(2) = max(lrdata(2), avp_i%rAttr(natt+1,j))
@@ -411,7 +387,7 @@ contains
        if (amroot) write(logunit, '(a,2es23.15)') 'nlmap> lnorm i min/max', grdata(1), grdata(2)
        lrdata(1) = 10; lrdata(2) = -10
        do j = 1,lsize_o
-          frac = dfrac(j)
+          frac = mapper%frac_d(j)
           if (frac > 0) then
              lrdata(1) = min(lrdata(1), avp_o%rAttr(natt+1,j))
              lrdata(2) = max(lrdata(2), avp_o%rAttr(natt+1,j))
@@ -433,7 +409,7 @@ contains
     do j = 1,lsize_o
        zero = .false.
        if (special > 0) then
-          zero = dfrac(j) <= 0
+          zero = mapper%frac_d(j) <= 0
        end if
        if (special > 0 .and. zero) n = n + 1
        do k = 1,natt
@@ -453,28 +429,20 @@ contains
        call mpi_allreduce(lidata, gidata, 3, MPI_INTEGER, MPI_SUM, mpicom, ierr)
        if (amroot) write(logunit, '(a,3i8)') 'nlmap> nzero', gidata(1), gidata(2), gidata(3)
 
+       k_sarea = mct_aVect_indexRA(mapper%dom_cx_s%data, afldname)
        k_darea = mct_aVect_indexRA(mapper%dom_cx_d%data, afldname)
        lrdata(1) = 0
        do j = 1,lsize_o
-          frac = dfrac(j)
+          frac = mapper%frac_d(j)
           lrdata(1) = lrdata(1) + frac*mapper%dom_cx_d%data%rAttr(k_darea,j)
        end do
        lrdata(2) = 0
        do j = 1,lsize_i
-          frac = sfrac(j)
+          frac = mapper%frac_s(j)
           lrdata(2) = lrdata(2) + frac*mapper%dom_cx_s%data%rAttr(k_sarea,j)
        end do
        call mpi_allreduce(lrdata, grdata, 2, MPI_DOUBLE_PRECISION, MPI_SUM, mpicom, ierr)
        if (amroot) write(logunit, '(a,2es23.15)') 'nlmap> fracsum s,a', grdata(1), grdata(2)
-       lrdata = 0
-       n = 1
-       if (special == 1) n = 15
-       do j = 1,lsize_i
-          area = mapper%dom_cx_s%data%rAttr(k_sarea,j)
-          lrdata(1) = lrdata(1) + area*(avp_i%rAttr(n,j) + avp_i%rAttr(n+1,j))
-       end do
-       call mpi_allreduce(lrdata, grdata, 1, MPI_DOUBLE_PRECISION, MPI_SUM, mpicom, ierr)
-       if (amroot) write(logunit, '(a,es23.15)') 'nlmap> wrain', grdata(1)
     end if
 
     if (mapper%nl_conservative) then
@@ -523,6 +491,7 @@ contains
        deallocate(lmins, lmaxs)
        
        ! Compute global mass in low-order and high-order fields.
+       k_sarea = mct_aVect_indexRA(mapper%dom_cx_s%data, afldname)
        k_darea = mct_aVect_indexRA(mapper%dom_cx_d%data, afldname)
        nfld = 2*natt
        allocate(glbl_masses(nfld))
@@ -541,14 +510,14 @@ contains
           allocate(dof_masses(nsum,natt))
           do j = 1,lsize_i
              area = mapper%dom_cx_s%data%rAttr(k_sarea,j)
-             frac = sfrac(j)
+             frac = mapper%frac_s(j)
              dof_masses(j,1:natt) = avp_i%rAttr(1:natt,j)*area*frac
           end do
           call shr_reprosum_calc(dof_masses(1:lsize_i,:), glbl_masses, &
                &                 lsize_i, lsize_i, natt, commid=mpicom)
           do j = 1,lsize_o
              area = mapper%dom_cx_d%data%rAttr(k_darea,j)
-             frac = dfrac(j)
+             frac = mapper%frac_d(j)
              dof_masses(j,1:natt) = nl_avp_o%rAttr(1:natt,j)*area*frac
           end do
           call shr_reprosum_calc(dof_masses(1:lsize_o,:), glbl_masses(natt+1:nfld), &
@@ -563,7 +532,7 @@ contains
        do j = 1,lsize_o
           area = mapper%dom_cx_d%data%rAttr(k_darea,j)
           if (special > 0) then
-             frac = dfrac(j)
+             frac = mapper%frac_d(j)
              area = area * frac
           end if
           do k = 1,natt
@@ -648,7 +617,7 @@ contains
        ! Clip for numerics, just against the global extrema.
        do j = 1,lsize_o
           if (special > 0) then
-             if (dfrac(j) <= 0) cycle
+             if (mapper%frac_d(j) <= 0) cycle
           end if
           do k = 1,natt
              if (special == 0) then
@@ -694,7 +663,7 @@ contains
           do j = 1,lsize_o
              area = mapper%dom_cx_d%data%rAttr(k_darea,j)
              if (special > 0) then
-                frac = dfrac(j)
+                frac = mapper%frac_d(j)
                 area = area * frac
              end if
              dof_masses(j,:natt) = avp_o%rAttr(:natt,j)*area
@@ -752,7 +721,6 @@ contains
           deallocate(lmins, lmaxs, oglims)
        end if
        deallocate(gmins, gmaxs, glbl_masses)
-       if (special > 0) deallocate(sfrac, dfrac)
     else
        ! In the case of S maps, clip using local bounds, but do not conserve
        ! global mass.

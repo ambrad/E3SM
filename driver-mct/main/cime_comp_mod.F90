@@ -1240,6 +1240,8 @@ contains
          repro_sum_rel_diff_max_in = reprosum_diffmax, &
          repro_sum_recompute_in    = reprosum_recompute)
 
+    call seq_map_setopts(maps_atm2srf_conserve_in = .true.)
+
     call seq_nlmap_setopts(nlmaps_verbosity_in = nlmaps_verbosity, &
          nlmaps_exclude_fields_in = nlmaps_exclude_fields)
 
@@ -2026,9 +2028,11 @@ contains
 
        call prep_atm_init(infodata, ocn_c2_atm, ice_c2_atm, lnd_c2_atm, iac_c2_lnd)
 
-       call prep_lnd_init(infodata, atm_c2_lnd, rof_c2_lnd, glc_c2_lnd, iac_c2_lnd)
+       call prep_lnd_init(infodata, atm_c2_lnd, rof_c2_lnd, glc_c2_lnd, iac_c2_lnd, &
+            fractions_ax, fractions_lx)
 
-       call prep_ocn_init(infodata, atm_c2_ocn, atm_c2_ice, ice_c2_ocn, rof_c2_ocn, wav_c2_ocn, glc_c2_ocn, glcshelf_c2_ocn)
+       call prep_ocn_init(infodata, atm_c2_ocn, atm_c2_ice, ice_c2_ocn, rof_c2_ocn, wav_c2_ocn, &
+            glc_c2_ocn, glcshelf_c2_ocn, fractions_ax, fractions_ox)
 
        call prep_ice_init(infodata, ocn_c2_ice, glc_c2_ice, glcshelf_c2_ice, rof_c2_ice )
 
@@ -2296,6 +2300,20 @@ contains
           call t_stopf ('CPL:init_aoflux')
        endif
     endif
+
+    !----------------------------------------------------------
+    !| Initialize atm/srf exact mass conservation
+    !----------------------------------------------------------
+
+    if (iamin_CPLID) then
+       if (atm_present .and. ocn_present .and. lnd_present .and. ice_present) then
+          call seq_map_init_a2l_cons(prep_lnd_get_mapper_Fa2l(), fractions_ax, &
+               fractions_lx, samegrid_al)
+          call seq_map_init_a2oi_cons(prep_ocn_get_mapper_Fa2o(), fractions_ax, &
+               fractions_ox)
+       end if
+    end if
+    
 
     !----------------------------------------------------------
     !| ATM PREP for recalculation of initial solar

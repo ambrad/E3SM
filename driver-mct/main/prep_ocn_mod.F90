@@ -120,7 +120,7 @@ contains
   !================================================================================================
 
   subroutine prep_ocn_init(infodata, atm_c2_ocn, atm_c2_ice, ice_c2_ocn, rof_c2_ocn, &
-       wav_c2_ocn, glc_c2_ocn, glcshelf_c2_ocn)
+       wav_c2_ocn, glc_c2_ocn, glcshelf_c2_ocn, fractions_ax, fractions_ox)
 
     !---------------------------------------------------------------
     ! Description
@@ -136,6 +136,7 @@ contains
     logical                 , intent(in)    :: wav_c2_ocn ! .true.=>wav to ocn coupling on
     logical                 , intent(in)    :: glc_c2_ocn ! .true.=>glc to ocn coupling on
     logical                 , intent(in)    :: glcshelf_c2_ocn ! .true.=>glc ice shelf to ocn coupling on
+    type(mct_aVect)         , intent(in)    :: fractions_ax(:), fractions_ox(:)
     !
     ! Local Variables
     logical                  :: esmf_map_flag  ! .true. => use esmf for mapping
@@ -1297,7 +1298,7 @@ contains
 
        call seq_map_map(mapper_Sa2o, a2x_ax, a2x_ox(eai), fldlist=seq_flds_a2x_states, norm=.true.)
 
-       call seq_map_map(mapper_Fa2o, a2x_ax, a2x_ox(eai), fldlist=seq_flds_a2x_fluxes, norm=.false., special=2)
+       call seq_map_map(mapper_Fa2o, a2x_ax, a2x_ox(eai), fldlist=seq_flds_a2x_fluxes, norm=.true.)
 
 #ifdef COMPARE_TO_NUOPC
        call seq_map_mapvect(mapper_Va2o, vect_map, a2x_ax, a2x_ox(eai), 'Sa_u', 'Sa_v', norm=.true.)

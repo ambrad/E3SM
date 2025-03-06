@@ -38,6 +38,12 @@ module seq_map_mod
   public :: seq_map_mapvect         ! cpl pes
   public :: seq_map_readdata        ! cpl pes
 
+  ! For exaction conservation in atm-to-surface flux mapping when the surface
+  ! grids overlap.
+  public :: seq_map_setopts         ! cpl pes
+  public :: seq_map_init_a2oi_cons  ! cpl pes
+  public :: seq_map_init_a2l_cons   ! cpl pes
+
   interface seq_map_avNorm
      module procedure seq_map_avNormArr
      module procedure seq_map_avNormAvF
@@ -55,8 +61,19 @@ module seq_map_mod
   character(*),parameter :: seq_map_stron  = 'StrinG_is_ON'
   real(R8),parameter,private :: deg2rad = shr_const_pi/180.0_R8  ! deg to rads
 
+  logical :: maps_atm2srf_conserve
+
   !=======================================================================
 contains
+  !=======================================================================
+  subroutine seq_map_setopts(maps_atm2srf_conserve_in)
+    logical, optional, intent(in) :: maps_atm2srf_conserve_in
+
+    if (present(maps_atm2srf_conserve_in)) then
+       maps_atm2srf_conserve = maps_atm2srf_conserve_in
+    end if
+  end subroutine seq_map_setopts
+  
   !=======================================================================
 
   subroutine seq_map_init_rcfile( mapper, comp_s, comp_d, &
@@ -193,6 +210,64 @@ contains
     mapper%dom_cx_d => comp_d%dom_cx
 
   end subroutine seq_map_init_rcfile
+
+  !=======================================================================
+
+  subroutine seq_map_init_a2oi_cons(mapper, fractions_ax, fractions_ox)
+    type(seq_map), pointer, intent(inout) :: mapper ! Fa2o
+    type(mct_aVect)       , intent(in)    :: fractions_ax(:), fractions_ox(:)
+
+    integer :: k_sarea, k_sfrac, k_dfrac1, k_dfrac2, lsize_s, lsize_d, j
+
+    k_sarea = mct_aVect_indexRA(mapper%dom_cx_s%data, 'aream')
+    k_sfrac = mct_aVect_indexRA(fractions_ax(1), 'lfrac')
+    k_dfrac1 = mct_aVect_indexRA(fractions_ox(1), 'ofrac')
+    k_dfrac2 = mct_aVect_indexRA(fractions_ox(1), 'ifrac')
+
+    lsize_s = mct_aVect_lsize(mapper%dom_cx_s%data)
+    lsize_d = mct_aVect_lsize(mapper%dom_cx_d%data)
+    
+    allocate(mapper%scale_s(lsize_s), mapper%frac_s(lsize_s), mapper%frac_d(lsize_d))
+
+    do j = 1,lsize_s
+       mapper%frac_s(j) = 1 - fractions_ax(1)%rAttr(k_sfrac,j)
+    end do
+    do j = 1,lsize_d
+       mapper%frac_d(j) = fractions_ox(1)%rAttr(k_dfrac1,j) + fractions_ox(1)%rAttr(k_dfrac2,j)
+    end do
+    
+  end subroutine seq_map_init_a2oi_cons
+
+  !=======================================================================
+
+  subroutine seq_map_init_a2l_cons(mapper, fractions_ax, fractions_lx, samegrid_al)
+    type(seq_map), pointer, intent(inout) :: mapper ! Fa2l
+    type(mct_aVect)       , intent(in)    :: fractions_ax(:), fractions_lx(:)
+    logical               , intent(in)    :: samegrid_al
+
+    integer :: k_sarea, k_sfrac, k_dfrac, lsize_s, lsize_d, j
+
+    k_sarea = mct_aVect_indexRA(mapper%dom_cx_s%data, 'aream')
+    k_sfrac = mct_aVect_indexRA(fractions_ax(1), 'lfrac')
+    if (samegrid_al) then
+       k_dfrac = mct_aVect_indexRA(fractions_lx(1), 'lfrac')
+    else
+       k_dfrac = mct_aVect_indexRA(fractions_lx(1), 'lfrin')
+    end if
+
+    lsize_s = mct_aVect_lsize(mapper%dom_cx_s%data)
+    lsize_d = mct_aVect_lsize(mapper%dom_cx_d%data)
+    
+    allocate(mapper%scale_s(lsize_s), mapper%frac_s(lsize_s), mapper%frac_d(lsize_d))
+
+    do j = 1,lsize_s
+       mapper%frac_s(j) = fractions_ax(1)%rAttr(k_sfrac,j)
+    end do
+    do j = 1,lsize_d
+       mapper%frac_d(j) = fractions_lx(1)%rAttr(k_dfrac,j)
+    end do
+
+  end subroutine seq_map_init_a2l_cons
 
   !=======================================================================
 
@@ -904,6 +979,11 @@ contains
        lnorm = norm
     endif
 
+    if (allocated(mapper%frac_s)) then
+       lnorm = .false.
+       lspecial = 1
+    end if
+
     if (present(norm_i)) then
        if (.not.lnorm) call shr_sys_abort(subname//' ERROR norm_i and norm = false')
        if (size(norm_i) /= lsize_i) call shr_sys_abort(subname//' ERROR size(norm_i) ne lsize_i')
@@ -954,7 +1034,7 @@ contains
     else
        ! MCT based SMM
        if (use_nonlinear_map) then
-          call seq_nlmap_avNormArr(mapper, avp_i, avp_o, norm, lspecial)
+          call seq_nlmap_avNormArr(mapper, avp_i, avp_o, lnorm, lspecial)
        else
           call mct_sMat_avMult(avp_i, mapper%sMatp, avp_o, VECTOR=mct_usevector)
        end if
