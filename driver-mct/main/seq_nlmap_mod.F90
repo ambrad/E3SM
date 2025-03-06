@@ -115,6 +115,7 @@ module seq_nlmap_mod
   ! permitting the final line to hold.
   !
   ! Author: A.M. Bradley, Mar,Apr-2023
+  ! Update: A.M. Bradley, Mar-2025. a2s_cons feature.
   !
   !-----------------------------------------------------------------------------
   
@@ -284,7 +285,7 @@ contains
 
   end subroutine sort_rowcols
 
-  subroutine seq_nlmap_avNormArr(mapper, avp_i, avp_o, lnorm_in, special)
+  subroutine seq_nlmap_avNormArr(mapper, avp_i, avp_o, lnorm_in, omit_a2s_cons)
     ! When mapper%nl_available, the call to mct_sMat_avMult in seq_map_avNormArr
     ! can be replaced with a call to this routine. This routine applies the
     ! nonlinear map, just as mct_sMat_avMult applies a linear map.
@@ -293,7 +294,7 @@ contains
     type(mct_aVect) , intent(in)    :: avp_i  ! input
     type(mct_aVect) , intent(inout) :: avp_o  ! output
     logical         , intent(in)    :: lnorm_in  ! normalize at end
-    integer(IN)     , intent(in)    :: special
+    logical         , intent(in)    :: omit_a2s_cons
 
     type(mct_aVect)        :: nl_avp_o
     integer(IN)            :: j,kf
@@ -304,15 +305,13 @@ contains
     character(len=*),parameter :: ffld = 'norm8wt'
     character(len=*), parameter :: afldname  = 'aream'
     character(len=128) :: msg
-    logical :: amroot, verbose, found, lnorm, zero
+    logical :: amroot, verbose, found, lnorm, zero, a2s_cons
     integer(IN) :: mpicom, ierr, k, natt, nsum, nfld, k_sarea, k_darea, i, n, lidata(3), gidata(3)
     real(r8) :: tmp, area, lo, hi, y, frac, lrdata(3), grdata(3)
     real(r8), allocatable, dimension(:) :: lmins, gmins, lmaxs, gmaxs, glbl_masses, gwts
     real(r8), allocatable, dimension(:,:) :: dof_masses, caas_wgt, oglims, lcl_lo, lcl_hi
     type(mct_string) :: mstring
     character(CL) :: fldname
-
-    !integer, parameter :: special = 0
 
     ! BFB speedups to do:
     ! * Combine matvecs into one routine that shares the X->X' comm.
@@ -326,6 +325,8 @@ contains
     verbose = nlmaps_verbosity > 0
     call seq_comm_setptrs(CPLID, mpicom=mpicom)
     amroot = seq_comm_iamroot(CPLID)
+
+    a2s_cons = allocated(mapper%frac_s) .and. .not. omit_a2s_cons
 
     lsize_i = mct_aVect_lsize(avp_i)
     lsize_o = mct_aVect_lsize(avp_o)
@@ -343,7 +344,7 @@ contains
     end if
 
     call mct_aVect_init(nl_avp_o, avp_o, lsize=lsize_o)
-    if (special == 0) then
+    if (.not. a2s_cons) then
        call mct_sMat_avMult(avp_i, mapper%sMatp, avp_o, VECTOR=mct_usevector)
     else
        if (lnorm_in) then
@@ -357,8 +358,8 @@ contains
        if (amroot) then
           write(logunit, '(4A,2L2,I3)') 'nlmap> ', trim(mapper%nl_mapfile), ' ', &
                trim(mapper%strategy), mapper%nl_conservative, lnorm, natt
-          if (special > 0) then
-             write(logunit, '(A,4I2)') 'nlmap> special', special
+          if (a2s_cons) then
+             write(logunit, '(A,2L)') 'nlmap> a2s_cons', a2s_cons
           end if
        end if
     end if
@@ -373,7 +374,7 @@ contains
        natt = natt - 1
     end if
     
-    if (special > 0 .and. lnorm_in .and. verbose) then
+    if (a2s_cons .and. lnorm_in .and. verbose) then
        lrdata(1) = 10; lrdata(2) = -10
        do j = 1,lsize_i
           frac = mapper%frac_s(j)
@@ -408,12 +409,12 @@ contains
     n = 0
     do j = 1,lsize_o
        zero = .false.
-       if (special > 0) then
+       if (a2s_cons) then
           zero = mapper%frac_d(j) <= 0
        end if
-       if (special > 0 .and. zero) n = n + 1
+       if (a2s_cons .and. zero) n = n + 1
        do k = 1,natt
-          if (special == 0) zero = avp_o%rAttr(k,j) == 0
+          if (.not. a2s_cons) zero = avp_o%rAttr(k,j) == 0
           if (zero) then
              nl_avp_o%rAttr(k,j) = 0
              ! Need to set bounds to 0 so that the mass is not modified.
@@ -422,7 +423,7 @@ contains
           end if
        end do
     end do
-    if (special > 0 .and. verbose) then
+    if (a2s_cons .and. verbose) then
        lidata(1) = n
        lidata(2) = lsize_o
        lidata(3) = lsize_i
@@ -495,7 +496,7 @@ contains
        k_darea = mct_aVect_indexRA(mapper%dom_cx_d%data, afldname)
        nfld = 2*natt
        allocate(glbl_masses(nfld))
-       if (special == 0) then
+       if (.not. a2s_cons) then
           nsum = lsize_o
           allocate(dof_masses(nsum,nfld)) ! low- and high-order
           do j = 1,lsize_o
@@ -531,7 +532,7 @@ contains
        allocate(caas_wgt(nsum,nfld)) ! dm, cap low, cap high
        do j = 1,lsize_o
           area = mapper%dom_cx_d%data%rAttr(k_darea,j)
-          if (special > 0) then
+          if (a2s_cons) then
              frac = mapper%frac_d(j)
              area = area * frac
           end if
@@ -616,11 +617,11 @@ contains
 
        ! Clip for numerics, just against the global extrema.
        do j = 1,lsize_o
-          if (special > 0) then
+          if (a2s_cons) then
              if (mapper%frac_d(j) <= 0) cycle
           end if
           do k = 1,natt
-             if (special == 0) then
+             if (.not. a2s_cons) then
                 if (avp_o%rAttr(k,j) == 0) cycle ! 0-mask
              end if
              nl_avp_o%rAttr(k,j) = max(gmins(k), min(gmaxs(k), nl_avp_o%rAttr(k,j)))
@@ -629,7 +630,7 @@ contains
 
        ! Set avp_o.
        do k = 1,natt
-          if (special == 0 .or. verbose) then
+          if (.not. a2s_cons .or. verbose) then
              call mct_aVect_getRList(mstring, k, avp_i)
              fldname = mct_string_toChar(mstring)
              call mct_string_clean(mstring)
@@ -641,7 +642,7 @@ contains
                    exit
                 end if
              end do
-             if (special == 0 .and. found) cycle
+             if (.not. a2s_cons .and. found) cycle
              if (found .and. amroot .and. verbose) then
                 write(logunit, '(2a,4i)') &
                      'nlmap> field ', trim(fldname(1:nlmaps_exclude_max_nchar)), k
@@ -662,7 +663,7 @@ contains
           allocate(dof_masses(nsum,nfld), gwts(nfld))
           do j = 1,lsize_o
              area = mapper%dom_cx_d%data%rAttr(k_darea,j)
-             if (special > 0) then
+             if (a2s_cons) then
                 frac = mapper%frac_d(j)
                 area = area * frac
              end if
