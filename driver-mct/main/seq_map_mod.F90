@@ -282,8 +282,6 @@ contains
     ! Compute scale_s. We could do this with a transpose matrix-vector product,
     ! but that is not available in MCT.
     amroot = seq_comm_iamroot(CPLID)
-    allocate(mapper%scale_s(lsize_s), den(lsize_s))
-    mapper%scale_s = 0
     call seq_comm_setptrs(CPLID, mpicom=mpicom)
     !   Read the map file in Y format so we have access to columns.
     call shr_mct_sMatPInitnc(sMatp, mapper%gsMap_s, mapper%gsMap_d, &
@@ -291,7 +289,6 @@ contains
     !   Get area_d for the destination grid.
     call mct_aVect_init(area_d, mapper_Fl2a%dom_cx_s%data, mapper_Fl2a%sMatp%XPrimeLength)
     call mct_aVect_zero(area_d)
-    k_sarea = mct_aVect_indexRA(mapper_Fl2a%dom_cx_s%data, 'aream')
     call mct_rearr_rearrange(mapper_Fl2a%dom_cx_s%data, area_d, &
          mapper_Fl2a%sMatp%XToXPrime, tag=mapper_Fl2a%sMatp%Tag, vector=mct_usevector, &
          alltoall=.true., handshake=.true.)
@@ -310,6 +307,9 @@ contains
     irow = mct_sMat_indexIA(sMatp%Matrix, 'lrow')
     icol = mct_sMat_indexIA(sMatp%Matrix, 'lcol')
     iwgt = mct_sMat_indexRA(sMatp%Matrix, 'weight')
+    allocate(mapper%scale_s(lsize_s), den(lsize_s))
+    mapper%scale_s = 0
+    den = 0
     do j = 1, ne
        row = sMatp%Matrix%data%iAttr(irow,j)
        col = sMatp%Matrix%data%iAttr(icol,j)
@@ -334,7 +334,7 @@ contains
     call mpi_allreduce(lr, gr, 1, MPI_DOUBLE_PRECISION, MPI_MIN, mpicom, j)
     call mpi_allreduce(lr(2:2), gr(2:2), 1, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, j)
     call mpi_allreduce(li, gi, 2, MPI_INTEGER, MPI_SUM, mpicom, j)
-    if (amroot) write(logunit,'(a,i8,2es23.15)') 'nlmap> scale_s',gi(1),gr(2),gr(1),gr(2)
+    if (amroot) write(logunit,'(a,2i8,2es23.15)') 'nlmap> scale_s',gi(1),gi(2),gr(1),gr(2)
     !   Clean up.
     call mct_aVect_clean(frac_d)
     call mct_aVect_clean(area_d)
@@ -1035,6 +1035,11 @@ contains
     character(len=*),parameter :: ffld = 'norm8wt'  ! want something unique
     !-----------------------------------------------------
 
+    !amb
+    logical :: amroot
+    real(r8), allocatable :: lr(:), gr(:)
+    integer :: n, mpicom, k_area
+
     use_nonlinear_map = .false.
     if (mapper%nl_available) then
        use_nonlinear_map = .true.
@@ -1053,11 +1058,6 @@ contains
     lnorm = .true.
     if (present(norm)) then
        lnorm = norm
-    endif
-
-    if (allocated(mapper%frac_s)) then
-       lnorm = .false.
-       lomit_a2s_cons = .false.
     endif
 
     a2s_cons = allocated(mapper%frac_s) .and. .not. omit_a2s_cons
@@ -1117,10 +1117,36 @@ contains
        else
           if (a2s_cons) then
              do j = 1,lsize_i
-                avp_i%rAttr(:,j) = avp_i%rAttr(:,j)*mapper%scale_s(j)
+                avp_i%rAttr(:,j) = avp_i%rAttr(:,j)*mapper%scale_s(j)*mapper%frac_s(j)
              enddo
           endif
           call mct_sMat_avMult(avp_i, mapper%sMatp, avp_o, VECTOR=mct_usevector)
+          if (a2s_cons) then
+             amroot = seq_comm_iamroot(CPLID)
+             call seq_comm_setptrs(CPLID, mpicom=mpicom)
+             k_area = mct_aVect_indexRA(mapper%dom_cx_s%data, 'aream')
+             n = size(avp_i%rAttr,1)
+             allocate(lr(2*n),gr(2*n))
+             lr = 0
+             do j = 1,lsize_i
+                lr(1:n) = lr(1:n) + &
+                     mapper%frac_s(j) * mapper%dom_cx_s%data%rAttr(k_area,j) * avp_i%rAttr(:,j)
+             end do
+             do j = 1,lsize_o
+                lr(n+1:) = lr(n+1:) + &
+                     mapper%frac_d(j) * mapper%dom_cx_d%data%rAttr(k_area,j) * avp_o%rAttr(:,j)
+             end do
+             call mpi_allreduce(lr, gr, 2*n, MPI_DOUBLE_PRECISION, MPI_SUM, mpicom, j)
+             if (amroot) then
+                write(logunit,'(2a)') 'nlmap> lin cons', trim(mapper%mapfile)
+                do j = 1, n
+                   if (gr(j) == 0) cycle
+                   write(logunit,'(a,i3,2es23.15)') 'nlmap> mass', j, &
+                        gr(j), gr(n+j) !(gr(n+j) - gr(j))/gr(j)
+                end do
+             end if
+             deallocate(lr, gr)
+          end if
        end if
     endif
 
