@@ -320,7 +320,11 @@ contains
        den(col) = den(col) + frac*area*wgt
     end do
     do j = 1, lsize_s
-       if (den(j) > 0) mapper%scale_s(j) = mapper%scale_s(j)/den(j)
+       if (den(j) > 0) then
+          mapper%scale_s(j) = mapper%scale_s(j)/den(j)
+       else
+          mapper%scale_s(j) = 0
+       end if
     end do
     lr(1) = 1e8; lr(2) = -1e8
     li(1) = 0
@@ -1037,8 +1041,9 @@ contains
 
     !amb
     logical :: amroot
-    real(r8), allocatable :: lr(:), gr(:)
     integer :: n, mpicom, k_area
+    real(r8), allocatable :: lr(:), gr(:)
+    real(r8) :: lr1(8), gr1(8)
 
     use_nonlinear_map = .false.
     if (mapper%nl_available) then
@@ -1047,7 +1052,10 @@ contains
           if (omit_nonlinear) use_nonlinear_map = .false.
        endif
     endif
+
     use_nonlinear_map = .false. !amb
+    amroot = seq_comm_iamroot(CPLID)
+    call seq_comm_setptrs(CPLID, mpicom=mpicom)
 
     lomit_a2s_cons = .false.
     if (present(omit_a2s_cons)) lomit_a2s_cons = omit_a2s_cons
@@ -1115,30 +1123,38 @@ contains
        if (use_nonlinear_map) then
           call seq_nlmap_avNormArr(mapper, avp_i, avp_o, lnorm, lomit_a2s_cons)
        else
-          if (a2s_cons .and. allocated(mapper%scale_s)) then
-             do j = 1,lsize_i
-                avp_i%rAttr(:,j) = avp_i%rAttr(:,j)*mapper%scale_s(j)*mapper%frac_s(j)
-             enddo
-          endif
-          call mct_sMat_avMult(avp_i, mapper%sMatp, avp_o, VECTOR=mct_usevector)
           if (a2s_cons) then
-             amroot = seq_comm_iamroot(CPLID)
-             call seq_comm_setptrs(CPLID, mpicom=mpicom)
              k_area = mct_aVect_indexRA(mapper%dom_cx_s%data, 'aream')
              n = size(avp_i%rAttr,1)
              allocate(lr(2*n),gr(2*n))
              lr = 0
+             lr1 = 0
              do j = 1,lsize_i
                 lr(1:n) = lr(1:n) + &
-                     mapper%frac_s(j) * mapper%dom_cx_s%data%rAttr(k_area,j) * avp_i%rAttr(:,j)
+                     mapper%frac_s(j) * mapper%dom_cx_s%data%rAttr(k_area,j) * avp_i%rAttr(1:n,j)
+                lr1(1) = lr1(1) + mapper%frac_s(j) * mapper%dom_cx_s%data%rAttr(k_area,j)
              end do
+             if (allocated(mapper%scale_s)) then
+                if (amroot) write(logunit,'(a)') 'nlmap> scaling'
+                do j = 1,lsize_i
+                   avp_i%rAttr(:,j) = avp_i%rAttr(:,j)*mapper%scale_s(j)*mapper%frac_s(j)
+                enddo
+             else
+                if (amroot) write(logunit,'(a)') 'nlmap> no scaling'
+             end if
+          endif
+          call mct_sMat_avMult(avp_i, mapper%sMatp, avp_o, VECTOR=mct_usevector)
+          if (a2s_cons) then
              do j = 1,lsize_o
                 lr(n+1:) = lr(n+1:) + &
-                     mapper%frac_d(j) * mapper%dom_cx_d%data%rAttr(k_area,j) * avp_o%rAttr(:,j)
+                     mapper%frac_d(j) * mapper%dom_cx_d%data%rAttr(k_area,j) * avp_o%rAttr(1:n,j)
+                lr1(2) = lr1(2) + mapper%frac_d(j) * mapper%dom_cx_d%data%rAttr(k_area,j)
              end do
              call mpi_allreduce(lr, gr, 2*n, MPI_DOUBLE_PRECISION, MPI_SUM, mpicom, j)
+             call mpi_allreduce(lr1, gr1, 2, MPI_DOUBLE_PRECISION, MPI_SUM, mpicom, j)
              if (amroot) then
                 write(logunit,'(2a)') 'nlmap> lin cons', trim(mapper%mapfile)
+                write(logunit,'(a,2es23.15)') 'nlmap> area', gr1(1), (gr1(2) - gr1(1))/gr1(1)
                 do j = 1, n
                    if (gr(j) == 0) cycle
                    write(logunit,'(a,i3,2es23.15)') 'nlmap> mass', j, &
