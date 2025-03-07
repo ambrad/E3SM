@@ -1142,7 +1142,7 @@ contains
                 do j = 1, n
                    if (gr(j) == 0) cycle
                    write(logunit,'(a,i3,2es23.15)') 'nlmap> mass', j, &
-                        gr(j), gr(n+j) !(gr(n+j) - gr(j))/gr(j)
+                        gr(j), (gr(n+j) - gr(j))/gr(j)
                 end do
              end if
              deallocate(lr, gr)
