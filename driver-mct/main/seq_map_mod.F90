@@ -228,7 +228,7 @@ contains
     lsize_s = mct_aVect_lsize(mapper%dom_cx_s%data)
     lsize_d = mct_aVect_lsize(mapper%dom_cx_d%data)
     
-    allocate(mapper%scale_s(lsize_s), mapper%frac_s(lsize_s), mapper%frac_d(lsize_d))
+    allocate(mapper%frac_s(lsize_s), mapper%frac_d(lsize_d))
 
     do j = 1,lsize_s
        mapper%frac_s(j) = 1 - fractions_ax(1)%rAttr(k_sfrac,j)
@@ -1115,7 +1115,7 @@ contains
        if (use_nonlinear_map) then
           call seq_nlmap_avNormArr(mapper, avp_i, avp_o, lnorm, lomit_a2s_cons)
        else
-          if (a2s_cons) then
+          if (a2s_cons .and. allocated(mapper%scale_s)) then
              do j = 1,lsize_i
                 avp_i%rAttr(:,j) = avp_i%rAttr(:,j)*mapper%scale_s(j)*mapper%frac_s(j)
              enddo
