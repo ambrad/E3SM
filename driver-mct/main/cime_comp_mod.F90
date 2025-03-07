@@ -2303,8 +2303,8 @@ contains
 
     if (iamin_CPLID) then
        if (atm_present .and. ocn_present .and. lnd_present .and. ice_present) then
-          call seq_map_init_a2l_cons(prep_lnd_get_mapper_Fa2l(), fractions_ax, &
-               fractions_lx, samegrid_al)
+          call seq_map_init_a2l_cons(prep_lnd_get_mapper_Fa2l(), prep_atm_get_mapper_Fl2a(), &
+               fractions_ax, fractions_lx, samegrid_al)
           call seq_map_init_a2oi_cons(prep_ocn_get_mapper_Fa2o(), fractions_ax, &
                fractions_ox)
        end if

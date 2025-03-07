@@ -241,8 +241,9 @@ contains
 
   !=======================================================================
 
-  subroutine seq_map_init_a2l_cons(mapper, fractions_ax, fractions_lx, samegrid_al)
+  subroutine seq_map_init_a2l_cons(mapper, mapper_Fl2a, fractions_ax, fractions_lx, samegrid_al)
     type(seq_map), pointer, intent(inout) :: mapper ! Fa2l
+    type(seq_map), pointer, intent(in)    :: mapper_Fl2a
     type(mct_aVect)       , intent(in)    :: fractions_ax(:), fractions_lx(:)
     logical               , intent(in)    :: samegrid_al
 
@@ -251,6 +252,11 @@ contains
     real(R8) :: frac, area, wgt
     real(R8), allocatable :: den(:)
     type(mct_sMatp) :: sMatp
+    type(mct_aVect) :: lfrac_d, frac_d, area_d
+
+    !amb
+    logical :: amroot
+    real(r8) :: tmp(2)
 
     k_sarea = mct_aVect_indexRA(mapper%dom_cx_s%data, 'aream')
     k_sfrac = mct_aVect_indexRA(fractions_ax(1), 'lfrac')
@@ -263,7 +269,7 @@ contains
     lsize_s = mct_aVect_lsize(mapper%dom_cx_s%data)
     lsize_d = mct_aVect_lsize(mapper%dom_cx_d%data)
     
-    allocate(mapper%scale_s(lsize_s), mapper%frac_s(lsize_s), mapper%frac_d(lsize_d))
+    allocate(mapper%frac_s(lsize_s), mapper%frac_d(lsize_d))
 
     do j = 1,lsize_s
        mapper%frac_s(j) = fractions_ax(1)%rAttr(k_sfrac,j)
@@ -272,12 +278,43 @@ contains
        mapper%frac_d(j) = fractions_lx(1)%rAttr(k_dfrac,j)
     end do
 
-    k_darea = mct_aVect_indexRA(mapper%dom_cx_d%data, 'aream')
+    ! Compute scale_s. We could do this with a transpose matrix-vector product,
+    ! but that is not available in MCT.
+    amroot = seq_comm_iamroot(CPLID)
+    if (amroot) write(logunit,'(2a)') 'nlmap> file ', trim(mapper%mapfile)
     allocate(mapper%scale_s(lsize_s), den(lsize_s))
     mapper%scale_s = 0
     call seq_comm_setptrs(CPLID, mpicom=mpicom)
+    !   Read the map file in Y format so we have access to full columns.
+    if (amroot) write(logunit,'(a)') 'nlmap> sMatp'
     call shr_mct_sMatPInitnc(sMatp, mapper%gsMap_s, mapper%gsMap_d, &
          &                   trim(mapper%mapfile), 'Y', mpicom)
+    !   Get area_d for the full destination grid.
+    if (amroot) write(logunit,'(a,i6)') 'nlmap> area_d', mapper_Fl2a%sMatp%XPrimeLength
+    call mct_aVect_init(area_d, mapper_Fl2a%dom_cx_s%data, &
+         &              mapper_Fl2a%sMatp%XPrimeLength)
+    call mct_aVect_zero(area_d)
+    call mct_rearr_rearrange(mapper_Fl2a%dom_cx_s%data, area_d, &
+         mapper_Fl2a%sMatp%XToXPrime, tag=mapper_Fl2a%sMatp%Tag, vector=mct_usevector, &
+         alltoall=.true., handshake=.true.)
+    tmp(1) = 1e8; tmp(2) = -1e8
+    do j = 1, mapper_Fl2a%sMatp%XPrimeLength
+       tmp(1) = min(tmp(1), area_d%rAttr(k_darea,j))
+       tmp(2) = max(tmp(2), area_d%rAttr(k_darea,j))
+    end do
+    if (amroot) write(logunit,'(a,2es23.15)') 'nlmap> area_d min/max', tmp(1), tmp(2)
+    !   Get frac_d for the full destination grid.
+    if (amroot) write(logunit,'(a)') 'nlmap> frac_d'
+    call mct_aVect_init(lfrac_d, rList='frac', lsize=lsize_d)
+    lfrac_d%rAttr(1,:) = mapper%frac_d
+    call mct_aVect_init(frac_d, rList='frac', lsize=mapper_Fl2a%sMatp%XPrimeLength)
+    call mct_aVect_zero(frac_d)
+    call mct_rearr_rearrange(lfrac_d, frac_d, &
+         mapper_Fl2a%sMatp%XToXPrime, tag=mapper_Fl2a%sMatp%Tag, vector=mct_usevector, &
+         alltoall=.true., handshake=.true.)
+    !   Now we have everything we need to compute scale_s.
+    if (amroot) write(logunit,'(a)') 'nlmap> compute scale_s'
+    k_darea = mct_aVect_indexRA(mapper%dom_cx_d%data, 'aream')
     ne = mct_sMat_lsize(sMatp%Matrix)
     irow = mct_sMat_indexIA(sMatp%Matrix, 'lrow')
     icol = mct_sMat_indexIA(sMatp%Matrix, 'lcol')
@@ -286,16 +323,20 @@ contains
        row = sMatp%Matrix%data%iAttr(irow,j)
        col = sMatp%Matrix%data%iAttr(icol,j)
        wgt = sMatp%Matrix%data%rAttr(iwgt,j)
-       area = mapper%dom_cx_d%data%rAttr(k_darea,row)
-       frac = mapper%frac_d(row)
+       area = area_d%rAttr(k_darea,row)
+       frac = frac_d%rAttr(1,row)
        mapper%scale_s(col) = mapper%scale_s(col) + area*wgt
        den(col) = den(col) + frac*area*wgt
     end do
     do j = 1, lsize_s
        if (den(j) > 0) mapper%scale_s(j) = mapper%scale_s(j)/den(j)
     end do
-    deallocate(den)
+    !   Clean up.
+    call mct_aVect_clean(frac_d)
+    call mct_aVect_clean(area_d)
     call mct_sMatp_clean(sMatp)
+    deallocate(den)
+
   end subroutine seq_map_init_a2l_cons
 
   !=======================================================================
@@ -985,7 +1026,7 @@ contains
     integer(IN)            :: lsize_i,lsize_o
     real(r8)               :: normval
     character(CX)          :: lrList,appnd
-    logical                :: lnorm, use_nonlinear_map, lomit_a2s_cons
+    logical                :: lnorm, use_nonlinear_map, lomit_a2s_cons, a2s_cons
     character(*),parameter :: subName = '(seq_map_avNormArr) '
     character(len=*),parameter :: ffld = 'norm8wt'  ! want something unique
     !-----------------------------------------------------
@@ -1012,6 +1053,9 @@ contains
        lnorm = .false.
        lomit_a2s_cons = .false.
     end if
+
+    a2s_cons = allocated(mapper%frac_s) .and. .not. omit_a2s_cons
+    if (a2s_cons) lnorm = .false.
 
     if (present(norm_i)) then
        if (.not.lnorm) call shr_sys_abort(subname//' ERROR norm_i and norm = false')

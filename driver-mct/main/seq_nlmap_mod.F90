@@ -326,6 +326,7 @@ contains
     amroot = seq_comm_iamroot(CPLID)
 
     a2s_cons = allocated(mapper%frac_s) .and. .not. omit_a2s_cons
+    if (a2s_cons) lnorm = .false.
 
     lsize_i = mct_aVect_lsize(avp_i)
     lsize_o = mct_aVect_lsize(avp_o)
@@ -345,12 +346,6 @@ contains
     call mct_aVect_init(nl_avp_o, avp_o, lsize=lsize_o)
     if (.not. a2s_cons) then
        call mct_sMat_avMult(avp_i, mapper%sMatp, avp_o, VECTOR=mct_usevector)
-    else
-       if (lnorm_in) then
-          ! Need this to satisfy lnorm calcs in calling routine.
-          call mct_sMat_avMult(avp_i, mapper%sMatp, avp_o, VECTOR=mct_usevector)
-       end if
-       lnorm = .false.
     end if
     
     if (verbose) then
@@ -363,7 +358,7 @@ contains
        end if
     end if
 
-    if (lnorm_in) then
+    if (lnorm) then
        kf = mct_aVect_indexRA(avp_i,ffld)
        if (kf /= natt) then
           call shr_sys_abort(subname// &
@@ -372,32 +367,7 @@ contains
        end if
        natt = natt - 1
     end if
-    
-    if (a2s_cons .and. lnorm_in .and. verbose) then
-       lrdata(1) = 10; lrdata(2) = -10
-       do j = 1,lsize_i
-          frac = mapper%frac_s(j)
-          if (frac > 0) then
-             lrdata(1) = min(lrdata(1), avp_i%rAttr(natt+1,j))
-             lrdata(2) = max(lrdata(2), avp_i%rAttr(natt+1,j))
-          end if
-       end do
-       call mpi_allreduce(lrdata(1:1), grdata(1:1), 1, MPI_DOUBLE_PRECISION, MPI_MIN, mpicom, ierr)
-       call mpi_allreduce(lrdata(2:2), grdata(2:2), 1, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, ierr)
-       if (amroot) write(logunit, '(a,2es23.15)') 'nlmap> lnorm i min/max', grdata(1), grdata(2)
-       lrdata(1) = 10; lrdata(2) = -10
-       do j = 1,lsize_o
-          frac = mapper%frac_d(j)
-          if (frac > 0) then
-             lrdata(1) = min(lrdata(1), avp_o%rAttr(natt+1,j))
-             lrdata(2) = max(lrdata(2), avp_o%rAttr(natt+1,j))
-          end if
-       end do
-       call mpi_allreduce(lrdata(1:1), grdata(1:1), 1, MPI_DOUBLE_PRECISION, MPI_MIN, mpicom, ierr)
-       call mpi_allreduce(lrdata(2:2), grdata(2:2), 1, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, ierr)
-       if (amroot) write(logunit, '(a,2es23.15)') 'nlmap> lnorm o min/max', grdata(1), grdata(2)
-    end if
-    
+        
     allocate(lcl_lo(natt,lsize_o), lcl_hi(natt,lsize_o))
     call sMat_avMult_and_calc_bounds(avp_i, mapper%nl_sMatp, lnorm, natt, &
          &                           nl_avp_o, lcl_lo, lcl_hi)
