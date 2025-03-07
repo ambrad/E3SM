@@ -247,7 +247,7 @@ contains
     type(mct_aVect)       , intent(in)    :: fractions_ax(:), fractions_lx(:)
     logical               , intent(in)    :: samegrid_al
 
-    integer(IN) :: k_sarea, k_sfrac, k_dfrac, k_darea, lsize_s, lsize_d, j, ne, irow, &
+    integer(IN) :: k_sarea, k_sfrac, k_darea, k_dfrac, lsize_s, lsize_d, j, ne, irow, &
          &     icol, iwgt, row, col, mpicom
     real(R8) :: frac, area, wgt
     real(R8), allocatable :: den(:)
@@ -256,7 +256,8 @@ contains
 
     !amb
     logical :: amroot
-    real(r8) :: tmp(2)
+    integer :: li(2), gi(2)
+    real(r8) :: lr(2), gr(2), tmp
 
     k_sarea = mct_aVect_indexRA(mapper%dom_cx_s%data, 'aream')
     k_sfrac = mct_aVect_indexRA(fractions_ax(1), 'lfrac')
@@ -281,28 +282,19 @@ contains
     ! Compute scale_s. We could do this with a transpose matrix-vector product,
     ! but that is not available in MCT.
     amroot = seq_comm_iamroot(CPLID)
-    if (amroot) write(logunit,'(2a)') 'nlmap> file ', trim(mapper%mapfile)
     allocate(mapper%scale_s(lsize_s), den(lsize_s))
     mapper%scale_s = 0
     call seq_comm_setptrs(CPLID, mpicom=mpicom)
-    !   Read the map file in Y format so we have access to full columns.
-    if (amroot) write(logunit,'(a)') 'nlmap> sMatp'
+    !   Read the map file in Y format so we have access to columns.
     call shr_mct_sMatPInitnc(sMatp, mapper%gsMap_s, mapper%gsMap_d, &
          &                   trim(mapper%mapfile), 'Y', mpicom)
-    !   Get area_d for the full destination grid.
-    if (amroot) write(logunit,'(a,i6)') 'nlmap> area_d', mapper_Fl2a%sMatp%XPrimeLength
-    call mct_aVect_init(area_d, mapper_Fl2a%dom_cx_s%data, &
-         &              mapper_Fl2a%sMatp%XPrimeLength)
+    !   Get area_d for the destination grid.
+    call mct_aVect_init(area_d, mapper_Fl2a%dom_cx_s%data, mapper_Fl2a%sMatp%XPrimeLength)
     call mct_aVect_zero(area_d)
+    k_sarea = mct_aVect_indexRA(mapper_Fl2a%dom_cx_s%data, 'aream')
     call mct_rearr_rearrange(mapper_Fl2a%dom_cx_s%data, area_d, &
          mapper_Fl2a%sMatp%XToXPrime, tag=mapper_Fl2a%sMatp%Tag, vector=mct_usevector, &
          alltoall=.true., handshake=.true.)
-    tmp(1) = 1e8; tmp(2) = -1e8
-    do j = 1, mapper_Fl2a%sMatp%XPrimeLength
-       tmp(1) = min(tmp(1), area_d%rAttr(k_darea,j))
-       tmp(2) = max(tmp(2), area_d%rAttr(k_darea,j))
-    end do
-    if (amroot) write(logunit,'(a,2es23.15)') 'nlmap> area_d min/max', tmp(1), tmp(2)
     !   Get frac_d for the full destination grid.
     if (amroot) write(logunit,'(a)') 'nlmap> frac_d'
     call mct_aVect_init(lfrac_d, rList='frac', lsize=lsize_d)
@@ -313,7 +305,6 @@ contains
          mapper_Fl2a%sMatp%XToXPrime, tag=mapper_Fl2a%sMatp%Tag, vector=mct_usevector, &
          alltoall=.true., handshake=.true.)
     !   Now we have everything we need to compute scale_s.
-    if (amroot) write(logunit,'(a)') 'nlmap> compute scale_s'
     k_darea = mct_aVect_indexRA(mapper%dom_cx_d%data, 'aream')
     ne = mct_sMat_lsize(sMatp%Matrix)
     irow = mct_sMat_indexIA(sMatp%Matrix, 'lrow')
@@ -331,6 +322,19 @@ contains
     do j = 1, lsize_s
        if (den(j) > 0) mapper%scale_s(j) = mapper%scale_s(j)/den(j)
     end do
+    lr(1) = 1e8; lr(2) = -1e8
+    li(1) = 0
+    do j = 1, lsize_s
+       tmp = mapper%scale_s(j)
+       if (tmp > 0) li(1) = li(1) + 1
+       if (abs(tmp - 1) < 1e-5) li(2) = li(2) + 1
+       lr(1) = min(lr(1), tmp)
+       lr(2) = max(lr(2), tmp)
+    end do
+    call mpi_allreduce(lr, gr, 1, MPI_DOUBLE_PRECISION, MPI_MIN, mpicom, j)
+    call mpi_allreduce(lr(2:2), gr(2:2), 1, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, j)
+    call mpi_allreduce(li, gi, 2, MPI_INTEGER, MPI_SUM, mpicom, j)
+    if (amroot) write(logunit,'(a,i8,2es23.15)') 'nlmap> scale_s',gi(1),gr(2),gr(1),gr(2)
     !   Clean up.
     call mct_aVect_clean(frac_d)
     call mct_aVect_clean(area_d)
@@ -1036,8 +1040,10 @@ contains
        use_nonlinear_map = .true.
        if (present(omit_nonlinear)) then
           if (omit_nonlinear) use_nonlinear_map = .false.
-       end if
-    end if
+       endif
+    endif
+    use_nonlinear_map = .false. !amb
+
     lomit_a2s_cons = .false.
     if (present(omit_a2s_cons)) lomit_a2s_cons = omit_a2s_cons
 
@@ -1052,7 +1058,7 @@ contains
     if (allocated(mapper%frac_s)) then
        lnorm = .false.
        lomit_a2s_cons = .false.
-    end if
+    endif
 
     a2s_cons = allocated(mapper%frac_s) .and. .not. omit_a2s_cons
     if (a2s_cons) lnorm = .false.
@@ -1109,6 +1115,11 @@ contains
        if (use_nonlinear_map) then
           call seq_nlmap_avNormArr(mapper, avp_i, avp_o, lnorm, lomit_a2s_cons)
        else
+          if (a2s_cons) then
+             do j = 1,lsize_i
+                avp_i%rAttr(:,j) = avp_i%rAttr(:,j)*mapper%scale_s(j)
+             enddo
+          endif
           call mct_sMat_avMult(avp_i, mapper%sMatp, avp_o, VECTOR=mct_usevector)
        end if
     endif
