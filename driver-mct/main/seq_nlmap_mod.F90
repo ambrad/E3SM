@@ -138,7 +138,10 @@ module seq_nlmap_mod
   private
 #include <mpif.h>
 
+  ! All routines are intended to be called on the cpl pes.
   public :: seq_nlmap_setopts
+  public :: seq_nlmap_init_a2oi_cons
+  public :: seq_nlmap_init_a2l_cons
   public :: seq_nlmap_check_matrices
   public :: seq_nlmap_avNormArr
 
@@ -150,12 +153,17 @@ module seq_nlmap_mod
   ! instead.
   character(nlmaps_exclude_nchar) :: nlmaps_exclude_fields(nlmaps_exclude_max_number)
   integer :: nlmaps_exclude_n_fields, nlmaps_exclude_max_nchar
+  !amb-todo
+  logical :: atm2srf_conserve
+  logical :: atm2srf_a2oi_inited = .false., atm2srf_a2l_inited = .false.
 
 contains
 
-  subroutine seq_nlmap_setopts(nlmaps_verbosity_in, nlmaps_exclude_fields_in)
+  subroutine seq_nlmap_setopts(nlmaps_verbosity_in, nlmaps_exclude_fields_in, atm2srf_conserve_in)
     integer, optional, intent(in) :: nlmaps_verbosity_in
-    character(nlmaps_exclude_nchar), optional, intent(in) :: nlmaps_exclude_fields_in(nlmaps_exclude_max_number)
+    character(nlmaps_exclude_nchar), optional, intent(in) :: &
+         nlmaps_exclude_fields_in(nlmaps_exclude_max_number)
+    logical, optional, intent(in) :: atm2srf_conserve_in
 
     integer :: i, n
 
@@ -173,7 +181,71 @@ contains
           end if
        end do
     end if
+
+    if (present(atm2srf_conserve_in)) atm2srf_conserve = atm2srf_conserve_in
+
+    if (atm2srf_conserve .and. nlmaps_exclude_n_fields > 0) then
+       write(logunit,'(a)') 'nlmap> WARNING: When atm2srf_conserve is ON,&
+            & the field exclusion list is ignored.'
+    end if
   end subroutine seq_nlmap_setopts
+
+  subroutine seq_nlmap_init_a2oi_cons(mapper, fractions_ax, fractions_ox)
+    type(seq_map), pointer, intent(inout) :: mapper ! Fa2o
+    type(mct_aVect)       , intent(in)    :: fractions_ax(:), fractions_ox(:)
+
+    integer(IN) :: k_sarea, k_sfrac, k_dfrac1, k_dfrac2, lsize_s, lsize_d, j
+
+    k_sarea = mct_aVect_indexRA(mapper%dom_cx_s%data, 'aream')
+    k_sfrac = mct_aVect_indexRA(fractions_ax(1), 'lfrac')
+    k_dfrac1 = mct_aVect_indexRA(fractions_ox(1), 'ofrac')
+    k_dfrac2 = mct_aVect_indexRA(fractions_ox(1), 'ifrac')
+
+    lsize_s = mct_aVect_lsize(mapper%dom_cx_s%data)
+    lsize_d = mct_aVect_lsize(mapper%dom_cx_d%data)
+    
+    allocate(mapper%frac_s(lsize_s), mapper%frac_d(lsize_d))
+
+    do j = 1,lsize_s
+       mapper%frac_s(j) = 1 - fractions_ax(1)%rAttr(k_sfrac,j)
+    end do
+    do j = 1,lsize_d
+       mapper%frac_d(j) = fractions_ox(1)%rAttr(k_dfrac1,j) + fractions_ox(1)%rAttr(k_dfrac2,j)
+    end do
+
+    atm2srf_a2oi_inited = .true.
+    
+  end subroutine seq_nlmap_init_a2oi_cons
+
+  subroutine seq_nlmap_init_a2l_cons(mapper, fractions_ax, fractions_lx, samegrid_al)
+    type(seq_map), pointer, intent(inout) :: mapper ! Fa2l
+    type(mct_aVect)       , intent(in)    :: fractions_ax(:), fractions_lx(:)
+    logical               , intent(in)    :: samegrid_al
+
+    integer(IN) :: k_sfrac, k_dfrac, lsize_s, lsize_d, j
+
+    k_sfrac = mct_aVect_indexRA(fractions_ax(1), 'lfrac')
+    if (samegrid_al) then
+       k_dfrac = mct_aVect_indexRA(fractions_lx(1), 'lfrac')
+    else
+       k_dfrac = mct_aVect_indexRA(fractions_lx(1), 'lfrin')
+    end if
+
+    lsize_s = mct_aVect_lsize(mapper%dom_cx_s%data)
+    lsize_d = mct_aVect_lsize(mapper%dom_cx_d%data)
+    
+    allocate(mapper%frac_s(lsize_s), mapper%frac_d(lsize_d))
+
+    do j = 1,lsize_s
+       mapper%frac_s(j) = fractions_ax(1)%rAttr(k_sfrac,j)
+    end do
+    do j = 1,lsize_d
+       mapper%frac_d(j) = fractions_lx(1)%rAttr(k_dfrac,j)
+    end do
+
+    atm2srf_a2l_inited = .true.
+
+  end subroutine seq_nlmap_init_a2l_cons
 
   subroutine seq_nlmap_check_matrices(m)
     ! Check that m%sMatp%Matrix's non-0 pattern is a subset of the pattern of
@@ -326,7 +398,13 @@ contains
     amroot = seq_comm_iamroot(CPLID)
 
     a2s_cons = allocated(mapper%frac_s) .and. .not. omit_a2s_cons
-    if (a2s_cons) lnorm = .false.
+    if (a2s_cons) then
+       lnorm = .false.
+       if (.not. (atm2srf_a2l_inited .and. atm2srf_a2oi_inited)) then
+          call shr_sys_abort(subname//' ERROR: nlmap> atm2srf_conserve was requested &
+               &but a2l and a2oi initialization is incomplete.')
+       end if
+    end if
 
     lsize_i = mct_aVect_lsize(avp_i)
     lsize_o = mct_aVect_lsize(avp_o)

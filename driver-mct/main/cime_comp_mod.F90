@@ -163,7 +163,7 @@ module cime_comp_mod
   use seq_flds_mod, only : seq_flds_z2x_fluxes, seq_flds_x2z_fluxes
 
   ! nonlinear maps
-  use seq_nlmap_mod, only : seq_nlmap_setopts
+  use seq_nlmap_mod, only : seq_nlmap_setopts, seq_nlmap_init_a2oi_cons, seq_nlmap_init_a2l_cons
 
   ! component type and accessor functions
   use component_type_mod, only: component_get_iamin_compid, component_get_suffix
@@ -1238,10 +1238,9 @@ contains
          repro_sum_rel_diff_max_in = reprosum_diffmax, &
          repro_sum_recompute_in    = reprosum_recompute)
 
-    call seq_map_setopts(maps_atm2srf_conserve_in = .true.)
-
     call seq_nlmap_setopts(nlmaps_verbosity_in = nlmaps_verbosity, &
-         nlmaps_exclude_fields_in = nlmaps_exclude_fields)
+         nlmaps_exclude_fields_in = nlmaps_exclude_fields, &
+         atm2srf_conserve_in = .true.)
 
     ! Check cpl_seq_option
 
@@ -2298,14 +2297,14 @@ contains
     endif
 
     !----------------------------------------------------------
-    !| Initialize atm/srf exact mass conservation
+    !| Initialize atm/srf exact mass conservation if requested
     !----------------------------------------------------------
 
     if (iamin_CPLID) then
        if (atm_present .and. ocn_present .and. lnd_present .and. ice_present) then
-          call seq_map_init_a2l_cons(prep_lnd_get_mapper_Fa2l(), prep_atm_get_mapper_Fl2a(), &
-               fractions_ax, fractions_lx, samegrid_al)
-          call seq_map_init_a2oi_cons(prep_ocn_get_mapper_Fa2o(), fractions_ax, &
+          call seq_nlmap_init_a2l_cons(prep_lnd_get_mapper_Fa2l(), fractions_ax, &
+               fractions_lx, samegrid_al)
+          call seq_nlmap_init_a2oi_cons(prep_ocn_get_mapper_Fa2o(), fractions_ax, &
                fractions_ox)
        end if
     end if
