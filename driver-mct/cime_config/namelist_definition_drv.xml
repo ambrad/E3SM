@@ -1746,6 +1746,21 @@
     </values>
   </entry>
 
+  <entry id="nlmaps_atm2srf_conserve">
+    <type>logical</type>
+    <category>nlmaps</category>
+    <group>seq_infodata_inparm</group>
+    <desc>
+      Use various fractions to adjust output so that an atmosphere-to-surface
+      flux integrates to the same value on the atmosphere grid and on the land +
+      ocean + ice grids.
+      default: .false.
+    </desc>
+    <values>
+      <value>.false.</value>
+    </values>
+  </entry>
+
   <entry id="nlmaps_exclude_fields">
     <type>char(20)</type>
     <category>nlmaps</category>

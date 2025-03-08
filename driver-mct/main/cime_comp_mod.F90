@@ -1066,6 +1066,7 @@ contains
     integer(i8) :: end_count          ! end time
     integer(i8) :: irtc_rate          ! factor to convert time to seconds
     integer :: nlmaps_verbosity
+    logical :: nlmaps_atm2srf_conserve
     character(nlmaps_exclude_nchar) :: nlmaps_exclude_fields(nlmaps_exclude_max_number)
 
     !----------------------------------------------------------
@@ -1225,6 +1226,7 @@ contains
          reprosum_recompute=reprosum_recompute     , &
          max_cplstep_time=max_cplstep_time         , &
          nlmaps_verbosity=nlmaps_verbosity         , &
+         nlmaps_atm2srf_conserve=nlmaps_atm2srf_conserve, &
          nlmaps_exclude_fields=nlmaps_exclude_fields)
 
     ! above - cpl_decomp is set to pass the cpl_decomp value to seq_mctext_decomp
@@ -1240,7 +1242,7 @@ contains
 
     call seq_nlmap_setopts(nlmaps_verbosity_in = nlmaps_verbosity, &
          nlmaps_exclude_fields_in = nlmaps_exclude_fields, &
-         nlmaps_atm2srf_conserve_in = .true.)
+         nlmaps_atm2srf_conserve_in = nlmaps_atm2srf_conserve)
 
     ! Check cpl_seq_option
 
