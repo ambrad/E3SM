@@ -1240,7 +1240,7 @@ contains
 
     call seq_nlmap_setopts(nlmaps_verbosity_in = nlmaps_verbosity, &
          nlmaps_exclude_fields_in = nlmaps_exclude_fields, &
-         atm2srf_conserve_in = .true.)
+         nlmaps_atm2srf_conserve_in = .true.)
 
     ! Check cpl_seq_option
 

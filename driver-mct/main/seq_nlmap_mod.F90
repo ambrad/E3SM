@@ -159,11 +159,12 @@ module seq_nlmap_mod
 
 contains
 
-  subroutine seq_nlmap_setopts(nlmaps_verbosity_in, nlmaps_exclude_fields_in, atm2srf_conserve_in)
+  subroutine seq_nlmap_setopts(nlmaps_verbosity_in, nlmaps_exclude_fields_in, &
+       nlmaps_atm2srf_conserve_in)
     integer, optional, intent(in) :: nlmaps_verbosity_in
     character(nlmaps_exclude_nchar), optional, intent(in) :: &
          nlmaps_exclude_fields_in(nlmaps_exclude_max_number)
-    logical, optional, intent(in) :: atm2srf_conserve_in
+    logical, optional, intent(in) :: nlmaps_atm2srf_conserve_in
 
     integer :: i, n
 
@@ -182,11 +183,13 @@ contains
        end do
     end if
 
-    if (present(atm2srf_conserve_in)) atm2srf_conserve = atm2srf_conserve_in
+    if (present(nlmaps_atm2srf_conserve_in)) then
+       atm2srf_conserve = nlmaps_atm2srf_conserve_in
+    end if
 
     if (atm2srf_conserve .and. nlmaps_exclude_n_fields > 0) then
        if (seq_comm_iamroot(CPLID)) then
-          write(logunit,'(a)') 'nlmap> WARNING: When atm2srf_conserve is ON,&
+          write(logunit,'(a)') 'nlmap> WARNING: When nlmaps_atm2srf_conserve is ON,&
                & the field exclusion list is ignored.'
        end if
     end if
@@ -403,8 +406,8 @@ contains
     if (a2s_cons) then
        lnorm = .false.
        if (.not. (atm2srf_a2l_inited .and. atm2srf_a2oi_inited)) then
-          call shr_sys_abort(subname//' ERROR: nlmap> atm2srf_conserve was requested &
-               &but a2l and a2oi initialization is incomplete.')
+          call shr_sys_abort(subname//' ERROR: nlmap> nlmaps_atm2srf_conserve &
+               &was requested but a2l and a2oi initialization is incomplete.')
        end if
     end if
 
