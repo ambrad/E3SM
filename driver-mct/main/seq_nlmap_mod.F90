@@ -185,8 +185,10 @@ contains
     if (present(atm2srf_conserve_in)) atm2srf_conserve = atm2srf_conserve_in
 
     if (atm2srf_conserve .and. nlmaps_exclude_n_fields > 0) then
-       write(logunit,'(a)') 'nlmap> WARNING: When atm2srf_conserve is ON,&
-            & the field exclusion list is ignored.'
+       if (seq_comm_iamroot(CPLID)) then
+          write(logunit,'(a)') 'nlmap> WARNING: When atm2srf_conserve is ON,&
+               & the field exclusion list is ignored.'
+       end if
     end if
   end subroutine seq_nlmap_setopts
 
@@ -677,7 +679,7 @@ contains
 
        ! Set avp_o.
        do k = 1,natt
-          if (.not. a2s_cons .or. verbose) then
+          if (.not. a2s_cons) then
              call mct_aVect_getRList(mstring, k, avp_i)
              fldname = mct_string_toChar(mstring)
              call mct_string_clean(mstring)
@@ -689,11 +691,7 @@ contains
                    exit
                 end if
              end do
-             if (.not. a2s_cons .and. found) cycle
-             if (found .and. amroot .and. verbose) then
-                write(logunit, '(2a,4i)') &
-                     'nlmap> field ', trim(fldname(1:nlmaps_exclude_max_nchar)), k
-             end if
+             if (found) cycle
           end if
           do j = 1,lsize_o
              avp_o%rAttr(k,j) = nl_avp_o%rAttr(k,j)
