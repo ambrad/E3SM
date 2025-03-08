@@ -250,14 +250,15 @@ contains
     integer(IN) :: k_sarea, k_sfrac, k_darea, k_dfrac, lsize_s, lsize_d, j, ne, irow, &
          &     icol, iwgt, row, col, mpicom
     real(R8) :: frac, area, wgt
-    real(R8), allocatable :: den(:)
     type(mct_sMatp) :: sMatp
     type(mct_aVect) :: lfrac_d, frac_d, area_d
 
     !amb
     logical :: amroot
-    integer :: li(2), gi(2)
+    integer :: li(2), gi(2), n
     real(r8) :: lr(2), gr(2), tmp
+    integer, allocatable :: lcnt(:), gcnt(:)
+    integer, parameter :: nt = 1000
 
     k_sarea = mct_aVect_indexRA(mapper%dom_cx_s%data, 'aream')
     k_sfrac = mct_aVect_indexRA(fractions_ax(1), 'lfrac')
@@ -307,23 +308,20 @@ contains
     irow = mct_sMat_indexIA(sMatp%Matrix, 'lrow')
     icol = mct_sMat_indexIA(sMatp%Matrix, 'lcol')
     iwgt = mct_sMat_indexRA(sMatp%Matrix, 'weight')
-    allocate(mapper%scale_s(lsize_s), den(lsize_s))
+    allocate(mapper%scale_s(lsize_s))
     mapper%scale_s = 0
-    den = 0
     do j = 1, ne
        row = sMatp%Matrix%data%iAttr(irow,j)
        col = sMatp%Matrix%data%iAttr(icol,j)
        wgt = sMatp%Matrix%data%rAttr(iwgt,j)
-       area = area_d%rAttr(k_darea,row)
-       frac = frac_d%rAttr(1,row)
-       mapper%scale_s(col) = mapper%scale_s(col) + area*wgt
-       den(col) = den(col) + frac*area*wgt
+       mapper%scale_s(col) = mapper%scale_s(col) + &
+            frac_d%rAttr(1,row) * area_d%rAttr(k_darea,row) * wgt
     end do
     do j = 1, lsize_s
-       if (den(j) > 0) then
-          mapper%scale_s(j) = mapper%scale_s(j)/den(j)
-       else
-          mapper%scale_s(j) = 0
+       if (mapper%scale_s(j) > 0) then
+          mapper%scale_s(j) = (mapper%dom_cx_s%data%rAttr(k_sarea,j) / &
+               &               mapper%scale_s(j))
+          if (mapper%scale_s(j) < 1) print *,'nlmap> scale_s',mapper%scale_s(j)
        end if
     end do
     lr(1) = 1e8; lr(2) = -1e8
@@ -343,7 +341,22 @@ contains
     call mct_aVect_clean(frac_d)
     call mct_aVect_clean(area_d)
     call mct_sMatp_clean(sMatp)
-    deallocate(den)
+
+    allocate(lcnt(nt), gcnt(nt))
+    do ne = 1,nt
+       n = 0
+       do j = 1, lsize_s
+          if (mapper%scale_s(j) > ne-1) n = n + 1
+       end do
+       lcnt(ne) = n
+    end do
+    call mpi_allreduce(lcnt, gcnt, nt, MPI_INTEGER, MPI_SUM, mpicom, j)
+    if (amroot) then
+       do ne = 1,nt
+          write(logunit,'(i4,i9)') ne, gcnt(ne)
+       end do
+    end if
+    deallocate(lcnt, gcnt)
 
   end subroutine seq_map_init_a2l_cons
 
