@@ -253,13 +253,6 @@ contains
     type(mct_sMatp) :: sMatp
     type(mct_aVect) :: lfrac_d, frac_d, area_d
 
-    !amb
-    logical :: amroot
-    integer :: li(2), gi(2), n
-    real(r8) :: lr(2), gr(2), tmp
-    integer, allocatable :: lcnt(:), gcnt(:)
-    integer, parameter :: nt = 1000
-
     k_sarea = mct_aVect_indexRA(mapper%dom_cx_s%data, 'aream')
     k_sfrac = mct_aVect_indexRA(fractions_ax(1), 'lfrac')
     if (samegrid_al) then
@@ -282,7 +275,6 @@ contains
 
     ! Compute scale_s. We could do this with a transpose matrix-vector product,
     ! but that is not available in MCT.
-    amroot = seq_comm_iamroot(CPLID)
     call seq_comm_setptrs(CPLID, mpicom=mpicom)
     !   Read the map file in Y format so we have access to columns.
     call shr_mct_sMatPInitnc(sMatp, mapper%gsMap_s, mapper%gsMap_d, &
@@ -294,7 +286,6 @@ contains
          mapper_Fl2a%sMatp%XToXPrime, tag=mapper_Fl2a%sMatp%Tag, vector=mct_usevector, &
          alltoall=.true., handshake=.true.)
     !   Get frac_d for the full destination grid.
-    if (amroot) write(logunit,'(a)') 'nlmap> frac_d'
     call mct_aVect_init(lfrac_d, rList='frac', lsize=lsize_d)
     lfrac_d%rAttr(1,:) = mapper%frac_d
     call mct_aVect_init(frac_d, rList='frac', lsize=mapper_Fl2a%sMatp%XPrimeLength)
@@ -321,42 +312,12 @@ contains
        if (mapper%scale_s(j) > 0) then
           mapper%scale_s(j) = (mapper%dom_cx_s%data%rAttr(k_sarea,j) / &
                &               mapper%scale_s(j))
-          if (mapper%scale_s(j) < 1) print *,'nlmap> scale_s',mapper%scale_s(j)
        end if
     end do
-    lr(1) = 1e8; lr(2) = -1e8
-    li(1) = 0
-    do j = 1, lsize_s
-       tmp = mapper%scale_s(j)
-       if (tmp > 0) li(1) = li(1) + 1
-       if (abs(tmp - 1) < 1e-5) li(2) = li(2) + 1
-       lr(1) = min(lr(1), tmp)
-       lr(2) = max(lr(2), tmp)
-    end do
-    call mpi_allreduce(lr, gr, 1, MPI_DOUBLE_PRECISION, MPI_MIN, mpicom, j)
-    call mpi_allreduce(lr(2:2), gr(2:2), 1, MPI_DOUBLE_PRECISION, MPI_MAX, mpicom, j)
-    call mpi_allreduce(li, gi, 2, MPI_INTEGER, MPI_SUM, mpicom, j)
-    if (amroot) write(logunit,'(a,2i8,2es23.15)') 'nlmap> scale_s',gi(1),gi(2),gr(1),gr(2)
     !   Clean up.
     call mct_aVect_clean(frac_d)
     call mct_aVect_clean(area_d)
     call mct_sMatp_clean(sMatp)
-
-    allocate(lcnt(nt), gcnt(nt))
-    do ne = 1,nt
-       n = 0
-       do j = 1, lsize_s
-          if (mapper%scale_s(j) > ne-1) n = n + 1
-       end do
-       lcnt(ne) = n
-    end do
-    call mpi_allreduce(lcnt, gcnt, nt, MPI_INTEGER, MPI_SUM, mpicom, j)
-    if (amroot) then
-       do ne = 1,nt
-          write(logunit,'(i4,i9)') ne, gcnt(ne)
-       end do
-    end if
-    deallocate(lcnt, gcnt)
 
   end subroutine seq_map_init_a2l_cons
 
