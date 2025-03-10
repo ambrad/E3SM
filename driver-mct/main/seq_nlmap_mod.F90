@@ -196,29 +196,11 @@ contains
 
   end subroutine seq_nlmap_setopts
 
-  subroutine seq_nlmap_init_a2oi_cons(mapper, fractions_ax, fractions_ox)
+  subroutine seq_nlmap_init_a2oi_cons(mapper, fractions_ax)
     type(seq_map), pointer, intent(inout) :: mapper ! Fa2o
-    type(mct_aVect)       , intent(in)    :: fractions_ax(:), fractions_ox(:)
+    type(mct_aVect)       , intent(in)    :: fractions_ax(:)
 
-    integer(IN) :: k_sarea, k_sfrac, k_dfrac1, k_dfrac2, lsize_s, lsize_d, j
-
-    !amb
-    integer :: i, n, ifrac, same
-    real(8) :: md
-    k_dfrac1 = mct_aVect_indexRA(fractions_ox(1), 'ofrac')
-    k_dfrac2 = mct_aVect_indexRA(fractions_ox(1), 'ifrac')
-    ifrac = mct_aVect_indexRA(mapper%dom_cx_d%data, 'frac')
-    lsize_d = mct_aVect_lsize(mapper%dom_cx_d%data)
-    same = .true.
-    md = 0
-    do i = 1,lsize_d
-       if (mapper%dom_cx_d%data%rAttr(ifrac,i) /= fractions_ox(1)%rAttr(k_dfrac1,i)) same = .false.
-       md = max(md, abs(mapper%dom_cx_d%data%rAttr(ifrac,i) - fractions_ox(1)%rAttr(k_dfrac1,i)))
-    end do
-    if (seq_comm_iamroot(CPLID)) then
-       write(logunit,'(a,l,es23.15)') 'nlmap> ocn dom_d same?',same,md
-    end if
-    !amb
+    integer(IN) :: k_sfrac, k_dfrac, lsize_s, lsize_d, j
 
     if (.not. atm2srf_conserve) return
 
@@ -226,10 +208,8 @@ contains
        call shr_sys_abort('seq_nlmap_init_a2oi_cons ERROR: Nonlinear map not set.')
     end if
 
-    k_sarea = mct_aVect_indexRA(mapper%dom_cx_s%data, 'aream')
     k_sfrac = mct_aVect_indexRA(fractions_ax(1), 'lfrac')
-    k_dfrac1 = mct_aVect_indexRA(fractions_ox(1), 'ofrac')
-    k_dfrac2 = mct_aVect_indexRA(fractions_ox(1), 'ifrac')
+    k_dfrac = mct_aVect_indexRA(mapper%dom_cx_d%data, 'frac')
 
     lsize_s = mct_aVect_lsize(mapper%dom_cx_s%data)
     lsize_d = mct_aVect_lsize(mapper%dom_cx_d%data)
@@ -240,58 +220,18 @@ contains
        mapper%frac_s(j) = 1 - fractions_ax(1)%rAttr(k_sfrac,j)
     end do
     do j = 1,lsize_d
-       mapper%frac_d(j) = fractions_ox(1)%rAttr(k_dfrac1,j) + fractions_ox(1)%rAttr(k_dfrac2,j)
+       mapper%frac_d(j) = mapper%dom_cx_d%data%rAttr(k_dfrac,j)
     end do
 
     atm2srf_a2oi_inited = .true.
     
   end subroutine seq_nlmap_init_a2oi_cons
 
-  subroutine seq_nlmap_init_a2l_cons(mapper, fractions_ax, fractions_lx, samegrid_al)
+  subroutine seq_nlmap_init_a2l_cons(mapper, fractions_ax)
     type(seq_map), pointer, intent(inout) :: mapper ! Fa2l
-    type(mct_aVect)       , intent(in)    :: fractions_ax(:), fractions_lx(:)
-    logical               , intent(in)    :: samegrid_al
+    type(mct_aVect)       , intent(in)    :: fractions_ax(:)
 
     integer(IN) :: k_sfrac, k_dfrac, lsize_s, lsize_d, j
-    character(1024) :: item
-
-    !amb
-    integer :: i, n, ifrac, same
-    n = mct_aVect_nRattr(mapper%dom_cx_s%data)
-    do i = 1,n
-       item = mct_aVect_getRList2c(i, mapper%dom_cx_s%data)
-       if (seq_comm_iamroot(CPLID)) then
-          write(logunit,'(a,i3,2a)') 'nlmap> lnd dom_s',i,' ',trim(item)
-       end if
-    end do
-    n = mct_aVect_nRattr(mapper%dom_cx_d%data)
-    do i = 1,n
-       item = mct_aVect_getRList2c(i, mapper%dom_cx_d%data)
-       if (seq_comm_iamroot(CPLID)) then
-          write(logunit,'(a,i3,2a)') 'nlmap> lnd dom_d',i,' ',trim(item)
-       end if
-    end do
-    k_sfrac = mct_aVect_indexRA(fractions_ax(1), 'lfrac')
-    ifrac = mct_aVect_indexRA(mapper%dom_cx_s%data, 'frac')
-    lsize_s = mct_aVect_lsize(mapper%dom_cx_s%data)
-    same = .true.
-    do i = 1,lsize_s
-       if (mapper%dom_cx_s%data%rAttr(ifrac,i) /= fractions_ax(1)%rAttr(k_sfrac,i)) same = .false.
-    end do
-    if (seq_comm_iamroot(CPLID)) then
-       write(logunit,'(a,l)') 'nlmap> lnd dom_s same?',same
-    end if
-    k_dfrac = mct_aVect_indexRA(fractions_lx(1), 'lfrin')
-    ifrac = mct_aVect_indexRA(mapper%dom_cx_d%data, 'frac')
-    lsize_d = mct_aVect_lsize(mapper%dom_cx_d%data)
-    same = .true.
-    do i = 1,lsize_d
-       if (mapper%dom_cx_d%data%rAttr(ifrac,i) /= fractions_lx(1)%rAttr(k_dfrac,i)) same = .false.
-    end do
-    if (seq_comm_iamroot(CPLID)) then
-       write(logunit,'(a,l)') 'nlmap> lnd dom_d same?',same
-    end if
-    !amb
 
     if (.not. atm2srf_conserve) return
 
@@ -300,11 +240,7 @@ contains
     end if
 
     k_sfrac = mct_aVect_indexRA(fractions_ax(1), 'lfrac')
-    if (samegrid_al) then
-       k_dfrac = mct_aVect_indexRA(fractions_lx(1), 'lfrac')
-    else
-       k_dfrac = mct_aVect_indexRA(fractions_lx(1), 'lfrin')
-    end if
+    k_dfrac = mct_aVect_indexRA(mapper%dom_cx_d%data, 'frac')
 
     lsize_s = mct_aVect_lsize(mapper%dom_cx_s%data)
     lsize_d = mct_aVect_lsize(mapper%dom_cx_d%data)
@@ -315,7 +251,7 @@ contains
        mapper%frac_s(j) = fractions_ax(1)%rAttr(k_sfrac,j)
     end do
     do j = 1,lsize_d
-       mapper%frac_d(j) = fractions_lx(1)%rAttr(k_dfrac,j)
+       mapper%frac_d(j) = mapper%dom_cx_d%data%rAttr(k_dfrac,j)
     end do
 
     atm2srf_a2l_inited = .true.
