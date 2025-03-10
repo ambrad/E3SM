@@ -905,8 +905,8 @@ contains
        lnorm = norm
     endif
 
-    a2s_cons = allocated(mapper%frac_s) .and. .not. omit_a2s_cons
-    if (a2s_cons) lnorm = .false.
+    a2s_cons = use_nonlinear_map .and. allocated(mapper%frac_s) .and. .not. omit_a2s_cons
+    if (a2s_cons) lnorm = .false. ! see seq_nlmap_mod.F90
 
     if (present(norm_i)) then
        if (.not.lnorm) call shr_sys_abort(subname//' ERROR norm_i and norm = false')
@@ -958,7 +958,7 @@ contains
     else
        ! MCT based SMM
        if (use_nonlinear_map) then
-          call seq_nlmap_avNormArr(mapper, avp_i, avp_o, lnorm, lomit_a2s_cons)
+          call seq_nlmap_avNormArr(mapper, avp_i, avp_o, lnorm, a2s_cons)
        else
           call mct_sMat_avMult(avp_i, mapper%sMatp, avp_o, VECTOR=mct_usevector)
        end if

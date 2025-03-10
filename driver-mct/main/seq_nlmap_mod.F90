@@ -367,7 +367,7 @@ contains
 
   end subroutine sort_rowcols
 
-  subroutine seq_nlmap_avNormArr(mapper, avp_i, avp_o, lnorm_in, omit_a2s_cons)
+  subroutine seq_nlmap_avNormArr(mapper, avp_i, avp_o, lnorm_in, a2s_cons)
     ! When mapper%nl_available, the call to mct_sMat_avMult in seq_map_avNormArr
     ! can be replaced with a call to this routine. This routine applies the
     ! nonlinear map, just as mct_sMat_avMult applies a linear map.
@@ -376,7 +376,7 @@ contains
     type(mct_aVect) , intent(in)    :: avp_i  ! input
     type(mct_aVect) , intent(inout) :: avp_o  ! output
     logical         , intent(in)    :: lnorm_in  ! normalize at end
-    logical         , intent(in)    :: omit_a2s_cons
+    logical         , intent(in)    :: a2s_cons
 
     type(mct_aVect)        :: nl_avp_o
     integer(IN)            :: j,kf
@@ -387,7 +387,7 @@ contains
     character(len=*),parameter :: ffld = 'norm8wt'
     character(len=*), parameter :: afldname  = 'aream'
     character(len=128) :: msg
-    logical :: amroot, verbose, found, lnorm, zero, a2s_cons
+    logical :: amroot, verbose, found, lnorm, zero
     integer(IN) :: mpicom, ierr, k, natt, nsum, nfld, k_sarea, k_darea, i, n, lidata(3), gidata(3)
     real(r8) :: tmp, area, lo, hi, y, frac, lrdata(3), grdata(3)
     real(r8), allocatable, dimension(:) :: lmins, gmins, lmaxs, gmaxs, glbl_masses, gwts
@@ -408,7 +408,6 @@ contains
     call seq_comm_setptrs(CPLID, mpicom=mpicom)
     amroot = seq_comm_iamroot(CPLID)
 
-    a2s_cons = allocated(mapper%frac_s) .and. .not. omit_a2s_cons
     if (a2s_cons) then
        lnorm = .false.
        if (.not. (atm2srf_a2l_inited .and. atm2srf_a2oi_inited)) then
