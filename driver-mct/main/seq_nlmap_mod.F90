@@ -26,6 +26,13 @@ module seq_nlmap_mod
   ! data in any target cell that SRC2TGT_TMAPFILE does. In the opposite
   ! direction, at runtime, any target cell that SRC2TGT_TMAPFILE does not affect
   ! is zeroed after SRC2TGT_TMAPFILE_NONLINEAR is applied.
+  !   Optionally, this module provides an algorithm variant to obtains exact
+  ! mass conservation for atmosphere-to-surface flux maps in the case of
+  ! overlapping surface grids with a nontrivial common refinement. (A unified
+  ! surface grid permits conservation without the variant.) This variant is
+  ! controlled by the boolean option NLMAPS_ATM2SRF_CONSERVE in the coupler
+  ! options. If this option is true, both the atm2lnd and atm2ocn maps must be
+  ! nonlinear; if they aren't, the module calls abort.
   !
   ! Following is a description of the algorithm and its properties,
   ! specializations of Alg. 3.1 of the following reference for this use case:
@@ -114,6 +121,23 @@ module seq_nlmap_mod
   !   0 <= (dM / (t g)'w) <= 1,
   ! permitting the final line to hold.
   !
+  ! nlmas_atm2srf_conserve variant.
+  !   Some modifications are made for this case.
+  !   f, the vector of area fractions, is not used. That is because it is atm
+  ! fractions, which are uniformly and globally 1.
+  !   Instead, we need nontrivial fraction fields. We use the notation of the
+  ! documentation in seq_frac_mct.F90.
+  !   For atm2lnd, on the atmosphere we use frac_s = fractions_a(lfrac); on the
+  ! land we set frac_d to the 'frac' field in dom_cx_d.
+  !   For atm2ocn, on the atmosphere we use frac_s = 1 - fractions_a(lfrac); on
+  ! the ocn grid we again set frac_d to the 'frac' field in dom_cx_d, which is
+  ! the sum of the ocn and ice fractions in the fractions_ox structure.
+  !   Then in the above statement of the CAAS algorithm, use these lines instead
+  ! of the original ones:
+  !     (1) M := sum( frac_s * area_s * x )
+  !     (2) zero y0, l, u in any cell in which frac_d is 0
+  !     (3) dM := M - sum( frac_d * area_d * y1 )
+  !
   ! Author: A.M. Bradley, Mar,Apr-2023
   ! Update: A.M. Bradley, Mar-2025. a2s_cons feature.
   !
@@ -161,6 +185,8 @@ contains
 
   subroutine seq_nlmap_setopts(nlmaps_verbosity_in, nlmaps_exclude_fields_in, &
        nlmaps_atm2srf_conserve_in)
+    ! Options in drv_in.
+    
     integer, optional, intent(in) :: nlmaps_verbosity_in
     character(nlmaps_exclude_nchar), optional, intent(in) :: &
          nlmaps_exclude_fields_in(nlmaps_exclude_max_number)
@@ -197,6 +223,8 @@ contains
   end subroutine seq_nlmap_setopts
 
   subroutine seq_nlmap_init_a2oi_cons(mapper, fractions_ax)
+    ! Initialize frac_s, frac_d for the atm2ocn map.
+    
     type(seq_map), pointer, intent(inout) :: mapper ! Fa2o
     type(mct_aVect)       , intent(in)    :: fractions_ax(:)
 
@@ -228,6 +256,8 @@ contains
   end subroutine seq_nlmap_init_a2oi_cons
 
   subroutine seq_nlmap_init_a2l_cons(mapper, fractions_ax)
+    ! Initialize frac_s, frac_d for the atm2lnd map.
+
     type(seq_map), pointer, intent(inout) :: mapper ! Fa2l
     type(mct_aVect)       , intent(in)    :: fractions_ax(:)
 
@@ -396,10 +426,7 @@ contains
     character(CL) :: fldname
 
     ! BFB speedups to do:
-    ! * Combine matvecs into one routine that shares the X->X' comm.
     ! * Combine the min/max reductions using a custom reduce.
-    ! * Cleaner handling of the excludes list would remove computation and
-    !   communication for vectors in the list.
 
     call t_startf('seq_nlmap_avNormArr')
 
