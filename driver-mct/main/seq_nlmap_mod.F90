@@ -408,22 +408,19 @@ contains
     logical         , intent(in)    :: lnorm_in  ! normalize at end
     logical         , intent(in)    :: a2s_cons
 
-    type(mct_aVect)        :: nl_avp_o
-    integer(IN)            :: j,kf
-    integer(IN)            :: lsize_i,lsize_o
-    real(r8)               :: normval
-    character(CX)          :: lrList,appnd
-    character(*),parameter :: subName = '(seq_nlmap_avNormArr) '
-    character(len=*),parameter :: ffld = 'norm8wt'
-    character(len=*), parameter :: afldname  = 'aream'
+    type(mct_aVect) :: nl_avp_o
+    integer(IN) :: j, kf, lsize_i, lsize_o, mpicom, ierr, k, natt, nsum, nfld, &
+         &         k_sarea, k_darea
     character(len=128) :: msg
+    character(CL) :: fldname
     logical :: amroot, verbose, found, lnorm, zero
-    integer(IN) :: mpicom, ierr, k, natt, nsum, nfld, k_sarea, k_darea, i, n, lidata(3), gidata(3)
-    real(r8) :: tmp, area, lo, hi, y, frac, lrdata(3), grdata(3)
+    real(r8) :: tmp, area, lo, hi, y, frac
     real(r8), allocatable, dimension(:) :: lmins, gmins, lmaxs, gmaxs, glbl_masses, gwts
     real(r8), allocatable, dimension(:,:) :: dof_masses, caas_wgt, oglims, lcl_lo, lcl_hi
     type(mct_string) :: mstring
-    character(CL) :: fldname
+    character(*),parameter :: subName = '(seq_nlmap_avNormArr) '
+    character(len=*),parameter :: ffld = 'norm8wt'
+    character(len=*), parameter :: afldname  = 'aream'
 
     ! BFB speedups to do:
     ! * Combine the min/max reductions using a custom reduce.
@@ -465,11 +462,8 @@ contains
     
     if (verbose) then
        if (amroot) then
-          write(logunit, '(4A,2L2,I3)') 'nlmap> ', trim(mapper%nl_mapfile), ' ', &
-               trim(mapper%strategy), mapper%nl_conservative, lnorm, natt
-          if (a2s_cons) then
-             write(logunit, '(A,2L)') 'nlmap> a2s_cons', a2s_cons
-          end if
+          write(logunit, '(4A,2L2,I3,L)') 'nlmap> ', trim(mapper%nl_mapfile), ' ', &
+               trim(mapper%strategy), mapper%nl_conservative, lnorm, natt, a2s_cons
        end if
     end if
 
@@ -490,13 +484,9 @@ contains
     ! Mask high-order field against low-order. An exact 0 in the low-order field
     ! will mask the high-order field unnecessarily, but that's OK: it's a rare,
     ! local reduction in order to one, not a wrong value.
-    n = 0
     do j = 1,lsize_o
        zero = .false.
-       if (a2s_cons) then
-          zero = mapper%frac_d(j) <= 0
-       end if
-       if (a2s_cons .and. zero) n = n + 1
+       if (a2s_cons) zero = mapper%frac_d(j) <= 0
        do k = 1,natt
           if (.not. a2s_cons) zero = avp_o%rAttr(k,j) == 0
           if (zero) then
@@ -507,28 +497,6 @@ contains
           end if
        end do
     end do
-    if (a2s_cons .and. verbose) then
-       lidata(1) = n
-       lidata(2) = lsize_o
-       lidata(3) = lsize_i
-       call mpi_allreduce(lidata, gidata, 3, MPI_INTEGER, MPI_SUM, mpicom, ierr)
-       if (amroot) write(logunit, '(a,3i8)') 'nlmap> nzero', gidata(1), gidata(2), gidata(3)
-
-       k_sarea = mct_aVect_indexRA(mapper%dom_cx_s%data, afldname)
-       k_darea = mct_aVect_indexRA(mapper%dom_cx_d%data, afldname)
-       lrdata(1) = 0
-       do j = 1,lsize_o
-          frac = mapper%frac_d(j)
-          lrdata(1) = lrdata(1) + frac*mapper%dom_cx_d%data%rAttr(k_darea,j)
-       end do
-       lrdata(2) = 0
-       do j = 1,lsize_i
-          frac = mapper%frac_s(j)
-          lrdata(2) = lrdata(2) + frac*mapper%dom_cx_s%data%rAttr(k_sarea,j)
-       end do
-       call mpi_allreduce(lrdata, grdata, 2, MPI_DOUBLE_PRECISION, MPI_SUM, mpicom, ierr)
-       if (amroot) write(logunit, '(a,2es23.15)') 'nlmap> fracsum s,a', grdata(1), grdata(2)
-    end if
 
     if (mapper%nl_conservative) then
        ! Compute global bounds.
@@ -715,6 +683,8 @@ contains
        ! Set avp_o.
        do k = 1,natt
           if (.not. a2s_cons) then
+             ! Search the list of excluded fields. If found, skip. If a2s_cons,
+             ! ignore the list.
              call mct_aVect_getRList(mstring, k, avp_i)
              fldname = mct_string_toChar(mstring)
              call mct_string_clean(mstring)
