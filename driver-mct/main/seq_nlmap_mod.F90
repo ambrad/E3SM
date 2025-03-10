@@ -202,6 +202,24 @@ contains
 
     integer(IN) :: k_sarea, k_sfrac, k_dfrac1, k_dfrac2, lsize_s, lsize_d, j
 
+    !amb
+    integer :: i, n, ifrac, same
+    real(8) :: md
+    k_dfrac1 = mct_aVect_indexRA(fractions_ox(1), 'ofrac')
+    k_dfrac2 = mct_aVect_indexRA(fractions_ox(1), 'ifrac')
+    ifrac = mct_aVect_indexRA(mapper%dom_cx_d%data, 'frac')
+    lsize_d = mct_aVect_lsize(mapper%dom_cx_d%data)
+    same = .true.
+    md = 0
+    do i = 1,lsize_d
+       if (mapper%dom_cx_d%data%rAttr(ifrac,i) /= fractions_ox(1)%rAttr(k_dfrac1,i)) same = .false.
+       md = max(md, abs(mapper%dom_cx_d%data%rAttr(ifrac,i) - fractions_ox(1)%rAttr(k_dfrac1,i)))
+    end do
+    if (seq_comm_iamroot(CPLID)) then
+       write(logunit,'(a,l,es23.15)') 'nlmap> ocn dom_d same?',same,md
+    end if
+    !amb
+
     if (.not. atm2srf_conserve) return
 
     if (.not. mapper%nl_available) then
@@ -235,6 +253,45 @@ contains
     logical               , intent(in)    :: samegrid_al
 
     integer(IN) :: k_sfrac, k_dfrac, lsize_s, lsize_d, j
+    character(1024) :: item
+
+    !amb
+    integer :: i, n, ifrac, same
+    n = mct_aVect_nRattr(mapper%dom_cx_s%data)
+    do i = 1,n
+       item = mct_aVect_getRList2c(i, mapper%dom_cx_s%data)
+       if (seq_comm_iamroot(CPLID)) then
+          write(logunit,'(a,i3,2a)') 'nlmap> lnd dom_s',i,' ',trim(item)
+       end if
+    end do
+    n = mct_aVect_nRattr(mapper%dom_cx_d%data)
+    do i = 1,n
+       item = mct_aVect_getRList2c(i, mapper%dom_cx_d%data)
+       if (seq_comm_iamroot(CPLID)) then
+          write(logunit,'(a,i3,2a)') 'nlmap> lnd dom_d',i,' ',trim(item)
+       end if
+    end do
+    k_sfrac = mct_aVect_indexRA(fractions_ax(1), 'lfrac')
+    ifrac = mct_aVect_indexRA(mapper%dom_cx_s%data, 'frac')
+    lsize_s = mct_aVect_lsize(mapper%dom_cx_s%data)
+    same = .true.
+    do i = 1,lsize_s
+       if (mapper%dom_cx_s%data%rAttr(ifrac,i) /= fractions_ax(1)%rAttr(k_sfrac,i)) same = .false.
+    end do
+    if (seq_comm_iamroot(CPLID)) then
+       write(logunit,'(a,l)') 'nlmap> lnd dom_s same?',same
+    end if
+    k_dfrac = mct_aVect_indexRA(fractions_lx(1), 'lfrin')
+    ifrac = mct_aVect_indexRA(mapper%dom_cx_d%data, 'frac')
+    lsize_d = mct_aVect_lsize(mapper%dom_cx_d%data)
+    same = .true.
+    do i = 1,lsize_d
+       if (mapper%dom_cx_d%data%rAttr(ifrac,i) /= fractions_lx(1)%rAttr(k_dfrac,i)) same = .false.
+    end do
+    if (seq_comm_iamroot(CPLID)) then
+       write(logunit,'(a,l)') 'nlmap> lnd dom_d same?',same
+    end if
+    !amb
 
     if (.not. atm2srf_conserve) return
 
