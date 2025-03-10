@@ -193,6 +193,7 @@ contains
                & the field exclusion list is ignored.'
        end if
     end if
+
   end subroutine seq_nlmap_setopts
 
   subroutine seq_nlmap_init_a2oi_cons(mapper, fractions_ax, fractions_ox)
@@ -200,6 +201,12 @@ contains
     type(mct_aVect)       , intent(in)    :: fractions_ax(:), fractions_ox(:)
 
     integer(IN) :: k_sarea, k_sfrac, k_dfrac1, k_dfrac2, lsize_s, lsize_d, j
+
+    if (.not. atm2srf_conserve) return
+
+    if (.not. mapper%nl_available) then
+       call shr_sys_abort('seq_nlmap_init_a2oi_cons ERROR: Nonlinear map not set.')
+    end if
 
     k_sarea = mct_aVect_indexRA(mapper%dom_cx_s%data, 'aream')
     k_sfrac = mct_aVect_indexRA(fractions_ax(1), 'lfrac')
@@ -228,6 +235,12 @@ contains
     logical               , intent(in)    :: samegrid_al
 
     integer(IN) :: k_sfrac, k_dfrac, lsize_s, lsize_d, j
+
+    if (.not. atm2srf_conserve) return
+
+    if (.not. mapper%nl_available) then
+       call shr_sys_abort('seq_nlmap_init_a2l_cons ERROR: Nonlinear map not set.')
+    end if
 
     k_sfrac = mct_aVect_indexRA(fractions_ax(1), 'lfrac')
     if (samegrid_al) then
