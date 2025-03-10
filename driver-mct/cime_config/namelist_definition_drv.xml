@@ -1768,7 +1768,8 @@
     <desc>
       List of fields that are to be excluded from the set that are nonlinearly
       mapped. For these excluded fields, the low-order linear map is used,
-      instead. Modify user_nl_cpl to edit this.
+      instead. Modify user_nl_cpl to edit this. This option is ignored if
+      nlmaps_atm2srf_conserve is .true.
       default: 'Faxa_rainc', 'Faxa_rainl', 'Faxa_snowc', 'Faxa_snowl'
     </desc>
     <values>
