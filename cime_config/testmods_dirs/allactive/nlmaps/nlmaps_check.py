@@ -65,8 +65,12 @@ def main(case_dir):
         # the only ALARM, everything is OK.
         special_case = True
         for ln in alarms:
-            relerr = float(ln.split()[-2])
+            relerr = abs(float(ln.split()[-2]))
             ln_ok = 'fin-mass 14/38' in ln and relerr < 1e-5
+            if not ln_ok:
+                # another special case that is OK
+                mass = abs(float(ln.split()[3]))
+                ln_ok = 'fin-mass 17/38' in ln and mass < 1e-34 and relerr < 1e-4
             if not ln_ok:
                 special_case = False
                 print(ln)
