@@ -299,6 +299,7 @@ void traj_calc_own_next_step (IslMpi<MT>& cm, const DepPoints<MT>& dep_points,
 
 template <typename VdepT, typename MT>
 void traj_copy_next_step (IslMpi<MT>& cm, const VdepT& vdep) {
+#ifndef NDEBUG
   const auto myrank = cm.p->rank();
   const auto xsz = cm.traj_msg_sz;
 #ifdef COMPOSE_PORT
@@ -379,7 +380,7 @@ interp_v_update (IslMpi<MT>& cm, const Int nets, const Int nete,
 #else
   DepPointsH<MT> dep_points(dep_points_r, cm.nelemd, cm.nlev, cm.np2, ndim);
 #endif
-  slmm_assert(dep_points.extent_int(3) == ndim);
+  slmm_assert(dep_points.extent_int(3) == cm.dep_points_ndim);
 
   // See comments in homme::islmpi::step for details. Each substep follows
   // essentially the same pattern.
