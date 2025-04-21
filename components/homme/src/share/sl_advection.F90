@@ -1434,9 +1434,16 @@ contains
                 dep_points_all(1:3,i,j,k,ie) = dep_points_all(1:3,i,j,1,ie)
              end do
              if (independent_time_steps) then
-                do k = 1, nlev
-                   dep_points_all(4,i,j,k,ie) = hvcoord%etam(k)
-                end do
+                if (etalg == 0) then
+                   do k = 1, nlev
+                      dep_points_all(4,i,j,k,ie) = hvcoord%etam(k)
+                   end do
+                else
+                   ! hvcoord%etai(k), k = 1 and nlevp, are not used.
+                   do k = 1, nlev
+                      dep_points_all(4,i,j,k,ie) = hvcoord%etai(k)
+                   end do
+                end if
              end if
           end do
        end do
@@ -1764,18 +1771,8 @@ contains
                 dep_points_all(1:3,i,j,k,ie) = p
                 if (independent_time_steps) then
                    ! Update vertical position.
-                   if (etalg == 0) then
-                      dep_points_all(4,i,j,k,ie) = dep_points_all(4,i,j,k,ie) - &
-                           dtsub*vdep(4,i,j,k,ie)
-                   else
-                      if (k < nlev) then
-                         eta_dot_kp1 = vdep(4,i,j,k+1,ie)
-                      else
-                         eta_dot_kp1 = zero
-                      end if
-                      dep_points_all(4,i,j,k,ie) = dep_points_all(4,i,j,k,ie) - &
-                           dtsub*half*(vdep(4,i,j,k,ie) + eta_dot_kp1)
-                   end if
+                   dep_points_all(4,i,j,k,ie) = dep_points_all(4,i,j,k,ie) - &
+                        &                       dtsub*vdep(4,i,j,k,ie)
                 end if
              end do
           end do
@@ -1798,35 +1795,59 @@ contains
     real(real_kind), intent(inout) :: dep_points_all(:,:,:,:,:)
     integer, intent(inout) :: limcnt
 
-    real(real_kind) :: deta_ref(nlevp), w1(np,np), v1(np,np,nlev), &
-         &             v2(np,np,nlevp), p(3)
+    real(real_kind) :: detam_ref(nlevp), detai_ref(nlev), w1(np,np), &
+         &             v1(np,np,nlev), v2(np,np,nlevp), p(3)
     integer :: ie, i, j, k, d
 
     call set_deta_tol(hvcoord)
 
-    deta_ref(1) = hvcoord%etam(1) - hvcoord%etai(1)
+    detam_ref(1) = hvcoord%etam(1) - hvcoord%etai(1)
     do k = 2, nlev
-       deta_ref(k) = hvcoord%etam(k) - hvcoord%etam(k-1)
+       detam_ref(k) = hvcoord%etam(k) - hvcoord%etam(k-1)
     end do
-    deta_ref(nlevp) = hvcoord%etai(nlevp) - hvcoord%etam(nlev)
+    detam_ref(nlevp) = hvcoord%etai(nlevp) - hvcoord%etam(nlev)
+    do k = 1, nlev
+       detai_ref(k) = hvcoord%etai(k+1) - hvcoord%etai(k)
+    end do
 
     do ie = nets, nete
        ! Surface pressure.
        w1 = hvcoord%hyai(1)*hvcoord%ps0 + sum(elem(ie)%state%dp3d(:,:,:,tl%np1), 3)
 
-       ! Reconstruct Lagrangian levels at t1 on arrival column:
-       !     eta_arr_int = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_int)
-       call limit_etam(hvcoord, deta_ref, dep_points_all(4,:,:,:,ie), v1, limcnt)
-       v2(:,:,1) = hvcoord%etai(1)
-       v2(:,:,nlevp) = hvcoord%etai(nlevp)
-       call eta_interp_eta(hvcoord, v1, hvcoord%etam, &
-            &              nlevp-2, hvcoord%etai(2:nlev), v2(:,:,2:nlev))
+       if (etalg == 0) then
+          ! Reconstruct Lagrangian levels at t1 on arrival column:
+          !     eta_arr_int = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_int)
+          call limit_etam(hvcoord, detam_ref, dep_points_all(4,:,:,:,ie), v1, limcnt)
+          v2(:,:,1) = hvcoord%etai(1)
+          v2(:,:,nlevp) = hvcoord%etai(nlevp)
+          call eta_interp_eta(hvcoord, &
+               &              nlev, v1, hvcoord%etam, &
+               &              nlevp-2, hvcoord%etai(2:nlev), v2(:,:,2:nlev))
+       else
+          ! Reconstruct Lagrangian levels at t1 on arrival column:
+          !     eta_arr_int = I[eta_ref_int(eta_dep_int)](eta_ref_int)
+          call limit_etai(hvcoord, detai_ref, dep_points_all(4,:,:,:,ie), v1, limcnt)
+          v2(:,:,1) = hvcoord%etai(1)
+          v2(:,:,nlevp) = hvcoord%etai(nlevp)
+          call eta_interp_eta(hvcoord, &
+               &              nlevp-2, v1(:,:,2:nlev), hvcoord%etai(2:nlev), &
+               &              nlevp-2, hvcoord%etai(2:nlev), v2(:,:,2:nlev))
+       end if
        call eta_to_dp(hvcoord, w1, v2, elem(ie)%derived%divdp)
 
-       ! Compute Lagrangian level midpoints at t1 on arrival column:
-       !     eta_arr_mid = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_mid)
-       call eta_interp_eta(hvcoord, v1, hvcoord%etam, &
-            &              nlev, hvcoord%etam, v2(:,:,1:nlev))
+       if (etalg == 0) then
+          ! Compute Lagrangian level midpoints at t1 on arrival column:
+          !     eta_arr_mid = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_mid)
+          call eta_interp_eta(hvcoord, &
+               &              nlev, v1, hvcoord%etam, &
+               &              nlev, hvcoord%etam, v2(:,:,1:nlev))
+       else
+          ! Compute Lagrangian level midpoints at t1 on arrival column:
+          !     eta_arr_mid = I[eta_ref_int(eta_dep_int)](eta_ref_mid)
+          call eta_interp_eta(hvcoord, &
+               &              nlevp-2, v1(:,:,2:nlev), hvcoord%etai(2:nlev), &
+               &              nlev, hvcoord%etam, v2(:,:,1:nlev))
+       end if
        dep_points_all(4,:,:,:,ie) = v2(:,:,1:nlev)
 
        ! Compute departure horizontal points corresponding to arrival
@@ -1880,7 +1901,7 @@ contains
 
     do j = 1, np
        do i = 1, np
-          ! Check nonmonotonicity in eta.
+          ! Check for nonmonotonicity in eta.
           ok = eta(i,j,1) - hvcoord%etai(1) >= deta_tol
           if (ok) then
              do k = 2, nlev
@@ -1916,6 +1937,50 @@ contains
        end do
     end do
   end subroutine limit_etam
+
+  subroutine limit_etai(hvcoord, deta_ref, eta, eta_lim, cnt)
+    type (hvcoord_t), intent(in) :: hvcoord
+    real(real_kind), intent(in) :: deta_ref(nlev), eta(np,np,nlev)
+    real(real_kind), intent(out) :: eta_lim(np,np,nlev)
+    integer, intent(inout) :: cnt
+
+    real(real_kind) :: deta(nlev)
+    integer :: i, j, k
+    logical :: ok
+
+    do j = 1, np
+       do i = 1, np
+          ! Check for nonmonotonicity in eta.
+          ok = .true.
+          do k = 2, nlev
+             if (eta(i,j,k) - eta(i,j,k-1) < deta_tol) then
+                ok = .false.
+                exit
+             end if
+          end do
+          if (ok) then
+             ok = hvcoord%etai(nlevp) - eta(i,j,nlev) >= deta_tol
+          end if
+          ! eta is monotonically increasing, so don't need to do anything
+          ! further.
+          if (ok) then
+             eta_lim(i,j,:) = eta(i,j,:)
+             cycle
+          end if
+          
+          do k = 1, nlev-1
+             deta(k) = eta(i,j,k+1) - eta(i,j,k)
+          end do
+          deta(nlev) = hvcoord%etai(nlevp) - eta(i,j,nlev)
+          cnt = cnt + 1
+          call deta_caas(nlev, deta_ref, deta_tol, deta)
+          eta_lim(i,j,1) = eta(i,j,1)
+          do k = 1, nlev-1
+             eta_lim(i,j,k+1) = eta_lim(i,j,k) + deta(k)
+          end do
+       end do
+    end do
+  end subroutine limit_etai
 
   subroutine deta_caas(nlp, deta_ref, lo, deta)
     integer, intent(in) :: nlp
@@ -1977,25 +2042,25 @@ contains
     end do
   end subroutine linterp
 
-  subroutine eta_interp_eta(hvcoord, x, y, ni, xi, yi)
+  subroutine eta_interp_eta(hvcoord, n, x, y, ni, xi, yi)
     type (hvcoord_t), intent(in) :: hvcoord
-    real(real_kind), intent(in) :: x(np,np,nlev), y(nlev)
-    integer, intent(in) :: ni
+    integer, intent(in) :: n, ni
+    real(real_kind), intent(in) :: x(np,np,n), y(n)
     real(real_kind), intent(in) :: xi(ni)
     real(real_kind), intent(out) :: yi(np,np,ni)
 
-    real(real_kind) :: x01(nlev+2), y01(nlev+2)
+    real(real_kind) :: x01(n+2), y01(n+2)
     integer :: i, j
 
     x01(1) = hvcoord%etai(1)
-    x01(nlev+2) = hvcoord%etai(nlevp)
+    x01(n+2) = hvcoord%etai(nlevp)
     y01(1) = hvcoord%etai(1)
-    y01(2:nlev+1) = y
-    y01(nlev+2) = hvcoord%etai(nlevp)
+    y01(2:n+1) = y
+    y01(n+2) = hvcoord%etai(nlevp)
     do j = 1, np
        do i = 1, np
-          x01(2:nlev+1) = x(i,j,:)
-          call linterp(nlev+2, x01, y01, &
+          x01(2:n+1) = x(i,j,:)
+          call linterp(n+2, x01, y01, &
                &       ni, xi, yi(i,j,:), &
                &       'eta_interp_eta')
        end do
