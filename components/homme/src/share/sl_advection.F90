@@ -56,6 +56,7 @@ module sl_advection
   ! Trajectory velocity data.
   real(kind=real_kind), dimension(:,:,:,:,:), allocatable :: vnode, vdep ! (ndim,np,np,nlev,nelemd)
   real(kind=real_kind), allocatable :: dep_points_all(:,:,:,:,:)         ! (ndim,np,np,nlev,nelemd)
+  real(kind=real_kind), allocatable :: dep_points_all_save(:,:,:,:)
 
   type :: velocity_record_t
      integer :: nvel
@@ -170,6 +171,7 @@ contains
        if (enhanced_trajectory) then
           allocate(vnode(dep_points_ndim,np,np,nlev,size(elem)), &
                &   vdep (dep_points_ndim,np,np,nlev,size(elem)))
+          if (etalg == 1) allocate(dep_points_all_save(np,np,nlev,size(elem)))
        end if
        call init_velocity_record(size(elem), dt_tracer_factor, dt_remap_factor, &
             semi_lagrange_trajectory_nsubstep, semi_lagrange_trajectory_nvelocity, &
@@ -1351,7 +1353,7 @@ contains
     logical, intent(in) :: independent_time_steps
 
 #ifdef HOMME_ENABLE_COMPOSE
-    integer :: step, ie, info, limiter_active_count
+    integer :: step, ie, info, limiter_active_count, k
     real(real_kind) :: alpha(2), dtsub
 
     call t_startf('SLMM_trajectory')
@@ -1386,9 +1388,21 @@ contains
           call update_dep_points_all(independent_time_steps, dtsub, nets, nete, vnode)
        else
           ! Fill vdep.
+          if (etalg == 1) then
+             dep_points_all_save = dep_points_all(4,:,:,:,:)
+             do k = 1, nlev-1
+                dep_points_all(4,:,:,k,:) = half*(dep_points_all(4,:,:,k  ,:) + &
+                     &                            dep_points_all(4,:,:,k+1,:))
+             end do
+             dep_points_all(4,:,:,nlev,:) = half*(dep_points_all(4,:,:,nlev,:) + &
+                  &                               hvcoord%etai(nlevp))
+          end if
           call slmm_interp_v_update(nets, nete, step, dtsub, dep_points_all, &
                &                    dep_points_ndim, vnode, vdep, info)
 
+          if (etalg == 1) then
+             dep_points_all(4,:,:,:,:) = dep_points_all_save
+          end if
           ! Using vdep, update dep_points_all to departure points.
           call update_dep_points_all(independent_time_steps, dtsub, nets, nete, vdep)
        end if
