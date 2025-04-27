@@ -558,7 +558,7 @@ struct IslMpi {
   const Int traj_nsubstep, dep_points_ndim;
 
   Real etai_beg, etai_end;
-  ArrayD<Real*> etam;
+  ArrayD<Real*> etai, etam;
 
   ElemDataListH ed_h; // this rank's owned cells, indexed by LID
   ElemDataListD ed_d;
@@ -736,8 +736,7 @@ void step(
   Real* q_min_r, Real* q_max_r);
 
 template <typename MT = ko::MachineTraits>
-void set_hvcoord(IslMpi<MT>& cm, const Real etai_beg, const Real etai_end,
-                 const Real* etam);
+void set_hvcoord(IslMpi<MT>& cm, const Real* etai, const Real* etam);
 
 template <typename MT = ko::MachineTraits>
 void interp_v_update(

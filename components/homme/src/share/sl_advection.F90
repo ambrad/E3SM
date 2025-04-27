@@ -1358,7 +1358,7 @@ contains
 
     call t_startf('SLMM_trajectory')
 
-    call slmm_set_hvcoord(hvcoord%etai(1), hvcoord%etai(nlevp), hvcoord%etam)
+    call slmm_set_hvcoord(hvcoord%etai, hvcoord%etam)
 
     ! Set dep_points_all to level-midpoint arrival points.
     call init_dep_points_all(elem, hvcoord, nets, nete, independent_time_steps)
