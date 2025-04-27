@@ -153,7 +153,7 @@ void calc_v (const CalcVData<MT>& cvd, const VnodeT& vnode,
 template <int np, typename VnodeT, typename MT>
 void traj_calc_rmt_next_step (IslMpi<MT>& cm, const VnodeT& vnode) {
   calc_rmt_q_pass1(cm, true);
-  const auto ndim = cm.dep_points_ndim;
+  const auto xsz = cm.traj_msg_sz;
   const auto& rmt_xs = cm.rmt_xs;
   const auto& sendbuf = cm.sendbuf;
   const auto& recvbuf = cm.recvbuf;
@@ -170,7 +170,7 @@ void traj_calc_rmt_next_step (IslMpi<MT>& cm, const VnodeT& vnode) {
   {
     const Int
       ri = rmt_xs(5*it), lid = rmt_xs(5*it + 1), lev = rmt_xs(5*it + 2),
-      xos = rmt_xs(5*it + 3), vos = ndim*rmt_xs(5*it + 4);
+      xos = rmt_xs(5*it + 3), vos = xsz*rmt_xs(5*it + 4);
     const auto&& xs = recvbuf(ri);
     auto&& v = sendbuf(ri);
     calc_v<np>(cvd, vnode, lid, lev, &xs(xos), &v(vos));
@@ -273,6 +273,16 @@ interp_v_update (IslMpi<MT>& cm, const Int nets, const Int nete,
                  Real* dep_points_r, const Real* vnode_r, Real* vdep_r)
 {
   const int np = 4;
+
+  {
+    static bool first = true;
+    if (first) {
+      if (cm.p->amroot())
+        printf("amb> traj_alg %d traj_nsubstep %d dep_points_ndim %d traj_msg_sz %d\n",
+               cm.traj_alg, cm.traj_nsubstep, cm.dep_points_ndim, cm.traj_msg_sz);
+      first = false;
+    }
+  }
 
   slmm_assert(cm.np == np);
   slmm_assert((cm.traj_3d and cm.dep_points_ndim == 4) or
