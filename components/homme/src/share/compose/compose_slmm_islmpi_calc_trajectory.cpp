@@ -7,12 +7,12 @@ namespace islmpi {
 
 template <typename T> using CA4 = ko::View<T****, ko::LayoutRight, ko::HostSpace>;
 
-template <Int np, typename EtamT, typename VnodeT> SLMM_KF void
-interpolate_vertical (const Int nlev, const Real etai_beg, const Real etai_end,
-                      const EtamT& etam, const VnodeT& vnode,
-                      const Int src_lid, const Int lev, const Real eta_dep,
-                      const Real rx[np], const Real ry[np], Real* const v_tgt) {
-  slmm_kernel_assert(eta_dep > etai_beg && eta_dep < etai_end);
+template <Int np, typename EtaT, typename VnodeT> SLMM_KF void
+interpolate_vertical (const Int nlev, const EtaT& etai, const EtaT& etam,
+                      const VnodeT& vnode, const Int src_lid, const Int lev,
+                      const Real eta_dep, const Real rx[np], const Real ry[np],
+                      Real* const v_tgt) {
+  slmm_kernel_assert(eta_dep > etai(0) and eta_dep < etai(nlev));
   
   // Search for the eta midpoint values that support the departure point's eta
   // value.
@@ -28,8 +28,8 @@ interpolate_vertical (const Int nlev, const Real etai_beg, const Real etai_end,
           break;
     }
   }
-  slmm_kernel_assert(lev_dep >= -1 && lev_dep < nlev);
-  slmm_kernel_assert(lev_dep == -1 || eta_dep >= etam(lev_dep));
+  slmm_kernel_assert(lev_dep >= -1 and lev_dep < nlev);
+  slmm_kernel_assert(lev_dep == -1 or eta_dep >= etam(lev_dep));
   Real a;
   bool bdy = false;
   if (lev_dep == -1) {
@@ -59,12 +59,12 @@ interpolate_vertical (const Int nlev, const Real etai_beg, const Real etai_end,
   }
   // Treat eta_dot specially since eta_dot goes to 0 at the boundaries.
   if (bdy) {
-    slmm_kernel_assert(etam(0) > etai_beg);
-    slmm_kernel_assert(etam(nlev-1) < etai_end);
+    slmm_kernel_assert(etam(0) > etai(0));
+    slmm_kernel_assert(etam(nlev-1) < etai(nlev));
     if (lev_dep == 0)
-      v_tgt[3] *= (eta_dep - etai_beg)/(etam(0) - etai_beg);
+      v_tgt[3] *= (eta_dep - etai(0))/(etam(0) - etai(0));
     else
-      v_tgt[3] *= (etai_end - eta_dep)/(etai_end - etam(nlev-1));
+      v_tgt[3] *= (etai(nlev) - eta_dep)/(etai(nlev) - etam(nlev-1));
   }
 }
 
@@ -93,7 +93,7 @@ void calc_v (const IslMpi<MT>& cm, const VnodeT& vnode,
 
   // Vertical Interpolation.
   slmm_kernel_assert(cm.dep_points_ndim == 4);
-  interpolate_vertical<np>(cm.nlev, cm.etai_beg, cm.etai_end, cm.etam, vnode,
+  interpolate_vertical<np>(cm.nlev, cm.etai, cm.etam, vnode,
                            src_lid, lev, dep_point[3], rx, ry, v_tgt);
 }
 
@@ -106,7 +106,6 @@ struct CalcVData {
   const bool traj_3d;
   const int dep_points_ndim;
   const int nlev;
-  const Real etai_beg, etai_end;
   const typename IslMpi<MT>::template ArrayD<Real*> etai, etam;
   const int traj_alg;
 
@@ -117,7 +116,6 @@ struct CalcVData {
       traj_3d(cm.traj_3d),
       dep_points_ndim(cm.dep_points_ndim),
       nlev(cm.nlev),
-      etai_beg(cm.etai_beg), etai_end(cm.etai_end),
       etai(cm.etai), etam(cm.etam),
       traj_alg(cm.traj_alg)
   {}
@@ -148,7 +146,7 @@ void calc_v (const CalcVData<MT>& cvd, const VnodeT& vnode,
 
   // Vertical Interpolation.
   slmm_kernel_assert(cvd.dep_points_ndim == 4);
-  interpolate_vertical<np>(cvd.nlev, cvd.etai_beg, cvd.etai_end, cvd.etam, vnode,
+  interpolate_vertical<np>(cvd.nlev, cvd.etai, cvd.etam, vnode,
                            src_lid, lev, dep_point[3], rx, ry, v_tgt);
 }
 
@@ -290,7 +288,7 @@ interp_v_update (IslMpi<MT>& cm, const Int nets, const Int nete,
   slmm_assert((cm.traj_3d and cm.dep_points_ndim == 4) or
               (not cm.traj_3d and cm.dep_points_ndim == 3));
 #ifdef COMPOSE_PORT
-  slmm_assert(nets == 0 && nete+1 == cm.nelemd);
+  slmm_assert(nets == 0 and nete+1 == cm.nelemd);
 #endif
 
   // If step = 0, the departure points are at the nodes and no interpolation is
