@@ -185,7 +185,7 @@ void traj_calc_rmt_next_step (IslMpi<MT>& cm, const VnodeT& vnode) {
 template <int np, typename VnodeT, typename VdepT, typename MT>
 void traj_calc_own_next_step (IslMpi<MT>& cm, const DepPoints<MT>& dep_points,
                               const VnodeT& vnode, const VdepT& vdep) {
-  const auto ndim = cm.dep_points_ndim;
+  const auto xsz = cm.traj_msg_sz;
 #ifdef COMPOSE_PORT
   const auto& ed_d = cm.ed_d;
   const auto& own_dep_list = cm.own_dep_list;
@@ -196,9 +196,9 @@ void traj_calc_own_next_step (IslMpi<MT>& cm, const DepPoints<MT>& dep_points,
     const Int tgt_k = own_dep_list(it,2);
     const auto& ed = ed_d(tci);
     const Int slid = ed.nbrs(ed.src(tgt_lev, tgt_k)).lid_on_rank;
-    Real v_tgt[4];
+    Real v_tgt[5];
     calc_v<np>(cvd, vnode, slid, tgt_lev, &dep_points(tci,tgt_lev,tgt_k,0), v_tgt);
-    for (int d = 0; d < ndim; ++d)
+    for (int d = 0; d < xsz; ++d)
       vdep(tci,tgt_lev,tgt_k,d) = v_tgt[d];
   };
   ko::parallel_for(
@@ -214,9 +214,9 @@ void traj_calc_own_next_step (IslMpi<MT>& cm, const DepPoints<MT>& dep_points,
     for (Int idx = 0; idx < ned; ++idx) {
       const auto& e = ed.own(idx);
       const Int slid = ed.nbrs(ed.src(e.lev, e.k)).lid_on_rank;
-      Real v_tgt[4];
+      Real v_tgt[5];
       calc_v<np>(cm, vnode, slid, e.lev, &dep_points(tci,e.lev,e.k,0), v_tgt);
-      for (int d = 0; d < ndim; ++d)
+      for (int d = 0; d < xsz; ++d)
         vdep(tci,e.lev,e.k,d) = v_tgt[d];
     }
   }
@@ -226,7 +226,7 @@ void traj_calc_own_next_step (IslMpi<MT>& cm, const DepPoints<MT>& dep_points,
 template <typename VdepT, typename MT>
 void traj_copy_next_step (IslMpi<MT>& cm, const VdepT& vdep) {
   const auto myrank = cm.p->rank();
-  const auto ndim = cm.dep_points_ndim;
+  const auto xsz = cm.traj_msg_sz;
 #ifdef COMPOSE_PORT
   const auto& mylid_with_comm = cm.mylid_with_comm_d;
   const auto& ed_d = cm.ed_d;
@@ -242,7 +242,7 @@ void traj_copy_next_step (IslMpi<MT>& cm, const VdepT& vdep) {
     slmm_kernel_assert(ed.nbrs(ed.src(e.lev, e.k)).rank != myrank);
     const Int ri = ed.nbrs(ed.src(e.lev, e.k)).rank_idx;
     const auto&& recvbuf = recvbufs(ri);
-    for (int d = 0; d < ndim; ++d)
+    for (int d = 0; d < xsz; ++d)
       vdep(tci,e.lev,e.k,d) = recvbuf(e.q_ptr + d);
   };
   ko::parallel_for(ko::RangePolicy<typename MT::DES>(0, nlid*np2*nlev), f);
@@ -257,7 +257,7 @@ void traj_copy_next_step (IslMpi<MT>& cm, const VdepT& vdep) {
       slmm_assert(ed.nbrs(ed.src(e.lev, e.k)).rank != myrank);
       const Int ri = ed.nbrs(ed.src(e.lev, e.k)).rank_idx;
       const auto&& recvbuf = cm.recvbuf(ri);
-      for (int d = 0; d < ndim; ++d)
+      for (int d = 0; d < xsz; ++d)
         vdep(tci,e.lev,e.k,d) = recvbuf(e.q_ptr + d);
     }
   }
