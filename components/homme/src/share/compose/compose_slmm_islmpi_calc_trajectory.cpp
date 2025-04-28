@@ -107,7 +107,8 @@ struct CalcVData {
   const int dep_points_ndim;
   const int nlev;
   const Real etai_beg, etai_end;
-  const typename IslMpi<MT>::template ArrayD<Real*> etam;
+  const typename IslMpi<MT>::template ArrayD<Real*> etai, etam;
+  const int traj_alg;
 
   CalcVData (const IslMpi<MT>& cm)
     : local_meshes(cm.advecter->local_meshes()),
@@ -117,7 +118,8 @@ struct CalcVData {
       dep_points_ndim(cm.dep_points_ndim),
       nlev(cm.nlev),
       etai_beg(cm.etai_beg), etai_end(cm.etai_end),
-      etam(cm.etam)
+      etai(cm.etai), etam(cm.etam),
+      traj_alg(cm.traj_alg)
   {}
 };
 
@@ -303,7 +305,7 @@ interp_v_update (IslMpi<MT>& cm, const Int nets, const Int nete,
   const auto& vdep  = cm.tracer_arrays->vdep;
 #else
   CA4<const Real> vnode(vnode_r, cm.nelemd, cm.nlev, cm.np2, ndim);
-  CA4<      Real> vdep (vdep_r , cm.nelemd, cm.nlev, cm.np2, ndim);
+  CA4<      Real> vdep (vdep_r , cm.nelemd, cm.nlev, cm.np2, ndim + cm.traj_alg);
 #endif
   slmm_assert(vnode.extent_int(3) == ndim);
   slmm_assert(vdep .extent_int(3) == ndim);

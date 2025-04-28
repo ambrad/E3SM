@@ -54,8 +54,8 @@ module sl_advection
   real(kind=real_kind), dimension(:,:,:,:,:), allocatable :: minq, maxq  ! (np,np,nlev,qsize,nelemd)
 
   ! Trajectory velocity data.
-  real(kind=real_kind), dimension(:,:,:,:,:), allocatable :: vnode, vdep ! (ndim,np,np,nlev,nelemd)
-  real(kind=real_kind), allocatable :: dep_points_all(:,:,:,:,:)         ! (ndim,np,np,nlev,nelemd)
+  real(kind=real_kind), dimension(:,:,:,:,:), allocatable :: vnode, vdep ! (ndim[+1],np,np,nlev,nelemd)
+  real(kind=real_kind), allocatable :: dep_points_all(:,:,:,:,:)         ! (ndim,    np,np,nlev,nelemd)
   real(kind=real_kind), allocatable :: dep_points_all_save(:,:,:,:)
 
   type :: velocity_record_t
@@ -169,8 +169,8 @@ contains
        allocate(minq(np,np,nlev,qsize,size(elem)), maxq(np,np,nlev,qsize,size(elem)), &
             &   dep_points_all(dep_points_ndim,np,np,nlev,size(elem)))
        if (enhanced_trajectory) then
-          allocate(vnode(dep_points_ndim,np,np,nlev,size(elem)), &
-               &   vdep (dep_points_ndim,np,np,nlev,size(elem)))
+          allocate(vnode(dep_points_ndim,      np,np,nlev,size(elem)), &
+               &   vdep (dep_points_ndim+etalg,np,np,nlev,size(elem)))
           if (etalg == 1) allocate(dep_points_all_save(np,np,nlev,size(elem)))
        end if
        call init_velocity_record(size(elem), dt_tracer_factor, dt_remap_factor, &
