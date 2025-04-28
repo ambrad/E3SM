@@ -184,6 +184,7 @@ template <int np, typename VnodeT, typename VdepT, typename MT>
 void traj_calc_own_next_step (IslMpi<MT>& cm, const DepPoints<MT>& dep_points,
                               const VnodeT& vnode, const VdepT& vdep) {
   const auto xsz = cm.traj_msg_sz;
+  const auto ndim = cm.dep_points_ndim;
 #ifdef COMPOSE_PORT
   const auto& ed_d = cm.ed_d;
   const auto& own_dep_list = cm.own_dep_list;
@@ -194,8 +195,14 @@ void traj_calc_own_next_step (IslMpi<MT>& cm, const DepPoints<MT>& dep_points,
     const Int tgt_k = own_dep_list(it,2);
     const auto& ed = ed_d(tci);
     const Int slid = ed.nbrs(ed.src(tgt_lev, tgt_k)).lid_on_rank;
-    Real v_tgt[5];
-    calc_v<np>(cvd, vnode, slid, tgt_lev, &dep_points(tci,tgt_lev,tgt_k,0), v_tgt);
+    Real dep[5], v_tgt[5];
+    for (Int d = 0; d < ndim; ++d)
+      dep[d] = dep_points(tci,tgt_lev,tgt_k,d);
+    if (cvd.traj_alg == 1)
+      dep[ndim] = (tgt_lev+1 == cvd.nlev ?
+                   0 :
+                   dep_points(tci,tgt_lev+1,tgt_k,ndim-1));
+    calc_v<np>(cvd, vnode, slid, tgt_lev, dep, v_tgt);
     for (int d = 0; d < xsz; ++d)
       vdep(tci,tgt_lev,tgt_k,d) = v_tgt[d];
   };
@@ -212,8 +219,14 @@ void traj_calc_own_next_step (IslMpi<MT>& cm, const DepPoints<MT>& dep_points,
     for (Int idx = 0; idx < ned; ++idx) {
       const auto& e = ed.own(idx);
       const Int slid = ed.nbrs(ed.src(e.lev, e.k)).lid_on_rank;
-      Real v_tgt[5];
-      calc_v<np>(cm, vnode, slid, e.lev, &dep_points(tci,e.lev,e.k,0), v_tgt);
+      Real dep[5], v_tgt[5];
+      for (Int d = 0; d < ndim; ++d)
+        dep[d] = dep_points(tci,e.lev,e.k,d);
+      if (cm.traj_alg == 1)
+        dep[ndim] = (e.lev+1 == cm.nlev ?
+                     0 :
+                     dep_points(tci,e.lev+1,e.k,ndim-1));
+      calc_v<np>(cm, vnode, slid, e.lev, dep, v_tgt);
       for (int d = 0; d < xsz; ++d)
         vdep(tci,e.lev,e.k,d) = v_tgt[d];
     }
