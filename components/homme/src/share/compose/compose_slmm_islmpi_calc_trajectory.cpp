@@ -1,3 +1,31 @@
+/* Level arrangement:
+          0 i etai(0), etaid(0) = 0
+          0 m x or xdot (= xd)
+          1 i e or ed
+          1 m x(d)
+          2 i e(d)
+          2 m x(d)
+       nlev i
+   Algorithm:
+       x[k] is the horizontal position at midpoint k
+       analyze_dep_points for x[k]
+       send/recv p[k] = (x[k], e[k], e[k+1])
+         where e is at interfaces
+       compute (rx,ry) using x[k]
+       interp3d for xd[k]   at (x[k], (e[k] + e[k+1])/2)
+         using eta_ref_mid
+       interp3d for ed[k]   at (x[k], e[k])
+         using eta_ref_int if k > 0, else 0
+       interp3d for ed[k+1] at (x[k], e[k+1])
+         using eta_ref_int if k+1 < nlev, else 0
+       send/recv pd[k] = (xd[k], ed[k], ed[k+1])
+       vdep[k,0:3] = pd[k].xd[k]
+       vdep[k,3] = linterp(eta_ref_mid[k-1:k+1],
+                           (pd[k-1].ed[k], pd[k].ed[k]),
+                           eta_ref_int[k])
+         if k > 0, else 0
+ */
+
 #include "compose_slmm_islmpi.hpp"
 #include "compose_slmm_islmpi_interpolate.hpp"
 #include "compose_slmm_islmpi_buf.hpp"
@@ -10,8 +38,11 @@ template <typename T> using CA4 = ko::View<T****, ko::LayoutRight, ko::HostSpace
 template <Int np, typename EtaT, typename VnodeT> SLMM_KF void
 interpolate_vertical (const Int nlev, const EtaT& etai, const EtaT& etam,
                       const VnodeT& vnode, const Int src_lid, const Int lev,
-                      const Real eta_dep, const Real rx[np], const Real ry[np],
+                      const Real etai_lev, const Real etai_levp1,
+                      const Real rx[np], const Real ry[np],
                       Real* const v_tgt) {
+  const bool new_alg = etai_levp1 >= 0;
+  const Real eta_dep = new_alg ? (etai_lev + etai_levp1)/2 : etai_lev;
   slmm_kernel_assert(eta_dep > etai(0) and eta_dep < etai(nlev));
   
   // Search for the eta midpoint values that support the departure point's eta
@@ -71,12 +102,12 @@ interpolate_vertical (const Int nlev, const EtaT& etai, const EtaT& etam,
 template <Int np, typename VnodeT, typename MT>
 void calc_v (const IslMpi<MT>& cm, const VnodeT& vnode,
              const Int src_lid, const Int lev,
-             const Real* const dep_point, Real* const v_tgt) {
+             const Real* const dep, Real* const v_tgt) {
   // Horizontal interpolation.
   Real rx[np], ry[np]; {
     Real ref_coord[2];
     const auto& m = cm.advecter->local_mesh(src_lid);
-    cm.advecter->s2r().calc_sphere_to_ref(src_lid, m, dep_point,
+    cm.advecter->s2r().calc_sphere_to_ref(src_lid, m, dep,
                                           ref_coord[0], ref_coord[1]);
     interpolate<MT>(cm.advecter->alg(), ref_coord, rx, ry);
   }
@@ -93,8 +124,9 @@ void calc_v (const IslMpi<MT>& cm, const VnodeT& vnode,
 
   // Vertical Interpolation.
   slmm_kernel_assert(cm.dep_points_ndim == 4);
+  const Real etai_p1 = cm.traj_alg == 1 ? dep[4] : -1;
   interpolate_vertical<np>(cm.nlev, cm.etai, cm.etam, vnode,
-                           src_lid, lev, dep_point[3], rx, ry, v_tgt);
+                           src_lid, lev, dep[3], etai_p1, rx, ry, v_tgt);
 }
 
 template <typename MT>
@@ -124,12 +156,12 @@ struct CalcVData {
 template <Int np, typename VnodeT, typename MT> SLMM_KF
 void calc_v (const CalcVData<MT>& cvd, const VnodeT& vnode,
              const Int src_lid, const Int lev,
-             const Real* const dep_point, Real* const v_tgt) {
+             const Real* const dep, Real* const v_tgt) {
   // Horizontal interpolation.
   Real rx[np], ry[np]; {
     Real ref_coord[2];
     const auto& m = cvd.local_meshes(src_lid);
-    cvd.s2r.calc_sphere_to_ref(src_lid, m, dep_point,
+    cvd.s2r.calc_sphere_to_ref(src_lid, m, dep,
                                ref_coord[0], ref_coord[1]);
     interpolate<MT>(cvd.interp_alg, ref_coord, rx, ry);
   }
@@ -146,8 +178,9 @@ void calc_v (const CalcVData<MT>& cvd, const VnodeT& vnode,
 
   // Vertical Interpolation.
   slmm_kernel_assert(cvd.dep_points_ndim == 4);
+  const Real etai_p1 = cvd.traj_alg == 1 ? dep[4] : -1;
   interpolate_vertical<np>(cvd.nlev, cvd.etai, cvd.etam, vnode,
-                           src_lid, lev, dep_point[3], rx, ry, v_tgt);
+                           src_lid, lev, dep[3], etai_p1, rx, ry, v_tgt);
 }
 
 template <int np, typename VnodeT, typename MT>
