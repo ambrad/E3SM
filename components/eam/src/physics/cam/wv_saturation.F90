@@ -23,6 +23,7 @@ module wv_saturation
 !                                                                    !
 !--------------------------------------------------------------------!
 
+#ifndef SCREAM_CONFIG_IS_CMAKE
 use shr_kind_mod, only: r8 => shr_kind_r8
 use physconst,    only: epsilo, &
                         latvap, &
@@ -31,6 +32,9 @@ use physconst,    only: epsilo, &
                         cpair,  &
                         tmelt,  &
                         h2otrip
+#else
+use zm_eamxx_bridge, only: r8, epsilo, latvap, latice, rh2o, cpair, tmelt, h2otrip
+#endif
 
 use wv_sat_methods, only: &
      svp_to_qsat => wv_sat_svp_to_qsat
@@ -40,10 +44,12 @@ private
 save
 
 ! Public interfaces
+#ifndef SCREAM_CONFIG_IS_CMAKE
 ! Namelist, initialization, finalization
 public wv_sat_readnl
 public wv_sat_init
 public wv_sat_final
+#endif
 
 ! Saturation vapor pressure calculations
 public svp_water
@@ -114,6 +120,7 @@ contains
 ! ADMINISTRATIVE FUNCTIONS
 !---------------------------------------------------------------------
 
+#ifndef SCREAM_CONFIG_IS_CMAKE
 subroutine wv_sat_readnl(nlfile)
   !------------------------------------------------------------------!
   ! Purpose:                                                         !
@@ -253,6 +260,9 @@ subroutine wv_sat_final
   end if
 
 end subroutine wv_sat_final
+#else
+!todo call wv_sat_methods_init
+#endif
 
 !---------------------------------------------------------------------
 ! DEFAULT SVP FUNCTIONS

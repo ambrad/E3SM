@@ -15,17 +15,23 @@ module zm_conv
 ! April 2021: X. Song added code for convective microphysics
 ! April 2022: X. Song added code for mass flux adjustment
 !---------------------------------------------------------------------------------
+  use cam_abortutils,         only: endrun
+  use cam_logfile,            only: iulog
+#ifndef SCREAM_CONFIG_IS_CMAKE
   use shr_kind_mod,           only: r8 => shr_kind_r8
+  use physconst,              only: cpair, epsilo, gravit, latice, latvap, tmelt, rair, &
+       &                            cpwv, cpliq, rh2o
   use spmd_utils,             only: masterproc
   use ppgrid,                 only: pcols, pver, pverp
   use cloud_fraction,         only: cldfrc_fice
-  use physconst,              only: cpair, epsilo, gravit, latice, latvap, tmelt, rair, &
-                                    cpwv, cpliq, rh2o
-  use cam_abortutils,         only: endrun
-  use cam_logfile,            only: iulog
   use zm_aero,                only: zm_aero_t
   use zm_microphysics,        only: zm_mphy
   use zm_microphysics_state,  only: zm_microp_st, zm_microp_st_alloc, zm_microp_st_dealloc, zm_microp_st_ini, zm_microp_st_gb
+#else
+  use zm_eamxx_bridge,        only: r8, pcols, pver, pverp, cpair, epsilo, gravit, &
+       &                            latice, latvap, tmelt, rair, cpwv, cpliq, rh2o, &
+       &                            cldfrc_fice
+#endif
 
   implicit none
 
@@ -34,8 +40,10 @@ module zm_conv
 !
 ! PUBLIC: interfaces
 !
+#ifndef SCREAM_CONFIG_IS_CMAKE
   public zmconv_readnl            ! read zmconv_nl namelist
   public zm_convi                 ! ZM schemea
+#endif
   public zm_convr                 ! ZM schemea
   public zm_conv_evap             ! evaporation of precip from ZM schemea
   public trigdcape_ull            ! true if to use dcape-ULL trigger
@@ -140,6 +148,7 @@ module zm_conv
 
 contains
 
+#ifndef SCREAM_CONFIG_IS_CMAKE
 subroutine zmconv_readnl(nlfile)
 
    use namelist_utils,  only: find_group_name
@@ -273,7 +282,7 @@ end subroutine zmconv_readnl
 
 subroutine zm_convi(limcnv_in, no_deep_pbl_in)
 
-   use dycore,       only: dycore_is, get_resolution
+   use dycore,       only: get_resolution
 
    integer, intent(in)           :: limcnv_in       ! top interface level limit for convection
    logical, intent(in), optional :: no_deep_pbl_in  ! no_deep_pbl = .true. eliminates ZM convection entirely within PBL 
@@ -315,7 +324,7 @@ subroutine zm_convi(limcnv_in, no_deep_pbl_in)
    if (masterproc) write(iulog,*)'**** ZM: DILUTE Buoyancy Calculation ****'
 
 end subroutine zm_convi
-
+#endif
 
 
 subroutine zm_convr(lchnk   ,ncol    , &
@@ -349,7 +358,11 @@ subroutine zm_convr(lchnk   ,ncol    , &
 ! and will make use of the standard CAM nomenclature
 ! 
 !-----------------------------------------------------------------------
-   use time_manager, only: is_first_step 
+#ifndef SCREAM_CONFIG_IS_CMAKE
+   use time_manager, only: is_first_step
+#else
+   use zm_eamxx_bridge, only: is_first_step
+#endif
 !
 ! ************************ index of variables **********************
 !
@@ -462,11 +475,15 @@ subroutine zm_convr(lchnk   ,ncol    , &
    real(r8), intent(in) :: pblh(pcols)
    real(r8), intent(in) :: tpert(pcols)
    real(r8), intent(in) :: landfrac(pcols) ! RBN Landfrac
+#ifndef SCREAM_CONFIG_IS_CMAKE
    type(zm_aero_t), intent(inout) :: aero         ! aerosol object. intent(inout) because the
                                                   ! gathered arrays are set here
                                                   ! before passing object
                                                   ! to microphysics
    type(zm_microp_st), intent(inout) :: microp_st ! state and tendency of convective microphysics
+#else
+   integer, intent(in) :: aero, microp_st
+#endif
 
 !DCAPE-ULL
    real(r8), intent(in), pointer, dimension(:,:) :: t_star ! intermediate T between n and n-1 time step
@@ -631,7 +648,11 @@ subroutine zm_convr(lchnk   ,ncol    , &
    real(r8) dsfng(pcols,pver)          ! num tendency due to detrainment of snow
    real(r8) frzg(pcols,pver)           ! gathered heating rate due to freezing
 
+#ifndef SCREAM_CONFIG_IS_CMAKE
    type(zm_microp_st)  :: loc_microp_st ! state and tendency of convective microphysics
+#else
+   integer :: loc_microp_st
+#endif
 
 
    real(r8) mb(pcols)                  ! wg cloud base mass flux.
@@ -673,10 +694,12 @@ subroutine zm_convr(lchnk   ,ncol    , &
    heat(:,:) = 0._r8
    mcon(:,:) = 0._r8
    rliq(:ncol)   = 0._r8
-   rice(:ncol)   = 0._r8    
+   rice(:ncol)   = 0._r8
+#ifndef SCREAM_CONFIG_IS_CMAKE
 !
 ! Allocate microphysics arrays 
    if (zm_microp) call zm_microp_st_alloc(loc_microp_st)
+#endif
 !
 ! initialize convective tendencies
 !
@@ -728,11 +751,13 @@ subroutine zm_convr(lchnk   ,ncol    , &
       end do
    end do
 
+#ifndef SCREAM_CONFIG_IS_CMAKE
 ! Initialize microphysics arrays
    if (zm_microp) then
       call zm_microp_st_ini(microp_st,    ncol)
       call zm_microp_st_ini(loc_microp_st,ncol)
    end if
+#endif
 
    lambdadpcu  = (mucon + 1._r8)/dcon
    mudpcu      = mucon
@@ -887,6 +912,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
       end do
    end do
 
+#ifndef SCREAM_CONFIG_IS_CMAKE
    if (zm_microp) then
 
       if (aero%scheme == 'modal') then
@@ -923,6 +949,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
       end if
 
    end if
+#endif
 
 !
    do i = 1,lengath
@@ -1073,7 +1100,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
          sprdg(i,k)  = sprdg(i,k)*mb(i)
          frzg(i,k)   = frzg(i,k)*mb(i)
 
-
+#ifndef SCREAM_CONFIG_IS_CMAKE
          if ( zm_microp .and. mb(i).eq.0._r8) then
             qlg (i,k) = 0._r8
             dsfmg(i,k) = 0._r8
@@ -1163,6 +1190,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
             loc_microp_st%fallgn(i,k) = 0._r8
             loc_microp_st%fhmrm (i,k) = 0._r8
          end if
+#endif
       end do
    end do
 !
@@ -1178,6 +1206,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
                  ncdeg   ,nideg   ,dnlg    ,dnig    ,frzg    , &
                  qsdeg   ,nsdeg   ,dsg     ,dnsg    )
 
+#ifndef SCREAM_CONFIG_IS_CMAKE
 !
 ! Conservation check
 !
@@ -1273,7 +1302,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
       end do
    end do
   end if
-
+#endif
 
 
 ! gather back temperature and mixing ratio.
@@ -1306,10 +1335,13 @@ subroutine zm_convr(lchnk   ,ncol    , &
          lambdadpcu(ideep(i),k) = lambdadpcug(i,k)
          mudpcu(ideep(i),k)     = mudpcug(i,k)
          frz(ideep(i),k)  = frzg(i,k)*latice/cpres
+#ifndef SCREAM_CONFIG_IS_CMAKE
          if (zm_microp) qi(ideep(i),k) = loc_microp_st%qice(i,k)
+#endif
       end do
    end do
 
+#ifndef SCREAM_CONFIG_IS_CMAKE
 ! Gather back microphysics arrays.
    if (zm_microp)  call zm_microp_st_gb(microp_st,loc_microp_st,ideep,lengath)
    
@@ -1362,6 +1394,7 @@ subroutine zm_convr(lchnk   ,ncol    , &
        end do
      end do
    end if
+#endif
 !
 #ifdef CPRCRAY
 !DIR$ CONCURRENT
@@ -1397,8 +1430,10 @@ subroutine zm_convr(lchnk   ,ncol    , &
    rliq(:ncol) = rliq(:ncol) /1000._r8
    rice(:ncol) = rice(:ncol) /1000._r8    
 
+#ifndef SCREAM_CONFIG_IS_CMAKE
 ! Deallocate microphysics arrays.
    if (zm_microp) call zm_microp_st_dealloc(loc_microp_st)
+#endif
 
    return
 end subroutine zm_convr
@@ -1419,7 +1454,6 @@ subroutine zm_conv_evap(ncol,lchnk, &
 !-----------------------------------------------------------------------
 
     use wv_saturation,  only: qsat
-    use phys_grid, only: get_rlat_all_p
 
 !------------------------------Arguments--------------------------------
     integer,intent(in) :: ncol, lchnk             ! number of columns and chunk index
@@ -1666,7 +1700,7 @@ subroutine cldprp(lchnk   , &
                   landfrac,tpertg  , &
                   aero    ,qhat ,lambdadpcu ,mudpcu  ,sprd   ,frz1 , &
                   qcde    ,qide   ,qsde     ,ncde    ,nide   ,nsde , &
-                  dsfm    ,dsfn   ,loc_microp_st )
+                  dsfm    ,dsfn   ,loc_microp_st)
 
 !----------------------------------------------------------------------- 
 ! 
@@ -1723,7 +1757,11 @@ subroutine cldprp(lchnk   , &
    real(r8), intent(in) :: tpertg(pcols)
 
    real(r8), intent(in) :: qhat(pcols,pver)      ! wg grid slice of upper interface mixing ratio.
+#ifndef SCREAM_CONFIG_IS_CMAKE
    type(zm_aero_t), intent(in) :: aero           ! aerosol object
+#else
+   integer, intent(in) :: aero
+#endif
 
 !
 ! output
@@ -1745,8 +1783,12 @@ subroutine cldprp(lchnk   , &
    real(r8), intent(out) :: sd(pcols,pver)       ! normalized dry stat energy of downdraft
    real(r8), intent(out) :: su(pcols,pver)       ! normalized dry stat energy of updraft
 
+#ifndef SCREAM_CONFIG_IS_CMAKE
    ! Convective microphysics
    type(zm_microp_st)  :: loc_microp_st ! state and tendency of convective microphysics
+#else
+   integer :: loc_microp_st
+#endif
 
    real(r8), intent(out) :: qcde(pcols,pver)     ! cloud water mixing ratio for detrainment (kg/kg)
    real(r8), intent(out) :: qide(pcols,pver)     ! cloud ice mixing ratio for detrainment (kg/kg)
@@ -1849,6 +1891,7 @@ subroutine cldprp(lchnk   , &
 !------------------------------------------------------------------------------
    dsfm  (:il2g,:) = 0._r8
    dsfn  (:il2g,:) = 0._r8
+#ifndef SCREAM_CONFIG_IS_CMAKE
    if (zm_microp) then
       loc_microp_st%autolm(:il2g,:) = 0._r8
       loc_microp_st%accrlm(:il2g,:) = 0._r8
@@ -1924,6 +1967,7 @@ subroutine cldprp(lchnk   , &
        end do
       end do
    end if
+#endif
 !
    do i = 1,il2g
       ftemp(i) = 0._r8
@@ -1992,6 +2036,7 @@ subroutine cldprp(lchnk   , &
          nsde(i,k) = 0._r8
          frz(i,k)  = 0._r8
          frz1(i,k) = 0._r8
+#ifndef SCREAM_CONFIG_IS_CMAKE
          if (zm_microp) then
            loc_microp_st%cmel(i,k) = 0._r8
            loc_microp_st%cmei(i,k) = 0._r8
@@ -2007,6 +2052,7 @@ subroutine cldprp(lchnk   , &
            loc_microp_st%qns(i,k)  = 0._r8
            loc_microp_st%qng(i,k)  = 0._r8
          end if
+#endif
       end do
    end do
 !
@@ -2153,7 +2199,7 @@ subroutine cldprp(lchnk   , &
                         hsat(i,k)* (z(i,k-1)-zf(i,k)))/(z(i,k-1)-z(i,k))
          end if
          if ((expdif(i) > 100._r8 .and. expnum(i) > 0._r8) .and. &
-	     k1(i,k) > expnum(i)*dz(i,k)) then
+            k1(i,k) > expnum(i)*dz(i,k)) then
             ftemp(i) = expnum(i)/k1(i,k)
             f(i,k) = ftemp(i) + i2(i,k)/k1(i,k)*ftemp(i)**2 + &
                      (2._r8*i2(i,k)**2-k1(i,k)*i3(i,k))/k1(i,k)**2* &
@@ -2206,8 +2252,10 @@ subroutine cldprp(lchnk   , &
       do k = pver,msg + 1,-1
         do i = 1,il2g
            cu(i,k) = 0._r8
+#ifndef SCREAM_CONFIG_IS_CMAKE
            if (zm_microp)  loc_microp_st%qliq(i,k) = 0._r8
            if (zm_microp)  loc_microp_st%qice(i,k) = 0._r8
+#endif
            ql(i,k) = 0._r8
            frz1(i,k) = 0._r8
         end do
@@ -2387,6 +2435,7 @@ subroutine cldprp(lchnk   , &
       end do
    end do
 
+#ifndef SCREAM_CONFIG_IS_CMAKE
    if (zm_microp) then
 
       tug(:il2g,:) = t(:il2g,:)
@@ -2476,6 +2525,7 @@ subroutine cldprp(lchnk   , &
       end do
 
    else  ! no microphysics
+#endif
 
 ! compute condensed liquid, rain production rate
 ! accumulate total precipitation (condensation - detrainment of liquid)
@@ -2509,7 +2559,9 @@ subroutine cldprp(lchnk   , &
          end if
        end do
      end do
+#ifndef SCREAM_CONFIG_IS_CMAKE
    end if  ! zm_microp
+#endif
 
  end do   !iter
 
@@ -2666,6 +2718,7 @@ subroutine cldprp(lchnk   , &
    end do
 !
    do i = 1,il2g
+#ifndef SCREAM_CONFIG_IS_CMAKE
      if ( zm_microp .and. jt(i)>=jlcl(i)) then
        do k = msg + 1,pver  
           mu(i,k)   = 0._r8
@@ -2704,7 +2757,8 @@ subroutine cldprp(lchnk   , &
           loc_microp_st%qng(i,k)  = 0._r8
        end do
      end if
-   end do       
+#endif
+   end do
    return
 end subroutine cldprp
 
@@ -2735,7 +2789,6 @@ subroutine closure(lchnk   , &
 ! the documentation has been enhanced to the degree that we are able
 ! 
 !-----------------------------------------------------------------------
-   use dycore,    only: dycore_is, get_resolution
 
    implicit none
 
@@ -3806,7 +3859,9 @@ SUBROUTINE ientropy (rcall,icol,lchnk,s,p,qt,T,qst,Tfg)
 ! for T and saturated vapor mixing ratio
 ! 
 
+#ifndef SCREAM_CONFIG_IS_CMAKE
   use phys_grid, only: get_rlon_p, get_rlat_p
+#endif
 
   integer, intent(in) :: icol, lchnk, rcall
   real(r8), intent(in)  :: s, p, Tfg, qt
@@ -3828,8 +3883,8 @@ SUBROUTINE ientropy (rcall,icol,lchnk,s,p,qt,T,qst,Tfg)
 
   T = Tfg                  ! Better first guess based on Tprofile from conv.
 
-  a = Tfg-10			!low bracket
-  b = Tfg+10			!high bracket
+  a = Tfg-10               ! low bracket
+  b = Tfg+10               ! high bracket
 
   fa = entropy(a, p, qt) - s
   fb = entropy(b, p, qt) - s
@@ -3896,6 +3951,7 @@ SUBROUTINE ientropy (rcall,icol,lchnk,s,p,qt,T,qst,Tfg)
   call qsat_hPa(T, p, est, qst)
 
   if (.not. converged) then
+#ifndef SCREAM_CONFIG_IS_CMAKE
      this_lat = get_rlat_p(lchnk, icol)*57.296_r8
      this_lon = get_rlon_p(lchnk, icol)*57.296_r8
      write(iulog,*) '*** ZM_CONV: IENTROPY: Failed and about to exit, info follows ****'
@@ -3904,6 +3960,9 @@ SUBROUTINE ientropy (rcall,icol,lchnk,s,p,qt,T,qst,Tfg)
           ' P(mb)= ', p, ' Tfg(K)= ', Tfg, ' qt(g/kg) = ', 1000._r8*qt, &
           ' qst(g/kg) = ', 1000._r8*qst,', s(J/kg) = ',s
      call endrun('**** ZM_CONV IENTROPY: Tmix did not converge ****')
+#else
+     call endrun('ZM_CONV: IENTROPY failed.')
+#endif
   end if
 
 100 format (A,I1,I4,I4,7(A,F6.2))

@@ -1,0 +1,37 @@
+set(PATH_TO_LEGACY_ZM ${SCREAM_BASE_DIR}/../eam/src/physics/cam/)
+set(ZM_SRCS
+  ${PATH_TO_LEGACY_ZM}/zm_conv.F90
+  ${PATH_TO_LEGACY_ZM}/wv_saturation.F90
+  ${PATH_TO_LEGACY_ZM}/wv_sat_methods.F90
+  ${PATH_TO_LEGACY_ZM}/../../utils/cam_abortutils.F90
+  ${PATH_TO_LEGACY_ZM}/../../control/cam_logfile.F90
+  ${CMAKE_CURRENT_SOURCE_DIR}/zm_eamxx_bridge.F90
+)
+
+# Add ETI source files if not on CUDA/HIP
+if (NOT EAMXX_ENABLE_GPU OR Kokkos_ENABLE_CUDA_RELOCATABLE_DEVICE_CODE OR Kokkos_ENABLE_HIP_RELOCATABLE_DEVICE_CODE)
+  list(APPEND ZM_SRCS
+  )
+endif()
+
+add_library(zm ${ZM_SRCS})
+set_target_properties(zm PROPERTIES
+  Fortran_MODULE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/modules
+)
+
+target_include_directories(zm PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_CURRENT_BINARY_DIR}/modules
+  ${CMAKE_CURRENT_SOURCE_DIR}/impl
+  ${PATH_TO_LEGACY_ZM}
+)
+target_link_libraries(zm physics_share scream_share csm_share)
+
+if (NOT SCREAM_LIB_ONLY)
+  add_subdirectory(tests)
+endif()
+
+if (TARGET eamxx_physics)
+  # Add this library to eamxx_physics
+  target_link_libraries(eamxx_physics INTERFACE zm)
+endif()
