@@ -1388,7 +1388,8 @@ contains
           ! Fill vdep.
           call slmm_interp_v_update(nets, nete, step, dtsub, dep_points_all, &
                &                    dep_points_ndim, vnode, vdep, info)
-
+          ! TODO combine vdep(4:5).
+          
           ! Using vdep, update dep_points_all to departure points.
           call update_dep_points_all(independent_time_steps, dtsub, nets, nete, vdep)
        end if

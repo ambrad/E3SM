@@ -35,6 +35,45 @@ namespace islmpi {
 
 template <typename T> using CA4 = ko::View<T****, ko::LayoutRight, ko::HostSpace>;
 
+// Interpolate at eta interfaces, rather than midpoints as below.
+template <Int np, typename EtaT, typename VnodeT> SLMM_KF
+Real interpolate_at_vertical_interfaces (
+  const Int nlev, const EtaT& etai, const VnodeT& vnode, const Int src_lid,
+  const Int lev, const Real rx[np], const Real ry[np], const Real etai_dep)
+{
+  slmm_kernel_assert(etai_dep >= etai(0) and etai_dep <= etai(nlev));
+  // Search for the eta interface values that support etai_dep.
+  Int lev_dep = lev;
+  if (etai_dep != etai(lev)) {
+    if (etai_dep < etai(lev)) {
+      for (lev_dep = lev-1; lev_dep >= 0; --lev_dep)
+        if (etai_dep >= etai(lev_dep))
+          break;
+    } else {
+      for (lev_dep = lev; lev_dep < nlev; ++lev_dep)
+        if (etai_dep < etai(lev_dep+1))
+          break;
+    }
+  }
+  slmm_kernel_assert(lev_dep >= 0 and lev_dep <= nlev);
+  if (lev_dep == nlev) return 0; // etai_dep == etai_end => eta_dot = 0
+  const Real a = (etai_dep - etai(lev_dep)) / (etai(lev_dep+1) - etai(lev_dep));
+  // Linear interp coefficients.
+  const Real alpha[] = {1-a, a};
+  const int dim = 3;
+  Real etai_dot = 0;
+  for (int i = 0; i < 2; ++i) {
+    if (lev_dep+i == 0 or lev_dep+i == nlev)
+      continue; // vel_nodes[:] = 0
+    slmm_kernel_assert(lev_dep+i >= 0 and lev_dep+i < nlev);
+    Real vel_nodes[np*np];
+    for (int k = 0; k < np*np; ++k)
+      vel_nodes[k] = vnode(src_lid,lev_dep+i,k,dim);
+    etai_dot += alpha[i]*calc_q_tgt(rx, ry, vel_nodes);
+  }
+  return etai_dot;
+}
+
 template <Int np, typename EtaT, typename VnodeT> SLMM_KF void
 interpolate_vertical (const Int nlev, const EtaT& etai, const EtaT& etam,
                       const VnodeT& vnode, const Int src_lid, const Int lev,
@@ -42,25 +81,26 @@ interpolate_vertical (const Int nlev, const EtaT& etai, const EtaT& etam,
                       const Real rx[np], const Real ry[np],
                       Real* const v_tgt) {
   const bool new_alg = etai_levp1 >= 0;
-  const Real eta_dep = new_alg ? (etai_lev + etai_levp1)/2 : etai_lev;
-  slmm_kernel_assert(eta_dep > etai(0) and eta_dep < etai(nlev));
+  const Real eta_mid_dep = new_alg ? (etai_lev + etai_levp1)/2 : etai_lev;
+  slmm_kernel_assert(eta_mid_dep > etai(0) and eta_mid_dep < etai(nlev));
+  slmm_kernel_assert(not new_alg or etai_levp1 > etai_lev);
   
   // Search for the eta midpoint values that support the departure point's eta
   // value.
   Int lev_dep = lev;
-  if (eta_dep != etam(lev)) {
-    if (eta_dep < etam(lev)) {
+  if (eta_mid_dep != etam(lev)) {
+    if (eta_mid_dep < etam(lev)) {
       for (lev_dep = lev-1; lev_dep >= 0; --lev_dep)
-        if (eta_dep >= etam(lev_dep))
+        if (eta_mid_dep >= etam(lev_dep))
           break;
     } else {
       for (lev_dep = lev; lev_dep < nlev-1; ++lev_dep)
-        if (eta_dep < etam(lev_dep+1))
+        if (eta_mid_dep < etam(lev_dep+1))
           break;
     }
   }
   slmm_kernel_assert(lev_dep >= -1 and lev_dep < nlev);
-  slmm_kernel_assert(lev_dep == -1 or eta_dep >= etam(lev_dep));
+  slmm_kernel_assert(lev_dep == -1 or eta_mid_dep >= etam(lev_dep));
   Real a;
   bool bdy = false;
   if (lev_dep == -1) {
@@ -71,7 +111,7 @@ interpolate_vertical (const Int nlev, const EtaT& etai, const EtaT& etam,
     a = 0;
     bdy = true;
   } else {
-    a = ((eta_dep - etam(lev_dep)) /
+    a = ((eta_mid_dep - etam(lev_dep)) /
          (etam(lev_dep+1) - etam(lev_dep)));
   }
   // Linear interp coefficients.
@@ -81,7 +121,8 @@ interpolate_vertical (const Int nlev, const EtaT& etai, const EtaT& etam,
     v_tgt[d] = 0;
   for (int i = 0; i < 2; ++i) {
     if (alpha[i] == 0) continue;
-    for (int d = 0; d < 4; ++d) {
+    const int ndim = new_alg ? 3 : 4;
+    for (int d = 0; d < ndim; ++d) {
       Real vel_nodes[np*np];
       for (int k = 0; k < np*np; ++k)
         vel_nodes[k] = vnode(src_lid,lev_dep+i,k,d);
@@ -89,13 +130,20 @@ interpolate_vertical (const Int nlev, const EtaT& etai, const EtaT& etam,
     }
   }
   // Treat eta_dot specially since eta_dot goes to 0 at the boundaries.
-  if (bdy) {
+  if (not new_alg and bdy) {
     slmm_kernel_assert(etam(0) > etai(0));
     slmm_kernel_assert(etam(nlev-1) < etai(nlev));
     if (lev_dep == 0)
-      v_tgt[3] *= (eta_dep - etai(0))/(etam(0) - etai(0));
+      v_tgt[3] *= (eta_mid_dep - etai(0))/(etam(0) - etai(0));
     else
-      v_tgt[3] *= (etai(nlev) - eta_dep)/(etai(nlev) - etam(nlev-1));
+      v_tgt[3] *= (etai(nlev) - eta_mid_dep)/(etai(nlev) - etam(nlev-1));
+  }
+
+  if (new_alg) {
+    v_tgt[3] = interpolate_at_vertical_interfaces<np>(
+      nlev, etai, vnode, src_lid, lev, rx, ry, etai_lev);
+    v_tgt[4] = interpolate_at_vertical_interfaces<np>(
+      nlev, etai, vnode, src_lid, lev, rx, ry, etai_levp1);
   }
 }
 
@@ -218,6 +266,7 @@ void traj_calc_own_next_step (IslMpi<MT>& cm, const DepPoints<MT>& dep_points,
                               const VnodeT& vnode, const VdepT& vdep) {
   const auto xsz = cm.traj_msg_sz;
   const auto ndim = cm.dep_points_ndim;
+  const auto etai_end = cm.etai_end;
 #ifdef COMPOSE_PORT
   const auto& ed_d = cm.ed_d;
   const auto& own_dep_list = cm.own_dep_list;
@@ -233,7 +282,7 @@ void traj_calc_own_next_step (IslMpi<MT>& cm, const DepPoints<MT>& dep_points,
       dep[d] = dep_points(tci,tgt_lev,tgt_k,d);
     if (cvd.traj_alg == 1)
       dep[ndim] = (tgt_lev+1 == cvd.nlev ?
-                   0 :
+                   etai_end :
                    dep_points(tci,tgt_lev+1,tgt_k,ndim-1));
     calc_v<np>(cvd, vnode, slid, tgt_lev, dep, v_tgt);
     for (int d = 0; d < xsz; ++d)
@@ -257,7 +306,7 @@ void traj_calc_own_next_step (IslMpi<MT>& cm, const DepPoints<MT>& dep_points,
         dep[d] = dep_points(tci,e.lev,e.k,d);
       if (cm.traj_alg == 1)
         dep[ndim] = (e.lev+1 == cm.nlev ?
-                     0 :
+                     etai_end :
                      dep_points(tci,e.lev+1,e.k,ndim-1));
       calc_v<np>(cm, vnode, slid, e.lev, dep, v_tgt);
       for (int d = 0; d < xsz; ++d)
@@ -352,7 +401,7 @@ interp_v_update (IslMpi<MT>& cm, const Int nets, const Int nete,
   CA4<      Real> vdep (vdep_r , cm.nelemd, cm.nlev, cm.np2, ndim + cm.traj_alg);
 #endif
   slmm_assert(vnode.extent_int(3) == ndim);
-  slmm_assert(vdep .extent_int(3) == ndim);
+  slmm_assert(vdep .extent_int(3) == cm.traj_alg == 0 ? ndim : ndim+1);
 
 #ifdef COMPOSE_PORT
   const auto& dep_points = cm.tracer_arrays->dep_points;

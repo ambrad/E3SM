@@ -263,7 +263,9 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const DepPoints<MT>& dep_poi
       for (Int i = 0; i < ndim; ++i)
         sb(xptr + i) = dep_points(tci,lev,k,i);
       if (trajectory and traj_alg == 1)
-        sb(xptr + ndim) = k+1 == nlev ? etai_end : dep_points(tci,lev,k+1,ndim-1);
+        sb(xptr + ndim) = (lev+1 == nlev ?
+                           etai_end :
+                           dep_points(tci,lev+1,k,ndim-1));
       auto& item = ed.rmt.atomic_inc_and_return_next();
       if (trajectory) {
         item.q_extrema_ptr = item.q_ptr = xsz*(qptr + cnt);
