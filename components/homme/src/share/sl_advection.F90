@@ -1390,6 +1390,10 @@ contains
                &                    dep_points_ndim, vnode, vdep, info)
 
           if (etalg == 1) then
+             ! Interpolate eta_dot at interfaces. The support data are not
+             ! midpoint data, though; rather, it's interface data collected at
+             ! different horizontal points. Thus, to be clear, this is not
+             ! midpoint-to-interface interpolation of eta_dot.
              do ie = nets, nete
                 do k = 2,nlev
                    a =  (hvcoord%etai(k) - hvcoord%etam(k-1)) / &
