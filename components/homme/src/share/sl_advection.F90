@@ -1351,8 +1351,8 @@ contains
     logical, intent(in) :: independent_time_steps
 
 #ifdef HOMME_ENABLE_COMPOSE
-    integer :: step, ie, info, limiter_active_count, k
-    real(real_kind) :: alpha(2), dtsub
+    integer :: step, ie, info, limiter_active_count, k, i, j
+    real(real_kind) :: alpha(2), dtsub, a
 
     call t_startf('SLMM_trajectory')
 
@@ -1388,8 +1388,22 @@ contains
           ! Fill vdep.
           call slmm_interp_v_update(nets, nete, step, dtsub, dep_points_all, &
                &                    dep_points_ndim, vnode, vdep, info)
-          ! TODO combine vdep(4:5).
-          
+
+          if (etalg == 1) then
+             do ie = nets, nete
+                do j = 1,np
+                   do i = 1,np
+                      do k = 2,nlev
+                         a =  (hvcoord%etai(k) - hvcoord%etam(k-1)) / &
+                              (hvcoord%etam(k) - hvcoord%etam(k-1))
+                         vdep(4,i,j,k,ie) = (1-a)*vdep(5,i,j,k-1,ie) + &
+                              &                a* vdep(4,i,j,k  ,ie)
+                      end do
+                   end do
+                end do
+             end do
+          end if
+
           ! Using vdep, update dep_points_all to departure points.
           call update_dep_points_all(independent_time_steps, dtsub, nets, nete, vdep)
        end if
