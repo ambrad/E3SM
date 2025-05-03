@@ -1351,7 +1351,7 @@ contains
     logical, intent(in) :: independent_time_steps
 
 #ifdef HOMME_ENABLE_COMPOSE
-    integer :: step, ie, info, limiter_active_count, k, i, j
+    integer :: step, ie, info, limiter_active_count, k
     real(real_kind) :: alpha(2), dtsub, a
 
     call t_startf('SLMM_trajectory')
@@ -1391,15 +1391,11 @@ contains
 
           if (etalg == 1) then
              do ie = nets, nete
-                do j = 1,np
-                   do i = 1,np
-                      do k = 2,nlev
-                         a =  (hvcoord%etai(k) - hvcoord%etam(k-1)) / &
-                              (hvcoord%etam(k) - hvcoord%etam(k-1))
-                         vdep(4,i,j,k,ie) = (1-a)*vdep(5,i,j,k-1,ie) + &
-                              &                a* vdep(4,i,j,k  ,ie)
-                      end do
-                   end do
+                do k = 2,nlev
+                   a =  (hvcoord%etai(k) - hvcoord%etam(k-1)) / &
+                        (hvcoord%etam(k) - hvcoord%etam(k-1))
+                   vdep(4,:,:,k,ie) = (1-a)*vdep(5,:,:,k-1,ie) + &
+                        &                a *vdep(4,:,:,k  ,ie)
                 end do
              end do
           end if
