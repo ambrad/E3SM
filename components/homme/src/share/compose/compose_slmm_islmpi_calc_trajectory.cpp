@@ -39,9 +39,11 @@ template <typename T> using CA4 = ko::View<T****, ko::LayoutRight, ko::HostSpace
 template <Int np, typename EtaT, typename VnodeT> SLMM_KF
 Real interpolate_at_vertical_interfaces (
   const Int nlev, const EtaT& etai, const VnodeT& vnode, const Int src_lid,
-  const Int lev, const Real rx[np], const Real ry[np], const Real etai_dep)
+  const Int lev, const Real rx[np], const Real ry[np], Real etai_dep)
 {
-  slmm_kernel_assert(etai_dep >= etai(0) and etai_dep <= etai(nlev));
+  if (etai_dep < etai[0   ]) etai_dep = etai[0   ];
+  if (etai_dep > etai[nlev]) etai_dep = etai[nlev];
+
   // Search for the eta interface values that support etai_dep.
   Int lev_dep = lev;
   if (etai_dep != etai(lev)) {
@@ -81,9 +83,9 @@ interpolate_vertical (const Int nlev, const EtaT& etai, const EtaT& etam,
                       const Real rx[np], const Real ry[np],
                       Real* const v_tgt) {
   const bool new_alg = etai_levp1 >= 0;
-  const Real eta_mid_dep = new_alg ? (etai_lev + etai_levp1)/2 : etai_lev;
-  slmm_kernel_assert(eta_mid_dep > etai(0) and eta_mid_dep < etai(nlev));
-  slmm_kernel_assert(not new_alg or etai_levp1 > etai_lev);
+  Real eta_mid_dep = new_alg ? (etai_lev + etai_levp1)/2 : etai_lev;
+  if (eta_mid_dep < etai[0   ]) eta_mid_dep = etai[0   ];
+  if (eta_mid_dep > etai[nlev]) eta_mid_dep = etai[nlev];
   
   // Search for the eta midpoint values that support the departure point's eta
   // value.
