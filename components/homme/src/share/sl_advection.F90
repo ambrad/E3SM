@@ -143,6 +143,7 @@ contains
           dep_points_ndim = 4
           etalg = 0
           if (iand(semi_lagrange_diagnostics, 2) /= 0) etalg = 1
+          if (iand(semi_lagrange_diagnostics, 3) /= 0) etalg = 2
        end if
        nslots = nlev*qsize
        do ie = 1, size(elem)
@@ -168,8 +169,10 @@ contains
        allocate(minq(np,np,nlev,qsize,size(elem)), maxq(np,np,nlev,qsize,size(elem)), &
             &   dep_points_all(dep_points_ndim,np,np,nlev,size(elem)))
        if (enhanced_trajectory) then
-          allocate(vnode(dep_points_ndim,      np,np,nlev,size(elem)), &
-               &   vdep (dep_points_ndim+etalg,np,np,nlev,size(elem)))
+          i = 0
+          if (etalg > 0) i = 1
+          allocate(vnode(dep_points_ndim,  np,np,nlev,size(elem)), &
+               &   vdep (dep_points_ndim+i,np,np,nlev,size(elem)))
        end if
        call init_velocity_record(size(elem), dt_tracer_factor, dt_remap_factor, &
             semi_lagrange_trajectory_nsubstep, semi_lagrange_trajectory_nvelocity, &
@@ -196,7 +199,7 @@ contains
   end subroutine sl_init1
 
   subroutine sl_get_params(nu_q_out, hv_scaling, hv_q, hv_subcycle_q, limiter_option_out, &
-       cdr_check, geometry_type, trajectory_nsubstep, trajectory_nvelocity) bind(c)
+       cdr_check, geometry_type, trajectory_nsubstep, trajectory_nvelocity, eta_alg) bind(c)
     use control_mod, only: semi_lagrange_hv_q, hypervis_subcycle_q, semi_lagrange_cdr_check, &
          nu_q, hypervis_scaling, limiter_option, geometry, semi_lagrange_trajectory_nsubstep, &
          semi_lagrange_trajectory_nvelocity
@@ -204,7 +207,7 @@ contains
 
     real(c_double), intent(out) :: nu_q_out, hv_scaling
     integer(c_int), intent(out) :: hv_q, hv_subcycle_q, limiter_option_out, cdr_check, &
-         geometry_type, trajectory_nsubstep, trajectory_nvelocity
+         geometry_type, trajectory_nsubstep, trajectory_nvelocity, eta_alg
 
     nu_q_out = nu_q
     hv_scaling = hypervis_scaling
@@ -217,6 +220,7 @@ contains
     if (trim(geometry) == "plane") geometry_type = 1
     trajectory_nsubstep = semi_lagrange_trajectory_nsubstep
     trajectory_nvelocity = semi_lagrange_trajectory_nvelocity
+    eta_alg = etalg
   end subroutine sl_get_params
 
   subroutine init_velocity_record(nelemd, dtf, drf_param, nsub, nvel_param, v, error)
@@ -1352,7 +1356,7 @@ contains
 
 #ifdef HOMME_ENABLE_COMPOSE
     integer :: step, ie, info, limiter_active_count, k
-    real(real_kind) :: alpha(2), dtsub, a
+    real(real_kind) :: alpha(2), dtsub, a, etam_km1(np,np), etam_k(np,np), av(np,np)
 
     call t_startf('SLMM_trajectory')
 
@@ -1386,20 +1390,32 @@ contains
           call update_dep_points_all(independent_time_steps, dtsub, nets, nete, vnode)
        else
           ! Fill vdep.
+          !amb Can I call this twice, saving data in tmps, to prototype?
           call slmm_interp_v_update(nets, nete, step, dtsub, dep_points_all, &
                &                    dep_points_ndim, vnode, vdep, info)
 
-          if (etalg == 1) then
+          if (etalg > 0) then
              ! Interpolate eta_dot at interfaces. The support data are not
-             ! midpoint data, though; rather, it's interface data collected at
-             ! different horizontal points. Thus, to be clear, this is not
+             ! midpoint data, though; rather, they're interface data collected
+             ! at different horizontal points. Thus, to be clear, this is not
              ! midpoint-to-interface interpolation of eta_dot.
              do ie = nets, nete
                 do k = 2,nlev
+#if 0
                    a =  (hvcoord%etai(k) - hvcoord%etam(k-1)) / &
                         (hvcoord%etam(k) - hvcoord%etam(k-1))
-                   vdep(4,:,:,k,ie) = (1-a)*vdep(5,:,:,k-1,ie) + &
-                        &                a *vdep(4,:,:,k  ,ie)
+#else
+                   etam_km1 = (dep_points_all(4,:,:,k-1,ie) + dep_points_all(4,:,:,k,ie))/2
+                   if (k == nlev) then
+                      etam_k = (dep_points_all(4,:,:,k,ie) + hvcoord%etai(nlev+1))/2
+                   else
+                      etam_k = (dep_points_all(4,:,:,k,ie) + dep_points_all(4,:,:,k+1,ie))/2
+                   end if
+                   av = (dep_points_all(4,:,:,k,ie) - etam_km1) / &
+                        (etam_k - etam_km1)
+#endif
+                   vdep(4,:,:,k,ie) = (1-av)*vdep(5,:,:,k-1,ie) + &
+                        &                av *vdep(4,:,:,k  ,ie)
                 end do
              end do
           end if
