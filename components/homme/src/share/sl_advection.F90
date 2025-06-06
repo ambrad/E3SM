@@ -143,7 +143,7 @@ contains
           dep_points_ndim = 4
           etalg = 0
           if (iand(semi_lagrange_diagnostics, 2) /= 0) etalg = 1
-          if (iand(semi_lagrange_diagnostics, 3) /= 0) etalg = 2
+          if (iand(semi_lagrange_diagnostics, 4) /= 0) etalg = 2
        end if
        nslots = nlev*qsize
        do ie = 1, size(elem)
@@ -188,9 +188,9 @@ contains
              write(iulog,'(a,i3,i3,i3)') &
                   'COMPOSE> dt_tracer_factor, dt_remap_factor, halo:', &
                   dt_tracer_factor, dt_remap_factor, semi_lagrange_halo
-             write(iulog,'(a,i3,i3)') &
-                  'COMPOSE> use enhanced trajectory; nsub, nvel:', &
-                  semi_lagrange_trajectory_nsubstep, vrec%nvel
+             write(iulog,'(a,i3,i3,i3)') &
+                  'COMPOSE> use enhanced trajectory; nsub, nvel, etalg:', &
+                  semi_lagrange_trajectory_nsubstep, vrec%nvel, etalg
           end if
        end if
     endif
@@ -1355,8 +1355,9 @@ contains
     logical, intent(in) :: independent_time_steps
 
 #ifdef HOMME_ENABLE_COMPOSE
-    integer :: step, ie, info, limiter_active_count, k
-    real(real_kind) :: alpha(2), dtsub, a, etam_km1(np,np), etam_k(np,np), av(np,np)
+    integer :: step, ie, info, limiter_active_count, k, d, i, j
+    real(real_kind) :: alpha(2), dtsub, a, etam_km1(np,np), etam_k(np,np), av(np,np), p(3)
+    real(real_kind), allocatable :: ptmp(:,:,:,:,:), vtmp(:,:,:,:,:)
 
     call t_startf('SLMM_trajectory')
 
@@ -1390,11 +1391,55 @@ contains
           call update_dep_points_all(independent_time_steps, dtsub, nets, nete, vnode)
        else
           ! Fill vdep.
-          !amb Can I call this twice, saving data in tmps, to prototype?
-          call slmm_interp_v_update(nets, nete, step, dtsub, dep_points_all, &
-               &                    dep_points_ndim, vnode, vdep, info)
+          if (etalg == 2) then
+             call slmm_interp_v_update(nets, nete, step, dtsub, dep_points_all, &
+                  &                    dep_points_ndim, vnode, vdep, info)
+             allocate(ptmp(dep_points_ndim,np,np,nlev,size(elem)), &
+                  &   vtmp(3,np,np,nlev,size(elem)))
+             ptmp = dep_points_all
+             vtmp(1:3,:,:,:,:) = vdep(1:3,:,:,:,:)
+             do ie = nets, nete
+                do k = 2,nlev
+#if 1
+                   a =  (hvcoord%etai(k) - hvcoord%etam(k-1)) / &
+                        (hvcoord%etam(k) - hvcoord%etam(k-1))
+                   av = a
+#else
+                   etam_km1 = (ptmp(4,:,:,k-1,ie) + ptmp(4,:,:,k,ie))/2
+                   if (k == nlev) then
+                      etam_k = (ptmp(4,:,:,k,ie) + hvcoord%etai(nlev+1))/2
+                   else
+                      etam_k = (ptmp(4,:,:,k,ie) + ptmp(4,:,:,k+1,ie))/2
+                   end if
+                   av = (ptmp(4,:,:,k,ie) - etam_km1) / &
+                        (etam_k - etam_km1)
+#endif
+                   do d = 1,3
+                      dep_points_all(d,:,:,k,ie) = (1-av)*ptmp(d,:,:,k-1,ie) + &
+                           &                          av *ptmp(d,:,:,k  ,ie)
+                   end do
+                   if (is_sphere) then
+                      do j = 1, np
+                         do i = 1, np
+                            p = dep_points_all(1:3,i,j,k,ie)
+                            p = p/sqrt(p(1)*p(1) + p(2)*p(2) + p(3)*p(3))
+                            dep_points_all(1:3,i,j,k,ie) = p
+                         end do
+                      end do
+                   end if
+                end do
+             end do
+             call slmm_interp_v_update(nets, nete, step, dtsub, dep_points_all, &
+                  &                    dep_points_ndim, vnode, vdep, info)
+             dep_points_all = ptmp
+             vdep(1:3,:,:,:,:) = vtmp(1:3,:,:,:,:)
+             deallocate(ptmp, vtmp)
+          else
+             call slmm_interp_v_update(nets, nete, step, dtsub, dep_points_all, &
+                  &                    dep_points_ndim, vnode, vdep, info)
+          end if
 
-          if (etalg > 0) then
+          if (etalg == 1) then
              ! Interpolate eta_dot at interfaces. The support data are not
              ! midpoint data, though; rather, they're interface data collected
              ! at different horizontal points. Thus, to be clear, this is not
@@ -1404,6 +1449,8 @@ contains
 #if 0
                    a =  (hvcoord%etai(k) - hvcoord%etam(k-1)) / &
                         (hvcoord%etam(k) - hvcoord%etam(k-1))
+                   vdep(4,:,:,k,ie) = (1-a)*vdep(5,:,:,k-1,ie) + &
+                        &                a *vdep(4,:,:,k  ,ie)
 #else
                    etam_km1 = (dep_points_all(4,:,:,k-1,ie) + dep_points_all(4,:,:,k,ie))/2
                    if (k == nlev) then
@@ -1413,9 +1460,9 @@ contains
                    end if
                    av = (dep_points_all(4,:,:,k,ie) - etam_km1) / &
                         (etam_k - etam_km1)
-#endif
                    vdep(4,:,:,k,ie) = (1-av)*vdep(5,:,:,k-1,ie) + &
                         &                av *vdep(4,:,:,k  ,ie)
+#endif
                 end do
              end do
           end if
