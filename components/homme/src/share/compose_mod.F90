@@ -399,7 +399,8 @@ contains
        sl_traj_3d = 0
        if (independent_time_steps) sl_traj_3d = 1
        nsub = semi_lagrange_trajectory_nsubstep
-       if (iand(semi_lagrange_diagnostics, 2) /= 0) nsub = -nsub
+       !if (iand(semi_lagrange_diagnostics, 2) /= 0) nsub = -nsub
+       if (semi_lagrange_diagnostics > 1) nsub = -nsub
        call slmm_init_impl(par%comm, transport_alg, np, nlev, qsize, qsize_d, &
             nelem, nelemd, cubed_sphere_map, geometry_type, lid2gid, lid2facenum, &
             nbr_id_rank, nirptr, semi_lagrange_halo, sl_traj_3d, &

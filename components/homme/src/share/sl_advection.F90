@@ -1355,8 +1355,8 @@ contains
     logical, intent(in) :: independent_time_steps
 
 #ifdef HOMME_ENABLE_COMPOSE
-    integer :: step, ie, info, limiter_active_count, k, d, i, j
-    real(real_kind) :: alpha(2), dtsub, a, etam_km1(np,np), etam_k(np,np), av(np,np), p(3)
+    integer :: step, ie, info, limiter_active_count, k, i, j
+    real(real_kind) :: alpha(2), dtsub, a, etam_km1(np,np), etam_k(np,np), p(3)
     real(real_kind), allocatable :: ptmp(:,:,:,:,:), vtmp(:,:,:,:,:)
 
     call t_startf('SLMM_trajectory')
@@ -1400,24 +1400,10 @@ contains
              vtmp(1:3,:,:,:,:) = vdep(1:3,:,:,:,:)
              do ie = nets, nete
                 do k = 2,nlev
-#if 1
                    a =  (hvcoord%etai(k) - hvcoord%etam(k-1)) / &
                         (hvcoord%etam(k) - hvcoord%etam(k-1))
-                   av = a
-#else
-                   etam_km1 = (ptmp(4,:,:,k-1,ie) + ptmp(4,:,:,k,ie))/2
-                   if (k == nlev) then
-                      etam_k = (ptmp(4,:,:,k,ie) + hvcoord%etai(nlev+1))/2
-                   else
-                      etam_k = (ptmp(4,:,:,k,ie) + ptmp(4,:,:,k+1,ie))/2
-                   end if
-                   av = (ptmp(4,:,:,k,ie) - etam_km1) / &
-                        (etam_k - etam_km1)
-#endif
-                   do d = 1,3
-                      dep_points_all(d,:,:,k,ie) = (1-av)*ptmp(d,:,:,k-1,ie) + &
-                           &                          av *ptmp(d,:,:,k  ,ie)
-                   end do
+                      dep_points_all(1:3,:,:,k,ie) = (1-a)*ptmp(1:3,:,:,k-1,ie) + &
+                           &                            a *ptmp(1:3,:,:,k  ,ie)
                    if (is_sphere) then
                       do j = 1, np
                          do i = 1, np
@@ -1446,23 +1432,10 @@ contains
              ! midpoint-to-interface interpolation of eta_dot.
              do ie = nets, nete
                 do k = 2,nlev
-#if 0
                    a =  (hvcoord%etai(k) - hvcoord%etam(k-1)) / &
                         (hvcoord%etam(k) - hvcoord%etam(k-1))
                    vdep(4,:,:,k,ie) = (1-a)*vdep(5,:,:,k-1,ie) + &
                         &                a *vdep(4,:,:,k  ,ie)
-#else
-                   etam_km1 = (dep_points_all(4,:,:,k-1,ie) + dep_points_all(4,:,:,k,ie))/2
-                   if (k == nlev) then
-                      etam_k = (dep_points_all(4,:,:,k,ie) + hvcoord%etai(nlev+1))/2
-                   else
-                      etam_k = (dep_points_all(4,:,:,k,ie) + dep_points_all(4,:,:,k+1,ie))/2
-                   end if
-                   av = (dep_points_all(4,:,:,k,ie) - etam_km1) / &
-                        (etam_k - etam_km1)
-                   vdep(4,:,:,k,ie) = (1-av)*vdep(5,:,:,k-1,ie) + &
-                        &                av *vdep(4,:,:,k  ,ie)
-#endif
                 end do
              end do
           end if
