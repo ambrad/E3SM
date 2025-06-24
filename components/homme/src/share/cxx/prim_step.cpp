@@ -12,7 +12,6 @@
 #include "Diagnostics.hpp"
 #include "ComposeTransport.hpp"
 #include "profiling.hpp"
-#include "utilities/IndexUtils.hpp"
 
 namespace Homme
 {
@@ -43,8 +42,10 @@ static void set_tracer_transport_derived_values (
     const auto n0 = tl.n0;
     Kokkos::parallel_for(Kokkos::RangePolicy<ExecSpace> (0,elements.num_elems()*NP*NP*NUM_LEV),
                          KOKKOS_LAMBDA(const int idx) {
-      int ie, igp, jgp, ilev;
-      get_ie_igp_jgp_midlevpack(idx, ie, igp, jgp, ilev);
+      const int ie   = ((idx / NUM_LEV) / NP) / NP;
+      const int igp  = ((idx / NUM_LEV) / NP) % NP;
+      const int jgp  =  (idx / NUM_LEV) % NP;
+      const int ilev =   idx % NUM_LEV;
       eta_dot_dpdn(ie,igp,jgp,ilev) = 0;
       derived_vn0(ie,0,igp,jgp,ilev) = 0;
       derived_vn0(ie,1,igp,jgp,ilev) = 0;
