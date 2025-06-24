@@ -273,8 +273,10 @@ namespace {
 void init_dep_points (const CTI& c, const cti::DeparturePoints& dep_pts) {
   const auto independent_time_steps = c.m_data.independent_time_steps;
   const auto& sphere_cart = c.m_geometry.m_sphere_cart;
-  //todo
-  const CRNV<NUM_PHYSICAL_LEV> hyetam(cti::cpack2real(c.m_hvcoord.etam));
+  const CRNV<NUM_PHYSICAL_LEV>
+    hyeta(c.m_data.eta_alg == 0 ?
+          cti::cpack2real(c.m_hvcoord.etam) :
+          c.m_hvcoord.etai.data());
   assert(not independent_time_steps or dep_pts.extent_int(4) == 4);
   const auto f = KOKKOS_LAMBDA (const int idx) {
     int ie, lev, i, j;
@@ -282,7 +284,7 @@ void init_dep_points (const CTI& c, const cti::DeparturePoints& dep_pts) {
     for (int d = 0; d < 3; ++d)
       dep_pts(ie,lev,i,j,d) = sphere_cart(ie,i,j,d);
     if (independent_time_steps)
-      dep_pts(ie,lev,i,j,3) = hyetam(lev);
+      dep_pts(ie,lev,i,j,3) = hyeta(lev);
   };
   c.launch_ie_physlev_ij(f);
 }
