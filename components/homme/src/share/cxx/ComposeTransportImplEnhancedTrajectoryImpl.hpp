@@ -925,7 +925,52 @@ KOKKOS_FUNCTION void calc_eta_dot_formula_node_ref_mid (
   }
 }
 
-//todo calc_eta_dot_formula_node_ref_int
+// Given the vertical (interface) and horizontal (midpoint) nodal velocities at
+// time endpoints, evaluate the velocity estimate formula, providing the final
+// vertical velocity estimates at interface nodes.
+KOKKOS_FUNCTION void calc_eta_dot_formula_node_ref_int (
+  const KernelVariables& kv, const SphereOperators& sphere_ops,
+  const CRNV<NUM_INTERFACE_LEV>& hyetai, const CSNV<NUM_LEV>& hyetam,
+  // Velocities are at midpoints. Final eta_dot entry is ignored.
+  const Real dtsub, const CS2elNlev vsph[2], const CSelNlevp eta_dot[2],
+  const SelNlevp& wrk1, const S2elNlevp& vwrk1,
+  const ExecViewUnmanaged<Real****>& vnode)
+{
+  const RelNlev ed1_vderiv(cti::pack2real(wrk1));
+  const CRNV<NUM_INTERFACE_LEV> etai(hyetai);
+  { // \dot{eta}_eta evaluated at interfaces
+    const CRelNlevp ed1s(cti::cpack2real(eta_dot[0]));
+    const auto f = [&] (const int i, const int j, const int km1) {
+      const auto k = km1 + 1;
+      ed1_vderiv(i,j,k) =
+        cti::approx_derivative(
+          etai(k-1), etai(k), etai(k+1),
+          ed1s(i,j,k-1), ed1s(i,j,k), ed1s(i,j,k+1));
+    };
+    cti::loop_ijk<cti::num_phys_lev-1>(kv, f);
+  }
+  kv.team_barrier();
+  const S2elNlev ed1_hderiv_p(vwrk1.data());
+  sphere_ops.gradient_sphere(kv, eta_dot[0], ed1_hderiv_p, NUM_LEV);
+  const CR2elNlev ed1_hderiv(cti::pack2real(ed1_hderiv_p));
+  const CRNV<NUM_PHYSICAL_LEV> etam(cti::cpack2real(hyetam));
+  {
+    const CR2elNlev vsph2(cti::cpack2real(vsph[1]));
+    const CRelNlevp ed1(cti::cpack2real(eta_dot[0]));
+    const CRelNlevp ed2(cti::cpack2real(eta_dot[1]));
+    const auto f = [&] (const int i, const int j, const int km1) {
+      const auto k = km1 + 1;
+      // Linearly interp horiz velocity to interfaces.
+      const auto a = (etai(k) - etam(k-1)) / (etam(k) - etam(k-1));
+      vnode(k,i,j,3) =
+        (ed1(i,j,k) + ed2(i,j,k)
+         - dtsub*(  ((1-a)*vsph2(0,i,j,k-1) + a*vsph2(0,i,j,k))*ed1_hderiv(0,i,j,k)
+                  + ((1-a)*vsph2(1,i,j,k-1) + a*vsph2(1,i,j,k))*ed1_hderiv(1,i,j,k)
+                  + ed2(i,j,k)*ed1_vderiv(i,j,k)))/2;
+    };
+    cti::loop_ijk<cti::num_phys_lev-1>(kv, f);
+  }
+}
 
 } // namespace anon
 } // namespace Homme

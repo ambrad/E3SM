@@ -348,6 +348,7 @@ void calc_nodal_velocities (
   const auto& buf1c = d.buf1o[2]; const auto& buf1d = d.buf1o[3];
   const auto& buf2a = d.buf2 [0]; const auto& buf2b = d.buf2 [1];
   const auto& buf2c = d.buf2 [2]; const auto& buf2d = d.buf2 [3];
+  const auto eta_alg = d.eta_alg;
   const auto f = KOKKOS_LAMBDA (const cti::MT& team) {
     KernelVariables kv(team);
     const int ie = kv.ie;
@@ -361,7 +362,6 @@ void calc_nodal_velocities (
       SelNlevp eta_dot[] = {Homme::subview(buf1c, kv.team_idx),
                             Homme::subview(buf1d, kv.team_idx)};
       if (independent_time_steps) {
-        //todo calc_eta_dot_formula_node_ref_int
         calc_eta_dot_ref(kv, sphere_ops, snaps,
                          ps0, hyai0, hybi, hydai, hydbi, hydetai,
                          wrk1, wrk2, vwrk1,
@@ -406,11 +406,18 @@ void calc_nodal_velocities (
                                         vnode_ie);
     if (independent_time_steps) {
       kv.team_barrier();
-      calc_eta_dot_formula_node_ref_mid(kv, sphere_ops,
-                                        hyetai, hyetam,
-                                        dtsub, vsph, eta_dot,
-                                        wrk1, vwrk1,
-                                        vnode_ie);
+      if (eta_alg == 0)
+        calc_eta_dot_formula_node_ref_mid(kv, sphere_ops,
+                                          hyetai, hyetam,
+                                          dtsub, vsph, eta_dot,
+                                          wrk1, vwrk1,
+                                          vnode_ie);
+      else
+        calc_eta_dot_formula_node_ref_int(kv, sphere_ops,
+                                          hyetai, hyetam,
+                                          dtsub, vsph, eta_dot,
+                                          wrk1, vwrk1,
+                                          vnode_ie);
     }
   };
   Kokkos::parallel_for(c.m_tp_ne, f);
