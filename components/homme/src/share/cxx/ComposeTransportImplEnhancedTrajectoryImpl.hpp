@@ -755,9 +755,10 @@ KOKKOS_FUNCTION void calc_etadotmid_from_etadotdpdnint (
   }
 }
 
-// Compute eta_dot at midpoint nodes at the start and end of the substep.
+// Compute eta_dot at midpoint or interface nodes at the start and end of the
+// substep.
 template <typename Snapshots>
-KOKKOS_FUNCTION void calc_eta_dot_ref_mid (
+KOKKOS_FUNCTION void calc_eta_dot_ref (
   const KernelVariables& kv, const SphereOperators& sphops, const Snapshots& snaps,
   const Real& ps0, const Real& hyai0, const CSNV<NUM_LEV_P>& hybi,
   const CSNV<NUM_LEV>& hydai, const CSNV<NUM_LEV>& hydbi, // delta ai, bi
@@ -799,6 +800,7 @@ KOKKOS_FUNCTION void calc_eta_dot_ref_mid (
                            divdps, edd,
                            edds);
     kv.team_barrier();
+    //todo calc_etadotint_from_etadotdpdnint
     calc_etadotmid_from_etadotdpdnint(kv, nlev,
                                       ps0, hydai, hydbi, hydetai,
                                       Kokkos::subview(ps,t,ALL,ALL),
@@ -852,6 +854,7 @@ KOKKOS_FUNCTION void calc_vel_horiz_formula_node_ref_mid (
             etams(k-1), etams(k), etams(k+1),
             vsph1s(d,i,j,k-1), vsph1s(d,i,j,k), vsph1s(d,i,j,k+1));
         }
+        //todo eta_dot at interfaces
         vfsphs(d,i,j,k) = (vfsphs(d,i,j,k) - dtsub*eds(i,j,k)*deriv)/2;
       };
       cti::loop_ijk<cti::num_phys_lev>(kv, f);
@@ -921,6 +924,8 @@ KOKKOS_FUNCTION void calc_eta_dot_formula_node_ref_mid (
     cti::loop_ijk<cti::num_lev_pack>(kv, f);
   }
 }
+
+//todo calc_eta_dot_formula_node_ref_int
 
 } // namespace anon
 } // namespace Homme

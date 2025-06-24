@@ -1356,7 +1356,7 @@ contains
 
 #ifdef HOMME_ENABLE_COMPOSE
     integer :: step, ie, info, limiter_active_count, k, i, j
-    real(real_kind) :: alpha(2), dtsub, a, etam_km1(np,np), etam_k(np,np), p(3)
+    real(real_kind) :: alpha(2), dtsub, a, p(3)
     real(real_kind), allocatable :: ptmp(:,:,:,:,:), vtmp(:,:,:,:,:)
 
     call t_startf('SLMM_trajectory')

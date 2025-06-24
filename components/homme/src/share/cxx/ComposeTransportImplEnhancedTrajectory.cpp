@@ -127,7 +127,6 @@
  */
 
 #include "ComposeTransportImplEnhancedTrajectoryImpl.hpp"
-#include "utilities/IndexUtils.hpp"
 
 namespace Homme {
 
@@ -274,6 +273,7 @@ namespace {
 void init_dep_points (const CTI& c, const cti::DeparturePoints& dep_pts) {
   const auto independent_time_steps = c.m_data.independent_time_steps;
   const auto& sphere_cart = c.m_geometry.m_sphere_cart;
+  //todo
   const CRNV<NUM_PHYSICAL_LEV> hyetam(cti::cpack2real(c.m_hvcoord.etam));
   assert(not independent_time_steps or dep_pts.extent_int(4) == 4);
   const auto f = KOKKOS_LAMBDA (const int idx) {
@@ -359,10 +359,11 @@ void calc_nodal_velocities (
       SelNlevp eta_dot[] = {Homme::subview(buf1c, kv.team_idx),
                             Homme::subview(buf1d, kv.team_idx)};
       if (independent_time_steps) {
-        calc_eta_dot_ref_mid(kv, sphere_ops, snaps,
-                             ps0, hyai0, hybi, hydai, hydbi, hydetai,
-                             wrk1, wrk2, vwrk1,
-                             eta_dot);
+        //todo calc_eta_dot_formula_node_ref_int
+        calc_eta_dot_ref(kv, sphere_ops, snaps,
+                         ps0, hyai0, hybi, hydai, hydbi, hydetai,
+                         wrk1, wrk2, vwrk1,
+                         eta_dot);
       } else {
         for (int t = 0; t < 2; ++t) {
           const auto& ed = eta_dot[t];
@@ -445,6 +446,8 @@ void interp_departure_points_to_floating_level_midpoints (const CTI& c, const in
     const auto vwrk = Homme::subview(buf2a, kv.team_idx);
     // Reconstruct Lagrangian levels at t1 on arrival column:
     //     eta_arr_int = I[eta_ref_mid([eta(0),eta_dep_mid,eta(1)])](eta_ref_int)
+    //todo limit_etai
+    //todo eta_arr_int = I[eta_ref_int(eta_dep_int)](eta_ref_int)
     const auto etam = p2rel(wrk3.data(), nlev);
     const auto f = [&] (const int i, const int j, const int k) {
       etam(i,j,k) = dep_pts(ie,k,i,j,3);
@@ -486,6 +489,7 @@ void interp_departure_points_to_floating_level_midpoints (const CTI& c, const in
     }
     // Compute Lagrangian level midpoints at t1 on arrival column:
     //     eta_arr_mid = I[eta_ref_mid([eta(0),eta_dep_mid,eta(1)])](eta_ref_mid)
+    //todo eta_arr_mid = I[eta_ref_int(eta_dep_int)](eta_ref_mid)
     const auto etam_arr = p2rel(wrk4.data(), nlev);
     eta_interp_eta(kv, nlev,
                    hyetai,
@@ -581,7 +585,7 @@ void ComposeTransportImpl
   const auto etamp = cmvdc(m_hvcoord.etam);
   HostViewUnmanaged<Real[NUM_PHYSICAL_LEV]> etam(pack2real(etamp));
   
-  // hydetam_ref.
+  // hydetam_ref
   m_data.hydetam_ref = decltype(m_data.hydetam_ref)("hydetam_ref");
   const auto m = Kokkos::create_mirror_view(m_data.hydetam_ref);
   const int nlev = num_phys_lev;
@@ -591,7 +595,7 @@ void ComposeTransportImpl
   Kokkos::deep_copy(m_data.hydetam_ref, m);
 
   // etam
-  homme::compose::set_hvcoord(etai(0), etai(num_phys_lev), etam.data());
+  homme::compose::set_hvcoord(etai.data(), etam.data());
 
   // Initialization for semi_lagrange_trajectory_nvelocity > 2.
   m_data.vrec = std::make_shared<VelocityRecord>(
@@ -691,6 +695,8 @@ void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real d
       homme::compose::interp_v_update(step, dtsub);
       Kokkos::fence();
       GPTLstop("compose_vdep");
+
+      //todo Interpolate eta_dot at interfaces.
 
       update_dep_points(*this, dtsub, vdep, dep_pts);
     }

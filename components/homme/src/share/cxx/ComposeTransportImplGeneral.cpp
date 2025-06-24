@@ -76,7 +76,8 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
     if (m_data.trajectory_nsubstep > 0)
       m_data.vnode = DeparturePoints("vnode", nel, num_phys_lev, np, np, ndim);
     if (m_data.trajectory_nsubstep > 1)
-      m_data.vdep  = DeparturePoints("vdep" , nel, num_phys_lev, np, np, ndim);
+      m_data.vdep  = DeparturePoints("vdep" , nel, num_phys_lev, np, np,
+                                     ndim + (m_data.eta_alg > 0 ? 1 : 0));
     if (m_data.trajectory_nsubstep > 0)
       setup_enhanced_trajectory(params, num_elems);
     homme::compose::set_views(
