@@ -455,9 +455,7 @@ void interp_departure_points_to_floating_level_midpoints (const CTI& c, const in
     const auto wrk3 = Homme::subview(buf1c, kv.team_idx);
     const auto wrk4 = Homme::subview(buf1d, kv.team_idx);
     const auto vwrk = Homme::subview(buf2a, kv.team_idx);
-    // Reconstruct Lagrangian levels at t1 on arrival column:
-    //     eta_arr_int = I[eta_ref_mid([eta(0),eta_dep_mid,eta(1)])](eta_ref_int)
-    //todo eta_arr_int = I[eta_ref_int(eta_dep_int)](eta_ref_int)
+    // Reconstruct Lagrangian levels at t1 on arrival column.
     const auto eta = p2rel(wrk3.data(), nlev);
     const auto f = [&] (const int i, const int j, const int k) {
       eta(i,j,k) = dep_pts(ie,k,i,j,3);
@@ -476,13 +474,26 @@ void interp_departure_points_to_floating_level_midpoints (const CTI& c, const in
                  eta);
     kv.team_barrier();
     {
-      // Compute eta_arr_int.
       const auto etai_arr = p2rel(wrk4.data(), nlevp);
-      eta_interp_eta(kv, nlev,
-                     hyetai,
-                     eta, hyetam,
-                     p2rel(wrk1.data(), nlev+2), RnV(cti::pack2real(wrk2), nlev+2),
-                     nlevp-2, hyetai, etai_arr, 1);
+      if (eta_alg == 0) {
+        // Compute
+        //   eta_arr_int = I[eta_ref_mid([eta(0),eta_dep_mid,eta(1)])](eta_ref_int).
+        eta_interp_eta(kv, nlev,
+                       hyetai,
+                       nlev, 0, eta, hyetam,
+                       p2rel(wrk1.data(), nlev+2), RnV(cti::pack2real(wrk2), nlev+2),
+                       nlevp-2, 1, hyetai, etai_arr);
+      } else {
+        // Compute
+        //   eta_arr_int = I[eta_ref_int(eta_dep_int)](eta_ref_int).
+#if 0
+        eta_interp_eta(kv, nlev,
+                       hyetai,
+                       eta, hyetam,
+                       p2rel(wrk1.data(), nlev+2), RnV(cti::pack2real(wrk2), nlev+2),
+                       nlevp-2, hyetai, etai_arr, 1);
+#endif
+      }
       const auto f = [&] (const int i, const int j) {
         etai_arr(i,j,0) = hyetai(0);
         etai_arr(i,j,nlev) = hyetai(nlev);
@@ -509,9 +520,9 @@ void interp_departure_points_to_floating_level_midpoints (const CTI& c, const in
     const auto etam_arr = p2rel(wrk4.data(), nlev);
     eta_interp_eta(kv, nlev,
                    hyetai,
-                   eta, hyetam,
+                   nlev, 0, eta, hyetam,
                    p2rel(wrk1.data(), nlev+2), RnV(cti::pack2real(wrk2), nlev+2),
-                   nlev, hyetam, etam_arr);
+                   nlev, 0, hyetam, etam_arr);
     kv.team_barrier();
     // Compute departure horizontal points corresponding to arrival
     // Lagrangian level midpoints:

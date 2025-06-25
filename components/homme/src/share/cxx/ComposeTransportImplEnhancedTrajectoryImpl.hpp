@@ -382,41 +382,43 @@ linterp (const Range& range,
   Kokkos::parallel_for(range, f);
 }
 
-// Compute Lagrangian level midpoints at t1 on arrival column:
-//     eta_arr_mid = I[eta_ref_mid([eta(0),eta_dep_mid,eta(1)])](eta_ref_mid).
+// Compute Lagrangian levels at t1 on arrival column:
+//     yi(i_os:) = I[y([eta(0),x,eta(1)])](xi(i_os:)),
+// where both x and y are eta values located at midpoints or interfaces and on
+// the reference or departure grids.
 KOKKOS_FUNCTION void
-eta_interp_eta (const KernelVariables& kv, const int nlev,
-                const CRnV& hy_etai, const CRelnV& x, const CRnV& y,
+eta_interp_eta (const KernelVariables& kv, const int nlev, const CRnV& hy_etai,
+                const int n,  const int os, const CRelnV& x, const CRnV& y,
                 const RelnV& xwrk, const RnV& ywrk,
                 // Use xi(i_os:), yi(i,j,i_os:).
-                const int ni, const CRnV& xi, const RelnV& yi, const int i_os = 0) {
+                const int ni, const int i_os, const CRnV& xi, const RelnV& yi) {
   const auto& xbdy = xwrk;
   const auto& ybdy = ywrk;
   assert(hy_etai.extent_int(0) >= nlev+1);
-  assert_eln(x, nlev);
-  assert(y.extent_int(0) >= nlev);
-  assert_eln(xbdy, nlev+2);
-  assert(ybdy.extent_int(0) >= nlev+2);
+  assert_eln(x, os + n);
+  assert(y.extent_int(0) >= os + n);
+  assert_eln(xbdy, n+2);
+  assert(ybdy.extent_int(0) >= n+2);
   assert(xi.extent_int(0) >= i_os + ni);
   assert_eln(yi, i_os + ni);
   const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
   const auto tvr_ni = Kokkos::ThreadVectorRange(kv.team, ni);
-  const auto tvr_nlevp2 = Kokkos::ThreadVectorRange(kv.team, nlev+2);
+  const auto tvr_np2 = Kokkos::ThreadVectorRange(kv.team, n+2);
   const auto f_y = [&] (const int k) {
-    ybdy(k) = (k == 0      ? hy_etai(0) :
-               k == nlev+1 ? hy_etai(nlev) :
-               /**/          y(k-1));
+    ybdy(k) = (k == 0   ? hy_etai(0) :
+               k == n+1 ? hy_etai(nlev) :
+               /**/       y(os+k-1));
   };
-  Kokkos::parallel_for(Kokkos::TeamVectorRange(kv.team, nlev+2), f_y);
+  Kokkos::parallel_for(Kokkos::TeamVectorRange(kv.team, n+2), f_y);
   kv.team_barrier();
   const auto f_x = [&] (const int idx) {
     const int i = idx / NP, j = idx % NP;
     const auto g = [&] (const int k) {
-      xbdy(i,j,k) = (k == 0      ? hy_etai(0) :
-                     k == nlev+1 ? hy_etai(nlev) :
-                     /**/          x(i,j,k-1));
+      xbdy(i,j,k) = (k == 0   ? hy_etai(0) :
+                     k == n+1 ? hy_etai(nlev) :
+                     /**/       x(i,j,os+k-1));
     };
-    Kokkos::parallel_for(tvr_nlevp2, g);
+    Kokkos::parallel_for(tvr_np2, g);
   };
   Kokkos::parallel_for(ttr, f_x);
   kv.team_barrier();

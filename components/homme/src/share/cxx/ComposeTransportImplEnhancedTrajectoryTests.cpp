@@ -7,6 +7,11 @@
 #include "Config.hpp"
 #ifdef HOMME_ENABLE_COMPOSE
 
+#ifdef NDEBUG
+# undef NDEBUG
+#endif
+#include "/home/ac.ambradl/compy-goodies/util/dbg.hpp"
+
 #include "ComposeTransportImplEnhancedTrajectoryImpl.hpp"
 
 #include <random>
@@ -601,9 +606,9 @@ int test_eta_interp (TestData& td) {
       const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
         KernelVariables kv(team);
         eta_interp_eta(kv, nlev, hy_etai,
-                       x, getcolc(y,0,0),
+                       nlev, 0, x, getcolc(y,0,0),
                        xwrk, getcol(ywrk,0,0),
-                       ni, getcolc(xi,0,0), yi);
+                       ni, 0, getcolc(xi,0,0), yi);
       };
       Kokkos::parallel_for(policy, f);
       Kokkos::fence();
