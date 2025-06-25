@@ -2033,16 +2033,16 @@ contains
     end do
   end subroutine limit_etai
 
-  subroutine deta_caas(nlp, deta_ref, lo, deta)
-    integer, intent(in) :: nlp
-    real(real_kind), intent(in) :: deta_ref(nlp), lo
-    real(real_kind), intent(inout) :: deta(nlp)
+  subroutine deta_caas(nl, deta_ref, lo, deta)
+    integer, intent(in) :: nl
+    real(real_kind), intent(in) :: deta_ref(nl), lo
+    real(real_kind), intent(inout) :: deta(nl)
 
-    real(real_kind) :: nerr, w(nlp)
+    real(real_kind) :: nerr, w(nl)
     integer :: k
 
     nerr = zero
-    do k = 1, nlp
+    do k = 1, nl
        if (deta(k) < lo) then
           nerr = nerr + (deta(k) - lo)
           deta(k) = lo

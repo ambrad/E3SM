@@ -551,7 +551,7 @@ eta_to_dp (const KernelVariables& kv, const int nlev,
  */
 template <typename Range>
 KOKKOS_FUNCTION void
-deta_caas (const KernelVariables& kv, const Range& tvr_nlevp,
+deta_caas (const KernelVariables& kv, const Range& tvr,
            const CRnV& deta_ref, const Real low, const RnV& w,
            const RnV& deta) {
   const auto g1 = [&] (const int k, Kokkos::Real2& sums) {
@@ -569,7 +569,7 @@ deta_caas (const KernelVariables& kv, const Range& tvr_nlevp,
     w(k) = wk;
   };
   Kokkos::Real2 sums;
-  Dispatch<>::parallel_reduce(kv.team, tvr_nlevp, g1, sums);
+  Dispatch<>::parallel_reduce(kv.team, tvr, g1, sums);
   const Real wneeded = sums.v[0];
   if (wneeded == 0) return;
   // Remove what is needed from the donors.
@@ -577,7 +577,7 @@ deta_caas (const KernelVariables& kv, const Range& tvr_nlevp,
   const auto g2 = [&] (const int k) {
     deta(k) += wneeded*(w(k)/wavail);
   };
-  Kokkos::parallel_for(tvr_nlevp, g2);
+  Kokkos::parallel_for(tvr, g2);
 }
 
 // Wrapper to above.
@@ -615,7 +615,7 @@ limit_etam (const KernelVariables& kv, const int nlev, const CRnV& hy_etai,
   const auto f1 = [&] (const int idx) {
     const int i = idx / NP, j = idx % NP;
     const auto  etaij = getcolc( eta,i,j);
-    const auto detaij = getcol(deta,i,j);
+    const auto detaij = getcol (deta,i,j);
     const auto g1 = [&] (const int k, int& nbad) {
       const auto d = (k == 0    ? etaij(0) - hy_etai(0) :
                       k == nlev ? hy_etai(nlev) - etaij(nlev-1) :
@@ -630,7 +630,7 @@ limit_etam (const KernelVariables& kv, const int nlev, const CRnV& hy_etai,
       // Signal this column is fine.
       Kokkos::single(Kokkos::PerThread(kv.team), [&] () { detaij(0) = -1; });
       return;
-    };
+    }
     deta_caas(kv, tvr, deta_ref, deta_tol, getcol(wrk1,i,j), detaij);
   };
   Kokkos::parallel_for(ttr, f1);
@@ -638,9 +638,9 @@ limit_etam (const KernelVariables& kv, const int nlev, const CRnV& hy_etai,
   // deta -> eta; ignore columns where limiting wasn't needed.
   const auto f2 = [&] (const int idx) {
     const int i = idx / NP, j = idx % NP;
-    const auto  etaij = getcol( eta,i,j);
-    const auto detaij = getcol(deta,i,j);
+    const auto detaij = getcolc(deta,i,j);
     if (detaij(0) == -1) return;
+    const auto etaij = getcol(eta,i,j);
     const auto g = [&] (const int k, Real& accum, const bool final) {
       assert(k != 0 or accum == 0);
       const Real d = k == 0 ? hy_etai(0) + detaij(0) : detaij(k);
@@ -648,6 +648,61 @@ limit_etam (const KernelVariables& kv, const int nlev, const CRnV& hy_etai,
       if (final) etaij(k) = accum;
     };
     Dispatch<>::parallel_scan(kv.team, nlev, g);
+  };
+  Kokkos::parallel_for(ttr, f2);
+}
+
+// Wrapper to deta_caas. On input and output, eta contains the interface eta
+// values, excluding the last one. On output, deta_caas has been applied, if
+// necessary, to diff(eta(i,j,:)).
+KOKKOS_FUNCTION void
+limit_etai (const KernelVariables& kv, const int nlev, const CRnV& hy_etai,
+            const CRnV& deta_ref, const Real deta_tol, const RelnV& wrk1,
+            const RelnV& wrk2, const RelnV& eta) {
+  assert(hy_etai.extent_int(0) >= nlev+1);
+  assert(deta_ref.extent_int(0) >= nlev);
+  const auto deta = wrk2;
+  assert_eln(wrk1, nlev);
+  assert_eln(deta, nlev);
+  assert_eln(eta , nlev);
+  const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
+  const auto tvr = Kokkos::ThreadVectorRange(kv.team, nlev);
+  // eta -> deta; limit deta if needed.
+  const auto f1 = [&] (const int idx) {
+    const int i = idx / NP, j = idx % NP;
+    const auto  etaij = getcolc( eta,i,j);
+    const auto detaij = getcol (deta,i,j);
+    const auto g1 = [&] (const int k, int& nbad) {
+      const auto d = (k+1 == nlev ? hy_etai(nlev) - etaij(nlev-1) :
+                      /**/          etaij(k+1) - etaij(k));
+      const bool ok = d >= deta_tol;
+      if (not ok) ++nbad;
+      detaij(k) = d;
+    };
+    int nbad = 0;
+    Dispatch<>::parallel_reduce(kv.team, tvr, g1, nbad);
+    if (nbad == 0) {
+      // Signal this column is fine.
+      Kokkos::single(Kokkos::PerThread(kv.team), [&] () { detaij(0) = -1; });
+      return;
+    }
+    deta_caas(kv, tvr, deta_ref, deta_tol, getcol(wrk1,i,j), detaij);
+  };
+  Kokkos::parallel_for(ttr, f1);
+  kv.team_barrier();
+  // deta -> eta; ignore columns where limiting wasn't needed.
+  const auto f2 = [&] (const int idx) {
+    const int i = idx / NP, j = idx % NP;
+    const auto detaij = getcolc(deta,i,j);
+    if (detaij(0) == -1) return;
+    const auto etaij = getcol(eta,i,j);
+    const auto g = [&] (const int k, Real& accum, const bool final) {
+      assert(k != 0 or accum == 0);
+      const Real d = k == 0 ? etaij(0) + detaij(0) : detaij(k);
+      accum += d;
+      if (final) etaij(k+1) = accum;
+    };
+    Dispatch<>::parallel_scan(kv.team, nlev-1, g);
   };
   Kokkos::parallel_for(ttr, f2);
 }

@@ -501,6 +501,79 @@ int test_limit_etam (TestData& td) {
   return nerr;
 }
 
+int test_limit_etai (TestData& td) {
+  int nerr = 0;
+  const Real tol = 100*td.eps;
+
+  for (const int nlev : {143, 128, 81}) {
+    const Real deta_tol = 1e5*td.eps/nlev;
+
+    ExecView<Real*> hy_etai("hy_etai",nlev+1), detai("detai",nlev);
+    ExecView<Real***> wrk1("wrk1",NP,NP,nlev), wrk2("wrk2",NP,NP,nlev);
+    ExecView<Real***> etai("etai",NP,NP,nlev);
+
+    HybridLevels h;
+    fill(h, nlev);
+    todev(h.etai, hy_etai);
+    todev(h.detai, detai);
+
+    const auto he = Kokkos::create_mirror_view(etai);
+
+    const auto policy = get_test_team_policy(1, nlev);
+    const auto run = [&] () {
+      Kokkos::deep_copy(etai, he);
+      const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
+        KernelVariables kv(team);
+        limit_etai(kv, nlev, hy_etai, detai, deta_tol, wrk1, wrk2, etai);
+      };
+      Kokkos::parallel_for(policy, f);
+      Kokkos::fence();
+      Kokkos::deep_copy(he, etai);
+    };
+
+    fillcols(h.etai.size()-1, h.etai.data(), he);
+    // Col 0 should be untouched. Cols 1 and 2 should have very specific
+    // changes. etai[0] is intended to be constant, so don't perturb that entry.
+    const int col1_idx = std::max(1, static_cast<int>(0.25*nlev));
+    he(0,1,col1_idx) += 0.3;
+    const int col2_idx = std::max(1, static_cast<int>(0.8*nlev));
+    he(0,2,col2_idx) -= 5.3;
+    // The rest of the columns get wild changes.
+    for (int idx = 3; idx < NP*NP; ++idx) {
+      const int i = idx / NP, j = idx % NP;
+      for (int k = 1; k < nlev; ++k)
+        he(i,j,k) += td.urand(-1, 1)*(h.etam[k] - h.etam[k-1]);
+    }
+    run();
+    bool ok = true;
+    for (int k = 0; k < nlev; ++k)
+      if (he(0,0,k) != h.etai[k]) ok = false;
+    if (he(0,1,0) != h.etai[0]) ok = false;
+    for (int k = 0; k < nlev; ++k) {
+      if (k == col1_idx) continue;
+      if (std::abs(he(0,1,k) - h.etai[k]) > tol) ok = false;
+    }
+    if (he(0,2,0) != h.etai[0]) ok = false;
+    for (int k = 0; k < nlev; ++k) {
+      if (k == col2_idx) continue;
+      if (std::abs(he(0,2,k) - h.etai[k]) > tol) ok = false;
+    }
+    Real mingap = 1;
+    for (int i = 0; i < NP; ++i)
+      for (int j = 0; j < NP; ++j) {
+        if (he(i,j,0) != h.etai[0]) ok = false;
+        for (int k = 1; k < nlev; ++k)
+          mingap = std::min(mingap, he(i,j,k) - he(i,j,k-1));
+        mingap = std::min(mingap, h.etai[nlev] - he(i,j,nlev-1));
+      }
+    // Test minimum level delta, with room for numerical error.
+    if (mingap < 0.8*deta_tol) ok = false;
+    if (not ok) ++nerr;
+  }
+  
+  return nerr;
+}
+
 int test_eta_interp (TestData& td) {
   int nerr = 0;
   const Real tol = 100*td.eps;
@@ -996,6 +1069,7 @@ int ComposeTransportImpl::run_enhanced_trajectory_unit_tests () {
   comunittest(test_eta_to_dp);
   comunittest(test_deta_caas);
   comunittest(test_limit_etam);
+  comunittest(test_limit_etai);
   comunittest(test_calc_ps);
   comunittest(test_calc_etadotmid_from_etadotdpdnint);
   comunittest(test_init_velocity_record);
