@@ -486,13 +486,11 @@ void interp_departure_points_to_floating_level_midpoints (const CTI& c, const in
       } else {
         // Compute
         //   eta_arr_int = I[eta_ref_int(eta_dep_int)](eta_ref_int).
-#if 0
         eta_interp_eta(kv, nlev,
                        hyetai,
-                       eta, hyetam,
-                       p2rel(wrk1.data(), nlev+2), RnV(cti::pack2real(wrk2), nlev+2),
-                       nlevp-2, hyetai, etai_arr, 1);
-#endif
+                       nlevp-2, 1, eta, hyetai,
+                       p2rel(wrk1.data(), nlev+1), RnV(cti::pack2real(wrk2), nlev+1),
+                       nlevp-2, 1, hyetai, etai_arr);
       }
       const auto f = [&] (const int i, const int j) {
         etai_arr(i,j,0) = hyetai(0);
