@@ -474,20 +474,17 @@ void interp_departure_points_to_floating_level_midpoints (const CTI& c, const in
                  eta);
     kv.team_barrier();
     {
+      // Compute Lagrangian level interfaces at t1 on arrival column.
       const auto etai_arr = p2rel(wrk4.data(), nlevp);
       if (eta_alg == 0) {
-        // Compute
-        //   eta_arr_int = I[eta_ref_mid([eta(0),eta_dep_mid,eta(1)])](eta_ref_int).
-        eta_interp_eta(kv, nlev,
-                       hyetai,
+        // eta_arr_int = I[eta_ref_mid([eta(0),eta_dep_mid,eta(1)])](eta_ref_int)
+        eta_interp_eta(kv, nlev, hyetai,
                        nlev, 0, eta, hyetam,
                        p2rel(wrk1.data(), nlev+2), RnV(cti::pack2real(wrk2), nlev+2),
                        nlevp-2, 1, hyetai, etai_arr);
       } else {
-        // Compute
-        //   eta_arr_int = I[eta_ref_int(eta_dep_int)](eta_ref_int).
-        eta_interp_eta(kv, nlev,
-                       hyetai,
+        // eta_arr_int = I[eta_ref_int(eta_dep_int)](eta_ref_int)
+        eta_interp_eta(kv, nlev, hyetai,
                        nlevp-2, 1, eta, hyetai,
                        p2rel(wrk1.data(), nlev+1), RnV(cti::pack2real(wrk2), nlev+1),
                        nlevp-2, 1, hyetai, etai_arr);
@@ -512,15 +509,21 @@ void interp_departure_points_to_floating_level_midpoints (const CTI& c, const in
                       NP, NP, NUM_LEV*VECTOR_SIZE));
       kv.team_barrier();
     }
-    // Compute Lagrangian level midpoints at t1 on arrival column:
-    //     eta_arr_mid = I[eta_ref_mid([eta(0),eta_dep_mid,eta(1)])](eta_ref_mid)
-    //todo eta_arr_mid = I[eta_ref_int(eta_dep_int)](eta_ref_mid)
+    // Compute Lagrangian level midpoints at t1 on arrival column.
     const auto etam_arr = p2rel(wrk4.data(), nlev);
-    eta_interp_eta(kv, nlev,
-                   hyetai,
-                   nlev, 0, eta, hyetam,
-                   p2rel(wrk1.data(), nlev+2), RnV(cti::pack2real(wrk2), nlev+2),
-                   nlev, 0, hyetam, etam_arr);
+    if (eta_alg == 0) {
+      // eta_arr_mid = I[eta_ref_mid([eta(0),eta_dep_mid,eta(1)])](eta_ref_mid)
+      eta_interp_eta(kv, nlev, hyetai,
+                     nlev, 0, eta, hyetam,
+                     p2rel(wrk1.data(), nlev+2), RnV(cti::pack2real(wrk2), nlev+2),
+                     nlev, 0, hyetam, etam_arr);
+    } else {
+      // eta_arr_mid = I[eta_ref_int(eta_dep_int)](eta_ref_mid)
+      eta_interp_eta(kv, nlev, hyetai,
+                     nlevp-2, 1, eta, hyetai,
+                     p2rel(wrk1.data(), nlev+1), RnV(cti::pack2real(wrk2), nlev+1),
+                     nlev, 0, hyetam, etam_arr);
+    }
     kv.team_barrier();
     // Compute departure horizontal points corresponding to arrival
     // Lagrangian level midpoints:
