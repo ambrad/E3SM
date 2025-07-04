@@ -358,7 +358,9 @@ void calc_nodal_velocities (
   const bool independent_time_steps = d.independent_time_steps;
   const auto ps0 = h.ps0;
   const auto hyai0 = h.hybrid_ai0;
-  const auto& hybi = h.hybrid_bi_packed;
+  const auto& hyai = h.hybrid_ai;
+  const auto& hybi = h.hybrid_bi;
+  const auto& hybi_p = h.hybrid_bi_packed;
   const auto& hydai = h.hybrid_ai_delta;
   const auto& hydbi = h.hybrid_bi_delta;
   const auto& hyetam = h.etam;
@@ -382,8 +384,9 @@ void calc_nodal_velocities (
       SelNlevp eta_dot[] = {Homme::subview(buf1c, kv.team_idx),
                             Homme::subview(buf1d, kv.team_idx)};
       if (independent_time_steps) {
-        calc_eta_dot_ref(kv, sphere_ops, snaps,
-                         ps0, hyai0, hybi, hydai, hydbi, hydetai,
+        calc_eta_dot_ref(kv, eta_alg, sphere_ops, snaps,
+                         ps0, hyai0, hybi_p,
+                         hyai, hybi, hyetai, hydai, hydbi, hydetai,
                          wrk1, wrk2, vwrk1,
                          eta_dot);
       } else {

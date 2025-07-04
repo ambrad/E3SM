@@ -777,7 +777,7 @@ KOKKOS_FUNCTION void calc_ps (
 
 // Transform eta_dot_dpdn at interfaces to eta_dot at midpoints using the
 // formula
-//     eta_dot = eta_dot_dpdn/(A_eta p0 + B_eta ps).
+//     eta_dot = eta_dot_dpdn/(A_eta p0 + B_eta ps)
 //            a= eta_dot_dpdn diff(eta)/(diff(A) p0 + diff(B) ps).
 KOKKOS_FUNCTION void calc_etadotmid_from_etadotdpdnint (
   const KernelVariables& kv, const int nlev,
@@ -812,12 +812,39 @@ KOKKOS_FUNCTION void calc_etadotmid_from_etadotdpdnint (
   }
 }
 
+// Transform eta_dot_dpdn to eta_dot, both at interfaces, using the formula
+//     eta_dot = eta_dot_dpdn/(A_eta p0 + B_eta ps).
+//            a= eta_dot_dpdn diff(eta)/(diff(A) p0 + diff(B) ps),
+// where diff is the central difference.
+KOKKOS_FUNCTION void calc_etadotint_from_etadotdpdnint (
+  const KernelVariables& kv, const int nlev, const Real ps0,
+  const CRnV& ai, const CRnV& bi, const CRnV& etai, const CRelV& ps,
+  //  in: eta_dot_dpdn at interfaces
+  // out: eta_dot at interfaces
+  const SelnV& ed)
+{
+  assert(ai.extent_int(0) >= nlev);
+  assert(bi.extent_int(0) >= nlev);
+  assert(etai.extent_int(0) >= nlev);
+  assert_eln(ed, nlev+1);
+  const auto f = [&] (const int i, const int j, const int km1) {
+    const int k = km1 + 1;
+    ed(i,j,k) = (ed(i,j,k)
+                 * (etai(k+1) - etai(k-1))
+                 / (  (ai(k+1) - ai(k-1))*ps0
+                    + (bi(k+1) - bi(k-1))*ps(i,j)));
+  };
+  cti::loop_ijk<cti::num_phys_lev-1>(kv, f);
+}
+
 // Compute eta_dot at midpoint or interface nodes at the start and end of the
 // substep.
 template <typename Snapshots>
 KOKKOS_FUNCTION void calc_eta_dot_ref (
-  const KernelVariables& kv, const SphereOperators& sphops, const Snapshots& snaps,
-  const Real& ps0, const Real& hyai0, const CSNV<NUM_LEV_P>& hybi,
+  const KernelVariables& kv, const int eta_alg, const SphereOperators& sphops,
+  const Snapshots& snaps, const Real& ps0, const Real& hyai0, const CSNV<NUM_LEV_P>& hybi_p,
+  const CRNV<NUM_INTERFACE_LEV>& hyai, const CRNV<NUM_INTERFACE_LEV>& hybi,
+  const CRNV<NUM_INTERFACE_LEV>& hyetai,
   const CSNV<NUM_LEV>& hydai, const CSNV<NUM_LEV>& hydbi, // delta ai, bi
   const CSNV<NUM_LEV>& hydetai, // delta etai
   const SelNlevp& wrk1, const SelNlevp& wrk2, const S2elNlevp& vwrk1,
@@ -853,16 +880,17 @@ KOKKOS_FUNCTION void calc_eta_dot_ref (
     const RelNlevp edds(cti::pack2real(edd));
     const RelNlev divdps(cti::pack2real(wrk1));
     cti::calc_eta_dot_dpdn(kv,
-                           hybi,
+                           hybi_p,
                            divdps, edd,
                            edds);
     kv.team_barrier();
-    //todo calc_etadotint_from_etadotdpdnint
-    calc_etadotmid_from_etadotdpdnint(kv, nlev,
-                                      ps0, hydai, hydbi, hydetai,
-                                      Kokkos::subview(ps,t,ALL,ALL),
-                                      wrk1,
-                                      edd);
+    const auto pst = Kokkos::subview(ps,t,ALL,ALL);
+    if (eta_alg == 0)
+      calc_etadotmid_from_etadotdpdnint(kv, nlev, ps0, hydai, hydbi, hydetai,
+                                        pst, wrk1, edd);
+    else
+      calc_etadotint_from_etadotdpdnint(kv, nlev, ps0, hyai, hybi, hyetai,
+                                        pst, edd);
     // No team_barrier: wrk1 is protected in second iteration.
   }
 }
