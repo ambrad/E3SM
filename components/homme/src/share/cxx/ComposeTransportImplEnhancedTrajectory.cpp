@@ -318,6 +318,26 @@ void update_dep_points (
   c.launch_ie_physlev_ij(f);
 }
 
+// Interpolate eta_dot at interfaces. The support data are not midpoint data,
+// though; rather, they're interface data collected at different horizontal
+// points. Thus, to be clear, this is not midpoint-to-interface interpolation of
+// eta_dot.
+void interp_etadot_at_interfaces (const CTI& c, const cti::DeparturePoints& vdep) {
+  assert(vdep.extent_int(4) == 5);
+  const auto etai = c.m_hvcoord.etai;
+  const CRNV<NUM_PHYSICAL_LEV> etam(cti::cpack2real(c.m_hvcoord.etam));
+  const auto f = KOKKOS_LAMBDA (const int idx) {
+    int ie, lev, i, j;
+    cti::idx_ie_physlev_ij(idx, ie, lev, i, j);
+    if (lev == 0) return;
+    const auto a = (etai(lev) - etam(lev-1)) / (etam(lev) - etam(lev-1));
+    // Safe to write to this slot in parallel b/c only this slot reads from it.
+    vdep(ie,lev,i,j,3) = ((1-a)*vdep(ie,lev-1,i,j,4) +
+                          (  a)*vdep(ie,lev  ,i,j,3));
+  };
+  c.launch_ie_physlev_ij(f);
+}
+
 /* Evaluate a formula to provide an estimate of nodal velocities that are use to
    create a 2nd-order update to the trajectory. The fundamental formula for the
    update in position p from arrival point p1 to departure point p0 is
@@ -724,7 +744,7 @@ void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real d
       Kokkos::fence();
       GPTLstop("compose_vdep");
 
-      //todo Interpolate eta_dot at interfaces.
+      interp_etadot_at_interfaces(*this, vdep);
 
       update_dep_points(*this, dtsub, vdep, dep_pts);
     }
