@@ -747,7 +747,8 @@ void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real d
       Kokkos::fence();
       GPTLstop("compose_vdep");
 
-      interp_etadot_at_interfaces(*this, vdep);
+      if (m_data.eta_alg > 0)
+        interp_etadot_at_interfaces(*this, vdep);
 
       update_dep_points(*this, dtsub, vdep, dep_pts);
     }
