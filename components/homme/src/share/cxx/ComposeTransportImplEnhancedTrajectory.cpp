@@ -419,7 +419,7 @@ void calc_nodal_velocities (
     // and vertical velocity estimates at midpoint nodes.
     const auto vnode_ie = Kokkos::subview(vnode, ie, ALL,ALL,ALL,ALL);
     const auto vec_sph2cart_ie = Homme::subview(vec_sph2cart, ie);
-    calc_vel_horiz_formula_node_ref_mid(kv, sphere_ops,
+    calc_vel_horiz_formula_node_ref_mid(kv, eta_alg, sphere_ops,
                                         hyetam, vec_sph2cart_ie,
                                         dtsub, vsph, eta_dot,
                                         wrk1, vwrk1, vwrk2,

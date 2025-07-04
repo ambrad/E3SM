@@ -871,7 +871,7 @@ KOKKOS_FUNCTION void calc_eta_dot_ref (
 // evaluate the velocity estimate formula, providing the final horizontal
 // velocity estimates at midpoint nodes.
 KOKKOS_FUNCTION void calc_vel_horiz_formula_node_ref_mid (
-  const KernelVariables& kv, const SphereOperators& sphere_ops,
+  const KernelVariables& kv, const int eta_alg, const SphereOperators& sphere_ops,
   const CSNV<NUM_LEV>& hyetam, const ExecViewUnmanaged<Real[2][3][NP][NP]>& vec_sph2cart,
   // Velocities are at midpoints. Final eta_dot entry is ignored.
   const Real dtsub, const CS2elNlev vsph[2], const CSelNlevp eta_dot[2],
@@ -911,8 +911,14 @@ KOKKOS_FUNCTION void calc_vel_horiz_formula_node_ref_mid (
             etams(k-1), etams(k), etams(k+1),
             vsph1s(d,i,j,k-1), vsph1s(d,i,j,k), vsph1s(d,i,j,k+1));
         }
-        //todo eta_dot at interfaces
-        vfsphs(d,i,j,k) = (vfsphs(d,i,j,k) - dtsub*eds(i,j,k)*deriv)/2;
+        const auto eta_dot =
+          (eta_alg == 0 ?
+           eds(i,j,k) :
+           // Interpolate eta_dot at interfaces to midpoints. Note that this is
+           // the only time this is done, and it's used only in a term of the
+           // formula that contains dtsub.
+           (eds(i,j,k) + eds(i,j,k+1))/2);
+        vfsphs(d,i,j,k) = (vfsphs(d,i,j,k) - dtsub*eta_dot*deriv)/2;
       };
       cti::loop_ijk<cti::num_phys_lev>(kv, f);
     }
