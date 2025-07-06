@@ -36,7 +36,7 @@ module sl_advection
   integer :: dep_points_ndim, etalg
 
   ! For use in make_positive. Set at initialization to a function of hvcoord%dp0.
-  real(kind=real_kind) :: dp_tol, deta_tol
+  real(kind=real_kind) :: dp_tol, deta_tol, db_deta(nlevp)
 
   public :: prim_advec_tracers_observe_velocity_ALE, prim_advec_tracers_remap_ALE, &
        &    sl_init1, sl_vertically_remap_tracers, sl_unittest
@@ -1850,7 +1850,11 @@ contains
          &             v1(np,np,nlev), v2(np,np,nlevp), p(3)
     integer :: ie, i, j, k, d
 
-    call set_deta_tol(hvcoord)
+    if (deta_tol < 0) then
+       ! Benign write race. Constants are only written, and at least one thread
+       ! must enter this block.
+       call init_constants(hvcoord)
+    end if
 
     detam_ref(1) = hvcoord%etam(1) - hvcoord%etai(1)
     do k = 2, nlev
@@ -1924,7 +1928,7 @@ contains
     end do
   end subroutine interp_departure_points_to_floating_level_midpoints
 
-  subroutine set_deta_tol(hvcoord)
+  subroutine init_constants(hvcoord)
     type (hvcoord_t), intent(in) :: hvcoord
 
     real(real_kind) :: deta_ave
@@ -1934,11 +1938,36 @@ contains
 
     ! Benign write race condition. A thread might see eta_tol < 0 and set it
     ! here even as another thread does the same. But because there is no read
-    ! and only one value to write, the redundant writes don't matter.
+    ! and only one value to write, the redundant writes don't matter. At least
+    ! one thread must see eta_tol < 0.
 
     deta_ave = (hvcoord%etai(nlev+1) - hvcoord%etai(1)) / nlev
     deta_tol = 10_real_kind*eps*deta_ave
-  end subroutine set_deta_tol
+
+    call estimate_derivative(nlevp, hvcoord%etai, hvcoord%hybi, db_deta)
+  end subroutine init_constants
+
+  subroutine estimate_derivative(n, x, y, y_x)
+    ! Weighted average of the two 1-sided finite differences. In infinite
+    ! precision, the values for indices 2:n-1 are the same as
+    ! eval_lagrange_poly_derivative with three support points.
+    
+    integer, intent(in) :: n
+    real(real_kind), intent(in) :: x(n), y(n)
+    real(real_kind), intent(out) :: y_x(n)
+
+    integer :: k
+    real(real_kind) :: dx1, dx2, a
+
+    y_x(1) = (y(2) - y(1)) / (x(2) - x(1))
+    do k = 2, n-1
+       dx1 = x(k) - x(k-1)
+       dx2 = x(k+1) - x(k)
+       a = dx2/(dx1 + dx2)
+       y_x(k) = a*(y(k) - y(k-1))/dx1 + (1-a)*(y(k+1) - y(k))/dx2
+    end do
+    y_x(n) = (y(n) - y(n-1)) / (x(n) - x(n-1))
+  end subroutine estimate_derivative
 
   subroutine limit_etam(hvcoord, deta_ref, eta, eta_lim, cnt)
     type (hvcoord_t), intent(in) :: hvcoord
@@ -2257,6 +2286,37 @@ contains
     nerr = 1
   end function assert
 
+  function test_estimate_derivative() result (nerr)
+    integer :: nerr
+
+    integer, parameter :: n = 3
+    real(real_kind), parameter :: x(3) = (/ -0.3, 0.1, 1.1 /)
+
+    real(real_kind) :: y(n), y_x_true(n), y_x_est(n)
+
+    integer :: k
+
+    nerr = 0
+
+    ! Linear.
+    do k = 1, n
+       y(k) =- 1.2*x(k) + 0.7
+       y_x_true(k) = -1.2
+    end do
+    call estimate_derivative(n, x, y, y_x_est)
+    do k = 1, n
+       if (abs(y_x_est(k) - y_x_true(k)) > 10*eps) nerr = nerr + 1
+    end do
+
+    ! Quadratic.
+    do k = 1, n
+       y(k) = 0.7*x(k)**2 - 1.2*x(k) + 0.7
+       y_x_true(k) = 1.4*x(k) - 1.2
+    end do
+    call estimate_derivative(n, x, y, y_x_est)
+    if (abs(y_x_est(2) - y_x_true(2)) > 10*eps) nerr = nerr + 1
+  end function test_estimate_derivative
+
   function test_linterp() result (nerr)
     integer, parameter :: n = 128, ni = 111
 
@@ -2531,13 +2591,14 @@ contains
     end subroutine cleanup
   end function test_init_velocity_record
 
-  subroutine sl_unittest(par, hvcoord)
+  subroutine sl_unittest(par, hvcoord, nerr)
     use kinds, only: iulog
 
     type (parallel_t), intent(in) :: par
     type (hvcoord_t), intent(in) :: hvcoord
+    integer, intent(out) :: nerr
 
-    integer :: n(6)
+    integer :: n(7)
 
     n(1) = test_lagrange()
     n(2) = test_reconstruct_and_limit_dp()
@@ -2545,9 +2606,11 @@ contains
     n(4) = test_linterp()
     n(5) = test_eta_to_dp(hvcoord)
     n(6) = test_init_velocity_record()
+    n(7) = test_estimate_derivative()
 
-    if (sum(n) > 0 .and. par%masterproc) then
-       write(iulog,'(a,6i2)') 'COMPOSE> sl_unittest FAIL ', n
+    nerr = sum(n)
+    if (nerr > 0 .and. par%masterproc) then
+       write(iulog,'(a,7i2)') 'COMPOSE> sl_unittest FAIL ', n
     end if
   end subroutine sl_unittest
 

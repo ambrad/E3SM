@@ -341,7 +341,7 @@ struct ComposeTransportImpl {
 
   // Form a 2nd-degree Lagrange polynomial over (x(k-1:k+1), y(k-1:k+1)) and set
   // yi(k) to its derivative at x(k). yps(:,:,0) is not written.
-  //   This is equivalent to a weighted average of 1-sided diffs:
+  //   This is equivalent to a weighted average of 1-sided finite differences:
   //      dx1 = xk - xkm1, dx2 = xkp1 - xk
   //      w = dx2/(dx1 + dx2)
   //      return w (yk - ykm1)/dx1 + (1-w) (ykp1 - yk)/dx2.
@@ -356,7 +356,7 @@ struct ComposeTransportImpl {
   }
 
   // In infinite precision, same as above. Impl as the weighted average of
-  // 1-sided diffs to reduce ops.
+  // 1-sided finite differences to reduce ops.
   template <typename Real>
   KOKKOS_FUNCTION static Real approx_derivative1 (
     const Real& xkm1, const Real& xk, const Real& xkp1,
