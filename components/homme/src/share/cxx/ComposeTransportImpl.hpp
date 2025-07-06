@@ -339,17 +339,34 @@ struct ComposeTransportImpl {
     }
   }
 
-  // Form a 3rd-degree Lagrange polynomial over (x(k-1:k+1), y(k-1:k+1)) and set
+  // Form a 2nd-degree Lagrange polynomial over (x(k-1:k+1), y(k-1:k+1)) and set
   // yi(k) to its derivative at x(k). yps(:,:,0) is not written.
+  //   This is equivalent to a weighted average of 1-sided diffs:
+  //      dx1 = xk - xkm1, dx2 = xkp1 - xk
+  //      w = dx2/(dx1 + dx2)
+  //      return w (yk - ykm1)/dx1 + (1-w) (ykp1 - yk)/dx2.
   template <typename Real>
   KOKKOS_FUNCTION static Real approx_derivative (
     const Real& xkm1, const Real& xk, const Real& xkp1,
     const Real& ykm1, const Real& yk, const Real& ykp1)
   {
-    return (ykm1*((         1 /(xkm1 - xk  ))*((xk - xkp1)/(xkm1 - xkp1))) +
-            yk  *((         1 /(xk   - xkm1))*((xk - xkp1)/(xk   - xkp1)) +
-                  ((xk - xkm1)/(xk   - xkm1))*(         1 /(xk   - xkp1))) +
-            ykp1*(((xk - xkm1)/(xkp1 - xkm1))*(         1 /(xkp1 - xk  ))));
+    return (ykm1*((1/(xkm1 - xk))*((xk - xkp1)/(xkm1 - xkp1))) +
+            yk  *(1/(xk - xkm1) + 1/(xk - xkp1)) +
+            ykp1*((1/(xkp1 - xk))*((xk - xkm1)/(xkp1 - xkm1))));
+  }
+
+  // In infinite precision, same as above. Impl as the weighted average of
+  // 1-sided diffs to reduce ops.
+  template <typename Real>
+  KOKKOS_FUNCTION static Real approx_derivative1 (
+    const Real& xkm1, const Real& xk, const Real& xkp1,
+    const Real& ykm1, const Real& yk, const Real& ykp1)
+  {
+    const auto
+      dx1 = xk - xkm1,
+      dx2 = xkp1 - xk,
+      w = dx2/(dx1 + dx2);
+    return w*(yk - ykm1)/dx1 + (1-w)*(ykp1 - yk)/dx2;
   }
 
   KOKKOS_INLINE_FUNCTION static void approx_derivative (
