@@ -1361,6 +1361,11 @@ contains
 
     call t_startf('SLMM_trajectory')
 
+    if (deta_tol < 0) then
+       ! Benign write race. Constants are only written, and at least one thread
+       ! must enter this block.
+       call init_constants(hvcoord)
+    end if
     call slmm_set_hvcoord(hvcoord%etai, hvcoord%etam)
 
     ! Set dep_points_all to level-midpoint arrival points.
@@ -1633,15 +1638,14 @@ contains
        do k = 2,nlev
           eta_dot(:,:,k,t) = hvcoord%hybi(k)*w1 - eta_dot(:,:,k,t)
        end do
-       !   Compute ps.
+       ! Compute ps.
        w1 = hvcoord%hyai(1)*hvcoord%ps0 + &
             &    (1 - alpha(t))*sum(dp1, 3) + &
             &         alpha(t) *sum(dp2, 3)
+       ! Transform eta_dot_dpdn at interfaces to eta_dot at midpoints using the
+       ! formula
+       !     eta_dot = eta_dot_dpdn/(A_eta p0 + B_eta ps).
        if (etalg == 0) then
-          ! Transform eta_dot_dpdn at interfaces to eta_dot at midpoints using the
-          ! formula
-          !     eta_dot = eta_dot_dpdn/(A_eta p0 + B_eta ps)
-          !            a= eta_dot_dpdn diff(eta)/(diff(A) p0 + diff(B) ps).
           do k = 1,nlev
              eta_dot(:,:,k,t) = half*(eta_dot(:,:,k,t) + eta_dot(:,:,k+1,t)) &
                   &             * (hvcoord%etai(k+1) - hvcoord%etai(k)) &
@@ -1649,11 +1653,10 @@ contains
                   &                + (hvcoord%hybi(k+1) - hvcoord%hybi(k))*w1)
           end do
        else
+          ! Use p_eta = A_eta p0 + B_eta ps = p0 + B_eta (ps - p0).
           do k = 2,nlev
-             eta_dot(:,:,k,t) = eta_dot(:,:,k,t) &
-                  &             * (hvcoord%etai(k+1) - hvcoord%etai(k-1)) &
-                  &             / (  (hvcoord%hyai(k+1) - hvcoord%hyai(k-1))*hvcoord%ps0 &
-                  &                + (hvcoord%hybi(k+1) - hvcoord%hybi(k-1))*w1)
+             eta_dot(:,:,k,t) = eta_dot(:,:,k,t) / &
+                  &             (hvcoord%ps0 + db_deta(k)*(w1 - hvcoord%ps0))
           end do
        end if
     end do
@@ -1849,12 +1852,6 @@ contains
     real(real_kind) :: detam_ref(nlevp), detai_ref(nlev), w1(np,np), &
          &             v1(np,np,nlev), v2(np,np,nlevp), p(3)
     integer :: ie, i, j, k, d
-
-    if (deta_tol < 0) then
-       ! Benign write race. Constants are only written, and at least one thread
-       ! must enter this block.
-       call init_constants(hvcoord)
-    end if
 
     detam_ref(1) = hvcoord%etam(1) - hvcoord%etai(1)
     do k = 2, nlev
