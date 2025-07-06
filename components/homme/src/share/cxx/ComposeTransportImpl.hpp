@@ -345,8 +345,10 @@ struct ComposeTransportImpl {
   //      dx1 = xk - xkm1, dx2 = xkp1 - xk
   //      w = dx2/(dx1 + dx2)
   //      return w (yk - ykm1)/dx1 + (1-w) (ykp1 - yk)/dx2.
+  // This impl is retained for BFBness in the original trajectory algorithm with
+  // the F90. The next impl is preferred in practice.
   template <typename Real>
-  KOKKOS_FUNCTION static Real approx_derivative (
+  KOKKOS_FUNCTION static Real approx_derivative1 (
     const Real& xkm1, const Real& xk, const Real& xkp1,
     const Real& ykm1, const Real& yk, const Real& ykp1)
   {
@@ -358,7 +360,7 @@ struct ComposeTransportImpl {
   // In infinite precision, same as above. Impl as the weighted average of
   // 1-sided finite differences to reduce ops.
   template <typename Real>
-  KOKKOS_FUNCTION static Real approx_derivative1 (
+  KOKKOS_FUNCTION static Real approx_derivative (
     const Real& xkm1, const Real& xk, const Real& xkp1,
     const Real& ykm1, const Real& yk, const Real& ykp1)
   {
@@ -369,7 +371,7 @@ struct ComposeTransportImpl {
     return w*(yk - ykm1)/dx1 + (1-w)*(ykp1 - yk)/dx2;
   }
 
-  KOKKOS_INLINE_FUNCTION static void approx_derivative (
+  KOKKOS_INLINE_FUNCTION static void approx_derivative1 (
     const KernelVariables& kv, const CSNlevp& xs, const CSNlevp& ys,
     const SNlev& yps) // yps(:,:,0) is undefined
   {
@@ -381,8 +383,8 @@ struct ComposeTransportImpl {
       const auto& xkm1 = x(i,j,k-1);
       const auto& xk   = x(i,j,k  ); // also the interpolation point
       const auto& xkp1 = x(i,j,k+1);
-      yp(i,j,k) = approx_derivative(x(i,j,k-1), x(i,j,k), x(i,j,k+1),
-                                    y(i,j,k-1), y(i,j,k), y(i,j,k+1));
+      yp(i,j,k) = approx_derivative1(x(i,j,k-1), x(i,j,k), x(i,j,k+1),
+                                     y(i,j,k-1), y(i,j,k), y(i,j,k+1));
     };
     loop_ijk<num_phys_lev>(kv, f);
   }

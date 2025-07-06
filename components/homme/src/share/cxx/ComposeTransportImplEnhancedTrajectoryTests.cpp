@@ -80,6 +80,33 @@ struct ElData {
 
 const Real TestData::eps = std::numeric_limits<Real>::epsilon();
 
+int test_deriv (const TestData& td) {
+  int ne = 0;
+  { // The two impls are equivalent in infinite precision.
+    const int n = 3;
+    const Real x[n] = {-0.3, 0.1, 1.1};
+    Real y[n] = {-0.1, 0.1, 0};
+    for (int t = 0; t < 10; ++t) {
+      y[2] = 0.2*(t - 9.5);
+      Real g1, g2;
+      g1 = cti::approx_derivative1(x[0], x[1], x[2], y[0], y[1], y[2]);
+      g2 = cti::approx_derivative (x[0], x[1], x[2], y[0], y[1], y[2]);
+      if (std::abs(g1 - g2) > 100*td.eps) ++ne;
+    }
+  }
+  { // Exactly recovers quadratic.
+    const int n = 3;
+    const Real x[n] = {-0.3, 0.1, 1.1};
+    Real y[n];
+    for (int i = 0; i < n; ++i)
+      y[i] = 0.7*x[i]*x[i] - 1.2*x[i] + 0.7;
+    const Real g_true = 1.4*x[1] - 1.2;
+    const Real g_est = cti::approx_derivative(x[0], x[1], x[2], y[0], y[1], y[2]);
+    if (std::abs(g_est - g_true) > 100*td.eps) ++ne;
+  }
+  return ne;
+}
+
 int test_find_support (TestData&) {
   int ne = 0;
   const int n = 97;
@@ -1068,6 +1095,7 @@ int test_init_velocity_record (TestData& td) {
 int ComposeTransportImpl::run_enhanced_trajectory_unit_tests () {
   int nerr = 0, ne;
   TestData td(*this);
+  comunittest(test_deriv);
   comunittest(test_find_support);
   comunittest(test_linterp);
   comunittest(test_eta_interp);

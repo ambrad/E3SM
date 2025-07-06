@@ -2300,7 +2300,7 @@ contains
 
     ! Linear.
     do k = 1, n
-       y(k) =- 1.2*x(k) + 0.7
+       y(k) = -1.2*x(k) + 0.7
        y_x_true(k) = -1.2
     end do
     call estimate_derivative(n, x, y, y_x_est)

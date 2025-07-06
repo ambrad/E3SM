@@ -202,7 +202,7 @@ KOKKOS_FUNCTION static void calc_vertically_lagrangian_levels (
   // Gradient of eta_dot_dpdn = p_eta deta/dt at final time w.r.t. p at initial
   // time.
   const auto& ptp0 = dprecon;
-  cti::approx_derivative(kv, pref, *eta_dot_dpdn[1], ptp0);
+  cti::approx_derivative1(kv, pref, *eta_dot_dpdn[1], ptp0);
 
   {
     const auto& edd = *eta_dot_dpdn[0];
@@ -435,7 +435,7 @@ static int test_approx_derivative () {
   { // Run approx_derivative.
     const auto f = KOKKOS_LAMBDA (const cti::MT& team) {
       KernelVariables kv(team);
-      cti::approx_derivative(kv, xp, yp, yip);
+      cti::approx_derivative1(kv, xp, yp, yip);
     };
     Kokkos::fence();
     Kokkos::parallel_for(policy, f);
