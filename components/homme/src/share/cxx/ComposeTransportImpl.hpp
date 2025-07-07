@@ -95,6 +95,7 @@ struct ComposeTransportImpl {
 
     ExecView<Scalar[NUM_LEV]> hydetai; // diff(etai)
     ExecView<Real[NUM_INTERFACE_LEV]> hydetam_ref;
+    ExecView<Scalar[NUM_LEV_P]> db_deta_i; // B_eta at interfaces
 
     // Persistent, allocated memory, depending on options.
     DeparturePoints dep_pts, vnode, vdep; // (ie,lev,i,j,d)

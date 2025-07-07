@@ -358,13 +358,12 @@ void calc_nodal_velocities (
   const bool independent_time_steps = d.independent_time_steps;
   const auto ps0 = h.ps0;
   const auto hyai0 = h.hybrid_ai0;
-  const auto& hyai = h.hybrid_ai;
-  const auto& hybi = h.hybrid_bi;
-  const auto& hybi_p = h.hybrid_bi_packed;
+  const auto& hybi = h.hybrid_bi_packed;
   const auto& hydai = h.hybrid_ai_delta;
   const auto& hydbi = h.hybrid_bi_delta;
-  const auto& hyetam = h.etam;
+  const auto& db_deta_i = d.db_deta_i;
   const auto& hyetai = h.etai;
+  const auto& hyetam = h.etam;
   const auto& hydetai = d.hydetai;
   const auto& buf1a = d.buf1o[0]; const auto& buf1b = d.buf1o[1];
   const auto& buf1c = d.buf1o[2]; const auto& buf1d = d.buf1o[3];
@@ -385,8 +384,8 @@ void calc_nodal_velocities (
                             Homme::subview(buf1d, kv.team_idx)};
       if (independent_time_steps) {
         calc_eta_dot_ref(kv, eta_alg, sphere_ops, snaps,
-                         ps0, hyai0, hybi_p,
-                         hyai, hybi, hyetai, hydai, hydbi, hydetai,
+                         ps0, hyai0, hybi,
+                         hydai, hydbi, hydetai, db_deta_i,
                          wrk1, wrk2, vwrk1,
                          eta_dot);
       } else {
@@ -638,12 +637,14 @@ void ComposeTransportImpl
   
   // hydetam_ref
   m_data.hydetam_ref = decltype(m_data.hydetam_ref)("hydetam_ref");
-  const auto m = Kokkos::create_mirror_view(m_data.hydetam_ref);
-  const int nlev = num_phys_lev;
-  m(0) = etam(0) - etai(0);
-  for (int k = 1; k < nlev; ++k) m(k) = etam(k) - etam(k-1);
-  m(nlev) = etai(nlev) - etam(nlev-1);
-  Kokkos::deep_copy(m_data.hydetam_ref, m);
+  {
+    const auto m = Kokkos::create_mirror_view(m_data.hydetam_ref);
+    const int nlev = num_phys_lev;
+    m(0) = etam(0) - etai(0);
+    for (int k = 1; k < nlev; ++k) m(k) = etam(k) - etam(k-1);
+    m(nlev) = etai(nlev) - etam(nlev-1);
+    Kokkos::deep_copy(m_data.hydetam_ref, m);
+  }
 
   // etam
   homme::compose::set_hvcoord(etai.data(), etam.data());
@@ -656,6 +657,19 @@ void ComposeTransportImpl
   if (nv > 2) {
     m_data.dp_extra_snapshots = DpSnaps( "dp_extra_snapshots", num_elems, nv-2);
     m_data.vel_extra_snapshots = VSnaps("vel_extra_snapshots", num_elems, nv-2);
+  }
+
+  // B_eta at interfaces
+  m_data.db_deta_i = decltype(m_data.db_deta_i)("db_deta_i");
+  {
+    const auto m_p = Kokkos::create_mirror_view(m_data.db_deta_i);
+    HostViewUnmanaged<Real[NUM_INTERFACE_LEV]> m(pack2real(m_p));
+    m(0) = m(NUM_INTERFACE_LEV-1) = 0; // unused
+    const auto hybi = cmvdc(m_hvcoord.hybrid_bi);
+    for (int k = 2; k < NUM_PHYSICAL_LEV-1; ++k)
+      m(k) = approx_derivative(etai(k-1), etai(k), etai(k+1),
+                               hybi(k-1), hybi(k), hybi(k+1));
+    Kokkos::deep_copy(m_data.db_deta_i, m_p);
   }
 }
 
