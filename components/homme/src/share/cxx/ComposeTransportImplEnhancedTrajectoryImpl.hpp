@@ -822,10 +822,9 @@ KOKKOS_FUNCTION void calc_etadotint_from_etadotdpdnint (
   // out: eta_dot at interfaces
   const SelnV& ed)
 {
-  assert(db_deta_i.extent_int(0) >= nlev+1);
+  assert(calc_nscal(db_deta_i.extent_int(0)) >= nlev+1);
   assert_eln(ed, nlev+1);
-  const auto f = [&] (const int i, const int j, const int km1) {
-    const int k = km1 + 1;
+  const auto f = [&] (const int i, const int j, const int k) {
     ed(i,j,k) = ed(i,j,k) / (ps0 + db_deta_i(k)*(ps(i,j) - ps0));
   };
   cti::loop_ijk(calc_npack(nlev), kv, f); // final level is unused

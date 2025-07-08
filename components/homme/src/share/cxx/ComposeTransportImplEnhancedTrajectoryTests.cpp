@@ -403,7 +403,7 @@ int test_deta_caas (TestData& td) {
 
 struct HybridLevels {
   Real ps0, a_eta, b_eta;
-  std::vector<Real> ai, dai, bi, dbi, am, bm, etai, detai, etam, detam;
+  std::vector<Real> ai, dai, bi, dbi, am, bm, etai, etam, detai, detam;
 };
 
 // Follow DCMIP2012 3D tracer transport specification for a, b, eta.
@@ -884,7 +884,7 @@ int test_calc_ps (TestData& td) {
   return nerr;
 }
 
-int test_calc_etadotmid_from_etadotdpdnint (TestData& td) {
+int test_calc_etadot_from_etadotdpdnint (TestData& td) {
   int nerr = 0;
   const Real tol = 100*td.eps;
 
@@ -905,41 +905,63 @@ int test_calc_etadotmid_from_etadotdpdnint (TestData& td) {
     ElData wrk("wrk",nlev+1), ed("ed",nlev+1);
     ExecView<Real[NP][NP]> ps("ps");
     const Real ps0 = h.ps0;
+    ExecView<Scalar*> db_deta_i("db_deta_i", calc_npack(nlev+1));
+    Kokkos::deep_copy(db_deta_i, h.b_eta);
 
-    const auto ps_m = Kokkos::create_mirror_view(ps);
-    for (int i = 0; i < NP; ++i)
-      for (int j = 0; j < NP; ++j) {
-        ps_m(i,j) = td.urand(0.5, 1.2)*ps0;
-        for (int k = 0; k < nlev; ++k) {
-          hydai.r[k] = h.dai[k];
-          hydbi.r[k] = h.dbi[k];
-          hydetai.r[k] = h.detai[k];
+    for (int trial = 0; trial < 2; ++trial) {
+      const auto ps_m = Kokkos::create_mirror_view(ps);
+      for (int i = 0; i < NP; ++i)
+        for (int j = 0; j < NP; ++j) {
+          ps_m(i,j) = td.urand(0.5, 1.2)*ps0;
+          for (int k = 0; k < nlev; ++k) {
+            hydai.r[k] = h.dai[k];
+            hydbi.r[k] = h.dbi[k];
+            hydetai.r[k] = h.detai[k];
+          }
+          for (int k = 0; k <= nlev; ++k)
+            ed.r(i,j,k) = (i-j)*h.etai[k] + 0.3;
+          if (trial == 1) {
+            ed.r(i,j,0) = 0;
+            ed.r(i,j,nlev) = 0;
+          }
         }
-        for (int k = 0; k <= nlev; ++k)
-          ed.r(i,j,k) = (i-j)*h.etai[k] + 0.3;
-      }
-    Kokkos::deep_copy(ps, ps_m);
-    hydai.h2d(); hydbi.h2d(); hydetai.h2d();
-    ed.h2d();
+      Kokkos::deep_copy(ps, ps_m);
+      hydai.h2d(); hydbi.h2d(); hydetai.h2d();
+      ed.h2d();
 
-    const auto policy = get_test_team_policy(1, nlev);
-    const auto f = KOKKOS_LAMBDA(const cti::MT& team) {
-      KernelVariables kv(team);
-      calc_etadotmid_from_etadotdpdnint(
-        kv, nlev, ps0, hydai.d, hydbi.d, hydetai.d, ps, wrk.d, ed.d);
-    };
-    Kokkos::parallel_for(policy, f);
-    Kokkos::fence();
-    ed.d2h();
+      const auto policy = get_test_team_policy(1, nlev);
+      const auto fmid = KOKKOS_LAMBDA(const cti::MT& team) {
+        KernelVariables kv(team);
+        calc_etadotmid_from_etadotdpdnint(
+          kv, nlev, ps0, hydai.d, hydbi.d, hydetai.d, ps, wrk.d, ed.d);
+      };
+      const auto fint = KOKKOS_LAMBDA(const cti::MT& team) {
+        KernelVariables kv(team);
+        calc_etadotint_from_etadotdpdnint(
+          kv, nlev, ps0, db_deta_i, ps, ed.d);
+      };
+      if (trial == 0)
+        Kokkos::parallel_for(policy, fmid);
+      else
+        Kokkos::parallel_for(policy, fint);
+      Kokkos::fence();
+      ed.d2h();
 
-    for (int i = 0; i < NP; ++i)
-      for (int j = 0; j < NP; ++j) {
-        const auto den = h.a_eta*h.ps0 + h.b_eta*ps_m(i,j);
-        for (int k = 0; k < nlev; ++k) {
-          const auto ed_true = ((i-j)*h.etam[k] + 0.3)/den;
-          if (std::abs(ed.r(i,j,k) - ed_true) > tol*(10/den)) ++nerr;
+      for (int i = 0; i < NP; ++i)
+        for (int j = 0; j < NP; ++j) {
+          const auto den = h.a_eta*h.ps0 + h.b_eta*ps_m(i,j);
+          for (int k = 0; k <= nlev; ++k) {
+            if (trial == 0 and k == nlev) continue;
+            if (trial == 1 and (k == 0 or k == nlev)) {
+              if (ed.r(i,j,k) != 0) ++nerr;
+              continue;
+            }
+            const auto eta = trial == 0 ? h.etam[k] : h.etai[k];
+            const auto ed_true = ((i-j)*eta + 0.3)/den;
+            if (std::abs(ed.r(i,j,k) - ed_true) > tol*(10/den)) ++nerr;
+          }
         }
-      }
+    }
   }
 
   return nerr;
@@ -1104,7 +1126,7 @@ int ComposeTransportImpl::run_enhanced_trajectory_unit_tests () {
   comunittest(test_limit_etam);
   comunittest(test_limit_etai);
   comunittest(test_calc_ps);
-  comunittest(test_calc_etadotmid_from_etadotdpdnint);
+  comunittest(test_calc_etadot_from_etadotdpdnint);
   comunittest(test_init_velocity_record);
   return nerr;
 }

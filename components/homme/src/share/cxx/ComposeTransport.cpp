@@ -76,10 +76,10 @@ ComposeTransport::run_unit_tests () {
   std::vector<std::pair<std::string, int> > fails;
   int ne, nerr = 0;
   ne = m_compose_impl->run_trajectory_unit_tests();
-  if (ne) fails.push_back(std::make_pair("run_trajectory_unit_tests", nerr));
+  if (ne) fails.push_back(std::make_pair("run_trajectory_unit_tests", ne));
   nerr += ne;
   ne = m_compose_impl->run_enhanced_trajectory_unit_tests();
-  if (ne) fails.push_back(std::make_pair("run_enhanced_trajectory_unit_tests", nerr));
+  if (ne) fails.push_back(std::make_pair("run_enhanced_trajectory_unit_tests", ne));
   nerr += ne;
   return fails;
 }
