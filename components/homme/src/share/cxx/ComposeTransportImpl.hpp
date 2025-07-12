@@ -82,7 +82,6 @@ struct ComposeTransportImpl {
     int geometry_type; // 0: sphere, 1: plane
     int trajectory_nsubstep; // 0: original alg, >= 1: enhanced
     int trajectory_nvelocity;
-    int eta_alg;
     Real nu_q, hv_scaling, dp_tol, deta_tol;
     bool independent_time_steps;
 

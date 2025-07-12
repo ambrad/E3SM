@@ -273,10 +273,7 @@ namespace {
 void init_dep_points (const CTI& c, const cti::DeparturePoints& dep_pts) {
   const auto independent_time_steps = c.m_data.independent_time_steps;
   const auto& sphere_cart = c.m_geometry.m_sphere_cart;
-  const CRNV<NUM_PHYSICAL_LEV>
-    hyeta(c.m_data.eta_alg == 0 ?
-          cti::cpack2real(c.m_hvcoord.etam) :
-          c.m_hvcoord.etai.data());
+  const auto& etai = c.m_hvcoord.etai;
   assert(not independent_time_steps or dep_pts.extent_int(4) == 4);
   const auto f = KOKKOS_LAMBDA (const int idx) {
     int ie, lev, i, j;
@@ -284,7 +281,7 @@ void init_dep_points (const CTI& c, const cti::DeparturePoints& dep_pts) {
     for (int d = 0; d < 3; ++d)
       dep_pts(ie,lev,i,j,d) = sphere_cart(ie,i,j,d);
     if (independent_time_steps)
-      dep_pts(ie,lev,i,j,3) = hyeta(lev);
+      dep_pts(ie,lev,i,j,3) = etai(lev);
   };
   c.launch_ie_physlev_ij(f);
 }
@@ -369,7 +366,6 @@ void calc_nodal_velocities (
   const auto& buf1c = d.buf1o[2]; const auto& buf1d = d.buf1o[3];
   const auto& buf2a = d.buf2 [0]; const auto& buf2b = d.buf2 [1];
   const auto& buf2c = d.buf2 [2]; const auto& buf2d = d.buf2 [3];
-  const auto eta_alg = d.eta_alg;
   const auto f = KOKKOS_LAMBDA (const cti::MT& team) {
     KernelVariables kv(team);
     const int ie = kv.ie;
@@ -383,7 +379,7 @@ void calc_nodal_velocities (
       SelNlevp eta_dot[] = {Homme::subview(buf1c, kv.team_idx),
                             Homme::subview(buf1d, kv.team_idx)};
       if (independent_time_steps) {
-        calc_eta_dot_ref(kv, eta_alg, sphere_ops, snaps,
+        calc_eta_dot_ref(kv, sphere_ops, snaps,
                          ps0, hyai0, hybi,
                          hydai, hydbi, hydetai, db_deta_i,
                          wrk1, wrk2, vwrk1,
@@ -421,25 +417,18 @@ void calc_nodal_velocities (
     // and vertical velocity estimates at midpoint nodes.
     const auto vnode_ie = Kokkos::subview(vnode, ie, ALL,ALL,ALL,ALL);
     const auto vec_sph2cart_ie = Homme::subview(vec_sph2cart, ie);
-    calc_vel_horiz_formula_node_ref_mid(kv, eta_alg, sphere_ops,
+    calc_vel_horiz_formula_node_ref_mid(kv, sphere_ops,
                                         hyetam, vec_sph2cart_ie,
                                         dtsub, vsph, eta_dot,
                                         wrk1, vwrk1, vwrk2,
                                         vnode_ie);
     if (independent_time_steps) {
       kv.team_barrier();
-      if (eta_alg == 0)
-        calc_eta_dot_formula_node_ref_mid(kv, sphere_ops,
-                                          hyetai, hyetam,
-                                          dtsub, vsph, eta_dot,
-                                          wrk1, vwrk1,
-                                          vnode_ie);
-      else
-        calc_eta_dot_formula_node_ref_int(kv, sphere_ops,
-                                          hyetai, hyetam,
-                                          dtsub, vsph, eta_dot,
-                                          wrk1, vwrk1,
-                                          vnode_ie);
+      calc_eta_dot_formula_node_ref_int(kv, sphere_ops,
+                                        hyetai, hyetam,
+                                        dtsub, vsph, eta_dot,
+                                        wrk1, vwrk1,
+                                        vnode_ie);
     }
   };
   Kokkos::parallel_for(c.m_tp_ne, f);
@@ -468,7 +457,6 @@ void interp_departure_points_to_floating_level_midpoints (const CTI& c, const in
   const auto& buf1a = d.buf1e[0]; const auto& buf1b = d.buf1e[1];
   const auto& buf1c = d.buf1e[2]; const auto& buf1d = d.buf1e[3];
   const auto& buf2a = d.buf2[0];
-  const auto eta_alg = d.eta_alg;
   const auto f = KOKKOS_LAMBDA (const cti::MT& team) {
     KernelVariables kv(team);
     const int ie = kv.ie;
@@ -484,33 +472,19 @@ void interp_departure_points_to_floating_level_midpoints (const CTI& c, const in
     };
     cti::loop_ijk<cti::num_phys_lev>(kv, f);
     kv.team_barrier();
-    if (eta_alg == 0)
-      limit_etam(kv, nlev,
-                 hyetai, detam_ref, deta_tol,
-                 p2rel(wrk1.data(), nlevp), p2rel(wrk2.data(), nlevp),
-                 eta);
-    else
-      limit_etai(kv, nlev,
-                 hyetai, detai, deta_tol,
-                 p2rel(wrk1.data(), nlev), p2rel(wrk2.data(), nlev),
-                 eta);
+    limit_etai(kv, nlev,
+               hyetai, detai, deta_tol,
+               p2rel(wrk1.data(), nlev), p2rel(wrk2.data(), nlev),
+               eta);
     kv.team_barrier();
     {
       // Compute Lagrangian level interfaces at t1 on arrival column.
       const auto etai_arr = p2rel(wrk4.data(), nlevp);
-      if (eta_alg == 0) {
-        // eta_arr_int = I[eta_ref_mid([eta(0),eta_dep_mid,eta(1)])](eta_ref_int)
-        eta_interp_eta(kv, nlev, hyetai,
-                       nlev, 0, eta, hyetam,
-                       p2rel(wrk1.data(), nlev+2), RnV(cti::pack2real(wrk2), nlev+2),
-                       nlevp-2, 1, hyetai, etai_arr);
-      } else {
-        // eta_arr_int = I[eta_ref_int(eta_dep_int)](eta_ref_int)
-        eta_interp_eta(kv, nlev, hyetai,
-                       nlevp-2, 1, eta, hyetai,
-                       p2rel(wrk1.data(), nlev+1), RnV(cti::pack2real(wrk2), nlev+1),
-                       nlevp-2, 1, hyetai, etai_arr);
-      }
+      // eta_arr_int = I[eta_ref_int(eta_dep_int)](eta_ref_int)
+      eta_interp_eta(kv, nlev, hyetai,
+                     nlevp-2, 1, eta, hyetai,
+                     p2rel(wrk1.data(), nlev+1), RnV(cti::pack2real(wrk2), nlev+1),
+                     nlevp-2, 1, hyetai, etai_arr);
       const auto f = [&] (const int i, const int j) {
         etai_arr(i,j,0) = hyetai(0);
         etai_arr(i,j,nlev) = hyetai(nlev);
@@ -533,19 +507,11 @@ void interp_departure_points_to_floating_level_midpoints (const CTI& c, const in
     }
     // Compute Lagrangian level midpoints at t1 on arrival column.
     const auto etam_arr = p2rel(wrk4.data(), nlev);
-    if (eta_alg == 0) {
-      // eta_arr_mid = I[eta_ref_mid([eta(0),eta_dep_mid,eta(1)])](eta_ref_mid)
-      eta_interp_eta(kv, nlev, hyetai,
-                     nlev, 0, eta, hyetam,
-                     p2rel(wrk1.data(), nlev+2), RnV(cti::pack2real(wrk2), nlev+2),
-                     nlev, 0, hyetam, etam_arr);
-    } else {
-      // eta_arr_mid = I[eta_ref_int(eta_dep_int)](eta_ref_mid)
-      eta_interp_eta(kv, nlev, hyetai,
-                     nlevp-2, 1, eta, hyetai,
-                     p2rel(wrk1.data(), nlev+1), RnV(cti::pack2real(wrk2), nlev+1),
-                     nlev, 0, hyetam, etam_arr);
-    }
+    // eta_arr_mid = I[eta_ref_int(eta_dep_int)](eta_ref_mid)
+    eta_interp_eta(kv, nlev, hyetai,
+                   nlevp-2, 1, eta, hyetai,
+                   p2rel(wrk1.data(), nlev+1), RnV(cti::pack2real(wrk2), nlev+1),
+                   nlev, 0, hyetam, etam_arr);
     kv.team_barrier();
     // Compute departure horizontal points corresponding to arrival
     // Lagrangian level midpoints:
@@ -761,8 +727,7 @@ void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real d
       Kokkos::fence();
       GPTLstop("compose_vdep");
 
-      if (m_data.eta_alg > 0)
-        interp_etadot_at_interfaces(*this, vdep);
+      interp_etadot_at_interfaces(*this, vdep);
 
       update_dep_points(*this, dtsub, vdep, dep_pts);
     }

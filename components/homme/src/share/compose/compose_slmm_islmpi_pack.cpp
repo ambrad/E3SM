@@ -214,8 +214,7 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const DepPoints<MT>& dep_poi
   {
     ConstExceptGnu Int np2 = cm.np2, nlev = cm.nlev, qsize = cm.qsize;
     ConstExceptGnu Int ndim = trajectory ? cm.dep_points_ndim : 3;
-    ConstExceptGnu Int traj_alg = cm.traj_alg;
-    ConstExceptGnu Int xsz = trajectory and traj_alg == 1 ? ndim+1 : ndim;
+    ConstExceptGnu Int xsz = trajectory ? ndim+1 : ndim;
     ConstExceptGnu auto etai_end = cm.etai_end;
     const auto& ed_d = cm.ed_d;
     const auto& mylid_with_comm_d = cm.mylid_with_comm_d;
@@ -262,7 +261,7 @@ void pack_dep_points_sendbuf_pass2 (IslMpi<MT>& cm, const DepPoints<MT>& dep_poi
       slmm_kernel_assert_high(xptr > 0);
       for (Int i = 0; i < ndim; ++i)
         sb(xptr + i) = dep_points(tci,lev,k,i);
-      if (trajectory and traj_alg == 1)
+      if (trajectory)
         sb(xptr + ndim) = (lev+1 == nlev ?
                            etai_end :
                            dep_points(tci,lev+1,k,ndim-1));

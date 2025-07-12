@@ -261,8 +261,7 @@ contains
     use gridgraph_mod, only: GridVertex_t
     use control_mod, only: semi_lagrange_cdr_alg, transport_alg, cubed_sphere_map, &
          semi_lagrange_halo, semi_lagrange_trajectory_nsubstep, &
-         semi_lagrange_nearest_point_lev, dt_remap_factor, dt_tracer_factor, geometry, &
-         semi_lagrange_diagnostics
+         semi_lagrange_nearest_point_lev, dt_remap_factor, dt_tracer_factor, geometry
     use physical_constants, only: Sx, Sy, Lx, Ly
     use scalable_grid_init_mod, only: sgi_is_initialized, sgi_get_rank2sfc, &
          sgi_gid2igv
@@ -399,8 +398,6 @@ contains
        sl_traj_3d = 0
        if (independent_time_steps) sl_traj_3d = 1
        nsub = semi_lagrange_trajectory_nsubstep
-       !if (iand(semi_lagrange_diagnostics, 2) /= 0) nsub = -nsub
-       if (semi_lagrange_diagnostics > 1) nsub = -nsub
        call slmm_init_impl(par%comm, transport_alg, np, nlev, qsize, qsize_d, &
             nelem, nelemd, cubed_sphere_map, geometry_type, lid2gid, lid2facenum, &
             nbr_id_rank, nirptr, semi_lagrange_halo, sl_traj_3d, &

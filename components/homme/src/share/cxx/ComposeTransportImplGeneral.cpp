@@ -13,7 +13,7 @@
 extern "C" void
 sl_get_params(double* nu_q, double* hv_scaling, int* hv_q, int* hv_subcycle_q,
               int* limiter_option, int* cdr_check, int* geometry_type,
-              int* trajectory_nsubstep, int* trajectory_nvelocity, int* eta_alg);
+              int* trajectory_nsubstep, int* trajectory_nvelocity);
 
 namespace Homme {
 
@@ -58,8 +58,7 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
 
   sl_get_params(&m_data.nu_q, &m_data.hv_scaling, &m_data.hv_q, &m_data.hv_subcycle_q,
                 &m_data.limiter_option, &m_data.cdr_check, &m_data.geometry_type,
-                &m_data.trajectory_nsubstep, &m_data.trajectory_nvelocity,
-                &m_data.eta_alg);
+                &m_data.trajectory_nsubstep, &m_data.trajectory_nvelocity);
 
   if (independent_time_steps != m_data.independent_time_steps or
       m_data.nelemd != num_elems or m_data.qsize != params.qsize) {
@@ -76,8 +75,7 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
     if (m_data.trajectory_nsubstep > 0)
       m_data.vnode = DeparturePoints("vnode", nel, num_phys_lev, np, np, ndim);
     if (m_data.trajectory_nsubstep > 1)
-      m_data.vdep  = DeparturePoints("vdep" , nel, num_phys_lev, np, np,
-                                     ndim + (m_data.eta_alg > 0 ? 1 : 0));
+      m_data.vdep  = DeparturePoints("vdep" , nel, num_phys_lev, np, np, ndim+1);
     if (m_data.trajectory_nsubstep > 0)
       setup_enhanced_trajectory(params, num_elems);
     homme::compose::set_views(

@@ -33,7 +33,7 @@ module sl_advection
 
   ! Configuration.
   logical :: is_sphere, enhanced_trajectory
-  integer :: dep_points_ndim, etalg
+  integer :: dep_points_ndim
 
   ! For use in make_positive. Set at initialization to a function of hvcoord%dp0.
   real(kind=real_kind) :: dp_tol, deta_tol, db_deta(nlevp)
@@ -141,9 +141,6 @@ contains
        dep_points_ndim = 3
        if (enhanced_trajectory .and. independent_time_steps) then
           dep_points_ndim = 4
-          etalg = 0
-          if (iand(semi_lagrange_diagnostics, 2) /= 0) etalg = 1
-          if (iand(semi_lagrange_diagnostics, 4) /= 0) etalg = 2
        end if
        nslots = nlev*qsize
        do ie = 1, size(elem)
@@ -169,10 +166,8 @@ contains
        allocate(minq(np,np,nlev,qsize,size(elem)), maxq(np,np,nlev,qsize,size(elem)), &
             &   dep_points_all(dep_points_ndim,np,np,nlev,size(elem)))
        if (enhanced_trajectory) then
-          i = 0
-          if (etalg > 0) i = 1
           allocate(vnode(dep_points_ndim,  np,np,nlev,size(elem)), &
-               &   vdep (dep_points_ndim+i,np,np,nlev,size(elem)))
+               &   vdep (dep_points_ndim+1,np,np,nlev,size(elem)))
        end if
        call init_velocity_record(size(elem), dt_tracer_factor, dt_remap_factor, &
             semi_lagrange_trajectory_nsubstep, semi_lagrange_trajectory_nvelocity, &
@@ -189,8 +184,8 @@ contains
                   'COMPOSE> dt_tracer_factor, dt_remap_factor, halo:', &
                   dt_tracer_factor, dt_remap_factor, semi_lagrange_halo
              write(iulog,'(a,i3,i3,i3)') &
-                  'COMPOSE> use enhanced trajectory; nsub, nvel, etalg:', &
-                  semi_lagrange_trajectory_nsubstep, vrec%nvel, etalg
+                  'COMPOSE> use enhanced trajectory; nsub, nvel:', &
+                  semi_lagrange_trajectory_nsubstep, vrec%nvel
           end if
        end if
     endif
@@ -199,7 +194,7 @@ contains
   end subroutine sl_init1
 
   subroutine sl_get_params(nu_q_out, hv_scaling, hv_q, hv_subcycle_q, limiter_option_out, &
-       cdr_check, geometry_type, trajectory_nsubstep, trajectory_nvelocity, eta_alg) bind(c)
+       cdr_check, geometry_type, trajectory_nsubstep, trajectory_nvelocity) bind(c)
     use control_mod, only: semi_lagrange_hv_q, hypervis_subcycle_q, semi_lagrange_cdr_check, &
          nu_q, hypervis_scaling, limiter_option, geometry, semi_lagrange_trajectory_nsubstep, &
          semi_lagrange_trajectory_nvelocity
@@ -207,7 +202,7 @@ contains
 
     real(c_double), intent(out) :: nu_q_out, hv_scaling
     integer(c_int), intent(out) :: hv_q, hv_subcycle_q, limiter_option_out, cdr_check, &
-         geometry_type, trajectory_nsubstep, trajectory_nvelocity, eta_alg
+         geometry_type, trajectory_nsubstep, trajectory_nvelocity
 
     nu_q_out = nu_q
     hv_scaling = hypervis_scaling
@@ -220,7 +215,6 @@ contains
     if (trim(geometry) == "plane") geometry_type = 1
     trajectory_nsubstep = semi_lagrange_trajectory_nsubstep
     trajectory_nvelocity = semi_lagrange_trajectory_nvelocity
-    eta_alg = etalg
   end subroutine sl_get_params
 
   subroutine init_velocity_record(nelemd, dtf, drf_param, nsub, nvel_param, v, error)
@@ -1396,54 +1390,21 @@ contains
           call update_dep_points_all(independent_time_steps, dtsub, nets, nete, vnode)
        else
           ! Fill vdep.
-          if (etalg == 2) then
-             call slmm_interp_v_update(nets, nete, step, dtsub, dep_points_all, &
-                  &                    dep_points_ndim, vnode, vdep, info)
-             allocate(ptmp(dep_points_ndim,np,np,nlev,size(elem)), &
-                  &   vtmp(3,np,np,nlev,size(elem)))
-             ptmp = dep_points_all
-             vtmp(1:3,:,:,:,:) = vdep(1:3,:,:,:,:)
-             do ie = nets, nete
-                do k = 2,nlev
-                   a =  (hvcoord%etai(k) - hvcoord%etam(k-1)) / &
-                        (hvcoord%etam(k) - hvcoord%etam(k-1))
-                      dep_points_all(1:3,:,:,k,ie) = (1-a)*ptmp(1:3,:,:,k-1,ie) + &
-                           &                            a *ptmp(1:3,:,:,k  ,ie)
-                   if (is_sphere) then
-                      do j = 1, np
-                         do i = 1, np
-                            p = dep_points_all(1:3,i,j,k,ie)
-                            p = p/sqrt(p(1)*p(1) + p(2)*p(2) + p(3)*p(3))
-                            dep_points_all(1:3,i,j,k,ie) = p
-                         end do
-                      end do
-                   end if
-                end do
-             end do
-             call slmm_interp_v_update(nets, nete, step, dtsub, dep_points_all, &
-                  &                    dep_points_ndim, vnode, vdep, info)
-             dep_points_all = ptmp
-             vdep(1:3,:,:,:,:) = vtmp(1:3,:,:,:,:)
-             deallocate(ptmp, vtmp)
-          else
-             call slmm_interp_v_update(nets, nete, step, dtsub, dep_points_all, &
-                  &                    dep_points_ndim, vnode, vdep, info)
-          end if
+          call slmm_interp_v_update(nets, nete, step, dtsub, dep_points_all, &
+               &                    dep_points_ndim, vnode, vdep, info)
 
-          if (etalg == 1) then
-             ! Interpolate eta_dot at interfaces. The support data are not
-             ! midpoint data, though; rather, they're interface data collected
-             ! at different horizontal points. Thus, to be clear, this is not
-             ! midpoint-to-interface interpolation of eta_dot.
-             do ie = nets, nete
-                do k = 2,nlev
-                   a =  (hvcoord%etai(k) - hvcoord%etam(k-1)) / &
-                        (hvcoord%etam(k) - hvcoord%etam(k-1))
-                   vdep(4,:,:,k,ie) = (1-a)*vdep(5,:,:,k-1,ie) + &
-                        &                a *vdep(4,:,:,k  ,ie)
-                end do
+          ! Interpolate eta_dot at interfaces. The support data are not midpoint
+          ! data, though; rather, they're interface data collected at different
+          ! horizontal points. Thus, to be clear, this is not
+          ! midpoint-to-interface interpolation of eta_dot.
+          do ie = nets, nete
+             do k = 2,nlev
+                a =  (hvcoord%etai(k) - hvcoord%etam(k-1)) / &
+                     (hvcoord%etam(k) - hvcoord%etam(k-1))
+                vdep(4,:,:,k,ie) = (1-a)*vdep(5,:,:,k-1,ie) + &
+                     &                a *vdep(4,:,:,k  ,ie)
              end do
-          end if
+          end do
 
           ! Using vdep, update dep_points_all to departure points.
           call update_dep_points_all(independent_time_steps, dtsub, nets, nete, vdep)
@@ -1490,16 +1451,10 @@ contains
                 dep_points_all(1:3,i,j,k,ie) = dep_points_all(1:3,i,j,1,ie)
              end do
              if (independent_time_steps) then
-                if (etalg == 0) then
-                   do k = 1, nlev
-                      dep_points_all(4,i,j,k,ie) = hvcoord%etam(k)
-                   end do
-                else
-                   ! hvcoord%etai(k), k = 1 and nlevp, are not used.
-                   do k = 1, nlev
-                      dep_points_all(4,i,j,k,ie) = hvcoord%etai(k)
-                   end do
-                end if
+                ! hvcoord%etai(k), k = 1 and nlevp, are not used.
+                do k = 1, nlev
+                   dep_points_all(4,i,j,k,ie) = hvcoord%etai(k)
+                end do
              end if
           end do
        end do
@@ -1599,13 +1554,8 @@ contains
     call calc_vel_horiz_formula_node_ref_mid( &
          &  elem, deriv, hvcoord, dtsub, vsph, eta_dot, vnode)
     if (independent_time_steps) then
-       if (etalg == 0) then
-          call calc_eta_dot_formula_node_ref_mid( &
-               elem, deriv, hvcoord, dtsub, vsph, eta_dot, vnode)
-       else
-          call calc_eta_dot_formula_node_ref_int( &
-               elem, deriv, hvcoord, dtsub, vsph, eta_dot, vnode)
-       end if
+       call calc_eta_dot_formula_node_ref_int( &
+            elem, deriv, hvcoord, dtsub, vsph, eta_dot, vnode)
     end if
   end subroutine calc_nodal_velocities
 
@@ -1645,20 +1595,11 @@ contains
        ! Transform eta_dot_dpdn at interfaces to eta_dot at midpoints using the
        ! formula
        !     eta_dot = eta_dot_dpdn/(A_eta p0 + B_eta ps).
-       if (etalg == 0) then
-          do k = 1,nlev
-             eta_dot(:,:,k,t) = half*(eta_dot(:,:,k,t) + eta_dot(:,:,k+1,t)) &
-                  &             * (hvcoord%etai(k+1) - hvcoord%etai(k)) &
-                  &             / (  (hvcoord%hyai(k+1) - hvcoord%hyai(k))*hvcoord%ps0 &
-                  &                + (hvcoord%hybi(k+1) - hvcoord%hybi(k))*w1)
-          end do
-       else
-          ! Use p_eta = A_eta p0 + B_eta ps = p0 + B_eta (ps - p0).
-          do k = 2,nlev
-             eta_dot(:,:,k,t) = eta_dot(:,:,k,t) / &
-                  &             (hvcoord%ps0 + db_deta(k)*(w1 - hvcoord%ps0))
-          end do
-       end if
+       ! Use p_eta = A_eta p0 + B_eta ps = p0 + B_eta (ps - p0).
+       do k = 2,nlev
+          eta_dot(:,:,k,t) = eta_dot(:,:,k,t) / &
+               &             (hvcoord%ps0 + db_deta(k)*(w1 - hvcoord%ps0))
+       end do
     end do
   end subroutine calc_eta_dot_ref
 
@@ -1697,13 +1638,8 @@ contains
              w2 = hvcoord%etam(k) ! derivative at this eta value
              call eval_lagrange_poly_derivative(3, w3, vsph(:,:,d,k-1:k+1,t0), w2, w1)
           end if
-          if (etalg == 0) then
-             vfsph(:,:,d) = vfsph(:,:,d) - &
-                  dtsub*eta_dot(:,:,k,t1)*w1
-          else
-             vfsph(:,:,d) = vfsph(:,:,d) - &
-                  dtsub*half*(eta_dot(:,:,k,t1) + eta_dot(:,:,k+1,t1))*w1
-          end if
+          vfsph(:,:,d) = vfsph(:,:,d) - &
+               dtsub*half*(eta_dot(:,:,k,t1) + eta_dot(:,:,k+1,t1))*w1
        end do
        ! Finish the formula.
        vfsph = half*vfsph
@@ -1713,55 +1649,6 @@ contains
        end do
     end do
   end subroutine calc_vel_horiz_formula_node_ref_mid
-
-  subroutine calc_eta_dot_formula_node_ref_mid( &
-       elem, deriv, hvcoord, dtsub, vsph, eta_dot, vnode)
-
-    type (element_t), intent(in) :: elem
-    type (derivative_t), intent(in) :: deriv
-    type (hvcoord_t), intent(in) :: hvcoord
-    real(real_kind), intent(in) :: dtsub, vsph(np,np,2,nlev,2), eta_dot(np,np,nlevp,2)
-    real(real_kind), intent(inout) :: vnode(:,:,:,:)
-
-    integer, parameter :: t0 = 1, t1 = 2
-    
-    real(real_kind) :: w1(np,np), w2(np,np), w3(np,np,3), w4(np,np,3)
-    integer :: k, d, i, k1, k2
-
-    do k = 1, nlev
-       w2 = hvcoord%etam(k)
-       if (k == 1 .or. k == nlev) then
-          if (k == 1) then
-             w3(:,:,1) = hvcoord%etai(1)
-             w4(:,:,1) = zero
-             do i = 1, 2
-                w3(:,:,i+1) = hvcoord%etam(i)
-                w4(:,:,i+1) = eta_dot(:,:,i,t0)
-             end do
-          else
-             do i = 1, 2
-                w3(:,:,i) = hvcoord%etam(nlev-2+i)
-                w4(:,:,i) = eta_dot(:,:,nlev-2+i,t0)
-             end do
-             w3(:,:,3) = hvcoord%etai(nlevp)
-             w4(:,:,3) = zero
-          end if
-          call eval_lagrange_poly_derivative(3, w3, w4, w2, w1)
-       else
-          k1 = k-1
-          k2 = k+1
-          do i = 1, 3
-             w3(:,:,i) = hvcoord%etam(k1-1+i)
-          end do
-          call eval_lagrange_poly_derivative(k2-k1+1, w3, eta_dot(:,:,k1:k2,t0), w2, w1)
-       end if
-       w3(:,:,1:2) = gradient_sphere(eta_dot(:,:,k,t0), deriv, elem%Dinv)
-       vnode(4,:,:,k) = &
-            half*(eta_dot(:,:,k,t0) + eta_dot(:,:,k,t1) &
-            &     - dtsub*(vsph(:,:,1,k,t1)*w3(:,:,1) + vsph(:,:,2,k,t1)*w3(:,:,2) &
-            &              + eta_dot(:,:,k,t1)*w1))
-    end do
-  end subroutine calc_eta_dot_formula_node_ref_mid
 
   subroutine calc_eta_dot_formula_node_ref_int( &
        elem, deriv, hvcoord, dtsub, vsph, eta_dot, vnode)
@@ -1866,40 +1753,21 @@ contains
        ! Surface pressure.
        w1 = hvcoord%hyai(1)*hvcoord%ps0 + sum(elem(ie)%state%dp3d(:,:,:,tl%np1), 3)
 
-       if (etalg == 0) then
-          ! Reconstruct Lagrangian levels at t1 on arrival column:
-          !     eta_arr_int = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_int)
-          call limit_etam(hvcoord, detam_ref, dep_points_all(4,:,:,:,ie), v1, limcnt)
-          v2(:,:,1) = hvcoord%etai(1)
-          v2(:,:,nlevp) = hvcoord%etai(nlevp)
-          call eta_interp_eta(hvcoord, &
-               &              nlev, v1, hvcoord%etam, &
-               &              nlevp-2, hvcoord%etai(2:nlev), v2(:,:,2:nlev))
-       else
-          ! Reconstruct Lagrangian levels at t1 on arrival column:
-          !     eta_arr_int = I[eta_ref_int(eta_dep_int)](eta_ref_int)
-          call limit_etai(hvcoord, detai_ref, dep_points_all(4,:,:,:,ie), v1, limcnt)
-          v2(:,:,1) = hvcoord%etai(1)
-          v2(:,:,nlevp) = hvcoord%etai(nlevp)
-          call eta_interp_eta(hvcoord, &
-               &              nlevp-2, v1(:,:,2:nlev), hvcoord%etai(2:nlev), &
-               &              nlevp-2, hvcoord%etai(2:nlev), v2(:,:,2:nlev))
-       end if
+       ! Reconstruct Lagrangian levels at t1 on arrival column:
+       !     eta_arr_int = I[eta_ref_int(eta_dep_int)](eta_ref_int)
+       call limit_etai(hvcoord, detai_ref, dep_points_all(4,:,:,:,ie), v1, limcnt)
+       v2(:,:,1) = hvcoord%etai(1)
+       v2(:,:,nlevp) = hvcoord%etai(nlevp)
+       call eta_interp_eta(hvcoord, &
+            &              nlevp-2, v1(:,:,2:nlev), hvcoord%etai(2:nlev), &
+            &              nlevp-2, hvcoord%etai(2:nlev), v2(:,:,2:nlev))
        call eta_to_dp(hvcoord, w1, v2, elem(ie)%derived%divdp)
 
-       if (etalg == 0) then
-          ! Compute Lagrangian level midpoints at t1 on arrival column:
-          !     eta_arr_mid = I[eta_ref_mid([0,eta_dep_mid,1])](eta_ref_mid)
-          call eta_interp_eta(hvcoord, &
-               &              nlev, v1, hvcoord%etam, &
-               &              nlev, hvcoord%etam, v2(:,:,1:nlev))
-       else
-          ! Compute Lagrangian level midpoints at t1 on arrival column:
-          !     eta_arr_mid = I[eta_ref_int(eta_dep_int)](eta_ref_mid)
-          call eta_interp_eta(hvcoord, &
-               &              nlevp-2, v1(:,:,2:nlev), hvcoord%etai(2:nlev), &
-               &              nlev, hvcoord%etam, v2(:,:,1:nlev))
-       end if
+       ! Compute Lagrangian level midpoints at t1 on arrival column:
+       !     eta_arr_mid = I[eta_ref_int(eta_dep_int)](eta_ref_mid)
+       call eta_interp_eta(hvcoord, &
+            &              nlevp-2, v1(:,:,2:nlev), hvcoord%etai(2:nlev), &
+            &              nlev, hvcoord%etam, v2(:,:,1:nlev))
        dep_points_all(4,:,:,:,ie) = v2(:,:,1:nlev)
 
        ! Compute departure horizontal points corresponding to arrival
@@ -1965,55 +1833,6 @@ contains
     end do
     y_x(n) = (y(n) - y(n-1)) / (x(n) - x(n-1))
   end subroutine estimate_derivative
-
-  subroutine limit_etam(hvcoord, deta_ref, eta, eta_lim, cnt)
-    type (hvcoord_t), intent(in) :: hvcoord
-    real(real_kind), intent(in) :: deta_ref(nlevp), eta(np,np,nlev)
-    real(real_kind), intent(out) :: eta_lim(np,np,nlev)
-    integer, intent(inout) :: cnt
-
-    real(real_kind) :: deta(nlevp)
-    integer :: i, j, k
-    logical :: ok
-
-    do j = 1, np
-       do i = 1, np
-          ! Check for nonmonotonicity in eta.
-          ok = eta(i,j,1) - hvcoord%etai(1) >= deta_tol
-          if (ok) then
-             do k = 2, nlev
-                if (eta(i,j,k) - eta(i,j,k-1) < deta_tol) then
-                   ok = .false.
-                   exit
-                end if
-             end do
-             if (ok) then
-                ok = hvcoord%etai(nlevp) - eta(i,j,nlev) >= deta_tol
-             end if
-          end if
-          ! eta is monotonically increasing, so don't need to do anything
-          ! further.
-          if (ok) then
-             eta_lim(i,j,:) = eta(i,j,:)
-             cycle
-          end if
-          
-          deta(1) = eta(i,j,1) - hvcoord%etai(1)
-          do k = 2, nlev
-             deta(k) = eta(i,j,k) - eta(i,j,k-1)
-          end do
-          deta(nlevp) = hvcoord%etai(nlevp) - eta(i,j,nlev)
-          ! [0, etam(1)] and [etam(nlev),1] are half levels, but deta_tol is so
-          ! small there's no reason not to use it as a lower bound for these.
-          cnt = cnt + 1
-          call deta_caas(nlevp, deta_ref, deta_tol, deta)
-          eta_lim(i,j,1) = hvcoord%etai(1) + deta(1)
-          do k = 2, nlev
-             eta_lim(i,j,k) = eta_lim(i,j,k-1) + deta(k)
-          end do
-       end do
-    end do
-  end subroutine limit_etam
 
   subroutine limit_etai(hvcoord, deta_ref, eta, eta_lim, cnt)
     type (hvcoord_t), intent(in) :: hvcoord

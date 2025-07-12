@@ -555,7 +555,7 @@ struct IslMpi {
   const typename Advecter::ConstPtr advecter;
   const Int np, np2, nlev, qsize, qsized, nelemd, halo;
   const bool traj_3d;
-  const Int traj_alg, traj_nsubstep, dep_points_ndim, traj_msg_sz;
+  const Int traj_nsubstep, dep_points_ndim, traj_msg_sz;
 
   Real etai_beg, etai_end;
   ArrayD<Real*> etai, etam;
@@ -612,10 +612,9 @@ struct IslMpi {
     : p(ip), advecter(advecter),
       np(inp), np2(np*np), nlev(inlev), qsize(iqsize), qsized(iqsized), nelemd(inelemd),
       halo(ihalo), traj_3d(itraj_3d),
-      traj_alg(itraj_nsubstep < 0 ? 1 : 0),
-      traj_nsubstep(std::abs(itraj_nsubstep)),
+      traj_nsubstep(itraj_nsubstep),
       dep_points_ndim(traj_3d and traj_nsubstep > 0 ? 4 : 3),
-      traj_msg_sz(traj_3d and traj_alg == 1 ? 5 : dep_points_ndim),
+      traj_msg_sz(traj_3d ? 5 : dep_points_ndim),
       tracer_arrays(itracer_arrays)
   {}
 

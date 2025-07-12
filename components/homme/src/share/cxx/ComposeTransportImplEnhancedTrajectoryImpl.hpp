@@ -598,62 +598,6 @@ deta_caas (const KernelVariables& kv, const int nlevp, const CRnV& deta_ref,
   Kokkos::parallel_for(ttr, f);
 }
 
-// Wrapper to deta_caas. On input and output, eta contains the midpoint eta
-// values. On output, deta_caas has been applied, if necessary, to
-// diff(eta(i,j,:)).
-KOKKOS_FUNCTION void
-limit_etam (const KernelVariables& kv, const int nlev, const CRnV& hy_etai,
-            const CRnV& deta_ref, const Real deta_tol, const RelnV& wrk1,
-            const RelnV& wrk2, const RelnV& eta) {
-  assert(hy_etai.extent_int(0) >= nlev+1);
-  assert(deta_ref.extent_int(0) >= nlev+1);
-  const auto deta = wrk2;
-  assert_eln(wrk1, nlev+1);
-  assert_eln(deta, nlev+1);
-  assert_eln(eta , nlev  );
-  const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
-  const auto tvr = Kokkos::ThreadVectorRange(kv.team, nlev+1);
-  // eta -> deta; limit deta if needed.
-  const auto f1 = [&] (const int idx) {
-    const int i = idx / NP, j = idx % NP;
-    const auto  etaij = getcolc( eta,i,j);
-    const auto detaij = getcol (deta,i,j);
-    const auto g1 = [&] (const int k, int& nbad) {
-      const auto d = (k == 0    ? etaij(0) - hy_etai(0) :
-                      k == nlev ? hy_etai(nlev) - etaij(nlev-1) :
-                      /**/        etaij(k) - etaij(k-1));
-      const bool ok = d >= deta_tol;
-      if (not ok) ++nbad;
-      detaij(k) = d;
-    };
-    int nbad = 0;
-    Dispatch<>::parallel_reduce(kv.team, tvr, g1, nbad);
-    if (nbad == 0) {
-      // Signal this column is fine.
-      Kokkos::single(Kokkos::PerThread(kv.team), [&] () { detaij(0) = -1; });
-      return;
-    }
-    deta_caas(kv, tvr, deta_ref, deta_tol, getcol(wrk1,i,j), detaij);
-  };
-  Kokkos::parallel_for(ttr, f1);
-  kv.team_barrier();
-  // deta -> eta; ignore columns where limiting wasn't needed.
-  const auto f2 = [&] (const int idx) {
-    const int i = idx / NP, j = idx % NP;
-    const auto detaij = getcolc(deta,i,j);
-    if (detaij(0) == -1) return;
-    const auto etaij = getcol(eta,i,j);
-    const auto g = [&] (const int k, Real& accum, const bool final) {
-      assert(k != 0 or accum == 0);
-      const Real d = k == 0 ? hy_etai(0) + detaij(0) : detaij(k);
-      accum += d;
-      if (final) etaij(k) = accum;
-    };
-    Dispatch<>::parallel_scan(kv.team, nlev, g);
-  };
-  Kokkos::parallel_for(ttr, f2);
-}
-
 // Wrapper to deta_caas. On input and output, eta contains the interface eta
 // values, excluding the last one. On output, deta_caas has been applied, if
 // necessary, to diff(eta(i,j,:)).
@@ -834,8 +778,8 @@ KOKKOS_FUNCTION void calc_etadotint_from_etadotdpdnint (
 // substep.
 template <typename Snapshots>
 KOKKOS_FUNCTION void calc_eta_dot_ref (
-  const KernelVariables& kv, const int eta_alg, const SphereOperators& sphops,
-  const Snapshots& snaps, const Real& ps0, const Real& hyai0, const CSNV<NUM_LEV_P>& hybi,
+  const KernelVariables& kv, const SphereOperators& sphops, const Snapshots& snaps,
+  const Real& ps0, const Real& hyai0, const CSNV<NUM_LEV_P>& hybi,
   const CSNV<NUM_LEV>& hydai, const CSNV<NUM_LEV>& hydbi, // delta ai, bi
   const CSNV<NUM_LEV>& hydetai, // delta etai
   const CSNV<NUM_LEV_P>& db_deta_i,
@@ -877,11 +821,7 @@ KOKKOS_FUNCTION void calc_eta_dot_ref (
                            edds);
     kv.team_barrier();
     const auto pst = Kokkos::subview(ps,t,ALL,ALL);
-    if (eta_alg == 0)
-      calc_etadotmid_from_etadotdpdnint(kv, nlev, ps0, hydai, hydbi, hydetai,
-                                        pst, wrk1, edd);
-    else
-      calc_etadotint_from_etadotdpdnint(kv, nlev, ps0, db_deta_i, pst, edd);
+    calc_etadotint_from_etadotdpdnint(kv, nlev, ps0, db_deta_i, pst, edd);
     // No team_barrier: wrk1 is protected in second iteration.
   }
 }
@@ -890,7 +830,7 @@ KOKKOS_FUNCTION void calc_eta_dot_ref (
 // evaluate the velocity estimate formula, providing the final horizontal
 // velocity estimates at midpoint nodes.
 KOKKOS_FUNCTION void calc_vel_horiz_formula_node_ref_mid (
-  const KernelVariables& kv, const int eta_alg, const SphereOperators& sphere_ops,
+  const KernelVariables& kv, const SphereOperators& sphere_ops,
   const CSNV<NUM_LEV>& hyetam, const ExecViewUnmanaged<Real[2][3][NP][NP]>& vec_sph2cart,
   // Velocities are at midpoints. Final eta_dot entry is ignored.
   const Real dtsub, const CS2elNlev vsph[2], const CSelNlevp eta_dot[2],
@@ -930,13 +870,10 @@ KOKKOS_FUNCTION void calc_vel_horiz_formula_node_ref_mid (
             etams(k-1), etams(k), etams(k+1),
             vsph1s(d,i,j,k-1), vsph1s(d,i,j,k), vsph1s(d,i,j,k+1));
         }
-        const auto eta_dot =
-          (eta_alg == 0 ?
-           eds(i,j,k) :
-           // Interpolate eta_dot at interfaces to midpoints. Note that this is
-           // the only time this is done, and it's used only in a term of the
-           // formula that contains dtsub.
-           (eds(i,j,k) + eds(i,j,k+1))/2);
+        // Interpolate eta_dot at interfaces to midpoints. Note that this is the
+        // only time this is done, and it's used only in a term of the formula
+        // that contains dtsub.
+        const auto eta_dot = (eds(i,j,k) + eds(i,j,k+1))/2;
         vfsphs(d,i,j,k) = (vfsphs(d,i,j,k) - dtsub*eta_dot*deriv)/2;
       };
       cti::loop_ijk<cti::num_phys_lev>(kv, f);
@@ -950,60 +887,6 @@ KOKKOS_FUNCTION void calc_vel_horiz_formula_node_ref_mid (
       };
       cti::loop_ijk<cti::num_phys_lev>(kv, f);
     }
-  }
-}
-
-// Given the vertical and horizontal nodal velocities at time endpoints,
-// evaluate the velocity estimate formula, providing the final vertical velocity
-// estimates at midpoint nodes.
-KOKKOS_FUNCTION void calc_eta_dot_formula_node_ref_mid (
-  const KernelVariables& kv, const SphereOperators& sphere_ops,
-  const CRNV<NUM_INTERFACE_LEV>& hyetai, const CSNV<NUM_LEV>& hyetam,
-  // Velocities are at midpoints. Final eta_dot entry is ignored.
-  const Real dtsub, const CS2elNlev vsph[2], const CSelNlevp eta_dot[2],
-  const SelNlevp& wrk1, const S2elNlevp& vwrk1,
-  const ExecViewUnmanaged<Real****>& vnode)
-{
-  const SelNlev ed1_vderiv(wrk1.data());
-  {
-    const CRNV<NUM_PHYSICAL_LEV> etams(cti::cpack2real(hyetam));
-    const CRelNlevp ed1s(cti::cpack2real(eta_dot[0]));
-    const RelNlev ed1_vderiv_s(cti::pack2real(ed1_vderiv));
-    const auto f = [&] (const int i, const int j, const int k) {
-      Real deriv;
-      if (k == 0 or k+1 == NUM_PHYSICAL_LEV) {
-        deriv = cti::approx_derivative(
-          k == 0 ? hyetai(0) : etams(k-1),
-          etams(k),
-          k+1 == NUM_PHYSICAL_LEV ? hyetai(NUM_PHYSICAL_LEV) : etams(k+1),
-          k == 0 ? 0 : ed1s(i,j,k-1),
-          ed1s(i,j,k),
-          k+1 == NUM_PHYSICAL_LEV ? 0 : ed1s(i,j,k+1));
-      } else {
-        deriv = cti::approx_derivative(
-          etams(k-1), etams(k), etams(k+1),
-          ed1s(i,j,k-1), ed1s(i,j,k), ed1s(i,j,k+1));
-      }
-      ed1_vderiv_s(i,j,k) = deriv;
-    };
-    cti::loop_ijk<cti::num_phys_lev>(kv, f);
-  }
-  kv.team_barrier();
-  const S2elNlev ed1_hderiv(vwrk1.data());
-  sphere_ops.gradient_sphere(kv, eta_dot[0], ed1_hderiv, NUM_LEV);
-  {
-    const auto& vsph2 = vsph[1];
-    const auto& ed1 = eta_dot[0];
-    const auto& ed2 = eta_dot[1];
-    const auto f = [&] (const int i, const int j, const int k) {
-      const auto v = (ed1(i,j,k) + ed2(i,j,k)
-                      - dtsub*(  vsph2(0,i,j,k)*ed1_hderiv(0,i,j,k)
-                               + vsph2(1,i,j,k)*ed1_hderiv(1,i,j,k)
-                               +   ed2(  i,j,k)*ed1_vderiv(  i,j,k)))/2;
-      for (int s = 0; s < VECTOR_SIZE; ++s)
-        vnode(VECTOR_SIZE*k+s, i,j,3) = v[s];
-    };
-    cti::loop_ijk<cti::num_lev_pack>(kv, f);
   }
 }
 
