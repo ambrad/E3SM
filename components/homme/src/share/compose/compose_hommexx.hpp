@@ -16,8 +16,8 @@ typedef SetView<HommexxReal*****> SetView5;
 void set_views(const SetView<HommexxReal***>& spheremp,
                const SetView<HommexxReal****>& dp, const SetView5& dp3d,
                const SetView<HommexxReal******>& qdp, const SetView5& q,
-               const SetView5& dep_points, const SetView5& vnode,
-               const SetView5& vdep, const int trajectory_ndim);
+               const SetView5& dep_points, const SetView5& vnode, const int ndim,
+               const SetView5& vdep, const int vdep_ndim);
 
 void set_hvcoord(const HommexxReal* etai, const HommexxReal* etam);
 void interp_v_update(const int step, const HommexxReal dtsub);

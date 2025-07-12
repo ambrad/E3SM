@@ -324,7 +324,7 @@ void update_dep_points (
 // eta_dot.
 void interp_etadot_at_interfaces (const CTI& c, const cti::DeparturePoints& vdep) {
   assert(vdep.extent_int(4) == 5);
-  const auto etai = c.m_hvcoord.etai;
+  const auto& etai = c.m_hvcoord.etai;
   const CRNV<NUM_PHYSICAL_LEV> etam(cti::cpack2real(c.m_hvcoord.etam));
   const auto f = KOKKOS_LAMBDA (const int idx) {
     int ie, lev, i, j;

@@ -94,7 +94,7 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
         nel, t.qdp.extent_int(1), t.qdp.extent_int(2), np, np, nlev),
       homme::compose::SetView<Real*****> (reinterpret_cast<Real*>(t.Q.data()),
                                           nel, t.Q.extent_int(1), np, np, nlev),
-      m_data.dep_pts, m_data.vnode, m_data.vdep, ndim);
+      m_data.dep_pts, m_data.vnode, ndim, m_data.vdep, m_data.vdep.extent_int(4));
   }
 
   m_data.independent_time_steps = independent_time_steps;
