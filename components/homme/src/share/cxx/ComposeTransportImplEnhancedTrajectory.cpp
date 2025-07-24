@@ -450,7 +450,6 @@ void interp_departure_points_to_floating_level_midpoints (const CTI& c, const in
   const auto& hyetai = h.etai;
   const CRNV<NUM_PHYSICAL_LEV> hyetam(cti::cpack2real(h.etam));
   const CRNV<NUM_PHYSICAL_LEV> detai(cti::cpack2real(d.hydetai));
-  const auto& detam_ref = d.hydetam_ref;
   const auto deta_tol = d.deta_tol;
   const auto& dep_pts = d.dep_pts;
   const auto& dp3d = c.m_state.m_dp3d;

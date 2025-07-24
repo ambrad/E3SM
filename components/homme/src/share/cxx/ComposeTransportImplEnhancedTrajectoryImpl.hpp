@@ -582,22 +582,6 @@ deta_caas (const KernelVariables& kv, const Range& tvr,
   Kokkos::parallel_for(tvr, g2);
 }
 
-// Wrapper to above.
-KOKKOS_FUNCTION void
-deta_caas (const KernelVariables& kv, const int nlevp, const CRnV& deta_ref,
-           const Real low, const RelnV& wrk, const RelnV& deta) {
-  assert(deta_ref.extent_int(0) >= nlevp);
-  assert_eln(wrk, nlevp);
-  assert_eln(deta, nlevp);
-  const auto ttr = Kokkos::TeamThreadRange(kv.team, NP*NP);
-  const auto tvr = Kokkos::ThreadVectorRange(kv.team, nlevp);
-  const auto f = [&] (const int idx) {
-    const int i = idx / NP, j = idx % NP;
-    deta_caas(kv, tvr, deta_ref, low, getcol(wrk,i,j), getcol(deta,i,j));
-  };
-  Kokkos::parallel_for(ttr, f);
-}
-
 // Wrapper to deta_caas. On input and output, eta contains the interface eta
 // values, excluding the last one. On output, deta_caas has been applied, if
 // necessary, to diff(eta(i,j,:)).
@@ -717,43 +701,6 @@ KOKKOS_FUNCTION void calc_ps (
     Kokkos::single(Kokkos::PerThread(kv.team), g);
   };
   Kokkos::parallel_for(ttr, f2);
-}
-
-// Transform eta_dot_dpdn at interfaces to eta_dot at midpoints using the
-// formula
-//     eta_dot = eta_dot_dpdn/(A_eta p0 + B_eta ps)
-//            a= eta_dot_dpdn diff(eta)/(diff(A) p0 + diff(B) ps).
-KOKKOS_FUNCTION void calc_etadotmid_from_etadotdpdnint (
-  const KernelVariables& kv, const int nlev,
-  const Real& ps0, const CSnV& hydai, const CSnV& hydbi,
-  const CSnV& hydetai, const CRelV& ps, const SelnV& wrk,
-  //  in: eta_dot_dpdn at interfaces
-  // out: eta_dot at midpoints, final slot unused
-  const SelnV& ed)
-{
-  assert(calc_nscal(hydai.extent_int(0)) >= nlev);
-  assert(calc_nscal(hydbi.extent_int(0)) >= nlev);
-  assert(calc_nscal(hydetai.extent_int(0)) >= nlev);
-  assert_eln(wrk, nlev+1);
-  assert_eln(ed, nlev+1);
-  const auto& edd_mid = wrk;
-  {
-    const CRelnV edd(elp2r(ed));
-    const RelnV tmp(elp2r(wrk));
-    const auto f = [&] (const int i, const int j, const int k) {
-      tmp(i,j,k) = (edd(i,j,k) + edd(i,j,k+1))/2;
-    };
-    cti::loop_ijk(nlev, kv, f);
-  }
-  kv.team_barrier();
-  {
-    const auto f = [&] (const int i, const int j, const int kp) {
-      ed(i,j,kp) = (edd_mid(i,j,kp)
-                    * hydetai(kp)
-                    / (hydai(kp)*ps0 + hydbi(kp)*ps(i,j)));
-    };
-    cti::loop_ijk(calc_npack(nlev), kv, f);
-  }
 }
 
 // Transform eta_dot_dpdn to eta_dot, both at interfaces, using the formula
