@@ -301,6 +301,7 @@ template <typename VdepT, typename MT>
 void traj_copy_next_step (IslMpi<MT>& cm, const VdepT& vdep) {
 #ifndef NDEBUG
   const auto myrank = cm.p->rank();
+#endif
   const auto xsz = cm.traj_msg_sz;
 #ifdef COMPOSE_PORT
   const auto& mylid_with_comm = cm.mylid_with_comm_d;
