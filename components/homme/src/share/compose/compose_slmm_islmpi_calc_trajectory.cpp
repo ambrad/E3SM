@@ -1,4 +1,47 @@
-/* Level arrangement:
+/* This file contains the driver routine interp_v_update. It interpolates
+   reference-grid velocities to off-grid arrival points. This situation occurs
+   when the enhanced trajectory method is run with nsubstep >= 2. In the first
+   substep, the arrival points are on-grid; thus, interp_v_update is not
+   needed. Subsequent substeps start with off-grid arrival points. These are the
+   departure points from the previous substep.
+     interp_v_update follows the same computational and communication patterns
+   as the main step routine. Both interp_v_update and 'step' are essentially
+   computing interpolants. In the case of 'step', the mixing ratios q are
+   interpolated; in the case of interp_v_update, (xdot, ydot, zdot, etadot) are
+   interpolated, where (xdot, ydot, zdot) is the horizontal velocity on the
+   sphere and etadot is the vertical velocity. In this sense, interp_v_update
+   can be understood as a specialization of 'step' to this case.
+     However, there is one bit of complexity in interp_v_update that requires
+   further explanation.
+     Let the horizontal position (velocity) be abbreviated as h(dot) := (x(dot),
+   y(dot), z(dot)). h(dot) lives on vertical midpoints. In contrast, eta(dot)
+   lives on vertical interfaces. A previous version of this method interpolated
+   etadot to midpoints, then interpolated the vertical part of departure points
+   from midpoints to interfaces. This caused issues in certain chemistry
+   parameterizations around the tropopause. The current version keeps eta and
+   etadot at interfaces, which adds complexity since (h(dot), eta(dot)) are at a
+   mix of midpoints and interfaces.
+     The high-level key ideas are as follows. Let _ref denote quantities on the
+   reference grid and _arr quantities on the vertically Lagrangian grid.
+     Interpolate (hdot_ref, etadot_ref) at (h_ref, midpoint(eta_ref)) to get
+   hdot_eta. In this step, eta_ref is interpolated to midpoints. Crucially, the
+   error made here affects hdot_arr only in higher-order terms.
+     Next, we need to interpolate for etadot_arr. The simplest procedure would
+   be to compute extra full trajectories at interfaces. But this would be
+   expensive. Instead, we reuse the midpoint trajectories as follows.
+     At each interface k, interpolate for etadot_ref at (h_(k-1)_arr, eta_k_arr)
+   and (h_k_arr, eta_k_arr). Then combine these two values to get the final
+   etadot_k_arr. The key here is that only interface etadot_ref values are used
+   in computing these steps; a derived midpoint etadot_arr is never used.
+     This calculation is a bit subtle, but its set up such that it adds very
+   little cost to the much simpler calculation that uses eta(dot) at
+   midpoints. It adds two additional entries to the communicated arrays and a
+   small amount of extra computation. Again, the conceptually simplest approach
+   would double the number of trajectories to compute.
+     The following notes provide precise implementation details about this
+   calculation, outlining the code in the rest of this file.
+
+   Level arrangement. x is horizontal position. A suffixed 'd' means 'dot'.
           0 i etai(0), etaid(0) = 0
           0 m x or xdot (= xd)
           1 i e or ed
