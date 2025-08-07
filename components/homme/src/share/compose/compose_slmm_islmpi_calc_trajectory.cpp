@@ -5,43 +5,55 @@
    needed. Subsequent substeps start with off-grid arrival points. These are the
    departure points from the previous substep.
      interp_v_update follows the same computational and communication patterns
-   as the main step routine. Both interp_v_update and 'step' are essentially
-   computing interpolants. In the case of 'step', the mixing ratios q are
-   interpolated; in the case of interp_v_update, (xdot, ydot, zdot, etadot) are
-   interpolated, where (xdot, ydot, zdot) is the horizontal velocity on the
-   sphere and etadot is the vertical velocity. In this sense, interp_v_update
-   can be understood as a specialization of 'step' to this case.
+   as the main 'step' routine (compose_slmm_islmpi_step.cpp). Both
+   interp_v_update and 'step' are essentially computing interpolants. In the
+   case of 'step', the mixing ratios q are interpolated; in the case of
+   interp_v_update, (xdot, ydot, zdot, etadot) are interpolated, where (xdot,
+   ydot, zdot) is the horizontal velocity on the sphere and etadot is the
+   vertical velocity. In this sense, interp_v_update can be understood as a
+   specialization of 'step' to this case.
      However, there is one bit of complexity in interp_v_update that requires
    further explanation.
      Let the horizontal position (velocity) be abbreviated as h(dot) := (x(dot),
-   y(dot), z(dot)). h(dot) lives on vertical midpoints. In contrast, eta(dot)
-   lives on vertical interfaces. A previous version of this method interpolated
-   etadot to midpoints, then interpolated the vertical part of departure points
-   from midpoints to interfaces. This caused issues in certain chemistry
-   parameterizations around the tropopause. The current version keeps eta and
-   etadot at interfaces, which adds complexity since (h(dot), eta(dot)) are at a
-   mix of midpoints and interfaces.
+   y(dot), z(dot)), where h(dot) means the statement applies to both h and
+   hdot. h(dot) lives on vertical midpoints. In contrast, the eta(dot) part of
+   the trajectory lives on vertical interfaces. A previous version of this
+   method interpolated etadot to midpoints, then interpolated the vertical part
+   of departure points from midpoints to interfaces. This caused issues in
+   certain chemistry parameterizations around the tropopause. The current
+   version keeps eta and etadot at interfaces, which adds complexity since
+   (h(dot), eta(dot)) are at a mix of midpoints and interfaces. This change
+   removes the dependence of the reconstruction of floating Lagrangian levels on
+   the vertical grid in some (but, unavoidably, not all) terms of the
+   approximation. Simply stated, staying on interfaces as much as possible,
+   where eta(dot) naturally lives, is better than moving to midpoints, where
+   eta(dot) has to be interpolated.
      The high-level key ideas are as follows. Let _ref denote quantities on the
-   reference grid and _arr quantities on the vertically Lagrangian grid.
-     Interpolate (hdot_ref, etadot_ref) at (h_ref, midpoint(eta_ref)) to get
-   hdot_eta. In this step, eta_ref is interpolated to midpoints. Crucially, the
-   error made here affects hdot_arr only in higher-order terms.
+   reference grid; _arr (for "arrival point"), quantities on the vertically
+   Lagrangian grid.
+     Interpolate (hdot_ref, etadot_ref) at (h_arr, midpoint(eta_arr)) to get
+   hdot_arr. In this step, eta_arr is interpolated to midpoints. But this step
+   does not compute etadot_arr.
      Next, we need to interpolate for etadot_arr. The simplest procedure would
    be to compute extra full trajectories at interfaces. But this would be
    expensive. Instead, we reuse the midpoint trajectories as follows.
-     At each interface k, interpolate for etadot_ref at (h_(k-1)_arr, eta_k_arr)
-   and (h_k_arr, eta_k_arr). Then combine these two values to get the final
-   etadot_k_arr. The key here is that only interface etadot_ref values are used
-   in computing these steps; a derived midpoint etadot_arr is never used.
-     This calculation is a bit subtle, but its set up such that it adds very
+     At each interface k, interpolate for etadot_k_ref at (h_(k-1)_arr,
+   eta_k_arr) and (h_k_arr, eta_k_arr). Then combine these two values to get the
+   final etadot_k_arr. The key here is that only interface etadot_ref values are
+   used in computing these steps; a derived midpoint etadot_arr is never used.
+     This calculation is a bit subtle, but it's set up such that it adds very
    little cost to the much simpler calculation that uses eta(dot) at
    midpoints. It adds two additional entries to the communicated arrays and a
-   small amount of extra computation. Again, the conceptually simplest approach
-   would double the number of trajectories to compute.
+   small amount of extra computation.
+     Again, the conceptually simplest and most accurate approach would double
+   the number of trajectories to compute. The approach above is one
+   approximation to this. Other approximations are possible, but the one above
+   seems to use the least computation and communication among the available
+   approximations.
      The following notes provide precise implementation details about this
    calculation, outlining the code in the rest of this file.
 
-   Level arrangement. x is horizontal position. A suffixed 'd' means 'dot'.
+     Level arrangement. x is horizontal position. A suffixed 'd' means 'dot'.
           0 i etai(0), etaid(0) = 0
           0 m x or xdot (= xd)
           1 i e or ed
@@ -49,7 +61,7 @@
           2 i e(d)
           2 m x(d)
        nlev i
-   Algorithm:
+     Algorithm:
        x[k] is the horizontal position at midpoint k
        analyze_dep_points for x[k]
        send/recv p[k] = (x[k], e[k], e[k+1])
