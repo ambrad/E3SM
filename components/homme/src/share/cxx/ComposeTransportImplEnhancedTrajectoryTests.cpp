@@ -7,10 +7,6 @@
 #include "Config.hpp"
 #ifdef HOMME_ENABLE_COMPOSE
 
-#ifdef NDEBUG
-# undef NDEBUG
-#endif
-
 #include "ComposeTransportImplEnhancedTrajectoryImpl.hpp"
 
 #include <random>
