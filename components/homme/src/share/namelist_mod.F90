@@ -565,20 +565,7 @@ use physical_constants, only : Sx, Sy, Lx, Ly, dx, dy, dx_ref, dy_ref
            test_case(1:13)== "jw_baroclinic"  .or. &
            test_case(1:5) == "dcmip"          .or. &
            test_case(1:5) == "mtest"          .or. &
-           test_case      == "planar_hydro_gravity_wave"            .or. &
-           test_case      == "planar_nonhydro_gravity_wave"           .or. &
-           test_case      == "planar_hydro_mtn_wave"            .or. &
-           test_case      == "planar_nonhydro_mtn_wave"           .or. &
-           test_case      == "planar_schar_mtn_wave"            .or. &
-           test_case      == "planar_rising_bubble"             .or. &
-           test_case      == "planar_rising_bubble_pg2"         .or. &
-           test_case      == "planar_density_current"             .or. &
-           test_case      == "planar_baroclinic_instab"             .or. &
-           test_case      == "planar_moist_rising_bubble"            .or. &
-           test_case      == "planar_moist_density_current"            .or. &
-           test_case      == "planar_moist_baroclinic_instab"            .or. &
-           test_case      == "planar_tropical_cyclone"             .or. &
-           test_case      == "planar_supercell"             .or. &
+           test_case(1:6) == "planar"         .or. &
            test_case(1:4) == "asp_")  then
          write(iulog,*) "reading vertical namelist..."
 
