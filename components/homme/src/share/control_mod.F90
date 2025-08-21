@@ -706,7 +706,10 @@ use physical_constants, only: Lx, Ly, Sx, Sy
 !       Ly = 5000.0D0 * 1000.0D0
 !       Sx = 0.0D0
 !       Sy = 0.0D0
-
+    else if (test_case(1:16) == 'planar_transport') then
+       ! These test cases set these values internally. Set them preliminarily to
+       ! values to get them past the namelist-reading checks.
+       Lx = 2.d0; Ly = 2.d0; Sx = -1.d0; Sy = -1.d0
     endif
     endif !if lx,ly,sx,sy are not set in nl
 
