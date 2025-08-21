@@ -470,6 +470,7 @@ contains
     use parallel_mod, only: global_shared_buf, global_shared_sum
     use global_norms_mod, only: wrap_repro_sum
     use physical_constants, only: Rd => Rgas, p0
+    use kinds, only: iulog
 
     character(len=*), intent(in) :: test_case
     type(element_t), intent(in) :: elem(:)
@@ -534,13 +535,14 @@ contains
     end do
     
     if (par%masterproc) then
-       print '(a)', 'test1_conv>                          l2                    linf'
+       write(iulog, '(a)') &
+            'test1_conv>                          l2                    linf'
        do iq = 1,qsize
           a = global_shared_sum(2*iq-1)
           b = global_shared_sum(2*iq)
           reldif = sqrt(a/b)
-          print '(a,i2,es24.16,es24.16)', 'test1_conv> Q', &
-               iq, reldif, linf_num(iq)/linf_den(iq)
+          write(iulog, '(a,i2,es24.16,es24.16)') &
+               'test1_conv> Q', iq, reldif, linf_num(iq)/linf_den(iq)
        end do
     end if
   end subroutine test1_conv_print_results
