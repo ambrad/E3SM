@@ -50,7 +50,6 @@ contains
        call init(test_case, hybrid, hvcoord)
     end if
 
-    if (hybrid%masterthread) print *,'amb> hi',time
     do ie = nets,nete
        do k = 1,nlev
           do j = 1,np
@@ -59,7 +58,7 @@ contains
                 dp = pressure_thickness(ps,k,hvcoord)
                 if (time <= 0.d0) then
                    do qi = 1, qsize
-                      elem(ie)%state%Q(i,j,k,qi) = elem(ie)%spherep(i,j)%lon * zm(k)
+                      elem(ie)%state%Q(i,j,k,qi) = (Lx/2 + elem(ie)%spherep(i,j)%lon) * zm(k)
                       elem(ie)%state%Qdp(i,j,k,qi,:) = elem(ie)%state%Q(i,j,k,qi) * dp
                    end do
                 end if
@@ -91,7 +90,6 @@ contains
     type(hvcoord_t), intent(in) :: hvcoord
     type(parallel_t), intent(in) :: par
 
-    if (par%masterproc) print *, 'amb> print_conv_planar_advection_results'
   end subroutine print_conv_planar_advection_results
 
   subroutine init(test_case, hybrid, hvcoord)
