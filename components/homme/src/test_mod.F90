@@ -161,6 +161,7 @@ subroutine set_test_initial_conditions(elem, deriv, hybrid, hvcoord, tl, nets, n
       case('planar_tropical_cyclone');              call planar_tropical_cyclone_init(elem,hybrid,hvcoord,nets,nete)
       case('planar_supercell');                     call planar_supercell_init(elem,hybrid,hvcoord,nets,nete)
       case('planar_transport_a')
+         midpoint_eta_dot_dpdn = .true.
          call test_conv_planar_advection( &
               test_case,elem,hybrid,hvcoord,deriv,nets,nete,0.0d0,1,timelevels)
       case default;               call abortmp('unrecognized test case')

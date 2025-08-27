@@ -10,7 +10,7 @@ module planar_transport_tests
   use derivative_mod, only: derivative_t
   use element_ops, only: set_state, set_state_i
   ! Planar geometry parameters.
-  use physical_constants, only: Lx, Ly, Sx, Sy, dx, dy, dx_ref, dy_ref, &
+  use physical_constants, only: Lx, Ly, &
        &                        Rgas, g, cp, dd_pi, p0
   use dimensions_mod, only: ne_x, ne_y, qsize, qsize_d, nlev, nlevp, np
   ! Test problem tools.
@@ -43,21 +43,26 @@ contains
     integer, intent(in):: nets, nete, n0, n1
     real(rl), intent(in):: time
 
-    integer :: ie, k, j, i
+    integer :: ie, k, j, i, qi
     real(rl) :: u, v, w, T, ps, phis, p, dp
 
     if (time <= 0.d0) then
        call init(test_case, hybrid, hvcoord)
     end if
 
+    if (hybrid%masterthread) print *,'amb> hi',time
     do ie = nets,nete
        do k = 1,nlev
           do j = 1,np
              do i = 1,np
-                elem(ie)%state%Q(i,j,k,:) = 0
-                elem(ie)%state%Qdp(i,j,k,:,:) = 0
-                u = 0; v = 0; w = 0; T = 273; ps = p0; phis = 0; p = p0*hvcoord%etam(k)
+                u = Lx/tau; v = 0; w = 0; T = 273; ps = p0; phis = 0; p = p0*hvcoord%etam(k)
                 dp = pressure_thickness(ps,k,hvcoord)
+                if (time <= 0.d0) then
+                   do qi = 1, qsize
+                      elem(ie)%state%Q(i,j,k,qi) = elem(ie)%spherep(i,j)%lon * zm(k)
+                      elem(ie)%state%Qdp(i,j,k,qi,:) = elem(ie)%state%Q(i,j,k,qi) * dp
+                   end do
+                end if
                 call set_state(u,v,w,T,ps,phis,p,dp,zm(k),g,i,j,k,elem(ie),n0,n1)
              end do
           end do
@@ -68,7 +73,7 @@ contains
        do k = 1,nlevp
           do j = 1,np
              do i = 1,np
-                u = 0; v = 0; w = 0; T = 273; ps = p0; phis = 0; p = p0*hvcoord%etai(k)
+                u = Lx/tau; v = 0; w = 0; T = 273; ps = p0; phis = 0; p = p0*hvcoord%etai(k)
                 call set_state_i(u,v,w,T,ps,phis,p,zi(k),g,i,j,k,elem(ie),n0,n1)
              end do
           end do
