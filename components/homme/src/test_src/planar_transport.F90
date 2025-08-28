@@ -44,9 +44,7 @@ contains
     real(rl), intent(in):: time
 
     integer :: ie, k, j, i, qi
-    real(rl) :: u, v, w, T, ps, phis, p, dp, zs, z, q, ztaper
-
-    real(rl), parameter :: ztop_t = 2000.d0
+    real(rl) :: x, y, u, v, w, T, ps, phis, p, dp, z, q(qsize)
 
     if (time <= 0.d0) then
        call init(test_case, hybrid, hvcoord)
@@ -56,47 +54,67 @@ contains
        do k = 1,nlevp
           do j = 1,np
              do i = 1,np
-                u = Lx/tau; v = 0; w = 0; T = 273
-                zs = 2000.d0*(1 + sin(4*dd_pi*elem(ie)%spherep(i,j)%lon/Lx))
-                zs = -zs
-                phis = g*zs
-                ps = p0 * exp(-zs/H)
+                x = elem(ie)%spherep(i,j)%lon
+                y = elem(ie)%spherep(i,j)%lat
                 if (k < nlevp) then
-                   p = hvcoord%hyam(k)*p0 + hvcoord%hybm(k)*ps
-                   z = H * log(p0/p)
+                   call get_values(hvcoord, k, .true., time, x, y, &
+                        &          ps, phis, p, z, T, u, v, w, q)
                    dp = pressure_thickness(ps,k,hvcoord)
-                   if (z <= 0) then
-                      ztaper = 0
-                   elseif (z >= ztop_t) then
-                      ztaper = 1
-                   else
-                      ztaper = (1 + cos(dd_pi*(1 + z/ztop_t)))/2
-                   end if
                    if (time <= 0.d0) then
                       do qi = 1, qsize
-                         q = 0
-                         if (z >= 6000.d0 .and. z <= 7000.d0) q = 1
-                         elem(ie)%state%Q(i,j,k,qi) = q
+                         elem(ie)%state%Q(i,j,k,qi) = q(qi)
                          elem(ie)%state%Qdp(i,j,k,qi,:) = elem(ie)%state%Q(i,j,k,qi) * dp
                       end do
                    end if
-                   call set_state(u*ztaper,v*ztaper,w,T,ps,phis,p,dp,z,g,i,j,k,elem(ie),n0,n1)
+                   call set_state(u, v, w, T, ps, phis, p, dp, z, g, i, j, k, elem(ie), n0, n1)
                 end if
-                p = hvcoord%hyai(k)*p0 + hvcoord%hybi(k)*ps
-                z = H * log(p0/p)
-                if (z <= 0) then
-                   ztaper = 0
-                elseif (z >= ztop_t) then
-                   ztaper = 1
-                else
-                   ztaper = (1 + cos(dd_pi*(1 + z/ztop_t)))/2
-                end if
-                call set_state_i(u*ztaper,v*ztaper,w,T,ps,phis,p,z,g,i,j,k,elem(ie),n0,n1)
+                call get_values(hvcoord, k, .false., time, x, y, &
+                     &          ps, phis, p, z, T, u, v, w, q)
+                call set_state_i(u, v, w, T, ps, phis, p, z, g, i, j, k, elem(ie), n0, n1)
              end do
           end do
        end do
     end do
   end subroutine test_conv_planar_advection
+
+  subroutine get_values(hvcoord, lev, mid, time, x, y, &
+       &                ps, phis, p, z, T, u, v, w, q)
+    type (hvcoord_t), intent(inout) :: hvcoord
+    integer, intent(in) :: lev
+    logical, intent(in) :: mid
+    real(rl), intent(in) :: time, x, y
+    real(rl), intent(out) :: ps, phis, p, z, T, u, v, w, q(qsize)
+
+    real(rl), parameter :: ztop_t = 2000.d0
+
+    real(rl) :: zs, ztaper
+
+    zs = 2000.d0*(1 + sin(4*dd_pi*x/Lx))
+    zs = -zs
+    phis = g*zs
+    ps = p0 * exp(-zs/H)
+
+    if (mid) then
+       p = hvcoord%hyam(lev)*p0 + hvcoord%hybm(lev)*ps
+    else
+       p = hvcoord%hyai(lev)*p0 + hvcoord%hybi(lev)*ps
+    end if
+    z = H * log(p0/p)
+
+    if (z <= 0) then
+       ztaper = 0
+    elseif (z >= ztop_t) then
+       ztaper = 1
+    else
+       ztaper = (1 + cos(dd_pi*(1 + z/ztop_t)))/2
+    end if
+
+    u = (Lx/tau)*ztaper
+    v = 0; w = 0; T = T0
+
+    q = 0
+    if (z >= 6000.d0 .and. z <= 7000.d0) q = 1
+  end subroutine get_values
   
   subroutine print_conv_planar_advection_results(test_case, elem, tl, hvcoord, par)
     use time_mod, only: timelevel_t
