@@ -312,12 +312,17 @@ contains
           tau_topo = tau_h
        end if
        u_topo_fac = -u0_topo/two
+       ! The mountain center moves with velocity
+       !    u(time) = cos(pi time/tau_topo) u_topo_fac
+       ! Then the position is
+       !    p(time) = int_0^time u(t) dt
+       !            = sin(pi time/tau_topo) (tau_topo/pi) u_topo_fac
        lambdam_t = lambdam_t + &
-            &      sin(pi*time/tau_topo)*(tau_topo/pi)*u_topo_fac & ! integral of u at lat = 0
+            &      sin(pi*time/tau_topo)*(tau_topo/pi)*u_topo_fac &
             &      /a ! to radians
     end if
     r = great_circle_dist(lambdam_t, phim, lon, lat)
-    if (r .lt. Rm) then
+    if (r < Rm) then
        zs = (h0/2.d0)*(one+cos(pi*r/Rm))*cos(pi*r/zetam)**2.d0
     else
        zs = zero

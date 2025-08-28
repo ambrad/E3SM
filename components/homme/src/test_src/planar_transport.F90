@@ -11,7 +11,7 @@ module planar_transport_tests
   use element_ops, only: set_state, set_state_i
   ! Planar geometry parameters.
   use physical_constants, only: Lx, Ly, dd_pi, &
-       &                        Rgas, g, cp, dd_pi, p0
+       &                        Rgas, g, cp, pi => dd_pi, p0
   use dimensions_mod, only: ne_x, ne_y, qsize, qsize_d, nlev, nlevp, np
   ! Test problem tools.
   use dcmip12_wrapper, only: get_evenly_spaced_z, set_hybrid_coefficients, &
@@ -85,11 +85,28 @@ contains
     real(rl), intent(in) :: time, x, y
     real(rl), intent(out) :: ps, phis, p, z, T, u, v, w, q(qsize)
 
-    real(rl), parameter :: ztop_t = 2000.d0
+    real(rl), parameter :: &
+         ztop_t = 2000.d0, &
+         xm = 0.25, &
+         distm = 3.d0/8.d0, &
+         h0 = 2000.d0
 
-    real(rl) :: zs, ztaper
+    real(rl) :: u_topo_fac, xm_t, dist, zs, ztaper
 
-    zs = 2000.d0*(1 + sin(4*dd_pi*x/Lx))
+    zs = 0
+    xm_t = xm*Lx
+    ! The mountain center moves in time.
+    u_topo_fac = -Lx/tau/2.d0
+    xm_t = xm_t + sin(pi*time/tau)*(tau/pi)*u_topo_fac
+    ! Mountain shape.
+    dist = min(min(abs(x - xm_t), &
+         &         abs(x - (xm_t - Lx))), &
+         &         abs(x - (xm_t + Lx)))
+    dist = dist/Lx
+    if (dist < distm) then
+       zs = h0*(1.d0 + cos(pi*(dist/distm)))*cos(pi*(6.d0*dist))**2.d0
+    end if
+
     zs = -zs
     phis = g*zs
     ps = p0 * exp(-zs/H)
@@ -106,14 +123,19 @@ contains
     elseif (z >= ztop_t) then
        ztaper = 1
     else
-       ztaper = (1 + cos(dd_pi*(1 + z/ztop_t)))/2
+       ztaper = (1 + cos(pi*(1 + z/ztop_t)))/2
     end if
 
+    ! Simple translation in x direction.
     u = (Lx/tau)*ztaper
+    ! Account for moving ps.
+    u = u + cos(pi*time/tau)*u_topo_fac*(1 - ztaper)
+
     v = 0; w = 0; T = T0
 
     q = 0
     if (z >= 6000.d0 .and. z <= 7000.d0) q = 1
+    !if (x < 0 .or. x > Lx/3) q = 0
   end subroutine get_values
   
   subroutine print_conv_planar_advection_results(test_case, elem, tl, hvcoord, par)
