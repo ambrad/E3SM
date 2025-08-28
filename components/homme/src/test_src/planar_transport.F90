@@ -10,7 +10,7 @@ module planar_transport_tests
   use derivative_mod, only: derivative_t
   use element_ops, only: set_state, set_state_i
   ! Planar geometry parameters.
-  use physical_constants, only: Lx, Ly, &
+  use physical_constants, only: Lx, Ly, dd_pi, &
        &                        Rgas, g, cp, dd_pi, p0
   use dimensions_mod, only: ne_x, ne_y, qsize, qsize_d, nlev, nlevp, np
   ! Test problem tools.
@@ -44,36 +44,54 @@ contains
     real(rl), intent(in):: time
 
     integer :: ie, k, j, i, qi
-    real(rl) :: u, v, w, T, ps, phis, p, dp
+    real(rl) :: u, v, w, T, ps, phis, p, dp, zs, z, q, ztaper
+
+    real(rl), parameter :: ztop_t = 2000.d0
 
     if (time <= 0.d0) then
        call init(test_case, hybrid, hvcoord)
     end if
 
     do ie = nets,nete
-       do k = 1,nlev
-          do j = 1,np
-             do i = 1,np
-                u = Lx/tau; v = 0; w = 0; T = 273; ps = p0; phis = 0; p = p0*hvcoord%etam(k)
-                dp = pressure_thickness(ps,k,hvcoord)
-                if (time <= 0.d0) then
-                   do qi = 1, qsize
-                      elem(ie)%state%Q(i,j,k,qi) = (Lx/2 + elem(ie)%spherep(i,j)%lon) * zm(k)
-                      elem(ie)%state%Qdp(i,j,k,qi,:) = elem(ie)%state%Q(i,j,k,qi) * dp
-                   end do
-                end if
-                call set_state(u,v,w,T,ps,phis,p,dp,zm(k),g,i,j,k,elem(ie),n0,n1)
-             end do
-          end do
-       end do
-    end do
-
-    do ie = nets,nete
        do k = 1,nlevp
           do j = 1,np
              do i = 1,np
-                u = Lx/tau; v = 0; w = 0; T = 273; ps = p0; phis = 0; p = p0*hvcoord%etai(k)
-                call set_state_i(u,v,w,T,ps,phis,p,zi(k),g,i,j,k,elem(ie),n0,n1)
+                u = Lx/tau; v = 0; w = 0; T = 273
+                zs = 2000.d0*(1 + sin(4*dd_pi*elem(ie)%spherep(i,j)%lon/Lx))
+                zs = -zs
+                phis = g*zs
+                ps = p0 * exp(-zs/H)
+                if (k < nlevp) then
+                   p = hvcoord%hyam(k)*p0 + hvcoord%hybm(k)*ps
+                   z = H * log(p0/p)
+                   dp = pressure_thickness(ps,k,hvcoord)
+                   if (z <= 0) then
+                      ztaper = 0
+                   elseif (z >= ztop_t) then
+                      ztaper = 1
+                   else
+                      ztaper = (1 + cos(dd_pi*(1 + z/ztop_t)))/2
+                   end if
+                   if (time <= 0.d0) then
+                      do qi = 1, qsize
+                         q = 0
+                         if (z >= 6000.d0 .and. z <= 7000.d0) q = 1
+                         elem(ie)%state%Q(i,j,k,qi) = q
+                         elem(ie)%state%Qdp(i,j,k,qi,:) = elem(ie)%state%Q(i,j,k,qi) * dp
+                      end do
+                   end if
+                   call set_state(u*ztaper,v*ztaper,w,T,ps,phis,p,dp,z,g,i,j,k,elem(ie),n0,n1)
+                end if
+                p = hvcoord%hyai(k)*p0 + hvcoord%hybi(k)*ps
+                z = H * log(p0/p)
+                if (z <= 0) then
+                   ztaper = 0
+                elseif (z >= ztop_t) then
+                   ztaper = 1
+                else
+                   ztaper = (1 + cos(dd_pi*(1 + z/ztop_t)))/2
+                end if
+                call set_state_i(u*ztaper,v*ztaper,w,T,ps,phis,p,z,g,i,j,k,elem(ie),n0,n1)
              end do
           end do
        end do
