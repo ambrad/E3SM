@@ -59,7 +59,7 @@ contains
                 x = elem(ie)%spherep(i,j)%lon
                 y = elem(ie)%spherep(i,j)%lat
                 if (k < nlevp) then
-                   call get_values(hvcoord, k, .true., time, x, y, &
+                   call get_values(time, x, y, hvcoord%hyam(k), hvcoord%hybm(k), &
                         &          ps, phis, p, z, T, u, v, q)
                    dp = pressure_thickness(ps,k,hvcoord)
                    if (time <= 0.d0) then
@@ -70,7 +70,7 @@ contains
                    end if
                    call set_state(u, v, w, T, ps, phis, p, dp, z, g, i, j, k, elem(ie), n0, n1)
                 end if
-                call get_values(hvcoord, k, .false., time, x, y, &
+                call get_values(time, x, y, hvcoord%hyai(k), hvcoord%hybi(k), &
                      &          ps, phis, p, z, T, u, v, q)
                 call set_state_i(u, v, w, T, ps, phis, p, z, g, i, j, k, elem(ie), n0, n1)
                 p_i(i,j) = p
@@ -89,12 +89,9 @@ contains
     end do
   end subroutine test_conv_planar_advection
 
-  subroutine get_values(hvcoord, lev, mid, time, x, y, &
+  subroutine get_values(time, x, y, hya, hyb, &
        &                ps, phis, p, z, T, u, v, q)
-    type (hvcoord_t), intent(inout) :: hvcoord
-    integer, intent(in) :: lev
-    logical, intent(in) :: mid
-    real(rl), intent(in) :: time, x, y
+    real(rl), intent(in) :: time, x, y, hya, hyb
     real(rl), intent(out) :: ps, phis, p, z, T, u, v, q(qsize)
 
     real(rl), parameter :: &
@@ -125,12 +122,7 @@ contains
     zs = -zs
     phis = g*zs
     ps = p0 * exp(-zs/H)
-
-    if (mid) then
-       p = hvcoord%hyam(lev)*p0 + hvcoord%hybm(lev)*ps
-    else
-       p = hvcoord%hyai(lev)*p0 + hvcoord%hybi(lev)*ps
-    end if
+    p = hya*p0 + hyb*ps
     z = H * log(p0/p)
 
     if (z <= 0) then
@@ -158,6 +150,8 @@ contains
     end if
     if (qsize == 1) return
     q(2) = q(1)*(1 + cos(6.d0*pi*(x/Lx)))
+    if (qsize == 2) return
+    q(3:qsize) = q(2)
   end subroutine get_values
   
   subroutine print_conv_planar_advection_results(test_case, elem, tl, hvcoord, par)
@@ -169,7 +163,7 @@ contains
     type(timelevel_t), intent(in) :: tl
     type(hvcoord_t), intent(in) :: hvcoord
     type(parallel_t), intent(in) :: par
-
+    
   end subroutine print_conv_planar_advection_results
 
   subroutine init(test_case, hybrid, hvcoord)
