@@ -7,7 +7,7 @@ module planar_transport_tests
   use parallel_mod, only: parallel_t, abortmp
   use hybrid_mod, only: hybrid_t
   use hybvcoord_mod, only: hvcoord_t, set_layer_locations
-  use derivative_mod, only: derivative_t
+  use derivative_mod, only: derivative_t, gradient_sphere
   use element_ops, only: set_state, set_state_i
   ! Planar geometry parameters.
   use physical_constants, only: Lx, Ly, dd_pi, &
@@ -45,11 +45,13 @@ contains
 
     integer :: ie, k, j, i, qi
     real(rl) :: x, y, u, v, w, T, ps, phis, p, dp, z, q(qsize)
+    real(rl):: grad_p(np,np,2), p_i(np,np), u_i(np,np), v_i(np,np)
 
     if (time <= 0.d0) then
        call init(test_case, hybrid, hvcoord)
     end if
 
+    w = 0
     do ie = nets,nete
        do k = 1,nlevp
           do j = 1,np
@@ -58,7 +60,7 @@ contains
                 y = elem(ie)%spherep(i,j)%lat
                 if (k < nlevp) then
                    call get_values(hvcoord, k, .true., time, x, y, &
-                        &          ps, phis, p, z, T, u, v, w, q)
+                        &          ps, phis, p, z, T, u, v, q)
                    dp = pressure_thickness(ps,k,hvcoord)
                    if (time <= 0.d0) then
                       do qi = 1, qsize
@@ -69,21 +71,29 @@ contains
                    call set_state(u, v, w, T, ps, phis, p, dp, z, g, i, j, k, elem(ie), n0, n1)
                 end if
                 call get_values(hvcoord, k, .false., time, x, y, &
-                     &          ps, phis, p, z, T, u, v, w, q)
+                     &          ps, phis, p, z, T, u, v, q)
                 call set_state_i(u, v, w, T, ps, phis, p, z, g, i, j, k, elem(ie), n0, n1)
+                p_i(i,j) = p
+                u_i(i,j) = u
+                v_i(i,j) = v
              end do
           end do
+          ! Get vertical mass flux. This is not used in the case of interest: 3D
+          ! transport. But include it for completeness.
+          grad_p = gradient_sphere(p_i,deriv,elem(ie)%Dinv)
+          elem(ie)%derived%eta_dot_dpdn_prescribed(:,:,k) = &
+               -u_i*grad_p(:,:,1) - v_i*grad_p(:,:,2)
        end do
     end do
   end subroutine test_conv_planar_advection
 
   subroutine get_values(hvcoord, lev, mid, time, x, y, &
-       &                ps, phis, p, z, T, u, v, w, q)
+       &                ps, phis, p, z, T, u, v, q)
     type (hvcoord_t), intent(inout) :: hvcoord
     integer, intent(in) :: lev
     logical, intent(in) :: mid
     real(rl), intent(in) :: time, x, y
-    real(rl), intent(out) :: ps, phis, p, z, T, u, v, w, q(qsize)
+    real(rl), intent(out) :: ps, phis, p, z, T, u, v, q(qsize)
 
     real(rl), parameter :: &
          ztop_t = 2000.d0, &
@@ -131,7 +141,8 @@ contains
     ! Account for moving ps.
     u = u + cos(pi*time/tau)*u_topo_fac*(1 - ztaper)
 
-    v = 0; w = 0; T = T0
+    v = 0
+    T = T0
 
     q = 0
     if (z >= 6000.d0 .and. z <= 7000.d0) q = 1
