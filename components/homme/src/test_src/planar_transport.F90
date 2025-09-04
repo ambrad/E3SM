@@ -98,10 +98,13 @@ contains
     real(rl), intent(out) :: ps, phis, p, z, T, u, v, q(qsize)
 
     real(rl), parameter :: &
-         ztop_t = 2000.d0, &
          xm = 0.25, &
          distm = 3.d0/8.d0, &
-         h0 = 2000.d0
+         h0 = 2000.d0, &
+         ztop_t = 2000.d0, &
+         z1_h = ztop_t + 1000.d0, &
+         z2_h = ztop_t + 6000.d0, &
+         z0_h = (z1_h + z2_h)/2
 
     real(rl) :: u_topo_fac, xm_t, dist, zs, ztaper
 
@@ -146,9 +149,15 @@ contains
     v = 0
     T = T0
 
+    if (time > 0.d0) return
+
+    if (qsize == 0) return
     q = 0
-    if (z >= 6000.d0 .and. z <= 7000.d0) q = 1
-    !if (x < 0 .or. x > Lx/3) q = 0
+    if (z < z2_h .and. z > z1_h) then
+       q(1) = 0.5d0 * (1 + cos(2.d0*pi*(z-z0_h)/(z2_h-z1_h)))
+    end if
+    if (qsize == 1) return
+    q(2) = q(1)*(1 + cos(6.d0*pi*(x/Lx)))
   end subroutine get_values
   
   subroutine print_conv_planar_advection_results(test_case, elem, tl, hvcoord, par)
