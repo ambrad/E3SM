@@ -386,8 +386,9 @@ contains
           fz_z = -3*sin(gz)**2*cos(gz)*gz_z
        end if
        c0 = w0_h*(rho0/rho)*cos(pi*time/tau_h)
-       w =    c0*(cos(lat)*fl_lat - 2*sin(lat)*fl)*fz
-       v = -a*c0*(cos(lat)*fl                    )*fz_z
+       ! Don't use this because !use_w:
+       !   w = c0*(cos(lat)*fl_lat - 2*sin(lat)*fl)*fz
+       v = -a*c0*(cos(lat)*fl)*fz_z
     case default
        call abortmp('test1_conv_advection_orography: invalid case')
     end select

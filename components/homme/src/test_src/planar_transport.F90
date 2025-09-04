@@ -84,6 +84,8 @@ contains
           elem(ie)%derived%eta_dot_dpdn_prescribed(:,:,k) = &
                -u_i*grad_p(:,:,1) - v_i*grad_p(:,:,2)
        end do
+       elem(ie)%derived%eta_dot_dpdn_prescribed(:,:,1)     = 0
+       elem(ie)%derived%eta_dot_dpdn_prescribed(:,:,nlevp) = 0       
     end do
   end subroutine test_conv_planar_advection
 
