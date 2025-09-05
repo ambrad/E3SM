@@ -12,7 +12,7 @@ module planar_transport_tests
   ! Planar geometry parameters.
   use physical_constants, only: Lx, Ly, dd_pi, &
        &                        Rgas, g, cp, pi => dd_pi, p0
-  use dimensions_mod, only: ne_x, ne_y, qsize, qsize_d, nlev, nlevp, np
+  use dimensions_mod, only: ne_x, ne_y, qsize, qsize_d, nlev, nlevp, np, nelemd
   ! Test problem tools.
   use dcmip12_wrapper, only: get_evenly_spaced_z, set_hybrid_coefficients, &
        &                     pressure_thickness
@@ -148,22 +148,73 @@ contains
     if (z < z2_h .and. z > z1_h) then
        q(1) = 0.5d0 * (1 + cos(2.d0*pi*(z-z0_h)/(z2_h-z1_h)))
     end if
-    if (qsize == 1) return
-    q(2) = q(1)*(1 + cos(6.d0*pi*(x/Lx)))
-    if (qsize == 2) return
-    q(3:qsize) = q(2)
+    if (qsize > 2) q(3) = q(1)
+    q(1) = q(1)*(1 + cos(6.d0*pi*(x/Lx)))
+    q(2) = q(1)
+    if (qsize > 3) q(3:qsize) = q(1)
   end subroutine get_values
   
   subroutine print_conv_planar_advection_results(test_case, elem, tl, hvcoord, par)
     use time_mod, only: timelevel_t
-    use parallel_mod, only: parallel_t
+    use parallel_mod, only: global_shared_buf, global_shared_sum, pmax_1d
+    use global_norms_mod, only: wrap_repro_sum
 
     character(len=*), intent(in) :: test_case
     type(element_t), intent(in) :: elem(:)
     type(timelevel_t), intent(in) :: tl
     type(hvcoord_t), intent(in) :: hvcoord
     type(parallel_t), intent(in) :: par
+
+    integer :: ie, k, j, i, iq
+    real(rl) :: time, x, y, ps, phis, p, z, T, u, v, q(np,np,qsize), &
+         &      reldif, linf_num(qsize), linf_den(qsize), a, b
     
+    ! Set time to 0 to get the initial conditions.
+    time = 0
+
+    linf_num = 0
+    linf_den = 0
+    do ie = 1,nelemd
+       global_shared_buf(ie,:2*qsize) = 0
+       do k = 1,nlev
+          do j = 1,np
+             do i = 1,np
+                x = elem(ie)%spherep(i,j)%lon
+                y = elem(ie)%spherep(i,j)%lat
+                call get_values(time, x, y, hvcoord%hyam(k), hvcoord%hybm(k), &
+                     &          ps, phis, p, z, T, u, v, q(i,j,:))
+             end do
+          end do
+          do iq = 1,qsize
+             global_shared_buf(ie,2*iq-1) = global_shared_buf(ie,2*iq-1) + &
+                  sum(elem(ie)%spheremp*(elem(ie)%state%Q(:,:,k,iq) - q(:,:,iq))**2)
+             global_shared_buf(ie,2*iq) = global_shared_buf(ie,2*iq) + &
+                  sum(elem(ie)%spheremp*q(:,:,iq)**2)
+             linf_num(iq) = max(linf_num(iq), &
+                  maxval(abs(elem(ie)%state%Q(:,:,k,iq) - q(:,:,iq))))
+             linf_den(iq) = max(linf_den(iq), &
+                  maxval(abs(q(:,:,iq))))
+          end do
+       end do
+    end do
+
+    call wrap_repro_sum(nvars=2*qsize, comm=par%comm)
+    do iq = 1, qsize
+       linf_num(iq) = pmax_1d(linf_num(iq:iq), par)
+       linf_den(iq) = pmax_1d(linf_den(iq:iq), par)
+    end do
+    
+    if (par%masterproc) then
+       write(iulog, '(a)') &
+            'planar_conv>                          l2                    linf'
+       do iq = 1,qsize
+          a = global_shared_sum(2*iq-1)
+          b = global_shared_sum(2*iq)
+          reldif = sqrt(a/b)
+          write(iulog, '(a,i2,es24.16,es24.16)') &
+               'planar_conv> Q', iq, reldif, linf_num(iq)/linf_den(iq)
+       end do
+    end if
   end subroutine print_conv_planar_advection_results
 
   subroutine init(test_case, hybrid, hvcoord)
