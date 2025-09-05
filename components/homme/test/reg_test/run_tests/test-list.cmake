@@ -47,7 +47,8 @@ IF (HOMME_ENABLE_COMPOSE)
     thetah-sl-test11conv-r1t2-cdr20.cmake
     thetah-sl-test11conv-r0t1-cdr30-rrm.cmake
     thetah-sl-dcmip16_test1pg2.cmake
-    thetah-sl-testconv-3e.cmake)
+    thetah-sl-testconv-3e.cmake
+    planar-transport-a-etm.cmake)
 ENDIF()
 
 SET(HOMME_RUN_TESTS_DIR ${HOMME_SOURCE_DIR}/test/reg_test/run_tests)
