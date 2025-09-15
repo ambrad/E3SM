@@ -60,6 +60,7 @@ static void prim_advec_tracers_remap_RK2 (const Real dt)
 
   // Get the ESF
   EulerStepFunctor& esf = Context::singleton().get<EulerStepFunctor>();
+  esf.reset(params);
 
   // Precompute divdp
   GPTLstart("tl-at precompute_divdp");
