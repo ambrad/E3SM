@@ -24,6 +24,7 @@
   hypervis_scaling  = 3.2
   nu                = 0.01
   nu_top            = 0.0
+  nu_p              = 42 ! to satisfy kokkos exe
   hypervis_order    = 2                         ! 2 = hyperviscosity
   hypervis_subcycle = 1                         ! 1 = no hypervis subcycling
   hypervis_subcycle_tom = 1
