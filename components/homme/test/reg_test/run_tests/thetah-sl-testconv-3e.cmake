@@ -10,10 +10,7 @@ SET(NAMELIST_FILES ${HOMME_ROOT}/test/reg_test/namelists/thetah-sl-testconv-3e.n
 # compare all of these files against baselines:
 SET(NC_OUTPUT_FILES dcmip2012_test1_3e_conv1.nc)
 
-set(TCEN_ERROR_ANCHOR "test1_conv")
-set(TCEN_FILENAME "${TEST_NAME}_1.out")
-set(TCEN_UPPER_BOUNDS "1.0e-1;1.1e-1;5.0e-2;9.0e-2")
-configure_file(
-  ${HOMME_SOURCE_DIR}/cmake/TransportCheckErrorNorms.cmake.in
-  ${HOMME_BINARY_DIR}/tests/${TEST_NAME}/check.cmake
-  @ONLY)
+check_transport_error_norms(
+  ${TEST_NAME} "test1_conv" "${TEST_NAME}_1.out"
+  "9.1e-2;1.1e-1;4.0e-2;8.1e-2")
+ 

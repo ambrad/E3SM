@@ -1,5 +1,5 @@
-set(TEST_NAME planar-transport-a-etm)
-set(EXEC_NAME theta-l-nlev128-native)
+set(TEST_NAME planar-transport-a-etm-kokkos)
+set(EXEC_NAME theta-l-nlev128-native-kokkos)
 set(NAMELIST_FILES ${HOMME_ROOT}/test/reg_test/namelists/planar-transport-a-etm.nl)
 set(NUM_CPUS 16)
 
