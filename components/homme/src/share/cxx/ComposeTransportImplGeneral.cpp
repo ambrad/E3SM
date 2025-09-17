@@ -13,7 +13,8 @@
 extern "C" void
 sl_get_params(double* nu_q, double* hv_scaling, int* hv_q, int* hv_subcycle_q,
               int* limiter_option, int* cdr_check, int* geometry_type,
-              int* trajectory_nsubstep, int* trajectory_nvelocity);
+              int* trajectory_nsubstep, int* trajectory_nvelocity,
+              int* diagnostics);
 
 namespace Homme {
 
@@ -58,7 +59,8 @@ void ComposeTransportImpl::reset (const SimulationParams& params) {
 
   sl_get_params(&m_data.nu_q, &m_data.hv_scaling, &m_data.hv_q, &m_data.hv_subcycle_q,
                 &m_data.limiter_option, &m_data.cdr_check, &m_data.geometry_type,
-                &m_data.trajectory_nsubstep, &m_data.trajectory_nvelocity);
+                &m_data.trajectory_nsubstep, &m_data.trajectory_nvelocity,
+                &m_data.diagnostics);
 
   if (independent_time_steps != m_data.independent_time_steps or
       m_data.nelemd != num_elems or m_data.qsize != params.qsize) {

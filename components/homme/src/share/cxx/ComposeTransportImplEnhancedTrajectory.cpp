@@ -438,7 +438,7 @@ void calc_nodal_velocities (
 // grid's arrival midpoints, where the floating levels are those that evolve
 // over the course of the full tracer time step. Also compute divdp, which holds
 // the floating levels' dp values for later use in vertical remap.
-void interp_departure_points_to_floating_level_midpoints (const CTI& c, const int np1) {
+int interp_departure_points_to_floating_level_midpoints (const CTI& c, const int np1) {
   using Kokkos::ALL;
   const int nlev = NUM_PHYSICAL_LEV, nlevp = nlev+1;
   const auto is_sphere = c.m_data.geometry_type == 0;
@@ -456,7 +456,7 @@ void interp_departure_points_to_floating_level_midpoints (const CTI& c, const in
   const auto& buf1a = d.buf1e[0]; const auto& buf1b = d.buf1e[1];
   const auto& buf1c = d.buf1e[2]; const auto& buf1d = d.buf1e[3];
   const auto& buf2a = d.buf2[0];
-  const auto f = KOKKOS_LAMBDA (const cti::MT& team) {
+  const auto f = KOKKOS_LAMBDA (const cti::MT& team, int& limcnt) {
     KernelVariables kv(team);
     const int ie = kv.ie;
     const auto wrk1 = Homme::subview(buf1a, kv.team_idx);
@@ -471,10 +471,10 @@ void interp_departure_points_to_floating_level_midpoints (const CTI& c, const in
     };
     cti::loop_ijk<cti::num_phys_lev>(kv, f);
     kv.team_barrier();
-    limit_etai(kv, nlev,
-               hyetai, detai, deta_tol,
-               p2rel(wrk1.data(), nlev), p2rel(wrk2.data(), nlev),
-               eta);
+    limcnt += limit_etai(kv, nlev,
+                         hyetai, detai, deta_tol,
+                         p2rel(wrk1.data(), nlev), p2rel(wrk2.data(), nlev),
+                         eta);
     kv.team_barrier();
     {
       // Compute Lagrangian level interfaces at t1 on arrival column.
@@ -548,7 +548,9 @@ void interp_departure_points_to_floating_level_midpoints (const CTI& c, const in
       }
     }
   };
-  Kokkos::parallel_for(c.m_tp_ne, f);
+  int limcnt = 0;
+  Kokkos::parallel_reduce(c.m_tp_ne, f, limcnt);
+  return limcnt;
 }
 
 void dss_vnode (const CTI& c, const cti::DeparturePoints& vnode) {
@@ -735,9 +737,18 @@ void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real d
 
   if (m_data.independent_time_steps) {
     GPTLstart("compose_floating_dep_pts");
-    interp_departure_points_to_floating_level_midpoints(*this, np1);
+    const int limcnt =
+      interp_departure_points_to_floating_level_midpoints(*this, np1);
     Kokkos::fence();
     GPTLstop("compose_floating_dep_pts");
+    if (m_data.diagnostics & 1) {
+      const auto& c = Context::singleton();
+      const auto& comm = c.get<Comm>();
+      int glimcnt;
+      MPI_Allreduce(&limcnt, &glimcnt, 1, MPI_INT, MPI_SUM, comm.mpi_comm());
+      if (glimcnt > 0 and comm.root())
+        printf("COMPOSE> limiter_active_count %10d\n", glimcnt);
+    }
   }
 
   GPTLstop("compose_calc_enhanced_trajectory");

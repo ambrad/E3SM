@@ -585,7 +585,7 @@ deta_caas (const KernelVariables& kv, const Range& tvr,
 // Wrapper to deta_caas. On input and output, eta contains the interface eta
 // values, excluding the last one. On output, deta_caas has been applied, if
 // necessary, to diff(eta(i,j,:)).
-KOKKOS_FUNCTION void
+KOKKOS_FUNCTION int
 limit_etai (const KernelVariables& kv, const int nlev, const CRnV& hy_etai,
             const CRnV& deta_ref, const Real deta_tol, const RelnV& wrk1,
             const RelnV& wrk2, const RelnV& eta) {
@@ -621,10 +621,11 @@ limit_etai (const KernelVariables& kv, const int nlev, const CRnV& hy_etai,
   Kokkos::parallel_for(ttr, f1);
   kv.team_barrier();
   // deta -> eta; ignore columns where limiting wasn't needed.
-  const auto f2 = [&] (const int idx) {
+  const auto f2 = [&] (const int idx, int& cnt) {
     const int i = idx / NP, j = idx % NP;
     const auto detaij = getcolc(deta,i,j);
     if (detaij(0) == -1) return;
+    ++cnt;
     const auto etaij = getcol(eta,i,j);
     const auto g = [&] (const int k, Real& accum, const bool final) {
       assert(k != 0 or accum == 0);
@@ -634,7 +635,9 @@ limit_etai (const KernelVariables& kv, const int nlev, const CRnV& hy_etai,
     };
     Dispatch<>::parallel_scan(kv.team, nlev-1, g);
   };
-  Kokkos::parallel_for(ttr, f2);
+  int cnt = 0;
+  Kokkos::parallel_reduce(ttr, f2, cnt);
+  return cnt;
 }
 
 // Compute surface pressure ps = ai(0) ps0 + sum dp.

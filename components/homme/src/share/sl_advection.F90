@@ -194,15 +194,15 @@ contains
   end subroutine sl_init1
 
   subroutine sl_get_params(nu_q_out, hv_scaling, hv_q, hv_subcycle_q, limiter_option_out, &
-       cdr_check, geometry_type, trajectory_nsubstep, trajectory_nvelocity) bind(c)
+       cdr_check, geometry_type, trajectory_nsubstep, trajectory_nvelocity, diagnostics) bind(c)
     use control_mod, only: semi_lagrange_hv_q, hypervis_subcycle_q, semi_lagrange_cdr_check, &
          nu_q, hypervis_scaling, limiter_option, geometry, semi_lagrange_trajectory_nsubstep, &
-         semi_lagrange_trajectory_nvelocity
+         semi_lagrange_trajectory_nvelocity, semi_lagrange_diagnostics
     use iso_c_binding, only: c_int, c_double
 
     real(c_double), intent(out) :: nu_q_out, hv_scaling
     integer(c_int), intent(out) :: hv_q, hv_subcycle_q, limiter_option_out, cdr_check, &
-         geometry_type, trajectory_nsubstep, trajectory_nvelocity
+         geometry_type, trajectory_nsubstep, trajectory_nvelocity, diagnostics
 
     nu_q_out = nu_q
     hv_scaling = hypervis_scaling
@@ -215,6 +215,7 @@ contains
     if (trim(geometry) == "plane") geometry_type = 1
     trajectory_nsubstep = semi_lagrange_trajectory_nsubstep
     trajectory_nvelocity = semi_lagrange_trajectory_nvelocity
+    diagnostics = semi_lagrange_diagnostics
   end subroutine sl_get_params
 
   subroutine init_velocity_record(nelemd, dtf, drf_param, nsub, nvel_param, v, error)
