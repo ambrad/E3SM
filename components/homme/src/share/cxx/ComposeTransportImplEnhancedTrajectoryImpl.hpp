@@ -368,9 +368,8 @@ linterp (const Range& range,
          const int x_idx_offset = 0, const char* const caller = nullptr) {
 #ifndef NDEBUG
   if (xi[0] < x[0] or xi[ni-1] > x[n-1]) {
-    if (caller)
-      Kokkos::printf("linterp: xi out of bounds: %s %1.15e %1.15e %1.15e %1.15e\n",
-                     caller ? caller : "NONE", x[0], xi[0], xi[ni-1], x[n-1]);
+    Kokkos::printf("linterp: xi out of bounds: %s %1.15e %1.15e %1.15e %1.15e\n",
+                   caller ? caller : "NONE", x[0], xi[0], xi[ni-1], x[n-1]);
     assert(false);
   }
 #endif
@@ -388,7 +387,7 @@ linterp (const Range& range,
 // the reference or departure grids.
 KOKKOS_FUNCTION void
 eta_interp_eta (const KernelVariables& kv, const int nlev, const CRnV& hy_etai,
-                const int n,  const int os, const CRelnV& x, const CRnV& y,
+                const int n, const int os, const CRelnV& x, const CRnV& y,
                 const RelnV& xwrk, const RnV& ywrk,
                 // Use xi(i_os:), yi(i,j,i_os:).
                 const int ni, const int i_os, const CRnV& xi, const RelnV& yi) {
@@ -425,8 +424,8 @@ eta_interp_eta (const KernelVariables& kv, const int nlev, const CRnV& hy_etai,
   const auto f_linterp = [&] (const int idx) {
     const int i = idx / NP, j = idx % NP;
     linterp(tvr_ni,
-            nlev+2, getcolc(xbdy,i,j), ybdy,
-            ni,     xi.data() + i_os, getcol(yi,i,j).data() + i_os,
+            n+2, getcolc(xbdy,i,j), ybdy,
+            ni, xi.data() + i_os, getcol(yi,i,j).data() + i_os,
             1, "eta_interp_eta");
   };
   Kokkos::parallel_for(ttr, f_linterp);
