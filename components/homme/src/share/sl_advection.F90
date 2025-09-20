@@ -1418,8 +1418,8 @@ contains
        if (iand(semi_lagrange_diagnostics, 1) /= 0) then
           limiter_active_count = ParallelSum(limiter_active_count, hybrid)
           if (limiter_active_count > 0 .and. hybrid%masterthread) then
-             write(iulog, '(a,i11)') 'COMPOSE> limiter_active_count', &
-                  limiter_active_count
+             write(iulog, '(a,i11,i11)') 'COMPOSE> nstep, limiter_active_count:', &
+                  tl%nstep, limiter_active_count
           end if
        end if
     end if

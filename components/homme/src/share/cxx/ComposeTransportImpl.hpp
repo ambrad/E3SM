@@ -149,7 +149,7 @@ struct ComposeTransportImpl {
   void remap_q(const TimeLevel& tl);
 
   void calc_trajectory(const int np1, const Real dt);
-  void calc_enhanced_trajectory(const int np1, const Real dt);
+  void calc_enhanced_trajectory(const int nstep, const int np1, const Real dt);
   void remap_v(const ExecViewUnmanaged<const Scalar*[NUM_TIME_LEVELS][NP][NP][NUM_LEV]>& dp3d,
                const int np1, const ExecViewUnmanaged<const Scalar*[NP][NP][NUM_LEV]>& dp,
                const ExecViewUnmanaged<Scalar*[2][NP][NP][NUM_LEV]>& v);

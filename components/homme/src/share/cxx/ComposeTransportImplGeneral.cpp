@@ -215,7 +215,7 @@ void ComposeTransportImpl::run (const TimeLevel& tl, const Real dt) {
   if (m_data.trajectory_nsubstep == 0)
     calc_trajectory(tl.np1, dt);
   else
-    calc_enhanced_trajectory(tl.np1, dt);
+    calc_enhanced_trajectory(tl.nstep, tl.np1, dt);
   
   GPTLstart("compose_isl");
   homme::compose::advect(tl.np1, tl.n0_qdp, tl.np1_qdp);

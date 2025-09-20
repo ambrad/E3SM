@@ -678,7 +678,8 @@ void ComposeTransportImpl::observe_velocity (const TimeLevel& tl, const int step
   }
 }
 
-void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real dt) {
+void ComposeTransportImpl
+::calc_enhanced_trajectory (const int nstep, const int np1, const Real dt) {
   GPTLstart("compose_calc_enhanced_trajectory");
 
   const auto& dep_pts = m_data.dep_pts;
@@ -747,7 +748,8 @@ void ComposeTransportImpl::calc_enhanced_trajectory (const int np1, const Real d
       int glimcnt;
       MPI_Allreduce(&limcnt, &glimcnt, 1, MPI_INT, MPI_SUM, comm.mpi_comm());
       if (glimcnt > 0 and comm.root())
-        printf("COMPOSE> limiter_active_count %10d\n", glimcnt);
+        printf("COMPOSE> nstep %10d limiter_active_count %10d\n",
+               nstep, glimcnt);
     }
   }
 
