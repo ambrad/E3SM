@@ -643,7 +643,7 @@ contains
 
 subroutine set_planar_defaults()
 
-use physical_constants, only: Lx, Ly, Sx, Sy, dd_pi, rearth0
+use physical_constants, only: Lx, Ly, Sx, Sy, dd_pi, rearth
  
 !since defaults here depend on test, they cannot be set before ctl_nl is read, unlike some other parameters, bubble_*, etc.        
 !if true, most likely lx,ly,sx,sy weren't set in ctl_nl
@@ -706,7 +706,7 @@ use physical_constants, only: Lx, Ly, Sx, Sy, dd_pi, rearth0
 !       Sx = 0.0D0
 !       Sy = 0.0D0
     else if (test_case(1:16) == 'planar_transport') then
-       Lx = 2*dd_pi*rearth0
+       Lx = 2*dd_pi*rearth
        Ly = Lx
        Sx = -Lx/2
        Sy = Sx

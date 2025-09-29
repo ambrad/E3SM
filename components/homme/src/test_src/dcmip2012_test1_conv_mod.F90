@@ -4,7 +4,7 @@ module dcmip2012_test1_conv_mod
 
   use parallel_mod,       only: abortmp
   ! Use physical constants consistent with HOMME
-  use physical_constants, only: a => rearth0, Rd => Rgas, g, cp, pi => dd_pi, p0
+  use physical_constants, only: a => rearth, Rd => Rgas, g, cp, pi => dd_pi, p0
 
   implicit none
   private
